@@ -16,6 +16,15 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 2
 fi
 
+# Release evidence must not inherit interpreter selection or Python startup hooks from the caller.
+# The SIP-protected system interpreter is fixed by absolute path and every invocation uses isolated
+# mode, which ignores PYTHON* startup authority and excludes the user site directory.
+PYTHON3="/usr/bin/python3"
+if [[ ! -x "$PYTHON3" ]]; then
+  echo "Signed field-candidate production requires the system Python 3 interpreter at $PYTHON3." >&2
+  exit 2
+fi
+
 : "${NEMBRA_DEVELOPMENT_TEAM:?Set NEMBRA_DEVELOPMENT_TEAM to the Apple signing TeamIdentifier.}"
 : "${NEMBRA_EXPORT_OPTIONS_PLIST:?Set NEMBRA_EXPORT_OPTIONS_PLIST to an existing Xcode export-options plist.}"
 : "${NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE:?Set NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE to an absolute private mode-0600 file containing the verification-only intended field iPhone UDID.}"
@@ -72,7 +81,7 @@ fi
 
 BUILD_IDENTIFIER="Capture Build V14-${SOURCE_SHA:0:12}"
 FIELD_RECIPE_ID="ES80-FINGERPRINT-v1"
-BUILD_INSTANCE_ID="$(python3 -c 'import uuid; print(str(uuid.uuid4()))')"
+BUILD_INSTANCE_ID="$("$PYTHON3" -I -c 'import uuid; print(str(uuid.uuid4()))')"
 if [[ ! "$BUILD_INSTANCE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
   echo "Generated build-instance ID is not canonical lowercase UUID text." >&2
   exit 9
@@ -94,7 +103,7 @@ RAW_ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/artifacts/Xcode27FieldCandidate-${SOUR
 if [[ "$RAW_ARTIFACTS_DIR" != /* ]]; then
   RAW_ARTIFACTS_DIR="$ROOT/$RAW_ARTIFACTS_DIR"
 fi
-ARTIFACTS_DIR="$(python3 - "$RAW_ARTIFACTS_DIR" <<'PY'
+ARTIFACTS_DIR="$("$PYTHON3" -I - "$RAW_ARTIFACTS_DIR" <<'PY'
 import sys
 from pathlib import Path
 print(Path(sys.argv[1]).resolve(strict=False))
@@ -150,10 +159,67 @@ chmod 0400 "$PRIVATE_RUNNER_SNAPSHOT" "$INSPECTOR_SNAPSHOT"
 exec 7< "$PRIVATE_RUNNER_SNAPSHOT"
 exec 8< "$INSPECTOR_SNAPSHOT"
 exec 9< "$PRIVATE_RUNNER_SNAPSHOT"
+
+# Path hashing above catches accidental materialization drift. This second proof closes the remaining
+# replacement window by hashing the actual opened subjects. os.pread leaves each descriptor's file
+# position untouched so Python later executes the same admitted bytes from offset zero.
+if ! "$PYTHON3" -I - \
+  /dev/fd/7 "$PRIVATE_RUNNER_BLOB_SHA" \
+  /dev/fd/8 "$INSPECTOR_BLOB_SHA" \
+  /dev/fd/9 "$PRIVATE_RUNNER_BLOB_SHA" <<'PY'
+import hashlib
+import os
+import stat
+import sys
+
+arguments = sys.argv[1:]
+if len(arguments) != 6:
+    raise SystemExit("Expected three descriptor-path / Git-blob pairs")
+
+for index in range(0, len(arguments), 2):
+    descriptor_path = arguments[index]
+    expected = arguments[index + 1]
+    try:
+        descriptor = int(descriptor_path.rsplit("/", 1)[1])
+    except (IndexError, ValueError):
+        raise SystemExit(f"Invalid inherited descriptor path: {descriptor_path!r}")
+
+    before = os.fstat(descriptor)
+    if not stat.S_ISREG(before.st_mode):
+        raise SystemExit(f"Inherited descriptor is not a regular file: {descriptor_path}")
+    if len(expected) == 40:
+        digest = hashlib.sha1()
+    elif len(expected) == 64:
+        digest = hashlib.sha256()
+    else:
+        raise SystemExit(f"Unsupported Git object digest width for {descriptor_path}")
+
+    digest.update(f"blob {before.st_size}\0".encode("ascii"))
+    offset = 0
+    while offset < before.st_size:
+        chunk = os.pread(descriptor, min(1024 * 1024, before.st_size - offset), offset)
+        if not chunk:
+            raise SystemExit(f"Short read while binding inherited descriptor: {descriptor_path}")
+        digest.update(chunk)
+        offset += len(chunk)
+
+    after = os.fstat(descriptor)
+    stable_before = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns)
+    stable_after = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+    if stable_before != stable_after:
+        raise SystemExit(f"Inherited descriptor changed while it was being verified: {descriptor_path}")
+    if digest.hexdigest() != expected:
+        raise SystemExit(f"Inherited descriptor does not match its exact SOURCE_SHA Git blob: {descriptor_path}")
+PY
+then
+  echo "Opened signed-field inspection tooling does not match exact SOURCE_SHA Git objects." >&2
+  exit 14
+fi
+
 rm -f "$PRIVATE_RUNNER_SNAPSHOT" "$INSPECTOR_SNAPSHOT"
 rmdir "$INSPECTION_TOOL_ROOT"
 
-if ! python3 /dev/fd/7 \
+if ! "$PYTHON3" -I /dev/fd/7 \
   --validate-intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"
 then
   echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE failed private content/mode validation." >&2
@@ -163,7 +229,7 @@ exec 7<&-
 
 cp -p "$EXPORT_OPTIONS_PLIST" "$EXPORT_OPTIONS_SNAPSHOT"
 /usr/bin/plutil -lint "$EXPORT_OPTIONS_SNAPSHOT" >/dev/null
-EXPORT_OPTIONS_SHA256="$(python3 - "$EXPORT_OPTIONS_SNAPSHOT" "$NEMBRA_DEVELOPMENT_TEAM" <<'PY'
+EXPORT_OPTIONS_SHA256="$("$PYTHON3" -I - "$EXPORT_OPTIONS_SNAPSHOT" "$NEMBRA_DEVELOPMENT_TEAM" <<'PY'
 import hashlib
 import plistlib
 import sys
@@ -239,7 +305,7 @@ then
   exit 17
 fi
 
-POST_EXPORT_OPTIONS_SHA256="$(python3 - "$EXPORT_OPTIONS_SNAPSHOT" <<'PY'
+POST_EXPORT_OPTIONS_SHA256="$("$PYTHON3" -I - "$EXPORT_OPTIONS_SNAPSHOT" <<'PY'
 import hashlib
 import sys
 from pathlib import Path
@@ -260,7 +326,7 @@ if [[ "$POST_BUILD_HEAD" != "$SOURCE_SHA" || -n "$POST_BUILD_SOURCE_STATUS" ]]; 
 fi
 
 # Closed-world top-level IPA selection without nullglob/empty arrays under Bash 3.2 + nounset.
-IPA_PATH="$(python3 - "$EXPORT_DIR" <<'PY'
+IPA_PATH="$("$PYTHON3" -I - "$EXPORT_DIR" <<'PY'
 import sys
 from pathlib import Path
 export_dir = Path(sys.argv[1])
@@ -276,9 +342,9 @@ PY
 )"
 
 # The intended-device UDID remains behind the private mode-0600 file boundary. Both executable
-# Python subjects are exact SOURCE_SHA Git blobs held by descriptors whose path names were removed
-# before build work; no mutable checkout path can swap the evidence implementation.
-python3 /dev/fd/9 \
+# Python subjects are exact SOURCE_SHA Git blobs held by post-open-verified descriptors whose path
+# names were removed before build work; no mutable checkout path can swap the evidence implementation.
+"$PYTHON3" -I /dev/fd/9 \
   --ipa "$IPA_PATH" \
   --expected-source-sha "$SOURCE_SHA" \
   --intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" \
@@ -292,7 +358,7 @@ FIELD_BUILD_RECORD="$INSPECTION_DIR/NembraCaptureFieldBuildEvidenceRecord.json"
 SIGNING_INSPECTION="$INSPECTION_DIR/NembraCaptureSignedFieldArtifactInspection.json"
 RETAINED_IPA="$INSPECTION_DIR/build-evidence/NembraField.ipa"
 
-python3 - \
+"$PYTHON3" -I - \
   "$EXTERNAL_RECORD" \
   "$FIELD_BUILD_RECORD" \
   "$SIGNING_INSPECTION" \
@@ -472,7 +538,7 @@ cp -R "$INSPECTION_DIR" "$FINAL_STAGING_DIR/inspection"
 } > "$FINAL_STAGING_DIR/field-candidate-environment.txt"
 
 # Re-prove that final staging preserved exact inspector evidence bytes and exact export policy bytes.
-python3 - "$INSPECTION_DIR" "$FINAL_STAGING_DIR/inspection" <<'PY'
+"$PYTHON3" -I - "$INSPECTION_DIR" "$FINAL_STAGING_DIR/inspection" <<'PY'
 import hashlib
 import sys
 from pathlib import Path
@@ -490,7 +556,7 @@ if manifest(source) != manifest(destination):
     raise SystemExit("Final candidate staging did not preserve exact canonical inspector bytes")
 PY
 
-FINAL_EXPORT_OPTIONS_SHA256="$(python3 - "$FINAL_STAGING_DIR/ExportOptions.plist" <<'PY'
+FINAL_EXPORT_OPTIONS_SHA256="$("$PYTHON3" -I - "$FINAL_STAGING_DIR/ExportOptions.plist" <<'PY'
 import hashlib
 import sys
 from pathlib import Path
@@ -503,7 +569,7 @@ if [[ "$FINAL_EXPORT_OPTIONS_SHA256" != "$EXPORT_OPTIONS_SHA256" ]]; then
 fi
 
 # macOS renamex_np(RENAME_EXCL) publishes the complete directory atomically without replacement.
-python3 - "$FINAL_STAGING_DIR" "$ARTIFACTS_DIR" <<'PY'
+"$PYTHON3" -I - "$FINAL_STAGING_DIR" "$ARTIFACTS_DIR" <<'PY'
 import ctypes
 import errno
 import os
