@@ -22,6 +22,24 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         )
     }
 
+    private static func appSource() throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let repositoryRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+
+        return try String(
+            contentsOf: repositoryRoot
+                .appendingPathComponent("NembraApp")
+                .appendingPathComponent("App")
+                .appendingPathComponent("NembraApp.swift"),
+            encoding: .utf8
+        )
+    }
+
     private static func riderSurface(in source: String) throws -> Substring {
         let beginning = try #require(source.range(of: "private var passiveSafetyPanel"))
         let details = try #require(
@@ -84,6 +102,19 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         #expect(riderSurface.contains("SEAL"))
     }
 
+    @Test("stationary preflight keeps recipe identifiers out of rider copy")
+    func stationaryPreflightStaysHumanFirst() throws {
+        let app = try Self.appSource()
+
+        #expect(app.contains("Stationary preflight"))
+        #expect(app.contains("Disconnected"))
+        #expect(app.contains("Unplug charger to continue"))
+        #expect(
+            !app.contains("Required for ES80-FINGERPRINT-v1"),
+            "The first rider-visible preflight still exposes the internal experiment recipe identifier."
+        )
+    }
+
     @Test("primary failure copy stays rider-readable and never dumps implementation errors")
     func failureCopyStaysHumanFirst() throws {
         let source = try Self.shellSource()
@@ -115,6 +146,26 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
 
         #expect(failureCopy.contains("Start a fresh capture."))
         #expect(failureCopy.contains("OFF / ON"))
+    }
+
+    @Test("phase-generated primary messages cannot bypass rider-language acceptance")
+    func phaseGeneratedMessagesStayHumanFirst() throws {
+        let source = try Self.shellSource()
+
+        let riderVisibleEngineeringMessages = [
+            "This evidence life cannot regain capture authority",
+            "replaying consumed authority",
+            "The package-owned CoreBluetooth controller is unavailable for this coordinator.",
+            "package-issued observation authority",
+            "The package-owned Experiment One workflow has no active correlation progress and no final result."
+        ]
+
+        for phrase in riderVisibleEngineeringMessages {
+            #expect(
+                !source.contains(phrase),
+                "A phase-generated primary state can still expose engineering authority vocabulary: \(phrase)"
+            )
+        }
     }
 
     @Test("engineering truth remains available in Details instead of being deleted")
