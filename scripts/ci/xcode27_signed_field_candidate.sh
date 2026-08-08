@@ -196,7 +196,7 @@ shared_expected = {
     "sourceCommitSHA": source_sha,
     "buildIdentifier": build_identifier,
     "buildInstanceID": build_instance_id,
-    "experimentRecipeID": FIELD_RECIPE_ID if False else "ES80-FINGERPRINT-v1",
+    "experimentRecipeID": "ES80-FINGERPRINT-v1",
     "procedureVersion": "V14",
 }
 for record_name, record in (("field-build evidence", field), ("signing inspection", inspection)):
