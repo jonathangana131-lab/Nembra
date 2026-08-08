@@ -33,6 +33,17 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         return source[beginning.lowerBound..<details.lowerBound]
     }
 
+    private static func phaseSurface(in source: String) throws -> Substring {
+        let beginning = try #require(source.range(of: "private func phase("))
+        let end = try #require(
+            source.range(
+                of: "private var presentationAnalysisReady",
+                range: beginning.lowerBound..<source.endIndex
+            )
+        )
+        return source[beginning.lowerBound..<end.lowerBound]
+    }
+
     @Test("primary Capture states use rider language instead of implementation vocabulary")
     func primaryStatesStayHumanFirst() throws {
         let source = try Self.shellSource()
@@ -115,6 +126,32 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
 
         #expect(failureCopy.contains("Start a fresh capture."))
         #expect(failureCopy.contains("OFF / ON"))
+    }
+
+    @Test("direct phase failure and recovery states stay rider-readable")
+    func phaseFailureCopyStaysHumanFirst() throws {
+        let source = try Self.shellSource()
+        let phaseSurface = try Self.phaseSurface(in: source)
+
+        let implementationPhrasesThatMustStayOutOfPhaseFailureCopy = [
+            "evidence life",
+            "consumed authority",
+            "package-owned CoreBluetooth controller",
+            "package-issued observation authority",
+            "package-owned Experiment One workflow"
+        ]
+
+        for phrase in implementationPhrasesThatMustStayOutOfPhaseFailureCopy {
+            #expect(
+                !phaseSurface.contains(phrase),
+                "Primary phase failure/recovery copy still exposes implementation vocabulary: \(phrase)"
+            )
+        }
+
+        #expect(phaseSurface.contains("This capture cannot safely continue"))
+        #expect(phaseSurface.contains("Bluetooth capture is unavailable in this build"))
+        #expect(phaseSurface.contains("Start again from OFF 1"))
+        #expect(phaseSurface.contains("Simulator QA interruption fixture"))
     }
 
     @Test("engineering truth remains available in Details instead of being deleted")
