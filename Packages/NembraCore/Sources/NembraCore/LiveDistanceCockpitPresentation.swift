@@ -81,6 +81,16 @@ public enum LiveDistanceCockpitState: Equatable, Sendable {
             return
         }
 
+        let missingAcceptedIntervals =
+            maximumPossibleIntegratedIntervals - snapshot.integratedIntervalCount
+        guard snapshot.knownCoverageGapCount >= missingAcceptedIntervals else {
+            // Every accepted-sample adjacency that was not integrated represents
+            // missing observation coverage. A snapshot cannot honestly claim a
+            // gap-free role while silently omitting one of those intervals.
+            self = .unavailable
+            return
+        }
+
         switch snapshot.acceptedSampleCount {
         case 0:
             guard snapshot.firstAcceptedSampleUptimeNanoseconds == nil,
