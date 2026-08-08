@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
 python3 scripts/ci/tests/test_xcode27_simulator_visual_evidence_descriptor_custody_source.py
+python3 scripts/ci/tests/test_xcode27_simulator_visual_manifest_output_custody_source.py
 
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/Artifacts/Xcode27Simulator}"
 DERIVED_DATA="${DERIVED_DATA:-${RUNNER_TEMP:-/tmp}/NembraDerivedData}"
@@ -379,7 +380,7 @@ find "$ARTIFACTS_DIR/screenshots" -type f -name '*.png' -print | sort >> "$ARTIF
 # screenshots into physical or protocol authority. The manifest is deliberately external to the app
 # and can be independently re-hashed after the Actions artifact is downloaded for visual review.
 VISUAL_EVIDENCE_MANIFEST="$ARTIFACTS_DIR/NembraCaptureSimulatorVisualEvidence.json"
-python3 - \
+VISUAL_EVIDENCE_MANIFEST_SHA256="$(python3 - \
   "$VISUAL_EVIDENCE_MANIFEST" \
   "$ARTIFACTS_DIR" \
   "$CAPTURE_BUILD_IDENTIFIER" \
@@ -403,7 +404,9 @@ from pathlib import Path
 ) = sys.argv[1:]
 
 artifacts_root = Path(artifacts_root_text).resolve()
-manifest_path = Path(manifest_path_text).resolve()
+manifest_name = Path(manifest_path_text).name
+if manifest_name != "NembraCaptureSimulatorVisualEvidence.json":
+    raise SystemExit("unexpected Simulator visual-evidence manifest filename")
 
 if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
     raise SystemExit("platform cannot enforce no-follow visual-evidence descriptor custody")
@@ -545,32 +548,52 @@ try:
     root_after = os.fstat(artifacts_fd)
     if stable_identity(root_before) != stable_identity(root_after):
         raise SystemExit("Simulator artifact root changed during visual-evidence enumeration")
+
+    entries.sort(key=lambda entry: (str(entry["relativePath"]), str(entry["artifactKind"])))
+
+    screenshot_entries = [entry for entry in entries if entry["artifactKind"] == "simulatorScreenshot"]
+    if not screenshot_entries:
+        raise SystemExit("visual evidence manifest requires at least one retained Simulator screenshot")
+    if any(entry["byteCount"] <= 0 for entry in entries):
+        raise SystemExit("visual evidence manifest refuses empty retained evidence files")
+
+    manifest = {
+        "schemaVersion": 1,
+        "authority": "simulator-visual-evidence-not-physical-authorization",
+        "buildIdentifier": build_identifier,
+        "buildInstanceID": build_instance_id,
+        "sourceCommitSHA": source_commit_sha,
+        "externalBuildRecordSHA256": external_build_record_sha256,
+        "files": entries,
+    }
+    manifest_bytes = json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+    manifest_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        manifest_flags |= os.O_CLOEXEC
+    try:
+        manifest_fd = os.open(manifest_name, manifest_flags, 0o600, dir_fd=artifacts_fd)
+    except OSError as exc:
+        raise SystemExit("could not publish Simulator visual-evidence manifest without replacement") from exc
+    try:
+        with os.fdopen(os.dup(manifest_fd), "wb", closefd=True) as handle:
+            handle.write(manifest_bytes)
+            handle.flush()
+            os.fsync(handle.fileno())
+        manifest_after = os.fstat(manifest_fd)
+        if (
+            not stat.S_ISREG(manifest_after.st_mode)
+            or manifest_after.st_size != len(manifest_bytes)
+            or manifest_after.st_nlink != 1
+        ):
+            raise SystemExit("published Simulator visual-evidence manifest identity is invalid")
+    finally:
+        os.close(manifest_fd)
+
+    print(hashlib.sha256(manifest_bytes).hexdigest())
 finally:
     os.close(artifacts_fd)
-
-entries.sort(key=lambda entry: (str(entry["relativePath"]), str(entry["artifactKind"])))
-
-screenshot_entries = [entry for entry in entries if entry["artifactKind"] == "simulatorScreenshot"]
-if not screenshot_entries:
-    raise SystemExit("visual evidence manifest requires at least one retained Simulator screenshot")
-if any(entry["byteCount"] <= 0 for entry in entries):
-    raise SystemExit("visual evidence manifest refuses empty retained evidence files")
-
-manifest = {
-    "schemaVersion": 1,
-    "authority": "simulator-visual-evidence-not-physical-authorization",
-    "buildIdentifier": build_identifier,
-    "buildInstanceID": build_instance_id,
-    "sourceCommitSHA": source_commit_sha,
-    "externalBuildRecordSHA256": external_build_record_sha256,
-    "files": entries,
-}
-manifest_bytes = json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8") + b"\n"
-with manifest_path.open("xb") as handle:
-    handle.write(manifest_bytes)
 PY
-
-VISUAL_EVIDENCE_MANIFEST_SHA256="$(shasum -a 256 "$VISUAL_EVIDENCE_MANIFEST" | awk '{print $1}')"
+)"
 if [[ ! "$VISUAL_EVIDENCE_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
   echo "Could not derive a valid SHA-256 digest for the Simulator visual evidence manifest." >&2
   exit 23
