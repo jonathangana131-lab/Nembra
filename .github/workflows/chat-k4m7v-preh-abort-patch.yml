@@ -1,0 +1,229 @@
+name: chat-k4m7v guarded pre-H abort patch
+
+on:
+  push:
+    branches:
+      - 'parallel/es80-preh-observation-abort/chat-k4m7v'
+    paths:
+      - '.github/workflows/chat-k4m7v-preh-abort-patch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: parallel/es80-preh-observation-abort/chat-k4m7v
+          fetch-depth: 0
+      - name: Apply exact guarded queue-gate edits
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift')
+          text = path.read_text()
+
+          def replace_once(old: str, new: str) -> None:
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one match, found {count}: {old[:160]!r}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+          '''        case horizonArtifactNotReady
+              }
+
+              struct Transaction: Equatable, Sendable {
+          ''',
+          '''        case horizonArtifactNotReady
+                  case freshTargetSessionRequired
+              }
+
+              struct Transaction: Equatable, Sendable {
+          ''')
+
+          replace_once(
+          '''    struct Transaction: Equatable, Sendable {
+                  let boundaryKind: BoundaryKind
+                  let queueCutoff: UInt64
+                  let authority: PassiveCoreBluetoothArtifactAuthorityContext
+                  let revision: UInt64
+              }
+
+              enum Phase: Equatable, Sendable {
+          ''',
+          '''    struct Transaction: Equatable, Sendable {
+                  let boundaryKind: BoundaryKind
+                  let queueCutoff: UInt64
+                  let authority: PassiveCoreBluetoothArtifactAuthorityContext
+                  let revision: UInt64
+              }
+
+              /// Producer-issued proof that one committed Ready observation epoch was
+              /// intentionally abandoned before Horizon. The abandoned recorder is
+              /// incomplete evidence; this receipt never upgrades it into a terminal
+              /// artifact and carries no physical scooter meaning.
+              struct ObservationEpochAbortReceipt: Equatable, Sendable {
+                  let abandonedReadyTransaction: Transaction
+                  let abandonedTargetSessionGeneration: UInt64
+
+                  private init(abandonedReadyTransaction: Transaction) {
+                      self.abandonedReadyTransaction = abandonedReadyTransaction
+                      abandonedTargetSessionGeneration =
+                          abandonedReadyTransaction.authority.targetSessionGeneration
+                  }
+              }
+
+              enum Phase: Equatable, Sendable {
+          ''')
+
+          replace_once(
+          '''    private var committedReadyTransaction: Transaction?
+
+              var isTerminal: Bool {
+          ''',
+          '''    private var committedReadyTransaction: Transaction?
+
+              /// A pre-H abort may reopen only the lifecycle grammar, never the old
+              /// durable capture session. Until a Ready transaction arrives under a
+              /// strictly newer target-session generation, this fence prevents the
+              /// abandoned recorder/session from earning a second Ready boundary.
+              private var abandonedTargetSessionGeneration: UInt64?
+
+              var isTerminal: Bool {
+          ''')
+
+          replace_once(
+          '''        switch (phase, boundaryKind) {
+                  case (.awaitingReady, .finiteAcquisitionReady):
+                      break
+
+                  case (.observing, .observationHorizon):
+          ''',
+          '''        switch (phase, boundaryKind) {
+                  case (.awaitingReady, .finiteAcquisitionReady):
+                      if let abandonedTargetSessionGeneration {
+                          guard authority.targetSessionGeneration > abandonedTargetSessionGeneration else {
+                              throw StateError.freshTargetSessionRequired
+                          }
+                      }
+
+                  case (.observing, .observationHorizon):
+          ''')
+
+          replace_once(
+          '''        switch boundaryKind {
+                  case .finiteAcquisitionReady:
+                      phase = .drainingReady(transaction)
+                  case .observationHorizon:
+                      phase = .drainingHorizon(transaction)
+                  }
+
+                  nextRevision += 1
+          ''',
+          '''        switch boundaryKind {
+                  case .finiteAcquisitionReady:
+                      abandonedTargetSessionGeneration = nil
+                      phase = .drainingReady(transaction)
+                  case .observationHorizon:
+                      phase = .drainingHorizon(transaction)
+                  }
+
+                  nextRevision += 1
+          ''')
+
+          replace_once(
+          '''    /// Requests a fresh lifecycle grammar only when no observation transaction has
+              /// begun yet. Once Ready starts, this gate remains closed through terminal freeze.
+              ///
+              /// Terminal artifact freeze proves the immutable artifact is sealed; it does NOT
+              /// prove callbacks intentionally withheld after Horizon have been retired from
+              /// the controller FIFO. Reopening here would erase their terminal quarantine and
+              /// make old-generation post-cut evidence drainable again. A future explicit
+              /// controller-owned retirement/abort operation must prove the old queue generation
+              /// is gone before this gate gains a terminal -> awaitingReady transition.
+              @discardableResult
+              mutating func resetForNewCaptureSession() -> Bool {
+                  guard phase == .awaitingReady else {
+                      return false
+                  }
+                  committedReadyTransaction = nil
+                  return true
+              }
+          ''',
+          '''    /// Intentionally abandons one already-committed Ready epoch before
+              /// Horizon begins. This is a recovery transition for an incomplete
+              /// observation artifact, not a successful finalization path.
+              ///
+              /// The caller must present the exact Ready transaction that established
+              /// `.observing`; stale/wrong transactions cannot reset another epoch.
+              /// After abort, a later Ready is admitted only under a strictly newer
+              /// `targetSessionGeneration`, mechanically requiring controller-level
+              /// durable session/recorder rotation rather than reusing the abandoned
+              /// recorder under a newer authority generation.
+              ///
+              /// The transition is deliberately unavailable during Ready drain, after
+              /// Horizon begins, or after terminal freeze. Those states retain their
+              /// existing fail-closed queue barriers and must be resolved by their own
+              /// accepted transaction/retirement contracts.
+              @discardableResult
+              mutating func abortObservationEpoch(
+                  establishedBy readyTransaction: Transaction
+              ) throws -> ObservationEpochAbortReceipt {
+                  guard case .observing = phase else {
+                      throw StateError.invalidTransition
+                  }
+                  guard let committedReadyTransaction,
+                        committedReadyTransaction == readyTransaction else {
+                      throw StateError.staleTransaction
+                  }
+                  guard readyTransaction.boundaryKind == .finiteAcquisitionReady else {
+                      throw StateError.staleTransaction
+                  }
+
+                  let receipt = ObservationEpochAbortReceipt(
+                      abandonedReadyTransaction: readyTransaction
+                  )
+                  abandonedTargetSessionGeneration =
+                      readyTransaction.authority.targetSessionGeneration
+                  self.committedReadyTransaction = nil
+                  phase = .awaitingReady
+                  return receipt
+              }
+
+              /// Requests a fresh lifecycle grammar only when no observation transaction has
+              /// begun yet. Once Ready starts, this gate remains closed through terminal freeze.
+              ///
+              /// A pre-H abort is the one explicit exception: it may return the gate to
+              /// `.awaitingReady`, but its fresh-target-session fence survives this no-op
+              /// reset and requires a strictly newer durable target session before Ready.
+              ///
+              /// Terminal artifact freeze proves the immutable artifact is sealed; it does NOT
+              /// prove callbacks intentionally withheld after Horizon have been retired from
+              /// the controller FIFO. Reopening here would erase their terminal quarantine and
+              /// make old-generation post-cut evidence drainable again. Terminal -> fresh still
+              /// requires the separate controller-owned post-H retirement/reopen authority.
+              @discardableResult
+              mutating func resetForNewCaptureSession() -> Bool {
+                  guard phase == .awaitingReady else {
+                      return false
+                  }
+                  committedReadyTransaction = nil
+                  return true
+              }
+          ''')
+
+          path.write_text(text)
+          PY
+
+          git rm .github/workflows/chat-k4m7v-preh-abort-patch.yml
+          git config user.name 'nembra-chat-k4m7v'
+          git config user.email 'actions@users.noreply.github.com'
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift
+          git commit -m 'feat: require fresh session after pre-H observation abort'
+          git push origin HEAD:parallel/es80-preh-observation-abort/chat-k4m7v
