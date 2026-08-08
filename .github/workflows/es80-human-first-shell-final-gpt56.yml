@@ -1,0 +1,69 @@
+name: ES80 human first shell final
+
+on:
+  push:
+    branches:
+      - product/es80-v14-human-first-shell-final-gpt56
+    paths:
+      - .github/workflows/es80-human-first-shell-final-gpt56.yml
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: product/es80-v14-human-first-shell-final-gpt56
+          fetch-depth: 0
+      - name: Reduce reviewed transform to shell-only current ownership
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/ci/es80_human_first_final_gpt56.py')
+          original = p.read_text()
+          shell_start = original.index('shell = SHELL.read_text()')
+          rider_test_start = original.index('\ntest = RIDER_TEST.read_text()', shell_start)
+          shell_body = original[shell_start:rider_test_start]
+          prefix = '''from pathlib import Path\n\nSHELL = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")\n\ndef replace_exact(source: str, old: str, new: str, label: str) -> str:\n    count = source.count(old)\n    if count == 0:\n        print(f"current flagship already differs for {label}: {old!r}")\n        return source\n    return source.replace(old, new)\n\n'''
+          p.write_text(prefix + shell_body + '\nprint("current shell-only transform complete")\n')
+          PY
+      - name: Apply remaining rider-facing shell transform
+        run: python3 scripts/ci/es80_human_first_final_gpt56.py
+      - name: Validate current visual, language, and truth contracts
+        run: |
+          git diff --check
+          grep -F 'Text("CAPTURE PROGRESS")' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'eyebrow: "CAPTURE LOCKED"' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'This build is not ready for a field capture' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'This run can no longer continue; start a fresh capture.' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'The OFF / ON setup is unavailable for this run. Start a fresh capture.' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'foreground-interrupted capture' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'healthItem("SIGNAL"' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'healthItem("DISCOVERY"' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'healthItem("SEAL"' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'CoreBluetooth correlation uses full peripheral identity' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'could not prepare the Share file' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'Capture progress, required observation complete and ready to seal' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'Share and progress rider language' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureShareProgressRiderLanguageAcceptanceTests.swift
+          grep -F 'dynamic phase and restart messages stay human-first' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureDynamicRiderLanguageAcceptanceTests.swift
+          grep -F 'stationary preflight keeps the internal recipe identifier out of rider copy' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift
+          grep -F 'guard status.physicalProcedurePermitted else' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'Text("Truth boundary")' NembraApp/Features/Research/ES80CaptureShellView.swift
+      - name: Commit two-path product checkpoint and delete construction files
+        env:
+          TARGET_BRANCH: product/es80-v14-human-first-shell-final-gpt56
+        run: |
+          rm .github/workflows/es80-human-first-shell-final-gpt56.yml
+          rm scripts/ci/es80_human_first_final_gpt56.py
+          git config user.name "nembra-gpt56-worker"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add NembraApp/Features/Research/ES80CaptureShellView.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureShareProgressRiderLanguageAcceptanceTests.swift \
+                  .github/workflows/es80-human-first-shell-final-gpt56.yml \
+                  scripts/ci/es80_human_first_final_gpt56.py
+          git commit -m "[Capture product v14] Finish human-first primary, Share, and progress copy"
+          git push origin "HEAD:${TARGET_BRANCH}"
