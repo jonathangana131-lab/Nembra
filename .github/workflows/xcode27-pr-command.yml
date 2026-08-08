@@ -122,7 +122,13 @@ jobs:
 
       - name: Validate Capture package
         working-directory: Packages/NembraBluetoothCapture
-        run: swift test
+        shell: bash
+        run: |
+          mkdir -p "$ARTIFACTS_DIR"
+          set +e
+          swift test 2>&1 | tee "$ARTIFACTS_DIR/capture-swift-test.log"
+          status=${PIPESTATUS[0]}
+          exit "$status"
 
       - name: Validate signed field evidence tooling
         run: |
