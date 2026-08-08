@@ -12,11 +12,13 @@ This is still evidence production only. It cannot authorize physical Experiment 
 from __future__ import annotations
 
 import argparse
+import io
 import importlib.util
 import os
 import stat
 import sys
 import tempfile
+from contextlib import redirect_stderr
 from pathlib import Path
 from types import ModuleType
 
@@ -91,6 +93,19 @@ def load_canonical_inspector() -> ModuleType:
     return module
 
 
+def invoke_inspector_redacted(inspector: ModuleType, inspector_arguments: list[str]) -> int:
+    """Invoke inspector without allowing ordinary exception text to cross the privacy boundary."""
+    try:
+        return int(inspector.main(inspector_arguments))
+    except Exception:
+        # The in-memory argv intentionally contains the verification-only identifier. Never echo an
+        # inspector exception here: a future diagnostic may include one or more argument values.
+        # Process-control exceptions such as KeyboardInterrupt/SystemExit remain deliberate because
+        # they inherit from BaseException rather than Exception.
+        print("ERROR: canonical signed-field inspector rejected the field candidate", file=sys.stderr)
+        return 2
+
+
 def run_inspector(args: argparse.Namespace) -> int:
     intended_device_identifier = read_private_identifier(args.intended_device_udid_file)
     inspector = load_canonical_inspector()
@@ -107,13 +122,7 @@ def run_inspector(args: argparse.Namespace) -> int:
         "--intended-device-udid",
         intended_device_identifier,
     ]
-    try:
-        return int(inspector.main(inspector_arguments))
-    except inspector.EvidenceError:
-        # Do not echo the inspector exception here: future inspector diagnostics must never be able
-        # to accidentally serialize the verification-only identifier supplied in memory.
-        print("ERROR: canonical signed-field inspector rejected the field candidate", file=sys.stderr)
-        return 2
+    return invoke_inspector_redacted(inspector, inspector_arguments)
 
 
 def self_test() -> None:
@@ -168,6 +177,22 @@ def self_test() -> None:
             pass
         else:
             raise AssertionError("oversized verification input must fail closed")
+
+    class ExplodingInspector:
+        def main(self, argv: list[str]) -> int:
+            if expected not in argv:
+                raise AssertionError("redaction self-test did not supply the exact private value")
+            raise RuntimeError(f"future diagnostic accidentally included {expected}")
+
+    captured_stderr = io.StringIO()
+    with redirect_stderr(captured_stderr):
+        result = invoke_inspector_redacted(
+            ExplodingInspector(),
+            ["--intended-device-udid", expected],
+        )
+    assert result == 2
+    assert expected not in captured_stderr.getvalue()
+    assert "future diagnostic" not in captured_stderr.getvalue()
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
