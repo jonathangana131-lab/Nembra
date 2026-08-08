@@ -1,18 +1,73 @@
-#!/bin/bash
+#!/bin/bash -p
 set -euo pipefail
+PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+export PATH
 
-# Retire the legacy raw-value environment seam before any child process starts. The producer accepts
-# only the private-file path below; a stale caller export must not propagate the raw device identifier.
+# Retire caller-controlled startup/process seams before any child process starts. Privileged Bash
+# startup suppresses BASH_ENV/ENV and inherited shell-function startup authority before line 1; this
+# closed system PATH then prevents later executable selection from falling back to caller PATH.
+unset BASH_ENV ENV
 unset NEMBRA_INTENDED_FIELD_DEVICE_UDID
 
 # Python participates directly in private-input validation and signed-field evidence admission.
 # Never discover it through caller PATH, and always use isolated mode so caller PYTHON* startup or
 # import state cannot execute before the exact descriptor-bound Nembra source.
 PYTHON3="/usr/bin/python3"
-if [[ ! -x "$PYTHON3" || -L "$PYTHON3" ]]; then
-  echo "Signed field-candidate production requires the sealed system Python 3 at $PYTHON3." >&2
+validate_root_custodied_path() {
+  local candidate="$1"
+  local kind="$2"
+  local cursor="$candidate"
+  local owner_uid mode_text mode_value
+
+  if [[ "$kind" == "file" ]]; then
+    if [[ ! -f "$cursor" || ! -x "$cursor" || -L "$cursor" ]]; then
+      echo "Pinned producer executable must be one regular executable non-symlink: $cursor" >&2
+      return 1
+    fi
+  elif [[ "$kind" == "directory" ]]; then
+    if [[ ! -d "$cursor" || -L "$cursor" ]]; then
+      echo "Pinned producer custody directory must be one real non-symlink directory: $cursor" >&2
+      return 1
+    fi
+  else
+    echo "Unknown producer custody path kind: $kind" >&2
+    return 1
+  fi
+
+  while :; do
+    if [[ -L "$cursor" ]]; then
+      echo "Producer custody path contains a symlink: $cursor" >&2
+      return 1
+    fi
+    owner_uid="$(/usr/bin/stat -f '%u' "$cursor")" || return 1
+    mode_text="$(/usr/bin/stat -f '%Lp' "$cursor")" || return 1
+    if [[ ! "$owner_uid" =~ ^[0-9]+$ || ! "$mode_text" =~ ^[0-7]{3,4}$ ]]; then
+      echo "Could not derive canonical ownership/mode for producer custody path: $cursor" >&2
+      return 1
+    fi
+    mode_value=$((8#$mode_text))
+    if (( owner_uid != 0 )); then
+      echo "Producer custody path is not root-owned: $cursor" >&2
+      return 1
+    fi
+    if (( (mode_value & 0022) != 0 )); then
+      echo "Producer custody path is group/world writable: $cursor" >&2
+      return 1
+    fi
+    [[ "$cursor" == "/" ]] && break
+    cursor="$(/usr/bin/dirname "$cursor")"
+  done
+}
+if ! validate_root_custodied_path "$PYTHON3" file; then
+  echo "Signed field-candidate production requires a root-custodied sealed system Python 3 at $PYTHON3." >&2
   exit 2
 fi
+for SYSTEM_PATH_COMPONENT in /usr/bin /bin /usr/sbin /sbin; do
+  if ! validate_root_custodied_path "$SYSTEM_PATH_COMPONENT" directory; then
+    echo "Signed field-candidate production requires one root-custodied closed system PATH." >&2
+    exit 2
+  fi
+done
 
 # Produce one exact signed iOS Nembra Capture field-build CANDIDATE.
 # This script cannot authorize physical ES80 Experiment One.
