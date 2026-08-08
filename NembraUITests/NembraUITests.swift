@@ -133,6 +133,7 @@ final class NembraUITests: XCTestCase {
 
         let controls = app.buttons["Vehicle controls"]
         XCTAssertTrue(controls.waitForExistence(timeout: 2))
+        XCTAssertTrue(scrollToHittable(controls, in: app), "Vehicle controls must remain reachable at Accessibility XXXL.")
         controls.tap()
 
         XCTAssertTrue(app.navigationBars["Vehicle Controls"].waitForExistence(timeout: 2))
@@ -142,8 +143,8 @@ final class NembraUITests: XCTestCase {
 
         let cruiseOff = app.buttons["vehicle-controls.cruise.off"]
         let cruiseOn = app.buttons["vehicle-controls.cruise.on"]
-        XCTAssertTrue(scrollToExistence(cruiseOff, in: app))
-        XCTAssertTrue(scrollToExistence(cruiseOn, in: app))
+        XCTAssertTrue(scrollToVisible(cruiseOff, in: app))
+        XCTAssertTrue(scrollToVisible(cruiseOn, in: app))
         XCTAssertFalse(cruiseOff.isEnabled)
         XCTAssertFalse(cruiseOn.isEnabled)
         XCTAssertGreaterThan(
@@ -166,6 +167,7 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Scooter not found"].waitForExistence(timeout: 4))
         let controls = app.buttons["Vehicle controls"]
         XCTAssertTrue(controls.waitForExistence(timeout: 2))
+        XCTAssertTrue(scrollToHittable(controls, in: app), "Vehicle controls must remain reachable in the unavailable fixture at Accessibility XXXL.")
         controls.tap()
 
         XCTAssertTrue(app.navigationBars["Vehicle Controls"].waitForExistence(timeout: 2))
@@ -183,8 +185,8 @@ final class NembraUITests: XCTestCase {
 
         let walk = app.buttons["vehicle-controls.mode.walk"]
         let eco = app.buttons["vehicle-controls.mode.eco"]
-        XCTAssertTrue(scrollToExistence(walk, in: app))
-        XCTAssertTrue(scrollToExistence(eco, in: app))
+        XCTAssertTrue(scrollToVisible(walk, in: app))
+        XCTAssertTrue(scrollToVisible(eco, in: app))
         XCTAssertGreaterThan(
             eco.frame.minY,
             walk.frame.maxY,
@@ -371,15 +373,34 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
-    private func scrollToExistence(
+    private func scrollToHittable(
         _ element: XCUIElement,
         in app: XCUIApplication,
-        maxSwipes: Int = 4
+        maxSwipes: Int = 5
     ) -> Bool {
-        if element.exists { return true }
+        if element.exists && element.isHittable { return true }
         for _ in 0..<maxSwipes {
             app.swipeUp()
-            if element.exists { return true }
+            if element.exists && element.isHittable { return true }
+        }
+        return false
+    }
+
+    @MainActor
+    private func scrollToVisible(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        maxSwipes: Int = 5
+    ) -> Bool {
+        func isVisible() -> Bool {
+            guard element.exists, !element.frame.isEmpty else { return false }
+            return app.frame.intersects(element.frame)
+        }
+
+        if isVisible() { return true }
+        for _ in 0..<maxSwipes {
+            app.swipeUp()
+            if isVisible() { return true }
         }
         return false
     }
