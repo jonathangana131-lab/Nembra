@@ -29,7 +29,7 @@ class PrivateInputError(RuntimeError):
     pass
 
 
-def _stable_file_identity(metadata: os.stat_result) -> tuple[int, int, int, int, int, int, int, int]:
+def _stable_file_identity(metadata: os.stat_result) -> tuple[int, int, int, int, int, int, int, int, int]:
     """Return descriptor metadata whose change makes a verification read non-stable."""
     return (
         metadata.st_dev,
@@ -37,59 +37,98 @@ def _stable_file_identity(metadata: os.stat_result) -> tuple[int, int, int, int,
         metadata.st_mode,
         metadata.st_uid,
         metadata.st_gid,
+        metadata.st_nlink,
         metadata.st_size,
         metadata.st_mtime_ns,
         metadata.st_ctime_ns,
     )
 
 
-def require_external_private_input(path: Path, repository_root: Path) -> Path:
-    """Return one resolved private-input path only when it remains outside the repository."""
-    if not path.is_absolute():
-        raise PrivateInputError("intended-device verification file path must be absolute")
-    if path.is_symlink():
-        raise PrivateInputError("intended-device verification file must be a non-symlink path")
+def _repository_directory_identity(repository_root: Path) -> tuple[int, int]:
+    """Resolve only the trusted repository root and return its directory identity."""
     try:
-        resolved_path = path.resolve(strict=True)
         resolved_repository = repository_root.resolve(strict=True)
+        metadata = os.stat(resolved_repository)
     except OSError as exc:
         raise PrivateInputError("could not resolve intended-device verification privacy boundary") from exc
-    path_text = os.path.normcase(str(resolved_path))
-    repository_text = os.path.normcase(str(resolved_repository))
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise PrivateInputError("repository privacy boundary must resolve to one directory")
+    return metadata.st_dev, metadata.st_ino
+
+
+def _open_private_identifier_without_symlink_components(path: Path, repository_root: Path) -> int:
+    """Open one external canonical path while refusing symlinks in every caller component."""
+    if (
+        not hasattr(os, "O_NOFOLLOW")
+        or not hasattr(os, "O_DIRECTORY")
+        or os.open not in os.supports_dir_fd
+    ):
+        raise PrivateInputError("this platform cannot enforce component-wise no-follow private input")
+    if not path.is_absolute() or path.anchor != os.sep:
+        raise PrivateInputError("intended-device verification file path must be one canonical absolute path")
+
+    components = path.parts[1:]
+    if not components or any(component in ("", ".", "..") for component in components):
+        raise PrivateInputError("intended-device verification file path is not canonical")
+
+    repository_identity = _repository_directory_identity(repository_root)
+    close_on_exec = os.O_CLOEXEC if hasattr(os, "O_CLOEXEC") else 0
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | close_on_exec
+    file_flags = os.O_RDONLY | os.O_NOFOLLOW | close_on_exec
+
     try:
-        inside_repository = os.path.commonpath([path_text, repository_text]) == repository_text
-    except ValueError:
-        inside_repository = False
-    if inside_repository:
-        raise PrivateInputError("intended-device verification file must live outside the Nembra repository")
-    return resolved_path
+        parent_descriptor = os.open(os.sep, directory_flags)
+    except OSError as exc:
+        raise PrivateInputError("private verification path root could not be opened safely") from exc
+
+    try:
+        root_metadata = os.fstat(parent_descriptor)
+        if (root_metadata.st_dev, root_metadata.st_ino) == repository_identity:
+            raise PrivateInputError("intended-device verification file must live outside the Nembra repository")
+
+        for component in components[:-1]:
+            try:
+                next_descriptor = os.open(component, directory_flags, dir_fd=parent_descriptor)
+            except OSError as exc:
+                raise PrivateInputError(
+                    "intended-device verification path contains an unsafe directory component"
+                ) from exc
+
+            next_metadata = os.fstat(next_descriptor)
+            if (next_metadata.st_dev, next_metadata.st_ino) == repository_identity:
+                os.close(next_descriptor)
+                raise PrivateInputError(
+                    "intended-device verification file must live outside the Nembra repository"
+                )
+            os.close(parent_descriptor)
+            parent_descriptor = next_descriptor
+
+        try:
+            return os.open(components[-1], file_flags, dir_fd=parent_descriptor)
+        except OSError as exc:
+            raise PrivateInputError(
+                "intended-device verification file is not a readable regular non-symlink file"
+            ) from exc
+    finally:
+        os.close(parent_descriptor)
 
 
 def read_private_identifier(path: Path, repository_root: Path) -> str:
-    """Read one external opaque identifier through one no-follow descriptor without repairing bytes."""
-    path = require_external_private_input(path, repository_root)
-    if not hasattr(os, "O_NOFOLLOW"):
-        raise PrivateInputError("this platform cannot enforce no-follow private verification input")
-
-    flags = os.O_RDONLY | os.O_NOFOLLOW
-    if hasattr(os, "O_CLOEXEC"):
-        flags |= os.O_CLOEXEC
-
-    try:
-        descriptor = os.open(path, flags)
-    except OSError as exc:
-        raise PrivateInputError("intended-device verification file is not a readable regular file") from exc
+    """Read one external opaque identifier through one stable component-wise no-follow descriptor."""
+    descriptor = _open_private_identifier_without_symlink_components(path, repository_root)
 
     try:
         metadata = os.fstat(descriptor)
         if not stat.S_ISREG(metadata.st_mode):
-            raise PrivateInputError("intended-device verification input must be one regular non-symlink file")
+            raise PrivateInputError("intended-device verification input must be one regular file")
         if metadata.st_size < 1 or metadata.st_size > MAX_IDENTIFIER_BYTES:
             raise PrivateInputError("intended-device verification input has an invalid bounded size")
         if metadata.st_mode & 0o077:
             raise PrivateInputError("intended-device verification file must not be accessible by group/other")
         if hasattr(os, "geteuid") and metadata.st_uid != os.geteuid():
             raise PrivateInputError("intended-device verification file must be owned by the current user")
+        if metadata.st_nlink != 1:
+            raise PrivateInputError("intended-device verification file must have exactly one hard link")
 
         with os.fdopen(descriptor, "rb", closefd=False) as handle:
             raw = handle.read(MAX_IDENTIFIER_BYTES + 1)
@@ -113,6 +152,8 @@ def read_private_identifier(path: Path, repository_root: Path) -> str:
         raise PrivateInputError("intended-device verification input contains a forbidden character")
     if len(value.encode("utf-8")) > MAX_IDENTIFIER_BYTES:
         raise PrivateInputError("intended-device verification input exceeds the bounded size")
+    if value in os.fspath(path):
+        raise PrivateInputError("intended-device verification file path must not contain the raw identifier")
     return value
 
 
@@ -198,7 +239,7 @@ def run_inspector(args: argparse.Namespace) -> int:
 def self_test() -> None:
     expected = "00008101-001234567890001E"
     with tempfile.TemporaryDirectory(prefix="nembra-private-device-input-") as temporary:
-        root = Path(temporary)
+        root = Path(temporary).resolve(strict=True)
         repository_root = root / "repository"
         repository_root.mkdir()
 
@@ -224,6 +265,50 @@ def self_test() -> None:
             pass
         else:
             raise AssertionError("relative verification input path must fail closed")
+
+        identifier_named_file = root / expected
+        identifier_named_file.write_text(expected, encoding="utf-8")
+        identifier_named_file.chmod(0o600)
+        try:
+            read_private_identifier(identifier_named_file, repository_root)
+        except PrivateInputError:
+            pass
+        else:
+            raise AssertionError("verification input path containing the raw identifier must fail closed")
+
+        real_parent = root / "real-parent"
+        real_parent.mkdir()
+        ancestor_file = real_parent / "device-id"
+        ancestor_file.write_text(expected, encoding="utf-8")
+        ancestor_file.chmod(0o600)
+        symlink_parent = root / "symlink-parent"
+        try:
+            symlink_parent.symlink_to(real_parent, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            symlink_parent = None
+        if symlink_parent is not None:
+            try:
+                read_private_identifier(symlink_parent / "device-id", repository_root)
+            except PrivateInputError:
+                pass
+            else:
+                raise AssertionError("symlinked verification-input ancestor must fail closed")
+
+        hardlink_file = root / "hardlink-source"
+        hardlink_file.write_text(expected, encoding="utf-8")
+        hardlink_file.chmod(0o600)
+        hardlink_alias = root / "hardlink-alias"
+        try:
+            os.link(hardlink_file, hardlink_alias)
+        except OSError:
+            hardlink_alias = None
+        if hardlink_alias is not None:
+            try:
+                read_private_identifier(hardlink_file, repository_root)
+            except PrivateInputError:
+                pass
+            else:
+                raise AssertionError("multiply-linked verification input must fail closed")
 
         newline_file = root / "newline"
         newline_file.write_text(expected + "\n", encoding="utf-8")
