@@ -479,6 +479,74 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testV14SimulatorQARetainsRemainingDeterministicPortraitStates() {
+        struct Scenario {
+            let rawValue: String
+            let attachmentName: String
+            let stableElementIdentifier: String?
+            let stableText: String?
+        }
+
+        let scenarios: [Scenario] = [
+            .init(rawValue: "firstPoweredOff", attachmentName: "OFF 1 Ready", stableElementIdentifier: "es80.capture.begin-window", stableText: "Scooter OFF"),
+            .init(rawValue: "firstPoweredOn", attachmentName: "ON 1 Ready", stableElementIdentifier: "es80.capture.begin-window", stableText: "Scooter ON"),
+            .init(rawValue: "secondPoweredOff", attachmentName: "OFF 2 Ready", stableElementIdentifier: "es80.capture.begin-window", stableText: "Scooter OFF"),
+            .init(rawValue: "secondPoweredOn", attachmentName: "Scooter Signal Found", stableElementIdentifier: "es80.capture.confirm-correlated-target", stableText: nil),
+            .init(rawValue: "targetConfirmation", attachmentName: "Target Confirmation", stableElementIdentifier: "es80.capture.confirm-correlated-target", stableText: nil),
+            .init(rawValue: "passiveDiscovery", attachmentName: "Passive Discovery", stableElementIdentifier: nil, stableText: "Opening the correlated target"),
+            .init(rawValue: "observationReady", attachmentName: "Observation Ready", stableElementIdentifier: "es80.capture.finish", stableText: nil),
+            .init(rawValue: "captureInProgress", attachmentName: "Capture In Progress", stableElementIdentifier: "es80.capture.finish", stableText: nil),
+            .init(rawValue: "horizonSealed", attachmentName: "Sealing", stableElementIdentifier: nil, stableText: "Freezing final evidence"),
+            .init(rawValue: "foregroundInterrupted", attachmentName: "Foreground Interrupted", stableElementIdentifier: "es80.capture.restart-experiment", stableText: "Capture stopped safely")
+        ]
+
+        for scenario in scenarios {
+            let app = XCUIApplication()
+            app.launchArguments = [
+                "--es80-passive-capture-simulator-qa",
+                "--es80-capture-qa-scenario=\(scenario.rawValue)"
+            ]
+            app.launch()
+
+            XCTAssertTrue(
+                app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5),
+                "\(scenario.rawValue) must render through the real Capture shell."
+            )
+            XCTAssertTrue(
+                app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3),
+                "\(scenario.rawValue) must retain the synthetic/non-authorizing QA disclosure."
+            )
+            XCTAssertFalse(
+                app.descendants(matching: .any)["es80.capture.field-no-go"].exists,
+                "The synthetic presentation seam must not masquerade as the real package NO-GO surface."
+            )
+            XCTAssertFalse(
+                app.buttons["Vehicle controls"].exists,
+                "Capture QA must not expose the normal vehicle-control experience."
+            )
+
+            if let identifier = scenario.stableElementIdentifier {
+                XCTAssertTrue(
+                    app.descendants(matching: .any)[identifier].waitForExistence(timeout: 3),
+                    "\(scenario.rawValue) must expose its expected stable Capture action/state."
+                )
+            }
+            if let text = scenario.stableText {
+                XCTAssertTrue(
+                    app.staticTexts[text].waitForExistence(timeout: 3),
+                    "\(scenario.rawValue) must render its expected rider-facing state."
+                )
+            }
+
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = "Nembra Capture V14 — SIMULATOR QA — \(scenario.attachmentName) — Portrait"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            app.terminate()
+        }
+    }
+
     func testSimulatorQAAppSeamIsCompileBoundedAndProductionRouteRemainsLocked() throws {
         let appSource = try repositorySource(at: "NembraApp/App/NembraApp.swift")
         let shellSource = try captureShellSource()
