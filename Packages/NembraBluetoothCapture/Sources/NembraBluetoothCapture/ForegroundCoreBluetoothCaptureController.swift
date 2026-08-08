@@ -1155,6 +1155,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
 
                     case let .recorded(recordedReady):
                         do {
+                            try self.requireForegroundEvidenceIntegrity()
                             // This typed queue commit is intentionally the immediate
                             // MainActor statement after the recorder actor returns.
                             // No await is permitted in this interlock.
