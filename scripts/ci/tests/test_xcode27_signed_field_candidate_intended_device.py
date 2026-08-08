@@ -47,16 +47,26 @@ class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
         self.assertNotIn('python3 - "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', source)
         self.assertNotIn('--intended-device-udid "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', source)
 
-        # The retired raw-value variable must be scrubbed before dirname/uname/Python/Git/Xcode or
-        # any other child process can inherit a stale caller-provided device identifier.
+        # The retired raw-value variable must be scrubbed before any child process can inherit a
+        # stale caller-provided identifier. Shell-only startup hardening may precede the scrub, but
+        # the closed PATH/startup environment and the scrub itself must all happen before the first
+        # command substitution or external command in the producer body.
         executable_lines = [
             line.strip()
             for line in source.splitlines()
             if line.strip() and not line.lstrip().startswith("#")
         ]
-        self.assertGreaterEqual(len(executable_lines), 2)
+        self.assertGreaterEqual(len(executable_lines), 6)
         self.assertEqual(executable_lines[0], "set -euo pipefail")
-        self.assertEqual(executable_lines[1], "unset NEMBRA_INTENDED_FIELD_DEVICE_UDID")
+        self.assertEqual(executable_lines[1], 'PATH="/usr/bin:/bin:/usr/sbin:/sbin"')
+        self.assertEqual(executable_lines[2], "export PATH")
+        self.assertEqual(executable_lines[3], "unset BASH_ENV ENV")
+        self.assertEqual(executable_lines[4], "unset NEMBRA_INTENDED_FIELD_DEVICE_UDID")
+        scrub_index = source.index("unset NEMBRA_INTENDED_FIELD_DEVICE_UDID")
+        first_external_child = source.index('/usr/bin/stat -f')
+        root_child = source.index('ROOT="$(cd "$(dirname "$0")/../.." && pwd -P)"')
+        self.assertLess(scrub_index, first_external_child)
+        self.assertLess(scrub_index, root_child)
         self.assertNotIn('NEMBRA_INTENDED_FIELD_DEVICE_UDID=', source)
 
         # The verification value is read only after each caller path component is opened without
