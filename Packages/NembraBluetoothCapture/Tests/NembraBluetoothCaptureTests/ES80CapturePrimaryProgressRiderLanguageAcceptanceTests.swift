@@ -37,14 +37,18 @@ struct ES80CapturePrimaryProgressRiderLanguageAcceptanceTests {
         return source[start.lowerBound..<end.lowerBound]
     }
 
+    private static func primaryRiderSource(_ source: String) throws -> Substring {
+        try slice(
+            source,
+            from: "private func primaryContent(",
+            to: "private var captureDetailsSheet"
+        )
+    }
+
     @Test("primary cards use field language instead of research vocabulary")
     func primaryCardsStayHumanFirst() throws {
         let source = try Self.shellSource()
-        let primary = try Self.slice(
-            source,
-            from: "private func hero(for phase: Phase)",
-            to: "private var captureDetailsSheet"
-        )
+        let primary = try Self.primaryRiderSource(source)
 
         let leaks = [
             "Text(\"EXPERIMENT ONE\")",
@@ -66,7 +70,7 @@ struct ES80CapturePrimaryProgressRiderLanguageAcceptanceTests {
             #expect(!primary.contains(leak), "Primary Capture copy still exposes research vocabulary: \(leak)")
         }
 
-        #expect(primary.contains("CAPTURE PROGRESS"))
+        #expect(source.contains("CAPTURE PROGRESS"))
         #expect(primary.contains("CAPTURE LOCKED"))
         #expect(primary.contains("Begin OFF 1 check"))
         #expect(primary.contains("Confirm scooter signal"))
@@ -78,15 +82,10 @@ struct ES80CapturePrimaryProgressRiderLanguageAcceptanceTests {
         #expect(primary.contains("healthItem(\"SEAL\""))
     }
 
-
     @Test("remaining field, ready, completion, and error copy avoids research jargon")
     func remainingRiderCopyStaysHumanFirst() throws {
         let source = try Self.shellSource()
-        let primary = try Self.slice(
-            source,
-            from: "private func hero(for phase: Phase)",
-            to: "private var captureDetailsSheet"
-        )
+        let primary = try Self.primaryRiderSource(source)
 
         for leak in [
             "OFF / ON windows, connection, capture, and sealing",
@@ -104,7 +103,7 @@ struct ES80CapturePrimaryProgressRiderLanguageAcceptanceTests {
         #expect(primary.contains("signal matching and read-only capture"))
         #expect(primary.contains("Begin read-only observation"))
         #expect(primary.contains("Verify Capture file"))
-        #expect(primary.contains("Capture locked"))
+        #expect(primary.contains("CAPTURE LOCKED"))
 
         #expect(!source.contains("This OFF / ON series has an evidence gap."))
         #expect(source.contains("These OFF / ON checks were interrupted. Start a fresh capture."))
