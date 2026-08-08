@@ -15,7 +15,7 @@ public struct PassiveBluetoothExperimentOneFinalShareIntegrityReport: Equatable,
     public let buildInstanceID: String
     public let softwareExport: PassiveBluetoothExperimentOneSoftwareExportIntegrityReport
 
-    public init(
+    package init(
         finalShareSHA256: String,
         finalShareByteCount: Int,
         experimentID: UUID,
