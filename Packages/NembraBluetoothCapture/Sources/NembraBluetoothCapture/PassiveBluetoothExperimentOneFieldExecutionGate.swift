@@ -80,6 +80,7 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
     }
 
     enum ResearchAdmissionError: Error, Equatable, Sendable {
+        case nonResearchBuildConfiguration
         case missingFieldRecipe
         case unsupportedFieldRecipe
         case buildMetadataMismatch
@@ -88,18 +89,22 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
 
     /// Production private-research admission for the app that is actually running.
     ///
-    /// The exact executable and Info.plist hashes are computed by
-    /// `PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()`. The Info.plist
-    /// recipe/build tuple is therefore only the mechanically identifiable build-time authorization;
-    /// external signed-IPA acceptance still has to match these exact values before the runbook may
-    /// authorize the physical procedure.
+    /// The canonical field producer archives a physical iOS Release build. Debug, Simulator, and
+    /// non-iOS builds are mechanically unable to enter this live producer even if matching bundle
+    /// metadata is injected. Within the physical Release lane, exact executable and Info.plist hashes
+    /// are computed by `PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()` and
+    /// the signed recipe/build tuple must still match the canonical producer shape.
     static func researchAdmissionForCurrentApplication() throws -> ResearchAdmission {
+#if os(iOS) && !targetEnvironment(simulator) && !DEBUG
         let bundle = Bundle.main
         let runtimeBuildIdentity = try PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()
         return try researchAdmission(
             infoDictionary: bundle.infoDictionary ?? [:],
             runtimeBuildIdentity: runtimeBuildIdentity
         )
+#else
+        throw ResearchAdmissionError.nonResearchBuildConfiguration
+#endif
     }
 
     /// Deterministic module seam used by executable regression tests.
