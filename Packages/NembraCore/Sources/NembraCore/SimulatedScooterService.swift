@@ -326,11 +326,13 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
 
     /// Availability is state, not a raw packet stream. Registration and the
     /// initial replay occur in this actor turn, so consumers cannot miss a
-    /// demotion in a snapshot -> subscribe gap.
+    /// demotion in a snapshot -> subscribe gap. Newest-only buffering prevents
+    /// a slow consumer from replaying obsolete `.live` state after a newer
+    /// retained/unavailable transition already exists at the source.
     public func speedEvidenceUpdates() -> AsyncStream<SpeedEvidenceAvailability> {
         let id = UUID()
         let current = speedEvidenceTruth.availability
-        return AsyncStream { continuation in
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
             speedEvidenceContinuations[id] = continuation
             continuation.yield(current)
             continuation.onTermination = { [weak self] _ in
