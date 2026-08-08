@@ -1,0 +1,37 @@
+name: ES80 V14 Current Primary Language Polish
+
+on:
+  push:
+    branches:
+      - "polish/es80-v14-current-primary-language/chatgpt56-thinking-go"
+
+permissions:
+  contents: write
+
+jobs:
+  polish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: "polish/es80-v14-current-primary-language/chatgpt56-thinking-go"
+
+      - name: Apply guarded rider-label polish
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tmp_es80_primary_language_polish.py
+          git diff --check
+          test ! -e .github/workflows/es80-v14-current-primary-language.yml
+          test ! -e scripts/ci/tmp_es80_primary_language_polish.py
+
+      - name: Commit product-only result
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-go-worker"
+          git config user.email "nembra-go-worker@users.noreply.github.com"
+          git add -A
+          git commit -m "[Capture product v14] Finish primary rider language"
+          git push origin HEAD:"polish/es80-v14-current-primary-language/chatgpt56-thinking-go"
