@@ -1,0 +1,82 @@
+name: ES80 Experiment One Clean Product V2
+
+on:
+  push:
+    branches:
+      - parallel/validate-es80-experiment-one-readiness/chat-b3m8p-v2
+
+permissions:
+  contents: read
+
+jobs:
+  validate-clean-product:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact clean product head
+        uses: actions/checkout@v6
+        with:
+          ref: 94c06ca4e839986a481f505c9a4051add56fefcf
+          fetch-depth: 0
+
+      - name: Verify immutable target and four-file product shape
+        run: |
+          target="94c06ca4e839986a481f505c9a4051add56fefcf"
+          base="320de702c607312cfac7bce05999e3dc5b44a30d"
+          test "$(git rev-parse HEAD)" = "$target"
+          git merge-base --is-ancestor "$base" "$target"
+          changed="$(git diff --name-only "$base" "$target" | sort)"
+          expected="$(printf '%s\n' \
+            'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCaptureEvidenceAssessment.swift' \
+            'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneRun.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOnePublicAuthoritySurfaceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOneVehicleContextTests.swift' | sort)"
+          test "$changed" = "$expected"
+
+      - name: Test Bluetooth capture package with warnings as errors
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test -Xswiftc -warnings-as-errors
+
+      - name: Guard clean product against characteristic writes
+        run: |
+          if grep -R -n -E 'writeValue[[:space:]]*\(' \
+            Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOne*.swift; then
+            echo 'Experiment One authority slice must remain read-only.' >&2
+            exit 1
+          fi
+
+      - name: Guard producer-only evidence issuance and mutable handoff
+        run: |
+          run_file='Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneRun.swift'
+          compact_run="$(tr -d '[:space:]' < "$run_file")"
+          required=(
+            'fileprivateinit?(result:PassiveBluetoothPowerCycleObservationResult)'
+            'fileprivateinit(observationSeriesIdentity:PassiveBluetoothCandidateObservationSeriesIdentity,session:PassiveBluetoothCaptureSession)'
+            'fileprivatefuncbeginCaptureRecorder('
+            'fileprivatefunccaptureEvidenceSnapshot()'
+            'fileprivatefunccaptureEvidenceAssessment()'
+          )
+          for token in "${required[@]}"; do
+            printf '%s' "$compact_run" | grep -Fq "$token"
+          done
+
+      - name: Guard unfinished Experiment One PASS surface from clients
+        run: |
+          compact_run="$(tr -d '[:space:]' < Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneRun.swift)"
+          compact_assessment="$(tr -d '[:space:]' < Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCaptureEvidenceAssessment.swift)"
+          forbidden=(
+            'publicfinalclassPassiveBluetoothExperimentOneRun'
+            'publicstructPassiveBluetoothExperimentOnePowerCycleEvidence'
+            'publicstructPassiveBluetoothExperimentOneCaptureEvidence'
+            'publicfuncbeginCaptureRecorder('
+            'publicfunccaptureEvidenceSnapshot('
+            'publicfunccaptureEvidenceAssessment('
+            'publicstructPassiveBluetoothExperimentOneCaptureEvidenceAssessment'
+            'publicstaticfuncassess('
+          )
+          for token in "${forbidden[@]}"; do
+            if printf '%s%s' "$compact_run" "$compact_assessment" | grep -Fq "$token"; then
+              echo "Unfinished Experiment One authority/PASS surface became public: $token" >&2
+              exit 1
+            fi
+          done
