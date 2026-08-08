@@ -418,11 +418,12 @@ struct PassiveCoreBluetoothTerminalQueueRetirementTests {
             lastProcessedQueueSequence: 5,
             currentAuthority: terminalAuthority
         )
-        let horizon = try gate.begin(
-            .observationHorizon,
+        let horizon = try gate.beginObservationHorizon(
             through: horizonQueueCutoff,
             processedThrough: 8,
-            authority: terminalAuthority
+            authority: terminalAuthority,
+            establishedByReadyRevision: ready.revision,
+            establishedByReadyIdentity: ready.identity
         )
         try gate.markBoundaryRecorded(
             horizon,
