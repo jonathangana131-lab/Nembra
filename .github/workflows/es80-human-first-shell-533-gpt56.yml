@@ -30,8 +30,16 @@ jobs:
           prefix = '''from pathlib import Path\n\nSHELL = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")\n\ndef replace_exact(source: str, old: str, new: str, label: str) -> str:\n    count = source.count(old)\n    if count == 0:\n        print(f"current flagship already differs for {label}: {old!r}")\n        return source\n    return source.replace(old, new)\n\n'''
           p.write_text(prefix + shell_body + '\nprint("current shell-only transform complete")\n')
           PY
-      - name: Apply remaining rider-facing shell transform
-        run: python3 scripts/ci/es80_human_first_final_gpt56.py
+      - name: Apply remaining rider-facing shell transform with exact guard annotation
+        run: |
+          python3 - <<'PY'
+          import runpy
+          try:
+              runpy.run_path('scripts/ci/es80_human_first_final_gpt56.py', run_name='__main__')
+          except SystemExit as exc:
+              print(f'::error title=Rider transform guard::{exc}')
+              raise
+          PY
       - name: Validate current rider, visual, and truth boundaries
         run: |
           git diff --check
