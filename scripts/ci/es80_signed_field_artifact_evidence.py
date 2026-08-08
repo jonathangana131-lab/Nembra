@@ -277,6 +277,61 @@ def run_codesign(app_path: Path) -> tuple[str, list[str], str]:
     return team_identifier, authorities, code_directory_hash
 
 
+def validate_effective_signed_entitlements(
+    entitlements: dict,
+    *,
+    team_identifier: str,
+    bundle_identifier: str,
+) -> str:
+    expected_application_identifier = f"{team_identifier}.{bundle_identifier}"
+    if entitlements.get("application-identifier") != expected_application_identifier:
+        raise EvidenceError(
+            "effective signed application-identifier does not match the signed Nembra bundle"
+        )
+    if entitlements.get("com.apple.developer.team-identifier") != team_identifier:
+        raise EvidenceError(
+            "effective signed entitlement TeamIdentifier does not match code signing"
+        )
+    return expected_application_identifier
+
+
+def verify_effective_signed_entitlements(
+    app_path: Path,
+    *,
+    team_identifier: str,
+    bundle_identifier: str,
+) -> str:
+    if sys.platform != "darwin":
+        raise EvidenceError("signed entitlement inspection requires macOS code-signing tools")
+    codesign = shutil.which("codesign")
+    if not codesign:
+        raise EvidenceError("codesign is not available for signed-entitlement inspection")
+
+    result = subprocess.run(
+        [codesign, "-d", "--entitlements", ":-", str(app_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise EvidenceError(f"could not inspect effective signed entitlements: {detail}")
+    if not result.stdout:
+        raise EvidenceError("codesign returned no effective signed entitlements")
+    try:
+        entitlements = plistlib.loads(result.stdout)
+    except Exception as exc:
+        raise EvidenceError("effective signed entitlements are not a valid plist") from exc
+    if not isinstance(entitlements, dict):
+        raise EvidenceError("effective signed entitlements root is not a dictionary")
+
+    return validate_effective_signed_entitlements(
+        entitlements,
+        team_identifier=team_identifier,
+        bundle_identifier=bundle_identifier,
+    )
+
+
 def _normalized_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
@@ -314,8 +369,7 @@ def validate_provisioning_profile(
         raise EvidenceError(
             "provisioning profile application-identifier does not match the signed Nembra bundle"
         )
-    entitlement_team = entitlements.get("com.apple.developer.team-identifier")
-    if entitlement_team is not None and entitlement_team != team_identifier:
+    if entitlements.get("com.apple.developer.team-identifier") != team_identifier:
         raise EvidenceError("provisioning profile entitlement TeamIdentifier does not match code signing")
 
     return (
@@ -428,6 +482,11 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
             raise EvidenceError("signed app executable is missing")
 
         team_identifier, signing_authorities, code_directory_hash = run_codesign(app_path)
+        signed_application_identifier = verify_effective_signed_entitlements(
+            app_path,
+            team_identifier=team_identifier,
+            bundle_identifier=bundle_id,
+        )
         (
             provisioning_profile_sha256,
             provisioning_profile_uuid,
@@ -438,6 +497,10 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
             team_identifier=team_identifier,
             bundle_identifier=bundle_id,
         )
+        if provisioning_application_identifier != signed_application_identifier:
+            raise EvidenceError(
+                "effective signed entitlements and provisioning profile disagree on application identity"
+            )
         executable_sha = sha256_file(executable_path)
         info_plist_sha = sha256_file(info_path)
         if not SHA256_RE.fullmatch(executable_sha) or not SHA256_RE.fullmatch(info_plist_sha):
@@ -666,6 +729,46 @@ def self_test() -> None:
     assert expiration_utc == "2099-01-01T00:00:00Z"
     assert application_id == f"{team}.{BUNDLE_ID}"
 
+    valid_signed_entitlements = {
+        "application-identifier": f"{team}.{BUNDLE_ID}",
+        "com.apple.developer.team-identifier": team,
+    }
+    assert validate_effective_signed_entitlements(
+        valid_signed_entitlements,
+        team_identifier=team,
+        bundle_identifier=BUNDLE_ID,
+    ) == f"{team}.{BUNDLE_ID}"
+
+    invalid_signed_entitlements = (
+        {
+            **valid_signed_entitlements,
+            "application-identifier": f"{team}.com.example.other",
+        },
+        {
+            **valid_signed_entitlements,
+            "com.apple.developer.team-identifier": "OTHER12345",
+        },
+        {"application-identifier": f"{team}.{BUNDLE_ID}"},
+        {"com.apple.developer.team-identifier": team},
+    )
+    for malformed in invalid_signed_entitlements:
+        try:
+            validate_effective_signed_entitlements(
+                malformed,
+                team_identifier=team,
+                bundle_identifier=BUNDLE_ID,
+            )
+        except EvidenceError:
+            pass
+        else:
+            raise AssertionError("invalid effective signed entitlement relationship was accepted")
+
+    profile_without_entitlement_team = {
+        **valid_profile,
+        "Entitlements": {
+            "application-identifier": f"{team}.{BUNDLE_ID}",
+        },
+    }
     invalid_profiles = (
         {**valid_profile, "TeamIdentifier": ["OTHER12345"]},
         {**valid_profile, "ExpirationDate": datetime(2097, 1, 1, tzinfo=timezone.utc)},
@@ -683,6 +786,7 @@ def self_test() -> None:
                 "com.apple.developer.team-identifier": "OTHER12345",
             },
         },
+        profile_without_entitlement_team,
     )
     for malformed in invalid_profiles:
         try:
