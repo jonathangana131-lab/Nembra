@@ -124,7 +124,7 @@ public enum PassiveBluetoothCaptureArtifactOutputPolicy {
 
         var stagedMetadata = stat()
         guard fstat(temporaryFD, &stagedMetadata) == 0,
-              (stagedMetadata.st_mode & S_IFMT) == S_IFREG,
+              (stagedMetadata.st_mode & mode_t(S_IFMT)) == mode_t(S_IFREG),
               stagedMetadata.st_size == off_t(data.count) else {
             throw posixError("verify derived report staging file")
         }
@@ -163,13 +163,21 @@ public enum PassiveBluetoothCaptureArtifactOutputPolicy {
         url.standardizedFileURL.resolvingSymlinksInPath()
     }
 
-    /// Open an absolute directory path one component at a time, never following
-    /// a symlink for a custody-bearing component. The returned final descriptor
-    /// remains authoritative even if a caller later mutates pathname aliases.
+    /// Resolve ordinary/system symlink aliases once, then prove that the exact
+    /// canonical directory subject opened component-by-component is the same
+    /// inode that resolution named. This permits normal macOS `/var` ->
+    /// `/private/var` ancestry while still failing closed if a mutable directory
+    /// target changes between resolution and descriptor custody.
     private static func openDirectoryCustody(_ url: URL) throws -> Int32 {
-        let standardized = url.standardizedFileURL
-        guard standardized.path.hasPrefix("/") else {
+        let canonical = canonicalFileURL(url)
+        guard canonical.path.hasPrefix("/") else {
             throw CocoaError(.fileReadInvalidFileName)
+        }
+
+        var expectedMetadata = stat()
+        guard stat(canonical.path, &expectedMetadata) == 0,
+              (expectedMetadata.st_mode & mode_t(S_IFMT)) == mode_t(S_IFDIR) else {
+            throw posixError("inspect canonical output directory")
         }
 
         var currentFD = open("/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
@@ -178,7 +186,7 @@ public enum PassiveBluetoothCaptureArtifactOutputPolicy {
         }
 
         do {
-            for component in standardized.pathComponents.dropFirst() where component != "/" {
+            for component in canonical.pathComponents.dropFirst() where component != "/" {
                 let nextFD = openat(
                     currentFD,
                     component,
@@ -190,6 +198,14 @@ public enum PassiveBluetoothCaptureArtifactOutputPolicy {
                 _ = close(currentFD)
                 currentFD = nextFD
             }
+
+            var openedMetadata = stat()
+            guard fstat(currentFD, &openedMetadata) == 0,
+                  openedMetadata.st_dev == expectedMetadata.st_dev,
+                  openedMetadata.st_ino == expectedMetadata.st_ino,
+                  (openedMetadata.st_mode & mode_t(S_IFMT)) == mode_t(S_IFDIR) else {
+                throw posixError("re-prove canonical output directory custody")
+            }
             return currentFD
         } catch {
             _ = close(currentFD)
@@ -198,9 +214,10 @@ public enum PassiveBluetoothCaptureArtifactOutputPolicy {
     }
 
     private static func fileIdentity(_ url: URL) throws -> stat {
-        let parentFD = try openDirectoryCustody(url.deletingLastPathComponent())
+        let canonical = canonicalFileURL(url)
+        let parentFD = try openDirectoryCustody(canonical.deletingLastPathComponent())
         defer { _ = close(parentFD) }
-        let fd = openat(parentFD, url.lastPathComponent, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+        let fd = openat(parentFD, canonical.lastPathComponent, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
         guard fd >= 0 else {
             throw posixError("open raw capture subject")
         }
@@ -208,7 +225,7 @@ public enum PassiveBluetoothCaptureArtifactOutputPolicy {
 
         var metadata = stat()
         guard fstat(fd, &metadata) == 0,
-              (metadata.st_mode & S_IFMT) == S_IFREG else {
+              (metadata.st_mode & mode_t(S_IFMT)) == mode_t(S_IFREG) else {
             throw posixError("verify raw capture subject")
         }
         return metadata
