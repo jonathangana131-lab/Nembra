@@ -147,6 +147,32 @@ struct PassiveBluetoothCaptureFieldAuthorizationTests {
     }
 
     @Test
+    func legacyBuildRecordOnlyAuthorizationSchemaCannotGainV2Meaning() throws {
+        let signingKey = P256.Signing.PrivateKey()
+        let runtimeIdentity = try makeRuntimeIdentity()
+        let record = try json(baseRecordObject())
+        var payloadObject = baseAuthorizationPayloadObject(record: record)
+        payloadObject["schemaVersion"] = 1
+        let legacyVersionPayload = try json(payloadObject)
+        let envelope = try makeEnvelope(
+            record: record,
+            payload: legacyVersionPayload,
+            signingKey: signingKey
+        )
+
+        #expect(
+            throws: PassiveBluetoothCaptureFieldAuthorizationError
+                .unsupportedAuthorizationPayloadSchemaVersion(1)
+        ) {
+            _ = try PassiveBluetoothCaptureFieldAuthorizationVerifier.verify(
+                envelope,
+                publicKeyX963Representation: signingKey.publicKey.x963Representation,
+                runtimeBuildIdentity: runtimeIdentity
+            )
+        }
+    }
+
+    @Test
     func signedGoWithoutExactFieldEvidenceSubjectCannotMintAuthority() throws {
         let signingKey = P256.Signing.PrivateKey()
         let runtimeIdentity = try makeRuntimeIdentity()
@@ -322,7 +348,7 @@ struct PassiveBluetoothCaptureFieldAuthorizationTests {
 
     private func baseAuthorizationPayloadObject(record: Data) -> [String: Any] {
         [
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "decision": "GO",
             "externalBuildRecordSHA256": sha256Hex(record),
             "signedFieldArtifactEvidenceSHA256": sha256Hex(signedFieldArtifactEvidenceData),
