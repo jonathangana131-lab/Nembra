@@ -289,8 +289,19 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
               !artifactReadBarrier.isActive,
               observationBoundaryTask == nil,
               case .observing = observationBoundaryQueueGate.phase,
-              let committedReadyEpoch else { return false }
-        return committedReadyEpoch.authority == artifactAuthorityFence.currentAuthority
+              let committedReadyEpoch,
+              committedReadyEpoch.authority == artifactAuthorityFence.currentAuthority else {
+            return false
+        }
+
+        // Product eligibility mirrors the trusted Experiment One procedure clock,
+        // but this descriptive status is never mutation authority. Finalization
+        // still obtains a producer-issued Permit immediately before H allocation.
+        if case .eligible = PassiveCoreBluetoothObservationHorizonMinimumDurationGate
+            .currentExperimentOneStatus(for: committedReadyEpoch) {
+            return true
+        }
+        return false
     }
 
     private let vehicleIdentity: VehicleIdentity
@@ -624,7 +635,12 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             throw ControllerError.captureIncomplete
         }
 
-        let horizonAdmission = try committedReadyEpoch.beginHorizon(
+        // H cannot be allocated from Ready merely because the queue is drained.
+        // The producer samples trusted monotonic uptime here and issues a Permit
+        // only after the fixed Experiment One Ready -> H minimum has elapsed.
+        let durationPermit = try PassiveCoreBluetoothObservationHorizonMinimumDurationGate
+            .authorizeExperimentOneHorizon(for: committedReadyEpoch)
+        let horizonAdmission = try durationPermit.beginHorizon(
             queueCutoff: lastEnqueuedEventSequence,
             processedThrough: lastProcessedEventSequence,
             gate: &observationBoundaryQueueGate
