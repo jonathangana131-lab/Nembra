@@ -210,6 +210,44 @@ def verify_exact_ipa_subject_unchanged(
         )
 
 
+def capture_extracted_tree_integrity(root: Path) -> dict[str, tuple[tuple[int, int, int, int, int, int], str | None]]:
+    """Capture one closed-world extracted tree including directory mutation evidence."""
+    if not root.is_dir():
+        raise EvidenceError("extracted signing subject root must be one directory")
+    entries = [root, *sorted(root.rglob("*"), key=lambda item: str(item.relative_to(root)))]
+    manifest: dict[str, tuple[tuple[int, int, int, int, int, int], str | None]] = {}
+    for entry in entries:
+        try:
+            metadata = entry.lstat()
+        except OSError as exc:
+            raise EvidenceError("extracted signing subject became unreadable while sealing") from exc
+        relative = "." if entry == root else str(entry.relative_to(root))
+        if relative in manifest:
+            raise EvidenceError("extracted signing subject contains a duplicate path")
+        if stat.S_ISLNK(metadata.st_mode):
+            raise EvidenceError("extracted signing subject must not contain symbolic links")
+        if stat.S_ISDIR(metadata.st_mode):
+            digest = None
+        elif stat.S_ISREG(metadata.st_mode):
+            digest = sha256_file(entry)
+        else:
+            raise EvidenceError("extracted signing subject contains an unsupported filesystem object")
+        manifest[relative] = (_stable_file_identity(metadata), digest)
+    return manifest
+
+
+def verify_extracted_tree_integrity(
+    root: Path,
+    *,
+    expected_manifest: dict[str, tuple[tuple[int, int, int, int, int, int], str | None]],
+) -> None:
+    current = capture_extracted_tree_integrity(root)
+    if current != expected_manifest:
+        raise EvidenceError(
+            "extracted signed-app inspection subject changed during signing/provisioning inspection"
+        )
+
+
 def canonical_sha40(value: str) -> str:
     if not SHA40_RE.fullmatch(value):
         raise EvidenceError("expected source SHA must be one canonical lowercase 40-hex Git commit")
@@ -706,6 +744,7 @@ def _inspect_snapshotted_ipa(ipa_path: Path, expected_source_sha: str, *, intend
     with tempfile.TemporaryDirectory(prefix="nembra-field-ipa-") as temporary:
         root = Path(temporary)
         app_path = extract_ipa_safely(ipa_path, root)
+        extracted_tree_manifest = capture_extracted_tree_integrity(root)
         reject_embedded_external_authority(app_path)
         info, info_path = read_info_plist(app_path)
 
@@ -754,6 +793,11 @@ def _inspect_snapshotted_ipa(ipa_path: Path, expected_source_sha: str, *, intend
         info_plist_sha = sha256_file(info_path)
         if not SHA256_RE.fullmatch(executable_sha) or not SHA256_RE.fullmatch(info_plist_sha):
             raise EvidenceError("could not derive canonical executable/Info.plist SHA-256")
+
+        verify_extracted_tree_integrity(
+            root,
+            expected_manifest=extracted_tree_manifest,
+        )
 
     verify_exact_ipa_subject_unchanged(
         ipa_path,
@@ -906,6 +950,28 @@ def self_test() -> None:
             assert "changed during signing/provisioning inspection" in str(error)
         else:
             raise AssertionError("mutate-and-restore exact IPA snapshot escaped stability detection")
+    with tempfile.TemporaryDirectory(prefix="nembra-extracted-subject-self-test-") as temporary:
+        extracted = Path(temporary) / "inspection"
+        app = extracted / "Payload" / "Nembra.app"
+        app.mkdir(parents=True)
+        executable = app / "Nembra"
+        executable.write_bytes(b"original executable")
+        info = app / "Info.plist"
+        info.write_bytes(b"original plist")
+        sealed = capture_extracted_tree_integrity(extracted)
+
+        parked = app / "Nembra.original"
+        executable.rename(parked)
+        executable.write_bytes(b"replacement executable")
+        executable.unlink()
+        parked.rename(executable)
+        try:
+            verify_extracted_tree_integrity(extracted, expected_manifest=sealed)
+        except EvidenceError as error:
+            assert "changed during signing/provisioning inspection" in str(error)
+        else:
+            raise AssertionError("swap-and-restore extracted app subject escaped integrity detection")
+
     try:
         canonical_sha40("A" * 40)
     except EvidenceError:
