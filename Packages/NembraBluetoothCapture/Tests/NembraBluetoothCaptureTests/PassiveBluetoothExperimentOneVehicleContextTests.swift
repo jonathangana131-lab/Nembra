@@ -6,7 +6,7 @@ import Testing
 struct PassiveBluetoothExperimentOneVehicleContextTests {
     @Test("product-specific run accepts only the canonical ES80 software context")
     @MainActor
-    func runRejectsDeferredVehicleContext() throws {
+    func runRejectsContradictoryVehicleContext() throws {
         let es80Run = try PassiveBluetoothExperimentOneRun(
             vehicleIdentity: VehicleProfile.aovoproES80.identity
         )
@@ -19,6 +19,19 @@ struct PassiveBluetoothExperimentOneVehicleContextTests {
             _ = try PassiveBluetoothExperimentOneRun(
                 vehicleIdentity: VehicleProfile.maxshotV1SPro.identity
             )
+        }
+
+        // Exact equality with the canonical profile is intentional. A caller-built identity cannot
+        // bypass the product context simply because it is neither one of Nembra's known profiles nor
+        // obviously MAXSHOT-shaped.
+        let arbitrary = VehicleIdentity(
+            manufacturer: "Example",
+            model: "Unknown",
+            displayName: "Unknown Scooter",
+            protocolFamily: "Unverified"
+        )
+        #expect(throws: PassiveBluetoothExperimentOneRunError.invalidVehicleContext) {
+            _ = try PassiveBluetoothExperimentOneRun(vehicleIdentity: arbitrary)
         }
     }
 
