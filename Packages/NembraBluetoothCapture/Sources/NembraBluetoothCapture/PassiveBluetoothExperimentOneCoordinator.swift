@@ -4,9 +4,9 @@ import NembraCore
 
 /// Pure construction-policy composition for Experiment One coordinator authority.
 ///
-/// A permissive field gate is necessary but not sufficient: the coordinator instance must also
+/// A permissive field status is necessary but not sufficient: the coordinator instance must also
 /// own the package-constructed canonical live controller. Keeping this composition independent of
-/// the current repository gate lets tests prove that a future GO cannot accidentally turn the
+/// the current repository gate lets tests prove that a GO status cannot accidentally turn the
 /// ordinary public status-only initializer into a second live Bluetooth authority path.
 enum PassiveBluetoothExperimentOneCoordinatorConstructionPolicy {
     static func permitsPhysicalProcedure(
@@ -25,9 +25,9 @@ enum PassiveBluetoothExperimentOneCoordinatorConstructionPolicy {
 /// GATT acquisition, Ready, Horizon, and immutable finalization.
 ///
 /// Physical execution is subordinate to both the package-owned canonical-controller construction
-/// path and `PassiveBluetoothExperimentOneFieldExecutionGate`. The ordinary public initializer is
-/// permanently status-only/non-live, even after a future field gate becomes permissive. Live
-/// CoreBluetooth authority can enter only through the mechanically gated canonical ES80 factory.
+/// path and an instance-bound `PassiveBluetoothExperimentOneFieldExecutionGate.Status`. The ordinary
+/// public initializer is permanently status-only/non-live. Live CoreBluetooth authority can enter
+/// only through mechanically gated canonical ES80 factories.
 @MainActor
 public final class PassiveBluetoothExperimentOneCoordinator {
     public enum CoordinatorError: Error, Equatable, Sendable {
@@ -97,6 +97,7 @@ public final class PassiveBluetoothExperimentOneCoordinator {
 
     private let run: PassiveBluetoothExperimentOneRun
     private let controller: ForegroundCoreBluetoothCaptureController?
+    private let fieldExecutionStatus: PassiveBluetoothExperimentOneFieldExecutionGate.Status
     private var pendingCaptureAdmission: PassiveBluetoothExperimentOneCaptureAdmission?
     private var preparedCorrelatedTargetIdentifier: UUID?
     private var foregroundIntegrityWasLost = false
@@ -107,19 +108,34 @@ public final class PassiveBluetoothExperimentOneCoordinator {
     /// Canonical ES80 status-only construction.
     ///
     /// This initializer intentionally never creates live CoreBluetooth authority. It stays inert
-    /// even when a future accepted field gate becomes permissive, so app code cannot bypass the
-    /// canonical `makeAuthorizedES80()` factory merely by constructing the coordinator directly.
+    /// even when a separately admitted private research build exists, so app code cannot bypass the
+    /// canonical factory merely by constructing the coordinator directly.
     public init() throws {
         let identity = VehicleProfile.aovoproES80.identity
         run = try PassiveBluetoothExperimentOneRun(vehicleIdentity: identity)
         controller = nil
+        fieldExecutionStatus = PassiveBluetoothExperimentOneFieldExecutionGate.status
     }
 
-    /// Package-only composition seam used by the mechanically gated canonical ES80 factory.
-    /// App code cannot inject a generic controller or bypass the field-execution gate through this
-    /// initializer; `makeAuthorizedES80()` is the only public live-controller construction path.
+    /// Package-only composition seam used by the release-grade canonical ES80 factory.
+    /// App code cannot inject a generic controller or bypass field authority through this initializer.
     package init(controller: ForegroundCoreBluetoothCaptureController) throws {
         self.controller = controller
+        fieldExecutionStatus = PassiveBluetoothExperimentOneFieldExecutionGate.status
+        run = try PassiveBluetoothExperimentOneRun(
+            vehicleIdentity: VehicleProfile.aovoproES80.identity
+        )
+    }
+
+    /// Module-private composition seam for the opaque capability minted by the exact-running-build
+    /// research gate. The raw GO `Status` is never accepted here, so sibling package targets cannot
+    /// inject a permissive value even if they can construct other package-owned objects.
+    init(
+        controller: ForegroundCoreBluetoothCaptureController,
+        researchAdmission: PassiveBluetoothExperimentOneFieldExecutionGate.ResearchAdmission
+    ) throws {
+        self.controller = controller
+        fieldExecutionStatus = researchAdmission.status
         run = try PassiveBluetoothExperimentOneRun(
             vehicleIdentity: VehicleProfile.aovoproES80.identity
         )
@@ -127,7 +143,7 @@ public final class PassiveBluetoothExperimentOneCoordinator {
 
     public var status: Status {
         Status(
-            fieldExecutionStatus: PassiveBluetoothExperimentOneFieldExecutionGate.status,
+            fieldExecutionStatus: fieldExecutionStatus,
             physicalProcedurePermitted: physicalProcedurePermittedForThisCoordinator,
             powerCycleProgress: run.powerCycleObservationSession.progress,
             correlation: correlationStatus,
@@ -327,7 +343,8 @@ public final class PassiveBluetoothExperimentOneCoordinator {
     private var physicalProcedurePermittedForThisCoordinator: Bool {
         PassiveBluetoothExperimentOneCoordinatorConstructionPolicy.permitsPhysicalProcedure(
             hasCanonicalLiveController: controller != nil,
-            fieldGatePermitsPhysicalProcedure: PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure
+            fieldGatePermitsPhysicalProcedure: PassiveBluetoothExperimentOneFieldExecutionGate
+                .permitsPhysicalProcedure(status: fieldExecutionStatus)
         )
     }
 

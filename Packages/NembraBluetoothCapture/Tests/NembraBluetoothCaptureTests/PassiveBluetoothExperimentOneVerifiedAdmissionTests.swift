@@ -56,7 +56,7 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
 
         // Minting a capability in a deterministic package test does not mutate global product
         // policy. Signed evidence remains necessary-but-insufficient while the deliberate final
-        // field gate is NO-GO.
+        // release-grade field gate is NO-GO.
         #expect(
             PassiveBluetoothExperimentOneFieldExecutionGate.status
                 == .noGo(.finalComposedBuildNotAuthorized)
@@ -64,7 +64,7 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(!PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure)
     }
 
-    @Test("future live factory requires admission plus final field GO and legacy factory stays sealed")
+    @Test("release-grade live factory requires admission plus final field GO and legacy factory stays sealed")
     func canonicalFactoryKeepsBooleanPreferenceAndEvidenceOnlyAuthorityOut() throws {
         let source = try sourceFile(
             "Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCoordinator+CanonicalES80.swift"
@@ -106,15 +106,17 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(!source.contains("ProcessInfo"))
     }
 
-    @Test("current app has no verified-admission consumption path")
-    func appRemainsOnLockedZeroArgumentFactory() throws {
+    @Test("current app consumes only the exact-running-build private research factory")
+    func appUsesPrivateResearchFactoryWithoutExternalAuthorizationInputs() throws {
         let source = try repositorySourceFile("NembraApp/App/NembraApp.swift")
-        let zeroArgumentFactory = "PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()"
+        let researchFactory = "makeResearchAuthorizedES80ForCurrentApplication()"
 
-        #expect(source.components(separatedBy: zeroArgumentFactory).count - 1 == 2)
+        #expect(source.components(separatedBy: researchFactory).count - 1 == 2)
+        #expect(!source.contains("PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()"))
         #expect(!source.contains("verifiedAdmission:"))
         #expect(!source.contains("PassiveBluetoothCaptureVerifiedFieldAuthorization"))
         #expect(!source.contains("PassiveBluetoothCaptureFieldAuthorizationVerifier"))
+        #expect(!source.contains("UserDefaults"))
     }
 
     private func makeRuntimeIdentity() throws -> PassiveBluetoothCaptureRuntimeBuildIdentity {
