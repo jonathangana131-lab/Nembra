@@ -22,15 +22,21 @@ public extension PassiveBluetoothExperimentOneCoordinator {
     /// Future field-authorized construction seam.
     ///
     /// The caller must possess a `VerifiedAdmission` minted only from the package's cryptographically
-    /// verified external field authorization. The admission type has no public initializer, so this
-    /// overload does not create a caller-forgeable Boolean/setting path. Production cannot reach it
-    /// today because the package authorization trust root remains unconfigured and NembraApp still
-    /// calls the locked zero-argument factory.
+    /// verified external field authorization AND the package's final field-execution policy must have
+    /// deliberately reached GO. Signed evidence is necessary but not sufficient: while the repository
+    /// gate remains NO-GO this overload fails before CoreBluetooth is instantiated, so merely parsing
+    /// an independently signed authorization cannot cause Bluetooth permission/transport side effects.
+    /// The admission type has no public initializer, so this overload also does not create a
+    /// caller-forgeable Boolean/setting path.
     @MainActor
     static func makeAuthorizedES80(
         verifiedAdmission _: PassiveBluetoothExperimentOneFieldExecutionGate.VerifiedAdmission
     ) throws -> PassiveBluetoothExperimentOneCoordinator {
-        try makeLiveES80Coordinator()
+        guard PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure else {
+            throw CanonicalES80ConstructionError.fieldExecutionNotAuthorized
+        }
+
+        return try makeLiveES80Coordinator()
     }
 
     @MainActor
