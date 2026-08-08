@@ -51,7 +51,7 @@ struct PassiveBluetoothTuyaCaptureReportTests {
         )
     }
 
-    @Test("completed framing summary retains exact source provenance without raw byte duplication")
+    @Test("completed framing summary retains exact scoped source provenance without raw byte duplication")
     func completedReportRetainsProvenance() throws {
         var session = try makeSession()
         let rawCallbackPayload: [UInt8] = [0x00, 0x02, 0x30, 0xAA, 0xBB]
@@ -69,7 +69,7 @@ struct PassiveBluetoothTuyaCaptureReportTests {
             policy: policy()
         )
 
-        #expect(report.schemaVersion == 1)
+        #expect(report.schemaVersion == 2)
         #expect(report.capture.sessionID == session.id)
         #expect(report.capture.vehicleIdentity == identity)
         #expect(report.capture.sessionStartedAt == Date(timeIntervalSince1970: 1_000))
@@ -89,6 +89,8 @@ struct PassiveBluetoothTuyaCaptureReportTests {
                 analysisObservationIndex: 0,
                 captureRecordIndex: 0,
                 captureSequenceNumber: 7,
+                receiptSequenceScope: session.id.uuidString,
+                receiptSequenceNumber: 7,
                 receivedAtUptimeNanoseconds: 700,
                 receivedAtDate: Date(timeIntervalSince1970: 7),
                 continuityGeneration: 0,
@@ -111,6 +113,9 @@ struct PassiveBluetoothTuyaCaptureReportTests {
             protocolVersionHighNibble: 0x03,
             encryptedByteCount: candidateEncryptedPayload.count,
             fragmentCount: 1,
+            receiptSequenceScope: session.id.uuidString,
+            firstReceiptSequenceNumber: 7,
+            lastReceiptSequenceNumber: 7,
             firstReceiptUptimeNanoseconds: 700,
             lastReceiptUptimeNanoseconds: 700
         ))
@@ -123,6 +128,48 @@ struct PassiveBluetoothTuyaCaptureReportTests {
         let encodedJSON = String(decoding: data, as: UTF8.self)
         #expect(encodedJSON.contains(Data(rawCallbackPayload).base64EncodedString()) == false)
         #expect(encodedJSON.contains(Data(candidateEncryptedPayload).base64EncodedString()) == false)
+    }
+
+    @Test("packet-zero restart remains an explicit source-mapped report boundary")
+    func packetZeroRestartBoundaryRemainsVisible() throws {
+        var session = try makeSession()
+        try appendValue(
+            to: &session,
+            payload: [0x00, 0x02, 0x30, 0xAA],
+            sequence: 1,
+            uptime: 100
+        )
+        try appendValue(
+            to: &session,
+            payload: [0x00, 0x01, 0x30, 0xBB],
+            sequence: 2,
+            uptime: 200
+        )
+
+        let report = try PassiveBluetoothTuyaCaptureReportBuilder.make(
+            session: session,
+            peripheralIdentifier: "target-A",
+            policy: policy()
+        )
+
+        let stream = try #require(report.streams.first)
+        #expect(stream.events.count == 2)
+
+        let boundary = stream.events[0]
+        #expect(boundary.kind == .incompleteAtBoundary)
+        #expect(boundary.boundary == "candidatePacketZeroRestart")
+        #expect(boundary.startSource?.captureSequenceNumber == 1)
+        #expect(boundary.lastAcceptedSource?.captureSequenceNumber == 1)
+        #expect(boundary.nextSource?.captureSequenceNumber == 2)
+        #expect(boundary.nextSource?.receiptSequenceScope == session.id.uuidString)
+        #expect(boundary.nextSource?.receiptSequenceNumber == 2)
+
+        let completed = stream.events[1]
+        #expect(completed.kind == .completed)
+        #expect(completed.startSource?.captureSequenceNumber == 2)
+        #expect(completed.completedMessage?.receiptSequenceScope == session.id.uuidString)
+        #expect(completed.completedMessage?.firstReceiptSequenceNumber == 2)
+        #expect(completed.completedMessage?.lastReceiptSequenceNumber == 2)
     }
 
     @Test("rejected candidates remain explicit and map back to the failing capture record")
@@ -148,6 +195,8 @@ struct PassiveBluetoothTuyaCaptureReportTests {
         #expect(event.error == "malformedVarint")
         #expect(event.failingObservationIndex == 0)
         #expect(event.failingSource?.captureSequenceNumber == 3)
+        #expect(event.failingSource?.receiptSequenceScope == session.id.uuidString)
+        #expect(event.failingSource?.receiptSequenceNumber == 3)
         #expect(event.completedMessage == nil)
     }
 
