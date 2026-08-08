@@ -9,16 +9,26 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
     def setUp(self):
         self.source = SCRIPT.read_text()
 
-    def test_targets_real_ios_and_injects_exact_build_rendezvous(self):
+    def test_targets_real_ios_and_injects_exact_build_and_launch_rendezvous(self):
         self.assertIn('generic/platform=iOS', self.source)
         self.assertIn('-exportArchive', self.source)
         self.assertNotIn('CODE_SIGNING_ALLOWED=NO', self.source)
         self.assertIn('Capture Build V14-${SOURCE_SHA:0:12}', self.source)
+        self.assertIn('FIELD_RECIPE_ID="ES80-FINGERPRINT-v1"', self.source)
         self.assertIn('INFOPLIST_KEY_NembraCaptureBuildIdentifier', self.source)
         self.assertIn('INFOPLIST_KEY_NembraCaptureBuildInstanceID', self.source)
         self.assertIn('INFOPLIST_KEY_NembraCaptureBuildCommitSHA', self.source)
-        self.assertIn('FIELD_RECIPE_ID="ES80-FINGERPRINT-v1"', self.source)
         self.assertIn('INFOPLIST_KEY_NembraCaptureFieldRecipe=$FIELD_RECIPE_ID', self.source)
+
+    def test_requires_intended_device_only_for_inspector_verification(self):
+        self.assertIn('NEMBRA_FIELD_DEVICE_UDID', self.source)
+        self.assertIn('--intended-device-udid "$NEMBRA_FIELD_DEVICE_UDID"', self.source)
+        self.assertIn('verification-only', self.source)
+        self.assertNotIn('field_device_udid=', self.source)
+        self.assertNotIn('intended_device_udid=', self.source)
+        self.assertNotIn('echo "$NEMBRA_FIELD_DEVICE_UDID"', self.source)
+        self.assertNotIn('DEVELOPMENT_TEAM=$NEMBRA_FIELD_DEVICE_UDID', self.source)
+        self.assertNotIn('INFOPLIST_KEY_NembraFieldDevice', self.source)
 
     def test_reuses_live_canonical_signed_field_evidence_contract(self):
         self.assertIn('es80_signed_field_artifact_evidence.py', self.source)
@@ -47,11 +57,71 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('Archive/export changed immutable source state', self.source)
         self.assertIn('git worktree remove --force "$SOURCE_ROOT"', self.source)
 
-    def test_keeps_generated_evidence_out_of_source_identity(self):
-        self.assertIn('$ROOT/artifacts/Xcode27FieldCandidate', self.source)
+    def test_canonicalizes_unique_non_destructive_final_evidence_directory(self):
+        self.assertIn('pwd -P', self.source)
+        self.assertIn(
+            'RAW_ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/artifacts/Xcode27FieldCandidate-${SOURCE_SHA:0:12}-$BUILD_INSTANCE_ID}"',
+            self.source,
+        )
+        self.assertIn('Path(sys.argv[1]).resolve(strict=False)', self.source)
+        self.assertIn('"$ARTIFACTS_DIR" == "/" || "$ARTIFACTS_DIR" == "$ROOT"', self.source)
+        self.assertIn('if [[ -e "$ARTIFACTS_DIR" || -e "$FINAL_STAGING_DIR" ]]', self.source)
         self.assertIn('git check-ignore -q', self.source)
-        self.assertIn('--output-dir "$ARTIFACTS_DIR"', self.source)
-        self.assertIn('EXPORT_OPTIONS_PLIST=', self.source)
+        self.assertIn('renamex_np', self.source)
+        self.assertIn('RENAME_EXCL', self.source)
+        self.assertIn('refusing to overwrite concurrently published field-candidate evidence', self.source)
+
+    def test_inspector_output_and_complete_candidate_publication_are_separate(self):
+        self.assertIn('INSPECTOR_OUTPUT_DIR="$WORK_ROOT/inspector-output"', self.source)
+        self.assertIn('--output-dir "$INSPECTOR_OUTPUT_DIR"', self.source)
+        self.assertIn('FINAL_STAGING_DIR=', self.source)
+        self.assertIn('cp -R "$INSPECTOR_OUTPUT_DIR"/. "$FINAL_STAGING_DIR"/', self.source)
+        self.assertNotIn('--output-dir "$ARTIFACTS_DIR"', self.source)
+        self.assertLess(
+            self.source.index('--output-dir "$INSPECTOR_OUTPUT_DIR"'),
+            self.source.index('rename_exclusive(source, destination'),
+        )
+
+    def test_snapshots_and_binds_exact_export_options_used(self):
+        self.assertIn('EXPORT_OPTIONS_SNAPSHOT="$WORK_ROOT/ExportOptions.plist"', self.source)
+        self.assertIn('cp -p "$EXPORT_OPTIONS_PLIST" "$EXPORT_OPTIONS_SNAPSHOT"', self.source)
+        self.assertIn('-exportOptionsPlist "$EXPORT_OPTIONS_SNAPSHOT"', self.source)
+        self.assertIn('options.get("teamID")', self.source)
+        self.assertIn('Export options teamID does not match NEMBRA_DEVELOPMENT_TEAM', self.source)
+        self.assertIn('EXPORT_OPTIONS_SHA256=', self.source)
+        self.assertIn('POST_EXPORT_OPTIONS_SHA256=', self.source)
+        self.assertIn('Retained ExportOptions.plist changed during archive/export', self.source)
+        self.assertIn('FINAL_EXPORT_OPTIONS_SHA256=', self.source)
+        self.assertIn('export_options_file=ExportOptions.plist', self.source)
+        self.assertIn('export_options_sha256=$EXPORT_OPTIONS_SHA256', self.source)
+
+    def test_optional_provisioning_path_is_safe_on_macos_bash_32(self):
+        self.assertIn('ALLOW_PROVISIONING_UPDATES="${NEMBRA_ALLOW_PROVISIONING_UPDATES:-0}"', self.source)
+        self.assertIn('NEMBRA_ALLOW_PROVISIONING_UPDATES must be exactly 0 or 1.', self.source)
+        self.assertIn('run_xcodebuild()', self.source)
+        self.assertIn('xcodebuild -allowProvisioningUpdates "$@"', self.source)
+        self.assertGreaterEqual(self.source.count('run_xcodebuild'), 3)
+        self.assertNotIn('PROVISIONING_ARGS=()', self.source)
+        self.assertNotIn('${PROVISIONING_ARGS[@]}', self.source)
+        self.assertIn('allow_provisioning_updates=$ALLOW_PROVISIONING_UPDATES', self.source)
+
+    def test_exact_ipa_selection_avoids_optional_bash_arrays(self):
+        self.assertIn('IPA_PATH="$(python3 - "$EXPORT_DIR"', self.source)
+        self.assertIn('path.suffix.lower() == ".ipa"', self.source)
+        self.assertIn('Expected exactly one exported .ipa; found', self.source)
+        self.assertNotIn('IPA_FILES=(', self.source)
+        self.assertNotIn('shopt -s nullglob', self.source)
+        self.assertNotIn('${#IPA_FILES[@]}', self.source)
+
+    def test_retains_archive_and_export_logs_in_final_candidate(self):
+        self.assertIn('xcodebuild-archive.log', self.source)
+        self.assertIn('xcodebuild-export.log', self.source)
+        self.assertIn('ARCHIVE_PIPESTATUS=("${PIPESTATUS[@]}")', self.source)
+        self.assertIn('EXPORT_PIPESTATUS=("${PIPESTATUS[@]}")', self.source)
+        self.assertIn('cp -p "$LOG_DIR/xcodebuild-archive.log"', self.source)
+        self.assertIn('cp -p "$LOG_DIR/xcodebuild-export.log"', self.source)
+        self.assertIn('archive_log=logs/xcodebuild-archive.log', self.source)
+        self.assertIn('export_log=logs/xcodebuild-export.log', self.source)
 
     def test_never_mutates_physical_authorization(self):
         self.assertIn('Independent acceptance has NOT occurred.', self.source)
