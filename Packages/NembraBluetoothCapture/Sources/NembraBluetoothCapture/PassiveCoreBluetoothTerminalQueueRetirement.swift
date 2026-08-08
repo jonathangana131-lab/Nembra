@@ -21,9 +21,17 @@ struct PassiveCoreBluetoothTerminalQueueRetirement: Sendable {
     /// Proof emitted only after this helper has validated the whole pending FIFO
     /// and removed every post-H item carrying the terminal transaction's exact
     /// artifact authority. This is software queue authority only, not RF proof.
+    ///
+    /// `terminalTransactionRevision` binds the receipt to one exact terminal gate
+    /// transaction. `validatedQueueTailSequence` binds it to the exact FIFO tail
+    /// observed while retirement executed. A future terminal -> fresh transition
+    /// must require both bindings and must reject the receipt if the controller's
+    /// current `lastEnqueuedEventSequence` has advanced in the meantime.
     struct Receipt: Equatable, Sendable {
         let terminalAuthority: PassiveCoreBluetoothArtifactAuthorityContext
+        let terminalTransactionRevision: UInt64
         let horizonQueueCutoff: UInt64
+        let validatedQueueTailSequence: UInt64
         let retiredEvidenceCount: Int
         let firstRetiredQueueSequence: UInt64?
         let lastRetiredQueueSequence: UInt64?
@@ -31,14 +39,18 @@ struct PassiveCoreBluetoothTerminalQueueRetirement: Sendable {
 
         fileprivate init(
             terminalAuthority: PassiveCoreBluetoothArtifactAuthorityContext,
+            terminalTransactionRevision: UInt64,
             horizonQueueCutoff: UInt64,
+            validatedQueueTailSequence: UInt64,
             retiredEvidenceCount: Int,
             firstRetiredQueueSequence: UInt64?,
             lastRetiredQueueSequence: UInt64?,
             retainedPendingEvidenceCount: Int
         ) {
             self.terminalAuthority = terminalAuthority
+            self.terminalTransactionRevision = terminalTransactionRevision
             self.horizonQueueCutoff = horizonQueueCutoff
+            self.validatedQueueTailSequence = validatedQueueTailSequence
             self.retiredEvidenceCount = retiredEvidenceCount
             self.firstRetiredQueueSequence = firstRetiredQueueSequence
             self.lastRetiredQueueSequence = lastRetiredQueueSequence
@@ -112,6 +124,12 @@ struct PassiveCoreBluetoothTerminalQueueRetirement: Sendable {
             lastRetiredQueueSequence = evidence.queueSequence
         }
 
+        // While terminal, every callback after H is withheld by the queue gate. The
+        // pending tail is therefore the controller FIFO tail. If nothing is pending,
+        // H itself is the validated tail. This binding lets the future reopen reject
+        // a stale receipt after any later callback advances the global queue sequence.
+        let validatedQueueTailSequence = previousQueueSequence ?? transaction.queueCutoff
+
         if retiredEvidenceCount > 0 {
             var retainedEvents: [Event] = []
             retainedEvents.reserveCapacity(pendingEvents.count - retiredEvidenceCount)
@@ -123,7 +141,9 @@ struct PassiveCoreBluetoothTerminalQueueRetirement: Sendable {
 
         return Receipt(
             terminalAuthority: transaction.authority,
+            terminalTransactionRevision: transaction.revision,
             horizonQueueCutoff: transaction.queueCutoff,
+            validatedQueueTailSequence: validatedQueueTailSequence,
             retiredEvidenceCount: retiredEvidenceCount,
             firstRetiredQueueSequence: firstRetiredQueueSequence,
             lastRetiredQueueSequence: lastRetiredQueueSequence,
