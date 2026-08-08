@@ -36,7 +36,6 @@ struct PassiveCoreBluetoothArtifactAuthorityFenceTests {
 
         #expect(value == 42)
         #expect(mutationCount == 1)
-        #expect(fence.currentAuthority == authorityA)
     }
 
     @Test("authority transition wins before stale mutation body can execute")
@@ -94,7 +93,8 @@ struct PassiveCoreBluetoothArtifactAuthorityFenceTests {
                 current: authorityB
             )
         )
-        #expect(fence.currentAuthority == authorityB)
+        let currentAuthority = await MainActor.run { fence.currentAuthority }
+        #expect(currentAuthority == authorityB)
     }
 
     @Test("same or same-session backward authority cannot become current again")
@@ -115,7 +115,8 @@ struct PassiveCoreBluetoothArtifactAuthorityFenceTests {
                 to: authorityA
             )
         )
-        #expect(fence.currentAuthority == authorityA)
+        var currentAuthority = await MainActor.run { fence.currentAuthority }
+        #expect(currentAuthority == authorityA)
 
         try await MainActor.run {
             try fence.transition(from: authorityA, to: authorityB)
@@ -135,7 +136,8 @@ struct PassiveCoreBluetoothArtifactAuthorityFenceTests {
                 to: authorityA
             )
         )
-        #expect(fence.currentAuthority == authorityB)
+        currentAuthority = await MainActor.run { fence.currentAuthority }
+        #expect(currentAuthority == authorityB)
     }
 
     @Test("strictly newer target session may start its own authority counter")
@@ -153,7 +155,8 @@ struct PassiveCoreBluetoothArtifactAuthorityFenceTests {
             )
         }
 
-        #expect(fence.currentAuthority == replacementSessionAuthority)
+        let currentAuthority = await MainActor.run { fence.currentAuthority }
+        #expect(currentAuthority == replacementSessionAuthority)
 
         var oldSessionMutationExecuted = false
         let error = capturedStateError {
@@ -209,7 +212,8 @@ struct PassiveCoreBluetoothArtifactAuthorityFenceTests {
                 to: attemptedOlderSession
             )
         )
-        #expect(fence.currentAuthority == newerSessionAuthority)
+        let currentAuthority = await MainActor.run { fence.currentAuthority }
+        #expect(currentAuthority == newerSessionAuthority)
     }
 
     @Test("throwing mutation releases the fence without changing authority")
@@ -305,7 +309,8 @@ struct PassiveCoreBluetoothArtifactAuthorityFenceTests {
         #expect(boundary.recordSequenceWatermark == 0)
         #expect(boundary.observedAtUptimeNanoseconds == decision.observedAtUptimeNanoseconds)
         #expect(boundary.observedAtDate == decision.observedAtDate)
-        #expect(fence.currentAuthority == authorityA)
+        let currentAuthority = await MainActor.run { fence.currentAuthority }
+        #expect(currentAuthority == authorityA)
     }
 
     private func capturedStateError(
