@@ -74,11 +74,9 @@ The exact bytes from the first verified pass are then both hashed and decoded. T
 - the input artifact byte count; and
 - a lowercase SHA-256 digest of those exact admitted bytes.
 
-The bounded reader does not normalize, re-encode, trim, or otherwise transform accepted input. This means a later worker can verify which physical-capture artifact produced a report even when two files decode to the same session content but differ byte-for-byte, for example because one was re-encoded or reformatted.
+The bounded reader does not normalize, re-encode, trim, or otherwise transform accepted input. A later replacement of the filesystem path cannot retarget the already-open subject used by the two verification passes.
 
-A later replacement of the filesystem path cannot retarget the already-open subject used by the two verification passes. The stable-read check is an offline artifact-integrity boundary; it does not authenticate who created the file or establish physical chain of custody by itself.
-
-The SHA-256 is an artifact-integrity/provenance identifier only. It does **not** authenticate the scooter, prove who recorded the capture, establish chain-of-custody by itself, or verify any ES80 protocol meaning.
+The stable-read check and SHA-256 are artifact-integrity/provenance boundaries only. They do **not** authenticate the scooter, prove who recorded the capture, establish physical chain of custody by themselves, or verify any ES80 protocol meaning.
 
 The raw capture JSON remains the authority for raw bytes. The report intentionally stores the digest and raw callback byte counts rather than duplicating encrypted payload bytes into a second evidence object that could later be mistaken for a transformed source of truth.
 
@@ -90,11 +88,11 @@ The command defaults to:
 - `--max-message-bytes 65536`
 - `--max-fragments 256`
 
-All three values are **offline process/resource ceilings only**. They are not measured ES80 limits, expected packet sizes, protocol claims, learned device behavior, or physical capture maxima. They can be changed explicitly for a specific offline run.
+All three values are **offline process/resource ceilings only**. They are not measured ES80 limits, expected packet sizes, protocol claims, learned device behavior, or physical capture maxima.
 
-The artifact ceiling is enforced before JSON decode. Each verification pass consumes bounded chunks and reads at most one byte beyond the configured ceiling to prove that the source is oversized. An oversized source fails closed instead of first materializing the complete file and decoded capture object graph. The second verification pass is compared incrementally against the retained first pass, so the tool does not materialize a second full artifact merely to prove stability. The artifact-report builder independently validates already-materialized `Data` against the same ceiling before it invokes `PassiveBluetoothCaptureJSON.decode`.
+The artifact ceiling is enforced before JSON decode. Each verification pass consumes bounded chunks and reads at most one byte beyond the configured ceiling to prove that the source is oversized. The second pass is compared incrementally against the retained first pass, so the tool does not materialize a second full artifact merely to prove stability. The artifact-report builder independently validates already-materialized `Data` against the same ceiling before it invokes `PassiveBluetoothCaptureJSON.decode`.
 
-For example, to intentionally analyze a retained artifact under a different operator-tool ceiling:
+For example:
 
 ```sh
 swift run --package-path Packages/NembraBluetoothCapture nembra-es80-capture-report \
@@ -114,12 +112,13 @@ The outer artifact-report schema v1 includes:
 - exact source capture JSON byte count; and
 - one deterministic framing-analysis report.
 
-The nested framing-analysis schema **v2** includes:
+The nested framing-analysis schema **v3** includes:
 
 - immutable capture session ID;
 - captured `VehicleIdentity` metadata;
 - capture session start time;
 - exact selected peripheral identifier;
+- explicit bridge provenance class `validated-software-session-only`;
 - caller-owned analysis resource bounds;
 - deterministic first-observed GATT + value-origin stream order;
 - exact service and characteristic identifiers;
@@ -137,9 +136,11 @@ The nested framing-analysis schema **v2** includes:
 - end-of-capture truncation;
 - source-record mappings for every analyzer event.
 
+`validated-software-session-only` is a machine-readable authority ceiling. `PassiveBluetoothCaptureSession` is publicly constructible, so a valid session and its derived report do not prove recorder custody, cryptographic attestation, physical AOVOPRO ES80 identity, protocol semantics, telemetry truth, command authority, or field GO.
+
 The scoped receipt sequence is capture chronology/provenance only. It does not assign packet, DP, command, or vehicle meaning. The report keeps it because flattening accepted sequence scope back to uptime-only chronology would weaken the current bridge/analyzer evidence contract.
 
-The library also exposes a deterministic `outcomeSummary` over those retained event kinds. It counts streams, fragments, completed candidates, rejected candidates, boundary-truncated candidates, end-truncated candidates, and unexpected analyzer failures. A packet-zero restart remains an `incompleteAtBoundary` event and is therefore counted as an incomplete candidate while retaining its explicit boundary reason and next-source mapping. The summary derives only from the already-retained report; it does not reinterpret bytes or add protocol meaning.
+The library also exposes a deterministic `outcomeSummary` over those retained event kinds. It counts streams, fragments, completed candidates, rejected candidates, boundary-truncated candidates, end-truncated candidates, and unexpected analyzer failures. A packet-zero restart remains an `incompleteAtBoundary` event and is therefore counted as an incomplete candidate while retaining its explicit boundary reason and next-source mapping.
 
 A `completed` event means only that the captured raw bytes satisfy the selected bounded public-family reassembly hypothesis. It does **not** mean the bytes are an ES80 message or that any field has been identified.
 
@@ -151,8 +152,9 @@ After the product-facing Nembra Capture flow produces a versioned JSON artifact 
 2. run this command against that artifact;
 3. retain both the raw artifact and generated report;
 4. verify the report's source-artifact SHA-256 against the retained raw file before using it for later protocol evidence;
-5. use the report plus its candidate-outcome summary to identify exact streams/candidate outcomes for the next correlation layer;
-6. only promote a field after repeatable physical evidence verifies raw source, framing, DP identity/type, scale, signedness, units, cadence, continuity, and provenance.
+5. retain the report's `validated-software-session-only` authority classification until an independently accepted stronger evidence layer actually earns promotion;
+6. use the report plus its candidate-outcome summary to identify exact streams/candidate outcomes for the next correlation layer;
+7. only promote a field after repeatable physical evidence verifies raw source, framing, DP identity/type, scale, signedness, units, cadence, continuity, and provenance.
 
 A failed candidate is useful falsifying evidence. Do not edit the capture to manufacture a parse.
 
@@ -160,7 +162,7 @@ A failed candidate is useful falsifying evidence. Do not edit the capture to man
 
 This report layer is intentionally downstream of the accepted passive-capture bridge and candidate analyzer. It must preserve their stronger provenance rather than flatten it.
 
-The current bridge preserves capture record/sequence provenance, stream-local source mapping, scoped receipt-sequence chronology, and explicit continuity-generation advances before target filtering. The report consumes that bridge directly; it must not reconstruct a second byte timeline, drop continuity boundaries, or renumber observations in a way that could make separated raw callbacks appear contiguous.
+The current bridge preserves capture record/sequence provenance, stream-local source mapping, scoped receipt-sequence chronology, explicit continuity-generation advances before target filtering, and the software-only provenance classification. The report consumes those contracts directly; it must not reconstruct a second byte timeline, drop continuity boundaries, erase provenance class, or renumber observations in a way that could make separated raw callbacks appear contiguous.
 
 Any future bridge/analyzer provenance strengthening must remain visible in this report and its source mappings before the report layer can be considered accepted on that newer dependency head.
 
