@@ -1,0 +1,99 @@
+name: Capture producer provenance re-anchor
+
+on:
+  push:
+    branches:
+      - agent/capture-producer-provenance-reanchor-v14
+
+permissions:
+  contents: write
+
+jobs:
+  reanchor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Guard exact current-spine parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "e3f54210f897890706f26ba477fbbce17285cbc6"
+
+      - name: Three-way merge reviewed producer-integrity delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_HEAD="046c67cdb0c19e1accdaf37266a381af73f0dc51"
+          COMMON_BASE="c2a0214572f9d4e748f8761e3dc4c29a0118920c"
+          git fetch --no-tags origin "$SOURCE_HEAD"
+          git fetch --no-tags origin "$COMMON_BASE"
+          test "$(git cat-file -t "$SOURCE_HEAD")" = commit
+          test "$(git cat-file -t "$COMMON_BASE")" = commit
+
+          merge_path() {
+            path="$1"
+            current="$(mktemp)"
+            base="$(mktemp)"
+            other="$(mktemp)"
+            merged="$(mktemp)"
+            trap 'rm -f "$current" "$base" "$other" "$merged"' RETURN
+            git show "HEAD:$path" > "$current"
+            git show "$COMMON_BASE:$path" > "$base"
+            git show "$SOURCE_HEAD:$path" > "$other"
+            cp "$current" "$merged"
+            git merge-file "$merged" "$base" "$other"
+            if grep -q '^<<<<<<<\|^=======\|^>>>>>>>' "$merged"; then
+              echo "Three-way source merge conflicted: $path" >&2
+              exit 1
+            fi
+            cp "$merged" "$path"
+            rm -f "$current" "$base" "$other" "$merged"
+            trap - RETURN
+          }
+
+          merge_path scripts/ci/es80_signed_field_artifact_private_runner.py
+          merge_path scripts/ci/xcode27_signed_field_candidate.sh
+          merge_path scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+
+          # The current-spine privacy repair must survive composition verbatim.
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("scripts/ci/xcode27_signed_field_candidate.sh").read_text(encoding="utf-8")
+          executable = [
+              line.strip() for line in source.splitlines()
+              if line.strip() and not line.lstrip().startswith("#")
+          ]
+          assert executable[:2] == ["set -euo pipefail", "unset NEMBRA_INTENDED_FIELD_DEVICE_UDID"]
+          PY
+
+      - name: Validate composed current-spine contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
+          git diff --check
+
+      - name: Commit only composed product hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/zz-capture-producer-provenance-reanchor.yml
+          git config user.name "nembra-go-worker"
+          git config user.email "actions@users.noreply.github.com"
+          git add scripts/ci/es80_signed_field_artifact_private_runner.py \
+                  scripts/ci/xcode27_signed_field_candidate.sh \
+                  scripts/ci/tests/test_xcode27_signed_field_candidate_source.py \
+                  .github/workflows/zz-capture-producer-provenance-reanchor.yml
+          git diff --cached --check
+          git commit -m "fix(capture): bind producer evidence code to exact source"
+          git push origin HEAD:agent/capture-producer-provenance-reanchor-v14
