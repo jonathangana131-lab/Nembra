@@ -1,0 +1,27 @@
+name: agent compose recorded h controller
+on:
+  push:
+    branches: ['agent/es80-controller-canonical-boundary-v14']
+    paths: ['.github/workflows/agent-compose-recorded-h-controller.yml']
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/es80-controller-canonical-boundary-v14
+          fetch-depth: 0
+      - name: Apply recorded-H controller composition
+        shell: bash
+        run: |
+          python3 .nembra/agent-compose-recorded-h-controller.py
+          git rm .github/workflows/agent-compose-recorded-h-controller.yml
+          git rm .nembra/agent-compose-recorded-h-controller.py
+          git config user.name 'nembra-gpt56'
+          git config user.email 'actions@users.noreply.github.com'
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          git add Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerRecordedHorizonRecoveryTests.swift
+          git commit -m 'fix: quarantine durable Horizon commit failures in controller'
+          git push origin HEAD:agent/es80-controller-canonical-boundary-v14
