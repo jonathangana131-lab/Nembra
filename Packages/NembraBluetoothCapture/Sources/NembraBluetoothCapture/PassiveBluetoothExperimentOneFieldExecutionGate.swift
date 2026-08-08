@@ -11,10 +11,11 @@ import Foundation
 /// 2. the narrow private-research build path used only to collect the first stationary passive
 ///    ES80 artifact under `CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md`.
 ///
-/// The research lane is not a user setting. It can be minted only from the exact running app when
-/// its signed-build metadata carries the canonical ES80 fingerprint recipe plus the producer-shaped
-/// build identifier / instance / source tuple that the runtime identity reader independently binds
-/// to the running executable and raw Info.plist bytes. A normal build, Debug launch flag, arbitrary
+/// The research lane is not a user setting. It can be minted only from a physical iOS Release binary
+/// compiled with Nembra's dedicated TODAY research-build capability, whose signed-build metadata
+/// carries the canonical ES80 fingerprint recipe plus the producer-shaped build identifier / instance /
+/// source tuple that the runtime identity reader independently binds to the running executable and raw
+/// Info.plist bytes. A normal Release build with edited bundle metadata, Debug launch flag, arbitrary
 /// imported document, or caller-created Boolean cannot mint that capability.
 ///
 /// This is build/procedure authority only. Possession of either capability does not authenticate an
@@ -39,6 +40,20 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
         case .goPrivateResearchBuild:
             return true
         }
+    }
+
+    /// Executable compile-time capability for the narrow private research lane.
+    ///
+    /// This is intentionally false in ordinary package/app builds, including ordinary physical iOS
+    /// Release archives. The canonical TODAY wrapper injects `-DNEMBRA_ES80_TODAY_RESEARCH` only while
+    /// delegating to the signed-field producer. Bundle metadata is checked separately and cannot create
+    /// this code capability after compilation.
+    static var hasCompiledTodayResearchCapability: Bool {
+#if NEMBRA_ES80_TODAY_RESEARCH && os(iOS) && !targetEnvironment(simulator) && !DEBUG
+        true
+#else
+        false
+#endif
     }
 
     /// Exact running-build identity retained by the private research GO status.
@@ -89,13 +104,14 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
 
     /// Production private-research admission for the app that is actually running.
     ///
-    /// The canonical field producer archives a physical iOS Release build. Debug, Simulator, and
-    /// non-iOS builds are mechanically unable to enter this live producer even if matching bundle
-    /// metadata is injected. Within the physical Release lane, exact executable and Info.plist hashes
-    /// are computed by `PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()` and
-    /// the signed recipe/build tuple must still match the canonical producer shape.
+    /// The TODAY field wrapper must compile the dedicated research capability into a physical iOS
+    /// Release archive. Debug, Simulator, ordinary Release, and non-iOS builds are mechanically unable
+    /// to enter this live producer even if matching bundle metadata is injected. Within that compiled
+    /// lane, exact executable and Info.plist hashes are computed by
+    /// `PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()` and the signed
+    /// recipe/build tuple must still match the canonical producer shape.
     static func researchAdmissionForCurrentApplication() throws -> ResearchAdmission {
-#if os(iOS) && !targetEnvironment(simulator) && !DEBUG
+#if NEMBRA_ES80_TODAY_RESEARCH && os(iOS) && !targetEnvironment(simulator) && !DEBUG
         let bundle = Bundle.main
         let runtimeBuildIdentity = try PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()
         return try researchAdmission(
