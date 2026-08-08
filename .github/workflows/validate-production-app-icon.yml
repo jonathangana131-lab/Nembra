@@ -1,0 +1,114 @@
+name: Validate Production App Icon
+
+on:
+  push:
+    branches:
+      - parallel/validate-production-app-icon/chat-q7m4
+    paths:
+      - .github/workflows/validate-production-app-icon.yml
+
+permissions:
+  contents: read
+
+jobs:
+  springboard:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    env:
+      PRODUCT_HEAD: 3e0e052e61cd984414624e2ec0b5a31a39615a7c
+    steps:
+      - name: Checkout immutable product head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.PRODUCT_HEAD }}
+
+      - name: Verify immutable product head
+        run: test "$(git rev-parse HEAD)" = "$PRODUCT_HEAD"
+
+      - name: Build, install, and capture SpringBoard
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$PWD"
+          OUT="$ROOT/Artifacts/AppIconSpringBoard"
+          DERIVED="${RUNNER_TEMP:-/tmp}/NembraAppIconDerivedData"
+          mkdir -p "$OUT"
+
+          RUNTIME_ID="$(xcrun simctl list runtimes -j | python3 -c '
+          import json,sys
+          r=json.load(sys.stdin)["runtimes"]
+          c=[x for x in r if x.get("isAvailable", True) and str(x.get("identifier", "")).startswith("com.apple.CoreSimulator.SimRuntime.iOS-27")]
+          if not c: raise SystemExit(1)
+          c.sort(key=lambda x: tuple(int(p) for p in str(x.get("version","0")).split(".") if p.isdigit()), reverse=True)
+          print(c[0]["identifier"])
+          ')"
+
+          DEVICE_TYPE="$(xcrun simctl list devicetypes -j | python3 -c '
+          import json,sys
+          items=json.load(sys.stdin)["devicetypes"]
+          for name in ["iPhone 12", "iPhone 17", "iPhone 17 Pro", "iPhone 16"]:
+              for x in items:
+                  if x.get("name")==name:
+                      print(x["identifier"]); raise SystemExit(0)
+          raise SystemExit(1)
+          ')"
+
+          SIM_NAME="Nembra App Icon QA ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          UDID="$(xcrun simctl create "$SIM_NAME" "$DEVICE_TYPE" "$RUNTIME_ID")"
+          cleanup() {
+            xcrun simctl shutdown "$UDID" >/dev/null 2>&1 || true
+            xcrun simctl delete "$UDID" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT INT TERM
+
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+
+          xcodebuild \
+            -project Nembra.xcodeproj \
+            -scheme Nembra \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=$UDID" \
+            -derivedDataPath "$DERIVED" \
+            CODE_SIGNING_ALLOWED=NO \
+            build \
+            | tee "$OUT/xcodebuild.log"
+
+          APP_PATH="$DERIVED/Build/Products/Debug-iphonesimulator/Nembra.app"
+          test -d "$APP_PATH"
+          xcrun simctl install "$UDID" "$APP_PATH"
+
+          xcrun simctl status_bar "$UDID" override \
+            --time 9:41 \
+            --batteryState charged \
+            --batteryLevel 82 \
+            --wifiBars 3 \
+            --cellularMode active \
+            --cellularBars 4 >/dev/null 2>&1 || true
+
+          xcrun simctl ui "$UDID" appearance light >/dev/null 2>&1 || true
+          sleep 2
+          xcrun simctl io "$UDID" screenshot "$OUT/springboard-light.png"
+          test -s "$OUT/springboard-light.png"
+
+          xcrun simctl ui "$UDID" appearance dark >/dev/null 2>&1 || true
+          sleep 2
+          xcrun simctl io "$UDID" screenshot "$OUT/springboard-dark.png"
+          test -s "$OUT/springboard-dark.png"
+
+          {
+            echo "product_head=$PRODUCT_HEAD"
+            echo "runtime=$RUNTIME_ID"
+            echo "device_type=$DEVICE_TYPE"
+            echo "simulator_udid=$UDID"
+            file "$APP_PATH" || true
+            find "$APP_PATH" -maxdepth 2 -type f -iname '*AppIcon*' -print || true
+          } > "$OUT/environment.txt"
+
+      - name: Upload SpringBoard evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-production-app-icon-springboard
+          path: Artifacts/AppIconSpringBoard
+          if-no-files-found: error
