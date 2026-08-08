@@ -49,6 +49,7 @@ jobs:
               "Waiting for accepted Horizon authority": "Waiting for capture timing",
               "Finite acquisition is Ready. Keep Nembra foregrounded and the scooter stationary while the accepted monotonic observation interval matures. The displayed timer is guidance only.": "Bluetooth discovery is complete. Keep Nembra open and the scooter stationary while the required observation time completes. The displayed timer is guidance only.",
               "Unavailable; waiting for accepted Horizon authority": "Unavailable; required observation time is still being verified",
+              "waiting for accepted Horizon authority": "waiting for capture timing",
               "Available only after the package accepts the required monotonic observation duration.": "Available only after Nembra verifies the required observation duration.",
               "The package-owned Ready epoch and required monotonic observation duration are both accepted. Finishing now requests one immutable Horizon from this same authority life.": "The required observation time is complete. Sealing now freezes this capture into one final read-only artifact.",
               "Nembra is draining the accepted cutoff, committing Horizon, checking final authority, and materializing the immutable JSON artifact. Do not leave the app while this finishes.": "Nembra is finishing queued capture events, checking integrity, and creating the final shareable capture. Keep the app open until sealing completes.",
