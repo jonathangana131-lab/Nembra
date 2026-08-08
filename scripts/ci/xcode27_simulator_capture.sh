@@ -154,10 +154,18 @@ if [[ ! "$EXECUTABLE_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
   exit 13
 fi
 
-TRUSTED_BUILD_RECORD="$ARTIFACTS_DIR/NembraCaptureTrustedBuildRecord.json"
+# Keep the exact-executable digest record OUTSIDE the app bundle.
+#
+# On a signed Apple-platform app, bundle resources participate in the code-signing resource seal,
+# while the code signature itself is stored in the Mach-O executable. Embedding a resource that
+# contains the hash of the final signed executable would therefore create a self-reference loop:
+# the record changes the resource seal/signature, which changes the executable digest recorded by
+# that same resource. Simulator uses CODE_SIGNING_ALLOWED=NO, but this harness must not normalize a
+# topology that cannot truthfully carry over to the final physical-device build.
+EXTERNAL_BUILD_RECORD="$ARTIFACTS_DIR/NembraCaptureExternalBuildRecord.json"
 RUNNER_METADATA="$ARTIFACTS_DIR/capture-runner-metadata.json"
 python3 - \
-  "$TRUSTED_BUILD_RECORD" \
+  "$EXTERNAL_BUILD_RECORD" \
   "$RUNNER_METADATA" \
   "$CAPTURE_BUILD_IDENTIFIER" \
   "$CAPTURE_BUILD_COMMIT_SHA" \
@@ -172,7 +180,7 @@ import json
 import sys
 
 (
-    trusted_record_path,
+    external_record_path,
     runner_metadata_path,
     build_identifier,
     source_commit_sha,
@@ -184,7 +192,7 @@ import sys
     run_attempt,
 ) = sys.argv[1:]
 
-trusted_record = {
+external_record = {
     "schemaVersion": 1,
     "buildIdentifier": build_identifier,
     "sourceCommitSHA": source_commit_sha,
@@ -192,16 +200,16 @@ trusted_record = {
     "experimentRecipeID": recipe_identifier,
     "procedureVersion": procedure_version,
 }
-trusted_bytes = (
-    json.dumps(trusted_record, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+external_bytes = (
+    json.dumps(external_record, indent=2, sort_keys=True).encode("utf-8") + b"\n"
 )
-with open(trusted_record_path, "wb") as handle:
-    handle.write(trusted_bytes)
+with open(external_record_path, "wb") as handle:
+    handle.write(external_bytes)
 
 runner_metadata = {
     "schemaVersion": 1,
-    "authority": "runner-generated-simulator-provenance-not-field-authorization",
-    "trustedBuildRecordSHA256": hashlib.sha256(trusted_bytes).hexdigest(),
+    "authority": "external-runner-simulator-provenance-not-field-authorization",
+    "externalBuildRecordSHA256": hashlib.sha256(external_bytes).hexdigest(),
     "bundleIdentifier": bundle_identifier,
     "platform": "iOS Simulator",
     "githubRunID": run_id,
@@ -212,20 +220,20 @@ with open(runner_metadata_path, "w", encoding="utf-8") as handle:
     handle.write("\n")
 PY
 
-BUNDLED_TRUSTED_BUILD_RECORD="$APP_PATH/NembraCaptureTrustedBuildRecord.json"
-cp "$TRUSTED_BUILD_RECORD" "$BUNDLED_TRUSTED_BUILD_RECORD"
-if ! cmp -s "$TRUSTED_BUILD_RECORD" "$BUNDLED_TRUSTED_BUILD_RECORD"; then
-  echo "Bundled trusted build record diverged from the runner-produced record." >&2
-  exit 14
-fi
-TRUSTED_BUILD_RECORD_SHA256="$(shasum -a 256 "$TRUSTED_BUILD_RECORD" | awk '{print $1}')"
+EXTERNAL_BUILD_RECORD_SHA256="$(shasum -a 256 "$EXTERNAL_BUILD_RECORD" | awk '{print $1}')"
 
 printf '%s\n' \
   "capture_executable_sha256=$EXECUTABLE_SHA256" \
-  "capture_trusted_build_record=$TRUSTED_BUILD_RECORD" \
-  "capture_trusted_build_record_sha256=$TRUSTED_BUILD_RECORD_SHA256" \
+  "capture_external_build_record=$EXTERNAL_BUILD_RECORD" \
+  "capture_external_build_record_sha256=$EXTERNAL_BUILD_RECORD_SHA256" \
   "capture_runner_metadata=$RUNNER_METADATA" \
   >> "$ARTIFACTS_DIR/environment.txt"
+
+# Assert the final Simulator app was not mutated with a self-referential executable-digest record.
+if [[ -e "$APP_PATH/NembraCaptureTrustedBuildRecord.json" || -e "$APP_PATH/NembraCaptureExternalBuildRecord.json" ]]; then
+  echo "Executable-digest provenance record must remain external to the built app bundle." >&2
+  exit 14
+fi
 
 xcrun simctl install "$UDID" "$APP_PATH"
 
