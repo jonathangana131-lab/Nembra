@@ -16,7 +16,7 @@ public enum AccelerationMilestoneEvidenceSuitePolicyError: Error, Equatable, Sen
 /// 0→target results assembled under different evidence rules.
 public struct AccelerationMilestoneEvidenceSuitePolicy: Equatable, Sendable {
     public let targetsMetersPerSecond: [Double]
-    public let sessionPolicies: [AccelerationEvidenceSessionPolicy]
+    let sessionPolicies: [AccelerationEvidenceSessionPolicy]
 
     public init(
         targetsMetersPerSecond: [Double],
@@ -72,18 +72,18 @@ public struct AccelerationMilestoneEvidenceSuitePolicy: Equatable, Sendable {
 
 public struct AccelerationMilestoneEvidence: Equatable, Sendable {
     public let targetMetersPerSecond: Double
-    public let session: AccelerationEvidenceSessionSnapshot
+    public let sessionSnapshot: AccelerationEvidenceSessionSnapshot
 
     public var readiness: AccelerationEvidenceReadiness {
-        session.readiness()
+        sessionSnapshot.readiness()
     }
 
     fileprivate init(
         targetMetersPerSecond: Double,
-        session: AccelerationEvidenceSessionSnapshot
+        sessionSnapshot: AccelerationEvidenceSessionSnapshot
     ) {
         self.targetMetersPerSecond = targetMetersPerSecond
-        self.session = session
+        self.sessionSnapshot = sessionSnapshot
     }
 }
 
@@ -139,7 +139,7 @@ public struct AccelerationMilestoneEvidenceSuite: Sendable {
         let milestones = zip(policy.targetsMetersPerSecond, sessions).map { target, session in
             AccelerationMilestoneEvidence(
                 targetMetersPerSecond: target,
-                session: session.snapshot
+                sessionSnapshot: session.snapshot
             )
         }
         return AccelerationMilestoneEvidenceSuiteSnapshot(milestones: milestones)
