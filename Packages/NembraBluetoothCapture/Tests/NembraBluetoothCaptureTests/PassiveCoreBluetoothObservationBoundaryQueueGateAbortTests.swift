@@ -1,3 +1,5 @@
+import Foundation
+import NembraCore
 import Testing
 @testable import NembraBluetoothCapture
 
@@ -8,54 +10,74 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateAbortTests {
         let authority: PassiveCoreBluetoothArtifactAuthorityContext
     }
 
+    private struct CommittedFixture {
+        let recorder: PassiveCoreBluetoothCaptureRecorder
+        let epoch: PassiveCoreBluetoothObservationBoundaryTransactionDecision.CommittedReadyEpoch
+    }
+
     private let authority = PassiveCoreBluetoothArtifactAuthorityContext(
         targetSessionGeneration: 7,
         authorityGeneration: 11
     )
 
+    private let es80 = VehicleIdentity(
+        manufacturer: "AOVOPRO",
+        model: "ES80",
+        displayName: "AOVOPRO ES80",
+        protocolFamily: "Tuya / AOVOPRO (hardware validation pending)"
+    )
+
+    @MainActor
     private func committedReady(
         on gate: inout PassiveCoreBluetoothObservationBoundaryQueueGate,
-        authority: PassiveCoreBluetoothArtifactAuthorityContext? = nil,
         cutoff: UInt64 = 4
-    ) throws -> PassiveCoreBluetoothObservationBoundaryQueueGate.Transaction {
-        let selectedAuthority = authority ?? self.authority
-        let ready = try gate.begin(
-            .finiteAcquisitionReady,
-            through: cutoff,
-            authority: selectedAuthority
+    ) async throws -> CommittedFixture {
+        let recorder = try PassiveCoreBluetoothCaptureRecorder(
+            vehicleIdentity: es80,
+            startedAt: Date(timeIntervalSince1970: 1)
         )
-        try gate.markBoundaryRecorded(
-            ready,
-            lastProcessedQueueSequence: cutoff,
-            currentAuthority: selectedAuthority
+        let fence = PassiveCoreBluetoothArtifactAuthorityFence(authority: authority)
+        let admission = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(
+            queueCutoff: cutoff,
+            processedThrough: cutoff,
+            authorityFence: fence,
+            gate: &gate
         )
-        return ready
+        let recorded = try await admission.recordBoundary(on: recorder)
+        let epoch = try recorded.markBoundaryRecorded(
+            on: &gate,
+            lastProcessedQueueSequence: cutoff
+        )
+        return CommittedFixture(recorder: recorder, epoch: epoch)
     }
 
+    @MainActor
     private func retireCommittedAbort(
         gate: inout PassiveCoreBluetoothObservationBoundaryQueueGate,
-        ready: PassiveCoreBluetoothObservationBoundaryQueueGate.Transaction,
+        fixture: CommittedFixture,
         pendingTail: UInt64 = 5
     ) throws -> PassiveCoreBluetoothAbortedObservationQueueRetirement.Receipt {
-        _ = try gate.abortObservationEpoch(
-            expectedReadyAuthority: ready.authority,
-            expectedReadyQueueCutoff: ready.queueCutoff
-        )
-        var pending = pendingTail > ready.queueCutoff
-            ? [
-                PendingEvent(
-                    queueSequence: pendingTail,
-                    authority: PassiveCoreBluetoothArtifactAuthorityContext(
-                        targetSessionGeneration: ready.authority.targetSessionGeneration,
-                        authorityGeneration: ready.authority.authorityGeneration + 1
+        _ = try gate.abortObservationEpoch(fixture.epoch)
+
+        var pending: [PendingEvent] = []
+        if pendingTail > fixture.epoch.queueCutoff {
+            for sequence in (fixture.epoch.queueCutoff + 1)...pendingTail {
+                pending.append(
+                    PendingEvent(
+                        queueSequence: sequence,
+                        authority: .init(
+                            targetSessionGeneration: fixture.epoch.authority.targetSessionGeneration,
+                            authorityGeneration: fixture.epoch.authority.authorityGeneration + sequence
+                        )
                     )
                 )
-            ]
-            : []
+            }
+        }
+
         return try PassiveCoreBluetoothAbortedObservationQueueRetirement.retire(
             from: &pending,
             currentLastEnqueuedEventSequence: pendingTail,
-            currentSettledQueueSequence: ready.queueCutoff,
+            currentSettledQueueSequence: fixture.epoch.queueCutoff,
             drainIsIdle: true,
             abortedGate: gate,
             identity: {
@@ -64,18 +86,16 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateAbortTests {
         )
     }
 
-    @Test("committed Ready abort quarantines draining until queue retirement + fresh session binding")
-    func committedAbortRequiresRetirementBeforeFreshReady() throws {
+    @Test("committed Ready abort quarantines draining until queue retirement + exact fresh session binding")
+    @MainActor
+    func committedAbortRequiresRetirementBeforeFreshReady() async throws {
         var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
-        let oldReady = try committedReady(on: &gate)
+        let fixture = try await committedReady(on: &gate)
 
-        let abort = try gate.abortObservationEpoch(
-            expectedReadyAuthority: oldReady.authority,
-            expectedReadyQueueCutoff: oldReady.queueCutoff
-        )
-        #expect(abort.abandonedReadyAuthority == oldReady.authority)
-        #expect(abort.abandonedReadyQueueCutoff == oldReady.queueCutoff)
-        #expect(abort.abandonedReadyTransactionRevision == oldReady.revision)
+        let abort = try gate.abortObservationEpoch(fixture.epoch)
+        #expect(abort.abandonedReadyAuthority == fixture.epoch.authority)
+        #expect(abort.abandonedReadyQueueCutoff == fixture.epoch.queueCutoff)
+        #expect(abort.abandonedReadyTransactionRevision == fixture.epoch.transactionRevision)
         #expect(abort.abandonedTargetSessionGeneration == authority.targetSessionGeneration)
         #expect(abort.origin == .committedReadyInvalidated)
         #expect(gate.phase == .abortQuarantined(abort))
@@ -101,14 +121,14 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateAbortTests {
         var pending = [
             PendingEvent(
                 queueSequence: 5,
-                authority: PassiveCoreBluetoothArtifactAuthorityContext(
+                authority: .init(
                     targetSessionGeneration: authority.targetSessionGeneration,
                     authorityGeneration: authority.authorityGeneration + 1
                 )
             ),
             PendingEvent(
                 queueSequence: 6,
-                authority: PassiveCoreBluetoothArtifactAuthorityContext(
+                authority: .init(
                     targetSessionGeneration: authority.targetSessionGeneration,
                     authorityGeneration: authority.authorityGeneration + 2
                 )
@@ -171,18 +191,19 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateAbortTests {
             authority: freshAuthority
         )
         #expect(freshReady.authority == freshAuthority)
-        #expect(freshReady.revision > oldReady.revision)
+        #expect(freshReady.revision > fixture.epoch.transactionRevision)
         #expect(gate.phase == .drainingReady(freshReady))
     }
 
     @Test("normal reset cannot erase abort quarantine or exact fresh-session binding")
-    func resetDoesNotEraseRecoveryFences() throws {
+    @MainActor
+    func resetDoesNotEraseRecoveryFences() async throws {
         var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
-        let oldReady = try committedReady(on: &gate)
+        let fixture = try await committedReady(on: &gate)
         let retirement = try retireCommittedAbort(
             gate: &gate,
-            ready: oldReady,
-            pendingTail: oldReady.queueCutoff
+            fixture: fixture,
+            pendingTail: fixture.epoch.queueCutoff
         )
 
         #expect(gate.resetForNewCaptureSession() == false)
@@ -191,7 +212,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateAbortTests {
         let freshGeneration = authority.targetSessionGeneration + 1
         try gate.completeAbortedObservationRecovery(
             retirement,
-            currentLastEnqueuedEventSequence: oldReady.queueCutoff,
+            currentLastEnqueuedEventSequence: fixture.epoch.queueCutoff,
             freshTargetSessionGeneration: freshGeneration
         )
         #expect(gate.resetForNewCaptureSession())
@@ -222,12 +243,13 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateAbortTests {
     }
 
     @Test("queue-tail movement after retirement keeps abort quarantine closed")
-    func queueTailMovementInvalidatesRetirementReceipt() throws {
+    @MainActor
+    func queueTailMovementInvalidatesRetirementReceipt() async throws {
         var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
-        let ready = try committedReady(on: &gate)
+        let fixture = try await committedReady(on: &gate)
         let retirement = try retireCommittedAbort(
             gate: &gate,
-            ready: ready,
+            fixture: fixture,
             pendingTail: 5
         )
 
@@ -244,95 +266,94 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateAbortTests {
         #expect(gate.permittedDrainUpperBound(firstPending: 6, pendingTail: 6) == nil)
     }
 
-    @Test("abort requires the exact committed Ready identity")
-    func staleReadyIdentityCannotAbortCurrentEpoch() throws {
-        var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
-        let currentReady = try committedReady(on: &gate)
-        let error = capturedAbortStateError {
-            try gate.abortObservationEpoch(
-                expectedReadyAuthority: currentReady.authority,
-                expectedReadyQueueCutoff: currentReady.queueCutoff + 1
-            )
-        }
-        #expect(error == .staleTransaction)
-        #expect(gate.phase == .observing)
+    @Test("committed proof from a structurally identical foreign gate cannot abort this gate")
+    @MainActor
+    func foreignCommittedEpochCannotAbortCurrentGate() async throws {
+        var currentGate = PassiveCoreBluetoothObservationBoundaryQueueGate()
+        let current = try await committedReady(on: &currentGate)
 
-        let horizon = try gate.begin(
-            .observationHorizon,
-            through: currentReady.queueCutoff,
-            processedThrough: currentReady.queueCutoff,
-            authority: authority
-        )
-        #expect(gate.phase == .drainingHorizon(horizon))
-    }
+        var foreignGate = PassiveCoreBluetoothObservationBoundaryQueueGate()
+        let foreign = try await committedReady(on: &foreignGate)
+        #expect(current.epoch.authority == foreign.epoch.authority)
+        #expect(current.epoch.queueCutoff == foreign.epoch.queueCutoff)
+        #expect(current.epoch.transactionRevision == foreign.epoch.transactionRevision)
+        #expect(current.epoch.transactionIdentity != foreign.epoch.transactionIdentity)
 
-    @Test("caller-asserted committed abort is unavailable during uncommitted Ready drain")
-    func genericAbortCannotEraseUncommittedReady() throws {
-        var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
-        let uncommittedReady = try gate.begin(
-            .finiteAcquisitionReady,
-            through: 1,
-            authority: authority
-        )
         #expect(
             capturedAbortStateError {
-                try gate.abortObservationEpoch(
-                    expectedReadyAuthority: uncommittedReady.authority,
-                    expectedReadyQueueCutoff: uncommittedReady.queueCutoff
-                )
+                try currentGate.abortObservationEpoch(foreign.epoch)
+            } == .staleTransaction
+        )
+        #expect(currentGate.phase == .observing)
+
+        _ = try current.epoch.beginHorizon(
+            queueCutoff: current.epoch.queueCutoff,
+            processedThrough: current.epoch.queueCutoff,
+            gate: &currentGate
+        )
+    }
+
+    @Test("committed abort proof cannot erase an uncommitted Ready transaction")
+    @MainActor
+    func committedProofCannotEraseUncommittedReady() async throws {
+        var committedGate = PassiveCoreBluetoothObservationBoundaryQueueGate()
+        let committed = try await committedReady(on: &committedGate)
+
+        var drainingGate = PassiveCoreBluetoothObservationBoundaryQueueGate()
+        let fence = PassiveCoreBluetoothArtifactAuthorityFence(authority: authority)
+        let admission = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(
+            queueCutoff: 1,
+            processedThrough: 1,
+            authorityFence: fence,
+            gate: &drainingGate
+        )
+        #expect(drainingGate.activeTransaction?.queueCutoff == admission.queueCutoff)
+
+        #expect(
+            capturedAbortStateError {
+                try drainingGate.abortObservationEpoch(committed.epoch)
             } == .invalidTransition
         )
-        #expect(gate.phase == .drainingReady(uncommittedReady))
+        #expect(drainingGate.activeTransaction?.queueCutoff == admission.queueCutoff)
     }
 
     @Test("Horizon-started, Horizon-recorded, and terminal states cannot escape through pre-H abort")
-    func postHorizonAbortIsRejected() throws {
+    @MainActor
+    func postHorizonAbortIsRejected() async throws {
         var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
-        let ready = try committedReady(on: &gate, cutoff: 1)
-        let horizon = try gate.begin(
-            .observationHorizon,
-            through: 2,
+        let fixture = try await committedReady(on: &gate, cutoff: 1)
+        let horizonAdmission = try fixture.epoch.beginHorizon(
+            queueCutoff: 2,
             processedThrough: 1,
-            authority: authority
+            gate: &gate
         )
-        #expect(
-            capturedAbortStateError {
-                try gate.abortObservationEpoch(
-                    expectedReadyAuthority: ready.authority,
-                    expectedReadyQueueCutoff: ready.queueCutoff
-                )
-            } == .invalidTransition
-        )
-        #expect(gate.phase == .drainingHorizon(horizon))
 
-        try gate.markBoundaryRecorded(
-            horizon,
-            lastProcessedQueueSequence: 2,
-            currentAuthority: authority
-        )
         #expect(
             capturedAbortStateError {
-                try gate.abortObservationEpoch(
-                    expectedReadyAuthority: ready.authority,
-                    expectedReadyQueueCutoff: ready.queueCutoff
-                )
+                try gate.abortObservationEpoch(fixture.epoch)
             } == .invalidTransition
         )
-        #expect(gate.phase == .horizonBoundaryRecorded(horizon))
+        #expect(gate.activeTransaction?.queueCutoff == 2)
 
-        try gate.completeHorizonArtifactFreeze(
-            horizon,
-            currentAuthority: authority
+        let recordedHorizon = try await horizonAdmission.recordBoundary(on: fixture.recorder)
+        let committedHorizon = try recordedHorizon.markBoundaryRecorded(
+            on: &gate,
+            lastProcessedQueueSequence: 2
         )
         #expect(
             capturedAbortStateError {
-                try gate.abortObservationEpoch(
-                    expectedReadyAuthority: ready.authority,
-                    expectedReadyQueueCutoff: ready.queueCutoff
-                )
+                try gate.abortObservationEpoch(fixture.epoch)
             } == .invalidTransition
         )
-        #expect(gate.phase == .terminal(horizon))
+        #expect(gate.terminalQueueCutoff == nil)
+
+        try committedHorizon.completeHorizonArtifactFreeze(on: &gate)
+        #expect(
+            capturedAbortStateError {
+                try gate.abortObservationEpoch(fixture.epoch)
+            } == .invalidTransition
+        )
+        #expect(gate.terminalQueueCutoff == 2)
     }
 }
 
