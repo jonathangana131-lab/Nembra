@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+# Scrub the superseded raw-value environment seam before this script launches any child process.
+# Current field production accepts only a path to private verification input.
+unset NEMBRA_INTENDED_FIELD_DEVICE_UDID
+
 # Produce one exact signed iOS Nembra Capture field-build CANDIDATE.
 # This script cannot authorize physical ES80 Experiment One.
 
@@ -14,22 +18,21 @@ fi
 
 : "${NEMBRA_DEVELOPMENT_TEAM:?Set NEMBRA_DEVELOPMENT_TEAM to the Apple signing TeamIdentifier.}"
 : "${NEMBRA_EXPORT_OPTIONS_PLIST:?Set NEMBRA_EXPORT_OPTIONS_PLIST to an existing Xcode export-options plist.}"
-: "${NEMBRA_INTENDED_FIELD_DEVICE_UDID:?Set NEMBRA_INTENDED_FIELD_DEVICE_UDID to the intended field iPhone UDID for verification only.}"
+: "${NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE:?Set NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE to a private mode-0600 file containing the intended field iPhone UDID for verification only.}"
 
 if [[ ! "$NEMBRA_DEVELOPMENT_TEAM" =~ ^[A-Z0-9]{10}$ ]]; then
   echo "NEMBRA_DEVELOPMENT_TEAM must be one canonical 10-character Apple TeamIdentifier." >&2
   exit 3
 fi
-if ! python3 - "$NEMBRA_INTENDED_FIELD_DEVICE_UDID" <<'PY'
-import sys
-value = sys.argv[1]
-if not value or len(value.encode("utf-8")) > 128 or value != value.strip():
-    raise SystemExit(1)
-if any(ord(character) < 33 or ord(character) == 127 for character in value):
-    raise SystemExit(1)
-PY
+if [[ "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" != /* ]]; then
+  echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE must be one absolute private verification-input path." >&2
+  exit 4
+fi
+if ! python3 scripts/ci/es80_signed_field_artifact_private_runner.py \
+  --validate-private-input \
+  --intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"
 then
-  echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID is not a valid bounded verification input." >&2
+  echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE is not a valid private bounded verification input." >&2
   exit 4
 fi
 if [[ ! -f "$NEMBRA_EXPORT_OPTIONS_PLIST" ]]; then
@@ -233,13 +236,14 @@ print(candidates[0])
 PY
 )"
 
-# The intended-device UDID is verification-only input. It is forwarded to the canonical inspector
-# and is deliberately never persisted, echoed, hashed, embedded into filenames, or copied into
-# candidate evidence. INSPECTION_DIR must remain absent until the failure-atomic inspector publishes.
-python3 scripts/ci/es80_signed_field_artifact_evidence.py \
+# The intended-device identifier is verification-only input. Only its private-file path enters this
+# process/runner argv; the runner reads the exact value internally and passes it to the canonical
+# inspector through an in-memory argument list. It is never persisted, echoed, hashed, named, or
+# copied into candidate evidence. INSPECTION_DIR remains absent until failure-atomic publication.
+python3 scripts/ci/es80_signed_field_artifact_private_runner.py \
   --ipa "$IPA_PATH" \
   --expected-source-sha "$SOURCE_SHA" \
-  --intended-device-udid "$NEMBRA_INTENDED_FIELD_DEVICE_UDID" \
+  --intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" \
   --output-dir "$INSPECTION_DIR"
 
 EXTERNAL_RECORD="$INSPECTION_DIR/NembraCaptureExternalBuildRecord.json"
