@@ -51,7 +51,7 @@ struct PassiveBluetoothExperimentOnePublicAuthoritySurfaceTests {
 
         // Authority-bearing wrappers remain producer-file private. Same-module code may consume only
         // the reviewed one-shot admission; it still cannot wrap detached raw evidence, initialize an
-        // admission, or construct a replacement consumed payload from chosen scalar/object values.
+        // admission, or construct replacement staging/payload values from chosen scalar/object values.
         #expect(
             compactRun.contains(
                 "fileprivateinit?(result:PassiveBluetoothPowerCycleObservationResult)"
@@ -64,7 +64,12 @@ struct PassiveBluetoothExperimentOnePublicAuthoritySurfaceTests {
         )
         #expect(
             compactRun.contains(
-                "fileprivateinit(admissionIdentity:UUID,powerCycleEvidence:PassiveBluetoothExperimentOnePowerCycleEvidence,peripheralIdentifier:UUID,recorder:PassiveCoreBluetoothCaptureRecorder)"
+                "fileprivateinit(admissionIdentity:UUID,peripheralIdentifier:UUID,issuedAtUptimeNanoseconds:UInt64)"
+            )
+        )
+        #expect(
+            compactRun.contains(
+                "fileprivateinit(admissionIdentity:UUID,powerCycleEvidence:PassiveBluetoothExperimentOnePowerCycleEvidence,peripheralIdentifier:UUID,recorder:PassiveCoreBluetoothCaptureRecorder,issuedAtUptimeNanoseconds:UInt64)"
             )
         )
         #expect(
@@ -132,5 +137,6 @@ struct PassiveBluetoothExperimentOnePublicAuthoritySurfaceTests {
         #expect(compact.contains("guard!hasBeenConsumedelse{throwConsumptionError.alreadyConsumed}"))
         #expect(compact.contains("hasBeenConsumed=true"))
         #expect(compact.contains("admissionIdentity:UUID()"))
+        #expect(compact.contains("issuedAtUptimeNanoseconds:DispatchTime.now().uptimeNanoseconds"))
     }
 }
