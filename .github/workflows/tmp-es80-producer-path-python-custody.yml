@@ -1,0 +1,129 @@
+name: TEMP ES80 producer PATH + Python custody construction
+
+on:
+  push:
+    branches:
+      - recovery/es80-v14-producer-path-python-custody/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  construct:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: recovery/es80-v14-producer-path-python-custody/gpt56-thinking-go
+
+      - name: Apply guarded current-spine repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/ci/xcode27_signed_field_candidate.sh")
+          source = path.read_text()
+
+          prelude = "#!/bin/bash\nset -euo pipefail\n"
+          if not source.startswith(prelude):
+              raise SystemExit("unexpected producer prelude; refusing transform")
+          closed_path = (
+              "#!/bin/bash\n"
+              "set -euo pipefail\n\n"
+              "# Release-candidate production must not inherit executable selection from the caller.\n"
+              "# Establish one closed system PATH before dirname, uname, Git, Xcode, or any other child runs.\n"
+              "PATH=\"/usr/bin:/bin:/usr/sbin:/sbin\"\n"
+              "export PATH\n"
+          )
+          source = closed_path + source[len(prelude):]
+
+          old = '''# Python participates directly in private-input validation and signed-field evidence admission.
+          # Never discover it through caller PATH, and always use isolated mode so caller PYTHON* startup or
+          # import state cannot execute before the exact descriptor-bound Nembra source.
+          PYTHON3="/usr/bin/python3"
+          if [[ ! -x "$PYTHON3" || -L "$PYTHON3" ]]; then
+            echo "Signed field-candidate production requires the sealed system Python 3 at $PYTHON3." >&2
+            exit 2
+          fi
+          '''
+          new = '''# Python participates directly in private-input validation and signed-field evidence admission.
+          # Pin the macOS system interpreter independently of PATH, prove the executable and every canonical
+          # custody component through / are root-owned and non-group/world-writable before first use, and
+          # always launch Python with -I so caller PYTHON* startup/import authority is ignored.
+          PYTHON3="/usr/bin/python3"
+          validate_root_custodied_path() {
+            local candidate="$1"
+            local kind="$2"
+            local cursor="$candidate"
+            local owner_uid mode_value
+
+            if [[ "$kind" == "file" ]]; then
+              if [[ ! -f "$cursor" || ! -x "$cursor" || -L "$cursor" ]]; then
+                echo "Root-custodied executable must be one regular executable non-symlink: $cursor" >&2
+                return 1
+              fi
+            fi
+
+            while :; do
+              if [[ -L "$cursor" ]]; then
+                echo "Root-custodied path contains a symlink: $cursor" >&2
+                return 1
+              fi
+              owner_uid="$(/usr/bin/stat -f '%u' "$cursor")" || return 1
+              mode_value="0$(/usr/bin/stat -f '%Lp' "$cursor")" || return 1
+              if (( owner_uid != 0 )); then
+                echo "Root-custodied path is not root-owned: $cursor" >&2
+                return 1
+              fi
+              if (( mode_value & 0022 )); then
+                echo "Root-custodied path is group/world writable: $cursor" >&2
+                return 1
+              fi
+              [[ "$cursor" == "/" ]] && break
+              cursor="$(/usr/bin/dirname "$cursor")"
+            done
+          }
+          if ! validate_root_custodied_path "$PYTHON3" file; then
+            echo "Signed field-candidate production requires a root-custodied system Python 3." >&2
+            exit 2
+          fi
+          '''
+          if source.count(old) != 1:
+              raise SystemExit(f"expected exactly one weak Python custody block, found {source.count(old)}")
+          source = source.replace(old, new, 1)
+          path.write_text(source)
+          PY
+
+          git show 7ea8392dd6e4618e9d60741b0f5ddbff5ad86771:scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py \
+            > scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
+          git show f1bd5e25f61431b03c614793eaa5c255c489b27f:scripts/ci/tests/test_xcode27_signed_field_candidate_process_custody_source.py \
+            > scripts/ci/tests/test_xcode27_signed_field_candidate_process_custody_source.py
+
+      - name: Validate construction
+        shell: bash
+        run: |
+          set -euo pipefail
+          /bin/bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          /usr/bin/python3 -I scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
+          /usr/bin/python3 -I scripts/ci/tests/test_xcode27_signed_field_candidate_process_custody_source.py
+          /usr/bin/python3 -I scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          git diff --check
+          git diff -- scripts/ci/xcode27_signed_field_candidate.sh scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py scripts/ci/tests/test_xcode27_signed_field_candidate_process_custody_source.py
+
+      - name: Commit product repair and self-delete construction workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tmp-es80-producer-path-python-custody.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/ci/xcode27_signed_field_candidate.sh \
+            scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py \
+            scripts/ci/tests/test_xcode27_signed_field_candidate_process_custody_source.py \
+            .github/workflows/tmp-es80-producer-path-python-custody.yml
+          git commit -m "[Capture field v14] Close producer PATH and Python custody"
+          git push origin HEAD:recovery/es80-v14-producer-path-python-custody/gpt56-thinking-go
