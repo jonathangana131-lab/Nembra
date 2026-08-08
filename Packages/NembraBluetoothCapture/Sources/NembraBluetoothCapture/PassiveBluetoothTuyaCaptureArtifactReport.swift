@@ -40,11 +40,11 @@ public struct PassiveBluetoothTuyaCaptureArtifactReport: Equatable, Codable, Sen
 public enum PassiveBluetoothTuyaCaptureArtifactReportBuilder {
     /// Verifies and analyzes the exact final Share file emitted by Nembra Capture.
     ///
-    /// The outer final-share closed-world codec validates procedure/build/recipe
-    /// rendezvous and its exact nested SoftwareExport digest; the SoftwareExport
-    /// codec validates the nested capture/manifest/correlation relationship; the
-    /// manifest then supplies the already-verified selected peripheral. The
-    /// operator is never asked to extract nested JSON or type a UUID.
+    /// The package-owned final-share integrity verifier is the admission authority:
+    /// it validates the outer closed-world Share, exact nested SoftwareExport,
+    /// immutable Capture readability, and procedure/build/recipe rendezvous. The
+    /// stationary manifest then supplies the already-verified selected peripheral.
+    /// The operator is never asked to extract nested JSON or type a UUID.
     ///
     /// `maximumArtifactBytes` is an offline process-safety ceiling only. It is not
     /// a physical ES80 packet/session/capture maximum. File callers should first
@@ -60,6 +60,10 @@ public enum PassiveBluetoothTuyaCaptureArtifactReportBuilder {
             maximumBytes: maximumArtifactBytes
         )
 
+        // Possession of this package-owned report is the mechanical proof that the
+        // exact bytes are analysis-ready under current final-Share semantics. Do
+        // not replace this with caller-selected JSON fields or codec decode alone.
+        let integrity = try PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(finalShareJSON)
         let verifiedFinalShare = try PassiveBluetoothExperimentOneFinalShareArtifactCodec
             .decodeAndVerify(finalShareJSON)
         let softwareExport = verifiedFinalShare.softwareExport
@@ -79,15 +83,15 @@ public enum PassiveBluetoothTuyaCaptureArtifactReportBuilder {
         return PassiveBluetoothTuyaCaptureArtifactReport(
             schemaVersion: PassiveBluetoothTuyaCaptureArtifactReport.currentSchemaVersion,
             sourceArtifact: .init(
-                finalShareSHA256: sha256Hex(of: finalShareJSON),
-                finalShareByteCount: finalShareJSON.count,
-                softwareExportSHA256: verifiedFinalShare.softwareExportSHA256,
+                finalShareSHA256: integrity.finalShareSHA256,
+                finalShareByteCount: integrity.finalShareByteCount,
+                softwareExportSHA256: integrity.softwareExport.envelopeSHA256,
                 captureSHA256: manifest.sourceArtifact.sha256,
                 captureByteCount: manifest.sourceArtifact.byteCount,
-                experimentID: verifiedFinalShare.experimentID,
-                experimentRecipeID: verifiedFinalShare.experimentRecipeID.rawValue,
-                procedureVersion: verifiedFinalShare.procedureVersion,
-                buildInstanceID: verifiedFinalShare.buildInstanceID,
+                experimentID: integrity.experimentID,
+                experimentRecipeID: integrity.experimentRecipeID.rawValue,
+                procedureVersion: integrity.procedureVersion,
+                buildInstanceID: integrity.buildInstanceID,
                 sourceCommitSHA: softwareExport.build.sourceCommitSHA
             ),
             analysis: analysis
