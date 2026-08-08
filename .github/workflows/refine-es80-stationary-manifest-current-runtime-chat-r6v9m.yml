@@ -1,0 +1,160 @@
+name: Refine ES80 stationary manifest current-runtime recovery
+
+on:
+  push:
+    branches:
+      - parallel/recover-es80-stationary-manifest-current-runtime/chat-r6v9m
+
+permissions:
+  contents: write
+
+jobs:
+  refine:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact recovery product
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 8
+
+      - name: Reuse core continuity truth and refresh owned documentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT=d9dc4cff1dd165a6cea4625171f0e99615b4952b
+          WORKFLOW=.github/workflows/refine-es80-stationary-manifest-current-runtime-chat-r6v9m.yml
+          SOURCE=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothStationaryCaptureManifest.swift
+          TEST=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothStationaryCaptureManifestTests.swift
+          DOC=docs/ES80_STATIONARY_CAPTURE_MANIFEST.md
+
+          test "$(git rev-parse HEAD^)" = "$PRODUCT"
+          test "$(git diff --name-only "$PRODUCT" HEAD)" = "$WORKFLOW"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothStationaryCaptureManifest.swift')
+          source = source_path.read_text()
+          old = '''        for record in session.records {
+              switch record.event {
+'''.replace('              ', '            ')
+          new = '''        for record in session.records {
+            if record.event.breaksByteContinuity {
+                continuityBreakCount += 1
+            }
+
+            switch record.event {
+'''
+          assert source.count(old) == 1
+          source = source.replace(old, new)
+
+          old = '''            case let .connection(observation):
+                // Connection-only callbacks never establish target attribution.
+                // Continuity semantics are stronger: NembraCore defines every
+                // captured disconnect as a byte-continuity break regardless of
+                // whether this sidecar can attribute that record to the selected UUID.
+                if observation.state == .disconnected {
+                    continuityBreakCount += 1
+                }
+            case .interruption:
+                continuityBreakCount += 1
+            case .advertisement:
+'''
+          new = '''            case .connection, .interruption:
+                // These records do not establish selected-target GATT attribution.
+                // Continuity is counted above through NembraCore's authoritative
+                // `breaksByteContinuity` classification instead of duplicating it here.
+                continue
+            case .advertisement:
+'''
+          assert source.count(old) == 1
+          source = source.replace(old, new)
+          source_path.write_text(source)
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothStationaryCaptureManifestTests.swift')
+          tests = test_path.read_text()
+          anchor = '''    @Test
+    func stockAppMarkersRequireADeclaredReferenceSetup() throws {
+'''
+          insertion = '''    @Test
+    func genericInterruptionUsesCoreContinuityClassification() throws {
+        let captureJSON = try makeCapture(includeInterruption: true)
+        let manifest = try makeManifest(captureJSON: captureJSON)
+
+        #expect(manifest.evidenceSummary.continuityBreakCount == 1)
+    }
+
+'''
+          assert tests.count(anchor) == 1
+          tests = tests.replace(anchor, insertion + anchor)
+
+          old = '''        includeStockAppMarker: Bool = false,
+        includeDisconnect: Bool = false
+'''
+          new = '''        includeStockAppMarker: Bool = false,
+        includeDisconnect: Bool = false,
+        includeInterruption: Bool = false
+'''
+          assert tests.count(old) == 1
+          tests = tests.replace(old, new)
+
+          old = '''        if includeDisconnect {
+            try append(.connection(try PassiveBluetoothConnectionObservation(
+                peripheralIdentifier: selected,
+                state: .disconnected
+            )))
+        }
+
+        return try PassiveBluetoothCaptureJSON.encode(session)
+'''
+          new = '''        if includeDisconnect {
+            try append(.connection(try PassiveBluetoothConnectionObservation(
+                peripheralIdentifier: selected,
+                state: .disconnected
+            )))
+        }
+
+        if includeInterruption {
+            try append(.interruption(try PassiveBluetoothCaptureInterruption(
+                reason: "foreground evidence integrity lost"
+            )))
+        }
+
+        return try PassiveBluetoothCaptureJSON.encode(session)
+'''
+          assert tests.count(old) == 1
+          tests = tests.replace(old, new)
+          test_path.write_text(tests)
+
+          doc_path = Path('docs/ES80_STATIONARY_CAPTURE_MANIFEST.md')
+          doc = doc_path.read_text()
+          old = '''Dependency: the current passive-capture runtime recovery/integration lineage that supplies `NembraBluetoothCapture` and versioned `PassiveBluetoothCaptureJSON`. That parent lineage is still source-truth blocked and must be repaired/reconciled before experiment one runs.
+'''
+          new = '''Dependency: the corrected current passive-capture runtime lineage that supplies `NembraBluetoothCapture` and versioned `PassiveBluetoothCaptureJSON`. This recovery is re-anchored onto that runtime; experiment one still remains blocked on the active target-correlation, observation-horizon, product-shell, and mechanical provenance-consumer integration gates.
+'''
+          assert doc.count(old) == 1
+          doc = doc.replace(old, new)
+
+          anchor = '''The sidecar therefore preserves **every captured disconnect** in `continuityBreakCount` rather than under-reporting a known gap. This can conservatively retain an unattributed break; it can never turn a disconnect into evidence of target identity.
+'''
+          insertion = anchor + '''\nImplementation consumes `PassiveBluetoothCaptureEvent.breaksByteContinuity` directly for every record rather than re-listing the current continuity-breaking cases inside the manifest. The sidecar therefore follows the core capture domain if that vocabulary evolves, while target-attribution handling remains separately fail-closed.\n'''
+          assert doc.count(anchor) == 1
+          doc = doc.replace(anchor, insertion)
+          doc_path.write_text(doc)
+          PY
+
+          if grep -R --line-number --include='*.swift' -E '\.writeValue[[:space:]]*\(' "$SOURCE"; then
+            echo 'Stationary manifest recovery must not call CoreBluetooth writeValue.' >&2
+            exit 1
+          fi
+
+          git config user.name "nembra-integration-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git rm "$WORKFLOW"
+
+          test "$(git diff --cached --name-only "$PRODUCT" | wc -l | tr -d ' ')" = 3
+          test -z "$(git diff --cached --name-only "$PRODUCT" | grep -v -E '^(Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothStationaryCaptureManifest.swift|Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothStationaryCaptureManifestTests.swift|docs/ES80_STATIONARY_CAPTURE_MANIFEST.md)$')"
+          git diff --cached --check
+
+          git commit -m "[es80 stationary manifest] Reuse core continuity truth"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
