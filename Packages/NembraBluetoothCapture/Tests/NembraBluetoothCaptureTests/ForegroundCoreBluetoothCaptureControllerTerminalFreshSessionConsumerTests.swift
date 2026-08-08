@@ -59,7 +59,8 @@ struct ForegroundCoreBluetoothCaptureControllerTerminalFreshSessionConsumerTests
         #expect(recovery.contains("currentResolvedThroughQueueSequence: lastResolvedEventSequence"))
         #expect(recovery.contains("currentLastEnqueuedEventSequence: lastEnqueuedEventSequence"))
         #expect(recovery.contains("pendingTerminalQueueResolution = nil"))
-        #expect(!recovery.contains("await "))
+        #expect(recovery.contains("private func completeTerminalFreshTargetSessionIfReady(\n        startedAt: Date = Date()\n    ) throws -> Bool"))
+        #expect(!recovery.contains(") async throws -> Bool"))
     }
 
     @Test("recovery is downstream of finalized teardown and real terminal callback")
