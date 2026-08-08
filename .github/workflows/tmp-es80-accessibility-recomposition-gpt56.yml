@@ -1,0 +1,75 @@
+name: Temporary ES80 accessibility recomposition
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-accessibility-recomposition/gpt56-thinking
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact shell parent
+        run: test "$(git rev-parse HEAD^)" = "cd54f0f63c78e9fe468caef784474113bdcb8836"
+
+      - name: Recompose hero progress and health for accessibility sizes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")
+          source = path.read_text(encoding="utf-8")
+
+          old = '''    @Environment(\\.scenePhase) private var scenePhase\n'''
+          new = '''    @Environment(\\.scenePhase) private var scenePhase\n    @Environment(\\.dynamicTypeSize) private var dynamicTypeSize\n'''
+          if old not in source:
+              raise SystemExit("scenePhase environment anchor missing")
+          source = source.replace(old, new, 1)
+
+          old = '''            HStack(spacing: 10) {\n                Image(systemName: statusSymbol(for: phase))\n                    .font(.caption.weight(.bold))\n                    .foregroundStyle(statusColor(for: phase))\n                    .accessibilityHidden(true)\n\n                Text(statusTitle(for: phase))\n                    .font(.subheadline.weight(.semibold))\n                    .foregroundStyle(.white)\n\n                Spacer(minLength: 8)\n\n                Text("PASSIVE / READ ONLY")\n                    .font(.caption2.monospaced().weight(.bold))\n                    .foregroundStyle(.secondary)\n            }\n'''
+          new = '''            if dynamicTypeSize.isAccessibilitySize {\n                VStack(alignment: .leading, spacing: 8) {\n                    HStack(alignment: .firstTextBaseline, spacing: 10) {\n                        Image(systemName: statusSymbol(for: phase))\n                            .font(.caption.weight(.bold))\n                            .foregroundStyle(statusColor(for: phase))\n                            .accessibilityHidden(true)\n\n                        Text(statusTitle(for: phase))\n                            .font(.subheadline.weight(.semibold))\n                            .foregroundStyle(.white)\n                            .fixedSize(horizontal: false, vertical: true)\n                    }\n\n                    Text("PASSIVE / READ ONLY")\n                        .font(.caption2.monospaced().weight(.bold))\n                        .foregroundStyle(.secondary)\n                }\n            } else {\n                HStack(spacing: 10) {\n                    Image(systemName: statusSymbol(for: phase))\n                        .font(.caption.weight(.bold))\n                        .foregroundStyle(statusColor(for: phase))\n                        .accessibilityHidden(true)\n\n                    Text(statusTitle(for: phase))\n                        .font(.subheadline.weight(.semibold))\n                        .foregroundStyle(.white)\n\n                    Spacer(minLength: 8)\n\n                    Text("PASSIVE / READ ONLY")\n                        .font(.caption2.monospaced().weight(.bold))\n                        .foregroundStyle(.secondary)\n                }\n            }\n'''
+          if old not in source:
+              raise SystemExit("hero status row anchor missing")
+          source = source.replace(old, new, 1)
+
+          start = source.index('    private func progressRail(')
+          end = source.index('    @ViewBuilder\n    private func primaryContent(', start)
+          old = source[start:end]
+          new = '''    private func progressRail(\n        status: PassiveBluetoothExperimentOneCoordinator.Status\n    ) -> some View {\n        let completed = presentationCompletedWindows(status: status)\n        let current = presentationCurrentWindow(status: status)\n        let labels = ["OFF 1", "ON 1", "OFF 2", "ON 2", "READY", "SEAL"]\n\n        return VStack(alignment: .leading, spacing: 10) {\n            if dynamicTypeSize.isAccessibilitySize {\n                VStack(alignment: .leading, spacing: 4) {\n                    Text("CAPTURE PROGRESS")\n                        .font(.caption.monospaced().weight(.bold))\n                        .foregroundStyle(.secondary)\n                    Text(progressStage(status: status, completedWindows: completed))\n                        .font(.caption.monospacedDigit().weight(.semibold))\n                        .foregroundStyle(.secondary)\n                }\n\n                LazyVGrid(\n                    columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3),\n                    spacing: 12\n                ) {\n                    ForEach(0..<6, id: \\.self) { index in\n                        VStack(alignment: .leading, spacing: 6) {\n                            Capsule(style: .continuous)\n                                .fill(progressSegmentFill(\n                                    index: index,\n                                    completedWindows: completed,\n                                    currentWindow: current,\n                                    status: status\n                                ))\n                                .frame(height: 5)\n                            Text(labels[index])\n                                .font(.caption2.monospaced().weight(.semibold))\n                                .foregroundStyle(.secondary)\n                                .fixedSize(horizontal: false, vertical: true)\n                        }\n                    }\n                }\n            } else {\n                HStack {\n                    Text("CAPTURE PROGRESS")\n                        .font(.caption.monospaced().weight(.bold))\n                        .foregroundStyle(.secondary)\n                    Spacer()\n                    Text(progressStage(status: status, completedWindows: completed))\n                        .font(.caption.monospacedDigit().weight(.semibold))\n                        .foregroundStyle(.secondary)\n                }\n\n                HStack(spacing: 6) {\n                    ForEach(0..<6, id: \\.self) { index in\n                        Capsule(style: .continuous)\n                            .fill(progressSegmentFill(\n                                index: index,\n                                completedWindows: completed,\n                                currentWindow: current,\n                                status: status\n                            ))\n                            .frame(height: 5)\n                    }\n                }\n\n                HStack {\n                    Text("OFF 1")\n                    Spacer()\n                    Text("ON 1")\n                    Spacer()\n                    Text("OFF 2")\n                    Spacer()\n                    Text("ON 2")\n                    Spacer()\n                    Text("READY")\n                    Spacer()\n                    Text("SEAL")\n                }\n                .font(.caption2.monospaced().weight(.semibold))\n                .foregroundStyle(.secondary)\n            }\n        }\n        .accessibilityElement(children: .ignore)\n        .accessibilityLabel(\n            progressAccessibilityLabel(\n                status: status,\n                completedWindows: completed,\n                analysisReady: presentationAnalysisReady\n            )\n        )\n        .accessibilityIdentifier("es80.capture.experiment-progress")\n    }\n\n'''
+          source = source[:start] + new + source[end:]
+
+          start = source.index('    private func observationHealthStrip(')
+          end = source.index('    private var completionPanel:', start)
+          old = source[start:end]
+          new = '''    private func observationHealthStrip(\n        status: PassiveBluetoothExperimentOneCoordinator.Status\n    ) -> some View {\n        let connection = presentationConnection(status: status)\n        let observationReady = presentationObservationReady(status: status)\n        let horizonReady = presentationCanFinalizeObservationHorizon(status: status)\n\n        return Group {\n            if dynamicTypeSize.isAccessibilitySize {\n                VStack(alignment: .leading, spacing: 10) {\n                    healthItem("TARGET", value: connection == .connected ? "BOUND" : "WAIT")\n                    Divider().overlay(.white.opacity(0.12))\n                    healthItem("DISCOVERY", value: observationReady ? "READY" : "WAIT")\n                    Divider().overlay(.white.opacity(0.12))\n                    healthItem("SEAL", value: horizonReady ? "READY" : "HOLD")\n                }\n            } else {\n                HStack(spacing: 12) {\n                    healthItem("TARGET", value: connection == .connected ? "BOUND" : "WAIT")\n                    Divider().frame(height: 28).overlay(.white.opacity(0.12))\n                    healthItem("DISCOVERY", value: observationReady ? "READY" : "WAIT")\n                    Divider().frame(height: 28).overlay(.white.opacity(0.12))\n                    healthItem("SEAL", value: horizonReady ? "READY" : "HOLD")\n                }\n            }\n        }\n        .padding(14)\n        .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 14, style: .continuous))\n        .accessibilityElement(children: .combine)\n        .accessibilityLabel(\n            "Capture health. Target \\(connection == .connected ? "bound" : "waiting"). Passive discovery \\(observationReady ? "ready" : "waiting"). Seal \\(horizonReady ? "ready" : "waiting")."\n        )\n    }\n\n'''
+          source = source[:start] + new + source[end:]
+          path.write_text(source, encoding="utf-8")
+          PY
+
+      - name: Verify structural contract and scope
+        run: |
+          git diff --check
+          test "$(git diff --name-only)" = "NembraApp/Features/Research/ES80CaptureShellView.swift"
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("NembraApp/Features/Research/ES80CaptureShellView.swift").read_text()
+          assert "@Environment(\\.dynamicTypeSize)" in source
+          assert source.count("dynamicTypeSize.isAccessibilitySize") >= 3
+          assert "LazyVGrid(" in source
+          PY
+
+      - name: Commit product repair and self-delete
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/tmp-es80-accessibility-recomposition-gpt56.yml
+          git add NembraApp/Features/Research/ES80CaptureShellView.swift
+          git commit -m "Capture accessibility: recompose large-text instrumentation"
+          git push origin HEAD:fix/es80-v14-accessibility-recomposition/gpt56-thinking
