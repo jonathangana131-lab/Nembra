@@ -87,7 +87,6 @@ jobs:
             '.github/workflows/es80-experiment-one-post-admission-rediscovery-once.yml' \
             'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift' \
             'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneRun.swift' \
-            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerExperimentOnePostAdmissionRediscoveryTests.swift' \
             'scripts/ci/es80_experiment_one_post_admission_rediscovery_once.py' | sort)"
           test "$ACTUAL" = "$EXPECTED"
           git commit -m 'Require rediscovery after sealed Experiment One admission'
