@@ -64,12 +64,12 @@ struct PassiveBluetoothExperimentOnePublicAuthoritySurfaceTests {
         )
         #expect(
             compactRun.contains(
-                "fileprivateinit(admissionIdentity:UUID,powerCycleEvidence:PassiveBluetoothExperimentOnePowerCycleEvidence,peripheralIdentifier:UUID,recorder:PassiveCoreBluetoothCaptureRecorder)"
+                "fileprivateinit(admissionIdentity:UUID,issuedAtUptimeNanoseconds:UInt64,powerCycleEvidence:PassiveBluetoothExperimentOnePowerCycleEvidence,peripheralIdentifier:UUID,recorder:PassiveCoreBluetoothCaptureRecorder)"
             )
         )
         #expect(
             compactRun.contains(
-                "fileprivateinit(powerCycleEvidence:PassiveBluetoothExperimentOnePowerCycleEvidence,peripheralIdentifier:UUID,recorder:PassiveCoreBluetoothCaptureRecorder)"
+                "fileprivateinit(issuedAtUptimeNanoseconds:UInt64,powerCycleEvidence:PassiveBluetoothExperimentOnePowerCycleEvidence,peripheralIdentifier:UUID,recorder:PassiveCoreBluetoothCaptureRecorder)"
             )
         )
 
@@ -89,8 +89,8 @@ struct PassiveBluetoothExperimentOnePublicAuthoritySurfaceTests {
         )
     }
 
-    @Test("controller admission is producer-derived and one-shot")
-    func controllerAdmissionIsProducerDerivedAndOneShot() throws {
+    @Test("controller admission is producer-derived, chronology-stamped, and one-shot")
+    func controllerAdmissionIsProducerDerivedChronologyStampedAndOneShot() throws {
         let source = try Self.runSource()
         let compact = source.filter { !$0.isWhitespace }
 
@@ -107,17 +107,22 @@ struct PassiveBluetoothExperimentOnePublicAuthoritySurfaceTests {
             of: "let recorder = try beginCaptureRecorder(startedAt: startedAt)",
             range: uniqueCorrelation.lowerBound..<source.endIndex
         ))
+        let issuance = try #require(source.range(
+            of: "let issuedAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds",
+            range: recorder.lowerBound..<source.endIndex
+        ))
         let admission = try #require(source.range(
             of: "return PassiveBluetoothExperimentOneCaptureAdmission(",
-            range: recorder.lowerBound..<source.endIndex
+            range: issuance.lowerBound..<source.endIndex
         ))
 
         #expect(issue.lowerBound < completedEvidence.lowerBound)
         #expect(completedEvidence.lowerBound < uniqueCorrelation.lowerBound)
         #expect(uniqueCorrelation.lowerBound < recorder.lowerBound)
-        #expect(recorder.lowerBound < admission.lowerBound)
+        #expect(recorder.lowerBound < issuance.lowerBound)
+        #expect(issuance.lowerBound < admission.lowerBound)
 
-        // The admission issuer accepts no caller-selected target/result/recorder parameters.
+        // The admission issuer accepts no caller-selected target/result/recorder/clock parameters.
         #expect(
             compact.contains(
                 "funcissueCaptureAdmission(startedAt:Date=Date())throws->PassiveBluetoothExperimentOneCaptureAdmission"
@@ -126,6 +131,12 @@ struct PassiveBluetoothExperimentOnePublicAuthoritySurfaceTests {
         #expect(!compact.contains("funcissueCaptureAdmission(peripheralIdentifier:"))
         #expect(!compact.contains("funcissueCaptureAdmission(result:"))
         #expect(!compact.contains("funcissueCaptureAdmission(recorder:"))
+        #expect(!compact.contains("funcissueCaptureAdmission(issuedAtUptimeNanoseconds:"))
+
+        // The producer-owned monotonic stamp crosses the sealed payload boundary. It is software
+        // callback chronology only and will be consumed downstream to reject pre-admission cache.
+        #expect(compact.contains("letissuedAtUptimeNanoseconds:UInt64"))
+        #expect(compact.contains("issuedAtUptimeNanoseconds:issuedAtUptimeNanoseconds"))
 
         // Aliased admission references share one consumed bit; replay cannot yield a second payload.
         #expect(compact.contains("privatevarhasBeenConsumed=false"))
