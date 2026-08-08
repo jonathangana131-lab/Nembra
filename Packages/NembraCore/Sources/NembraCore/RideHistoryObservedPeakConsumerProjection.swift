@@ -1,28 +1,12 @@
 import Foundation
 
-/// Exhaustive classification for a completed ride's consumer-safe peak presentation.
-///
-/// This enum is descriptive only. A bare `Kind` value is not wording authority because
-/// callers can construct enum cases themselves. Consumers must use the sealed
-/// `RideHistoryObservedPeakConsumerProjection` returned by NembraCore when deciding
-/// whether observed-maximum wording is permitted.
-public enum RideHistoryObservedPeakConsumerKind: String, Equatable, Sendable {
-    /// No accepted selected-source peak exists for this completed ride.
-    case unavailable
-    /// A real accepted observation exists, but retained quality evidence is insufficient
-    /// for observed-maximum wording.
-    case acceptedObservation
-    /// The accepted observation passed the durable quality and continuity gates required
-    /// for observed-maximum wording.
-    case qualifiedObservedMaximum
-}
-
 /// Fail-closed consumer shape for Ride Details, history summaries, and accessibility.
 ///
 /// Construction is sealed inside this file. External app/UI code can inspect a projection
-/// minted by NembraCore but cannot create one from a number or a `Kind`. The numeric value,
-/// disclosure requirement, and maximum-wording authority are all derived from one private
-/// storage state so contradictory combinations cannot be created through the public API.
+/// minted by NembraCore but cannot create one from a number or presentation-state enum case.
+/// The numeric value, disclosure requirement, and maximum-wording authority are all derived
+/// from one private storage state so contradictory combinations cannot be created through the
+/// public API.
 ///
 /// This is derived presentation state only. It is intentionally not Codable, must not be
 /// persisted as evidence, and never upgrades retained history into fresh telemetry.
@@ -37,14 +21,15 @@ public struct RideHistoryObservedPeakConsumerProjection: Equatable, Sendable {
     public let selectedSource: SpeedTelemetrySource
     private let storage: Storage
 
-    /// Exhaustive presentation classification. The classification alone is not an authority
-    /// token; use this sealed projection's computed wording/disclosure properties.
-    public var kind: RideHistoryObservedPeakConsumerKind {
+    /// Reuses NembraCore's existing product-state vocabulary. The enum value is descriptive;
+    /// observed-maximum wording authority remains this sealed projection's
+    /// `permitsObservedMaximumWording` property.
+    public var state: RideHistoryObservedPeakPresentationState {
         switch storage {
         case .unavailable:
-            return .unavailable
+            return .observedPeakUnavailable
         case .acceptedObservation:
-            return .acceptedObservation
+            return .unqualifiedAcceptedObservation
         case .qualifiedObservedMaximum:
             return .qualifiedObservedMaximum
         }

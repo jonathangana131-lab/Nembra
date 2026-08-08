@@ -24,7 +24,7 @@ struct RideHistoryObservedPeakConsumerProjectionTests {
 
         #expect(projection.sessionID == sessionID)
         #expect(projection.selectedSource == .scooterBluetooth)
-        #expect(projection.kind == .qualifiedObservedMaximum)
+        #expect(projection.state == .qualifiedObservedMaximum)
         #expect(projection.speedMetersPerSecond == 6)
         #expect(projection.permitsObservedMaximumWording)
         #expect(!projection.requiresQualityDisclosure)
@@ -39,7 +39,7 @@ struct RideHistoryObservedPeakConsumerProjectionTests {
             RideHistoryObservedPeakConsumerProjector.project(presentation)
         )
 
-        #expect(projection.kind == .acceptedObservation)
+        #expect(projection.state == .unqualifiedAcceptedObservation)
         #expect(projection.speedMetersPerSecond == 0)
         #expect(!projection.permitsObservedMaximumWording)
         #expect(projection.requiresQualityDisclosure)
@@ -65,19 +65,10 @@ struct RideHistoryObservedPeakConsumerProjectionTests {
             RideHistoryObservedPeakConsumerProjector.project(presentation)
         )
 
-        #expect(projection.kind == .unavailable)
+        #expect(projection.state == .observedPeakUnavailable)
         #expect(projection.speedMetersPerSecond == nil)
         #expect(!projection.permitsObservedMaximumWording)
         #expect(!projection.requiresQualityDisclosure)
-    }
-
-    @Test("consumer kind alone is descriptive rather than a wording authority API")
-    func kindIsClassificationOnly() {
-        let freelyConstructibleKind = RideHistoryObservedPeakConsumerKind.qualifiedObservedMaximum
-
-        #expect(freelyConstructibleKind == .qualifiedObservedMaximum)
-        // The actual wording decision is intentionally available only on the sealed
-        // RideHistoryObservedPeakConsumerProjection, which has no public initializer.
     }
 
     private func bluetoothFixture(speeds: [Double]) throws -> Fixture {
