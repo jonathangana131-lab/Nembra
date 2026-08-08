@@ -54,9 +54,6 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(admission.fieldEvidenceRecordSHA256 == sha256Hex(fieldEvidence))
         #expect(admission.authorizationPayloadSHA256 == sha256Hex(payload))
 
-        // Minting a capability in a deterministic package test does not mutate global product
-        // policy. Signed evidence remains necessary-but-insufficient while the deliberate final
-        // release-grade field gate is NO-GO.
         #expect(
             PassiveBluetoothExperimentOneFieldExecutionGate.status
                 == .noGo(.finalComposedBuildNotAuthorized)
@@ -69,54 +66,55 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         let source = try sourceFile(
             "Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCoordinator+CanonicalES80.swift"
         )
+        let code = codeOnly(source)
 
         let gateGuard = "guard PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure"
         let zeroFactoryStart = try #require(
-            source.range(of: "static func makeAuthorizedES80() throws")?.lowerBound
+            code.range(of: "static func makeAuthorizedES80() throws")?.lowerBound
         )
         let verifiedFactoryStart = try #require(
-            source.range(
+            code.range(
                 of: "static func makeAuthorizedES80(\n        verifiedAdmission _: PassiveBluetoothExperimentOneFieldExecutionGate.VerifiedAdmission"
             )?.lowerBound
         )
         let liveFactoryStart = try #require(
-            source.range(
+            code.range(
                 of: "private static func makeLiveES80Coordinator() throws",
-                range: verifiedFactoryStart..<source.endIndex
+                range: verifiedFactoryStart..<code.endIndex
             )?.lowerBound
         )
 
-        let zeroFactory = source[zeroFactoryStart..<verifiedFactoryStart]
+        let zeroFactory = code[zeroFactoryStart..<verifiedFactoryStart]
         #expect(zeroFactory.contains("throw CanonicalES80ConstructionError.fieldExecutionNotAuthorized"))
-        #expect(!zeroFactory.contains("makeLiveES80Coordinator()"))
-        #expect(!zeroFactory.contains(gateGuard))
+        #expect(zeroFactory.range(of: "makeLiveES80Coordinator()") == nil)
+        #expect(zeroFactory.range(of: gateGuard) == nil)
 
-        let verifiedFactory = source[verifiedFactoryStart..<liveFactoryStart]
+        let verifiedFactory = code[verifiedFactoryStart..<liveFactoryStart]
         let verifiedGuard = try #require(verifiedFactory.range(of: gateGuard))
         let liveConstruction = try #require(
             verifiedFactory.range(of: "return try makeLiveES80Coordinator()")
         )
         #expect(verifiedGuard.lowerBound < liveConstruction.lowerBound)
-        #expect(source.components(separatedBy: gateGuard).count - 1 == 1)
+        #expect(code.components(separatedBy: gateGuard).count - 1 == 1)
 
-        #expect(source.contains("private static func makeLiveES80Coordinator() throws"))
-        #expect(!source.contains("authorized: Bool"))
-        #expect(!source.contains("permission: Bool"))
-        #expect(!source.contains("UserDefaults"))
-        #expect(!source.contains("ProcessInfo"))
+        #expect(code.contains("private static func makeLiveES80Coordinator() throws"))
+        #expect(code.range(of: "authorized: Bool") == nil)
+        #expect(code.range(of: "permission: Bool") == nil)
+        #expect(code.range(of: "UserDefaults") == nil)
+        #expect(code.range(of: "ProcessInfo") == nil)
     }
 
     @Test("current app consumes only the exact-running-build private research factory")
     func appUsesPrivateResearchFactoryWithoutExternalAuthorizationInputs() throws {
-        let source = try repositorySourceFile("NembraApp/App/NembraApp.swift")
+        let source = codeOnly(try repositorySourceFile("NembraApp/App/NembraApp.swift"))
         let researchFactory = "makeResearchAuthorizedES80ForCurrentApplication()"
 
         #expect(source.components(separatedBy: researchFactory).count - 1 == 2)
-        #expect(!source.contains("PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()"))
-        #expect(!source.contains("verifiedAdmission:"))
-        #expect(!source.contains("PassiveBluetoothCaptureVerifiedFieldAuthorization"))
-        #expect(!source.contains("PassiveBluetoothCaptureFieldAuthorizationVerifier"))
-        #expect(!source.contains("UserDefaults"))
+        #expect(source.range(of: "PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()") == nil)
+        #expect(source.range(of: "verifiedAdmission:") == nil)
+        #expect(source.range(of: "PassiveBluetoothCaptureVerifiedFieldAuthorization") == nil)
+        #expect(source.range(of: "PassiveBluetoothCaptureFieldAuthorizationVerifier") == nil)
+        #expect(source.range(of: "UserDefaults") == nil)
     }
 
     private func makeRuntimeIdentity() throws -> PassiveBluetoothCaptureRuntimeBuildIdentity {
@@ -173,6 +171,16 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         SHA256.hash(data: data)
             .map { String(format: "%02x", $0) }
             .joined()
+    }
+
+    private func codeOnly(_ source: String) -> String {
+        source
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line in
+                guard let comment = line.range(of: "//") else { return String(line) }
+                return String(line[..<comment.lowerBound])
+            }
+            .joined(separator: "\n")
     }
 
     private func sourceFile(_ relativePath: String) throws -> String {
