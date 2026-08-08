@@ -29,6 +29,22 @@ public final class PassiveBluetoothExperimentOneSimulatorQAFixture {
         case foregroundInterrupted
     }
 
+    /// The finite successful path. Interruption is an alternate adversarial scenario and is never
+    /// appended after a legitimately completed Share flow.
+    public static let happyPathScenarios: [Scenario] = [
+        .stationaryPreflight,
+        .firstPoweredOff,
+        .firstPoweredOn,
+        .secondPoweredOff,
+        .secondPoweredOn,
+        .targetConfirmation,
+        .passiveDiscovery,
+        .observationReady,
+        .horizonSealed,
+        .captureComplete,
+        .shareRetry,
+    ]
+
     public enum ArtifactState: Equatable, Sendable {
         case unavailable
         case sealed
@@ -75,12 +91,11 @@ public final class PassiveBluetoothExperimentOneSimulatorQAFixture {
     /// or evidence producer is created.
     @discardableResult
     public func advance() -> Snapshot {
-        let scenarios = Scenario.allCases
-        guard let index = scenarios.firstIndex(of: scenario),
-              scenarios.indices.contains(index + 1) else {
+        guard let index = Self.happyPathScenarios.firstIndex(of: scenario),
+              Self.happyPathScenarios.indices.contains(index + 1) else {
             return snapshot
         }
-        scenario = scenarios[index + 1]
+        scenario = Self.happyPathScenarios[index + 1]
         return snapshot
     }
 
@@ -140,10 +155,7 @@ public final class PassiveBluetoothExperimentOneSimulatorQAFixture {
         switch scenario {
         case .passiveDiscovery:
             return .connecting
-        case .observationReady,
-             .horizonSealed,
-             .captureComplete,
-             .shareRetry:
+        case .observationReady:
             return .connected
         case .foregroundInterrupted:
             return .unavailable
@@ -163,11 +175,7 @@ public final class PassiveBluetoothExperimentOneSimulatorQAFixture {
 
     private static func isCorrelatedTargetRediscovered(for scenario: Scenario) -> Bool {
         switch scenario {
-        case .passiveDiscovery,
-             .observationReady,
-             .horizonSealed,
-             .captureComplete,
-             .shareRetry:
+        case .passiveDiscovery:
             return true
         default:
             return false
