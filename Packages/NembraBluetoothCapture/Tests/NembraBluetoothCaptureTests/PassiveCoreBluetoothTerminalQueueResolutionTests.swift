@@ -33,6 +33,7 @@ struct PassiveCoreBluetoothTerminalQueueResolutionTests {
 
         let resolution = try Resolution.resolve(
             currentResolvedThroughQueueSequence: 12,
+            currentLastEnqueuedEventSequence: 14,
             retirementReceipt: retirement
         )
 
@@ -56,6 +57,7 @@ struct PassiveCoreBluetoothTerminalQueueResolutionTests {
 
         let resolution = try Resolution.resolve(
             currentResolvedThroughQueueSequence: 12,
+            currentLastEnqueuedEventSequence: 12,
             retirementReceipt: retirement
         )
 
@@ -64,6 +66,35 @@ struct PassiveCoreBluetoothTerminalQueueResolutionTests {
         #expect(resolution.resolvedThroughQueueSequence == 12)
         #expect(resolution.retiredEvidenceCount == 0)
         #expect(!resolution.advancesResolvedFrontier)
+    }
+
+    @Test
+    func callbackAfterRetirementInvalidatesQueueTailProof() throws {
+        var events = [
+            Event(queueSequence: 13, authority: terminalAuthority),
+            Event(queueSequence: 14, authority: terminalAuthority)
+        ]
+        let retirement = try retire(
+            &events,
+            currentTail: 14,
+            horizonQueueCutoff: 12
+        )
+        #expect(events.isEmpty)
+
+        let error = capturedResolutionError {
+            _ = try Resolution.resolve(
+                currentResolvedThroughQueueSequence: 12,
+                currentLastEnqueuedEventSequence: 15,
+                retirementReceipt: retirement
+            )
+        }
+
+        #expect(
+            error == .controllerQueueChangedAfterRetirement(
+                expected: 14,
+                actual: 15
+            )
+        )
     }
 
     @Test
@@ -87,6 +118,7 @@ struct PassiveCoreBluetoothTerminalQueueResolutionTests {
         let error = capturedResolutionError {
             _ = try Resolution.resolve(
                 currentResolvedThroughQueueSequence: 12,
+                currentLastEnqueuedEventSequence: 14,
                 retirementReceipt: retirement
             )
         }
@@ -108,6 +140,7 @@ struct PassiveCoreBluetoothTerminalQueueResolutionTests {
         let error = capturedResolutionError {
             _ = try Resolution.resolve(
                 currentResolvedThroughQueueSequence: 11,
+                currentLastEnqueuedEventSequence: 13,
                 retirementReceipt: retirement
             )
         }
@@ -133,12 +166,14 @@ struct PassiveCoreBluetoothTerminalQueueResolutionTests {
         )
         let first = try Resolution.resolve(
             currentResolvedThroughQueueSequence: 12,
+            currentLastEnqueuedEventSequence: 14,
             retirementReceipt: retirement
         )
 
         let error = capturedResolutionError {
             _ = try Resolution.resolve(
                 currentResolvedThroughQueueSequence: first.resolvedThroughQueueSequence,
+                currentLastEnqueuedEventSequence: 14,
                 retirementReceipt: retirement
             )
         }
