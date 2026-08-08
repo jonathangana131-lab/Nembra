@@ -17,11 +17,7 @@ struct ForegroundCoreBluetoothCaptureControllerObservationBoundaryIntegrationTes
         return try String(contentsOf: controller, encoding: .utf8)
     }
 
-    private static func section(
-        in source: String,
-        from startMarker: String,
-        to endMarker: String
-    ) throws -> Substring {
+    private static func section(in source: String, from startMarker: String, to endMarker: String) throws -> Substring {
         let start = try #require(source.range(of: startMarker)?.lowerBound)
         let end = try #require(source.range(of: endMarker, range: start..<source.endIndex)?.lowerBound)
         return source[start..<end]
@@ -35,30 +31,16 @@ struct ForegroundCoreBluetoothCaptureControllerObservationBoundaryIntegrationTes
     @Test("queued evidence owns the artifact-authority epoch captured at enqueue")
     func pendingEventsCarryAuthorityEpoch() throws {
         let source = try Self.controllerSource()
-        let pending = try Self.section(
-            in: source,
-            from: "    private struct PendingEvent {",
-            to: "    /// Callback events are synchronously inserted"
-        )
+        let pending = try Self.section(in: source, from: "    private struct PendingEvent {", to: "    /// Callback events are synchronously inserted")
         #expect(pending.contains("let authority: PassiveCoreBluetoothArtifactAuthorityContext"))
-
-        let enqueue = try Self.section(
-            in: source,
-            from: "    private func enqueue(\n        _ event: PassiveBluetoothCaptureEvent,\n        receivedAtUptimeNanoseconds:",
-            to: "    private func enqueueInterruption("
-        )
+        let enqueue = try Self.section(in: source, from: "    private func enqueue(\n        _ event: PassiveBluetoothCaptureEvent,\n        receivedAtUptimeNanoseconds:", to: "    private func enqueueInterruption(")
         #expect(enqueue.contains("authority: currentArtifactAuthorityContext()"))
     }
 
     @Test("finite acquisition readiness enters the boundary pipeline before watchdog rearm")
     func readyTransitionIsObservedSynchronously() throws {
         let source = try Self.controllerSource()
-        let watchdog = try Self.section(
-            in: source,
-            from: "    private func refreshAcquisitionWatchdog() {",
-            to: "    private func cancelAcquisitionWatchdog() {"
-        )
-
+        let watchdog = try Self.section(in: source, from: "    private func refreshAcquisitionWatchdog() {", to: "    private func cancelAcquisitionWatchdog() {")
         let readyOffset = try Self.offset(of: "if acquisitionLedger.isReady {", in: watchdog)
         let boundaryOffset = try Self.offset(of: "beginFiniteAcquisitionReadyBoundaryIfNeeded()", in: watchdog)
         let acquiringOffset = try Self.offset(of: "guard acquisitionLedger.phase == .acquiring", in: watchdog)
@@ -69,28 +51,19 @@ struct ForegroundCoreBluetoothCaptureControllerObservationBoundaryIntegrationTes
     @Test("Ready cutoff, frontier, authority, and clocks are bound before the first await")
     func readyDecisionPrecedesActorHop() throws {
         let source = try Self.controllerSource()
-        let pipeline = try Self.section(
-            in: source,
-            from: "    private func beginFiniteAcquisitionReadyBoundaryIfNeeded() {",
-            to: "    private func validateBoundaryAuthority("
-        )
-
-        let decisionOffset = try Self.offset(
-            of: "let decision = try PassiveCoreBluetoothObservationBoundaryDecision.capture(",
-            in: pipeline
-        )
+        let pipeline = try Self.section(in: source, from: "    private func beginFiniteAcquisitionReadyBoundaryIfNeeded() {", to: "    private func validateBoundaryAuthority(")
+        let admissionOffset = try Self.offset(of: "let admission = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(", in: pipeline)
         let cutoffOffset = try Self.offset(of: "queueCutoff: lastEnqueuedEventSequence", in: pipeline)
         let frontierOffset = try Self.offset(of: "processedThrough: lastProcessedEventSequence", in: pipeline)
-        let beginOffset = try Self.offset(of: "let transaction = try observationBoundaryQueueGate.begin(", in: pipeline)
+        let authorityOffset = try Self.offset(of: "authorityFence: artifactAuthorityFence", in: pipeline)
         let taskOffset = try Self.offset(of: "observationBoundaryTask = Task", in: pipeline)
-        let awaitOffset = try Self.offset(of: "await self.flushPendingEvents(through: decision.queueCutoff)", in: pipeline)
-        let recordOffset = try Self.offset(of: "try await decision.recordBoundary(on: recorder)", in: pipeline)
-        let commitOffset = try Self.offset(of: "try self.observationBoundaryQueueGate.markBoundaryRecorded(", in: pipeline)
-
-        #expect(decisionOffset < cutoffOffset)
+        let awaitOffset = try Self.offset(of: "await self.flushPendingEvents(through: admission.queueCutoff)", in: pipeline)
+        let recordOffset = try Self.offset(of: "try await admission.recordBoundaryWithMutationOutcome(on: recorder)", in: pipeline)
+        let commitOffset = try Self.offset(of: "recordedReady.markBoundaryRecorded(", in: pipeline)
+        #expect(admissionOffset < cutoffOffset)
         #expect(cutoffOffset < frontierOffset)
-        #expect(frontierOffset < beginOffset)
-        #expect(beginOffset < taskOffset)
+        #expect(frontierOffset < authorityOffset)
+        #expect(authorityOffset < taskOffset)
         #expect(taskOffset < awaitOffset)
         #expect(awaitOffset < recordOffset)
         #expect(recordOffset < commitOffset)
@@ -99,26 +72,11 @@ struct ForegroundCoreBluetoothCaptureControllerObservationBoundaryIntegrationTes
     @Test("normal FIFO drain honors both lifecycle and immutable-artifact cutoffs")
     func drainIntersectsBoundaryAndArtifactGates() throws {
         let source = try Self.controllerSource()
-        let drain = try Self.section(
-            in: source,
-            from: "    private func startDrainIfNeeded() {",
-            to: "    private func flushPendingEvents(through watermark: UInt64) async {"
-        )
-
-        let boundaryOffset = try Self.offset(
-            of: "observationBoundaryQueueGate.permittedDrainUpperBound(",
-            in: drain
-        )
-        let artifactOffset = try Self.offset(
-            of: "artifactReadBarrier.permittedDrainUpperBound(",
-            in: drain
-        )
-        let intersectionOffset = try Self.offset(
-            of: "let drainThroughSequence = min(boundaryDrainUpperBound, artifactDrainUpperBound)",
-            in: drain
-        )
+        let drain = try Self.section(in: source, from: "    private func startDrainIfNeeded() {", to: "    private func flushPendingEvents(through watermark: UInt64) async {")
+        let boundaryOffset = try Self.offset(of: "observationBoundaryQueueGate.permittedDrainUpperBound(", in: drain)
+        let artifactOffset = try Self.offset(of: "artifactReadBarrier.permittedDrainUpperBound(", in: drain)
+        let intersectionOffset = try Self.offset(of: "let drainThroughSequence = min(boundaryDrainUpperBound, artifactDrainUpperBound)", in: drain)
         let recorderOffset = try Self.offset(of: "try await next.recorder.record(", in: drain)
-
         #expect(boundaryOffset < intersectionOffset)
         #expect(artifactOffset < intersectionOffset)
         #expect(intersectionOffset < recorderOffset)
@@ -127,19 +85,15 @@ struct ForegroundCoreBluetoothCaptureControllerObservationBoundaryIntegrationTes
     @Test("a fresh target cannot erase an already-started observation grammar")
     func targetSessionResetFailsClosedAfterReadyBegins() throws {
         let source = try Self.controllerSource()
-        let session = try Self.section(
-            in: source,
-            from: "    private func beginTargetSessionIfNeeded(for identifier: UUID) throws {",
-            to: "    private func currentArtifactContext() throws"
-        )
-
-        let resetOffset = try Self.offset(
-            of: "guard observationBoundaryQueueGate.resetForNewCaptureSession() else {",
-            in: session
-        )
+        let session = try Self.section(in: source, from: "    private func beginTargetSessionIfNeeded(for identifier: UUID) throws {", to: "    private func currentArtifactContext() throws")
+        let resetOffset = try Self.offset(of: "guard observationBoundaryQueueGate.resetForNewCaptureSession() else {", in: session)
+        let freshAuthorityOffset = try Self.offset(of: "let freshAuthority = PassiveCoreBluetoothArtifactAuthorityContext(", in: session)
+        let transitionOffset = try Self.offset(of: "try artifactAuthorityFence.transition(", in: session)
+        let publishGenerationOffset = try Self.offset(of: "targetSessionGeneration = freshAuthority.targetSessionGeneration", in: session)
         let targetOffset = try Self.offset(of: "targetState.selectTarget(identifier)", in: session)
-        let generationOffset = try Self.offset(of: "targetSessionGeneration += 1", in: session)
-        #expect(resetOffset < targetOffset)
-        #expect(targetOffset < generationOffset)
+        #expect(resetOffset < freshAuthorityOffset)
+        #expect(freshAuthorityOffset < transitionOffset)
+        #expect(transitionOffset < publishGenerationOffset)
+        #expect(publishGenerationOffset < targetOffset)
     }
 }
