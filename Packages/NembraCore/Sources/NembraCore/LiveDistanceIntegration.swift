@@ -76,6 +76,63 @@ public struct LiveDistanceSegmentSnapshot: Equatable, Sendable {
     public let acceptedSampleCount: Int
     public let integratedIntervalCount: Int
     public let knownCoverageGapCount: Int
+
+#if SWIFT_PACKAGE
+    /// Package-only construction keeps deterministic NembraCore fixtures able to
+    /// model malformed projection inputs without exposing an authority-minting
+    /// initializer to normal package clients.
+    package init(
+        source: SpeedTelemetrySource,
+        method: LiveDistanceIntegrationMethod,
+        segmentStartUptimeNanoseconds: UInt64,
+        firstAcceptedSampleUptimeNanoseconds: UInt64?,
+        lastAcceptedSampleUptimeNanoseconds: UInt64?,
+        distanceMeters: Double?,
+        hasKnownCoverageGap: Bool,
+        acceptedSampleCount: Int,
+        integratedIntervalCount: Int,
+        knownCoverageGapCount: Int
+    ) {
+        self.source = source
+        self.method = method
+        self.segmentStartUptimeNanoseconds = segmentStartUptimeNanoseconds
+        self.firstAcceptedSampleUptimeNanoseconds = firstAcceptedSampleUptimeNanoseconds
+        self.lastAcceptedSampleUptimeNanoseconds = lastAcceptedSampleUptimeNanoseconds
+        self.distanceMeters = distanceMeters
+        self.hasKnownCoverageGap = hasKnownCoverageGap
+        self.acceptedSampleCount = acceptedSampleCount
+        self.integratedIntervalCount = integratedIntervalCount
+        self.knownCoverageGapCount = knownCoverageGapCount
+    }
+#else
+    /// This source is also compiled directly into Nembra.app. Keep provisional
+    /// snapshot construction file-owned there so same-module UI/app code cannot
+    /// manufacture accepted live-distance evidence by using an otherwise
+    /// synthesized internal memberwise initializer.
+    fileprivate init(
+        source: SpeedTelemetrySource,
+        method: LiveDistanceIntegrationMethod,
+        segmentStartUptimeNanoseconds: UInt64,
+        firstAcceptedSampleUptimeNanoseconds: UInt64?,
+        lastAcceptedSampleUptimeNanoseconds: UInt64?,
+        distanceMeters: Double?,
+        hasKnownCoverageGap: Bool,
+        acceptedSampleCount: Int,
+        integratedIntervalCount: Int,
+        knownCoverageGapCount: Int
+    ) {
+        self.source = source
+        self.method = method
+        self.segmentStartUptimeNanoseconds = segmentStartUptimeNanoseconds
+        self.firstAcceptedSampleUptimeNanoseconds = firstAcceptedSampleUptimeNanoseconds
+        self.lastAcceptedSampleUptimeNanoseconds = lastAcceptedSampleUptimeNanoseconds
+        self.distanceMeters = distanceMeters
+        self.hasKnownCoverageGap = hasKnownCoverageGap
+        self.acceptedSampleCount = acceptedSampleCount
+        self.integratedIntervalCount = integratedIntervalCount
+        self.knownCoverageGapCount = knownCoverageGapCount
+    }
+#endif
 }
 
 /// Full evidence for one monotonic integration segment after its end boundary is
