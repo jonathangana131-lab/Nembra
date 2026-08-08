@@ -1,6 +1,5 @@
 import Foundation
 import NembraBluetoothCapture
-import NembraCore
 import SwiftUI
 
 @main
@@ -13,18 +12,15 @@ struct NembraApp: App {
 
     private let launchMode: LaunchMode
     @State private var runtime: AppRuntime?
-    @State private var experimentOneCoordinator: PassiveBluetoothExperimentOneCoordinator?
+    @State private var researchCoordinator: PassiveBluetoothExperimentOneCoordinator?
 
     init() {
         let launchMode = Self.resolveLaunchMode()
         self.launchMode = launchMode
         _runtime = State(initialValue: launchMode == .standard ? AppBootstrap.makeRuntime() : nil)
-
-        let fieldCaptureAuthorized = launchMode == .es80PassiveCapture
-            && PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure
-        _experimentOneCoordinator = State(
-            initialValue: fieldCaptureAuthorized
-                ? Self.makeExperimentOneCoordinator()
+        _researchCoordinator = State(
+            initialValue: launchMode == .es80PassiveCapture
+                ? try? PassiveBluetoothExperimentOneCoordinator()
                 : nil
         )
     }
@@ -51,8 +47,8 @@ struct NembraApp: App {
             case .es80PassiveCapture:
                 NavigationStack {
                     if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure {
-                        if let experimentOneCoordinator {
-                            ES80CaptureShellView(coordinator: experimentOneCoordinator)
+                        if let researchCoordinator {
+                            ES80CaptureShellView(coordinator: researchCoordinator)
                         } else {
                             ContentUnavailableView(
                                 "Capture unavailable",
@@ -82,12 +78,6 @@ struct NembraApp: App {
         }
 #endif
         return .standard
-    }
-
-    private static func makeExperimentOneCoordinator() -> PassiveBluetoothExperimentOneCoordinator? {
-        // The package owns both the canonical ES80 software context and its controller.
-        // Construction remains software provenance only, never physical authentication.
-        try? PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()
     }
 }
 
@@ -180,7 +170,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         Image(systemName: "checkmark.seal")
                             .foregroundStyle(.secondary)
                             .accessibilityHidden(true)
-                        Text("Correlation workflow installed")
+                        Text("Single-authority workflow installed")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.white)
                     }
@@ -197,7 +187,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                 .padding(18)
                 .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
-                Text("No physical action is required. A future accepted build must unlock this mechanically from package-owned authorization; a UI flag or local preference cannot do it.")
+                Text("No physical action is required. A future accepted build must unlock this mechanically from package-owned authorization; a UI flag, typed identifier, or local preference cannot do it.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
