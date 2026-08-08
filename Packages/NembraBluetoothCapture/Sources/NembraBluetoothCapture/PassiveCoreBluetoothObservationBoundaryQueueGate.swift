@@ -23,10 +23,6 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         case cutoffNotDrained
         case cutoffOverrun
         case horizonArtifactNotReady
-        case freshTargetSessionRequired
-        case abortQueueRetirementRequired
-        case abortRetirementReceiptMismatch
-        case abortQueueTailChanged
     }
 
     struct Transaction: Equatable, Sendable {
@@ -98,7 +94,6 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
     private(set) var phase: Phase = .awaitingReady
     private var nextRevision: UInt64 = 1
     private var committedReadyTransaction: Transaction?
-    private var requiredReadyTargetSessionGeneration: UInt64?
 
     var isTerminal: Bool {
         if case .terminal = phase { return true }
@@ -141,11 +136,6 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         guard processedQueueSequence == nil else {
             throw StateError.invalidTransition
         }
-        if let requiredReadyTargetSessionGeneration {
-            guard authority.targetSessionGeneration == requiredReadyTargetSessionGeneration else {
-                throw StateError.freshTargetSessionRequired
-            }
-        }
         guard nextRevision != UInt64.max else {
             throw StateError.transactionRevisionExhausted
         }
@@ -156,7 +146,6 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
             authority: authority,
             revision: nextRevision
         )
-        requiredReadyTargetSessionGeneration = nil
         phase = .drainingReady(transaction)
         nextRevision += 1
         return transaction
@@ -352,33 +341,11 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         return receipt
     }
 
-    /// Reopens boundary admission only after old-session FIFO retirement is proven,
-    /// the queue tail is unchanged, and the controller binds one exact newer durable
-    /// target-session generation. The next Ready must use that exact generation.
-    mutating func completeAbortedObservationRecovery(
-        _ retirement: PassiveCoreBluetoothAbortedObservationQueueRetirement.Receipt,
-        currentLastEnqueuedEventSequence: UInt64,
-        freshTargetSessionGeneration: UInt64
-    ) throws {
-        guard case let .abortQuarantined(currentAbort) = phase else {
-            throw StateError.abortQueueRetirementRequired
-        }
-        guard retirement.abortReceipt == currentAbort else {
-            throw StateError.abortRetirementReceiptMismatch
-        }
-        guard retirement.validatedQueueTailSequence == currentLastEnqueuedEventSequence else {
-            throw StateError.abortQueueTailChanged
-        }
-        guard retirement.retainedPendingEvidenceCount == 0 else {
-            throw StateError.abortQueueRetirementRequired
-        }
-        guard freshTargetSessionGeneration > currentAbort.abandonedTargetSessionGeneration else {
-            throw StateError.freshTargetSessionRequired
-        }
-        requiredReadyTargetSessionGeneration = freshTargetSessionGeneration
-        phase = .awaitingReady
-    }
-
+    /// Abort quarantine is intentionally irreversible in this slice. Raw FIFO
+    /// retirement alone cannot reopen lifecycle admission because retired positions
+    /// still need a separate globally-resolved frontier update. #450 owns that
+    /// producer and its successor integration must make fresh-session reopen consume
+    /// the producer-issued resolution receipt. Until then reset and Ready both fail.
     @discardableResult
     mutating func resetForNewCaptureSession() -> Bool {
         guard phase == .awaitingReady else { return false }
