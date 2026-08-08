@@ -1,0 +1,174 @@
+name: ES80 terminal transport isolation recovery
+
+on:
+  push:
+    branches:
+      - parallel/recover-es80-terminal-transport-isolation/chat-gpt56
+    paths:
+      - .github/workflows/es80-terminal-transport-isolation-recovery.yml
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact recovery branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch terminal transport isolation and import diagnostic regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift")
+          source = path.read_text()
+
+          old_disconnect = '''        let disposition = targetState.completeDisconnect(from: identifier)
+          guard disposition != .ignored else { return }
+
+          // A retired target may disconnect after the operator has already selected
+          '''
+          new_disconnect = '''        let disposition = targetState.completeDisconnect(from: identifier)
+          guard disposition != .ignored else { return }
+
+          // Once Horizon is terminal, transport teardown may release CoreBluetooth
+          // state but must not revoke or mutate the already-finalized artifact authority.
+          if observationBoundaryQueueGate.isTerminal {
+              if targetState.selectedTargetIdentifier == identifier {
+                  selectedTargetCancellationPending = false
+              }
+              if case .active = disposition {
+                  clearActiveConnectionState(for: identifier)
+              }
+              return
+          }
+
+          // A retired target may disconnect after the operator has already selected
+          '''
+          if source.count(old_disconnect) != 1:
+              raise SystemExit("disconnect patch anchor mismatch")
+          source = source.replace(old_disconnect, new_disconnect, 1)
+
+          old_central = '''        let previous = bluetoothState
+          bluetoothState = central.state
+
+          if hasObservedInitialCentralState, previous != central.state {
+          '''
+          new_central = '''        let previous = bluetoothState
+          bluetoothState = central.state
+
+          // A terminal Horizon freezes capture authority. Central-state callbacks may
+          // still clean up transport state, but they cannot create a new evidence epoch
+          // or invalidate the sealed artifact.
+          if observationBoundaryQueueGate.isTerminal {
+              hasObservedInitialCentralState = true
+              guard central.state != .poweredOn else { return }
+
+              scanRequested = false
+              if central.isScanning {
+                  central.stopScan()
+              }
+              if activePeripheral != nil {
+                  activePeripheral?.delegate = nil
+                  activePeripheral = nil
+                  connectionTimeoutTask?.cancel()
+                  connectionTimeoutTask = nil
+                  connectionPhase = .idle
+                  clearAcquisitionObjects()
+              }
+              selectedTargetCancellationPending = false
+              targetState.resetForCentralInvalidation()
+              clearCandidateCatalog()
+              return
+          }
+
+          if hasObservedInitialCentralState, previous != central.state {
+          '''
+          if source.count(old_central) != 1:
+              raise SystemExit("central-state patch anchor mismatch")
+          source = source.replace(old_central, new_central, 1)
+
+          old_services = '''    public func peripheral(_ peripheral: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {
+              let receipt = callbackReceipt()
+              guard targetState.acceptsActiveCallback(from: peripheral.identifier) else { return }
+
+              let uuids = invalidatedServices
+          '''
+          new_services = '''    public func peripheral(_ peripheral: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {
+              let receipt = callbackReceipt()
+              guard targetState.acceptsActiveCallback(from: peripheral.identifier) else { return }
+
+              // Service invalidation after terminal Horizon is outside the accepted
+              // observation interval. Do not advance artifact authority or restart a
+              // finite acquisition inside the sealed recorder lifecycle.
+              guard !observationBoundaryQueueGate.isTerminal else { return }
+
+              let uuids = invalidatedServices
+          '''
+          if source.count(old_services) != 1:
+              raise SystemExit("service-invalidation patch anchor mismatch")
+          source = source.replace(old_services, new_services, 1)
+
+          path.write_text(source)
+          PY
+
+          test_path="Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerTerminalTransportIsolationTests.swift"
+          git fetch --no-tags origin parallel/es80-terminal-transport-isolation-qa/chat-m6q8v
+          git show "FETCH_HEAD:${test_path}" > "${test_path}"
+
+          python3 <<'PY'
+          from pathlib import Path
+          source = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift").read_text()
+
+          def section(start, end):
+              a = source.index(start)
+              b = source.index(end, a)
+              return source[a:b]
+
+          service = section(
+              "    public func peripheral(_ peripheral: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {",
+              "\n    }\n}",
+          )
+          assert service.index("observationBoundaryQueueGate.isTerminal") < service.index("advanceArtifactAuthority()")
+          assert service.index("observationBoundaryQueueGate.isTerminal") < service.index("beginDiscovery(on: peripheral)")
+
+          disconnect = section(
+              "    private func handleDisconnect(",
+              "}\n\nextension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralManagerDelegate",
+          )
+          assert disconnect.index("observationBoundaryQueueGate.isTerminal") < disconnect.index("advanceArtifactAuthority()")
+
+          central = section(
+              "    public func centralManagerDidUpdateState(_ central: CBCentralManager) {",
+              "    public func centralManager(\n        _ central: CBCentralManager,\n        didDiscover peripheral: CBPeripheral,",
+          )
+          assert central.index("observationBoundaryQueueGate.isTerminal") < central.index("advanceArtifactAuthority()")
+
+          enqueue = section(
+              "    private func enqueue(\n        _ event: PassiveBluetoothCaptureEvent,\n        receivedAtUptimeNanoseconds:",
+              "    private func enqueueInterruption(",
+          )
+          assert enqueue.index("guard !observationBoundaryQueueGate.isTerminal else { return }") < enqueue.index("lastEnqueuedEventSequence += 1")
+          PY
+
+          git diff --check
+
+      - name: Commit durable recovery checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-chat-gpt56"
+          git config user.email "nembra-chat-gpt56@users.noreply.github.com"
+          rm .github/workflows/es80-terminal-transport-isolation-recovery.yml
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerTerminalTransportIsolationTests.swift \
+                  .github/workflows/es80-terminal-transport-isolation-recovery.yml
+          git diff --cached --check
+          git commit -m "fix: isolate terminal capture from transport callbacks"
+          git push origin HEAD:parallel/recover-es80-terminal-transport-isolation/chat-gpt56
