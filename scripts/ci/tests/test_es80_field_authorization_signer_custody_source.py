@@ -46,6 +46,11 @@ class OfflineFieldAuthorizationSignerCustodySourceTests(unittest.TestCase):
             '0o022' in self.source or '0o002' in self.source or 'world-writable' in self.source.lower(),
             "The signer must fail closed on writable executable/custody paths.",
         )
+        self.assertIn(
+            'directory_stat.st_uid not in {0, signing_uid}',
+            self.source,
+            "Every OpenSSL custody directory must be owned by root or the signing user; mode-only checks leave a pathname replacement surface for an unrelated directory owner.",
+        )
 
     def test_private_key_requires_owner_only_posix_access(self):
         self.assertTrue(
