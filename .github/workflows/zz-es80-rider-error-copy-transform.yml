@@ -1,0 +1,142 @@
+name: Temporary ES80 rider error-copy cleanup
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-rider-error-copy-gpt56-go
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Make primary failure copy rider-readable
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          shell_path = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")
+          source = shell_path.read_text()
+          replacements = {
+              'return "Foreground integrity was lost after Experiment One began. Start a fresh experiment."':
+                  'return "Nembra left the foreground after capture began. Start a fresh capture."',
+              'return "This Experiment One capture is already sealed."':
+                  'return "This capture is already sealed."',
+              'return "The accepted correlation-window duration is invalid in this build."':
+                  'return "This build has an invalid observation-window duration. Capture cannot continue."',
+              'return "This correlation series was invalidated by a known evidence gap."':
+                  'return "This OFF / ON series has an evidence gap. Start a fresh capture."',
+              'return "Bluetooth became unavailable during the bounded window."':
+                  'return "Bluetooth became unavailable during this observation window."',
+              'return "Bluetooth never confirmed scan readiness inside the bounded startup interval."':
+                  'return "Bluetooth did not become ready in time for this observation window."',
+              'return "The local observation-window sequence was exhausted."':
+                  'return "This OFF / ON sequence cannot continue. Start a fresh capture."',
+              'return String(describing: error)':
+                  'return "Capture stopped because an unexpected error occurred. Start a fresh capture."',
+          }
+          for old, new in replacements.items():
+              if source.count(old) != 1:
+                  raise SystemExit(f"expected exactly one rider-copy source phrase: {old}")
+              source = source.replace(old, new, 1)
+          shell_path.write_text(source)
+
+          test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift")
+          test_source = test_path.read_text()
+          marker = '    @Test("engineering truth remains available in Details instead of being deleted")\n'
+          if marker not in test_source:
+              raise SystemExit("rider-language test insertion marker missing")
+          if "failureCopyStaysHumanFirst" in test_source:
+              raise SystemExit("failure-copy regression already exists")
+          addition = '''    @Test("primary failure copy stays rider-readable and never dumps implementation errors")
+              func failureCopyStaysHumanFirst() throws {
+                  let source = try Self.shellSource()
+                  let beginning = try #require(source.range(of: "private func experimentErrorMessage"))
+                  let end = try #require(
+                      source.range(
+                          of: "private func bluetoothUnavailableMessage",
+                          range: beginning.lowerBound..<source.endIndex
+                      )
+                  )
+                  let failureCopy = source[beginning.lowerBound..<end.lowerBound]
+
+                  let implementationPhrasesThatMustStayOutOfFailureCopy = [
+                      "Experiment One",
+                      "package-owned",
+                      "CoreBluetooth",
+                      "bounded window",
+                      "bounded startup interval",
+                      "local observation-window sequence",
+                      "String(describing: error)"
+                  ]
+
+                  for phrase in implementationPhrasesThatMustStayOutOfFailureCopy {
+                      #expect(
+                          !failureCopy.contains(phrase),
+                          "Primary failure copy still exposes implementation vocabulary: \\(phrase)"
+                      )
+                  }
+
+                  #expect(failureCopy.contains("Start a fresh capture."))
+                  #expect(failureCopy.contains("OFF / ON"))
+              }
+
+          '''
+          test_source = test_source.replace(marker, addition + marker, 1)
+          test_path.write_text(test_source)
+          PY
+
+      - name: Validate rider failure-copy contract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          shell = Path("NembraApp/Features/Research/ES80CaptureShellView.swift").read_text()
+          start = shell.index("private func experimentErrorMessage")
+          end = shell.index("private func bluetoothUnavailableMessage", start)
+          failure = shell[start:end]
+          forbidden = [
+              "Experiment One",
+              "package-owned",
+              "CoreBluetooth",
+              "bounded window",
+              "bounded startup interval",
+              "local observation-window sequence",
+              "String(describing: error)",
+          ]
+          for phrase in forbidden:
+              if phrase in failure:
+                  raise SystemExit(f"forbidden primary failure vocabulary remains: {phrase}")
+          required = [
+              "Start a fresh capture.",
+              "OFF / ON",
+              "guard status.physicalProcedurePermitted else",
+              "PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)",
+              "es80.capture.share",
+              "es80.capture.view-details",
+          ]
+          for phrase in required:
+              if phrase not in shell:
+                  raise SystemExit(f"required Capture truth/action contract missing: {phrase}")
+
+          tests = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift").read_text()
+          if "failureCopyStaysHumanFirst" not in tests:
+              raise SystemExit("failure-copy source regression missing")
+          PY
+          git diff --check
+
+      - name: Publish clean product checkpoint
+        run: |
+          rm .github/workflows/zz-es80-rider-error-copy-transform.yml
+          git config user.name "Nembra V14 rider-copy recovery"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(capture): keep failure copy rider-readable"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
