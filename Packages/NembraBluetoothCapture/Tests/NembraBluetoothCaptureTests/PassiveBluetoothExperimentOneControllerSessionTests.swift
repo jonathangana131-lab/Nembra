@@ -21,8 +21,13 @@ struct PassiveBluetoothExperimentOneControllerSessionTests {
             vehicleIdentity: VehicleProfile.aovoproES80.identity
         )
 
-        #expect(throws: PassiveBluetoothExperimentOneControllerSession.SessionError.captureRediscoveryNotPrepared) {
+        do {
             try session.connectReacquiredTarget(using: controller)
+            Issue.record("Connection must not start before this run prepares its hidden capture admission")
+        } catch let error as PassiveBluetoothExperimentOneControllerSession.SessionError {
+            #expect(error == .captureRediscoveryNotPrepared)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
         }
     }
 }
