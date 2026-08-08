@@ -82,8 +82,12 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         let source = try captureShellSource()
 
         XCTAssertTrue(
-            source.contains("coordinator.encodedFinalizedSoftwareExportForCurrentApplication()"),
+            source.contains("coordinator.encodedFinalizedSoftwareExportForCurrentApplication("),
             "The product Share path must consume the package-owned Experiment One software export so capture bytes, same-run correlation, recipe, manifest, and build provenance stay mechanically bound."
+        )
+        XCTAssertTrue(
+            source.contains("setup: declaredStationarySetup"),
+            "The package export must receive the exact setup declaration retained from preflight rather than app-invented setup at Share time."
         )
         XCTAssertTrue(
             source.contains("ShareLink(item: softwareExportURL)"),
@@ -104,6 +108,35 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         XCTAssertTrue(
             source.contains("Nembra-ES80-Experiment-One-Software-Export-"),
             "The prepared file should be named as a software evidence export rather than implying independently accepted field authorization."
+        )
+    }
+
+    func testV14StationarySetupIsDeclaredBeforeOffOneAndRetainedForExport() throws {
+        let source = try captureShellSource()
+
+        XCTAssertTrue(
+            source.contains("@State private var declaredStationarySetup: PassiveBluetoothStationaryCaptureSetup?"),
+            "One explicit setup declaration must stay attached to the app-side Experiment One life."
+        )
+        XCTAssertTrue(
+            source.contains("Confirm stationary setup"),
+            "The operator must receive an explicit preflight declaration action before OFF 1 can begin."
+        )
+        XCTAssertTrue(
+            source.contains("chargerState: .disconnected"),
+            "The retained declaration must record the charger condition the operator confirmed."
+        )
+        XCTAssertTrue(
+            source.contains("stockAppReferenceSetup: .none"),
+            "The retained declaration must explicitly record that this recipe run has no stock-app reference marker phase."
+        )
+        XCTAssertTrue(
+            source.contains("executionContext: .foregroundUnlockedScreenOn"),
+            "The retained declaration must record the accepted foreground/unlocked/screen-on execution context."
+        )
+        XCTAssertTrue(
+            source.contains("Share remains blocked rather than inventing setup provenance after the run."),
+            "If the original declaration is unavailable after sealing, Share must fail closed instead of synthesizing provenance."
         )
     }
 
