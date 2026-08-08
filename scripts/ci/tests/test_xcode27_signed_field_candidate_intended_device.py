@@ -9,6 +9,7 @@ from unittest import mock
 
 SCRIPT = Path(__file__).resolve().parents[1] / "xcode27_signed_field_candidate.sh"
 PRIVATE_RUNNER = Path(__file__).resolve().parents[1] / "es80_signed_field_artifact_private_runner.py"
+REPOSITORY_ROOT = PRIVATE_RUNNER.resolve().parents[2]
 
 
 def load_private_runner():
@@ -38,6 +39,9 @@ class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
             '--intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"',
             source,
         )
+        self.assertEqual(source.count('--repository-root "$ROOT"'), 2)
+        self.assertIn('require_external_private_input(path, repository_root)', runner)
+        self.assertIn('os.path.commonpath([path_text, repository_text]) == repository_text', runner)
         self.assertIn('failed private content/mode validation', source)
         self.assertNotIn('NEMBRA_INTENDED_FIELD_DEVICE_UDID:?Set', source)
         self.assertNotIn('python3 - "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', source)
@@ -89,7 +93,30 @@ class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
                     runner.PrivateInputError,
                     "must be owned by the current user",
                 ):
-                    runner.read_private_identifier(private_file)
+                    runner.read_private_identifier(private_file, REPOSITORY_ROOT)
+
+    def test_repository_contained_private_input_fails_closed(self) -> None:
+        runner = load_private_runner()
+        with tempfile.TemporaryDirectory(dir=REPOSITORY_ROOT, prefix=".nembra-private-boundary-test-") as temporary:
+            private_file = Path(temporary) / "ignored-device-id"
+            private_file.write_text("00008101-001234567890001E", encoding="utf-8")
+            private_file.chmod(0o600)
+            try:
+                with self.assertRaisesRegex(
+                    runner.PrivateInputError,
+                    "must live outside the Nembra repository",
+                ):
+                    runner.read_private_identifier(private_file, REPOSITORY_ROOT)
+            finally:
+                private_file.unlink(missing_ok=True)
+
+    def test_relative_private_input_path_fails_closed(self) -> None:
+        runner = load_private_runner()
+        with self.assertRaisesRegex(
+            runner.PrivateInputError,
+            "path must be absolute",
+        ):
+            runner.read_private_identifier(Path("device-id"), REPOSITORY_ROOT)
 
     def test_same_size_in_place_mutation_fails_closed(self) -> None:
         runner = load_private_runner()
@@ -124,7 +151,7 @@ class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
                     runner.PrivateInputError,
                     "changed while being read",
                 ):
-                    runner.read_private_identifier(private_file)
+                    runner.read_private_identifier(private_file, REPOSITORY_ROOT)
 
             self.assertEqual(call_count, 2)
 

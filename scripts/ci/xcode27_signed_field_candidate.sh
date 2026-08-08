@@ -154,7 +154,8 @@ rm -f "$PRIVATE_RUNNER_SNAPSHOT" "$INSPECTOR_SNAPSHOT"
 rmdir "$INSPECTION_TOOL_ROOT"
 
 if ! python3 /dev/fd/7 \
-  --validate-intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"
+  --validate-intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" \
+  --repository-root "$ROOT"
 then
   echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE failed private content/mode validation." >&2
   exit 4
@@ -282,6 +283,7 @@ python3 /dev/fd/9 \
   --ipa "$IPA_PATH" \
   --expected-source-sha "$SOURCE_SHA" \
   --intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" \
+  --repository-root "$ROOT" \
   --canonical-inspector-fd 8 \
   --output-dir "$INSPECTION_DIR"
 exec 8<&-

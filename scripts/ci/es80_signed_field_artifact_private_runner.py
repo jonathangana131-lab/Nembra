@@ -43,8 +43,31 @@ def _stable_file_identity(metadata: os.stat_result) -> tuple[int, int, int, int,
     )
 
 
-def read_private_identifier(path: Path) -> str:
-    """Read one opaque identifier through one no-follow descriptor without repairing the bytes."""
+def require_external_private_input(path: Path, repository_root: Path) -> Path:
+    """Return one resolved private-input path only when it remains outside the repository."""
+    if not path.is_absolute():
+        raise PrivateInputError("intended-device verification file path must be absolute")
+    if path.is_symlink():
+        raise PrivateInputError("intended-device verification file must be a non-symlink path")
+    try:
+        resolved_path = path.resolve(strict=True)
+        resolved_repository = repository_root.resolve(strict=True)
+    except OSError as exc:
+        raise PrivateInputError("could not resolve intended-device verification privacy boundary") from exc
+    path_text = os.path.normcase(str(resolved_path))
+    repository_text = os.path.normcase(str(resolved_repository))
+    try:
+        inside_repository = os.path.commonpath([path_text, repository_text]) == repository_text
+    except ValueError:
+        inside_repository = False
+    if inside_repository:
+        raise PrivateInputError("intended-device verification file must live outside the Nembra repository")
+    return resolved_path
+
+
+def read_private_identifier(path: Path, repository_root: Path) -> str:
+    """Read one external opaque identifier through one no-follow descriptor without repairing bytes."""
+    path = require_external_private_input(path, repository_root)
     if not hasattr(os, "O_NOFOLLOW"):
         raise PrivateInputError("this platform cannot enforce no-follow private verification input")
 
@@ -151,7 +174,10 @@ def invoke_inspector_redacted(inspector: ModuleType, inspector_arguments: list[s
 
 
 def run_inspector(args: argparse.Namespace) -> int:
-    intended_device_identifier = read_private_identifier(args.intended_device_udid_file)
+    intended_device_identifier = read_private_identifier(
+        args.intended_device_udid_file,
+        args.repository_root,
+    )
     inspector = load_canonical_inspector_from_fd(args.canonical_inspector_fd)
 
     # The raw identifier exists only in this process's memory. `main(argv)` consumes this explicit
@@ -173,17 +199,37 @@ def self_test() -> None:
     expected = "00008101-001234567890001E"
     with tempfile.TemporaryDirectory(prefix="nembra-private-device-input-") as temporary:
         root = Path(temporary)
+        repository_root = root / "repository"
+        repository_root.mkdir()
 
         private_file = root / "device-id"
         private_file.write_text(expected, encoding="utf-8")
         private_file.chmod(0o600)
-        assert read_private_identifier(private_file) == expected
+        assert read_private_identifier(private_file, repository_root) == expected
+
+        repository_private_file = repository_root / "ignored-device-id"
+        repository_private_file.write_text(expected, encoding="utf-8")
+        repository_private_file.chmod(0o600)
+        try:
+            read_private_identifier(repository_private_file, repository_root)
+        except PrivateInputError:
+            pass
+        else:
+            raise AssertionError("repository-contained verification input must fail closed")
+
+        relative_private_file = Path("device-id")
+        try:
+            read_private_identifier(relative_private_file, repository_root)
+        except PrivateInputError:
+            pass
+        else:
+            raise AssertionError("relative verification input path must fail closed")
 
         newline_file = root / "newline"
         newline_file.write_text(expected + "\n", encoding="utf-8")
         newline_file.chmod(0o600)
         try:
-            read_private_identifier(newline_file)
+            read_private_identifier(newline_file, repository_root)
         except PrivateInputError:
             pass
         else:
@@ -193,7 +239,7 @@ def self_test() -> None:
         permissive_file.write_text(expected, encoding="utf-8")
         permissive_file.chmod(0o644)
         try:
-            read_private_identifier(permissive_file)
+            read_private_identifier(permissive_file, repository_root)
         except PrivateInputError:
             pass
         else:
@@ -206,7 +252,7 @@ def self_test() -> None:
             symlink_file = None
         if symlink_file is not None:
             try:
-                read_private_identifier(symlink_file)
+                read_private_identifier(symlink_file, repository_root)
             except PrivateInputError:
                 pass
             else:
@@ -216,7 +262,7 @@ def self_test() -> None:
         oversized.write_bytes(b"x" * (MAX_IDENTIFIER_BYTES + 1))
         oversized.chmod(0o600)
         try:
-            read_private_identifier(oversized)
+            read_private_identifier(oversized, repository_root)
         except PrivateInputError:
             pass
         else:
@@ -295,7 +341,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--intended-device-udid-file",
         type=Path,
-        help="private mode-0600 file containing the verification-only intended field-device identifier",
+        help="external private mode-0600 file containing the verification-only intended field-device identifier",
+    )
+    parser.add_argument(
+        "--repository-root",
+        type=Path,
+        help="exact repository root that the private intended-device input must resolve outside",
     )
     parser.add_argument(
         "--canonical-inspector-fd",
@@ -321,6 +372,7 @@ def main(argv: list[str]) -> int:
                 args.output_dir,
                 args.expected_source_sha,
                 args.intended_device_udid_file,
+                args.repository_root,
                 args.canonical_inspector_fd,
                 args.validate_intended_device_udid_file,
             )
@@ -342,7 +394,9 @@ def main(argv: list[str]) -> int:
             )
         ):
             raise PrivateInputError("private-input validation cannot be combined with inspector arguments")
-        read_private_identifier(args.validate_intended_device_udid_file)
+        if args.repository_root is None:
+            raise PrivateInputError("private-input validation requires --repository-root")
+        read_private_identifier(args.validate_intended_device_udid_file, args.repository_root)
         print("private intended-device verification input: PASS")
         return 0
 
@@ -353,6 +407,7 @@ def main(argv: list[str]) -> int:
             ("--output-dir", args.output_dir),
             ("--expected-source-sha", args.expected_source_sha),
             ("--intended-device-udid-file", args.intended_device_udid_file),
+            ("--repository-root", args.repository_root),
             ("--canonical-inspector-fd", args.canonical_inspector_fd),
         )
         if value is None
