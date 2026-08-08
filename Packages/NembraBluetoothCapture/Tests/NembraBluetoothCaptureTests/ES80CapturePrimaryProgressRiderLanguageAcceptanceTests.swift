@@ -122,7 +122,7 @@ struct ES80CapturePrimaryProgressRiderLanguageAcceptanceTests {
         let status = try Self.section(
             source,
             from: "private func statusTitle(for phase: Phase)",
-            to: "private func progressStage("
+            to: "private func statusSymbol(for phase: Phase)"
         )
 
         #expect(!progress.contains("Experiment One progress"))
