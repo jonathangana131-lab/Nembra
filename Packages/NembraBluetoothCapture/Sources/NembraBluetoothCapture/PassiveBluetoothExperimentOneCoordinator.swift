@@ -15,6 +15,7 @@ import NembraCore
 @MainActor
 public final class PassiveBluetoothExperimentOneCoordinator {
     public enum CoordinatorError: Error, Equatable, Sendable {
+        case fieldExecutionNotAuthorized
         case captureAdmissionAlreadyPrepared
         case captureAdmissionNotPrepared
         case correlatedTargetUnavailable
@@ -41,7 +42,31 @@ public final class PassiveBluetoothExperimentOneCoordinator {
     private let run: PassiveBluetoothExperimentOneRun
     private var pendingCaptureAdmission: PassiveBluetoothExperimentOneCaptureAdmission?
 
-    public init(
+    /// The only public production constructor for physical Experiment One.
+    ///
+    /// App code cannot choose a controller, vehicle identity, recipe, target UUID, or authority
+    /// token. The package-owned mechanical field gate must already permit the physical procedure,
+    /// then this factory creates the canonical ES80 controller and the coordinator that owns the
+    /// matching Experiment One run. In the current V14 build the gate has no GO case, so this fails
+    /// closed and cannot expose OFF/ON field actions merely because SwiftUI knows this type exists.
+    public static func makeAuthorizedES80() throws -> PassiveBluetoothExperimentOneCoordinator {
+        guard PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure else {
+            throw CoordinatorError.fieldExecutionNotAuthorized
+        }
+
+        let vehicleIdentity = VehicleProfile.aovoproES80.identity
+        let controller = try ForegroundCoreBluetoothCaptureController(
+            vehicleIdentity: vehicleIdentity
+        )
+        return try PassiveBluetoothExperimentOneCoordinator(
+            controller: controller,
+            vehicleIdentity: vehicleIdentity
+        )
+    }
+
+    /// Package-only deterministic seam for composition/tests. Production app code must enter through
+    /// `makeAuthorizedES80()` so the physical gate and canonical ES80 context cannot be bypassed.
+    package init(
         controller: ForegroundCoreBluetoothCaptureController,
         vehicleIdentity: VehicleIdentity
     ) throws {
