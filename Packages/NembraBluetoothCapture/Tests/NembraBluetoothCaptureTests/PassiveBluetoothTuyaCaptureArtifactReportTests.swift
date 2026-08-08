@@ -58,7 +58,7 @@ struct PassiveBluetoothTuyaCaptureArtifactReportTests {
         )
     }
 
-    @Test("artifact report binds analysis to exact exported bytes and current nested provenance schema")
+    @Test("artifact report binds analysis to exact exported bytes and software-only nested provenance")
     func exactArtifactBinding() throws {
         let session = try makeSession()
         let compactArtifact = try PassiveBluetoothCaptureJSON.encode(
@@ -76,7 +76,8 @@ struct PassiveBluetoothTuyaCaptureArtifactReportTests {
         )
 
         #expect(report.schemaVersion == 1)
-        #expect(report.analysis.schemaVersion == 2)
+        #expect(report.analysis.schemaVersion == 3)
+        #expect(report.analysis.capture.provenanceClass == .validatedSoftwareSessionOnly)
         #expect(report.sourceArtifact.byteCount == compactArtifact.count)
         #expect(
             report.sourceArtifact.sha256 ==
@@ -103,6 +104,7 @@ struct PassiveBluetoothTuyaCaptureArtifactReportTests {
                 from: encoded
             ) == report
         )
+        #expect(String(decoding: encoded, as: UTF8.self).contains("validated-software-session-only"))
     }
 
     @Test("SHA-256 helper emits canonical lowercase digest")
@@ -166,6 +168,7 @@ struct PassiveBluetoothTuyaCaptureArtifactReportTests {
             policy: policy()
         )
         #expect(explicit.analysis.capture.peripheralIdentifier == "target-A")
+        #expect(explicit.analysis.capture.provenanceClass == .validatedSoftwareSessionOnly)
     }
 
     @Test("requested peripheral must exist in attributable evidence")
