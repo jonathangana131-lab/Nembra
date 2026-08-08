@@ -27,6 +27,7 @@ final class PassiveCoreBluetoothArtifactAuthorityMutationGate: @unchecked Sendab
         case authorityChanged
         case staleTransitionSource
         case unchangedAuthority
+        case nonMonotonicAuthority
     }
 
     private let lock = NSLock()
@@ -43,9 +44,12 @@ final class PassiveCoreBluetoothArtifactAuthorityMutationGate: @unchecked Sendab
     }
 
     /// Atomically replaces the current authority only when the caller still owns
-    /// the exact authority it expects to retire. The controller should use this as
-    /// the linearization point for every artifact-authority advance before it
-    /// publishes the new generation to later asynchronous work.
+    /// the exact authority it expects to retire.
+    ///
+    /// Artifact authority is never allowed to move backward or reuse an older
+    /// generation. The current controller advances `authorityGeneration` for every
+    /// invalidation (including target-session changes), so strict growth here
+    /// prevents an old boundary permit from becoming current again later.
     func transition(
         from expectedAuthority: PassiveCoreBluetoothArtifactAuthorityContext,
         to newAuthority: PassiveCoreBluetoothArtifactAuthorityContext
@@ -58,6 +62,10 @@ final class PassiveCoreBluetoothArtifactAuthorityMutationGate: @unchecked Sendab
         }
         guard newAuthority != expectedAuthority else {
             throw StateError.unchangedAuthority
+        }
+        guard newAuthority.authorityGeneration > expectedAuthority.authorityGeneration,
+              newAuthority.targetSessionGeneration >= expectedAuthority.targetSessionGeneration else {
+            throw StateError.nonMonotonicAuthority
         }
         currentAuthority = newAuthority
     }
