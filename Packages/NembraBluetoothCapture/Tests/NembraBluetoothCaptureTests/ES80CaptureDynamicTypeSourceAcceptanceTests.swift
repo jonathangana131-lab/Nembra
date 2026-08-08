@@ -23,11 +23,11 @@ struct ES80CaptureDynamicTypeSourceAcceptanceTests {
         )
     }
 
-    private static func uiTestSource() throws -> String {
+    private static func researchUITestSource() throws -> String {
         try String(
             contentsOf: repositoryRoot()
                 .appendingPathComponent("NembraUITests")
-                .appendingPathComponent("NembraUITests.swift"),
+                .appendingPathComponent("ES80ResearchCaptureUITests.swift"),
             encoding: .utf8
         )
     }
@@ -107,25 +107,39 @@ struct ES80CaptureDynamicTypeSourceAcceptanceTests {
         )
     }
 
-    @Test("real Capture shell is visually retained at Accessibility XXXL")
-    func accessibilityXXXLVisualEvidenceIsRequired() throws {
-        let source = try Self.uiTestSource()
+    @Test("horizon-ready Capture retains Accessibility XXXL visual evidence")
+    func horizonReadyAccessibilityXXXLVisualEvidenceIsRequired() throws {
+        let source = try Self.researchUITestSource()
+        let functionBlocks = source.components(separatedBy: "@MainActor")
+        let horizonXXXLBlock = functionBlocks.first { block in
+            block.contains("--es80-capture-qa-scenario=observationHorizonReady")
+                && block.contains("-UIPreferredContentSizeCategoryName")
+                && block.contains("UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge")
+        }
 
-        #expect(
-            source.contains("-UIPreferredContentSizeCategoryName"),
-            "UI acceptance must launch the real Capture shell with an explicit Dynamic Type override."
+        let block = try #require(
+            horizonXXXLBlock,
+            "The real horizon-ready Capture state must be launched at Accessibility XXXL, not only default text size."
         )
+        #expect(block.contains("es80.capture-shell"))
+        #expect(block.contains("es80.capture.finish"))
+        #expect(block.contains("Capture can be sealed"))
         #expect(
-            source.contains("UICTContentSizeCategoryAccessibilityXXXL"),
-            "The retained visual gate must exercise the largest accessibility text category, not only default-size accessibility audits."
+            block.localizedCaseInsensitiveContains("accessibility xxxl"),
+            "Horizon-ready Accessibility XXXL must retain screenshot evidence for human visual critique."
         )
+    }
+
+    @Test("existing Accessibility XXXL product evidence is not regressed")
+    func existingAccessibilityXXXLProductEvidenceRemains() throws {
+        let source = try Self.researchUITestSource()
+
+        #expect(source.contains("UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"))
+        #expect(source.contains("Rider NO-GO — Accessibility XXXL"))
+        #expect(source.contains("Capture Complete — Accessibility XXXL"))
         #expect(
-            source.contains("keepScreenshot(named:") && source.localizedCaseInsensitiveContains("accessibility xxxl"),
-            "Accessibility XXXL must produce a retained screenshot artifact for human visual critique."
-        )
-        #expect(
-            source.contains("es80.capture-shell"),
-            "The Accessibility XXXL evidence path must remain anchored to the real Capture shell."
+            source.contains("--es80-capture-qa-scenario=captureComplete"),
+            "Capture Complete Accessibility XXXL remains valuable positive-state evidence while horizon/progress/health evidence is added."
         )
     }
 }
