@@ -1,0 +1,65 @@
+name: Temporary ES80 recovery action copy hot-swap
+
+on:
+  push:
+    branches:
+      - product/es80-v14-recovery-action-language/gpt56-go
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: product/es80-v14-recovery-action-language/gpt56-go
+          fetch-depth: 0
+
+      - name: Make failed-state recovery action rider-first
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")
+          source = path.read_text(encoding="utf-8")
+          old = '"Start a fresh Experiment One"'
+          new = '"Start a fresh Capture"'
+          if source.count(old) != 1:
+              raise SystemExit(f"expected exactly one failed-state recovery label, found {source.count(old)}")
+          source = source.replace(old, new, 1)
+
+          required = [
+              'title: "Capture stopped safely"',
+              '"Start a fresh Capture"',
+              'identifier: "es80.capture.restart-experiment"',
+              'guard status.physicalProcedurePermitted else',
+              'coordinator.invalidateForForegroundLoss()',
+          ]
+          for phrase in required:
+              if phrase not in source:
+                  raise SystemExit(f"required recovery/truth contract disappeared: {phrase}")
+          path.write_text(source, encoding="utf-8")
+          PY
+
+      - name: Verify exact narrow delta
+        shell: bash
+        run: |
+          git diff --check
+          test "$(git diff --numstat -- NembraApp/Features/Research/ES80CaptureShellView.swift | awk '{print $1 ":" $2}')" = "1:1"
+          grep -F 'Start a fresh Capture' NembraApp/Features/Research/ES80CaptureShellView.swift >/dev/null
+          ! grep -F 'Start a fresh Experiment One' NembraApp/Features/Research/ES80CaptureShellView.swift >/dev/null
+
+      - name: Commit product copy and self-delete transformer
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/_tmp_es80_recovery_action_language.yml
+          git add NembraApp/Features/Research/ES80CaptureShellView.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift
+          git diff --cached --check
+          git commit -m "Capture UX: make stopped-state recovery action rider-first"
+          git push origin HEAD:product/es80-v14-recovery-action-language/gpt56-go
