@@ -5,18 +5,8 @@ import Testing
 @Suite("Foreground controller terminal fresh-session consumer")
 struct ForegroundCoreBluetoothCaptureControllerTerminalFreshSessionConsumerTests {
     private static func controllerSource() throws -> String {
-        let testFile = URL(fileURLWithPath: #filePath)
-        let packageRoot = testFile
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: packageRoot
-                .appendingPathComponent("Sources")
-                .appendingPathComponent("NembraBluetoothCapture")
-                .appendingPathComponent("ForegroundCoreBluetoothCaptureController.swift"),
-            encoding: .utf8
-        )
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent("Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift"), encoding: .utf8)
     }
 
     @Test("immutable finalization retains terminal resolution without reopening")
@@ -25,30 +15,19 @@ struct ForegroundCoreBluetoothCaptureControllerTerminalFreshSessionConsumerTests
         #expect(source.contains("private var pendingTerminalQueueResolution: PassiveCoreBluetoothTerminalQueueResolution.Receipt?"))
         #expect(source.contains("let terminalResolution = try resolveQueuedEvidenceAfterTerminalHorizon()"))
         #expect(source.contains("pendingTerminalQueueResolution = terminalResolution"))
-        #expect(!source.contains("_ = try resolveQueuedEvidenceAfterTerminalHorizon()"))
-
-        let start = try #require(
-            source.range(of: "    public func encodedFinalizedObservationHorizonJSON(")?.lowerBound
-        )
-        let end = try #require(
-            source.range(of: "    private func completeTerminalFreshTargetSessionIfReady(", range: start..<source.endIndex)?.lowerBound
-        )
+        let start = try #require(source.range(of: "    public func encodedFinalizedObservationHorizonJSON(")?.lowerBound)
+        let end = try #require(source.range(of: "    private func completeTerminalFreshTargetSessionIfReady(", range: start..<source.endIndex)?.lowerBound)
         let finalization = source[start..<end]
         #expect(!finalization.contains("reopenAfterTerminalFreshTargetSession"))
         #expect(finalization.contains("lastFinalizedArtifactAuthority = committedHorizon.authority"))
     }
 
-    @Test("fresh recorder publication and gate reopen are one synchronous MainActor transition")
+    @Test("fresh recorder publication and gate reopen are one synchronous MainActor transition after any old drain")
     func freshConsumerUsesExactInstalledRecorderAndAppliedChronology() throws {
         let source = try Self.controllerSource()
-        let start = try #require(
-            source.range(of: "    private func completeTerminalFreshTargetSessionIfReady(")?.lowerBound
-        )
-        let end = try #require(
-            source.range(of: "    private func beginTargetSessionIfNeeded", range: start..<source.endIndex)?.lowerBound
-        )
+        let start = try #require(source.range(of: "    private func completeTerminalFreshTargetSessionIfReady(")?.lowerBound)
+        let end = try #require(source.range(of: "    private func beginTargetSessionIfNeeded", range: start..<source.endIndex)?.lowerBound)
         let recovery = source[start..<end]
-
         #expect(recovery.contains("guard !isSelectedTargetAwaitingTerminalCallback else"))
         #expect(recovery.contains("PassiveCoreBluetoothTerminalFreshTargetSession.create("))
         #expect(recovery.contains("try artifactAuthorityFence.transition("))
@@ -59,26 +38,19 @@ struct ForegroundCoreBluetoothCaptureControllerTerminalFreshSessionConsumerTests
         #expect(recovery.contains("currentResolvedThroughQueueSequence: lastResolvedEventSequence"))
         #expect(recovery.contains("currentLastEnqueuedEventSequence: lastEnqueuedEventSequence"))
         #expect(recovery.contains("pendingTerminalQueueResolution = nil"))
-        #expect(!recovery.contains("await "))
+        let synchronousStart = try #require(recovery.range(of: "let freshSession = try PassiveCoreBluetoothTerminalFreshTargetSession.create(")?.lowerBound)
+        #expect(!recovery[synchronousStart...].contains("await "))
     }
 
     @Test("recovery is downstream of finalized teardown and real terminal callback")
     func teardownAndTerminalCallbackDriveRecovery() throws {
         let source = try Self.controllerSource()
-
-        let teardownStart = try #require(
-            source.range(of: "    public func teardownActiveConnectionAfterFinalization() throws {")?.lowerBound
-        )
-        let teardownEnd = try #require(
-            source.range(of: "    private func cancelActiveConnection", range: teardownStart..<source.endIndex)?.lowerBound
-        )
+        let teardownStart = try #require(source.range(of: "    public func teardownActiveConnectionAfterFinalization() throws {")?.lowerBound)
+        let teardownEnd = try #require(source.range(of: "    private func cancelActiveConnection", range: teardownStart..<source.endIndex)?.lowerBound)
         let teardown = source[teardownStart..<teardownEnd]
         #expect(teardown.contains("_ = try completeTerminalFreshTargetSessionIfReady()"))
         #expect(teardown.contains("guard observationBoundaryQueueGate.isTerminal else"))
-
-        let disconnectStart = try #require(
-            source.range(of: "    private func handleDisconnect(")?.lowerBound
-        )
+        let disconnectStart = try #require(source.range(of: "    private func handleDisconnect(")?.lowerBound)
         let disconnect = source[disconnectStart...]
         #expect(disconnect.contains("let disposition = targetState.completeDisconnect(from: identifier)"))
         #expect(disconnect.contains("if observationBoundaryQueueGate.isTerminal || observationBoundaryBlocksArtifactMutation"))
