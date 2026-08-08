@@ -1,0 +1,66 @@
+name: Temporary Capture preflight rider-language transform
+
+on:
+  push:
+    branches:
+      - agent/capture-preflight-rider-language-v14
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/capture-preflight-rider-language-v14
+          fetch-depth: 0
+
+      - name: Remove recipe token from primary preflight copy
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraApp.swift")
+          source = path.read_text(encoding="utf-8")
+          old = 'detail: "Required for ES80-FINGERPRINT-v1",'
+          new = 'detail: "Required for this capture",'
+          if source.count(old) != 1:
+              raise SystemExit(f"guard failed: expected one recipe-bearing preflight detail, found {source.count(old)}")
+          source = source.replace(old, new)
+
+          start = source.index("private struct ES80ExperimentOneStationaryPreflightView")
+          end = source.index("private struct ES80ExperimentOneFieldNoGoView", start)
+          preflight = source[start:end]
+          if "ES80-FINGERPRINT-v1" in preflight:
+              raise SystemExit("guard failed: exact engineering recipe token remains in primary stationary preflight")
+
+          required = [
+              'detail: "Required for this capture"',
+              'title: "Disconnected"',
+              'title: "Connected"',
+              'Text("Disconnect charger to continue")',
+              'Label("Continue to setup confirmation"',
+              'Nembra cannot sense the charger directly.',
+              'PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure',
+              'selectedChargerState = nil',
+              'disconnectedDeclarationAccepted = false',
+          ]
+          missing = [value for value in required if value not in source]
+          if missing:
+              raise SystemExit(f"guard failed: preflight truth/action contract disappeared: {missing}")
+
+          path.write_text(source, encoding="utf-8")
+          PY
+          git diff --check
+
+      - name: Commit product-only delta and remove transformer
+        run: |
+          git config user.name "nembra-v14-preflight-language"
+          git config user.email "noreply@github.com"
+          git add NembraApp/App/NembraApp.swift
+          git rm .github/workflows/temporary-preflight-rider-language-transform.yml
+          git diff --cached --check
+          git commit -m "capture: keep recipe ID out of primary preflight"
+          git push origin HEAD:agent/capture-preflight-rider-language-v14
