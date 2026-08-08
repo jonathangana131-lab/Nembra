@@ -410,6 +410,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                                 .accessibilityHidden(true)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(minHeight: 44)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
