@@ -20,11 +20,16 @@ After this first artifact is analyzed, the next experiment must be selected from
 
 Do not run this experiment until all of the following are true:
 
-- the accepted passive-capture parent includes the hardened finite acquisition, target attribution, immutable artifact-read boundary, and same-target terminal-callback quarantine used by the current recovery line;
-- the V13 product-facing Nembra Capture shell (current recovery line: #350 or its accepted descendant) has been reconciled onto the accepted passive runtime and has passed its exact-head iPhone 12 / iOS 27 app gate;
-- any known shell blockers that could misstate evidence continuity or artifact finalization have been closed;
+- the accepted passive-capture runtime closes the current source-truth blockers, not merely its compile/test gate;
+- delayed `didDiscover` callbacks are admitted only while this controller is actively scanning with CoreBluetooth powered on, so a callback delivered after scan stop / target selection / central invalidation cannot repopulate the candidate catalog or become target-session advertisement evidence;
+- local/operator connection cancellation records an explicit interruption in the same evidence queue **before** artifact-authority advance/retirement, so later evidence cannot correlate backward across an unrecorded cancellation gap;
+- the current-main passive-capture integration composes the reviewed controlled-comparison descendant (currently #334 or an accepted equivalent) rather than the pre-#334 comparison blob; this keeps misleading comparison APIs out of the product even though experiment one itself does not perform a controlled comparison;
+- the V13 product-facing Nembra Capture shell (current recovery line: #350 or its accepted descendant) has been reconciled onto that repaired current-main passive runtime and has passed its exact-head iPhone 12 / iOS 27 app gate;
+- any known shell blockers that could misstate evidence continuity, target correlation, or artifact finalization have been closed;
 - the exact Nembra build/commit used on the phone is known;
 - the capture can be exported unchanged for offline analysis.
+
+A terminal green workflow on an older passive-runtime blob is not enough if source review has demonstrated a truth defect on that exact blob. Source-integrity blockers must be repaired and then re-gated on the exact accepted descendant.
 
 If the stationary-capture manifest/sidecar capability lands first, use it and preserve it with the exact capture JSON. Do not weaken provenance by manually editing the raw capture artifact.
 
@@ -82,7 +87,7 @@ The V13 shell deliberately uses a foreground-only evidence lifecycle. While a li
 6. Continue scanning for about **10 seconds** after power-on. Proceed only if one candidate is uniquely attributable from that before/after observation. If no new candidate appears, or multiple plausible candidates appear together, stop the scan and classify target selection as ambiguous. Do not guess from local name or strongest RSSI.
 7. Leave the scooter powered on and untouched for about **30 seconds** before connecting so transient power-on behavior can settle. The scooter remains stationary throughout.
 8. Treat any short UUID prefix shown in the product shell as display-only disambiguation. Provenance/manifest tooling must use the controller's **full canonical CoreBluetooth UUID** for the selected target. Never reconstruct or guess the full identifier from an 8-character prefix. If the integrated tooling cannot bind the full selected identifier automatically, keep the raw artifact and defer manifest creation until offline tooling can read the exact target identity from evidence.
-9. Select the uniquely correlated candidate and start the target-scoped capture.
+9. Select the uniquely correlated candidate and start the target-scoped capture. The accepted runtime must stop broad scanning here and reject any delayed discovery callback delivered after that stop from mutating the catalog or selected-target evidence.
 10. Keep the scooter stationary while Nembra performs finite service / included-service / characteristic / descriptor discovery plus only GATT-permitted reads/subscriptions.
 11. Wait until Nembra reports that the finite passive acquisition is complete/ready. If it fails closed, times out, disconnects before readiness, becomes ambiguous, or reports foreground evidence-integrity loss, stop. Preserve failed diagnostics only as failure evidence; do not use the attempt to claim a service/field is absent.
 12. After readiness, leave the healthy foreground session running for **60 seconds** without touching scooter controls.
@@ -156,6 +161,7 @@ These answers may promote facts only to **OBSERVED ON PHYSICAL TARGET** / **PHYS
 Only if:
 
 - target selection was uniquely correlated by the off-baseline -> normal power-on observation rather than guessed from name/RSSI;
+- the accepted runtime rejects delayed discovery callbacks once broad scanning has stopped for target capture;
 - finite acquisition reached the controller's accepted ready state;
 - export completed from one immutable target-scoped artifact;
 - target attribution is non-ambiguous under the capture/analyzer policy;
