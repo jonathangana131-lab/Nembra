@@ -1,0 +1,214 @@
+name: Capture descriptor-bound IPA extraction
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-signed-ipa-descriptor-extraction/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/es80-v14-signed-ipa-descriptor-extraction/gpt56-thinking-go
+          fetch-depth: 0
+
+      - name: Bind extraction to one already-open IPA descriptor
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          inspector_path = Path("scripts/ci/es80_signed_field_artifact_evidence.py")
+          test_path = Path("scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py")
+          text = inspector_path.read_text(encoding="utf-8")
+          tests = test_path.read_text(encoding="utf-8")
+
+          start = text.index("def extract_ipa_safely(")
+          end = text.index("\ndef read_info_plist", start)
+          new_extract = "\n".join([
+              "def extract_ipa_safely(ipa_path: Path, destination: Path) -> tuple[Path, str, int]:",
+              "    \"\"\"Extract through one no-follow descriptor and bind the returned digest to those bytes.\"\"\"",
+              "    if not hasattr(os, \"O_NOFOLLOW\"):",
+              "        raise EvidenceError(\"platform cannot enforce no-follow exact IPA inspection input\")",
+              "    flags = os.O_RDONLY | os.O_NOFOLLOW",
+              "    if hasattr(os, \"O_CLOEXEC\"):",
+              "        flags |= os.O_CLOEXEC",
+              "    try:",
+              "        descriptor = os.open(ipa_path, flags)",
+              "    except OSError as exc:",
+              "        raise EvidenceError(f\"could not open exact IPA inspection subject: {ipa_path}\") from exc",
+              "",
+              "    app_roots: set[str] = set()",
+              "    try:",
+              "        before = os.fstat(descriptor)",
+              "        if not stat.S_ISREG(before.st_mode) or before.st_size <= 0:",
+              "            raise EvidenceError(\"exact IPA inspection subject must be one non-empty regular file\")",
+              "        ipa_sha256, ipa_byte_count = _sha256_descriptor(descriptor)",
+              "        after_hash = os.fstat(descriptor)",
+              "        if (",
+              "            _stable_file_identity(before) != _stable_file_identity(after_hash)",
+              "            or ipa_byte_count != before.st_size",
+              "        ):",
+              "            raise EvidenceError(\"exact IPA inspection subject changed before extraction\")",
+              "",
+              "        os.lseek(descriptor, 0, os.SEEK_SET)",
+              "        with os.fdopen(os.dup(descriptor), \"rb\") as subject:",
+              "            try:",
+              "                archive = zipfile.ZipFile(subject)",
+              "            except (OSError, zipfile.BadZipFile) as exc:",
+              "                raise EvidenceError(\"input is not a readable IPA/ZIP archive\") from exc",
+              "",
+              "            with archive:",
+              "                infos = archive.infolist()",
+              "                validated_paths = _validated_unique_member_paths(infos)",
+              "                for info in infos:",
+              "                    member = validated_paths[info.filename]",
+              "                    mode = (info.external_attr >> 16) & 0o177777",
+              "                    if stat.S_ISLNK(mode):",
+              "                        raise EvidenceError(f\"IPA contains unsupported symbolic-link member: {info.filename}\")",
+              "",
+              "                    parts = member.parts",
+              "                    if len(parts) >= 2 and parts[0] == \"Payload\" and parts[1].endswith(\".app\"):",
+              "                        app_roots.add(parts[1])",
+              "",
+              "                    target = destination.joinpath(*parts)",
+              "                    resolved_parent = target.parent.resolve()",
+              "                    if destination.resolve() not in (resolved_parent, *resolved_parent.parents):",
+              "                        raise EvidenceError(f\"IPA member escapes extraction root: {info.filename}\")",
+              "",
+              "                    if info.is_dir():",
+              "                        target.mkdir(parents=True, exist_ok=True)",
+              "                        continue",
+              "",
+              "                    target.parent.mkdir(parents=True, exist_ok=True)",
+              "                    with archive.open(info, \"r\") as source, target.open(\"wb\") as sink:",
+              "                        shutil.copyfileobj(source, sink)",
+              "                    permissions = mode & 0o777",
+              "                    if permissions:",
+              "                        target.chmod(permissions)",
+              "",
+              "        after_extract = os.fstat(descriptor)",
+              "        post_sha256, post_byte_count = _sha256_descriptor(descriptor)",
+              "        after_rehash = os.fstat(descriptor)",
+              "        if (",
+              "            _stable_file_identity(before) != _stable_file_identity(after_extract)",
+              "            or _stable_file_identity(after_extract) != _stable_file_identity(after_rehash)",
+              "            or post_byte_count != ipa_byte_count",
+              "            or post_sha256 != ipa_sha256",
+              "        ):",
+              "            raise EvidenceError(\"exact IPA inspection subject changed during descriptor-bound extraction\")",
+              "    finally:",
+              "        os.close(descriptor)",
+              "",
+              "    if len(app_roots) != 1:",
+              "        raise EvidenceError(",
+              "            f\"IPA must contain exactly one top-level Payload/*.app bundle; found {sorted(app_roots)!r}\"",
+              "        )",
+              "    app_path = destination / \"Payload\" / next(iter(app_roots))",
+              "    if not app_path.is_dir():",
+              "        raise EvidenceError(\"IPA app bundle was not extracted as a directory\")",
+              "    return app_path, ipa_sha256, ipa_byte_count",
+              "",
+          ])
+          text = text[:start] + new_extract + text[end:]
+
+          old_preamble = """def _inspect_snapshotted_ipa(ipa_path: Path, expected_source_sha: str, *, intended_device_udid: str) -> dict:\n    source_sha = canonical_sha40(expected_source_sha)\n    if not ipa_path.is_file():\n        raise EvidenceError(f\"IPA does not exist as a file: {ipa_path}\")\n\n    ipa_sha = sha256_file(ipa_path)\n    ipa_size = ipa_path.stat().st_size\n    if not SHA256_RE.fullmatch(ipa_sha):\n        raise EvidenceError(\"could not derive canonical IPA SHA-256\")\n\n    with tempfile.TemporaryDirectory(prefix=\"nembra-field-ipa-\") as temporary:\n        root = Path(temporary)\n        app_path = extract_ipa_safely(ipa_path, root)\n"""
+          new_preamble = """def _inspect_snapshotted_ipa(ipa_path: Path, expected_source_sha: str, *, intended_device_udid: str) -> dict:\n    source_sha = canonical_sha40(expected_source_sha)\n\n    with tempfile.TemporaryDirectory(prefix=\"nembra-field-ipa-\") as temporary:\n        root = Path(temporary)\n        app_path, ipa_sha, ipa_size = extract_ipa_safely(ipa_path, root)\n        if not SHA256_RE.fullmatch(ipa_sha):\n            raise EvidenceError(\"could not derive canonical IPA SHA-256\")\n"""
+          if text.count(old_preamble) != 1:
+              raise SystemExit("unexpected snapshotted-inspector preamble")
+          text = text.replace(old_preamble, new_preamble, 1)
+          inspector_path.write_text(text, encoding="utf-8")
+
+          tests = tests.replace("import hashlib\n", "import hashlib\nimport io\nimport zipfile\n", 1)
+          old_race = """            real_sha256_file = inspector.sha256_file\n            first_input_hash = True\n            extracted_bytes: list[bytes] = []\n\n            def racing_sha256_file(path: Path) -> str:\n                nonlocal first_input_hash\n                if path == ipa_path and first_input_hash:\n                    first_input_hash = False\n                    digest = hashlib.sha256(original_ipa).hexdigest()\n                    path.write_bytes(transient_other_ipa)\n                    return digest\n                return real_sha256_file(path)\n\n            def observing_extract(path: Path, destination: Path) -> Path:\n                extracted_bytes.append(path.read_bytes())\n                if path == ipa_path:\n                    ipa_path.write_bytes(original_ipa)\n                return app_path\n\n            with (\n                patch.object(inspector, \"sha256_file\", side_effect=racing_sha256_file),\n                patch.object(inspector, \"extract_ipa_safely\", side_effect=observing_extract),\n"""
+          new_race = """            real_descriptor_hash = inspector._sha256_descriptor\n            first_descriptor_hash = True\n            extracted_bytes: list[bytes] = []\n\n            def racing_descriptor_hash(descriptor: int):\n                nonlocal first_descriptor_hash\n                if first_descriptor_hash:\n                    first_descriptor_hash = False\n                    held_path = root / \"caller-original.ipa\"\n                    ipa_path.rename(held_path)\n                    ipa_path.write_bytes(transient_other_ipa)\n                return real_descriptor_hash(descriptor)\n\n            def observing_extract(subject, destination: Path):\n                subject.seek(0)\n                extracted_bytes.append(subject.read())\n                subject.seek(0)\n                return app_path, hashlib.sha256(original_ipa).hexdigest(), len(original_ipa)\n\n            with (\n                patch.object(inspector, \"_sha256_descriptor\", side_effect=racing_descriptor_hash),\n                patch.object(inspector, \"extract_ipa_safely\", side_effect=observing_extract),\n"""
+          if tests.count(old_race) != 1:
+              raise SystemExit("unexpected exact-subject caller race fixture")
+          tests = tests.replace(old_race, new_race, 1)
+
+          first_assert = """            self.assertEqual(\n                extracted_bytes,\n                [original_ipa],\n                \"The code-signing/provisioning inspection must consume the same exact IPA bytes whose digest becomes field evidence.\",\n            )\n"""
+          first_assert_new = first_assert + "            self.assertEqual(ipa_path.read_bytes(), transient_other_ipa)\n"
+          if tests.count(first_assert) != 1:
+              raise SystemExit("unexpected exact-subject extraction assertion")
+          tests = tests.replace(first_assert, first_assert_new, 1)
+
+          insertion = """
+    def test_private_snapshot_path_swap_cannot_change_descriptor_extraction(self) -> None:
+        inspector = load_inspector()
+
+        def make_ipa(marker: bytes) -> bytes:
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, "w") as archive:
+                archive.writestr("Payload/Nembra.app/marker.bin", marker)
+            return buffer.getvalue()
+
+        original_ipa = make_ipa(b"original exact subject")
+        transient_ipa = make_ipa(b"transient pathname replacement")
+
+        with tempfile.TemporaryDirectory(prefix="nembra-private-subject-swap-test-") as temporary:
+            root = Path(temporary)
+            subject_path = root / "NembraField.ipa"
+            held_path = root / "held-original.ipa"
+            extraction_root = root / "extract"
+            subject_path.write_bytes(original_ipa)
+            subject_path.chmod(0o400)
+
+            real_descriptor_hash = inspector._sha256_descriptor
+            first_descriptor_hash = True
+
+            def replace_path_after_open(descriptor: int):
+                nonlocal first_descriptor_hash
+                if first_descriptor_hash:
+                    first_descriptor_hash = False
+                    subject_path.rename(held_path)
+                    subject_path.write_bytes(transient_ipa)
+                return real_descriptor_hash(descriptor)
+
+            with patch.object(
+                inspector,
+                "_sha256_descriptor",
+                side_effect=replace_path_after_open,
+            ):
+                app_path, ipa_sha256, ipa_byte_count = inspector.extract_ipa_safely(
+                    subject_path,
+                    extraction_root,
+                )
+
+            self.assertEqual((app_path / "marker.bin").read_bytes(), b"original exact subject")
+            self.assertEqual(ipa_sha256, hashlib.sha256(original_ipa).hexdigest())
+            self.assertEqual(ipa_byte_count, len(original_ipa))
+            self.assertEqual(subject_path.read_bytes(), transient_ipa)
+"""
+          main_marker = "\n\nif __name__ == \"__main__\":\n"
+          if tests.count(main_marker) != 1:
+              raise SystemExit("unexpected exact-subject test main marker")
+          tests = tests.replace(main_marker, "\n" + insertion + main_marker, 1)
+          test_path.write_text(tests, encoding="utf-8")
+
+          subprocess.run([sys.executable, "-m", "py_compile", str(inspector_path), str(test_path)], check=True)
+          subprocess.run([sys.executable, str(inspector_path), "--self-test"], check=True)
+          subprocess.run([sys.executable, str(test_path)], check=True)
+          PY
+          test "$(stat -c '%a' scripts/ci/es80_signed_field_artifact_evidence.py)" = "755"
+          test "$(stat -c '%a' scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py)" = "755"
+          git diff --check
+
+      - name: Commit hardening and remove transformer
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-ipa-descriptor-extraction.yml
+          git config user.name "nembra-v14-transform"
+          git config user.email "actions@users.noreply.github.com"
+          git add scripts/ci/es80_signed_field_artifact_evidence.py scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py .github/workflows/capture-ipa-descriptor-extraction.yml
+          git diff --cached --check
+          git commit -m "[Capture provenance v14] Extract exact IPA through one descriptor"
+          git push origin HEAD:fix/es80-v14-signed-ipa-descriptor-extraction/gpt56-thinking-go
