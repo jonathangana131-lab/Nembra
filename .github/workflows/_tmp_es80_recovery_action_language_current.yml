@@ -23,7 +23,6 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import subprocess
 
           path = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")
           source = path.read_text(encoding="utf-8")
@@ -32,15 +31,6 @@ jobs:
           if source.count(old) != 1:
               raise SystemExit(f"expected exactly one failed-state recovery label, found {source.count(old)}")
           source = source.replace(old, new, 1)
-          path.write_text(source, encoding="utf-8")
-
-          diff = subprocess.check_output(["git", "diff", "--unified=0", "--", str(path)], text=True)
-          removed = [line for line in diff.splitlines() if line.startswith("-") and not line.startswith("---")]
-          added = [line for line in diff.splitlines() if line.startswith("+") and not line.startswith("+++")]
-          if removed != ['-                "Start a fresh Experiment One"']:
-              raise SystemExit(f"unexpected removed shell lines: {removed!r}")
-          if added != ['+                "Start a fresh Capture"']:
-              raise SystemExit(f"unexpected added shell lines: {added!r}")
 
           required = [
               'title: "Capture stopped safely"',
@@ -52,12 +42,20 @@ jobs:
           for phrase in required:
               if phrase not in source:
                   raise SystemExit(f"required recovery/truth contract disappeared: {phrase}")
+          path.write_text(source, encoding="utf-8")
           PY
 
-      - name: Verify and commit product delta
+      - name: Verify exact working-tree scope
         shell: bash
         run: |
           git diff --check
+          test "$(git diff --name-only)" = "NembraApp/Features/Research/ES80CaptureShellView.swift"
+          grep -F 'Start a fresh Capture' NembraApp/Features/Research/ES80CaptureShellView.swift >/dev/null
+          ! grep -F 'Start a fresh Experiment One' NembraApp/Features/Research/ES80CaptureShellView.swift >/dev/null
+
+      - name: Commit product delta and self-delete transformer
+        shell: bash
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm .github/workflows/_tmp_es80_recovery_action_language_current.yml
