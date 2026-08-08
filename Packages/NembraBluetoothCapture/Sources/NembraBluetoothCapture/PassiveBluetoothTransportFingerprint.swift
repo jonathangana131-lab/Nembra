@@ -114,10 +114,9 @@ public enum PassiveBluetoothTransportFingerprint {
     }
 
     /// Aggregate identifier sets are descriptive ever-observed evidence. Match
-    /// strength must come from one uninterrupted continuity segment for this
-    /// exact peripheral. Structured disconnects from unrelated imported devices
-    /// do not fragment the selected peripheral; generic interruptions remain a
-    /// global observation gap because they carry no peripheral identity.
+    /// strength must come from one uninterrupted capture-wide byte-continuity
+    /// segment. Target attribution remains exact, but an authoritative raw gap
+    /// from any peripheral fences topology from being combined across that gap.
     ///
     /// Returns `nil` when the requested identifier never appears in any typed
     /// peripheral observation in the artifact. A non-`nil` report with empty
@@ -137,10 +136,7 @@ public enum PassiveBluetoothTransportFingerprint {
         var segments: [EvidenceAccumulator] = []
 
         for record in session.records {
-            if breaksContinuity(
-                record.event,
-                peripheralIdentifier: peripheralIdentifier
-            ) {
+            if record.event.breaksByteContinuity {
                 if !currentSegment.isEmpty {
                     segments.append(currentSegment)
                 }
@@ -277,21 +273,6 @@ public enum PassiveBluetoothTransportFingerprint {
             observedServiceUUIDs: [definition.serviceUUID],
             observedCharacteristicUUIDs: matchingCharacteristics
         )
-    }
-
-    private static func breaksContinuity(
-        _ event: PassiveBluetoothCaptureEvent,
-        peripheralIdentifier: String
-    ) -> Bool {
-        switch event {
-        case let .connection(observation):
-            return observation.state == .disconnected
-                && observation.peripheralIdentifier == peripheralIdentifier
-        case .interruption:
-            return true
-        default:
-            return false
-        }
     }
 
     private static func observedPeripheralIdentifiers(
