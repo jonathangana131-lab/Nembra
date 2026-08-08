@@ -32,7 +32,7 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
         permitsPhysicalProcedure(status: status)
     }
 
-    package static func permitsPhysicalProcedure(status: Status) -> Bool {
+    static func permitsPhysicalProcedure(status: Status) -> Bool {
         switch status {
         case .noGo:
             return false
@@ -45,7 +45,7 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
     ///
     /// Public consumers may inspect these values, but cannot construct this type directly. More
     /// importantly, constructing a `Status` value is never sufficient to create a live coordinator;
-    /// only the package-owned research-admission producer can feed the package-only live initializer.
+    /// only the module-owned research-admission producer can feed the capability-only live initializer.
     public struct ResearchBuild: Equatable, Sendable {
         public let buildIdentifier: String
         public let buildInstanceID: String
@@ -62,23 +62,24 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
         }
     }
 
-    /// Package-only capability for the first private field artifact.
+    /// Module-private capability for the first private field artifact.
     ///
-    /// No public initializer exists. The production producer below reads only `Bundle.main` plus the
-    /// package runtime identity reader, so app/UI code cannot substitute caller-owned metadata.
-    package struct ResearchAdmission: Equatable, Sendable {
-        package let build: ResearchBuild
+    /// No public/package initializer exists. The production producer below reads only `Bundle.main`
+    /// plus the package runtime identity reader, so app/UI or sibling package targets cannot
+    /// substitute caller-owned metadata into live coordinator construction.
+    struct ResearchAdmission: Equatable, Sendable {
+        let build: ResearchBuild
 
         fileprivate init(build: ResearchBuild) {
             self.build = build
         }
 
-        package var status: Status {
+        var status: Status {
             .goPrivateResearchBuild(build)
         }
     }
 
-    package enum ResearchAdmissionError: Error, Equatable, Sendable {
+    enum ResearchAdmissionError: Error, Equatable, Sendable {
         case missingFieldRecipe
         case unsupportedFieldRecipe
         case buildMetadataMismatch
@@ -92,7 +93,7 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
     /// recipe/build tuple is therefore only the mechanically identifiable build-time authorization;
     /// external signed-IPA acceptance still has to match these exact values before the runbook may
     /// authorize the physical procedure.
-    package static func researchAdmissionForCurrentApplication() throws -> ResearchAdmission {
+    static func researchAdmissionForCurrentApplication() throws -> ResearchAdmission {
         let bundle = Bundle.main
         let runtimeBuildIdentity = try PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()
         return try researchAdmission(
@@ -101,11 +102,11 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
         )
     }
 
-    /// Deterministic package seam used by executable regression tests.
+    /// Deterministic module seam used by executable regression tests.
     ///
     /// Every embedded build field is re-compared with the already-validated runtime identity instead
     /// of trusting a second caller-provided spelling. Production invokes this only with Bundle.main.
-    package static func researchAdmission(
+    static func researchAdmission(
         infoDictionary: [String: Any],
         runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity
     ) throws -> ResearchAdmission {
