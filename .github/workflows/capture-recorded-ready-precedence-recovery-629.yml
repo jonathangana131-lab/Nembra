@@ -1,0 +1,93 @@
+name: Capture recorded Ready precedence recovery on 629
+
+on:
+  push:
+    branches:
+      - recovery/es80-v14-recorded-ready-precedence-current-629/gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          ref: recovery/es80-v14-recorded-ready-precedence-current-629/gpt56
+
+      - name: Verify exact failed-harness parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "83f463a5a4584c0fd5dca61aadcf79f8341a2735"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-recorded-ready-precedence-recovery-629.yml"
+
+      - name: Apply exact Ready recovery precedence patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          controller = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift")
+          source = controller.read_text()
+          old = """                        } catch {
+                            // Recorder mutation already happened, so quarantine with
+                            // the distinct recorded-before-commit origin. Never label
+                            // this a zero-mutation rejection.
+                            _ = try? self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit(recordedReady)
+                            throw error
+                        }
+"""
+          new = """                        } catch {
+                            // Recorder mutation already happened, so quarantine with
+                            // the distinct recorded-before-commit origin. Never label
+                            // this a zero-mutation rejection. Exact quarantine failure
+                            // is stronger lifecycle evidence than the triggering commit
+                            // error and must not be suppressed.
+                            let recordedReadyFailure = error
+                            do {
+                                _ = try self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit(recordedReady)
+                            } catch {
+                                throw error
+                            }
+                            throw recordedReadyFailure
+                        }
+"""
+          count = source.count(old)
+          if count != 1:
+              raise SystemExit(f"expected exactly one current Ready recovery site, found {count}")
+          controller.write_text(source.replace(old, new, 1))
+
+          for workflow in (
+              Path(".github/workflows/capture-recorded-ready-recovery-precedence-integration.yml"),
+              Path(".github/workflows/capture-recorded-ready-precedence-recovery-629.yml"),
+          ):
+              if workflow.exists():
+                  workflow.unlink()
+          PY
+
+          git diff --check
+          controller=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          test "$(grep -c 'let recordedReadyFailure = error' "$controller")" = "1"
+          test "$(grep -c 'throw recordedReadyFailure' "$controller")" = "1"
+          test "$(grep -c 'try? self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit' "$controller" || true)" = "0"
+          test "$(grep -c 'let recordedHorizonFailure = error' "$controller")" = "1"
+          test "$(grep -c 'try? observationBoundaryQueueGate.abortRecordedHorizonBeforeGateCommit' "$controller" || true)" = "0"
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerRecoveryErrorPrecedenceTests.swift
+          test ! -e .github/workflows/capture-recorded-ready-recovery-precedence-integration.yml
+          test ! -e .github/workflows/capture-recorded-ready-precedence-recovery-629.yml
+
+      - name: Commit recovered product tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-v14-swarm"
+          git config user.email "actions@users.noreply.github.com"
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift \
+                  .github/workflows/capture-recorded-ready-recovery-precedence-integration.yml \
+                  .github/workflows/capture-recorded-ready-precedence-recovery-629.yml
+          git commit -m "fix(capture): preserve recorded Ready recovery failure"
+          git push origin HEAD:recovery/es80-v14-recorded-ready-precedence-current-629/gpt56
