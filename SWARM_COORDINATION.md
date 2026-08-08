@@ -80,6 +80,34 @@ CI running is not a stop condition. While waiting for a build/test result, do an
 
 Do not repeatedly poll CI when useful work exists.
 
+## GitHub durability — chat-only work is lost work
+
+GitHub is the swarm's durable memory. Conversation text is not a valid handoff channel for material engineering state.
+
+Before ending a worker run, every material result must exist durably on GitHub:
+- code, fixes, tests, UI work, tooling, and documentation belong in a branch/commit/PR;
+- review findings belong in the relevant PR review/comment or another durable GitHub checkpoint;
+- blockers must name the exact SHA/path/state and next safe action on GitHub;
+- visual/screenshot findings, accessibility failures, performance findings, test failures, rejected integrations, and exact-head acceptance results must be posted to GitHub;
+- if a worker cannot safely implement a discovered defect, it must still leave the finding on GitHub for the owning/integration worker;
+- PR bodies/checkpoints should be updated when they are the active durable handoff surface.
+
+A result that exists only in a worker's chat is considered **LOST / NOT HANDED OFF** and does not count as completed swarm work. Never assume another worker will see conversation-only reviewer output.
+
+Review-only workers are especially required to publish findings. A reviewer that says "I found X" only in chat has not completed the review handoff.
+
+Durable handoffs should include enough specificity for hot-swap continuation: exact head SHA, relevant paths, observed failure or evidence, whether the finding is blocking, and the next concrete safe action when known.
+
+## Night-relay continuity
+
+Scheduled/night workers exist primarily to keep Nembra moving after interactive workers stop, time out, die, or go idle.
+
+A night worker must not assume an old active branch means its worker is still alive. Fresh-check GitHub, determine what is actually moving, recover or claim a safe lane, and continue real repository work.
+
+Night workers are relays, not status reporters. If an interactive lane appears abandoned, recover it safely from its durable exact head on a new branch when appropriate. If it is still active, self-reassign to another useful lane.
+
+Every scheduled run must leave GitHub in a better, more recoverable state than it found it whenever meaningful safe work exists. Its final chat message is optional narration; GitHub is the required durable output.
+
 ## Existing workers / hot-swap
 
 Any worker that refreshes GitHub and sees this file should apply it immediately, even if its chat began before this document existed.
@@ -96,6 +124,7 @@ For Nembra V14, `GO` means:
 - determine the current flagship and safe ownership map;
 - claim the highest-value non-conflicting lane;
 - execute real work immediately;
+- persist every material result to GitHub, never chat-only;
 - after every checkpoint, refresh and continue;
 - never stop merely because one task, PR, test, merge, or CI run finished;
 - never sit idle behind another worker when another safe useful lane exists.
