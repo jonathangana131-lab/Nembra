@@ -24,6 +24,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         case cutoffOverrun
         case horizonArtifactNotReady
         case freshTargetSessionRequired
+        case resolvedFrontierDoesNotMatchResolution(expected: UInt64, actual: UInt64)
         case terminalQueueChangedAfterResolution(expected: UInt64, actual: UInt64)
     }
 
@@ -474,6 +475,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
     @MainActor
     mutating func reopenAfterTerminalQueueResolution(
         _ resolution: PassiveCoreBluetoothTerminalQueueResolution.Receipt,
+        currentResolvedThroughQueueSequence: UInt64,
         currentLastEnqueuedEventSequence: UInt64,
         freshTargetSessionGeneration: UInt64
     ) throws {
@@ -488,6 +490,15 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         }
         guard resolution.terminalAuthority == transaction.authority else {
             throw StateError.authorityChanged
+        }
+        // A resolution receipt proves the retired suffix may advance global FIFO
+        // chronology; it does not mutate the controller-owned resolved frontier.
+        // Lifecycle admission may reopen only after that frontier was applied.
+        guard currentResolvedThroughQueueSequence == resolution.resolvedThroughQueueSequence else {
+            throw StateError.resolvedFrontierDoesNotMatchResolution(
+                expected: resolution.resolvedThroughQueueSequence,
+                actual: currentResolvedThroughQueueSequence
+            )
         }
         guard resolution.resolvedThroughQueueSequence == currentLastEnqueuedEventSequence else {
             throw StateError.terminalQueueChangedAfterResolution(
