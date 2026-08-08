@@ -45,7 +45,7 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
         #expect(manifest.evidenceSummary.continuityBreakCount == 1)
 
         let encoded = try PassiveBluetoothStationaryCaptureManifestJSON.encode(manifest)
-        let verified = try PassiveBluetoothStationaryCaptureManifestJSON.verify(
+        let verified = try PassiveBluetoothStationaryCaptureManifestJSON.verifyCaptureBinding(
             manifestJSON: encoded,
             captureJSON: captureJSON
         )
@@ -61,7 +61,7 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
         changedBytes.append(contentsOf: Data("\n".utf8))
 
         #expect(throws: PassiveBluetoothStationaryCaptureManifestError.manifestDoesNotMatchCapture) {
-            _ = try PassiveBluetoothStationaryCaptureManifestJSON.verify(
+            _ = try PassiveBluetoothStationaryCaptureManifestJSON.verifyCaptureBinding(
                 manifestJSON: manifestJSON,
                 captureJSON: changedBytes
             )
@@ -150,7 +150,7 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
         let tamperedManifestJSON = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
 
         #expect(throws: PassiveBluetoothStationaryCaptureManifestError.manifestDoesNotMatchCapture) {
-            _ = try PassiveBluetoothStationaryCaptureManifestJSON.verify(
+            _ = try PassiveBluetoothStationaryCaptureManifestJSON.verifyCaptureBinding(
                 manifestJSON: tamperedManifestJSON,
                 captureJSON: captureJSON
             )
@@ -189,7 +189,7 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
         let changedManifestJSON = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
 
         #expect(throws: DecodingError.self) {
-            _ = try PassiveBluetoothStationaryCaptureManifestJSON.verify(
+            _ = try PassiveBluetoothStationaryCaptureManifestJSON.verifyCaptureBinding(
                 manifestJSON: changedManifestJSON,
                 captureJSON: captureJSON
             )
@@ -206,7 +206,7 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
         let changedManifestJSON = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
 
         #expect(throws: PassiveBluetoothStationaryCaptureManifestError.unsupportedSchemaVersion(99)) {
-            _ = try PassiveBluetoothStationaryCaptureManifestJSON.verify(
+            _ = try PassiveBluetoothStationaryCaptureManifestJSON.verifyCaptureBinding(
                 manifestJSON: changedManifestJSON,
                 captureJSON: captureJSON
             )
