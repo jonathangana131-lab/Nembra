@@ -101,13 +101,23 @@ public struct RideObservedPeakHistoryEvidence: Codable, Equatable, Sendable {
             throw RideObservedPeakHistoryEvidenceError.evidenceMismatch
         }
 
+        try RideObservedPeakHistoryIntegrity.validate(
+            beganAfterKnownObservationGap: beganAfterKnownObservationGap,
+            knownSelectedSourceInterruptionCount: knownSelectedSourceInterruptionCount,
+            foreignSourceCallbackCount: foreignSourceCallbackCount,
+            peakRejections: peakRejections,
+            completedPeak: completedPeak,
+            telemetryBenchmark: telemetryBenchmark
+        )
+
         if let completedPeak {
             guard completedPeak.sessionID == sessionID,
                   completedPeak.rideContinuity == rideContinuity,
                   completedPeak.source == source,
                   completedPeak.beganAfterKnownObservationGap == beganAfterKnownObservationGap,
                   completedPeak.knownInterruptionCount == knownSelectedSourceInterruptionCount,
-                  completedPeak.qualityRejectedSampleCount == peakRejections.totalRejectedSampleCount else {
+                  completedPeak.qualityRejectedSampleCount
+                    == peakRejections.selectedSourceQualityRejectedSampleCount else {
                 throw RideObservedPeakHistoryEvidenceError.evidenceMismatch
             }
         }
