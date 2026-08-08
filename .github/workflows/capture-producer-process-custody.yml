@@ -1,0 +1,39 @@
+name: Capture producer process custody
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-producer-process-custody/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/es80-v14-producer-process-custody/gpt56-thinking-go
+          fetch-depth: 0
+      - name: Apply guarded transform
+        run: python3 .github/nembra_tmp/producer_process_custody_patch.py
+      - name: Shell syntax
+        run: bash -n scripts/ci/xcode27_signed_field_candidate.sh
+      - name: Producer source regression
+        run: python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+      - name: Compile source regression
+        run: python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+      - name: Diff hygiene
+        run: git diff --check
+      - name: Commit product repair and remove transformer
+        run: |
+          rm .github/nembra_tmp/producer_process_custody_patch.py
+          rmdir .github/nembra_tmp 2>/dev/null || true
+          rm .github/workflows/capture-producer-process-custody.yml
+          git config user.name "nembra-v14-transform"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A scripts/ci/xcode27_signed_field_candidate.sh scripts/ci/tests/test_xcode27_signed_field_candidate_source.py .github/nembra_tmp .github/workflows/capture-producer-process-custody.yml
+          git diff --cached --check
+          git commit -m "[Capture release v14] Close signed-field process custody"
+          git push origin HEAD:fix/es80-v14-producer-process-custody/gpt56-thinking-go
