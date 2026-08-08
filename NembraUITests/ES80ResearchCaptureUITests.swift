@@ -38,6 +38,18 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             app.staticTexts["ES80-FINGERPRINT-v1"].waitForExistence(timeout: 3),
             "The installed versioned procedure must be identified without becoming executable."
         )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture.build-provenance-ready"].waitForExistence(timeout: 3),
+            "Exact-head QA must inject a valid Capture build declaration and establish the running executable fingerprint."
+        )
+        XCTAssertTrue(
+            app.staticTexts["Capture Build V14-F1"].waitForExistence(timeout: 3),
+            "The human-readable field build identifier must be visible in Capture preflight."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.build-provenance-blocked"].exists,
+            "The trusted exact-head QA build must not silently fall back to missing or malformed runtime provenance."
+        )
 
         XCTAssertFalse(
             app.buttons["Begin OFF 1 window"].exists,
@@ -73,7 +85,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Nembra Capture V14 — Package-Owned Physical NO-GO"
+        attachment.name = "Nembra Capture V14 — Package-Owned Physical NO-GO + Runtime Provenance"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
