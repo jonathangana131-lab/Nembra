@@ -48,6 +48,7 @@ struct PassiveCoreBluetoothTerminalQueueRetirementTests {
         #expect(receipt.firstRetiredQueueSequence == 13)
         #expect(receipt.lastRetiredQueueSequence == 15)
         #expect(receipt.retainedPendingEvidenceCount == 2)
+        #expect(receipt.requiresRetainedEvidenceRoutingBeforeReopen)
     }
 
     @Test
@@ -167,6 +168,7 @@ struct PassiveCoreBluetoothTerminalQueueRetirementTests {
         let receipt = try retire(&events, currentTail: 14, gate: gate)
         #expect(events.isEmpty)
         #expect(receipt.validatedQueueTailSequence == 14)
+        #expect(!receipt.requiresRetainedEvidenceRoutingBeforeReopen)
 
         let error = captureStateError {
             _ = try retire(&events, currentTail: 14, gate: gate)
@@ -200,6 +202,7 @@ struct PassiveCoreBluetoothTerminalQueueRetirementTests {
         #expect(receipt.validatedQueueTailSequence == 14)
         #expect(receipt.lastRetiredQueueSequence == 14)
         #expect(receipt.retainedPendingEvidenceCount == 1)
+        #expect(receipt.requiresRetainedEvidenceRoutingBeforeReopen)
     }
 
     @Test
@@ -227,6 +230,7 @@ struct PassiveCoreBluetoothTerminalQueueRetirementTests {
         #expect(receipt.firstRetiredQueueSequence == nil)
         #expect(receipt.lastRetiredQueueSequence == nil)
         #expect(receipt.retainedPendingEvidenceCount == 1)
+        #expect(receipt.requiresRetainedEvidenceRoutingBeforeReopen)
     }
 
     @Test
@@ -246,6 +250,7 @@ struct PassiveCoreBluetoothTerminalQueueRetirementTests {
         #expect(receipt.validatedQueueTailSequence == 12)
         #expect(receipt.retiredEvidenceCount == 0)
         #expect(receipt.retainedPendingEvidenceCount == 0)
+        #expect(!receipt.requiresRetainedEvidenceRoutingBeforeReopen)
     }
 
     @Test
