@@ -1,3 +1,5 @@
+import Foundation
+
 /// MainActor-only, one-shot retirement of queued evidence that belongs to the
 /// exact artifact authority already sealed by a terminal observation horizon.
 ///
@@ -36,6 +38,7 @@ struct PassiveCoreBluetoothTerminalQueueRetirement: Sendable {
     struct Receipt: Equatable, Sendable {
         let terminalAuthority: PassiveCoreBluetoothArtifactAuthorityContext
         let terminalTransactionRevision: UInt64
+        let terminalTransactionIdentity: UUID
         let horizonQueueCutoff: UInt64
         let validatedQueueTailSequence: UInt64
         let retiredEvidenceCount: Int
@@ -50,6 +53,7 @@ struct PassiveCoreBluetoothTerminalQueueRetirement: Sendable {
         fileprivate init(
             terminalAuthority: PassiveCoreBluetoothArtifactAuthorityContext,
             terminalTransactionRevision: UInt64,
+            terminalTransactionIdentity: UUID,
             horizonQueueCutoff: UInt64,
             validatedQueueTailSequence: UInt64,
             retiredEvidenceCount: Int,
@@ -59,6 +63,7 @@ struct PassiveCoreBluetoothTerminalQueueRetirement: Sendable {
         ) {
             self.terminalAuthority = terminalAuthority
             self.terminalTransactionRevision = terminalTransactionRevision
+            self.terminalTransactionIdentity = terminalTransactionIdentity
             self.horizonQueueCutoff = horizonQueueCutoff
             self.validatedQueueTailSequence = validatedQueueTailSequence
             self.retiredEvidenceCount = retiredEvidenceCount
@@ -191,6 +196,7 @@ struct PassiveCoreBluetoothTerminalQueueRetirement: Sendable {
         return Receipt(
             terminalAuthority: transaction.authority,
             terminalTransactionRevision: transaction.revision,
+            terminalTransactionIdentity: transaction.identity,
             horizonQueueCutoff: transaction.queueCutoff,
             validatedQueueTailSequence: currentLastEnqueuedEventSequence,
             retiredEvidenceCount: retiredEvidenceCount,
