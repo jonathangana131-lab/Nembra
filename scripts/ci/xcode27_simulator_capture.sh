@@ -24,6 +24,7 @@ if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
 fi
 CAPTURE_BUILD_IDENTIFIER="Capture Build V14-${CAPTURE_BUILD_COMMIT_SHA:0:12}"
 CAPTURE_RECIPE_IDENTIFIER="ES80-FINGERPRINT-v1"
+CAPTURE_PROCEDURE_VERSION="V14"
 
 {
   echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -31,6 +32,7 @@ CAPTURE_RECIPE_IDENTIFIER="ES80-FINGERPRINT-v1"
   echo "capture_build_identifier=$CAPTURE_BUILD_IDENTIFIER"
   echo "capture_build_commit_sha=$CAPTURE_BUILD_COMMIT_SHA"
   echo "capture_recipe_identifier=$CAPTURE_RECIPE_IDENTIFIER"
+  echo "capture_procedure_version=$CAPTURE_PROCEDURE_VERSION"
   sw_vers
   xcodebuild -version
   xcrun simctl list runtimes
@@ -152,49 +154,78 @@ if [[ ! "$EXECUTABLE_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
   exit 13
 fi
 
-CAPTURE_BUILD_RECORD="$ARTIFACTS_DIR/capture-build-record.json"
+TRUSTED_BUILD_RECORD="$ARTIFACTS_DIR/NembraCaptureTrustedBuildRecord.json"
+RUNNER_METADATA="$ARTIFACTS_DIR/capture-runner-metadata.json"
 python3 - \
-  "$CAPTURE_BUILD_RECORD" \
+  "$TRUSTED_BUILD_RECORD" \
+  "$RUNNER_METADATA" \
   "$CAPTURE_BUILD_IDENTIFIER" \
   "$CAPTURE_BUILD_COMMIT_SHA" \
   "$EXECUTABLE_SHA256" \
   "$CAPTURE_RECIPE_IDENTIFIER" \
+  "$CAPTURE_PROCEDURE_VERSION" \
   "$BUNDLE_ID" \
   "${GITHUB_RUN_ID:-local}" \
   "${GITHUB_RUN_ATTEMPT:-0}" <<'PY'
+import hashlib
 import json
 import sys
 
 (
-    output_path,
+    trusted_record_path,
+    runner_metadata_path,
     build_identifier,
     source_commit_sha,
     executable_sha256,
     recipe_identifier,
+    procedure_version,
     bundle_identifier,
     run_id,
     run_attempt,
 ) = sys.argv[1:]
 
-record = {
+trusted_record = {
     "schemaVersion": 1,
-    "authority": "runner-produced-build-record-not-source-attestation",
     "buildIdentifier": build_identifier,
     "sourceCommitSHA": source_commit_sha,
     "executableSHA256": executable_sha256,
-    "recipeIdentifier": recipe_identifier,
+    "experimentRecipeID": recipe_identifier,
+    "procedureVersion": procedure_version,
+}
+trusted_bytes = (
+    json.dumps(trusted_record, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+)
+with open(trusted_record_path, "wb") as handle:
+    handle.write(trusted_bytes)
+
+runner_metadata = {
+    "schemaVersion": 1,
+    "authority": "runner-generated-simulator-provenance-not-field-authorization",
+    "trustedBuildRecordSHA256": hashlib.sha256(trusted_bytes).hexdigest(),
     "bundleIdentifier": bundle_identifier,
     "platform": "iOS Simulator",
     "githubRunID": run_id,
     "githubRunAttempt": run_attempt,
 }
-with open(output_path, "w", encoding="utf-8") as handle:
-    json.dump(record, handle, indent=2, sort_keys=True)
+with open(runner_metadata_path, "w", encoding="utf-8") as handle:
+    json.dump(runner_metadata, handle, indent=2, sort_keys=True)
     handle.write("\n")
 PY
 
-echo "capture_executable_sha256=$EXECUTABLE_SHA256" >> "$ARTIFACTS_DIR/environment.txt"
-echo "capture_build_record=$CAPTURE_BUILD_RECORD" >> "$ARTIFACTS_DIR/environment.txt"
+BUNDLED_TRUSTED_BUILD_RECORD="$APP_PATH/NembraCaptureTrustedBuildRecord.json"
+cp "$TRUSTED_BUILD_RECORD" "$BUNDLED_TRUSTED_BUILD_RECORD"
+if ! cmp -s "$TRUSTED_BUILD_RECORD" "$BUNDLED_TRUSTED_BUILD_RECORD"; then
+  echo "Bundled trusted build record diverged from the runner-produced record." >&2
+  exit 14
+fi
+TRUSTED_BUILD_RECORD_SHA256="$(shasum -a 256 "$TRUSTED_BUILD_RECORD" | awk '{print $1}')"
+
+printf '%s\n' \
+  "capture_executable_sha256=$EXECUTABLE_SHA256" \
+  "capture_trusted_build_record=$TRUSTED_BUILD_RECORD" \
+  "capture_trusted_build_record_sha256=$TRUSTED_BUILD_RECORD_SHA256" \
+  "capture_runner_metadata=$RUNNER_METADATA" \
+  >> "$ARTIFACTS_DIR/environment.txt"
 
 xcrun simctl install "$UDID" "$APP_PATH"
 
