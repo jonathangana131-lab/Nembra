@@ -1,4 +1,4 @@
-name: Verify ES80 signed-field tooling repair
+name: Verify ES80 remaining portable exact-head gates
 
 on:
   push:
@@ -15,13 +15,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 2
+          fetch-depth: 3
 
-      - name: Verify exact product parent
+      - name: Verify exact product ancestor and workflow-only mirror
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "b982fc627da2afd45b305140931e65ff0250426f"
+          test "$(git rev-parse HEAD^^)" = "b982fc627da2afd45b305140931e65ff0250426f"
+          test "$(git diff --name-only b982fc627da2afd45b305140931e65ff0250426f..HEAD)" = ".github/workflows/diagnose-es80-signed-field-tooling-chatgpt56.yml"
 
       - name: Run exact signed-field tooling step
         shell: bash
@@ -35,3 +36,22 @@ jobs:
           python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
           python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py
           python3 scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py
+
+      - name: Run exact signed-field candidate producer source step
+        shell: bash
+        run: |
+          set -euxo pipefail
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+
+      - name: Run exact offline field authorization signer step
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 -m py_compile scripts/ci/es80_field_authorization_envelope.py
+          python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          python3 scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          python3 scripts/ci/es80_field_authorization_envelope.py --self-test
