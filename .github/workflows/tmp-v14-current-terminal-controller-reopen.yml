@@ -1,0 +1,210 @@
+name: TEMP V14 current terminal controller reopen
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-current-terminal-controller-reopen/chatgpt56-go
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: integration/es80-v14-current-terminal-controller-reopen/chatgpt56-go
+          fetch-depth: 0
+
+      - name: Patch foreground controller terminal handoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift')
+          source = path.read_text()
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one match, found {count}')
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              '    private var lastFinalizedArtifactAuthority: PassiveCoreBluetoothArtifactAuthorityContext?\n    private var targetState = PassiveCoreBluetoothTargetState()\n',
+              '    private var lastFinalizedArtifactAuthority: PassiveCoreBluetoothArtifactAuthorityContext?\n    /// Exact terminal FIFO resolution retained after immutable artifact seal. It remains\n    /// bound to the sealed authority through finalized transport teardown and may be\n    /// consumed only after the old same-target terminal callback quarantine clears.\n    private var pendingTerminalQueueResolution: PassiveCoreBluetoothTerminalQueueResolution.Receipt?\n    private var targetState = PassiveCoreBluetoothTargetState()\n',
+              'pending terminal resolution state',
+          )
+
+          replace_once(
+              '''    public func teardownActiveConnectionAfterFinalization() throws {
+        guard activePeripheral != nil else { return }
+        guard observationBoundaryQueueGate.isTerminal else {
+            throw ControllerError.artifactNotFinalized
+        }
+        guard let finalizedAuthority = lastFinalizedArtifactAuthority,
+              finalizedAuthority.matches(
+                targetSessionGeneration: targetSessionGeneration,
+                authorityGeneration: artifactAuthorityGeneration
+              ) else {
+            throw ControllerError.artifactNotFinalized
+        }
+        cancelActiveConnection(cause: .finalizedArtifactTeardown)
+    }
+
+''',
+              '''    public func teardownActiveConnectionAfterFinalization() throws {
+        guard activePeripheral != nil else { return }
+        guard observationBoundaryQueueGate.isTerminal else {
+            throw ControllerError.artifactNotFinalized
+        }
+        guard let finalizedAuthority = lastFinalizedArtifactAuthority,
+              finalizedAuthority.matches(
+                targetSessionGeneration: targetSessionGeneration,
+                authorityGeneration: artifactAuthorityGeneration
+              ) else {
+            throw ControllerError.artifactNotFinalized
+        }
+        cancelActiveConnection(cause: .finalizedArtifactTeardown)
+    }
+
+    /// Rotates a successfully sealed terminal Capture into one genuinely fresh durable
+    /// recorder only after finalized transport teardown has crossed the real same-target
+    /// terminal callback boundary. No callback/actor suspension occurs while fresh
+    /// recorder authority is installed and the queue gate is reopened.
+    ///
+    /// This is software lifecycle authority only. It establishes no physical ES80,
+    /// BLE/GATT, Tuya/DP, telemetry, command, or hardware truth.
+    public func prepareFreshCaptureSessionAfterFinalization() throws {
+        try ensureCaptureHealthy()
+        guard observationBoundaryQueueGate.isTerminal,
+              let terminalResolution = pendingTerminalQueueResolution,
+              let selectedTargetIdentifier = targetState.selectedTargetIdentifier,
+              let finalizedAuthority = lastFinalizedArtifactAuthority,
+              finalizedAuthority == terminalResolution.terminalAuthority,
+              currentArtifactAuthorityContext() == terminalResolution.terminalAuthority else {
+            throw ControllerError.artifactNotFinalized
+        }
+        guard !isSelectedTargetAwaitingTerminalCallback else {
+            throw ControllerError.peripheralAwaitingTerminalCallback(selectedTargetIdentifier)
+        }
+        guard activePeripheral == nil,
+              targetState.activeAttempt == nil else {
+            throw ControllerError.connectionAlreadyActive
+        }
+        guard lastResolvedEventSequence == terminalResolution.resolvedThroughQueueSequence,
+              lastEnqueuedEventSequence == terminalResolution.resolvedThroughQueueSequence else {
+            throw ControllerError.captureIncomplete
+        }
+
+        // Provision the recorder before any lifecycle authority changes. The producer
+        // derives exactly oldGeneration + 1 and issues proof only after construction.
+        let freshTargetSession = try PassiveCoreBluetoothTerminalFreshTargetSession.create(
+            after: terminalResolution,
+            vehicleIdentity: vehicleIdentity
+        )
+        let freshAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
+            targetSessionGeneration: freshTargetSession.receipt.targetSessionGeneration,
+            authorityGeneration: 1
+        )
+        let previousAuthority = currentArtifactAuthorityContext()
+
+        do {
+            // Publish one coherent fresh controller session synchronously. The gate
+            // then verifies that this exact installed recorder earned the fresh proof,
+            // that the resolved frontier was actually applied, and that no callback
+            // advanced the FIFO tail after resolution.
+            try artifactAuthorityFence.transition(
+                from: previousAuthority,
+                to: freshAuthority
+            )
+            targetSessionGeneration = freshAuthority.targetSessionGeneration
+            artifactAuthorityGeneration = freshAuthority.authorityGeneration
+            committedReadyEpoch = nil
+            acquisitionLedger.beginTargetSession()
+            gattIdentityRegistry.reset()
+            clearAcquisitionObjects()
+            selectedTargetCancellationPending = false
+            hasUsedInitialSessionIdentity = true
+            recorder = freshTargetSession.recorder
+
+            try observationBoundaryQueueGate.reopenAfterTerminalFreshTargetSession(
+                freshTargetSession.receipt,
+                installedRecorder: freshTargetSession.recorder,
+                currentResolvedThroughQueueSequence: lastResolvedEventSequence,
+                currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
+            )
+        } catch {
+            failCapture(
+                error,
+                fallback: "Fresh terminal Capture session could not be established safely. Start a fresh app session before another capture."
+            )
+            throw ControllerError.captureFailed
+        }
+
+        pendingTerminalQueueResolution = nil
+        lastFinalizedArtifactAuthority = nil
+    }
+
+''',
+              'fresh terminal controller handoff method',
+          )
+
+          replace_once(
+              '''            lastFinalizedArtifactAuthority = committedHorizon.authority
+            do {
+                _ = try resolveQueuedEvidenceAfterTerminalHorizon()
+            } catch {
+''',
+              '''            lastFinalizedArtifactAuthority = committedHorizon.authority
+            do {
+                let terminalResolution = try resolveQueuedEvidenceAfterTerminalHorizon()
+                pendingTerminalQueueResolution = terminalResolution
+            } catch {
+''',
+              'retain exact terminal resolution',
+          )
+
+          replace_once(
+              '''        targetSessionGeneration = freshAuthority.targetSessionGeneration
+        artifactAuthorityGeneration = freshAuthority.authorityGeneration
+        lastFinalizedArtifactAuthority = nil
+
+        targetState.selectTarget(identifier)
+''',
+              '''        targetSessionGeneration = freshAuthority.targetSessionGeneration
+        artifactAuthorityGeneration = freshAuthority.authorityGeneration
+        lastFinalizedArtifactAuthority = nil
+        pendingTerminalQueueResolution = nil
+
+        targetState.selectTarget(identifier)
+''',
+              'clear stale terminal resolution on ordinary target session',
+          )
+
+          path.write_text(source)
+          PY
+
+          git diff --check
+          grep -q 'private var pendingTerminalQueueResolution' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -q 'public func prepareFreshCaptureSessionAfterFinalization' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -q 'guard !isSelectedTargetAwaitingTerminalCallback else' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -q 'let terminalResolution = try resolveQueuedEvidenceAfterTerminalHorizon()' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -q 'PassiveCoreBluetoothTerminalFreshTargetSession.create(' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -q 'currentResolvedThroughQueueSequence: lastResolvedEventSequence' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+
+      - name: Commit product patch and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tmp-v14-current-terminal-controller-reopen.yml
+          git config user.name 'nembra-v14-patch-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -m '[Capture controller] rotate sealed terminal session after callback quarantine'
+          git push origin HEAD:integration/es80-v14-current-terminal-controller-reopen/chatgpt56-go
