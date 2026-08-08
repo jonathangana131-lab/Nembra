@@ -53,11 +53,14 @@ The projector rejects contradictory snapshot shapes, including:
 - negative counters;
 - a gap flag that disagrees with the gap count;
 - more integrated intervals than accepted samples can support;
+- fewer known gaps than the number of accepted-sample adjacencies that were not integrated;
 - accepted sample timestamps before the segment boundary;
 - non-increasing first/last accepted chronology for multiple accepted samples;
 - a late first accepted sample whose required initial coverage gap has disappeared;
 - missing/non-finite/negative numeric distance for an allegedly integrated interval;
 - synthetic motion-assist as an absolute distance source.
+
+The missing-interval lower bound follows directly from the accumulator lifecycle: a successful accepted adjacency increments both accepted samples and integrated intervals, while each accepted adjacency that is skipped because of an oversized interval or a prior numeric continuity break is backed by an already recorded gap. A gapless snapshot therefore cannot contain fewer integrated intervals than `acceptedSampleCount - 1`.
 
 These checks are defense in depth. Normal production snapshots are minted by `LiveDistanceSegmentAccumulator`.
 
