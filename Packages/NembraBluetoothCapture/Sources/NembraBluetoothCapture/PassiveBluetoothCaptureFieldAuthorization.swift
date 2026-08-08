@@ -26,6 +26,7 @@ public struct PassiveBluetoothCaptureVerifiedFieldAuthorization: Equatable, Send
 public enum PassiveBluetoothCaptureFieldAuthorizationError: Error, Equatable, Sendable {
     case malformedEnvelope
     case unexpectedEnvelopeField(String)
+    case duplicateEnvelopeField(String)
     case unsupportedEnvelopeSchemaVersion(Int)
     case invalidExternalBuildRecordBase64
     case invalidFieldBuildEvidenceRecordBase64
@@ -33,6 +34,9 @@ public enum PassiveBluetoothCaptureFieldAuthorizationError: Error, Equatable, Se
     case invalidSignatureBase64
     case malformedAuthorizationPayload
     case unexpectedAuthorizationPayloadField(String)
+    case duplicateAuthorizationPayloadField(String)
+    case duplicateExternalBuildRecordField(String)
+    case duplicateFieldBuildEvidenceRecordField(String)
     case unsupportedAuthorizationPayloadSchemaVersion(Int)
     case unsupportedDecision(String)
     case invalidExternalBuildRecordSHA256
@@ -188,6 +192,15 @@ public enum PassiveBluetoothCaptureFieldAuthorizationVerifier {
             throw PassiveBluetoothCaptureFieldAuthorizationError.invalidSignature
         }
 
+        if let duplicateKey = duplicateTopLevelObjectKey(in: externalBuildRecordData) {
+            throw PassiveBluetoothCaptureFieldAuthorizationError
+                .duplicateExternalBuildRecordField(duplicateKey)
+        }
+        if let duplicateKey = duplicateTopLevelObjectKey(in: fieldBuildEvidenceRecordData) {
+            throw PassiveBluetoothCaptureFieldAuthorizationError
+                .duplicateFieldBuildEvidenceRecordField(duplicateKey)
+        }
+
         let externalBuildRecord: PassiveBluetoothCaptureExternalBuildRecord
         do {
             externalBuildRecord = try PassiveBluetoothCaptureExternalBuildRecordJSON
@@ -228,6 +241,10 @@ public enum PassiveBluetoothCaptureFieldAuthorizationVerifier {
     }
 
     private static func validateClosedWorldEnvelope(_ data: Data) throws {
+        if let duplicateKey = duplicateTopLevelObjectKey(in: data) {
+            throw PassiveBluetoothCaptureFieldAuthorizationError
+                .duplicateEnvelopeField(duplicateKey)
+        }
         let root = try jsonObject(data, malformed: .malformedEnvelope)
         let allowed: Set<String> = [
             "schemaVersion",
@@ -242,6 +259,10 @@ public enum PassiveBluetoothCaptureFieldAuthorizationVerifier {
     }
 
     private static func validateClosedWorldAuthorizationPayload(_ data: Data) throws {
+        if let duplicateKey = duplicateTopLevelObjectKey(in: data) {
+            throw PassiveBluetoothCaptureFieldAuthorizationError
+                .duplicateAuthorizationPayloadField(duplicateKey)
+        }
         let root = try jsonObject(data, malformed: .malformedAuthorizationPayload)
         let allowed: Set<String> = [
             "schemaVersion",
@@ -277,6 +298,68 @@ public enum PassiveBluetoothCaptureFieldAuthorizationVerifier {
             return nil
         }
         return data
+    }
+
+    /// `JSONSerialization` and `JSONDecoder` both collapse object members into keyed storage. At
+    /// this signature boundary, accepting duplicate names would make authority depend on parser
+    /// duplicate-key precedence. Scan exact UTF-8 bytes first and reject any repeated semantic key
+    /// in the top-level object, including keys written with different JSON escape spellings.
+    private static func duplicateTopLevelObjectKey(in data: Data) -> String? {
+        let bytes = Array(data)
+        var objectDepth = 0
+        var seenKeys = Set<String>()
+        var index = 0
+
+        while index < bytes.count {
+            switch bytes[index] {
+            case 0x7B: // {
+                objectDepth += 1
+            case 0x7D: // }
+                objectDepth -= 1
+            case 0x22: // "
+                let stringStart = index
+                index += 1
+                var isEscaped = false
+
+                while index < bytes.count {
+                    let byte = bytes[index]
+                    if isEscaped {
+                        isEscaped = false
+                    } else if byte == 0x5C { // \
+                        isEscaped = true
+                    } else if byte == 0x22 {
+                        break
+                    }
+                    index += 1
+                }
+
+                guard index < bytes.count else { return nil }
+                let stringEnd = index
+
+                if objectDepth == 1 {
+                    var lookahead = index + 1
+                    while lookahead < bytes.count, isJSONWhitespace(bytes[lookahead]) {
+                        lookahead += 1
+                    }
+                    if lookahead < bytes.count, bytes[lookahead] == 0x3A { // :
+                        let encodedKey = Data(bytes[stringStart...stringEnd])
+                        if let key = try? JSONDecoder().decode(String.self, from: encodedKey),
+                           !seenKeys.insert(key).inserted {
+                            return key
+                        }
+                    }
+                }
+            default:
+                break
+            }
+            index += 1
+        }
+
+        return nil
+    }
+
+    private static func isJSONWhitespace(_ byte: UInt8) -> Bool {
+        byte == 0x20 || byte == 0x09 || byte == 0x0A || byte == 0x0D
     }
 
     private static func isCanonicalSHA256(_ value: String) -> Bool {
