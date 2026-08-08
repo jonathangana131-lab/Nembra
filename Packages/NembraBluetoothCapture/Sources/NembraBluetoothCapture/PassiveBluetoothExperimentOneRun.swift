@@ -81,11 +81,12 @@ struct PassiveBluetoothExperimentOneCaptureEvidence: Equatable, Sendable {
 /// declared context is still software metadata and is never physical ES80 authentication.
 ///
 /// **Critical integration boundary:** this run and all authority-bearing result types remain
-/// package-internal until the accepted foreground CoreBluetooth controller can create/use the
-/// recorder internally and emit a finalized H-bounded artifact under current controller authority.
-/// The general-purpose public recorder is deliberately *not* exposed through this run. Therefore
-/// ordinary app/UI code cannot obtain the authority-bearing mutable recorder, inject fabricated
-/// GATT evidence, or call an Experiment One PASS evaluator. Physical Experiment One remains blocked.
+/// package-internal, while the mutable recorder handoff/finalization path below remains
+/// producer-file private. Another production file in `NembraBluetoothCapture` therefore cannot
+/// obtain the recorder that would later earn Experiment One authority. The accepted foreground
+/// controller integration must deliberately replace this sealed boundary with controller-owned
+/// mutation plus finalized H-bounded artifact issuance; until then no package consumer can call an
+/// Experiment One PASS path. Physical Experiment One remains blocked.
 @MainActor
 final class PassiveBluetoothExperimentOneRun {
     let vehicleIdentity: VehicleIdentity
@@ -118,11 +119,11 @@ final class PassiveBluetoothExperimentOneRun {
         captureRecorder != nil
     }
 
-    /// Package-internal only. The future live coordinator may use this exact recorder as the one
-    /// injected into/owned by the corrected foreground controller. Starting capture retains the
-    /// exact existing power-cycle producer authority; no caller-supplied identity is accepted.
+    /// Deliberately file-private while physical Experiment One remains blocked. The future live
+    /// controller integration must establish an explicit controller-owned mutation/finalization
+    /// contract before this handoff can be widened beyond the producer implementation file.
     @discardableResult
-    func beginCaptureRecorder(
+    fileprivate func beginCaptureRecorder(
         startedAt: Date = Date()
     ) throws -> PassiveCoreBluetoothCaptureRecorder {
         guard captureRecorder == nil else {
@@ -147,9 +148,9 @@ final class PassiveBluetoothExperimentOneRun {
         return recorder
     }
 
-    /// Snapshots only this run's exact internally held recorder and binds that immutable session to
-    /// the producer authority captured atomically when the run entered its capture phase.
-    func captureEvidenceSnapshot() async throws -> PassiveBluetoothExperimentOneCaptureEvidence {
+    /// Producer-file private for the same reason as recorder creation: no other production file can
+    /// wrap mutable/raw capture evidence into Experiment One authority before controller ownership.
+    fileprivate func captureEvidenceSnapshot() async throws -> PassiveBluetoothExperimentOneCaptureEvidence {
         guard let captureRecorder else {
             throw PassiveBluetoothExperimentOneRunError.captureRecorderNotCreated
         }
@@ -162,10 +163,10 @@ final class PassiveBluetoothExperimentOneRun {
         )
     }
 
-    /// Internal one-shot structural boundary for tests/future live integration. This cannot be an
-    /// app-facing completion signal until the controller owns recorder mutation and finalized
-    /// H-bounded artifact production under accepted controller authority.
-    func captureEvidenceAssessment() async throws -> PassiveBluetoothExperimentOneCaptureEvidenceAssessment {
+    /// Producer-file private one-shot structural boundary. A later controller-integration slice must
+    /// not expose this evaluator until recorder mutation and finalized H-bounded artifact production
+    /// are owned by the accepted live controller authority.
+    fileprivate func captureEvidenceAssessment() async throws -> PassiveBluetoothExperimentOneCaptureEvidenceAssessment {
         guard powerCycleObservationSession.result != nil else {
             throw PassiveBluetoothExperimentOneRunError.powerCycleIncomplete
         }
