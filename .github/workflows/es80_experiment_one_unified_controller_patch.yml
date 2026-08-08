@@ -1,0 +1,42 @@
+name: ES80 Experiment One unified controller patch
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-admission-consumer-unified/chatgpt56-go
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: integration/es80-v14-admission-consumer-unified/chatgpt56-go
+
+      - name: Apply exact guarded patch
+        run: python3 scripts/ci/es80_experiment_one_unified_controller_patch.py
+
+      - name: Validate and commit product
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          grep -F 'func connectUsingExperimentOneAdmission(' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -F 'let payload = try admission.consume()' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -F 'recorder = payload.recorder' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -F 'foregroundEvidenceIntegrityValid = true' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -F 'vehicleIdentity == VehicleProfile.aovoproES80.identity' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          rm -f .github/workflows/es80_experiment_one_unified_controller_patch.yml
+          rm -f scripts/ci/es80_experiment_one_unified_controller_patch.py
+          git config user.name 'nembra-v14-bot'
+          git config user.email 'nembra-v14-bot@users.noreply.github.com'
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerExperimentOneAdmissionContractTests.swift \
+                  .github/workflows/es80_experiment_one_unified_controller_patch.yml \
+                  scripts/ci/es80_experiment_one_unified_controller_patch.py
+          git commit -m '[Capture Experiment One] consume sealed admission on unified controller'
+          git push origin HEAD:integration/es80-v14-admission-consumer-unified/chatgpt56-go
