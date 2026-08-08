@@ -112,7 +112,7 @@ public final class PassiveBluetoothExperimentOneSimulatorQAFixture {
             scenario: scenario,
             evidenceLabel: evidenceLabel,
             recipeID: recipeID,
-            fieldExecutionStatus: PassiveBluetoothExperimentOneFieldExecutionGate.status,
+            fieldExecutionStatus: .noGo(.finalComposedBuildNotAuthorized),
             physicalProcedurePermitted: false,
             mayUseBluetoothTransport: false,
             correlation: correlation(for: scenario),
