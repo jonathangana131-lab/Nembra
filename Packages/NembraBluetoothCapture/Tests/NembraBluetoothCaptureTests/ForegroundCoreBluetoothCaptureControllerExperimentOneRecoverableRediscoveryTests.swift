@@ -64,4 +64,26 @@ struct ForegroundCoreBluetoothCaptureControllerExperimentOneRecoverableRediscove
         // must still precede publication of the exact run-owned recorder.
         #expect(consume.lowerBound < publication.lowerBound)
     }
+    @Test("staging preview is narrow and producer-owned")
+    func stagingPreviewAuthorityIsNarrow() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let packageRoot = testFile.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let runSource = try String(contentsOf: packageRoot.appendingPathComponent("Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneRun.swift"), encoding: .utf8)
+        let start = try #require(runSource.range(of: "struct StagingPreview: Equatable, Sendable"))
+        let end = try #require(runSource.range(of: "struct Payload", range: start.upperBound..<runSource.endIndex))
+        let preview = String(runSource[start.lowerBound..<end.lowerBound])
+        #expect(preview.contains("let admissionIdentity: UUID"))
+        #expect(preview.contains("let peripheralIdentifier: UUID"))
+        #expect(preview.contains("let issuedAtUptimeNanoseconds: UInt64"))
+        #expect(preview.contains("fileprivate init("))
+        #expect(!preview.contains("recorder"))
+        #expect(!preview.contains("powerCycleEvidence"))
+        #expect(runSource.contains("func stagingPreview() throws -> StagingPreview"))
+
+        let method = try Self.controllerMethodSource()
+        #expect(method.contains("let preview = try admission.stagingPreview()"))
+        #expect(!method.contains("preview.powerCycleEvidence"))
+        #expect(method.contains("payload.powerCycleEvidence.result.correlation.disposition"))
+    }
+
 }

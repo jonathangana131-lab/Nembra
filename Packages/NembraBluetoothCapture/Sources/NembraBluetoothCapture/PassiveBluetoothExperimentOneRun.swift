@@ -83,12 +83,21 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
         case alreadyConsumed
     }
 
-    struct Preview: Equatable, Sendable {
+    struct StagingPreview: Equatable, Sendable {
         let admissionIdentity: UUID
-        let powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence
         let peripheralIdentifier: UUID
         /// Local monotonic handoff boundary. This is callback chronology only, never RF emission time.
         let issuedAtUptimeNanoseconds: UInt64
+
+        fileprivate init(
+            admissionIdentity: UUID,
+            peripheralIdentifier: UUID,
+            issuedAtUptimeNanoseconds: UInt64
+        ) {
+            self.admissionIdentity = admissionIdentity
+            self.peripheralIdentifier = peripheralIdentifier
+            self.issuedAtUptimeNanoseconds = issuedAtUptimeNanoseconds
+        }
     }
 
     struct Payload {
@@ -138,11 +147,14 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
         )
     }
 
-    /// Read-only producer-owned staging view. Reading it cannot consume the handoff.
-    var preview: Preview {
-        Preview(
+    /// Producer-owned read-only staging authority. It exposes no recorder or raw
+    /// power-cycle evidence and cannot be read after any alias consumes the handoff.
+    func stagingPreview() throws -> StagingPreview {
+        guard !hasBeenConsumed else {
+            throw ConsumptionError.alreadyConsumed
+        }
+        return StagingPreview(
             admissionIdentity: payload.admissionIdentity,
-            powerCycleEvidence: payload.powerCycleEvidence,
             peripheralIdentifier: payload.peripheralIdentifier,
             issuedAtUptimeNanoseconds: payload.issuedAtUptimeNanoseconds
         )

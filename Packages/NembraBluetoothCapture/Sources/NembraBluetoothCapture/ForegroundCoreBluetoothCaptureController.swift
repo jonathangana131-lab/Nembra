@@ -548,12 +548,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         // Inspect only immutable producer-owned staging metadata first. A target that has
         // not reappeared yet is recoverable by continuing passive scan and retrying this same
         // sealed admission, so do not burn its one-shot ownership handoff here.
-        let preview = admission.preview
-        guard case let .singleRepeatableCandidate(correlatedIdentifier) =
-                preview.powerCycleEvidence.result.correlation.disposition,
-              correlatedIdentifier == preview.peripheralIdentifier else {
-            throw ControllerError.targetSessionChanged
-        }
+        let preview = try admission.stagingPreview()
         guard let peripheral = peripheralByIdentifier[preview.peripheralIdentifier],
               let discovery = latestDiscoveryByIdentifier[preview.peripheralIdentifier] else {
             throw ControllerError.unknownPeripheral(preview.peripheralIdentifier)
@@ -585,9 +580,11 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         // same producer preview before publishing the run-owned recorder.
         let payload = try admission.consume()
         guard payload.admissionIdentity == preview.admissionIdentity,
-              payload.powerCycleEvidence == preview.powerCycleEvidence,
               payload.peripheralIdentifier == preview.peripheralIdentifier,
-              payload.issuedAtUptimeNanoseconds == preview.issuedAtUptimeNanoseconds else {
+              payload.issuedAtUptimeNanoseconds == preview.issuedAtUptimeNanoseconds,
+              case let .singleRepeatableCandidate(correlatedIdentifier) =
+                payload.powerCycleEvidence.result.correlation.disposition,
+              correlatedIdentifier == payload.peripheralIdentifier else {
             throw ControllerError.targetSessionChanged
         }
         guard observationBoundaryQueueGate.resetForNewCaptureSession() else {
