@@ -117,13 +117,13 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
     }
 
     @Test
-    func unrelatedConnectionOnlyNoiseDoesNotChangeTargetAttributionOrContinuity() throws {
+    func unrelatedConnectionOnlyNoiseCannotEstablishTargetButDisconnectStillBreaksContinuity() throws {
         let captureJSON = try makeCapture(unrelatedConnectionPeripheral: "legacy-nearby-id")
         let manifest = try makeManifest(captureJSON: captureJSON)
 
         #expect(manifest.sourceArtifact.selectedPeripheralIdentifier == target)
         #expect(manifest.evidenceSummary.targetGATTRecordCount == 3)
-        #expect(manifest.evidenceSummary.continuityBreakCount == 0)
+        #expect(manifest.evidenceSummary.continuityBreakCount == 1)
     }
 
     @Test
