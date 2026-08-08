@@ -58,18 +58,7 @@ struct PassiveBluetoothTuyaCaptureArtifactReportTests {
         )
     }
 
-    @Test("SHA-256 helper emits canonical lowercase digest")
-    func canonicalSHA256() {
-        let digest = PassiveBluetoothTuyaCaptureArtifactReportBuilder.sha256Hex(
-            of: Data("abc".utf8)
-        )
-        #expect(
-            digest == "ba7816bf8f01cfea414140de5dae2223" +
-                "b00361a396177a9cb410ff61f20015ad"
-        )
-    }
-
-    @Test("artifact report binds analysis to the exact exported JSON bytes")
+    @Test("artifact report binds analysis to exact exported bytes and current nested provenance schema")
     func exactArtifactBinding() throws {
         let session = try makeSession()
         let compactArtifact = try PassiveBluetoothCaptureJSON.encode(
@@ -87,6 +76,7 @@ struct PassiveBluetoothTuyaCaptureArtifactReportTests {
         )
 
         #expect(report.schemaVersion == 1)
+        #expect(report.analysis.schemaVersion == 2)
         #expect(report.sourceArtifact.byteCount == compactArtifact.count)
         #expect(
             report.sourceArtifact.sha256 ==
@@ -100,6 +90,10 @@ struct PassiveBluetoothTuyaCaptureArtifactReportTests {
         #expect(report.analysis.capture.peripheralIdentifier == "target-A")
         #expect(report.analysis.streams.count == 1)
 
+        let source = try #require(report.analysis.streams.first?.fragments.first)
+        #expect(source.receiptSequenceScope == session.id.uuidString)
+        #expect(source.receiptSequenceNumber == 2)
+
         let encoded = try report.jsonData(prettyPrinted: false)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .millisecondsSince1970
@@ -108,6 +102,17 @@ struct PassiveBluetoothTuyaCaptureArtifactReportTests {
                 PassiveBluetoothTuyaCaptureArtifactReport.self,
                 from: encoded
             ) == report
+        )
+    }
+
+    @Test("SHA-256 helper emits canonical lowercase digest")
+    func canonicalSHA256() {
+        let digest = PassiveBluetoothTuyaCaptureArtifactReportBuilder.sha256Hex(
+            of: Data("abc".utf8)
+        )
+        #expect(
+            digest == "ba7816bf8f01cfea414140de5dae2223" +
+                "b00361a396177a9cb410ff61f20015ad"
         )
     }
 
