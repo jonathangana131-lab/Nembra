@@ -42,8 +42,9 @@ if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   exit 6
 fi
 
-# This spelling is owned by the accepted schema-v3/current field-artifact evidence contract.
+# These spellings are owned by the accepted V14 field-candidate/build-evidence contracts.
 BUILD_IDENTIFIER="Capture Build V14-${SOURCE_SHA:0:12}"
+FIELD_RECIPE_ID="ES80-FINGERPRINT-v1"
 BUILD_INSTANCE_ID="$(python3 -c 'import uuid; print(str(uuid.uuid4()))')"
 if [[ ! "$BUILD_INSTANCE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
   echo "Generated build-instance ID is not canonical lowercase UUID text." >&2
@@ -105,6 +106,7 @@ xcodebuild \
   "INFOPLIST_KEY_NembraCaptureBuildIdentifier=$BUILD_IDENTIFIER" \
   "INFOPLIST_KEY_NembraCaptureBuildInstanceID=$BUILD_INSTANCE_ID" \
   "INFOPLIST_KEY_NembraCaptureBuildCommitSHA=$SOURCE_SHA" \
+  "INFOPLIST_KEY_NembraCaptureFieldRecipe=$FIELD_RECIPE_ID" \
   archive
 
 xcodebuild \
@@ -194,7 +196,7 @@ shared_expected = {
     "sourceCommitSHA": source_sha,
     "buildIdentifier": build_identifier,
     "buildInstanceID": build_instance_id,
-    "experimentRecipeID": "ES80-FINGERPRINT-v1",
+    "experimentRecipeID": FIELD_RECIPE_ID if False else "ES80-FINGERPRINT-v1",
     "procedureVersion": "V14",
 }
 for record_name, record in (("field-build evidence", field), ("signing inspection", inspection)):
@@ -234,6 +236,7 @@ PY
   echo "source_commit_sha=$SOURCE_SHA"
   echo "build_identifier=$BUILD_IDENTIFIER"
   echo "build_instance_id=$BUILD_INSTANCE_ID"
+  echo "field_recipe_id=$FIELD_RECIPE_ID"
   echo "development_team=$NEMBRA_DEVELOPMENT_TEAM"
   echo "experiment_recipe_id=ES80-FINGERPRINT-v1"
   echo "procedure_version=V14"
