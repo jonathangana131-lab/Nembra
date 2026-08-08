@@ -55,11 +55,11 @@ The bridge maps those facts mechanically into the candidate analyzer:
 
 The bridge does **not** renumber after filtering by target, characteristic, or value origin. If a selected stream contains source sequences `[1, 5]`, the analyzer receives `[1, 5]`.
 
-The capture-session UUID is the sequence scope because that immutable session owns the sequence counter. Peripheral ID, model name, display name, GATT UUID, filename, or wall-clock time are never substituted as authority.
+The capture-session UUID is the sequence scope because that validated session owns the sequence counter. Peripheral ID, model name, display name, GATT UUID, filename, or wall-clock time are never substituted as authority.
 
 Sequence must increase strictly, uptime must not move backward, and scope must remain exact. Wall-clock `Date` never repairs or overrides callback order.
 
-These are software-provenance facts. They do not authenticate the physical scooter or prove radio-level independence.
+These are software-provenance facts. `PassiveBluetoothCaptureSession` is publicly constructible, so valid session metadata is not recorder custody, hardware attestation, physical target authentication, or protocol truth.
 
 ## Stream identity and provenance
 
@@ -73,28 +73,23 @@ For the requested target the bridge:
 - preserves exact capture record index, global sequence number, uptime, wall-clock date, and candidate bytes on each source fragment;
 - keeps independent stream order deterministic by first observation in the capture.
 
-Public provenance/output structs are read-only views with module-internal construction. External callers may inspect producer-issued evidence but cannot mint a bridge report by arbitrarily pairing analyzer outcomes with unrelated capture provenance.
+Public provenance/output structs are read-only views with module-internal construction. External callers cannot directly assemble mutually inconsistent bridge output structs, but they can construct a valid capture session and ask the bridge to derive those views. This is therefore a compile-time software-provenance boundary, not cryptographic attestation or proof of how the session was acquired.
 
-This is a compile-time software evidence boundary, not cryptographic attestation.
+## Continuity authority
 
-## Target-scoped continuity
+`PassiveBluetoothCaptureEvent.breaksByteContinuity` is the authoritative capture-domain fact for whether raw value evidence on opposite sides of an observed event may remain in one byte-continuity segment. Today Core declares every structured disconnect and every global interruption to be such a break.
 
-`PassiveBluetoothCaptureEvent.breaksByteContinuity` is intentionally a **capture-level** fact: every structured disconnect and every global interruption marks a raw gap somewhere in the capture. The bridge has a narrower job because it projects one explicitly selected peripheral.
+Candidate continuity starts at generation zero for one projection and advances whenever `record.event.breaksByteContinuity == true`. The bridge consumes that Core property directly instead of maintaining a narrower duplicated list.
 
-For a selected target transcript, continuity generation advances only when:
+Target attribution remains separate from continuity truth. A disconnect carrying another peripheral identifier is **not** relabeled as a physical ES80 or selected-target disconnect, but once NembraCore has issued that observed event as a raw-byte continuity break, downstream framing preserves the gap rather than making selected-target bytes on opposite sides eligible to splice.
 
-- a structured `.connection(.disconnected)` belongs to that exact selected peripheral; or
-- a global `.interruption` occurs.
+This cross-layer contract is adversarially tested:
 
-A disconnect for another peripheral remains real evidence for that other peripheral, but it must **not** manufacture a discontinuity in the selected target stream. After target filtering, bytes from `target-A` do not become separated merely because `noise-B` disconnected between their callbacks.
-
-This distinction is permanent and adversarially tested:
-
-- unrelated peripheral disconnect -> selected-target continuity stays unchanged;
-- selected-target disconnect -> continuity advances;
+- unrelated peripheral structured disconnect -> candidate continuity advances because Core issued a capture-level raw-byte gap;
+- selected-target structured disconnect -> continuity advances;
 - global interruption -> continuity advances.
 
-Interleaved callbacks that are neither selected-target disconnects nor global interruptions remain filterable by target/GATT/origin without inventing byte gaps.
+Interleaved callbacks that are not Core-declared continuity breaks remain filterable by target/GATT/origin without inventing fake byte gaps. Directly consuming the Core property also prevents a future addition to the authoritative break vocabulary from silently drifting from a narrower bridge-specific case list.
 
 An empty selected-target raw value cannot be represented truthfully by the candidate observation type, so projection fails with exact record/sequence/GATT/origin provenance rather than silently dropping it. Continuity-generation overflow also fails closed rather than wrapping.
 
@@ -120,9 +115,9 @@ A rejection remains useful falsifying evidence. The bridge does not shift offset
 
 Before this bridge can be treated as accepted research infrastructure on the flagship composition:
 
-1. focused `NembraCore` / `NembraBluetoothCapture` tests must pass with the target-scoped continuity regressions;
+1. focused `NembraCore` / `NembraBluetoothCapture` tests must pass with the Core-authoritative continuity regressions;
 2. the package-wide no-application-`writeValue(...)` safety boundary must remain intact;
-3. exact scoped receipt chronology, target-presence rules, GATT/origin separation, empty-payload failure, and source-fragment provenance must remain unchanged;
+3. exact scoped receipt chronology, target-presence rules, GATT/origin separation, empty-payload failure, source-fragment provenance, and every Core-declared continuity break must remain unchanged;
 4. the final composed Capture head must earn the required exact-head Xcode 27 package/app/UI/provenance gate;
 5. retained runtime artifacts/screenshots must be inspected separately from test green;
 6. physical Experiment One remains blocked until the final signed-device authority/runbook GO gate is independently satisfied.
@@ -146,4 +141,4 @@ Until that ladder closes, **Experiment One remains DO NOT RUN / NO-GO**.
 
 This bridge adds no `writeValue`, command path, encryption/decryption key handling, device authentication, production `ScooterService`, Dashboard telemetry wiring, or vehicle-control acknowledgement.
 
-Its role is narrow: move trustworthy raw passive-capture evidence into reproducible bounded offline analysis while preserving selected-target identity, capture identity, exact scoped receipt chronology, GATT/value-origin provenance, and target-scoped continuity without inventing physical ES80 semantics.
+Its role is narrow: move trustworthy raw passive-capture evidence into reproducible bounded offline analysis while preserving selected-target attribution, capture identity, exact scoped receipt chronology, GATT/value-origin provenance, and every known capture-domain continuity gap without inventing physical ES80 semantics.
