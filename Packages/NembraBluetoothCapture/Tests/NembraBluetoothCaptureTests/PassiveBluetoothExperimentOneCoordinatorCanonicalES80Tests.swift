@@ -5,12 +5,12 @@ import Testing
 @Suite("Experiment One canonical ES80 coordinator")
 struct PassiveBluetoothExperimentOneCoordinatorCanonicalES80Tests {
     @Test @MainActor
-    func publicFactoryFailsClosedWhilePhysicalGateIsNoGo() {
+    func publicFactoryFailsClosedForOrdinaryTestHost() {
         #expect(PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure == false)
 
         do {
             _ = try PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()
-            Issue.record("current V14 NO-GO build must not construct a field Experiment One coordinator")
+            Issue.record("ordinary test host must not construct a field Experiment One coordinator")
         } catch let error as PassiveBluetoothExperimentOneCoordinator.CanonicalES80ConstructionError {
             #expect(error == .fieldExecutionNotAuthorized)
         } catch {
@@ -40,7 +40,12 @@ struct PassiveBluetoothExperimentOneCoordinatorCanonicalES80Tests {
         #expect(coordinatorSource.contains("package init(controller: ForegroundCoreBluetoothCaptureController) throws"))
         #expect(!coordinatorSource.contains("public init(controller: ForegroundCoreBluetoothCaptureController) throws"))
         #expect(canonicalSource.contains("static func makeAuthorizedES80()"))
-        #expect(canonicalSource.contains("guard PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure"))
+        #expect(
+            canonicalSource.contains(
+                "guard case .researchBuildAuthorized = PassiveBluetoothExperimentOneFieldExecutionGate.status"
+            )
+        )
+        #expect(canonicalSource.contains("PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure"))
         #expect(!canonicalSource.contains("convenience init()"))
     }
 }
