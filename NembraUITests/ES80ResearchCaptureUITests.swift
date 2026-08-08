@@ -633,6 +633,83 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testV14SimulatorQARetainsPreviouslyUncoveredPortraitStates() {
+        struct Scenario {
+            let rawValue: String
+            let attachmentName: String
+            let stableElementIdentifier: String
+            let stableText: String
+        }
+
+        let scenarios: [Scenario] = [
+            .init(
+                rawValue: "firstPoweredOff",
+                attachmentName: "OFF 1 Ready",
+                stableElementIdentifier: "es80.capture.begin-window",
+                stableText: "Scooter OFF"
+            ),
+            .init(
+                rawValue: "firstPoweredOn",
+                attachmentName: "ON 1 Ready",
+                stableElementIdentifier: "es80.capture.begin-window",
+                stableText: "Scooter ON"
+            ),
+            .init(
+                rawValue: "targetConfirmation",
+                attachmentName: "Target Confirmation",
+                stableElementIdentifier: "es80.capture.confirm-correlated-target",
+                stableText: "One target repeated twice"
+            ),
+            .init(
+                rawValue: "observationReady",
+                attachmentName: "Observation Ready",
+                stableElementIdentifier: "es80.capture.finish",
+                stableText: "OBSERVATION READY"
+            )
+        ]
+
+        for scenario in scenarios {
+            let app = XCUIApplication()
+            app.launchArguments = [
+                "--es80-passive-capture-simulator-qa",
+                "--es80-capture-qa-scenario=\(scenario.rawValue)"
+            ]
+            app.launch()
+
+            XCTAssertTrue(
+                app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5),
+                "\(scenario.rawValue) must render through the real Capture shell."
+            )
+            XCTAssertTrue(
+                app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3),
+                "\(scenario.rawValue) must retain the synthetic/non-authorizing QA disclosure."
+            )
+            XCTAssertTrue(
+                app.descendants(matching: .any)[scenario.stableElementIdentifier].waitForExistence(timeout: 3),
+                "\(scenario.rawValue) must expose its expected stable Capture action/state."
+            )
+            XCTAssertTrue(
+                app.staticTexts[scenario.stableText].waitForExistence(timeout: 3),
+                "\(scenario.rawValue) must render its expected rider-facing state."
+            )
+            XCTAssertFalse(
+                app.descendants(matching: .any)["es80.capture.field-no-go"].exists,
+                "Synthetic QA must exercise the real presentation state instead of the field-lock surface."
+            )
+            XCTAssertFalse(
+                app.buttons["Vehicle controls"].exists,
+                "Capture QA must never expose the ordinary vehicle-control surface."
+            )
+
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = "Nembra Capture V14 — SIMULATOR QA — \(scenario.attachmentName) — Portrait"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            app.terminate()
+        }
+    }
+
     func testSimulatorQAAppSeamIsCompileBoundedAndProductionRouteRemainsLocked() throws {
         let appSource = try repositorySource(at: "NembraApp/App/NembraApp.swift")
         let shellSource = try captureShellSource()
