@@ -17,6 +17,8 @@ public enum PassiveBluetoothStationaryCaptureManifestError: Error, Equatable, Se
     case selectedPeripheralNotPresent(requested: String, available: [String])
     case ambiguousTargetGATTEvidence([String])
     case stockAppMarkersWithoutDeclaredReference(markerCount: Int)
+    case stockAppReferenceDeclaredWithoutMarkers
+    case unsupportedExperimentRecipe(PassiveBluetoothExperimentRecipeID)
     case unsupportedSchemaVersion(Int)
     case unexpectedManifestField(String)
     case manifestDoesNotMatchCapture
@@ -147,23 +149,30 @@ public struct PassiveBluetoothStationaryCaptureManifest: Equatable, Sendable {
 }
 
 public enum PassiveBluetoothStationaryCaptureManifestBuilder {
-    /// Creates the current closed-world sidecar. Recipe/build identity is required so a new V14
-    /// physical artifact cannot silently fall back to the legacy v1 provenance vocabulary.
+    /// Creates the current closed-world sidecar for the sealed ES80 fingerprint recipe.
+    ///
+    /// Callers provide the package-owned recipe object rather than minting a raw recipe ID. This
+    /// records intended procedure identity only; it does not prove that the operator completed the
+    /// recipe or that any physical state occurred.
     public static func make(
         captureJSON: Data,
         experimentID: UUID = UUID(),
-        experimentRecipeID: PassiveBluetoothExperimentRecipeID,
+        experimentRecipe: PassiveBluetoothExperimentRecipe,
         preparedAt: Date = Date(),
         nembraBuildIdentifier: String,
         nembraBuildCommitSHA: String,
         selectedPeripheralIdentifier: String,
         setup: PassiveBluetoothStationaryCaptureSetup
     ) throws -> PassiveBluetoothStationaryCaptureManifest {
-        try makeValidated(
+        guard experimentRecipe.id == .es80FingerprintV1 else {
+            throw PassiveBluetoothStationaryCaptureManifestError
+                .unsupportedExperimentRecipe(experimentRecipe.id)
+        }
+        return try makeValidated(
             schemaVersion: PassiveBluetoothStationaryCaptureManifest.currentSchemaVersion,
             captureJSON: captureJSON,
             experimentID: experimentID,
-            experimentRecipeID: experimentRecipeID,
+            experimentRecipeID: experimentRecipe.id,
             preparedAt: preparedAt,
             nembraBuildIdentifier: nembraBuildIdentifier,
             nembraBuildCommitSHA: nembraBuildCommitSHA,
@@ -192,7 +201,14 @@ public enum PassiveBluetoothStationaryCaptureManifestBuilder {
             }
             buildIdentifier = nil
         case 2:
-            guard experimentRecipeID != nil, let nembraBuildIdentifier else {
+            guard let experimentRecipeID else {
+                throw PassiveBluetoothStationaryCaptureManifestError.manifestDoesNotMatchCapture
+            }
+            guard experimentRecipeID == .es80FingerprintV1 else {
+                throw PassiveBluetoothStationaryCaptureManifestError
+                    .unsupportedExperimentRecipe(experimentRecipeID)
+            }
+            guard let nembraBuildIdentifier else {
                 throw PassiveBluetoothStationaryCaptureManifestError.manifestDoesNotMatchCapture
             }
             buildIdentifier = try validatedBuildIdentifier(nembraBuildIdentifier)
@@ -210,9 +226,15 @@ public enum PassiveBluetoothStationaryCaptureManifestBuilder {
         )
         let session = try PassiveBluetoothCaptureJSON.decode(captureJSON)
         let summary = try summarize(session: session, selectedPeripheral: selectedPeripheral)
-        if setup.stockAppReferenceSetup == .none, summary.stockAppMarkerCount > 0 {
+
+        if setup.stockAppReferenceSetup == .none {
+            if summary.stockAppMarkerCount > 0 {
+                throw PassiveBluetoothStationaryCaptureManifestError
+                    .stockAppMarkersWithoutDeclaredReference(markerCount: summary.stockAppMarkerCount)
+            }
+        } else if summary.stockAppMarkerCount == 0 {
             throw PassiveBluetoothStationaryCaptureManifestError
-                .stockAppMarkersWithoutDeclaredReference(markerCount: summary.stockAppMarkerCount)
+                .stockAppReferenceDeclaredWithoutMarkers
         }
 
         return PassiveBluetoothStationaryCaptureManifest(
