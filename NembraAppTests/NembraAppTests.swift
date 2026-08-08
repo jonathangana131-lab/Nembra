@@ -308,7 +308,7 @@ extension NembraAppTests {
         XCTAssertFalse(app.contains("try? ForegroundCoreBluetoothCaptureController("))
     }
 
-    func testCaptureShellContinuesSameAuthorityThroughSealAndShare() throws {
+    func testCaptureShellContinuesSameAuthorityThroughSealAndVerifiedAnalysisShare() throws {
         let testFile = URL(fileURLWithPath: #filePath)
         let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
         let shell = try String(
@@ -317,9 +317,19 @@ extension NembraAppTests {
         )
         XCTAssertFalse(shell.contains("PassiveBluetoothPowerCycleObservationSession("))
         XCTAssertFalse(shell.contains("Passive capture binding not available in this build"))
-        XCTAssertTrue(shell.contains("coordinator.prepareCaptureRediscovery()"))
+        XCTAssertTrue(shell.contains("coordinator.confirmCorrelatedTargetAndBeginRediscovery()"))
         XCTAssertTrue(shell.contains("coordinator.connectPreparedCapture()"))
-        XCTAssertTrue(shell.contains("encodedFinalizedObservationHorizonJSON"))
-        XCTAssertTrue(shell.contains("ShareLink(item: finalizedCaptureURL)"))
+        XCTAssertTrue(shell.contains("coordinator.finalizeObservationHorizon()"))
+        XCTAssertTrue(shell.contains("encodedFinalizedSoftwareExportForCurrentApplication"))
+        XCTAssertTrue(shell.contains("PassiveBluetoothExperimentOneSoftwareExportIntegrity.inspect(data)"))
+        XCTAssertTrue(shell.contains("softwareExportIntegrityReport == nil ? \"CAPTURE SEALED\" : \"CAPTURE COMPLETE\""))
+        XCTAssertTrue(shell.contains("softwareExportIntegrityReport == nil ? \"Integrity check required\" : \"Ready for analysis\""))
+        XCTAssertTrue(shell.contains("Envelope SHA-256"))
+        XCTAssertTrue(shell.contains("Capture SHA-256"))
+        XCTAssertTrue(shell.contains("Capture session"))
+        XCTAssertTrue(shell.contains("Raw value records"))
+        XCTAssertTrue(shell.contains("if let retainedSoftwareExport = softwareExportData"))
+        XCTAssertTrue(shell.contains("shareURL = try persistShareArtifact(data)"))
+        XCTAssertFalse(shell.contains("persistShareArtifact(artifact.captureJSON)"))
     }
 }
