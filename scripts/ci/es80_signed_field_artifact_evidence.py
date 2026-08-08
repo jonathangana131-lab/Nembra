@@ -2,8 +2,9 @@
 """Produce fail-closed evidence for an already-built signed Nembra field IPA.
 
 This tool never authorizes physical Experiment One. It measures and preserves an exact
-installable artifact, verifies its iPhone code signature and embedded Nembra build declarations,
-and emits external evidence that a separate trusted acceptance step may attest/review.
+installable artifact, verifies its iPhone code signature, provisioning relationship, and embedded
+Nembra build declarations, and emits external evidence that a separate trusted acceptance step may
+attest/review.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ import sys
 import tempfile
 import uuid
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 RECIPE_ID = "ES80-FINGERPRINT-v1"
@@ -27,7 +29,7 @@ PROCEDURE_VERSION = "V14"
 BUNDLE_ID = "com.jonathangana131.nembra"
 EXTERNAL_RECORD_SCHEMA_VERSION = 3
 FIELD_BUILD_EVIDENCE_SCHEMA_VERSION = 1
-SIGNING_INSPECTION_SCHEMA_VERSION = 1
+SIGNING_INSPECTION_SCHEMA_VERSION = 2
 SIGNED_INSTALLABLE_KIND = "ipa"
 INSPECTION_AUTHORITY_LABEL = "signed-field-artifact-inspection-not-field-authorization"
 
@@ -36,6 +38,8 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 )
+TEAM_IDENTIFIER_RE = re.compile(r"^[A-Z0-9]{10}$")
+CDHASH_RE = re.compile(r"^[0-9a-f]{40,64}$")
 
 
 class EvidenceError(RuntimeError):
@@ -199,48 +203,154 @@ def verify_device_platform(info: dict) -> tuple[str, list[str]]:
     return platform, supported_values
 
 
-def run_codesign(app_path: Path) -> tuple[str, list[str]]:
+def _run_text(command: list[str]) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(
+        command,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        raise EvidenceError(f"command failed ({' '.join(command)}): {detail}")
+    return result
+
+
+def run_codesign(app_path: Path) -> tuple[str, list[str], str]:
     if sys.platform != "darwin":
         raise EvidenceError("signed field IPA inspection requires macOS code-signing tools")
     codesign = shutil.which("codesign")
     if not codesign:
         raise EvidenceError("codesign is not available")
 
-    verify = subprocess.run(
-        [codesign, "--verify", "--deep", "--strict", "--verbose=4", str(app_path)],
-        text=True,
-        capture_output=True,
-        check=False,
+    _run_text(
+        [
+            codesign,
+            "--verify",
+            "--deep",
+            "--strict",
+            "--all-architectures",
+            "--verbose=4",
+            str(app_path),
+        ]
     )
-    if verify.returncode != 0:
-        detail = (verify.stderr or verify.stdout).strip()
-        raise EvidenceError(f"codesign verification failed: {detail}")
-
-    display = subprocess.run(
-        [codesign, "-d", "--verbose=4", str(app_path)],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if display.returncode != 0:
-        detail = (display.stderr or display.stdout).strip()
-        raise EvidenceError(f"codesign metadata inspection failed: {detail}")
+    display = _run_text([codesign, "-d", "--verbose=4", str(app_path)])
 
     metadata = "\n".join(part for part in (display.stdout, display.stderr) if part)
     if re.search(r"(?m)^Signature=adhoc\s*$", metadata):
         raise EvidenceError("ad-hoc signature cannot become signed field artifact evidence")
 
+    identifier_match = re.search(r"(?m)^Identifier=([^\r\n]+)$", metadata)
+    if not identifier_match or identifier_match.group(1).strip() != BUNDLE_ID:
+        raise EvidenceError("code-signing identifier does not match Nembra bundle identifier")
+
     team_match = re.search(r"(?m)^TeamIdentifier=([^\r\n]+)$", metadata)
     if not team_match:
         raise EvidenceError("codesign metadata does not contain TeamIdentifier")
     team_identifier = team_match.group(1).strip()
-    if not team_identifier or team_identifier.lower() in {"not set", "none", "-"}:
-        raise EvidenceError("field IPA does not carry a concrete signing TeamIdentifier")
+    if not TEAM_IDENTIFIER_RE.fullmatch(team_identifier):
+        raise EvidenceError("field IPA does not carry a canonical Apple TeamIdentifier")
+
+    cdhash_match = re.search(r"(?m)^CDHash=([^\r\n]+)$", metadata)
+    if not cdhash_match:
+        raise EvidenceError("codesign metadata does not contain CDHash")
+    code_directory_hash = cdhash_match.group(1).strip().lower()
+    if not CDHASH_RE.fullmatch(code_directory_hash):
+        raise EvidenceError("codesign CDHash is malformed")
 
     authorities = [match.group(1).strip() for match in re.finditer(r"(?m)^Authority=([^\r\n]+)$", metadata)]
-    if not authorities:
-        raise EvidenceError("codesign metadata does not contain a signing authority chain")
-    return team_identifier, authorities
+    if not authorities or any(not authority for authority in authorities):
+        raise EvidenceError("codesign metadata does not contain a complete signing authority chain")
+    return team_identifier, authorities, code_directory_hash
+
+
+def _normalized_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def validate_provisioning_profile(
+    profile: dict,
+    *,
+    team_identifier: str,
+    bundle_identifier: str,
+    now: datetime | None = None,
+) -> tuple[str, str, str]:
+    profile_teams = profile.get("TeamIdentifier")
+    if not isinstance(profile_teams, list) or team_identifier not in profile_teams:
+        raise EvidenceError("provisioning profile TeamIdentifier does not match the code signature")
+
+    profile_uuid = profile.get("UUID")
+    if not isinstance(profile_uuid, str) or not profile_uuid.strip():
+        raise EvidenceError("provisioning profile UUID is missing")
+
+    expiration = profile.get("ExpirationDate")
+    if not isinstance(expiration, datetime):
+        raise EvidenceError("provisioning profile ExpirationDate is missing")
+    expiration_utc = _normalized_utc(expiration)
+    current_utc = _normalized_utc(now or datetime.now(timezone.utc))
+    if expiration_utc <= current_utc:
+        raise EvidenceError("provisioning profile is expired")
+
+    entitlements = profile.get("Entitlements")
+    if not isinstance(entitlements, dict):
+        raise EvidenceError("provisioning profile Entitlements are missing")
+    expected_application_identifier = f"{team_identifier}.{bundle_identifier}"
+    if entitlements.get("application-identifier") != expected_application_identifier:
+        raise EvidenceError(
+            "provisioning profile application-identifier does not match the signed Nembra bundle"
+        )
+    entitlement_team = entitlements.get("com.apple.developer.team-identifier")
+    if entitlement_team is not None and entitlement_team != team_identifier:
+        raise EvidenceError("provisioning profile entitlement TeamIdentifier does not match code signing")
+
+    return (
+        profile_uuid.strip(),
+        expiration_utc.isoformat().replace("+00:00", "Z"),
+        expected_application_identifier,
+    )
+
+
+def verify_provisioning_profile(
+    app_path: Path,
+    *,
+    team_identifier: str,
+    bundle_identifier: str,
+) -> tuple[str, str, str, str]:
+    if sys.platform != "darwin":
+        raise EvidenceError("provisioning verification requires macOS Apple signing tools")
+    security = shutil.which("security")
+    if not security:
+        raise EvidenceError("security is not available for provisioning-profile verification")
+
+    profile_path = app_path / "embedded.mobileprovision"
+    if not profile_path.is_file():
+        raise EvidenceError("signed field IPA is missing embedded.mobileprovision")
+    profile_sha256 = sha256_file(profile_path)
+
+    result = subprocess.run(
+        [security, "cms", "-D", "-i", str(profile_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise EvidenceError(f"could not decode embedded provisioning profile: {detail}")
+    try:
+        profile = plistlib.loads(result.stdout)
+    except Exception as exc:
+        raise EvidenceError("decoded embedded provisioning profile is not a valid plist") from exc
+    if not isinstance(profile, dict):
+        raise EvidenceError("decoded embedded provisioning profile root is not a dictionary")
+
+    profile_uuid, expiration_utc, application_identifier = validate_provisioning_profile(
+        profile,
+        team_identifier=team_identifier,
+        bundle_identifier=bundle_identifier,
+    )
+    return profile_sha256, profile_uuid, expiration_utc, application_identifier
 
 
 def reject_embedded_external_authority(app_path: Path) -> None:
@@ -304,7 +414,17 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
         if not executable_path.is_file():
             raise EvidenceError("signed app executable is missing")
 
-        team_identifier, signing_authorities = run_codesign(app_path)
+        team_identifier, signing_authorities, code_directory_hash = run_codesign(app_path)
+        (
+            provisioning_profile_sha256,
+            provisioning_profile_uuid,
+            provisioning_profile_expiration_utc,
+            provisioning_application_identifier,
+        ) = verify_provisioning_profile(
+            app_path,
+            team_identifier=team_identifier,
+            bundle_identifier=bundle_id,
+        )
         executable_sha = sha256_file(executable_path)
         info_plist_sha = sha256_file(info_path)
         if not SHA256_RE.fullmatch(executable_sha) or not SHA256_RE.fullmatch(info_plist_sha):
@@ -357,6 +477,11 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
         "supportedPlatforms": supported_platforms,
         "teamIdentifier": team_identifier,
         "signingAuthorities": signing_authorities,
+        "codeDirectoryHash": code_directory_hash,
+        "provisioningProfileSHA256": provisioning_profile_sha256,
+        "provisioningProfileUUID": provisioning_profile_uuid,
+        "provisioningProfileExpirationUTC": provisioning_profile_expiration_utc,
+        "provisioningApplicationIdentifier": provisioning_application_identifier,
         "executableSHA256": executable_sha,
         "infoPlistSHA256": info_plist_sha,
         "experimentRecipeID": RECIPE_ID,
@@ -491,6 +616,58 @@ def self_test() -> None:
     assert set(fixture_field) == exact_field_keys
     assert "physicalGO" not in fixture_field
     assert "authorized" not in fixture_field
+
+    team = "ABCDE12345"
+    expiry = datetime(2099, 1, 1, tzinfo=timezone.utc)
+    valid_profile = {
+        "TeamIdentifier": [team],
+        "UUID": "PROFILE-UUID",
+        "ExpirationDate": expiry,
+        "Entitlements": {
+            "application-identifier": f"{team}.{BUNDLE_ID}",
+            "com.apple.developer.team-identifier": team,
+        },
+    }
+    profile_uuid, expiration_utc, application_id = validate_provisioning_profile(
+        valid_profile,
+        team_identifier=team,
+        bundle_identifier=BUNDLE_ID,
+        now=datetime(2098, 1, 1, tzinfo=timezone.utc),
+    )
+    assert profile_uuid == "PROFILE-UUID"
+    assert expiration_utc == "2099-01-01T00:00:00Z"
+    assert application_id == f"{team}.{BUNDLE_ID}"
+
+    invalid_profiles = (
+        {**valid_profile, "TeamIdentifier": ["OTHER12345"]},
+        {**valid_profile, "ExpirationDate": datetime(2097, 1, 1, tzinfo=timezone.utc)},
+        {
+            **valid_profile,
+            "Entitlements": {
+                **valid_profile["Entitlements"],
+                "application-identifier": f"{team}.com.example.other",
+            },
+        },
+        {
+            **valid_profile,
+            "Entitlements": {
+                **valid_profile["Entitlements"],
+                "com.apple.developer.team-identifier": "OTHER12345",
+            },
+        },
+    )
+    for malformed in invalid_profiles:
+        try:
+            validate_provisioning_profile(
+                malformed,
+                team_identifier=team,
+                bundle_identifier=BUNDLE_ID,
+                now=datetime(2098, 1, 1, tzinfo=timezone.utc),
+            )
+        except EvidenceError:
+            pass
+        else:
+            raise AssertionError("invalid provisioning profile relationship was accepted")
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
