@@ -18,14 +18,14 @@ jobs:
       - name: Checkout QA mirror
         uses: actions/checkout@v6
         with:
-          fetch-depth: 2
+          fetch-depth: 3
 
-      - name: Verify immutable product parent and workflow-only delta
+      - name: Verify immutable product ancestry and workflow-only delta
         run: |
           set -euo pipefail
           product_sha="ed84c748406f7f691270284b1567728297725da9"
-          test "$(git rev-parse HEAD^)" = "$product_sha"
-          changed="$(git diff --name-only HEAD^ HEAD)"
+          test "$(git rev-parse HEAD~2)" = "$product_sha"
+          changed="$(git diff --name-only "$product_sha" HEAD)"
           test "$changed" = ".github/workflows/es80-window-isolation-focused-qa.yml"
 
       - name: Toolchain
