@@ -12,8 +12,8 @@ struct PassiveBluetoothTuyaCandidateBridgeTargetContinuityTests {
         protocolFamily: "unknown-2025-es80"
     )
 
-    @Test("unrelated peripheral disconnect does not manufacture a target stream gap")
-    func unrelatedDisconnectDoesNotAdvanceTargetContinuity() throws {
+    @Test("unrelated peripheral disconnect preserves the Core-issued capture gap")
+    func unrelatedDisconnectAdvancesCandidateContinuity() throws {
         var session = try PassiveBluetoothCaptureSession(
             id: UUID(uuidString: "72000000-0000-0000-0000-000000000001")!,
             vehicleIdentity: identity,
@@ -24,6 +24,9 @@ struct PassiveBluetoothTuyaCandidateBridgeTargetContinuityTests {
         try appendDisconnect(to: &session, peripheral: "noise-B", sequence: 2, uptime: 110)
         try appendValue(to: &session, peripheral: "target-A", payload: [1, 0xBB], sequence: 3, uptime: 200)
 
+        let disconnectRecord = try #require(session.records.first { $0.sequenceNumber == 2 })
+        #expect(disconnectRecord.event.breaksByteContinuity)
+
         let transcript = try #require(
             PassiveBluetoothTuyaCandidateBridge.transcripts(
                 in: session,
@@ -32,10 +35,10 @@ struct PassiveBluetoothTuyaCandidateBridgeTargetContinuityTests {
         )
 
         #expect(transcript.fragments.map(\.captureSequenceNumber) == [1, 3])
-        #expect(transcript.fragments.map(\.observation.continuityGeneration) == [0, 0])
+        #expect(transcript.fragments.map(\.observation.continuityGeneration) == [0, 1])
     }
 
-    @Test("selected target disconnect advances target stream continuity")
+    @Test("selected target disconnect advances candidate continuity")
     func targetDisconnectAdvancesTargetContinuity() throws {
         var session = try PassiveBluetoothCaptureSession(
             id: UUID(uuidString: "72000000-0000-0000-0000-000000000002")!,
@@ -58,7 +61,7 @@ struct PassiveBluetoothTuyaCandidateBridgeTargetContinuityTests {
         #expect(transcript.fragments.map(\.observation.continuityGeneration) == [0, 1])
     }
 
-    @Test("global interruption advances target stream continuity")
+    @Test("global interruption advances candidate continuity")
     func globalInterruptionAdvancesTargetContinuity() throws {
         var session = try PassiveBluetoothCaptureSession(
             id: UUID(uuidString: "72000000-0000-0000-0000-000000000003")!,
