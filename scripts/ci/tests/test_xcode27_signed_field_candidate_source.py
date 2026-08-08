@@ -24,6 +24,8 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('es80_signed_field_artifact_evidence.py', self.source)
         self.assertIn('--ipa "$IPA_PATH"', self.source)
         self.assertIn('--expected-source-sha "$SOURCE_SHA"', self.source)
+        self.assertIn('--intended-device-udid "$NEMBRA_FIELD_DEVICE_UDID"', self.source)
+        self.assertIn('--output-dir "$INSPECTION_DIR"', self.source)
         self.assertIn('NembraCaptureExternalBuildRecord.json', self.source)
         self.assertIn('NembraCaptureFieldBuildEvidenceRecord.json', self.source)
         self.assertIn('NembraCaptureSignedFieldArtifactInspection.json', self.source)
@@ -32,10 +34,14 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('fieldBuildEvidenceRecordSHA256', self.source)
         self.assertIn('externalBuildRecordSHA256', self.source)
         self.assertIn('signedInstallableSHA256', self.source)
-        self.assertIn('fieldLaunchRecipeID', self.source)
-        self.assertIn('provisioningTeamIdentifier', self.source)
-        self.assertIn('provisionedDeviceCount', self.source)
-        self.assertIn('embeddedMobileProvisionSHA256', self.source)
+        self.assertIn('provisioningProfileSHA256', self.source)
+        self.assertIn('provisioningProfileUUID', self.source)
+        self.assertIn('provisioningProfileExpirationUTC', self.source)
+        self.assertIn('provisioningApplicationIdentifier', self.source)
+        self.assertNotIn('fieldLaunchRecipeID', self.source)
+        self.assertNotIn('provisioningTeamIdentifier', self.source)
+        self.assertNotIn('provisionedDeviceCount', self.source)
+        self.assertNotIn('embeddedMobileProvisionSHA256', self.source)
         self.assertNotIn('NembraCaptureSignedFieldArtifactEvidence.json', self.source)
         self.assertNotIn('NembraCaptureSignedFieldCandidateEvidence.json', self.source)
         self.assertNotIn('es80_field_candidate_verify.py', self.source)
@@ -51,7 +57,7 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('Archive/export changed immutable source state', self.source)
         self.assertIn('git worktree remove --force "$SOURCE_ROOT"', self.source)
 
-    def test_canonicalizes_unique_non_destructive_evidence_directory(self):
+    def test_canonicalizes_unique_non_destructive_outer_directory_and_fresh_inspector_child(self):
         self.assertIn('pwd -P', self.source)
         self.assertIn(
             'RAW_ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/artifacts/Xcode27FieldCandidate-${SOURCE_SHA:0:12}-$BUILD_INSTANCE_ID}"',
@@ -59,10 +65,14 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         )
         self.assertIn('Path(sys.argv[1]).resolve(strict=False)', self.source)
         self.assertIn('"$ARTIFACTS_DIR" == "/" || "$ARTIFACTS_DIR" == "$ROOT"', self.source)
-        self.assertIn('if [[ -e "$ARTIFACTS_DIR" ]]', self.source)
+        self.assertIn('if [[ -e "$ARTIFACTS_DIR" || -L "$ARTIFACTS_DIR" ]]', self.source)
         self.assertIn('refusing to mix or overwrite field-production evidence', self.source)
         self.assertIn('git check-ignore -q', self.source)
-        self.assertIn('--output-dir "$ARTIFACTS_DIR"', self.source)
+        self.assertIn('INSPECTION_DIR="$ARTIFACTS_DIR/inspection"', self.source)
+        self.assertNotIn('mkdir -p "$INSPECTION_DIR"', self.source)
+        self.assertIn('--output-dir "$INSPECTION_DIR"', self.source)
+        self.assertNotIn('--output-dir "$ARTIFACTS_DIR"', self.source)
+        self.assertIn('inspection_directory=inspection', self.source)
 
     def test_snapshots_and_binds_exact_export_options_used(self):
         self.assertIn('EXPORT_OPTIONS_SNAPSHOT="$ARTIFACTS_DIR/ExportOptions.plist"', self.source)
@@ -101,6 +111,14 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('EXPORT_PIPESTATUS=("${PIPESTATUS[@]}")', self.source)
         self.assertIn('archive_log=logs/xcodebuild-archive.log', self.source)
         self.assertIn('export_log=logs/xcodebuild-export.log', self.source)
+
+    def test_proves_signed_release_launch_recipe_on_exact_info_plist_evidence_bytes(self):
+        self.assertIn('zipfile.ZipFile(ipa_path)', self.source)
+        self.assertIn('info.get("NembraCaptureFieldRecipe") != field_recipe', self.source)
+        self.assertIn('raw_info_plist', self.source)
+        self.assertIn('hashlib.sha256(raw_info_plist).hexdigest()', self.source)
+        self.assertIn('field.get("infoPlistSHA256")', self.source)
+        self.assertIn('Signed field-launch recipe was not verified on the exact Info.plist evidence bytes', self.source)
 
     def test_never_mutates_physical_authorization(self):
         self.assertIn('Independent acceptance has NOT occurred.', self.source)
