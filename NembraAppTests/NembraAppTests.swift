@@ -305,6 +305,12 @@ extension NembraAppTests {
         )
         XCTAssertTrue(app.contains("PassiveBluetoothExperimentOneCoordinator"))
         XCTAssertFalse(app.contains("try? ForegroundCoreBluetoothCaptureController("))
+        XCTAssertTrue(
+            app.contains("onFreshExperimentRequested: makeFreshExperimentCoordinator"),
+            "Fresh Experiment One must return through parent-owned stationary preflight."
+        )
+        XCTAssertTrue(app.contains("selectedChargerState = nil"))
+        XCTAssertTrue(app.contains("disconnectedDeclarationAccepted = false"))
     }
 
     func testCaptureShellContinuesSameAuthorityThroughFinalShareIntegrity() throws {
@@ -327,6 +333,14 @@ extension NembraAppTests {
         XCTAssertTrue(shell.contains("finalShareIntegrityReport != nil"))
         XCTAssertTrue(shell.contains("Integrity check required"))
         XCTAssertTrue(shell.contains("Ready for analysis"))
+        XCTAssertTrue(
+            shell.contains("coordinator = try onFreshExperimentRequested()"),
+            "Shell restart must delegate fresh-run ownership to stationary preflight."
+        )
+        XCTAssertFalse(
+            shell.contains("coordinator = try PassiveBluetoothExperimentOneCoordinator()"),
+            "The shell must not mint a fresh run behind an already-accepted charger declaration."
+        )
 
         XCTAssertFalse(
             shell.contains("encodedFinalizedObservationHorizonJSON"),
