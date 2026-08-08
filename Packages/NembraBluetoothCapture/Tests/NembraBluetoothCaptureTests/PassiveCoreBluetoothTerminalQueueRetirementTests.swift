@@ -39,7 +39,9 @@ struct PassiveCoreBluetoothTerminalQueueRetirementTests {
 
         #expect(events.map(\.label) == ["new", "foreign"])
         #expect(receipt.terminalAuthority == terminalAuthority)
+        #expect(receipt.terminalTransactionRevision == 2)
         #expect(receipt.horizonQueueCutoff == 12)
+        #expect(receipt.validatedQueueTailSequence == 16)
         #expect(receipt.retiredEvidenceCount == 2)
         #expect(receipt.firstRetiredQueueSequence == 13)
         #expect(receipt.lastRetiredQueueSequence == 15)
@@ -249,10 +251,35 @@ struct PassiveCoreBluetoothTerminalQueueRetirementTests {
 
         #expect(events.map(\.label) == ["new"])
         #expect(receipt.terminalAuthority == terminalAuthority)
+        #expect(receipt.terminalTransactionRevision == 2)
         #expect(receipt.horizonQueueCutoff == 12)
+        #expect(receipt.validatedQueueTailSequence == 13)
         #expect(receipt.retiredEvidenceCount == 0)
         #expect(receipt.firstRetiredQueueSequence == nil)
         #expect(receipt.lastRetiredQueueSequence == nil)
+        #expect(receipt.retainedPendingEvidenceCount == 1)
+    }
+
+    @Test
+    func receiptKeepsValidatedGlobalTailWhenThatTailIsRetired() throws {
+        let newerAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
+            targetSessionGeneration: 4,
+            authorityGeneration: 10
+        )
+        var events = [
+            Event(queueSequence: 13, authority: newerAuthority, label: "retained"),
+            Event(queueSequence: 14, authority: terminalAuthority, label: "retired-tail")
+        ]
+
+        let receipt = try PassiveCoreBluetoothTerminalQueueRetirement.retire(
+            from: &events,
+            terminalGate: try terminalGate(horizonQueueCutoff: 12),
+            identity: identity
+        )
+
+        #expect(events.map(\.label) == ["retained"])
+        #expect(receipt.validatedQueueTailSequence == 14)
+        #expect(receipt.lastRetiredQueueSequence == 14)
         #expect(receipt.retainedPendingEvidenceCount == 1)
     }
 
@@ -268,7 +295,9 @@ struct PassiveCoreBluetoothTerminalQueueRetirementTests {
 
         #expect(events.isEmpty)
         #expect(receipt.terminalAuthority == terminalAuthority)
+        #expect(receipt.terminalTransactionRevision == 2)
         #expect(receipt.horizonQueueCutoff == 12)
+        #expect(receipt.validatedQueueTailSequence == 12)
         #expect(receipt.retiredEvidenceCount == 0)
         #expect(receipt.retainedPendingEvidenceCount == 0)
     }
