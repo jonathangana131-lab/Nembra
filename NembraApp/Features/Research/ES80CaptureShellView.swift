@@ -343,7 +343,7 @@ struct ES80CaptureShellView: View {
     private func accessibilityProgressStage(
         index: Int,
         completedWindows: Int,
-        currentWindow: PassiveBluetoothPowerCycleObservationPhase?,
+        currentWindow: Int?,
         status: PassiveBluetoothExperimentOneCoordinator.Status
     ) -> some View {
         VStack(spacing: 6) {
