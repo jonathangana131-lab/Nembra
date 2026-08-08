@@ -25,6 +25,12 @@ class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
         source = SCRIPT.read_text(encoding="utf-8")
         runner = PRIVATE_RUNNER.read_text(encoding="utf-8")
 
+        self.assertTrue(
+            source.startswith(
+                "#!/bin/bash\nset -euo pipefail\n\nunset NEMBRA_INTENDED_FIELD_DEVICE_UDID\n"
+            ),
+            "The superseded raw-UDID environment variable must be scrubbed before any producer child process can inherit it.",
+        )
         self.assertIn(
             ': "${NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE:?Set NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE to an absolute private mode-0600 file containing the verification-only intended field iPhone UDID.}"',
             source,
@@ -40,6 +46,7 @@ class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
         )
         self.assertIn('failed private content/mode validation', source)
         self.assertNotIn('NEMBRA_INTENDED_FIELD_DEVICE_UDID:?Set', source)
+        self.assertNotIn('${NEMBRA_INTENDED_FIELD_DEVICE_UDID}', source)
         self.assertNotIn('python3 - "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', source)
         self.assertNotIn('--intended-device-udid "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', source)
 
