@@ -148,6 +148,28 @@ struct ForegroundCoreBluetoothCaptureControllerSourceContractTests {
     @Test
     func finalizedTeardownQuarantineRejectsMarkersBeforeTerminalCallback() throws {
         let source = try Self.controllerSource()
+
+        let artifactReads = try Self.section(
+            in: source,
+            from: "    public func captureSnapshot() async throws -> PassiveBluetoothCaptureSession {",
+            to: "    private func beginTargetSessionIfNeeded(for identifier: UUID) throws {"
+        )
+        #expect(artifactReads.contains("lastFinalizedArtifactAuthority = context.authority"))
+
+        let teardown = try Self.section(
+            in: source,
+            from: "    public func teardownActiveConnectionAfterFinalization() throws {",
+            to: "    private func cancelActiveConnection(cause:"
+        )
+        let finalizationAuthorizationOffset = try Self.offset(
+            of: "guard let finalizedAuthority = lastFinalizedArtifactAuthority,",
+            in: teardown
+        )
+        let finalizedTeardownOffset = try Self.offset(
+            of: "cancelActiveConnection(cause: .finalizedArtifactTeardown)",
+            in: teardown
+        )
+        #expect(finalizationAuthorizationOffset < finalizedTeardownOffset)
         let cancellation = try Self.section(
             in: source,
             from: "    private func cancelActiveConnection(cause:",
