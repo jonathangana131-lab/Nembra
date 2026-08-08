@@ -547,6 +547,49 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
     }
 
+
+
+    @MainActor
+    func testV14SimulatorQARendersForegroundInterruptionAsRecoverableRiderState() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=foregroundInterrupted"
+        ]
+        app.launch()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5),
+            "The real Capture shell must render the synthetic interruption state."
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3),
+            "Synthetic interruption QA must remain visibly disclosed as Simulator-only."
+        )
+        XCTAssertTrue(
+            app.staticTexts["Capture stopped safely"].waitForExistence(timeout: 3),
+            "Foreground loss must present a calm, explicit stopped state."
+        )
+        XCTAssertTrue(
+            app.staticTexts["Capture was interrupted when Nembra left the foreground. This synthetic run is no longer valid. Start a fresh Capture."].waitForExistence(timeout: 3),
+            "The recovery explanation must be rider-readable and must not expose evidence-lifecycle jargon."
+        )
+
+        let restart = app.descendants(matching: .any)["es80.capture.restart-experiment"]
+        XCTAssertTrue(restart.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Start a fresh Capture"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.begin-window"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.finish"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.share"].exists)
+        XCTAssertFalse(app.buttons["Vehicle controls"].exists)
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Nembra Capture V14 — SIMULATOR QA — Foreground Interruption Recovery"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+
     private func assertVisibleInScreenshotViewport(
         _ element: XCUIElement,
         windowFrame: CGRect,
