@@ -59,6 +59,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
             case uncommittedReadyRejectedBeforeRecorderMutation
             case recordedReadyInvalidatedBeforeGateCommit
             case committedReadyInvalidated
+            case uncommittedHorizonAbandonedBeforeRecorderMutation
             case uncommittedHorizonRejectedBeforeRecorderMutation
             case recordedHorizonInvalidatedBeforeGateCommit
             case committedHorizonInvalidatedBeforeArtifactFreeze
@@ -69,9 +70,9 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         let abandonedReadyTransactionRevision: UInt64
         let abandonedReadyTransactionIdentity: UUID
         let abandonedTargetSessionGeneration: UInt64
-        /// Exact Horizon transaction abandoned after canonical mutation-point rejection
-        /// but before any H recorder mutation. These fields are lifecycle provenance
-        /// only and must not extend `abandonedEvidenceQueueCutoff`.
+        /// Exact Horizon transaction abandoned before any H recorder mutation. These
+        /// fields are lifecycle provenance only and must not extend
+        /// `abandonedEvidenceQueueCutoff`.
         let abandonedUnrecordedHorizonQueueCutoff: UInt64?
         let abandonedUnrecordedHorizonTransactionRevision: UInt64?
         let abandonedUnrecordedHorizonTransactionIdentity: UUID?
@@ -85,7 +86,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
 
         /// Furthest queue prefix already represented by durable lifecycle evidence in
         /// this abandoned epoch. Recorded/committed Horizon extends it through H; a
-        /// zero-mutation Horizon rejection deliberately leaves Ready as the boundary.
+        /// zero-mutation Horizon abandonment/rejection leaves Ready as the boundary.
         var abandonedEvidenceQueueCutoff: UInt64 {
             abandonedHorizonQueueCutoff ?? abandonedReadyQueueCutoff
         }
@@ -367,6 +368,34 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
             abandonedReadyTransaction: current,
             origin: .recordedReadyInvalidatedBeforeGateCommit
         )
+        phase = .abortQuarantined(receipt)
+        return receipt
+    }
+
+    /// Abandons an exact Horizon admission before any recorder attempt only when the
+    /// admission itself proves its shared one-shot mutation permit was still unused and
+    /// is now permanently consumed. This is deliberate fail-closed abandonment, not an
+    /// authority-rejection claim and not durable H evidence.
+    @discardableResult
+    mutating func abortUncommittedHorizon(
+        after abandonment: PassiveCoreBluetoothObservationBoundaryTransactionDecision.HorizonRecorderMutationAbandonmentReceipt
+    ) throws -> ObservationEpochAbortReceipt {
+        guard case let .drainingHorizon(currentHorizon) = phase,
+              let ready = committedReadyTransaction else {
+            throw StateError.invalidTransition
+        }
+        guard currentHorizon.authority == abandonment.authority,
+              currentHorizon.queueCutoff == abandonment.queueCutoff,
+              currentHorizon.revision == abandonment.transactionRevision,
+              currentHorizon.identity == abandonment.transactionIdentity else {
+            throw StateError.staleTransaction
+        }
+        let receipt = ObservationEpochAbortReceipt(
+            abandonedReadyTransaction: ready,
+            origin: .uncommittedHorizonAbandonedBeforeRecorderMutation,
+            abandonedUnrecordedHorizonTransaction: currentHorizon
+        )
+        committedReadyTransaction = nil
         phase = .abortQuarantined(receipt)
         return receipt
     }
