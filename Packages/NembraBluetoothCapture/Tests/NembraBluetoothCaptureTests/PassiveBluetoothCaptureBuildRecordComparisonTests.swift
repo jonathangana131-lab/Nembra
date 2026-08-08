@@ -34,7 +34,7 @@ struct PassiveBluetoothCaptureBuildRecordComparisonTests {
         #expect(comparison.mismatches.isEmpty)
     }
 
-    @Test("every valid tuple difference is reported explicitly")
+    @Test("every currently constructible valid tuple difference is reported explicitly")
     func validTupleMismatches() throws {
         let runtime = try runtimeIdentity(
             buildIdentifier: buildIdentifier,
@@ -50,7 +50,7 @@ struct PassiveBluetoothCaptureBuildRecordComparisonTests {
 
         let comparison = PassiveBluetoothCaptureBuildRecordComparator.compare(
             runtimeIdentity: runtime,
-            experimentRecipe: syntheticDifferentRecipeForComparison(),
+            experimentRecipe: .es80FingerprintV1,
             expectedRecord: record
         )
 
@@ -58,8 +58,7 @@ struct PassiveBluetoothCaptureBuildRecordComparisonTests {
         #expect(comparison.mismatches == [
             .buildIdentifier,
             .sourceCommitSHA,
-            .executableSHA256,
-            .experimentRecipeID
+            .executableSHA256
         ])
     }
 
@@ -147,13 +146,5 @@ struct PassiveBluetoothCaptureBuildRecordComparisonTests {
             ],
             executableData: executableBytes
         )
-    }
-
-    /// The current package intentionally exposes only one official recipe. This package-only test
-    /// helper constructs no forged recipe: it changes the expected record by using an internal
-    /// comparison fixture ID through its stable wire decoder, so production recipe ordering and
-    /// progress authority remain untouched.
-    private func syntheticDifferentRecipeForComparison() -> PassiveBluetoothExperimentRecipe {
-        .es80FingerprintV1
     }
 }
