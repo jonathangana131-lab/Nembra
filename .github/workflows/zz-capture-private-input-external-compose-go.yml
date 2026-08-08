@@ -1,0 +1,69 @@
+name: Capture external private-input flagship composition
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-private-input-external-compose-go
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard exact live flagship parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "77bfc265601b8e52d0cf89a6d5b2426dcfcc20cc"
+
+      - name: Merge reviewed external-input lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_HEAD="602c0b7e5aae226e0a5f8497b640e8ef4d02baf7"
+          COMMON_BASE="c3a6238159e5e16de7dc1387f9eb621ac52fe345"
+          git fetch --no-tags origin "$SOURCE_HEAD"
+          test "$(git cat-file -t "$SOURCE_HEAD")" = commit
+          git merge-base --is-ancestor "$COMMON_BASE" HEAD
+          git merge-base --is-ancestor "$COMMON_BASE" "$SOURCE_HEAD"
+          git config user.name "nembra-go-worker"
+          git config user.email "actions@users.noreply.github.com"
+          git merge --no-ff --no-edit "$SOURCE_HEAD"
+
+      - name: Validate latest inspector plus external private-input boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
+          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
+          git diff --check HEAD^
+          test "$(git diff --name-only 77bfc265601b8e52d0cf89a6d5b2426dcfcc20cc...HEAD | sort)" = "$(printf '%s\n' \
+            .github/workflows/zz-capture-private-input-external-compose-go.yml \
+            scripts/ci/es80_signed_field_artifact_private_runner.py \
+            scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py \
+            scripts/ci/tests/test_xcode27_signed_field_candidate_source.py \
+            scripts/ci/xcode27_signed_field_candidate.sh | sort)"
+
+      - name: Remove composer and publish composed checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/zz-capture-private-input-external-compose-go.yml
+          git add .github/workflows/zz-capture-private-input-external-compose-go.yml
+          git diff --cached --check
+          git commit -m "chore(capture): retire external-input composer"
+          git push origin HEAD:integration/es80-v14-private-input-external-compose-go
