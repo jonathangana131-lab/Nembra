@@ -15,25 +15,46 @@ struct PassiveCoreBluetoothAbortedFreshTargetSession: Sendable {
     /// constructed from one exact abandoned-queue resolution receipt. File-private init
     /// prevents another package file from wrapping a naked generation and calling it
     /// durable-session authority.
+    ///
+    /// The receipt strongly retains the exact recorder whose construction earned this proof.
+    /// A detached receipt therefore cannot outlive that recorder and later mistake a recycled
+    /// process-local `ObjectIdentifier` for the original actor.
     struct Receipt: Equatable, Sendable {
         let abortedResolution: PassiveCoreBluetoothAbortedQueueResolution.Receipt
         let targetSessionGeneration: UInt64
         let sessionID: UUID
-        let recorderIdentity: ObjectIdentifier
+        /// Exact process-local recorder actor whose successful construction earned
+        /// this receipt. Keeping the actor itself alive closes address-reuse/ABA
+        /// substitution if the receipt escapes the outer fresh-session value.
+        let recorder: PassiveCoreBluetoothCaptureRecorder
+        /// Compatibility/readability projection for consumers that compare their
+        /// installed recorder to this proof. It is computed while the exact recorder
+        /// is strongly retained, never stored as detachable scalar authority.
+        var recorderIdentity: ObjectIdentifier {
+            ObjectIdentifier(recorder)
+        }
         let provisioningIdentity: UUID
 
         fileprivate init(
             abortedResolution: PassiveCoreBluetoothAbortedQueueResolution.Receipt,
             targetSessionGeneration: UInt64,
             sessionID: UUID,
-            recorderIdentity: ObjectIdentifier,
+            recorder: PassiveCoreBluetoothCaptureRecorder,
             provisioningIdentity: UUID = UUID()
         ) {
             self.abortedResolution = abortedResolution
             self.targetSessionGeneration = targetSessionGeneration
             self.sessionID = sessionID
-            self.recorderIdentity = recorderIdentity
+            self.recorder = recorder
             self.provisioningIdentity = provisioningIdentity
+        }
+
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.abortedResolution == rhs.abortedResolution
+                && lhs.targetSessionGeneration == rhs.targetSessionGeneration
+                && lhs.sessionID == rhs.sessionID
+                && ObjectIdentifier(lhs.recorder) == ObjectIdentifier(rhs.recorder)
+                && lhs.provisioningIdentity == rhs.provisioningIdentity
         }
     }
 
@@ -71,7 +92,7 @@ struct PassiveCoreBluetoothAbortedFreshTargetSession: Sendable {
             abortedResolution: abortedResolution,
             targetSessionGeneration: previousGeneration + 1,
             sessionID: id,
-            recorderIdentity: ObjectIdentifier(recorder)
+            recorder: recorder
         )
         return Self(recorder: recorder, receipt: receipt)
     }
