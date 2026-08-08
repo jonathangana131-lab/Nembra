@@ -61,6 +61,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
             case committedReadyInvalidated
             case uncommittedHorizonRejectedBeforeRecorderMutation
             case recordedHorizonInvalidatedBeforeGateCommit
+            case committedHorizonInvalidatedBeforeArtifactFreeze
         }
 
         let abandonedReadyAuthority: PassiveCoreBluetoothArtifactAuthorityContext
@@ -75,15 +76,16 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         let abandonedUnrecordedHorizonTransactionRevision: UInt64?
         let abandonedUnrecordedHorizonTransactionIdentity: UUID?
         /// Exact Horizon transaction whose recorder mutation succeeded durably before
-        /// queue commit failed. Presence here extends durable evidence through H.
+        /// queue commit failed, or whose queue commit succeeded before artifact freeze
+        /// was intentionally abandoned. Presence here extends durable evidence through H.
         let abandonedHorizonQueueCutoff: UInt64?
         let abandonedHorizonTransactionRevision: UInt64?
         let abandonedHorizonTransactionIdentity: UUID?
         let origin: Origin
 
         /// Furthest queue prefix already represented by durable lifecycle evidence in
-        /// this abandoned epoch. Recorded-but-uncommitted Horizon extends it through H;
-        /// a zero-mutation Horizon rejection deliberately leaves Ready as the boundary.
+        /// this abandoned epoch. Recorded/committed Horizon extends it through H; a
+        /// zero-mutation Horizon rejection deliberately leaves Ready as the boundary.
         var abandonedEvidenceQueueCutoff: UInt64 {
             abandonedHorizonQueueCutoff ?? abandonedReadyQueueCutoff
         }
@@ -418,6 +420,34 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         let receipt = ObservationEpochAbortReceipt(
             abandonedReadyTransaction: ready,
             origin: .recordedHorizonInvalidatedBeforeGateCommit,
+            abandonedHorizonTransaction: currentHorizon
+        )
+        committedReadyTransaction = nil
+        phase = .abortQuarantined(receipt)
+        return receipt
+    }
+
+    /// Abandons an already durable and queue-committed H when artifact creation,
+    /// integrity validation, or final authority validation fails before terminal
+    /// freeze. H remains durable incomplete evidence; this transition never retries
+    /// under a newer authority and never fabricates terminal artifact success.
+    @discardableResult
+    mutating func abortCommittedHorizonBeforeArtifactFreeze(
+        _ committedHorizon: PassiveCoreBluetoothObservationBoundaryTransactionDecision.CommittedHorizonBoundary
+    ) throws -> ObservationEpochAbortReceipt {
+        guard case let .horizonBoundaryRecorded(currentHorizon) = phase,
+              let ready = committedReadyTransaction else {
+            throw StateError.invalidTransition
+        }
+        guard currentHorizon.authority == committedHorizon.authority,
+              currentHorizon.queueCutoff == committedHorizon.queueCutoff,
+              currentHorizon.revision == committedHorizon.transactionRevision,
+              currentHorizon.identity == committedHorizon.transactionIdentity else {
+            throw StateError.staleTransaction
+        }
+        let receipt = ObservationEpochAbortReceipt(
+            abandonedReadyTransaction: ready,
+            origin: .committedHorizonInvalidatedBeforeArtifactFreeze,
             abandonedHorizonTransaction: currentHorizon
         )
         committedReadyTransaction = nil
