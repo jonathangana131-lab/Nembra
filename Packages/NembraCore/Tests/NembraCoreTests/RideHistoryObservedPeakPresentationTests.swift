@@ -30,7 +30,10 @@ struct RideHistoryObservedPeakPresentationTests {
 
     @Test("legitimate accepted zero stays distinct from unavailable peak")
     func legitimateObservedZero() throws {
-        let fixture = try bluetoothFixture(speeds: [0, 0, 0])
+        let fixture = try bluetoothFixture(
+            speeds: [0, 0, 0],
+            maximumEmpiricalSpeedStepKilometersPerHour: nil
+        )
         let presentation = try RideHistoryObservedPeakPresenter.present(joined(fixture))
 
         #expect(presentation.state == .qualifiedObservedMaximum)
@@ -163,7 +166,8 @@ struct RideHistoryObservedPeakPresentationTests {
         interruptionThenSpeeds: [Double] = [],
         includeForeignSourceCallback: Bool = false,
         maximumRejectedFraction: Double = 0,
-        minimumAcceptedSampleCount: Int = 3
+        minimumAcceptedSampleCount: Int = 3,
+        maximumEmpiricalSpeedStepKilometersPerHour: Double? = 100
     ) throws -> Fixture {
         let ride = try completedRide()
         var accumulator = RideSpeedEvidenceSessionAccumulator(
@@ -200,7 +204,8 @@ struct RideHistoryObservedPeakPresentationTests {
         let readiness = snapshot.observedPeakReadiness(
             using: try bluetoothPolicy(
                 maximumRejectedFraction: maximumRejectedFraction,
-                minimumAcceptedSampleCount: minimumAcceptedSampleCount
+                minimumAcceptedSampleCount: minimumAcceptedSampleCount,
+                maximumEmpiricalSpeedStepKilometersPerHour: maximumEmpiricalSpeedStepKilometersPerHour
             )
         )
         let ridePeak = try #require(snapshot.peakEvidence)
@@ -256,7 +261,8 @@ struct RideHistoryObservedPeakPresentationTests {
 
     private func bluetoothPolicy(
         maximumRejectedFraction: Double = 0,
-        minimumAcceptedSampleCount: Int = 3
+        minimumAcceptedSampleCount: Int = 3,
+        maximumEmpiricalSpeedStepKilometersPerHour: Double? = 100
     ) throws -> RideObservedPeakQualityPolicy {
         try RideObservedPeakQualityPolicy(
             telemetry: SpeedTelemetryQualityPolicy(
@@ -266,7 +272,7 @@ struct RideHistoryObservedPeakPresentationTests {
                 maximumMeanIntervalMilliseconds: 150,
                 maximumObservedIntervalMilliseconds: 200,
                 maximumJitterStandardDeviationMilliseconds: 50,
-                maximumEmpiricalSpeedStepKilometersPerHour: 100
+                maximumEmpiricalSpeedStepKilometersPerHour: maximumEmpiricalSpeedStepKilometersPerHour
             )
         )
     }
