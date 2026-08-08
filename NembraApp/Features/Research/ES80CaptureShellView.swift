@@ -680,7 +680,7 @@ struct ES80CaptureShellView: View {
                     Text("CAPTURE COMPLETE")
                         .font(.caption.monospaced().weight(.bold))
                         .foregroundStyle(.secondary)
-                    Text("Ready for analysis")
+                    Text(finalizedExportData == nil ? "Capture sealed" : "Ready for analysis")
                         .font(.title2.weight(.semibold))
                         .foregroundStyle(.white)
                 }
@@ -1294,7 +1294,9 @@ struct ES80CaptureShellView: View {
         completedWindows: Int
     ) -> String {
         if status.artifactFinalized {
-            return "Experiment One progress, capture sealed and ready for analysis"
+            return finalizedExportData == nil
+                ? "Experiment One progress, capture sealed; Share and analysis package preparation pending"
+                : "Experiment One progress, capture sealed and analysis package ready"
         }
         if declaredCaptureSetup == nil {
             return "Experiment One progress, stationary setup preflight required"
