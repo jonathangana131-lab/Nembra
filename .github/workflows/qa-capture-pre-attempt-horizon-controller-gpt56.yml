@@ -1,0 +1,112 @@
+name: Capture pre-attempt Horizon controller exact-product QA
+
+on:
+  push:
+    branches:
+      - cell/capture-pre-attempt-horizon-controller/ci/gpt56
+
+permissions:
+  contents: read
+
+jobs:
+  capture-pre-attempt-horizon-qa:
+    runs-on: xcode-27
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout immutable validation mirror
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact product parent and workflow-only delta
+        env:
+          EXPECTED_PRODUCT_SHA: 4ca8f04b4f3a4cfa3d5c421dce74b914ca0607d6
+          EXPECTED_WORKFLOW_PATH: .github/workflows/qa-capture-pre-attempt-horizon-controller-gpt56.yml
+        run: |
+          set -euo pipefail
+          actual_parent="$(git rev-parse HEAD^)"
+          printf 'Expected product parent: %s\nActual product parent:   %s\n' "$EXPECTED_PRODUCT_SHA" "$actual_parent"
+          test "$actual_parent" = "$EXPECTED_PRODUCT_SHA"
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          printf 'Validation-only delta:\n%s\n' "$changed"
+          test "$changed" = "$EXPECTED_WORKFLOW_PATH"
+
+      - name: Report Apple toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Reject application characteristic writes
+        run: |
+          set -euo pipefail
+          if grep -R --include='*.swift' -nE '\.writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Application characteristic-value write path detected in NembraBluetoothCapture Sources.' >&2
+            exit 1
+          fi
+          echo 'No application .writeValue(...) call found in NembraBluetoothCapture Sources.'
+
+      - name: Verify pre-attempt Horizon authority and controller consumption
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          transaction = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryTransactionDecision.swift').read_text()
+          gate = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift').read_text()
+          controller = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift').read_text()
+          producer_tests = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothUncommittedHorizonRecoveryTests.swift').read_text()
+          controller_tests = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerPreAttemptHorizonRecoveryTests.swift').read_text()
+
+          required_transaction = [
+              'struct HorizonRecorderMutationAbandonmentReceipt',
+              'func abandonBeforeRecorderMutation()',
+              'try mutationPermit.claim()',
+          ]
+          required_gate = [
+              'case uncommittedHorizonAbandonedBeforeRecorderMutation',
+              'after abandonment: PassiveCoreBluetoothObservationBoundaryTransactionDecision.HorizonRecorderMutationAbandonmentReceipt',
+          ]
+          required_controller = [
+              'let horizonAdmission = try durationPermit.beginHorizon(',
+              'await flushPendingEvents(through: horizonAdmission.queueCutoff)',
+              'let abandonment = try horizonAdmission.abandonBeforeRecorderMutation()',
+              'after: abandonment',
+              '.recordBoundaryWithMutationOutcome(on: recorder)',
+              'case let .rejectedBeforeMutation(rejection):',
+              'abortUncommittedHorizon(after: rejection)',
+          ]
+          for token in required_transaction:
+              assert token in transaction, token
+          for token in required_gate:
+              assert token in gate, token
+          for token in required_controller:
+              assert token in controller, token
+
+          positions = [controller.index(token) for token in required_controller[:5]]
+          assert positions == sorted(positions), positions
+          assert controller.count('abandonBeforeRecorderMutation()') == 1
+          assert 'explicitPreAttemptAbandonmentQuarantinesWithoutMutation' in producer_tests
+          assert 'controllerConsumesUnusedAdmissionBeforeRecorderAttempt' in controller_tests
+          PY
+
+      - name: Run NembraCore tests
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors
+
+      - name: Run full capture package tests
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+
+      - name: Build capture package for generic iOS Simulator
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          xcodebuild -scheme NembraBluetoothCapture \
+            -destination 'generic/platform=iOS Simulator' \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+            CODE_SIGNING_ALLOWED=NO \
+            build
