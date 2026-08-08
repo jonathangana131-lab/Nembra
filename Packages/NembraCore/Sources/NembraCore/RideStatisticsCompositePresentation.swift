@@ -160,14 +160,19 @@ public enum RideStatisticsCompositePresenter {
             calendar: calendar
         )
 
-        return Set(rides.lazy.compactMap { ride in
+        var selected: Set<SelectedRideIdentity> = []
+        selected.reserveCapacity(rides.count)
+
+        for ride in rides {
             let date = attributedDate(ride)
-            guard window.contains(date) else { return nil }
-            return SelectedRideIdentity(
+            guard window.contains(date) else { continue }
+            selected.insert(SelectedRideIdentity(
                 sessionID: sessionID(ride),
                 attributedDate: date
-            )
-        })
+            ))
+        }
+
+        return selected
     }
 
     private static func periodWindow(
