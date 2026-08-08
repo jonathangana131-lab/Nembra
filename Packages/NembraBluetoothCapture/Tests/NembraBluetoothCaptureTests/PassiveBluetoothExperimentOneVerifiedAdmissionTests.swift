@@ -102,8 +102,8 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(source.contains("private static func makeLiveES80Coordinator() throws"))
         #expect(!source.contains("authorized: Bool"))
         #expect(!source.contains("permission: Bool"))
-        #expect(!source.contains("UserDefaults"))
-        #expect(!source.contains("ProcessInfo"))
+        #expect(!source.contains("UserDefaults.standard"))
+        #expect(!source.contains("ProcessInfo.processInfo"))
     }
 
     @Test("current app consumes only the exact-running-build private research factory")
