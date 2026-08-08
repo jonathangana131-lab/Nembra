@@ -1,0 +1,185 @@
+name: TEMP ES80 exact-subject double-pass transform
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-signed-ipa-double-pass/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Harden exact IPA snapshot and permanent acceptance gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source_path = Path("scripts/ci/es80_signed_field_artifact_evidence.py")
+          text = source_path.read_text(encoding="utf-8")
+          start = text.index("def snapshot_ipa_exact(")
+          end = text.index("\ndef canonical_sha40", start)
+          replacement = '''def _sha256_descriptor(descriptor: int) -> tuple[str, int]:
+              """Hash one complete regular-file pass through the already-open descriptor."""
+              os.lseek(descriptor, 0, os.SEEK_SET)
+              digest = hashlib.sha256()
+              byte_count = 0
+              while True:
+                  chunk = os.read(descriptor, 1024 * 1024)
+                  if not chunk:
+                      break
+                  digest.update(chunk)
+                  byte_count += len(chunk)
+              return digest.hexdigest(), byte_count
+
+
+          def snapshot_ipa_exact(ipa_path: Path, destination: Path) -> Path:
+              """Copy one exact IPA subject and prove two full reads of one descriptor agree."""
+              if not hasattr(os, "O_NOFOLLOW"):
+                  raise EvidenceError("platform cannot enforce no-follow exact IPA snapshot input")
+              flags = os.O_RDONLY | os.O_NOFOLLOW
+              if hasattr(os, "O_CLOEXEC"):
+                  flags |= os.O_CLOEXEC
+              try:
+                  descriptor = os.open(ipa_path, flags)
+              except OSError as exc:
+                  raise EvidenceError(f"could not open exact IPA subject: {ipa_path}") from exc
+
+              try:
+                  before = os.fstat(descriptor)
+                  if not stat.S_ISREG(before.st_mode) or before.st_size <= 0:
+                      raise EvidenceError("IPA input must be one non-empty regular file")
+                  destination.parent.mkdir(parents=True, exist_ok=True)
+
+                  first_digest = hashlib.sha256()
+                  first_count = 0
+                  try:
+                      os.lseek(descriptor, 0, os.SEEK_SET)
+                      with destination.open("xb") as sink:
+                          while True:
+                              chunk = os.read(descriptor, 1024 * 1024)
+                              if not chunk:
+                                  break
+                              first_digest.update(chunk)
+                              first_count += len(chunk)
+                              if sink.write(chunk) != len(chunk):
+                                  raise EvidenceError("could not write complete exact IPA snapshot")
+                          sink.flush()
+                          os.fsync(sink.fileno())
+                  except (OSError, EvidenceError) as exc:
+                      destination.unlink(missing_ok=True)
+                      if isinstance(exc, EvidenceError):
+                          raise
+                      raise EvidenceError("could not snapshot exact IPA subject") from exc
+
+                  middle = os.fstat(descriptor)
+                  second_sha256, second_count = _sha256_descriptor(descriptor)
+                  after = os.fstat(descriptor)
+                  first_sha256 = first_digest.hexdigest()
+                  if (
+                      _stable_file_identity(before) != _stable_file_identity(middle)
+                      or _stable_file_identity(middle) != _stable_file_identity(after)
+                      or first_count != before.st_size
+                      or second_count != before.st_size
+                      or first_sha256 != second_sha256
+                  ):
+                      destination.unlink(missing_ok=True)
+                      raise EvidenceError("IPA input changed while exact inspection subject was snapshotted")
+
+                  try:
+                      snapshot_stat = destination.stat()
+                  except OSError as exc:
+                      destination.unlink(missing_ok=True)
+                      raise EvidenceError("could not stat exact IPA inspection subject") from exc
+                  if not stat.S_ISREG(snapshot_stat.st_mode) or snapshot_stat.st_size != before.st_size:
+                      destination.unlink(missing_ok=True)
+                      raise EvidenceError("exact IPA inspection subject does not match source byte count")
+                  if sha256_file(destination) != second_sha256:
+                      destination.unlink(missing_ok=True)
+                      raise EvidenceError("exact IPA inspection snapshot digest diverged from source")
+                  destination.chmod(0o400)
+                  return destination
+              finally:
+                  os.close(descriptor)
+
+          '''
+          text = text[:start] + replacement + text[end + 1:]
+          source_path.write_text(text, encoding="utf-8")
+
+          test_path = Path("scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py")
+          tests = test_path.read_text(encoding="utf-8")
+          if "import os\n" not in tests:
+              tests = tests.replace("import importlib.util\n", "import importlib.util\nimport os\n", 1)
+          marker = "\n\nif __name__ == \"__main__\":\n"
+          if marker not in tests:
+              raise SystemExit("exact-subject test insertion marker not found")
+          regression = '''
+              def test_snapshot_rejects_same_length_mutation_between_full_descriptor_passes(self) -> None:
+                  inspector = load_inspector()
+                  original_ipa = b"A" * 4096
+                  changed_ipa = b"B" * 4096
+
+                  with tempfile.TemporaryDirectory(prefix="nembra-double-pass-test-") as temporary:
+                      root = Path(temporary)
+                      ipa_path = root / "candidate.ipa"
+                      snapshot_path = root / "snapshot.ipa"
+                      ipa_path.write_bytes(original_ipa)
+                      real_second_pass = inspector._sha256_descriptor
+
+                      def mutate_then_hash(descriptor: int) -> tuple[str, int]:
+                          with ipa_path.open("r+b") as handle:
+                              handle.seek(0)
+                              handle.write(changed_ipa)
+                              handle.flush()
+                              os.fsync(handle.fileno())
+                          return real_second_pass(descriptor)
+
+                      with patch.object(inspector, "_sha256_descriptor", side_effect=mutate_then_hash):
+                          with self.assertRaises(inspector.EvidenceError):
+                              inspector.snapshot_ipa_exact(ipa_path, snapshot_path)
+
+                      self.assertFalse(
+                          snapshot_path.exists(),
+                          "A snapshot whose two complete source reads disagree must never survive as evidence input.",
+                      )
+          '''
+          if "test_snapshot_rejects_same_length_mutation_between_full_descriptor_passes" not in tests:
+              tests = tests.replace(marker, "\n" + regression + marker, 1)
+          test_path.write_text(tests, encoding="utf-8")
+
+          workflow_path = Path(".github/workflows/xcode27-pr-command.yml")
+          workflow = workflow_path.read_text(encoding="utf-8")
+          needle = "          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test\n"
+          addition = (
+              needle
+              + "          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py\n"
+              + "          python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py\n"
+          )
+          if workflow.count(needle) != 1:
+              raise SystemExit("expected exactly one canonical signed-field self-test gate")
+          if "test_es80_signed_field_artifact_exact_subject.py" not in workflow:
+              workflow = workflow.replace(needle, addition, 1)
+          workflow_path.write_text(workflow, encoding="utf-8")
+          PY
+
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
+          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
+          git diff --check
+
+          rm .github/workflows/tmp-es80-exact-subject-double-pass.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "[Capture provenance v14] Prove exact IPA snapshot across two reads"
+          git push origin HEAD:${{ github.ref_name }}
