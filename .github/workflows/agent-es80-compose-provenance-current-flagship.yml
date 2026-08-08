@@ -17,14 +17,16 @@ jobs:
           ref: integration/es80-v14-share-structural-exact-sequence/gpt56-thinking-go
           fetch-depth: 0
 
-      - name: Merge current additive provenance lanes
+      - name: Cherry-pick only the reviewed additive provenance commits
         shell: bash
         run: |
           git config user.name 'nembra-go-worker'
           git config user.email 'actions@users.noreply.github.com'
           git fetch origin feature/es80-v14-export-build-reference-gpt56 feature/es80-v14-external-build-record-declaration-gpt56
-          git merge --no-ff origin/feature/es80-v14-export-build-reference-gpt56 -m 'merge(capture): compose external exact-build comparison'
-          git merge --no-ff origin/feature/es80-v14-external-build-record-declaration-gpt56 -m 'merge(capture): compose exact external build-record declaration'
+          git cherry-pick 97701ee05076ad36bb2b4a5e176ba2b962d30bf9
+          git cherry-pick 74a0fe366cbe7d8aa96d0eb5959e414f3a854abb
+          git cherry-pick 2f08f03bbeb12e315516e92478aa06f014811c98
+          git cherry-pick badd13e743654a20442519600509880c2c0f6ffc
           rm .github/workflows/agent-es80-compose-provenance-current-flagship.yml
           git add .github/workflows/agent-es80-compose-provenance-current-flagship.yml
           git commit -m 'chore(capture): remove temporary provenance compose workflow'
