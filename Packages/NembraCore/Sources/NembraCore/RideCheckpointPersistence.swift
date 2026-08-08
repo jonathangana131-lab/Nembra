@@ -296,8 +296,48 @@ public actor AtomicRideCheckpointStore: RideCheckpointStore {
     }
 
     public func clear() async throws {
-        for url in [slotAURL, slotBURL] where fileManager.fileExists(atPath: url.path) {
-            try fileManager.removeItem(at: url)
+        let a = try readSlot(at: slotAURL)
+        let b = try readSlot(at: slotBURL)
+        try rejectUnsupportedSchema(a, b)
+        try rejectConflictingGenerations(a, b)
+
+        // A corrupt slot cannot be ranked safely against a readable generation.
+        // It may be the newest completion handoff. Deleting the readable copy first
+        // could therefore expose or erase the wrong ride after an interrupted clear.
+        // Preserve all bytes and require explicit recovery instead.
+        if a.isCorrupt || b.isCorrupt {
+            throw RideCheckpointError.corruptedCheckpoint
+        }
+
+        let slots: [(url: URL, read: SlotRead)] = [
+            (slotAURL, a),
+            (slotBURL, b),
+        ]
+        let validSlots: [(url: URL, envelope: Envelope)] = slots.compactMap { slot in
+            guard let envelope = slot.read.envelope else { return nil }
+            return (slot.url, envelope)
+        }
+
+        guard let newest = validSlots.max(by: {
+            $0.envelope.generation < $1.envelope.generation
+        }) else {
+            // Both slots are missing. Unsupported/conflicting/corrupt evidence has
+            // already failed closed before this point, so clearing is idempotent.
+            return
+        }
+
+        // Remove every fallback before the newest durable generation. If the second
+        // physical removal fails or the process dies between removals, restart can
+        // still recover only the newest checkpoint. In particular, acknowledging a
+        // completed history commit can never resurrect an older in-progress ride.
+        for slot in slots
+            where slot.url != newest.url
+            && fileManager.fileExists(atPath: slot.url.path) {
+            try fileManager.removeItem(at: slot.url)
+        }
+
+        if fileManager.fileExists(atPath: newest.url.path) {
+            try fileManager.removeItem(at: newest.url)
         }
     }
 
