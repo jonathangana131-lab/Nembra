@@ -56,6 +56,7 @@ struct ES80CaptureShellView: View {
     @State private var finalShareFilename: String?
     @State private var finalShareIntegrityReport: PassiveBluetoothExperimentOneFinalShareIntegrityReport?
     @State private var sharePreparationWarning: String?
+    @State private var selectedChargerState: PassiveBluetoothStationaryCaptureChargerState?
     @State private var declaredStationarySetup: PassiveBluetoothStationaryCaptureSetup?
     @State private var showingDetails = false
 
@@ -282,24 +283,7 @@ struct ES80CaptureShellView: View {
 
         case let .correlationReady(window):
             if window == .firstPoweredOff, declaredStationarySetup == nil {
-                statePanel(
-                    eyebrow: "PREFLIGHT / DECLARATION",
-                    title: "Confirm stationary setup",
-                    message: "Before OFF 1, unplug the scooter charger, keep Nembra foregrounded with the screen unlocked, and keep the stock scooter app closed. Confirm only when those are your declared setup conditions for this Experiment One run.",
-                    symbol: "checkmark.shield"
-                )
-                primaryButton(
-                    "Confirm setup",
-                    systemImage: "checkmark.circle.fill",
-                    identifier: "es80.capture.confirm-setup"
-                ) {
-                    declaredStationarySetup = PassiveBluetoothStationaryCaptureSetup(
-                        chargerState: .disconnected,
-                        executionContext: .foregroundUnlockedScreenOn,
-                        stockAppReferenceSetup: .none
-                    )
-                }
-                guidanceFootnote("This records your operator declaration; it is not independent proof that the condition held continuously.")
+                stationarySetupDeclarationPanel
             } else {
                 correlationReadyPanel(window)
                 primaryButton(
@@ -566,6 +550,61 @@ struct ES80CaptureShellView: View {
         }
     }
 
+    private var stationarySetupDeclarationPanel: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            statePanel(
+                eyebrow: "PREFLIGHT / DECLARATION",
+                title: "Declare charger state",
+                message: "Choose the scooter charger's actual state before OFF 1. Keep Nembra foregrounded with the screen unlocked and keep the stock scooter app closed for this Experiment One run.",
+                symbol: "checkmark.shield"
+            )
+
+            HStack(spacing: 10) {
+                chargerChoiceButton(
+                    "Disconnected",
+                    state: .disconnected,
+                    systemImage: "bolt.slash"
+                )
+                chargerChoiceButton(
+                    "Connected",
+                    state: .connected,
+                    systemImage: "bolt.fill"
+                )
+            }
+
+            if let selectedChargerState {
+                Text("Declared charger state: \(chargerStateLabel(selectedChargerState)).")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white)
+                    .accessibilityIdentifier("es80.capture.selected-charger-state")
+
+                if selectedChargerState == .connected {
+                    diagnosticBanner("ES80-FINGERPRINT-v1 requires the charger disconnected before OFF 1. Disconnect the charger, then explicitly change this declaration to Disconnected. Nembra will not advance while Connected is selected.")
+                        .accessibilityIdentifier("es80.capture.charger-connected-blocker")
+                }
+
+                primaryButton(
+                    selectedChargerState == .disconnected ? "Confirm setup" : "Disconnect charger to continue",
+                    systemImage: selectedChargerState == .disconnected ? "checkmark.circle.fill" : "lock.fill",
+                    disabled: selectedChargerState != .disconnected,
+                    identifier: "es80.capture.confirm-setup"
+                ) {
+                    guard selectedChargerState == .disconnected else { return }
+                    declaredStationarySetup = PassiveBluetoothStationaryCaptureSetup(
+                        chargerState: selectedChargerState,
+                        executionContext: .foregroundUnlockedScreenOn,
+                        stockAppReferenceSetup: .none
+                    )
+                }
+            } else {
+                guidanceFootnote("Select the charger's actual state. Nembra will not assume Disconnected from a generic confirmation tap.")
+            }
+
+            guidanceFootnote("This records your operator declaration. It does not measure the charger or prove that charger, foreground, or stock-app conditions remain true continuously, and it never authorizes a physical run by itself.")
+        }
+        .accessibilityIdentifier("es80.capture.stationary-setup")
+    }
+
     private func correlationReadyPanel(_ window: PassiveBluetoothPowerCycleObservationPhase) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("\(phaseShortName(window)) / READY")
@@ -691,6 +730,11 @@ struct ES80CaptureShellView: View {
                     detailRow("Recipe", value: PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue)
                     detailRow("Correlation", value: correlationDetailValue)
                     detailRow("Cleanup", value: finalizationCleanupDetailValue)
+                    if let declaredStationarySetup {
+                        detailRow("Declared charger", value: chargerStateLabel(declaredStationarySetup.chargerState))
+                        detailRow("Declared execution", value: "Foreground / unlocked / screen on")
+                        detailRow("Declared stock app reference", value: "None")
+                    }
 
                     if let report = finalShareIntegrityReport {
                         detailRow("Analysis readiness", value: "Ready")
@@ -716,7 +760,7 @@ struct ES80CaptureShellView: View {
 
                     Text("Truth boundary")
                         .font(.headline)
-                    Text("This artifact is passive software evidence. File and build hashes are software provenance, not independent field authorization. Repeated full-UUID correlation does not authenticate the physical ES80, and this screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics.")
+                    Text("This artifact is passive software evidence. Setup rows are operator-declared provenance, not measured or continuous-condition attestation. File and build hashes are software provenance, not independent field authorization. Repeated full-UUID correlation does not authenticate the physical ES80, and this screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics.")
                         .font(.body)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -940,6 +984,7 @@ struct ES80CaptureShellView: View {
         finalShareFilename = nil
         finalShareIntegrityReport = nil
         sharePreparationWarning = nil
+        selectedChargerState = nil
         declaredStationarySetup = nil
         showingDetails = false
         observedScanBeganAtUptimeNanoseconds = nil
@@ -1183,6 +1228,35 @@ struct ES80CaptureShellView: View {
         .accessibilityIdentifier(identifier)
     }
 
+    private func chargerChoiceButton(
+        _ title: String,
+        state: PassiveBluetoothStationaryCaptureChargerState,
+        systemImage: String
+    ) -> some View {
+        let selected = selectedChargerState == state
+        return Button {
+            selectedChargerState = state
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: selected ? "checkmark.circle.fill" : systemImage)
+                    .accessibilityHidden(true)
+                Text(title)
+            }
+            .font(.subheadline.weight(.semibold))
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 50)
+            .foregroundStyle(selected ? Color.black : Color.white)
+            .background(
+                selected ? Color.white : Color.white.opacity(0.065),
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Charger \(title)")
+        .accessibilityValue(selected ? "Selected" : "Not selected")
+        .accessibilityIdentifier("es80.capture.charger-\(state.rawValue)")
+    }
+
     private func diagnosticBanner(_ message: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "exclamationmark.circle")
@@ -1315,6 +1389,15 @@ struct ES80CaptureShellView: View {
         case .notAttempted: return "Not attempted"
         case .complete: return "Complete"
         case .failed: return "Recovery needed"
+        }
+    }
+
+    private func chargerStateLabel(
+        _ state: PassiveBluetoothStationaryCaptureChargerState
+    ) -> String {
+        switch state {
+        case .disconnected: return "Disconnected"
+        case .connected: return "Connected"
         }
     }
 
