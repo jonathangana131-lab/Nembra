@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import importlib.util
 import json
 import plistlib
@@ -20,6 +21,8 @@ COMMIT = "a" * 40
 BUILD_ID = "Capture Build V14-aaaaaaaaaaaa"
 INSTANCE = "a1b2c3d4-e5f6-47a8-90bc-def123456789"
 EXECUTABLE = b"signed-nembra-executable-fixture"
+DEVICE_UDID = "00008101-001234567890001E"
+TEAM_ID = "ABCDE12345"
 
 
 class FieldArtifactVerifierTests(unittest.TestCase):
@@ -69,6 +72,33 @@ class FieldArtifactVerifierTests(unittest.TestCase):
             external_record_path=record_path,
             expected_source_commit=COMMIT,
             extraction_root=extraction_root,
+        )
+
+    def make_profile(self, **overrides):
+        expiration = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30)
+        profile = {
+            "Platform": ["iOS"],
+            "TeamIdentifier": [TEAM_ID],
+            "ApplicationIdentifierPrefix": [TEAM_ID],
+            "ExpirationDate": expiration,
+            "ProvisionedDevices": [DEVICE_UDID],
+            "Entitlements": {
+                "application-identifier": f"{TEAM_ID}.{verifier.EXPECTED_BUNDLE_ID}",
+                "com.apple.developer.team-identifier": TEAM_ID,
+            },
+        }
+        profile.update(overrides)
+        return profile
+
+    def mock_security_decode(self, profile):
+        return mock.patch.object(
+            verifier.subprocess,
+            "run",
+            return_value=mock.Mock(
+                returncode=0,
+                stdout=plistlib.dumps(profile),
+                stderr=b"",
+            ),
         )
 
     def test_exact_signed_artifact_shape_correlates_without_minting_go(self):
@@ -159,6 +189,73 @@ class FieldArtifactVerifierTests(unittest.TestCase):
                     external_record_path=record_path,
                     expected_source_commit=COMMIT,
                     extraction_root=extraction_root,
+                )
+
+    def test_duplicate_archive_path_is_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ipa_path, record_path = self.make_fixture(root)
+            malicious = root / "Duplicate.ipa"
+            with zipfile.ZipFile(ipa_path, "r") as source, zipfile.ZipFile(malicious, "w") as dest:
+                for item in source.infolist():
+                    dest.writestr(item, source.read(item.filename))
+                dest.writestr("Payload/Nembra.app/Nembra", b"ambiguous-second-entry")
+            extraction_root = root / "extract"
+            extraction_root.mkdir()
+            with self.assertRaisesRegex(verifier.VerificationError, "duplicate path"):
+                verifier.verify_static_artifact(
+                    ipa_path=malicious,
+                    external_record_path=record_path,
+                    expected_source_commit=COMMIT,
+                    extraction_root=extraction_root,
+                )
+
+    def test_provisioning_profile_must_cover_exact_target_device(self):
+        profile = self.make_profile()
+        signature = {"identifier": verifier.EXPECTED_BUNDLE_ID, "teamIdentifier": TEAM_ID}
+        with mock.patch.object(verifier.shutil, "which", return_value="/usr/bin/security"), self.mock_security_decode(profile):
+            metadata = verifier.verify_provisioning_profile(
+                app_path=Path("/tmp/Nembra.app"),
+                expected_device_udid=DEVICE_UDID,
+                code_signature=signature,
+            )
+        self.assertTrue(metadata["targetDeviceProvisioningMatched"])
+        self.assertEqual(metadata["teamIdentifier"], TEAM_ID)
+
+    def test_provisioning_profile_rejects_wrong_device(self):
+        profile = self.make_profile(ProvisionedDevices=["00008101-00FFFFFFFFFFFFFF"])
+        signature = {"identifier": verifier.EXPECTED_BUNDLE_ID, "teamIdentifier": TEAM_ID}
+        with mock.patch.object(verifier.shutil, "which", return_value="/usr/bin/security"), self.mock_security_decode(profile):
+            with self.assertRaisesRegex(verifier.VerificationError, "expected field device"):
+                verifier.verify_provisioning_profile(
+                    app_path=Path("/tmp/Nembra.app"),
+                    expected_device_udid=DEVICE_UDID,
+                    code_signature=signature,
+                )
+
+    def test_provisioning_profile_rejects_expired_or_wrong_team(self):
+        expired = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)
+        profile = self.make_profile(ExpirationDate=expired)
+        signature = {"identifier": verifier.EXPECTED_BUNDLE_ID, "teamIdentifier": TEAM_ID}
+        with mock.patch.object(verifier.shutil, "which", return_value="/usr/bin/security"), self.mock_security_decode(profile):
+            with self.assertRaisesRegex(verifier.VerificationError, "expired"):
+                verifier.verify_provisioning_profile(
+                    app_path=Path("/tmp/Nembra.app"),
+                    expected_device_udid=DEVICE_UDID,
+                    code_signature=signature,
+                )
+
+        wrong_team_signature = {
+            "identifier": verifier.EXPECTED_BUNDLE_ID,
+            "teamIdentifier": "ZZZZZ99999",
+        }
+        profile = self.make_profile()
+        with mock.patch.object(verifier.shutil, "which", return_value="/usr/bin/security"), self.mock_security_decode(profile):
+            with self.assertRaisesRegex(verifier.VerificationError, "TeamIdentifier"):
+                verifier.verify_provisioning_profile(
+                    app_path=Path("/tmp/Nembra.app"),
+                    expected_device_udid=DEVICE_UDID,
+                    code_signature=wrong_team_signature,
                 )
 
 
