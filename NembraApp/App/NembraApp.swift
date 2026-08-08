@@ -274,11 +274,6 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
 @MainActor
 private struct ES80ExperimentOneFieldNoGoView: View {
     @State private var engineeringDetailsExpanded = false
-    private let runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity?
-
-    init() {
-        runtimeBuildIdentity = try? PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()
-    }
 
     private var recipeID: String {
         PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue
@@ -286,13 +281,6 @@ private struct ES80ExperimentOneFieldNoGoView: View {
 
     private var physicalLockAccessibilityLabel: String {
         "Capture locked on this build. Nembra is still completing the final app and build checks required before the scooter capture can begin. No scooter action is needed yet."
-    }
-
-    private var buildIdentityAccessibilityLabel: String {
-        if let runtimeBuildIdentity {
-            return "Capture build, \(runtimeBuildIdentity.buildIdentifier)"
-        }
-        return "Capture build identity unavailable"
     }
 
     var body: some View {
@@ -327,27 +315,6 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         .font(.title3.weight(.medium))
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
-
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("BUILD")
-                            .font(.caption2.monospaced().weight(.bold))
-                            .foregroundStyle(.secondary)
-
-                        if let runtimeBuildIdentity {
-                            Text(runtimeBuildIdentity.buildIdentifier)
-                                .font(.caption.monospaced().weight(.semibold))
-                                .foregroundStyle(.white)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.75)
-                        } else {
-                            Text("Identity unavailable")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.orange)
-                        }
-                    }
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(buildIdentityAccessibilityLabel)
-                    .accessibilityIdentifier("es80.capture.build-identity")
                 }
 
                 HStack(alignment: .top, spacing: 12) {
@@ -382,7 +349,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                                 Text("Engineering details")
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(.white)
-                                Text("Recipe, build provenance, and authorization")
+                                Text("Recipe and software authorization")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                             }
@@ -399,7 +366,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityValue(engineeringDetailsExpanded ? "Expanded" : "Collapsed")
-                    .accessibilityHint("Shows the exact software recipe, build provenance, and authorization state. It does not unlock scooter capture.")
+                    .accessibilityHint("Shows the exact software recipe and authorization state. It does not unlock scooter capture.")
                     .accessibilityIdentifier("es80.capture.engineering-details")
 
                     if engineeringDetailsExpanded {
@@ -426,44 +393,6 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                                 Text("NO-GO")
                                     .font(.subheadline.monospaced().weight(.bold))
                                     .foregroundStyle(.orange)
-                            }
-
-                            if let runtimeBuildIdentity {
-                                Divider().overlay(.white.opacity(0.12))
-
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("SOURCE COMMIT")
-                                        .font(.caption2.monospaced().weight(.bold))
-                                        .foregroundStyle(.secondary)
-                                    Text(runtimeBuildIdentity.sourceCommitSHA)
-                                        .font(.caption.monospaced())
-                                        .foregroundStyle(.white)
-                                        .textSelection(.enabled)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                        .accessibilityIdentifier("es80.capture.build-source-sha")
-
-                                    Text("BUILD INSTANCE")
-                                        .font(.caption2.monospaced().weight(.bold))
-                                        .foregroundStyle(.secondary)
-                                    Text(runtimeBuildIdentity.buildInstanceID)
-                                        .font(.caption.monospaced())
-                                        .foregroundStyle(.white)
-                                        .textSelection(.enabled)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                        .accessibilityIdentifier("es80.capture.build-instance-id")
-                                }
-                            } else {
-                                Divider().overlay(.white.opacity(0.12))
-
-                                VStack(alignment: .leading, spacing: 5) {
-                                    Text("Build identity unavailable")
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(.orange)
-                                    Text("Nembra could not verify this running build's embedded identity. Capture stays locked and no exact source or build-instance claim is shown.")
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
                             }
 
                             Text("Software evidence only. This does not verify a physical ES80 or unlock scooter controls.")
