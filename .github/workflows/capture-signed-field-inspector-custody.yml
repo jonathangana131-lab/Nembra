@@ -6,6 +6,7 @@ on:
     paths:
       - scripts/ci/es80_signed_field_artifact_evidence.py
       - scripts/ci/tests/test_es80_signed_field_artifact_apple_process_custody.py
+      - scripts/ci/tests/test_es80_signed_field_artifact_output_parent_custody.py
       - .github/workflows/capture-signed-field-inspector-custody.yml
 
 permissions:
@@ -34,5 +35,7 @@ jobs:
           set -euo pipefail
           python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
           python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_apple_process_custody.py
+          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_output_parent_custody.py
           python3 scripts/ci/tests/test_es80_signed_field_artifact_apple_process_custody.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_output_parent_custody.py
           python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
