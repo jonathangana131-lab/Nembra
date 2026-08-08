@@ -1,0 +1,75 @@
+name: Temporary ES80 Horizon Ready Accessibility XXXL evidence
+
+on:
+  push:
+    branches:
+      - test/es80-v14-horizon-xxxl-visual-evidence/gpt56-thinking
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact expanded-contract checkpoint
+        run: test "$(git rev-parse HEAD^)" = "71407c5b37f2dd18a1d1d1a332f42c080d784861"
+
+      - name: Add Horizon Ready Accessibility XXXL visual gate
+        env:
+          TEST_B64: "ICAgIEBNYWluQWN0b3IKICAgIGZ1bmMgdGVzdFYxNFNpbXVsYXRvclFBSG9yaXpvblJlYWR5UmVtYWluc0FjdGlvbmFibGVBdEFjY2Vzc2liaWxpdHlFeHRyYUV4dHJhRXh0cmFMYXJnZSgpIHsKICAgICAgICBsZXQgYXBwID0gWENVSUFwcGxpY2F0aW9uKCkKICAgICAgICBhcHAubGF1bmNoQXJndW1lbnRzID0gWwogICAgICAgICAgICAiLS1lczgwLXBhc3NpdmUtY2FwdHVyZS1zaW11bGF0b3ItcWEiLAogICAgICAgICAgICAiLS1lczgwLWNhcHR1cmUtcWEtc2NlbmFyaW89b2JzZXJ2YXRpb25Ib3Jpem9uUmVhZHkiLAogICAgICAgICAgICAiLVVJUHJlZmVycmVkQ29udGVudFNpemVDYXRlZ29yeU5hbWUiLAogICAgICAgICAgICAiVUlDVENvbnRlbnRTaXplQ2F0ZWdvcnlBY2Nlc3NpYmlsaXR5RXh0cmFFeHRyYUV4dHJhTGFyZ2UiCiAgICAgICAgXQogICAgICAgIGFwcC5sYXVuY2goKQoKICAgICAgICBsZXQgc2hlbGwgPSBhcHAuZGVzY2VuZGFudHMobWF0Y2hpbmc6IC5hbnkpWyJlczgwLmNhcHR1cmUtc2hlbGwiXQogICAgICAgIGxldCBxYURpc2Nsb3N1cmUgPSBhcHAuZGVzY2VuZGFudHMobWF0Y2hpbmc6IC5hbnkpWyJlczgwLmNhcHR1cmUuc2ltdWxhdG9yLXFhIl0KICAgICAgICBsZXQgcHJvZ3Jlc3MgPSBhcHAuZGVzY2VuZGFudHMobWF0Y2hpbmc6IC5hbnkpWyJlczgwLmNhcHR1cmUuZXhwZXJpbWVudC1wcm9ncmVzcyJdCiAgICAgICAgbGV0IHJlYWR5U3RhdGUgPSBhcHAuc3RhdGljVGV4dHNbIkNhcHR1cmUgY2FuIGJlIHNlYWxlZCJdCiAgICAgICAgbGV0IGhlYWx0aCA9IGFwcC5kZXNjZW5kYW50cyhtYXRjaGluZzogLmFueSkKICAgICAgICAgICAgLm1hdGNoaW5nKE5TUHJlZGljYXRlKGZvcm1hdDogImxhYmVsIEJFR0lOU1dJVEggJUAiLCAiQ2FwdHVyZSBoZWFsdGguIikpCiAgICAgICAgICAgIC5maXJzdE1hdGNoCiAgICAgICAgbGV0IGZpbmlzaCA9IGFwcC5kZXNjZW5kYW50cyhtYXRjaGluZzogLmFueSlbImVzODAuY2FwdHVyZS5maW5pc2giXQoKICAgICAgICBYQ1RBc3NlcnRUcnVlKHNoZWxsLndhaXRGb3JFeGlzdGVuY2UodGltZW91dDogNSkpCiAgICAgICAgWENUQXNzZXJ0VHJ1ZShxYURpc2Nsb3N1cmUud2FpdEZvckV4aXN0ZW5jZSh0aW1lb3V0OiAzKSkKICAgICAgICBYQ1RBc3NlcnRUcnVlKHByb2dyZXNzLndhaXRGb3JFeGlzdGVuY2UodGltZW91dDogMykpCiAgICAgICAgWENUQXNzZXJ0VHJ1ZShyZWFkeVN0YXRlLndhaXRGb3JFeGlzdGVuY2UodGltZW91dDogMykpCiAgICAgICAgWENUQXNzZXJ0VHJ1ZShoZWFsdGgud2FpdEZvckV4aXN0ZW5jZSh0aW1lb3V0OiAzKSkKICAgICAgICBYQ1RBc3NlcnRUcnVlKGZpbmlzaC53YWl0Rm9yRXhpc3RlbmNlKHRpbWVvdXQ6IDMpKQogICAgICAgIFhDVEFzc2VydEZhbHNlKGFwcC5kZXNjZW5kYW50cyhtYXRjaGluZzogLmFueSlbImVzODAuY2FwdHVyZS5maWVsZC1uby1nbyJdLmV4aXN0cykKICAgICAgICBYQ1RBc3NlcnRGYWxzZShhcHAuYnV0dG9uc1siVmVoaWNsZSBjb250cm9scyJdLmV4aXN0cykKCiAgICAgICAgYnJpbmdJbnRvU2NyZWVuc2hvdFZpZXdwb3J0KAogICAgICAgICAgICBxYURpc2Nsb3N1cmUsCiAgICAgICAgICAgIGluOiBhcHAsCiAgICAgICAgICAgIGNvbnRleHQ6ICJzeW50aGV0aWMgU2ltdWxhdG9yIFFBIGRpc2Nsb3N1cmUgYXQgSG9yaXpvbiBSZWFkeSBBY2Nlc3NpYmlsaXR5IFhYWEwiCiAgICAgICAgKQogICAgICAgIGFzc2VydFZpc2libGVJblNjcmVlbnNob3RWaWV3cG9ydCgKICAgICAgICAgICAgcWFEaXNjbG9zdXJlLAogICAgICAgICAgICB3aW5kb3dGcmFtZTogYXBwLndpbmRvd3MuZmlyc3RNYXRjaC5mcmFtZSwKICAgICAgICAgICAgY29udGV4dDogInN5bnRoZXRpYyBTaW11bGF0b3IgUUEgZGlzY2xvc3VyZSBhdCBIb3Jpem9uIFJlYWR5IEFjY2Vzc2liaWxpdHkgWFhYTCIKICAgICAgICApCiAgICAgICAgbGV0IGRpc2Nsb3N1cmVBdHRhY2htZW50ID0gWENUQXR0YWNobWVudChzY3JlZW5zaG90OiBhcHAuc2NyZWVuc2hvdCgpKQogICAgICAgIGRpc2Nsb3N1cmVBdHRhY2htZW50Lm5hbWUgPSAiTmVtYnJhIENhcHR1cmUgVjE0IOKAlCBTSU1VTEFUT1IgUUEg4oCUIEhvcml6b24gUmVhZHkg4oCUIEFjY2Vzc2liaWxpdHkgWFhYTCDigJQgRGlzY2xvc3VyZSIKICAgICAgICBkaXNjbG9zdXJlQXR0YWNobWVudC5saWZldGltZSA9IC5rZWVwQWx3YXlzCiAgICAgICAgYWRkKGRpc2Nsb3N1cmVBdHRhY2htZW50KQoKICAgICAgICBicmluZ0ludG9TY3JlZW5zaG90Vmlld3BvcnQoCiAgICAgICAgICAgIHByb2dyZXNzLAogICAgICAgICAgICBpbjogYXBwLAogICAgICAgICAgICBjb250ZXh0OiAiQ2FwdHVyZSBwcm9ncmVzcyBhdCBIb3Jpem9uIFJlYWR5IEFjY2Vzc2liaWxpdHkgWFhYTCIKICAgICAgICApCiAgICAgICAgYXNzZXJ0VmlzaWJsZUluU2NyZWVuc2hvdFZpZXdwb3J0KAogICAgICAgICAgICBwcm9ncmVzcywKICAgICAgICAgICAgd2luZG93RnJhbWU6IGFwcC53aW5kb3dzLmZpcnN0TWF0Y2guZnJhbWUsCiAgICAgICAgICAgIGNvbnRleHQ6ICJDYXB0dXJlIHByb2dyZXNzIGF0IEhvcml6b24gUmVhZHkgQWNjZXNzaWJpbGl0eSBYWFhMIgogICAgICAgICkKICAgICAgICBsZXQgcHJvZ3Jlc3NBdHRhY2htZW50ID0gWENUQXR0YWNobWVudChzY3JlZW5zaG90OiBhcHAuc2NyZWVuc2hvdCgpKQogICAgICAgIHByb2dyZXNzQXR0YWNobWVudC5uYW1lID0gIk5lbWJyYSBDYXB0dXJlIFYxNCDigJQgU0lNVUxBVE9SIFFBIOKAlCBIb3Jpem9uIFJlYWR5IOKAlCBBY2Nlc3NpYmlsaXR5IFhYWEwg4oCUIFByb2dyZXNzIgogICAgICAgIHByb2dyZXNzQXR0YWNobWVudC5saWZldGltZSA9IC5rZWVwQWx3YXlzCiAgICAgICAgYWRkKHByb2dyZXNzQXR0YWNobWVudCkKCiAgICAgICAgYnJpbmdJbnRvU2NyZWVuc2hvdFZpZXdwb3J0KAogICAgICAgICAgICBoZWFsdGgsCiAgICAgICAgICAgIGluOiBhcHAsCiAgICAgICAgICAgIGNvbnRleHQ6ICJDYXB0dXJlIGhlYWx0aCBhdCBIb3Jpem9uIFJlYWR5IEFjY2Vzc2liaWxpdHkgWFhYTCIKICAgICAgICApCiAgICAgICAgYXNzZXJ0VmlzaWJsZUluU2NyZWVuc2hvdFZpZXdwb3J0KAogICAgICAgICAgICBoZWFsdGgsCiAgICAgICAgICAgIHdpbmRvd0ZyYW1lOiBhcHAud2luZG93cy5maXJzdE1hdGNoLmZyYW1lLAogICAgICAgICAgICBjb250ZXh0OiAiQ2FwdHVyZSBoZWFsdGggYXQgSG9yaXpvbiBSZWFkeSBBY2Nlc3NpYmlsaXR5IFhYWEwiCiAgICAgICAgKQogICAgICAgIGxldCBoZWFsdGhBdHRhY2htZW50ID0gWENUQXR0YWNobWVudChzY3JlZW5zaG90OiBhcHAuc2NyZWVuc2hvdCgpKQogICAgICAgIGhlYWx0aEF0dGFjaG1lbnQubmFtZSA9ICJOZW1icmEgQ2FwdHVyZSBWMTQg4oCUIFNJTVVMQVRPUiBRQSDigJQgSG9yaXpvbiBSZWFkeSDigJQgQWNjZXNzaWJpbGl0eSBYWFhMIOKAlCBIZWFsdGgiCiAgICAgICAgaGVhbHRoQXR0YWNobWVudC5saWZldGltZSA9IC5rZWVwQWx3YXlzCiAgICAgICAgYWRkKGhlYWx0aEF0dGFjaG1lbnQpCgogICAgICAgIGJyaW5nSW50b1NjcmVlbnNob3RWaWV3cG9ydCgKICAgICAgICAgICAgcmVhZHlTdGF0ZSwKICAgICAgICAgICAgaW46IGFwcCwKICAgICAgICAgICAgY29udGV4dDogIkhvcml6b24tcmVhZHkgc3RhdHVzIGF0IEFjY2Vzc2liaWxpdHkgWFhYTCIKICAgICAgICApCiAgICAgICAgYXNzZXJ0VmlzaWJsZUluU2NyZWVuc2hvdFZpZXdwb3J0KAogICAgICAgICAgICByZWFkeVN0YXRlLAogICAgICAgICAgICB3aW5kb3dGcmFtZTogYXBwLndpbmRvd3MuZmlyc3RNYXRjaC5mcmFtZSwKICAgICAgICAgICAgY29udGV4dDogIkhvcml6b24tcmVhZHkgc3RhdHVzIGF0IEFjY2Vzc2liaWxpdHkgWFhYTCIKICAgICAgICApCiAgICAgICAgbGV0IHJlYWR5QXR0YWNobWVudCA9IFhDVEF0dGFjaG1lbnQoc2NyZWVuc2hvdDogYXBwLnNjcmVlbnNob3QoKSkKICAgICAgICByZWFkeUF0dGFjaG1lbnQubmFtZSA9ICJOZW1icmEgQ2FwdHVyZSBWMTQg4oCUIFNJTVUxBVE9SIFFBIOKAlCBIb3Jpem9uIFJlYWR5IOKAlCBBY2Nlc3NpYmlsaXR5IFhYWEwg4oCUIFN0YXR1cyIKICAgICAgICByZWFkeUF0dGFjaG1lbnQubGlmZXRpbWUgPSAua2VlcEFsd2F5cwogICAgICAgIGFkZChyZWFkeUF0dGFjaG1lbnQpCgogICAgICAgIGJyaW5nSW50b1NjcmVlbnNob3RWaWV3cG9ydCgKICAgICAgICAgICAgZmluaXNoLAogICAgICAgICAgICBpbjogYXBwLAogICAgICAgICAgICBjb250ZXh0OiAiU2VhbCBDYXB0dXJlIGFjdGlvbiBhdCBIb3Jpem9uIFJlYWR5IEFjY2Vzc2liaWxpdHkgWFhYTCIKICAgICAgICApCiAgICAgICAgYXNzZXJ0VmlzaWJsZUluU2NyZWVuc2hvdFZpZXdwb3J0KAogICAgICAgICAgICBmaW5pc2gsCiAgICAgICAgICAgIHdpbmRvd0ZyYW1lOiBhcHAud2luZG93cy5maXJzdE1hdGNoLmZyYW1lLAogICAgICAgICAgICBjb250ZXh0OiAiU2VhbCBDYXB0dXJlIGFjdGlvbiBhdCBIb3Jpem9uIFJlYWR5IEFjY2Vzc2liaWxpdHkgWFhYWEwiCiAgICAgICAgKQogICAgICAgIGxldCBmaW5pc2hBdHRhY2htZW50ID0gWENUQXR0YWNobWVudChzY3JlZW5zaG90OiBhcHAuc2NyZWVuc2hvdCgpKQogICAgICAgIGZpbmlzaEF0dGFjaG1lbnQubmFtZSA9ICJOZW1icmEgQ2FwdHVyZSBWMTQg4oCUIFNJTVUxBVE9SIFFBIOKAlCBIb3Jpem9uIFJlYWR5IOKAlCBBY2Nlc3NpYmlsaXR5IFhYWEwg4oCUIFNlYWwiCiAgICAgICAgZmluaXNoQXR0YWNobWVudC5saWZldGltZSA9IC5rZWVwQWx3YXlzCiAgICAgICAgYWRkKGZpbmlzaEF0dGFjaG1lbnQpCiAgICB9Cgo="
+        run: |
+          python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+          path = Path("NembraUITests/ES80ResearchCaptureUITests.swift")
+          source = path.read_text(encoding="utf-8")
+          marker = "    @MainActor\n    func testV14SimulatorQAHorizonReadyLandscapeKeepsFinishAndTruthVisible() {"
+          test = base64.b64decode(os.environ["TEST_B64"]).decode("utf-8")
+          if marker not in source:
+              raise SystemExit("Horizon Ready landscape insertion marker missing")
+          if "testV14SimulatorQAHorizonReadyRemainsActionableAtAccessibilityExtraExtraExtraLarge" in source:
+              raise SystemExit("Horizon Ready Accessibility XXXL gate already exists")
+          path.write_text(source.replace(marker, test + marker, 1), encoding="utf-8")
+          PY
+
+      - name: Verify exact UI-test scope and contract
+        run: |
+          git diff --check
+          test "$(git diff --name-only)" = "NembraUITests/ES80ResearchCaptureUITests.swift"
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("NembraUITests/ES80ResearchCaptureUITests.swift").read_text()
+          start = source.index("func testV14SimulatorQAHorizonReadyRemainsActionableAtAccessibilityExtraExtraExtraLarge()")
+          end = source.index("func testV14SimulatorQAHorizonReadyLandscapeKeepsFinishAndTruthVisible()", start)
+          block = source[start:end]
+          for token in [
+              "--es80-capture-qa-scenario=observationHorizonReady",
+              "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge",
+              "es80.capture-shell",
+              "es80.capture.simulator-qa",
+              "es80.capture.experiment-progress",
+              "Capture health.",
+              "Capture can be sealed",
+              "es80.capture.finish",
+              "Accessibility XXXL",
+          ]:
+              assert token in block, token
+          assert block.count("assertVisibleInScreenshotViewport(") >= 5
+          assert block.count("bringIntoScreenshotViewport(") >= 5
+          PY
+
+      - name: Commit visual gate and self-delete transformer
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/tmp-es80-horizon-xxxl-visual-evidence.yml
+          git add NembraUITests/ES80ResearchCaptureUITests.swift
+          git commit -m "Capture visual QA: retain Horizon Ready at Accessibility XXXL"
+          git push origin HEAD:test/es80-v14-horizon-xxxl-visual-evidence/gpt56-thinking
