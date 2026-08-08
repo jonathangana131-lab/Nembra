@@ -1,0 +1,48 @@
+name: Capture descriptor r4 diagnostic
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-descriptor-diagnostic-r4/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/es80-v14-descriptor-diagnostic-r4/gpt56-thinking-go
+          fetch-depth: 0
+      - name: Apply transform and retain exact validation transcript
+        shell: bash
+        run: |
+          set +e
+          LOG=.github/nembra_tmp/descriptor_r4_validation.log
+          : > "$LOG"
+          FINAL=0
+          run_step() {
+            label="$1"; shift
+            printf '\n===== %s =====\n' "$label" >> "$LOG"
+            "$@" >> "$LOG" 2>&1
+            code=$?
+            printf 'exit=%s\n' "$code" >> "$LOG"
+            if [ "$code" -ne 0 ] && [ "$FINAL" -eq 0 ]; then FINAL=$code; fi
+            return "$code"
+          }
+          run_step patch python3 .github/nembra_tmp/descriptor_bound_ipa_r4_patch.py
+          if [ "$FINAL" -eq 0 ]; then run_step py_compile python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py; fi
+          if [ "$FINAL" -eq 0 ]; then run_step inspector_self_test python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test; fi
+          if [ "$FINAL" -eq 0 ]; then run_step exact_subject_tests python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py; fi
+          if [ "$FINAL" -eq 0 ]; then run_step diff_check git diff --check; fi
+          printf '\nFINAL_STATUS=%s\n' "$FINAL" >> "$LOG"
+          rm .github/workflows/capture-descriptor-r4-diagnostic.yml
+          rm .github/nembra_tmp/descriptor_bound_ipa_r4_patch.py
+          git config user.name "nembra-v14-diagnostic"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A scripts/ci/es80_signed_field_artifact_evidence.py scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py .github/nembra_tmp .github/workflows/capture-descriptor-r4-diagnostic.yml
+          git commit -m "chore(capture): retain descriptor r4 validation transcript"
+          git push origin HEAD:fix/es80-v14-descriptor-diagnostic-r4/gpt56-thinking-go
+          exit 0
