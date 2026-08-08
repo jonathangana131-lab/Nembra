@@ -83,6 +83,14 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
         case alreadyConsumed
     }
 
+    struct Preview: Equatable, Sendable {
+        let admissionIdentity: UUID
+        let powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence
+        let peripheralIdentifier: UUID
+        /// Local monotonic handoff boundary. This is callback chronology only, never RF emission time.
+        let issuedAtUptimeNanoseconds: UInt64
+    }
+
     struct Payload {
         let admissionIdentity: UUID
         let powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence
@@ -120,6 +128,16 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
             peripheralIdentifier: peripheralIdentifier,
             recorder: recorder,
             issuedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
+        )
+    }
+
+    /// Read-only producer-owned staging view. Reading it cannot consume the handoff.
+    var preview: Preview {
+        Preview(
+            admissionIdentity: payload.admissionIdentity,
+            powerCycleEvidence: payload.powerCycleEvidence,
+            peripheralIdentifier: payload.peripheralIdentifier,
+            issuedAtUptimeNanoseconds: payload.issuedAtUptimeNanoseconds
         )
     }
 
