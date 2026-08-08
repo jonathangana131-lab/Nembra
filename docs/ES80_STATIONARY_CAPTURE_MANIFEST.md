@@ -85,7 +85,9 @@ The schema-v1 execution context is required rather than defaulted. An imported s
 
 If the declared reference setup is `none`, the raw artifact must contain **zero** stock-app markers. A marker-bearing artifact paired with `.none` fails manifest construction and therefore also fails capture-binding verification.
 
-For the non-`none` cases, marker presence alone does **not** prove when another app refreshed, simultaneous Bluetooth observation, or the truth of a same-device/separate-device declaration. Those enum values remain declared experiment setup. Raw marker receipt clocks retain only their existing correlation semantics.
+Conversely, every non-`none` reference setup literally declares that a stock-app observation arrangement was used, so the immutable raw artifact must contain **at least one** stock-app marker. A non-`none` declaration paired with zero markers fails closed instead of preserving an unsupported “observation happened” claim.
+
+Marker presence still does **not** prove when another app refreshed, simultaneous Bluetooth observation, or the truth of a same-device/separate-device declaration. Those enum values remain operator-declared experiment setup. The consistency gate proves only that the declaration is not directly contradicted by the existence/absence of immutable marker evidence; raw marker receipt clocks retain only their existing correlation semantics.
 
 ## Target-attribution gate
 
