@@ -34,6 +34,65 @@ struct SpeedTelemetryCodableValidationTests {
         #expect(decoded == sample)
     }
 
+    @Test("live construction rejects nonfinite wall-clock dates")
+    func rejectsNonfiniteDatesAtConstruction() {
+        #expect(throws: SpeedTelemetryValidationError.invalidDate) {
+            _ = try SpeedTelemetrySample(
+                source: .gps,
+                provenance: .absoluteMeasurement,
+                metersPerSecond: 3,
+                receivedAtUptimeNanoseconds: 500,
+                receivedAtDate: Date(timeIntervalSinceReferenceDate: .infinity),
+                measurementDate: epoch,
+                speedAccuracyMetersPerSecond: 0.5
+            )
+        }
+
+        #expect(throws: SpeedTelemetryValidationError.invalidDate) {
+            _ = try SpeedTelemetrySample(
+                source: .gps,
+                provenance: .absoluteMeasurement,
+                metersPerSecond: 3,
+                receivedAtUptimeNanoseconds: 501,
+                receivedAtDate: epoch,
+                measurementDate: Date(timeIntervalSinceReferenceDate: .nan),
+                speedAccuracyMetersPerSecond: 0.5
+            )
+        }
+    }
+
+    @Test("PropertyList import cannot bypass date invariants")
+    func rejectsNonfiniteImportedDates() throws {
+        let invalidReceivedDate = UncheckedPayload(
+            source: .gps,
+            provenance: .absoluteMeasurement,
+            metersPerSecond: 3,
+            receivedAtUptimeNanoseconds: 600,
+            receivedAtDate: Date(timeIntervalSinceReferenceDate: .infinity),
+            measurementDate: epoch,
+            speedAccuracyMetersPerSecond: 0.5
+        )
+        let invalidMeasurementDate = UncheckedPayload(
+            source: .gps,
+            provenance: .absoluteMeasurement,
+            metersPerSecond: 3,
+            receivedAtUptimeNanoseconds: 601,
+            receivedAtDate: epoch,
+            measurementDate: Date(timeIntervalSinceReferenceDate: .nan),
+            speedAccuracyMetersPerSecond: 0.5
+        )
+
+        let invalidReceivedData = try PropertyListEncoder().encode(invalidReceivedDate)
+        let invalidMeasurementData = try PropertyListEncoder().encode(invalidMeasurementDate)
+
+        #expect(throws: SpeedTelemetryValidationError.invalidDate) {
+            _ = try PropertyListDecoder().decode(SpeedTelemetrySample.self, from: invalidReceivedData)
+        }
+        #expect(throws: SpeedTelemetryValidationError.invalidDate) {
+            _ = try PropertyListDecoder().decode(SpeedTelemetrySample.self, from: invalidMeasurementData)
+        }
+    }
+
     @Test("import cannot relabel motion assist as an absolute measurement")
     func rejectsImpossibleSourceProvenancePair() throws {
         let data = try JSONEncoder().encode(UncheckedPayload(

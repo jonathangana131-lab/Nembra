@@ -47,10 +47,11 @@ public struct RideStatisticsRide: Equatable, Sendable {
     public let distanceMeters: Double?
     public let distanceDisposition: RideStatisticsDistanceDisposition
 
-    /// Module-internal construction is reserved for core tests and trusted
-    /// adapters. App code must not bypass reconciliation by self-declaring an
-    /// arbitrary distance as included evidence.
-    init(
+    /// Package-only construction is reserved for NembraCore tests and trusted
+    /// package adapters. Ordinary clients cannot manufacture included mileage,
+    /// and direct-app source composition fails closed instead of silently gaining
+    /// same-module access to this constructor.
+    package init(
         sessionID: UUID,
         attributedDate: Date,
         distanceMeters: Double?,
@@ -76,11 +77,13 @@ public struct RideStatisticsRide: Equatable, Sendable {
         self.distanceDisposition = distanceDisposition
     }
 
-    /// Bridges the existing completed-ride and reconciliation domains without
-    /// treating incomplete/conflicting evidence as trustworthy mileage. The
-    /// calendar attribution rule is explicit so this domain does not invent a
+    /// Package-only bridge between completed-ride and reconciliation domains.
+    /// `ReconciledRideDistance` does not yet carry durable ride identity, so this
+    /// two-value composition must not be exposed as public production API until
+    /// a future adapter mechanically binds both values to the same ride.
+    /// Calendar attribution stays explicit so the domain does not invent a
     /// start-vs-end-date product decision for rides that cross midnight.
-    public init(
+    package init(
         completedRide: CompletedRideEvidence,
         reconciledDistance: ReconciledRideDistance,
         calendarAttribution: RideStatisticsCalendarAttribution
@@ -157,6 +160,9 @@ public struct RideStatisticsSummary: Equatable, Sendable {
     /// included ride legitimately has a zero reconciled distance.
     public let totalDistanceMeters: Double?
     public let longestRideDistanceMeters: Double?
+    /// Equal-distance ties use only the durable session UUID as a deterministic
+    /// identity tie-break. Calendar date does not become an extra product
+    /// preference merely because two rides have the same longest distance.
     public let longestRideSessionID: UUID?
     public let longestRidingDayStreakDays: Int
 }
@@ -171,22 +177,38 @@ public enum RideStatisticsAggregator {
         guard referenceDate.timeIntervalSinceReferenceDate.isFinite else {
             throw RideStatisticsError.invalidReferenceDate
         }
-
-        let uniqueRides = try deduplicated(rides)
-        let periodRides = try uniqueRides.filter { ride in
-            try contains(
-                ride.attributedDate,
-                period: period,
-                referenceDate: referenceDate,
-                calendar: calendar
-            )
+        if period != .allTime,
+           !isRepresentable(referenceDate, in: calendar) {
+            throw RideStatisticsError.invalidReferenceDate
         }
 
-        var trustworthyDistanceRideCount = 0
+        // Resolve the requested bucket before reconciling the supplied history.
+        // A corrupt or calendar-unrepresentable ride wholly outside a bounded
+        // period must not make Today/Week/Month unavailable. Once any copy of a
+        // session touches the selected bucket, however, every supplied copy of
+        // that session remains relevant so conflicting identity/date/distance
+        // evidence still fails closed instead of being silently filtered away.
+        let selectedWindow = try periodWindow(
+            for: period,
+            referenceDate: referenceDate,
+            calendar: calendar
+        )
+        let periodRides = try selectedAndDeduplicated(
+            rides,
+            selectedWindow: selectedWindow
+        )
+
+        guard periodRides.allSatisfy({ isRepresentable($0.attributedDate, in: calendar) }) else {
+            throw RideStatisticsError.invalidRide
+        }
+
         var excludedDistanceRideCount = 0
-        var totalDistanceMeters: Double?
-        var longestRideDistanceMeters: Double?
-        var longestRideSessionID: UUID?
+        var trustworthyRides: [(
+            ride: RideStatisticsRide,
+            distance: Double,
+            sessionKey: String
+        )] = []
+        trustworthyRides.reserveCapacity(periodRides.count)
 
         for ride in periodRides {
             guard ride.distanceDisposition == .included,
@@ -194,19 +216,80 @@ public enum RideStatisticsAggregator {
                 excludedDistanceRideCount += 1
                 continue
             }
+            trustworthyRides.append((
+                ride: ride,
+                distance: distance,
+                sessionKey: ride.sessionID.uuidString
+            ))
+        }
 
-            let nextTotal = (totalDistanceMeters ?? 0) + distance
-            guard nextTotal.isFinite else {
+        // Only trustworthy rides inside the requested period need a stable
+        // arithmetic order. Do not sort years of unrelated history merely to
+        // summarize Today/Week/Month. UUID string keys are materialized once
+        // per selected ride so comparison-heavy sorts do not repeatedly allocate
+        // the same deterministic identity representation.
+        trustworthyRides.sort { lhs, rhs in
+            if lhs.ride.attributedDate != rhs.ride.attributedDate {
+                return lhs.ride.attributedDate < rhs.ride.attributedDate
+            }
+            return lhs.sessionKey < rhs.sessionKey
+        }
+
+        let trustworthyDistanceRideCount = trustworthyRides.count
+        var distanceSum = 0.0
+        var distanceCompensation = 0.0
+        var longestRideDistanceMeters: Double?
+        var longestRideSessionID: UUID?
+        var longestRideSessionKey: String?
+
+        for trustworthyRide in trustworthyRides {
+            let ride = trustworthyRide.ride
+            let distance = trustworthyRide.distance
+
+            // Neumaier compensated summation keeps small legitimate ride
+            // distances from disappearing merely because a much larger total
+            // was accumulated first. Stable ride ordering still guarantees the
+            // same immutable ride set follows the same arithmetic path.
+            let nextSum = distanceSum + distance
+            guard nextSum.isFinite else {
                 throw RideStatisticsError.aggregateOverflow
             }
 
-            trustworthyDistanceRideCount += 1
-            totalDistanceMeters = nextTotal
+            let correction: Double
+            if distanceSum.magnitude >= distance.magnitude {
+                correction = (distanceSum - nextSum) + distance
+            } else {
+                correction = (distance - nextSum) + distanceSum
+            }
+            let nextCompensation = distanceCompensation + correction
+            guard nextCompensation.isFinite else {
+                throw RideStatisticsError.aggregateOverflow
+            }
 
-            if longestRideDistanceMeters.map({ distance > $0 }) ?? true {
+            distanceSum = nextSum
+            distanceCompensation = nextCompensation
+
+            if shouldReplaceLongestRide(
+                candidateDistance: distance,
+                candidateSessionKey: trustworthyRide.sessionKey,
+                currentDistance: longestRideDistanceMeters,
+                currentSessionKey: longestRideSessionKey
+            ) {
                 longestRideDistanceMeters = distance
                 longestRideSessionID = ride.sessionID
+                longestRideSessionKey = trustworthyRide.sessionKey
             }
+        }
+
+        let totalDistanceMeters: Double?
+        if trustworthyDistanceRideCount == 0 {
+            totalDistanceMeters = nil
+        } else {
+            let compensatedTotal = distanceSum + distanceCompensation
+            guard compensatedTotal.isFinite, compensatedTotal >= 0 else {
+                throw RideStatisticsError.aggregateOverflow
+            }
+            totalDistanceMeters = compensatedTotal
         }
 
         let distanceAvailability: RideStatisticsDistanceAvailability
@@ -240,6 +323,60 @@ public enum RideStatisticsAggregator {
         )
     }
 
+    private struct PeriodWindow {
+        let interval: DateInterval?
+
+        func contains(_ date: Date) -> Bool {
+            guard let interval else {
+                return true
+            }
+            return date >= interval.start && date < interval.end
+        }
+    }
+
+    private static func shouldReplaceLongestRide(
+        candidateDistance: Double,
+        candidateSessionKey: String,
+        currentDistance: Double?,
+        currentSessionKey: String?
+    ) -> Bool {
+        guard let currentDistance else {
+            return true
+        }
+
+        if candidateDistance != currentDistance {
+            return candidateDistance > currentDistance
+        }
+
+        guard let currentSessionKey else {
+            return true
+        }
+        return candidateSessionKey < currentSessionKey
+    }
+
+    private static func selectedAndDeduplicated(
+        _ rides: [RideStatisticsRide],
+        selectedWindow: PeriodWindow
+    ) throws -> [RideStatisticsRide] {
+        guard selectedWindow.interval != nil else {
+            return try deduplicated(rides)
+        }
+
+        let selectedSessionIDs = Set(
+            rides.lazy
+                .filter { selectedWindow.contains($0.attributedDate) }
+                .map(\.sessionID)
+        )
+        guard !selectedSessionIDs.isEmpty else {
+            return []
+        }
+
+        let relevantRides = rides.filter { selectedSessionIDs.contains($0.sessionID) }
+        return try deduplicated(relevantRides).filter {
+            selectedWindow.contains($0.attributedDate)
+        }
+    }
+
     private static func deduplicated(
         _ rides: [RideStatisticsRide]
     ) throws -> [RideStatisticsRide] {
@@ -261,56 +398,51 @@ public enum RideStatisticsAggregator {
         return uniqueRides
     }
 
-    private static func contains(
+    private static func isRepresentable(
         _ date: Date,
-        period: RideStatisticsPeriod,
-        referenceDate: Date,
-        calendar: Calendar
-    ) throws -> Bool {
-        switch period {
-        case .allTime:
-            return true
-        case .today:
-            return calendar.isDate(date, inSameDayAs: referenceDate)
-        case .yesterday:
-            guard let yesterday = calendar.date(byAdding: .day, value: -1, to: referenceDate) else {
-                throw RideStatisticsError.invalidReferenceDate
-            }
-            return calendar.isDate(date, inSameDayAs: yesterday)
-        case .week:
-            return try contains(
-                date,
-                component: .weekOfYear,
-                referenceDate: referenceDate,
-                calendar: calendar
-            )
-        case .month:
-            return try contains(
-                date,
-                component: .month,
-                referenceDate: referenceDate,
-                calendar: calendar
-            )
-        case .year:
-            return try contains(
-                date,
-                component: .year,
-                referenceDate: referenceDate,
-                calendar: calendar
-            )
+        in calendar: Calendar
+    ) -> Bool {
+        guard let dayInterval = calendar.dateInterval(of: .day, for: date) else {
+            return false
         }
+        return dayInterval.contains(date)
     }
 
-    private static func contains(
-        _ date: Date,
-        component: Calendar.Component,
+    private static func periodWindow(
+        for period: RideStatisticsPeriod,
         referenceDate: Date,
         calendar: Calendar
-    ) throws -> Bool {
-        guard let interval = calendar.dateInterval(of: component, for: referenceDate) else {
-            throw RideStatisticsError.invalidReferenceDate
+    ) throws -> PeriodWindow {
+        switch period {
+        case .allTime:
+            return PeriodWindow(interval: nil)
+        case .today:
+            guard let interval = calendar.dateInterval(of: .day, for: referenceDate) else {
+                throw RideStatisticsError.invalidReferenceDate
+            }
+            return PeriodWindow(interval: interval)
+        case .yesterday:
+            guard let yesterday = calendar.date(byAdding: .day, value: -1, to: referenceDate),
+                  let interval = calendar.dateInterval(of: .day, for: yesterday) else {
+                throw RideStatisticsError.invalidReferenceDate
+            }
+            return PeriodWindow(interval: interval)
+        case .week:
+            guard let interval = calendar.dateInterval(of: .weekOfYear, for: referenceDate) else {
+                throw RideStatisticsError.invalidReferenceDate
+            }
+            return PeriodWindow(interval: interval)
+        case .month:
+            guard let interval = calendar.dateInterval(of: .month, for: referenceDate) else {
+                throw RideStatisticsError.invalidReferenceDate
+            }
+            return PeriodWindow(interval: interval)
+        case .year:
+            guard let interval = calendar.dateInterval(of: .year, for: referenceDate) else {
+                throw RideStatisticsError.invalidReferenceDate
+            }
+            return PeriodWindow(interval: interval)
         }
-        return interval.contains(date)
     }
 
     private static func longestConsecutiveDayStreak(

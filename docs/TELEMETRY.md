@@ -1,6 +1,6 @@
 # Speed telemetry architecture
 
-Updated: 2026-08-06
+Updated: 2026-08-07
 
 ## Non-negotiable truth model
 
@@ -37,8 +37,10 @@ A raw sample's `receivedAtUptimeNanoseconds` means **when that packet/evidence e
 
 - accepted sample count
 - rejected sample count
+- accepted observation-segment count
+- known observation-interruption count for segment-splitting gaps
 - interval count
-- observed duration
+- observed duration summed only across accepted intra-segment intervals
 - effective sample rate (Hz)
 - mean/min/max arrival interval
 - interval jitter (population standard deviation)
@@ -50,7 +52,13 @@ A raw sample's `receivedAtUptimeNanoseconds` means **when that packet/evidence e
 
 A collector is source-specific; trying to mix GPS into a BLE collector is rejected.
 
-Out-of-order or duplicate monotonic timestamps are rejected rather than silently reordering history.
+Out-of-order or duplicate monotonic timestamps are rejected rather than silently reordering history. Selected-source receive chronology advances for each fresh source-matching callback before representation-specific benchmark admission, so a newer callback that is later rejected cannot be erased to let an older or equal-timestamp callback masquerade as fresh. Foreign-source callbacks never advance that selected-source watermark.
+
+`markKnownObservationInterruption()` is for an explicit known break in the selected observation stream, such as a disconnect or subscription interruption. Once accepted benchmark evidence exists, a mark makes the next accepted sample begin a new observation segment so cadence, jitter, duplicate-value, and empirical-step comparisons never bridge the missing evidence. Repeated marks before accepted evidence resumes are idempotent. A mark before the collector has accepted its first benchmark sample is intentionally a no-op because there is no accepted segment to split; callers that need attempt-wide lifecycle-gap provenance must retain that separately rather than treating this benchmark summary as a complete lifecycle log.
+
+The raw speed is stored in SI meters/second, while the empirical resolution diagnostic is expressed in km/h. If a finite SI value cannot be represented as finite km/h, that sample is rejected from benchmark statistics before it can become an accepted interval/speed-step anchor or consume a pending interruption marker. The callback still advances selected-source receive chronology, preventing delayed replay. Without an explicit pending continuity break, the next accepted benchmark sample forms its interval from the previous accepted benchmark anchor; with a pending known interruption, it begins a new segment instead. Nembra does not invent an arbitrary scooter maximum to make the conversion fit.
+
+Observation-segment and interruption counts report only explicit benchmark segment topology. They do not prove continuous physical sampling between otherwise accepted packets, and they do not replace higher-level attempt/session provenance where gaps can occur before benchmark evidence begins.
 
 ## Latency limitations
 
@@ -73,7 +81,7 @@ Important behavior:
 
 This preserves truthful raw-arrival semantics while allowing ride-distance fixtures to jump forward deterministically. A regression test checks that a simulated raw sample lands within the real process-uptime window around its emission.
 
-Simulation timing is not MAXSHOT timing. It exists to exercise the presentation system before physical scooter packet cadence is captured.
+Simulation timing is not physical AOVOPRO ES80 timing. It exists to exercise the presentation system before physical scooter packet cadence is captured.
 
 ## Real-hardware benchmark procedure (pending hardware access)
 
@@ -94,7 +102,7 @@ For Core Motion, evaluate only bounded short-horizon assistance around authorita
 
 ## Dashboard decision gate
 
-No interpolation/fusion constants should be tuned to imaginary MAXSHOT packet rates. The eventual Dashboard strategy must be selected from measured hardware traces. A 60/120 Hz visual render loop may interpolate between reliable estimates, but the raw evidence cadence remains exactly what the sensors produced.
+No interpolation/fusion constants should be tuned to imaginary AOVOPRO ES80 packet rates. The eventual Dashboard strategy must be selected from measured hardware traces. A 60/120 Hz visual render loop may interpolate between reliable estimates, but the raw evidence cadence remains exactly what the sensors produced.
 
 ## Render-only interpolation
 
@@ -109,7 +117,7 @@ No interpolation/fusion constants should be tuned to imaginary MAXSHOT packet ra
 - motion-assisted estimates cannot enter this authoritative interpolator
 - every `SpeedDisplayFrame` carries both the visual value and the latest measured value, plus an origin flag (`measured` vs `visuallyInterpolated`)
 
-The interpolator does not predict future speed. Final transition duration is supplied by its caller and must be tuned from real MAXSHOT benchmark traces plus iPhone 12 Simulator/device visual QA. No production timing constant is claimed yet.
+The interpolator does not predict future speed. Final transition duration is supplied by its caller and must be tuned from real AOVOPRO ES80 benchmark traces plus iPhone 12 Simulator/device visual QA. No production timing constant is claimed yet.
 
 ## Phase 10 Dashboard presentation policy
 
@@ -117,7 +125,7 @@ The interpolator does not predict future speed. Final transition duration is sup
 
 Rules:
 
-- ordinary/unverified production launch injects `SpeedInstrumentInterpolationPolicy.disabled`; real MAXSHOT samples therefore snap until hardware timing is measured
+- ordinary/unverified production launch injects `SpeedInstrumentInterpolationPolicy.disabled`; real AOVOPRO ES80 samples therefore snap until hardware timing is measured
 - explicit Simulator QA launch injects `.simulatorQA` only to exercise visual behavior; its constants are test presentation values, not hardware claims
 - the speed subtree may render on a SwiftUI animation timeline capped at 60 Hz while a transition is active
 - that timeline is paused when no interpolation window is active, avoiding a permanent whole-app/high-frequency refresh loop

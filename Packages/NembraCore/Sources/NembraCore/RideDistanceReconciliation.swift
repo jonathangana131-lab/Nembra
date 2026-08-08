@@ -54,7 +54,11 @@ public struct RideDistanceEvidence: Equatable, Sendable {
                 throw RideDistanceReconciliationError.invalidEvidence
             }
         case let (.some(start), .some(end)):
-            guard start.isFinite, start >= 0, end.isFinite, end >= start else {
+            guard start.isFinite,
+                  start >= 0,
+                  end.isFinite,
+                  end >= start,
+                  Self.odometerDeltaMeters(start: start, end: end) != nil else {
                 throw RideDistanceReconciliationError.invalidEvidence
             }
         default:
@@ -74,24 +78,29 @@ public struct RideDistanceEvidence: Equatable, Sendable {
         self.transportGapOccurred = transportGapOccurred
     }
 
-    /// Bridges completed ride evidence without inventing coverage. Callers must
-    /// supply coverage classifications from the ODO/location/integration layers.
+    /// Bridges completed ride evidence with durable live-distance evidence only
+    /// when both values belong to the same ride session. A missing aggregate
+    /// remains unavailable rather than becoming fake zero distance.
     public init(
         completedRide: CompletedRideEvidence,
         odometerCoverage: RideDistanceCoverage,
         gpsRouteCoverage: RideDistanceCoverage,
-        liveIntegratedDistanceMeters: Double?,
-        liveIntegratedCoverage: RideDistanceCoverage,
+        liveDistanceAggregate: RideLiveDistanceAggregate?,
         transportGapOccurred: Bool
     ) throws {
+        if let liveDistanceAggregate,
+           liveDistanceAggregate.rideSessionID != completedRide.sessionID {
+            throw RideDistanceReconciliationError.invalidEvidence
+        }
+
         try self.init(
             startingOdometerKilometers: completedRide.startingOdometerKilometers,
             endingOdometerKilometers: completedRide.endingOdometerKilometers,
             odometerCoverage: odometerCoverage,
             gpsRouteDistanceMeters: completedRide.qualityScreenedGPSDistanceMeters,
             gpsRouteCoverage: gpsRouteCoverage,
-            liveIntegratedDistanceMeters: liveIntegratedDistanceMeters,
-            liveIntegratedCoverage: liveIntegratedCoverage,
+            liveIntegratedDistanceMeters: liveDistanceAggregate?.distanceMeters,
+            liveIntegratedCoverage: liveDistanceAggregate?.coverage ?? .unknown,
             transportGapOccurred: transportGapOccurred
         )
     }
@@ -101,7 +110,7 @@ public struct RideDistanceEvidence: Equatable, Sendable {
               let end = endingOdometerKilometers else {
             return nil
         }
-        return (end - start) * 1_000
+        return Self.odometerDeltaMeters(start: start, end: end)
     }
 
     public func distance(for source: RideDistanceSource) -> Double? {
@@ -126,6 +135,12 @@ public struct RideDistanceEvidence: Equatable, Sendable {
         }
     }
 
+    private static func odometerDeltaMeters(start: Double, end: Double) -> Double? {
+        let meters = (end - start) * 1_000
+        guard meters.isFinite, meters >= 0 else { return nil }
+        return meters
+    }
+
     private static func validateOptionalDistance(
         _ distance: Double?,
         coverage: RideDistanceCoverage
@@ -142,10 +157,10 @@ public struct RideDistanceEvidence: Equatable, Sendable {
     }
 }
 
-/// Reconciliation behavior is injected rather than hard-coded as MAXSHOT truth.
-/// Hardware/field validation will decide the production source order and
-/// tolerance values. Every known source must be ranked explicitly so evidence is
-/// never silently ignored by an incomplete priority list.
+/// Reconciliation behavior is injected rather than hard-coded as physical
+/// scooter truth. Hardware/field validation will decide the production source
+/// order and tolerance values. Every known source must be ranked explicitly so
+/// evidence is never silently ignored by an incomplete priority list.
 public struct RideDistanceReconciliationPolicy: Equatable, Sendable {
     public let sourcePriority: [RideDistanceSource]
     public let absoluteAgreementToleranceMeters: Double

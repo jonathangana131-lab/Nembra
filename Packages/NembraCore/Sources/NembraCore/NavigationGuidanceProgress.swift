@@ -1,3 +1,5 @@
+import Foundation
+
 public enum NavigationGuidanceProgressError: Error, Equatable, Sendable {
     case invalidObservation
     case invalidStepIndex
@@ -5,11 +7,33 @@ public enum NavigationGuidanceProgressError: Error, Equatable, Sendable {
     case selectionSequenceExhausted
 }
 
+/// Opaque identity for one exact route selection.
+///
+/// `sequence` remains public as the ordering counter within one tracker generation.
+/// Private tracker/selection UUIDs prevent two fresh trackers — or two copied
+/// tracker values that later diverge — from minting equal tokens at the same sequence.
+/// Consumers outside NembraCore should continue treating the full token as opaque
+/// equality identity instead of assuming sequences are globally ordered.
 public struct NavigationGuidanceSelectionToken: Equatable, Sendable {
     public let sequence: UInt64
+    private let trackerGenerationID: UUID
+    private let selectionID: UUID
 
-    fileprivate init(sequence: UInt64) {
+    fileprivate init(
+        trackerGenerationID: UUID,
+        selectionID: UUID,
+        sequence: UInt64
+    ) {
+        self.trackerGenerationID = trackerGenerationID
+        self.selectionID = selectionID
         self.sequence = sequence
+    }
+
+    /// Sequence ordering is meaningful only when two tokens share this tracker
+    /// generation. The UUID itself stays private so downstream reducers cannot
+    /// accidentally promote implementation identity into a public contract.
+    func sharesTrackerGeneration(with other: Self) -> Bool {
+        trackerGenerationID == other.trackerGenerationID
     }
 }
 
@@ -43,7 +67,8 @@ public struct NavigationGuidanceProgressObservation: Equatable, Sendable {
               distanceRemainingOnStepMeters.isFinite,
               distanceRemainingOnStepMeters >= 0,
               distanceRemainingOnRouteMeters.isFinite,
-              distanceRemainingOnRouteMeters >= 0 else {
+              distanceRemainingOnRouteMeters >= 0,
+              distanceRemainingOnStepMeters <= distanceRemainingOnRouteMeters else {
             throw NavigationGuidanceProgressError.invalidObservation
         }
 
@@ -78,24 +103,58 @@ public enum NavigationGuidanceProgressState: Equatable, Sendable {
     )
 }
 
+/// Immutable proof that this exact observation was accepted by a guidance tracker
+/// and produced this exact resulting guidance state in the same mutation.
+///
+/// Construction is file-private so downstream NembraCore reducers cannot pair a
+/// replayed/rejected raw observation with a separately copied matching state and
+/// misrepresent that pair as one accepted guidance event.
+struct NavigationGuidanceAcceptedObservationReceipt: Equatable, Sendable {
+    let observation: NavigationGuidanceProgressObservation
+    let resultingState: NavigationGuidanceProgressState
+
+    fileprivate init(
+        observation: NavigationGuidanceProgressObservation,
+        resultingState: NavigationGuidanceProgressState
+    ) {
+        self.observation = observation
+        self.resultingState = resultingState
+    }
+}
+
 /// Platform-neutral guidance-state reducer above route geometry matching.
 ///
 /// Selection tokens isolate route generations so late observations for a prior
-/// route cannot publish onto a newly selected route. Process-local monotonic
-/// uptime rejects re-ordered callbacks within the selected route generation.
+/// route cannot publish onto a newly selected route. Token identity includes a
+/// tracker-generation namespace and a fresh per-selection identity in addition
+/// to the sequence counter, so recreating or copying a tracker cannot accidentally
+/// reuse another route generation's token. Process-local monotonic uptime rejects
+/// re-ordered callbacks within the selected route generation.
+/// Once confident evidence advances to a later provider step, a newer match to
+/// an earlier step fails current progress closed instead of resurrecting an old
+/// maneuver. No meter-based backward-progress tolerance is guessed here; normal
+/// same-step distance jitter remains a geometry/presentation concern.
 /// This type deliberately does not snap coordinates, compute geometry, reroute,
 /// mutate ride distance, or infer maneuver semantics from localized text.
 public struct NavigationGuidanceProgressTracker: Sendable {
     public private(set) var state: NavigationGuidanceProgressState = .idle
+    private let trackerGenerationID: UUID
     private var lastSelectionSequence: UInt64
     private var lastAcceptedObservationUptimeNanoseconds: UInt64?
+    private var highestConfidentStepIndex: Int?
 
     public init() {
+        trackerGenerationID = UUID()
         lastSelectionSequence = 0
+        highestConfidentStepIndex = nil
     }
 
+    /// Internal construction exists only for sequence-exhaustion regression coverage.
+    /// Generation identity remains tracker-owned rather than caller-supplied.
     init(initialSelectionSequence: UInt64) {
+        trackerGenerationID = UUID()
         lastSelectionSequence = initialSelectionSequence
+        highestConfidentStepIndex = nil
     }
 
     @discardableResult
@@ -107,8 +166,13 @@ public struct NavigationGuidanceProgressTracker: Sendable {
         }
 
         lastSelectionSequence += 1
-        let token = NavigationGuidanceSelectionToken(sequence: lastSelectionSequence)
+        let token = NavigationGuidanceSelectionToken(
+            trackerGenerationID: trackerGenerationID,
+            selectionID: UUID(),
+            sequence: lastSelectionSequence
+        )
         lastAcceptedObservationUptimeNanoseconds = nil
+        highestConfidentStepIndex = nil
         state = .unavailable(token: token, route: route, reason: .awaitingEvidence)
         return token
     }
@@ -158,6 +222,13 @@ public struct NavigationGuidanceProgressTracker: Sendable {
             return true
         }
 
+        if let highestConfidentStepIndex,
+           observation.stepIndex < highestConfidentStepIndex {
+            state = .unavailable(token: token, route: route, reason: .ambiguousProgress)
+            return true
+        }
+        highestConfidentStepIndex = observation.stepIndex
+
         let nextIndex = observation.stepIndex + 1
         let nextStep = route.steps.indices.contains(nextIndex) ? route.steps[nextIndex] : nil
         state = .active(
@@ -172,6 +243,22 @@ public struct NavigationGuidanceProgressTracker: Sendable {
             )
         )
         return true
+    }
+
+    /// Atomically binds one accepted raw observation to the state produced by
+    /// that exact `observe` mutation. Superseded selections return nil; rejected
+    /// current-selection observations throw and cannot mint a receipt.
+    @discardableResult
+    mutating func acceptanceReceipt(
+        for observation: NavigationGuidanceProgressObservation
+    ) throws -> NavigationGuidanceAcceptedObservationReceipt? {
+        guard try observe(observation) else {
+            return nil
+        }
+        return NavigationGuidanceAcceptedObservationReceipt(
+            observation: observation,
+            resultingState: state
+        )
     }
 
     /// Known location/guidance continuity loss invalidates the displayed route
@@ -190,5 +277,6 @@ public struct NavigationGuidanceProgressTracker: Sendable {
     public mutating func clearSelection() {
         state = .idle
         lastAcceptedObservationUptimeNanoseconds = nil
+        highestConfidentStepIndex = nil
     }
 }

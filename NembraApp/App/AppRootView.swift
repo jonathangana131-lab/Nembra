@@ -341,6 +341,7 @@ private struct RideHistoryDetailView: View {
         }
         .navigationTitle("Ride Details")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar)
         .accessibilityIdentifier("rides.detail")
         .task(id: record.sessionID) {
             await routes.refresh(sessionID: record.sessionID)
