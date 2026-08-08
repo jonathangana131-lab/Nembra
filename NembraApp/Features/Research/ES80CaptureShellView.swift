@@ -898,7 +898,7 @@ struct ES80CaptureShellView: View {
             return .physicalProcedureLocked
         }
         if status.foregroundIntegrityLost {
-            return .failed("Nembra left the active foreground after Experiment One began. This capture cannot resume safely; start a fresh Experiment One.")
+            return .failed("Nembra left the foreground after capture began. This run can no longer continue; start a fresh capture.")
         }
         if finalizationInFlight {
             return .finalizing
@@ -920,7 +920,7 @@ struct ES80CaptureShellView: View {
             return .acquiring
         case .idle:
             if captureConnectionAttempted && !status.hasPreparedCaptureAdmission {
-                return .failed(coordinator.lastDiagnostic ?? "The passive target connection ended before an accepted observation could be sealed. Start a fresh Experiment One rather than replaying consumed authority.")
+                return .failed("The passive Bluetooth connection ended before capture could be sealed. Start a fresh capture.")
             }
         case .unavailable:
             return .bluetoothUnavailable("Bluetooth capture is unavailable for this run.")
@@ -947,10 +947,10 @@ struct ES80CaptureShellView: View {
             return .bluetoothUnavailable(bluetoothUnavailableMessage(status.bluetoothState))
         }
         guard let progress = status.powerCycleProgress else {
-            return .correlationFailed("This Experiment One run has no active progress and no final result. Start a fresh run.")
+            return .correlationFailed("The OFF / ON setup is unavailable for this run. Start a fresh capture.")
         }
         if progress.isSeriesInvalidated {
-            return .correlationFailed("A known Bluetooth, scan-liveness, or foreground gap invalidated this four-window observation series.")
+            return .correlationFailed("Bluetooth scanning or a foreground interruption invalidated this OFF / ON series. Start a fresh capture.")
         }
         if progress.isScanning {
             return .correlationObserving(progress.phase)
@@ -985,7 +985,7 @@ struct ES80CaptureShellView: View {
         case .captureComplete, .shareRetry:
             return .complete
         case .foregroundInterrupted:
-            return .failed("Simulator QA interruption fixture. This synthetic state represents a foreground-invalidated evidence life; it is not physical evidence.")
+            return .failed("Simulator QA interruption fixture. This synthetic state represents a foreground-interrupted capture; it is not physical evidence.")
         }
     }
 #endif
@@ -1227,7 +1227,7 @@ struct ES80CaptureShellView: View {
         do {
             coordinator = try onFreshExperimentRequested()
         } catch {
-            localFailureMessage = "Nembra could not create a fresh Experiment One run: \(String(describing: error))"
+            localFailureMessage = "Nembra could not start a fresh capture. Close and reopen Nembra, then try again."
         }
     }
 
