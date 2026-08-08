@@ -13,17 +13,9 @@ public struct PassiveBluetoothCaptureFieldBuildEvidenceRecord: Equatable, Sendab
     public static let currentSchemaVersion = 1
     public static let requiredInstallableKind = "ipa"
 
-    /// SHA-256 of the exact evidence JSON bytes passed to the parser, without re-encoding.
     public let exactEvidenceRecordSHA256: String
-
-    /// SHA-256 of the exact schema-v3 external build-record bytes independently measured by the
-    /// producer. This binds the signed-installable statement to one exact external record encoding.
     public let externalBuildRecordSHA256: String
-
-    /// SHA-256 of the exact final signed `.ipa` bytes. The parser validates only canonical spelling;
-    /// an external trusted system must independently re-hash/attest those actual bytes.
     public let signedInstallableSHA256: String
-
     public let signedInstallableKind: String
     public let schemaVersion: Int
     public let buildIdentifier: String
@@ -62,12 +54,6 @@ public struct PassiveBluetoothCaptureFieldBuildEvidenceRecord: Equatable, Sendab
         self.procedureVersion = procedureVersion
     }
 
-    /// Re-proves that this signed-installable declaration is bound to the exact external build
-    /// record bytes and exact produced-build tuple before projecting the existing SoftwareExport
-    /// comparison reference.
-    ///
-    /// A successful result is still software/build rendezvous evidence only. It does not grant
-    /// physical field authority and cannot mutate `PassiveBluetoothExperimentOneFieldExecutionGate`.
     public func makeSoftwareExportBuildReference(
         matching externalRecord: PassiveBluetoothCaptureExternalBuildRecord
     ) throws -> PassiveBluetoothExperimentOneSoftwareExportBuildReference {
@@ -88,6 +74,7 @@ public struct PassiveBluetoothCaptureFieldBuildEvidenceRecord: Equatable, Sendab
 public enum PassiveBluetoothCaptureFieldBuildEvidenceRecordError: Error, Equatable, Sendable {
     case malformedJSON
     case unexpectedField(String)
+    case duplicateField(String)
     case unsupportedSchemaVersion(Int)
     case invalidExternalBuildRecordSHA256
     case invalidSignedInstallableSHA256
@@ -102,12 +89,6 @@ public enum PassiveBluetoothCaptureFieldBuildEvidenceRecordError: Error, Equatab
     case externalBuildRecordMismatch
 }
 
-/// Strict parser for an externally produced signed-field-build evidence declaration.
-///
-/// This parser intentionally performs no network lookup, signature verification, attestation
-/// verification, or GO decision. It only establishes a closed-world exact-byte/build rendezvous that
-/// a later independently trusted acceptance layer can consume without accepting caller-invented
-/// booleans or loose build labels.
 public enum PassiveBluetoothCaptureFieldBuildEvidenceRecordJSON {
     private struct WireV1: Decodable {
         let schemaVersion: Int
@@ -194,6 +175,10 @@ public enum PassiveBluetoothCaptureFieldBuildEvidenceRecordJSON {
     }
 
     private static func validateClosedWorldShape(_ data: Data) throws {
+        if let duplicateKey = PassiveBluetoothStrictJSON.duplicateTopLevelObjectKey(in: data) {
+            throw PassiveBluetoothCaptureFieldBuildEvidenceRecordError.duplicateField(duplicateKey)
+        }
+
         let object: Any
         do {
             object = try JSONSerialization.jsonObject(with: data)
