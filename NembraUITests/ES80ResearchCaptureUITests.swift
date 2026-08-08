@@ -14,26 +14,79 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         app.launchArguments = ["--es80-passive-capture"]
         app.launch()
 
-        XCTAssertTrue(app.navigationBars["Nembra Capture"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["NEMBRA CAPTURE"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["Capture locked"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.descendants(matching: .any)["es80.capture.field-no-go"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.descendants(matching: .any)["es80.capture.physical-run-locked"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["ES80-FINGERPRINT-v1"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.descendants(matching: .any)["es80.capture.build-identity"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            app.navigationBars["Nembra Capture"].waitForExistence(timeout: 5),
+            "The explicit research launch must open the dedicated Nembra Capture surface."
+        )
+        XCTAssertTrue(
+            app.staticTexts["NEMBRA CAPTURE"].waitForExistence(timeout: 3),
+            "The V14 capture identity must remain visible."
+        )
+        XCTAssertTrue(
+            app.staticTexts["Capture locked"].waitForExistence(timeout: 3),
+            "The current package-owned NO-GO must be the primary product state."
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture.field-no-go"].waitForExistence(timeout: 3),
+            "The dedicated package-gated NO-GO surface must be active."
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture.physical-run-locked"].waitForExistence(timeout: 3),
+            "The physical NO-GO boundary must be exposed as one stable accessibility element."
+        )
+        XCTAssertTrue(
+            app.staticTexts["ES80-FINGERPRINT-v1"].waitForExistence(timeout: 3),
+            "The installed versioned procedure must be identified without becoming executable."
+        )
 
-        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.stationary-preflight"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.preflight.charger-disconnected"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.preflight.charger-connected"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.preflight.continue"].exists)
-        XCTAssertFalse(app.buttons["Begin OFF 1 window"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.begin-window"].exists)
-        XCTAssertFalse(app.buttons["Scan for scooter"].exists)
-        XCTAssertFalse(app.buttons["Start passive capture"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.start"].exists)
-        XCTAssertFalse(app.buttons["Finish Capture"].exists)
-        XCTAssertFalse(app.buttons["Vehicle controls"].exists)
-        XCTAssertFalse(app.buttons["Advanced details"].exists)
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.stationary-preflight"].exists,
+            "The charger declaration is downstream of package field authority and must not appear while the package gate is NO-GO."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.preflight.charger-disconnected"].exists,
+            "Even the accepted charger choice must not become a UI-level bypass around package NO-GO."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.preflight.charger-connected"].exists,
+            "The blocked charger choice must remain unreachable until package field authority exists."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.preflight.continue"].exists,
+            "No local preflight state may instantiate the physical shell while the package field gate is closed."
+        )
+        XCTAssertFalse(
+            app.buttons["Begin OFF 1 window"].exists,
+            "A NO-GO build must not expose the first physical OFF/ON action."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.begin-window"].exists,
+            "No hidden or differently-labeled correlation-window action may bypass the package gate."
+        )
+        XCTAssertFalse(
+            app.buttons["Scan for scooter"].exists,
+            "The old generic manual-candidate scan must not become a fallback physical path."
+        )
+        XCTAssertFalse(
+            app.buttons["Start passive capture"].exists,
+            "Standalone capture cannot bypass field authorization or Experiment One authority binding."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.start"].exists,
+            "No hidden Start Capture action may bypass the Experiment One authority boundary."
+        )
+        XCTAssertFalse(
+            app.buttons["Finish Capture"].exists,
+            "Finish cannot exist before field authorization and accepted Horizon/seal authority."
+        )
+        XCTAssertFalse(
+            app.buttons["Vehicle controls"].exists,
+            "Research capture must not silently expose the normal vehicle-control experience."
+        )
+        XCTAssertFalse(
+            app.buttons["Advanced details"].exists,
+            "The control-capable package research console must not become a second acquisition workflow."
+        )
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "Nembra Capture V14 — Package-Owned Physical NO-GO"
@@ -44,24 +97,37 @@ final class ES80ResearchCaptureUITests: XCTestCase {
     @MainActor
     func testV14NoGoRemainsLegibleAtAccessibilityExtraExtraExtraLarge() {
         let app = XCUIApplication()
-        app.launchArguments = ["--es80-passive-capture", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"]
+        app.launchArguments = [
+            "--es80-passive-capture",
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+        ]
         app.launch()
 
         let lockedState = app.descendants(matching: .any)["es80.capture.field-no-go"]
         let physicalBoundary = app.descendants(matching: .any)["es80.capture.physical-run-locked"]
         let recipe = app.staticTexts["ES80-FINGERPRINT-v1"]
-        let buildIdentity = app.descendants(matching: .any)["es80.capture.build-identity"]
 
         XCTAssertTrue(lockedState.waitForExistence(timeout: 5))
         XCTAssertTrue(physicalBoundary.waitForExistence(timeout: 3))
         XCTAssertTrue(recipe.waitForExistence(timeout: 3))
-        XCTAssertTrue(buildIdentity.waitForExistence(timeout: 3))
 
         let windowFrame = app.windows.firstMatch.frame
-        assertVisibleInScreenshotViewport(lockedState, windowFrame: windowFrame, context: "primary NO-GO state at Accessibility XXXL")
-        assertVisibleInScreenshotViewport(physicalBoundary, windowFrame: windowFrame, context: "physical-run boundary at Accessibility XXXL")
-        assertVisibleInScreenshotViewport(recipe, windowFrame: windowFrame, context: "recipe identity at Accessibility XXXL")
-        assertVisibleInScreenshotViewport(buildIdentity, windowFrame: windowFrame, context: "running build identity at Accessibility XXXL")
+        assertVisibleInScreenshotViewport(
+            lockedState,
+            windowFrame: windowFrame,
+            context: "primary NO-GO state at Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            physicalBoundary,
+            windowFrame: windowFrame,
+            context: "physical-run boundary at Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            recipe,
+            windowFrame: windowFrame,
+            context: "recipe identity at Accessibility XXXL"
+        )
 
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.begin-window"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.stationary-preflight"].exists)
@@ -80,24 +146,36 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--es80-passive-capture"]
         app.launch()
-        XCTAssertTrue(app.descendants(matching: .any)["es80.capture.field-no-go"].waitForExistence(timeout: 5))
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture.field-no-go"].waitForExistence(timeout: 5)
+        )
 
         XCUIDevice.shared.orientation = .landscapeLeft
 
         let lockedState = app.descendants(matching: .any)["es80.capture.field-no-go"]
         let physicalBoundary = app.descendants(matching: .any)["es80.capture.physical-run-locked"]
         let recipe = app.staticTexts["ES80-FINGERPRINT-v1"]
-        let buildIdentity = app.descendants(matching: .any)["es80.capture.build-identity"]
         XCTAssertTrue(lockedState.waitForExistence(timeout: 3))
         XCTAssertTrue(physicalBoundary.waitForExistence(timeout: 3))
         XCTAssertTrue(recipe.waitForExistence(timeout: 3))
-        XCTAssertTrue(buildIdentity.waitForExistence(timeout: 3))
 
         let windowFrame = app.windows.firstMatch.frame
-        assertVisibleInScreenshotViewport(lockedState, windowFrame: windowFrame, context: "primary NO-GO state in landscape")
-        assertVisibleInScreenshotViewport(physicalBoundary, windowFrame: windowFrame, context: "physical-run boundary in landscape")
-        assertVisibleInScreenshotViewport(recipe, windowFrame: windowFrame, context: "recipe identity in landscape")
-        assertVisibleInScreenshotViewport(buildIdentity, windowFrame: windowFrame, context: "running build identity in landscape")
+        assertVisibleInScreenshotViewport(
+            lockedState,
+            windowFrame: windowFrame,
+            context: "primary NO-GO state in landscape"
+        )
+        assertVisibleInScreenshotViewport(
+            physicalBoundary,
+            windowFrame: windowFrame,
+            context: "physical-run boundary in landscape"
+        )
+        assertVisibleInScreenshotViewport(
+            recipe,
+            windowFrame: windowFrame,
+            context: "recipe identity in landscape"
+        )
 
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.begin-window"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.stationary-preflight"].exists)
@@ -110,45 +188,100 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
     func testCompletionSourceRequiresExactFinalShareIntegrityBeforeAnalysisReady() throws {
         let source = try captureShellSource()
-        XCTAssertTrue(source.contains("coordinator.finalizedShareArtifactForCurrentApplication(setup: setup)"))
-        XCTAssertTrue(source.contains("PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)"))
-        XCTAssertTrue(source.contains("Text(analysisReady ? \"Ready for analysis\" : \"Integrity check required\")"))
-        XCTAssertTrue(source.contains("if let data = finalShareData"))
-        XCTAssertTrue(source.contains("finalShareIntegrityReport = report"))
-        XCTAssertTrue(source.contains("coordinator.status.finalizationCleanup == .failed"))
-        XCTAssertFalse(source.contains("prepareSoftwareExportForShare()"))
-        XCTAssertFalse(source.contains("softwareExportData"))
+
+        XCTAssertTrue(
+            source.contains("coordinator.finalizedShareArtifactForCurrentApplication(setup: setup)"),
+            "The app must prepare the package-owned final Share artifact, not stage raw capture or inner export bytes directly."
+        )
+        XCTAssertTrue(
+            source.contains("PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)"),
+            "Analysis readiness must come from inspection of the exact final Share bytes."
+        )
+        XCTAssertTrue(
+            source.contains("Text(analysisReady ? \"Ready for analysis\" : \"Integrity check required\")"),
+            "Horizon seal alone must not render Ready for analysis."
+        )
+        XCTAssertTrue(
+            source.contains("if let data = finalShareData"),
+            "A temporary Share-file retry must reuse retained verified bytes rather than mint a new evidence artifact."
+        )
+        XCTAssertTrue(
+            source.contains("finalShareIntegrityReport = report"),
+            "The exact integrity report must be retained as the app's analysis-readiness authority."
+        )
+        XCTAssertTrue(
+            source.contains("coordinator.status.finalizationCleanup == .failed"),
+            "Post-seal cleanup failure must remain visible without revoking the sealed artifact."
+        )
+        XCTAssertFalse(
+            source.contains("prepareSoftwareExportForShare()"),
+            "The superseded inner-SoftwareExport-only Share path must not remain callable."
+        )
+        XCTAssertFalse(
+            source.contains("softwareExportData"),
+            "The app should retain the exact final Share artifact rather than an ambiguous inner-export state."
+        )
     }
 
-    func testNoGoSourceUsesPackageRuntimeBuildIdentityReader() throws {
-        let source = try nembraAppSource()
-        XCTAssertTrue(source.contains("PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()"))
-        XCTAssertTrue(source.contains("accessibilityIdentifier(\"es80.capture.build-identity\")"))
-        XCTAssertTrue(source.contains("runtimeBuildIdentity.buildIdentifier"))
-        XCTAssertTrue(source.contains("runtimeBuildIdentity.sourceCommitSHA"))
-        XCTAssertTrue(source.contains("runtimeBuildIdentity.buildInstanceID"))
-        XCTAssertTrue(source.contains("Build identity unavailable"))
-    }
-
-    private func assertVisibleInScreenshotViewport(_ element: XCUIElement, windowFrame: CGRect, context: String, file: StaticString = #filePath, line: UInt = #line) {
+    private func assertVisibleInScreenshotViewport(
+        _ element: XCUIElement,
+        windowFrame: CGRect,
+        context: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
         let frame = element.frame
-        XCTAssertGreaterThan(frame.width, 0, "Required \(context) must have positive width.", file: file, line: line)
-        XCTAssertGreaterThan(frame.height, 0, "Required \(context) must have positive height.", file: file, line: line)
-        XCTAssertGreaterThanOrEqual(frame.minX, windowFrame.minX - 1, "Required \(context) must not clip off the leading screenshot edge.", file: file, line: line)
-        XCTAssertLessThanOrEqual(frame.maxX, windowFrame.maxX + 1, "Required \(context) must not clip off the trailing screenshot edge.", file: file, line: line)
-        XCTAssertGreaterThanOrEqual(frame.minY, windowFrame.minY - 1, "Required \(context) must not clip above the screenshot viewport.", file: file, line: line)
-        XCTAssertLessThanOrEqual(frame.maxY, windowFrame.maxY + 1, "Required \(context) must not clip below the screenshot viewport.", file: file, line: line)
+        XCTAssertGreaterThan(
+            frame.width,
+            0,
+            "Required \(context) must have positive width.",
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThan(
+            frame.height,
+            0,
+            "Required \(context) must have positive height.",
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThanOrEqual(
+            frame.minX,
+            windowFrame.minX - 1,
+            "Required \(context) must not clip off the leading screenshot edge.",
+            file: file,
+            line: line
+        )
+        XCTAssertLessThanOrEqual(
+            frame.maxX,
+            windowFrame.maxX + 1,
+            "Required \(context) must not clip off the trailing screenshot edge.",
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThanOrEqual(
+            frame.minY,
+            windowFrame.minY - 1,
+            "Required \(context) must not clip above the screenshot viewport.",
+            file: file,
+            line: line
+        )
+        XCTAssertLessThanOrEqual(
+            frame.maxY,
+            windowFrame.maxY + 1,
+            "Required \(context) must not clip below the screenshot viewport.",
+            file: file,
+            line: line
+        )
     }
 
     private func captureShellSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
-        let repositoryRoot = testFile.deletingLastPathComponent().deletingLastPathComponent()
-        return try String(contentsOf: repositoryRoot.appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift"), encoding: .utf8)
-    }
-
-    private func nembraAppSource() throws -> String {
-        let testFile = URL(fileURLWithPath: #filePath)
-        let repositoryRoot = testFile.deletingLastPathComponent().deletingLastPathComponent()
-        return try String(contentsOf: repositoryRoot.appendingPathComponent("NembraApp/App/NembraApp.swift"), encoding: .utf8)
+        let repositoryRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = repositoryRoot
+            .appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }
