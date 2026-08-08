@@ -1,0 +1,68 @@
+name: Temp ES80 post-inspection subject stability
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-post-inspection-subject-stability-current
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply focused exact-subject guard
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/ci/es80_signed_field_artifact_evidence.py')
+          source = path.read_text()
+
+          anchor = '''    finally:\n        os.close(descriptor)\n\ndef canonical_sha40(value: str) -> str:\n'''
+          helper = '''    finally:\n        os.close(descriptor)\n\n\ndef verify_exact_ipa_subject_unchanged(\n    ipa_path: Path,\n    *,\n    expected_identity: tuple[int, int, int, int, int, int],\n    expected_sha256: str,\n) -> None:\n    try:\n        current_stat = ipa_path.lstat()\n        current_sha256 = sha256_file(ipa_path)\n    except OSError as exc:\n        raise EvidenceError("exact IPA inspection subject became unreadable during inspection") from exc\n    if (\n        not stat.S_ISREG(current_stat.st_mode)\n        or _stable_file_identity(current_stat) != expected_identity\n        or current_sha256 != expected_sha256\n    ):\n        raise EvidenceError(\n            "exact IPA inspection subject changed during signing/provisioning inspection"\n        )\n\n\ndef canonical_sha40(value: str) -> str:\n'''
+          if source.count(anchor) != 1:
+              raise SystemExit('expected exactly one snapshot/helper anchor')
+          source = source.replace(anchor, helper, 1)
+
+          old_start = '''def _inspect_snapshotted_ipa(ipa_path: Path, expected_source_sha: str, *, intended_device_udid: str) -> dict:\n    source_sha = canonical_sha40(expected_source_sha)\n    if not ipa_path.is_file():\n        raise EvidenceError(f"IPA does not exist as a file: {ipa_path}")\n\n    ipa_sha = sha256_file(ipa_path)\n    ipa_size = ipa_path.stat().st_size\n'''
+          new_start = '''def _inspect_snapshotted_ipa(ipa_path: Path, expected_source_sha: str, *, intended_device_udid: str) -> dict:\n    source_sha = canonical_sha40(expected_source_sha)\n    try:\n        ipa_stat_before = ipa_path.lstat()\n    except OSError as exc:\n        raise EvidenceError(f"IPA does not exist as a file: {ipa_path}") from exc\n    if not stat.S_ISREG(ipa_stat_before.st_mode):\n        raise EvidenceError("exact IPA inspection subject must remain one regular file")\n    ipa_identity_before = _stable_file_identity(ipa_stat_before)\n\n    ipa_sha = sha256_file(ipa_path)\n    ipa_size = ipa_stat_before.st_size\n'''
+          if source.count(old_start) != 1:
+              raise SystemExit('expected exactly one snapshotted inspector start block')
+          source = source.replace(old_start, new_start, 1)
+
+          before_records = '''        if not SHA256_RE.fullmatch(executable_sha) or not SHA256_RE.fullmatch(info_plist_sha):\n            raise EvidenceError("could not derive canonical executable/Info.plist SHA-256")\n\n    external_record = {\n'''
+          guarded_records = '''        if not SHA256_RE.fullmatch(executable_sha) or not SHA256_RE.fullmatch(info_plist_sha):\n            raise EvidenceError("could not derive canonical executable/Info.plist SHA-256")\n\n    verify_exact_ipa_subject_unchanged(\n        ipa_path,\n        expected_identity=ipa_identity_before,\n        expected_sha256=ipa_sha,\n    )\n\n    external_record = {\n'''
+          if source.count(before_records) != 1:
+              raise SystemExit('expected exactly one evidence-record construction anchor')
+          source = source.replace(before_records, guarded_records, 1)
+
+          self_test_anchor = '''    assert valid_build_identifier("Capture Build V14-aaaaaaaaaaaa")\n    assert not valid_build_identifier(" Capture Build V14-aaaaaaaaaaaa")\n    assert not valid_build_identifier("Capture\\nBuild")\n'''
+          self_test_insert = self_test_anchor + '''\n    with tempfile.TemporaryDirectory(prefix="nembra-field-subject-stability-self-test-") as temporary:\n        subject = Path(temporary) / "subject.ipa"\n        original_bytes = b"exact subject bytes"\n        subject.write_bytes(original_bytes)\n        subject.chmod(0o400)\n        subject_identity = _stable_file_identity(subject.lstat())\n        subject_sha = sha256_file(subject)\n        subject.chmod(0o600)\n        subject.write_bytes(b"mutated subject bytes")\n        subject.write_bytes(original_bytes)\n        subject.chmod(0o400)\n        try:\n            verify_exact_ipa_subject_unchanged(\n                subject,\n                expected_identity=subject_identity,\n                expected_sha256=subject_sha,\n            )\n        except EvidenceError as error:\n            assert "changed during signing/provisioning inspection" in str(error)\n        else:\n            raise AssertionError("mutate-and-restore exact IPA snapshot escaped stability detection")\n'''
+          if source.count(self_test_anchor) != 1:
+              raise SystemExit('expected exactly one self-test anchor')
+          source = source.replace(self_test_anchor, self_test_insert, 1)
+
+          path.write_text(source)
+          PY
+
+      - name: Validate repair
+        run: |
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
+          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
+          git diff --check
+
+      - name: Commit product-only result
+        run: |
+          git config user.name "nembra-v14-transform"
+          git config user.email "nembra-v14-transform@users.noreply.github.com"
+          git rm .github/workflows/tmp-es80-post-inspection-subject-stability.yml
+          git add scripts/ci/es80_signed_field_artifact_evidence.py
+          git commit -m "[Capture provenance v14] Re-prove exact IPA after signing inspection"
+          git push origin HEAD:${GITHUB_REF_NAME}
