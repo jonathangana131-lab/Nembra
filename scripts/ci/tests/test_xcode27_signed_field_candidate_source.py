@@ -6,6 +6,7 @@ import unittest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "xcode27_signed_field_candidate.sh"
 PRIVATE_RUNNER = Path(__file__).resolve().parents[1] / "es80_signed_field_artifact_private_runner.py"
+AUTHORIZATION_SIGNER = Path(__file__).resolve().parents[1] / "es80_field_authorization_envelope.py"
 
 
 class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
@@ -53,6 +54,16 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn('private signed-field inspector runner self-test: PASS', completed.stdout)
+
+    def test_offline_authorization_signer_self_test_passes(self):
+        completed = subprocess.run(
+            [sys.executable, str(AUTHORIZATION_SIGNER), '--self-test'],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn('field authorization envelope self-test: PASS', completed.stdout)
 
     def test_reuses_live_canonical_signed_field_evidence_contract(self):
         self.assertIn('es80_signed_field_artifact_evidence.py', self.runner_source)
