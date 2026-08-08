@@ -4,10 +4,12 @@ import NembraCore
 
 /// One synchronous MainActor decision that binds a lifecycle-boundary intent to
 /// the exact controller FIFO prefix, recorder-completed prefix, artifact authority,
-/// and trusted local observation clock seen before the first asynchronous hop.
+/// and local clock correlation seen before the first asynchronous hop.
 ///
-/// This is software observation/evidence ordering only. The clock is not a BLE or
-/// RF emission timestamp, and this type establishes no physical scooter state.
+/// `observedAtUptimeNanoseconds` is the software chronology authority. `observedAtDate`
+/// is wall-clock correlation metadata only and must never be treated as monotonic.
+/// Neither clock is a BLE/RF emission timestamp, and this type establishes no
+/// physical scooter state.
 struct PassiveCoreBluetoothObservationBoundaryDecision: Equatable, Sendable {
     enum StateError: Error, Equatable, Sendable {
         case processedFrontierBeyondCutoff
