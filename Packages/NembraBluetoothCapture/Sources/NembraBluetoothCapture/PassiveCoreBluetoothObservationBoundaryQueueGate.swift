@@ -23,6 +23,11 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         case cutoffNotDrained
         case cutoffOverrun
         case horizonArtifactNotReady
+        case freshTargetSessionRequired
+        case recoveryResolvedFrontierNotApplied(expected: UInt64, actual: UInt64)
+        case recoveryQueueTailChanged(expected: UInt64, actual: UInt64)
+        case freshRecorderNotInstalled
+        case freshRecorderSessionMismatch
     }
 
     struct Transaction: Equatable, Sendable {
@@ -125,6 +130,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
     private(set) var phase: Phase = .awaitingReady
     private var nextRevision: UInt64 = 1
     private var committedReadyTransaction: Transaction?
+    private var requiredReadyTargetSessionGeneration: UInt64?
 
     var isTerminal: Bool {
         if case .terminal = phase { return true }
@@ -167,6 +173,9 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         guard processedQueueSequence == nil else {
             throw StateError.invalidTransition
         }
+        if let requiredReadyTargetSessionGeneration {
+            guard authority.targetSessionGeneration == requiredReadyTargetSessionGeneration else { throw StateError.freshTargetSessionRequired }
+        }
         guard nextRevision != UInt64.max else {
             throw StateError.transactionRevisionExhausted
         }
@@ -177,6 +186,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
             authority: authority,
             revision: nextRevision
         )
+        requiredReadyTargetSessionGeneration = nil
         phase = .drainingReady(transaction)
         nextRevision += 1
         return transaction
@@ -484,11 +494,60 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         return receipt
     }
 
-    /// Abort quarantine is intentionally irreversible in this slice. Raw FIFO
-    /// retirement alone cannot reopen lifecycle admission because retired positions
-    /// still need a separate globally-resolved frontier update. #450 owns that
-    /// producer and its successor integration must make fresh-session reopen consume
-    /// the producer-issued resolution receipt. Until then reset and Ready both fail.
+    @MainActor
+    mutating func reopenAfterAbortedFreshTargetSession(
+        _ fresh: PassiveCoreBluetoothAbortedFreshTargetSession.Receipt,
+        currentResolvedThroughQueueSequence: UInt64,
+        currentLastEnqueuedEventSequence: UInt64,
+        installedRecorderIdentity: ObjectIdentifier,
+        installedRecorderSessionID: UUID
+    ) throws {
+        guard case let .abortQuarantined(currentAbort) = phase else { throw StateError.invalidTransition }
+        let resolution = fresh.abortedResolution
+        guard resolution.abortReceipt == currentAbort else { throw StateError.staleTransaction }
+        guard currentResolvedThroughQueueSequence == resolution.resolvedThroughQueueSequence else {
+            throw StateError.recoveryResolvedFrontierNotApplied(expected: resolution.resolvedThroughQueueSequence, actual: currentResolvedThroughQueueSequence)
+        }
+        guard currentLastEnqueuedEventSequence == resolution.resolvedThroughQueueSequence else {
+            throw StateError.recoveryQueueTailChanged(expected: resolution.resolvedThroughQueueSequence, actual: currentLastEnqueuedEventSequence)
+        }
+        guard installedRecorderIdentity == fresh.recorderIdentity else { throw StateError.freshRecorderNotInstalled }
+        guard installedRecorderSessionID == fresh.sessionID else { throw StateError.freshRecorderSessionMismatch }
+        guard fresh.targetSessionGeneration > currentAbort.abandonedTargetSessionGeneration else { throw StateError.freshTargetSessionRequired }
+        committedReadyTransaction = nil
+        requiredReadyTargetSessionGeneration = fresh.targetSessionGeneration
+        phase = .awaitingReady
+    }
+
+    @MainActor
+    mutating func reopenAfterTerminalFreshTargetSession(
+        _ fresh: PassiveCoreBluetoothTerminalFreshTargetSession.Receipt,
+        currentResolvedThroughQueueSequence: UInt64,
+        currentLastEnqueuedEventSequence: UInt64,
+        installedRecorderIdentity: ObjectIdentifier,
+        installedRecorderSessionID: UUID
+    ) throws {
+        guard case let .terminal(transaction) = phase else { throw StateError.invalidTransition }
+        let resolution = fresh.terminalResolution
+        guard resolution.terminalTransactionRevision == transaction.revision,
+              resolution.terminalTransactionIdentity == transaction.identity,
+              resolution.horizonQueueCutoff == transaction.queueCutoff,
+              resolution.previouslyResolvedThroughQueueSequence == transaction.queueCutoff else { throw StateError.staleTransaction }
+        guard resolution.terminalAuthority == transaction.authority else { throw StateError.authorityChanged }
+        guard currentResolvedThroughQueueSequence == resolution.resolvedThroughQueueSequence else {
+            throw StateError.recoveryResolvedFrontierNotApplied(expected: resolution.resolvedThroughQueueSequence, actual: currentResolvedThroughQueueSequence)
+        }
+        guard currentLastEnqueuedEventSequence == resolution.resolvedThroughQueueSequence else {
+            throw StateError.recoveryQueueTailChanged(expected: resolution.resolvedThroughQueueSequence, actual: currentLastEnqueuedEventSequence)
+        }
+        guard installedRecorderIdentity == fresh.recorderIdentity else { throw StateError.freshRecorderNotInstalled }
+        guard installedRecorderSessionID == fresh.sessionID else { throw StateError.freshRecorderSessionMismatch }
+        guard fresh.targetSessionGeneration > transaction.authority.targetSessionGeneration else { throw StateError.freshTargetSessionRequired }
+        committedReadyTransaction = nil
+        requiredReadyTargetSessionGeneration = fresh.targetSessionGeneration
+        phase = .awaitingReady
+    }
+
     @discardableResult
     mutating func resetForNewCaptureSession() -> Bool {
         guard phase == .awaitingReady else { return false }
