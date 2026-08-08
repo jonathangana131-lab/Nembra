@@ -43,6 +43,18 @@ class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
         self.assertNotIn('python3 - "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', source)
         self.assertNotIn('--intended-device-udid "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', source)
 
+        # The retired raw-value variable must be scrubbed before dirname/uname/Python/Git/Xcode or
+        # any other child process can inherit a stale caller-provided device identifier.
+        executable_lines = [
+            line.strip()
+            for line in source.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+        self.assertGreaterEqual(len(executable_lines), 2)
+        self.assertEqual(executable_lines[0], "set -euo pipefail")
+        self.assertEqual(executable_lines[1], "unset NEMBRA_INTENDED_FIELD_DEVICE_UDID")
+        self.assertNotIn('NEMBRA_INTENDED_FIELD_DEVICE_UDID=', source)
+
         # The verification value is read only inside the runner after a no-follow descriptor open.
         # It must never become an OS-visible child-process argument or environment value.
         self.assertIn('os.O_NOFOLLOW', runner)
