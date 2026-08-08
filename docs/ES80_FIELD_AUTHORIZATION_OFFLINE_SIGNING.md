@@ -48,6 +48,21 @@ This prevents a mutable external pathname from silently switching signing author
 
 The temporary snapshot is operation-scoped and is destroyed with its temporary directory. Python never loads the private-key bytes into a Python `bytes` value.
 
+## OpenSSL executable custody
+
+The signer never discovers OpenSSL from ambient `PATH`. It uses `/usr/bin/openssl` by default, or one explicit absolute `NEMBRA_OPENSSL` override supplied by the release-authority environment. The selected path must resolve outside the repository to one regular, executable, non-symlink file.
+
+Because OpenSSL receives the inherited private-key descriptor, executable custody is part of the authority boundary. Before that descriptor is handed to any subprocess, the signer requires:
+
+- the OpenSSL executable itself to be owned by root;
+- the executable to have no group/other write bits;
+- every canonical ancestor directory up to the filesystem root to be a real directory owned by root;
+- every canonical ancestor directory to have no group/other write bits.
+
+A signing-user-owned executable is deliberately rejected even if its mode is `0755`: that same user could otherwise unlink or replace the checked program between validation and execution. The external P-256 private key remains separately required to be owned by the signing user and owner-private. Platforms that cannot expose the POSIX ownership needed to enforce this executable-custody contract fail closed.
+
+Do not point `NEMBRA_OPENSSL` at a user-managed toolchain, Homebrew cellar under a user-writable prefix, repository helper, shell wrapper, or other path the signing identity can replace. An override is acceptable only when its actual live executable and complete canonical parent chain satisfy the same root-custody checks.
+
 ## One semantic parser
 
 The offline signer intentionally does **not** decode or reinterpret either evidence record.
@@ -97,7 +112,9 @@ python3 scripts/ci/es80_field_authorization_envelope.py \
 
 The tool:
 
-- requires OpenSSL;
+- uses `/usr/bin/openssl` by default and never searches ambient `PATH`;
+- accepts only an absolute explicit `NEMBRA_OPENSSL` override that passes the same custody checks;
+- requires the selected OpenSSL executable and every canonical parent directory to be root-owned and not group/world-writable;
 - requires a P-256 / `prime256v1` private key;
 - requires an owner-only external private-key file and fails closed on group/other access;
 - opens the authority key once with no-follow semantics and snapshots that exact descriptor into a private operation-local key file;
@@ -130,7 +147,7 @@ python3 scripts/ci/es80_field_authorization_envelope.py --self-test
 
 The self-test generates an **ephemeral temporary** P-256 fixture key outside the repository, signs synthetic opaque subjects, verifies the signature, checks exact-byte/base64 preservation, checks the schema-v2 payload, checks no-replace output, rejects an authority key with group/other access, proves an operation-local snapshot remains bound to the originally opened key when the external source pathname is replaced, and verifies repository-contained authority paths fail closed. The temporary keys and snapshots are destroyed with their temporary directories.
 
-The trusted exact-head Xcode 27 workflow compiles this signer and executes the self-test. A passing self-test is still software acceptance evidence only; it does not create or accept a production authority.
+The trusted exact-head Xcode 27 workflow compiles the signer, executes the dedicated signer-custody source regression, and then executes the signer self-test. The source regression pins the no-ambient-PATH and root-owned executable/canonical-ancestor contract. A passing source regression or self-test is still software acceptance evidence only; neither creates or accepts a production authority.
 
 ## What a cryptographically valid envelope still does not prove
 
