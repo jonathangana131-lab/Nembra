@@ -1,0 +1,33 @@
+name: Temporary ES80 producer startup diagnostic
+
+on:
+  push:
+    branches:
+      - recovery/es80-v14-producer-path-python-custody/gpt56-thinking-go
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: recovery/es80-v14-producer-path-python-custody/gpt56-thinking-go
+          fetch-depth: 0
+      - name: Apply uncommitted privileged Bash candidate
+        shell: bash
+        run: |
+          sed -i '1s|^#!/bin/bash$|#!/bin/bash -p|' scripts/ci/xcode27_signed_field_candidate.sh
+          git show 23cb4cf0a1be859b1fedc0bafad3769fc9a9da2a:scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py > scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+      - name: Startup custody
+        run: python3 scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py
+      - name: Whole-process custody
+        run: python3 scripts/ci/tests/test_xcode27_signed_field_candidate_process_custody_source.py
+      - name: Python custody
+        run: python3 scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
+      - name: Descriptor custody
+        run: python3 scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py
+      - name: Producer source contract
+        run: python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+      - name: Intended-device regression
+        run: python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
