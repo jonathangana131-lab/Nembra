@@ -23,7 +23,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "The V14 capture identity must remain visible."
         )
         XCTAssertTrue(
-            app.staticTexts["Field capture locked"].waitForExistence(timeout: 3),
+            app.staticTexts["Capture not ready yet"].waitForExistence(timeout: 3),
             "The current package-owned NO-GO must be the primary product state."
         )
         XCTAssertTrue(
@@ -166,6 +166,29 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         attachment.name = "Nembra Capture V14 — NO-GO — Landscape"
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    func testNoGoProductCopyRemovesEngineeringJargonWithoutWeakeningPhysicalLock() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let repositoryRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("NembraApp/App/NembraApp.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains("Capture not ready yet"))
+        XCTAssertTrue(source.contains("Physical test locked"))
+        XCTAssertTrue(source.contains("Only an approved Nembra build can unlock this test; there is no in-app override."))
+        XCTAssertTrue(source.contains("PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure"))
+        XCTAssertTrue(source.contains("ES80ExperimentOneFieldNoGoView()"))
+        XCTAssertTrue(source.contains("PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue"))
+
+        XCTAssertFalse(source.contains("final composed app, lifecycle authority, provenance, runtime, visual, accessibility, performance, and runbook gates"))
+        XCTAssertFalse(source.contains("Single-authority workflow installed"))
+        XCTAssertFalse(source.contains("package-owned authorization"))
+        XCTAssertFalse(source.contains("typed identifier, or local preference"))
     }
 
     func testCompletionSourceRequiresExactFinalShareIntegrityBeforeAnalysisReady() throws {

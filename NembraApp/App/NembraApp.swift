@@ -261,7 +261,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
     }
 
     private var physicalLockAccessibilityLabel: String {
-        "Physical Experiment One locked. Nembra will not expose the OFF and ON field controls until the final composed app, lifecycle authority, provenance, runtime, visual, accessibility, performance, and runbook gates have all earned a deliberate GO authorization."
+        "Physical ES80 capture is locked. This build still needs final safety and quality approval before Nembra can enable the OFF and ON steps."
     }
 
     var body: some View {
@@ -286,13 +286,13 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                                 .tracking(1.4)
                                 .foregroundStyle(.secondary)
 
-                            Text("Field capture locked")
+                            Text("Capture not ready yet")
                                 .font(.system(.largeTitle, design: .rounded, weight: .semibold))
                                 .foregroundStyle(.white)
                         }
                     }
 
-                    Text("This exact build is not authorized to begin the physical ES80 procedure.")
+                    Text("This build can’t start the physical ES80 test yet.")
                         .font(.title3.weight(.medium))
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
@@ -305,11 +305,11 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Physical Experiment One locked")
+                        Text("Physical test locked")
                             .font(.headline)
                             .foregroundStyle(.white)
 
-                        Text("Nembra will not expose the OFF/ON field controls until the final composed app, lifecycle authority, provenance, runtime, visual, accessibility, performance, and runbook gates have all earned a deliberate GO authorization.")
+                        Text("Nembra will enable the OFF/ON steps only after this build passes the remaining safety, quality, and field-approval checks.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -323,11 +323,11 @@ private struct ES80ExperimentOneFieldNoGoView: View {
 
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
-                        Text("PROCEDURE")
+                        Text("EXPERIMENT")
                             .font(.caption.monospaced().weight(.bold))
                             .foregroundStyle(.secondary)
                         Spacer()
-                        Text("NO-GO")
+                        Text("LOCKED")
                             .font(.caption.monospaced().weight(.bold))
                             .foregroundStyle(.orange)
                     }
@@ -343,7 +343,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         Image(systemName: "checkmark.seal")
                             .foregroundStyle(.secondary)
                             .accessibilityHidden(true)
-                        Text("Single-authority workflow installed")
+                        Text("One guided capture workflow")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.white)
                     }
@@ -352,7 +352,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         Image(systemName: "lock.fill")
                             .foregroundStyle(.orange)
                             .accessibilityHidden(true)
-                        Text("Field execution unavailable on this build")
+                        Text("Physical test unavailable on this build")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white)
                     }
@@ -360,7 +360,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                 .padding(18)
                 .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
-                Text("No physical action is required. A future accepted build must unlock this mechanically from package-owned authorization; a UI flag, typed identifier, or local preference cannot do it.")
+                Text("No action is needed right now. Only an approved Nembra build can unlock this test; there is no in-app override.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
