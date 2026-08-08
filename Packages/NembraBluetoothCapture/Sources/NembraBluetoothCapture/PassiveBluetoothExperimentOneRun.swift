@@ -85,17 +85,23 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
 
     struct Payload {
         let admissionIdentity: UUID
+        /// Local monotonic software handoff boundary captured when this sealed
+        /// admission is issued. It orders controller callback receipts only; it is
+        /// not BLE/RF emission time and carries no physical timing semantics.
+        let issuedAtUptimeNanoseconds: UInt64
         let powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence
         let peripheralIdentifier: UUID
         let recorder: PassiveCoreBluetoothCaptureRecorder
 
         fileprivate init(
             admissionIdentity: UUID,
+            issuedAtUptimeNanoseconds: UInt64,
             powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,
             peripheralIdentifier: UUID,
             recorder: PassiveCoreBluetoothCaptureRecorder
         ) {
             self.admissionIdentity = admissionIdentity
+            self.issuedAtUptimeNanoseconds = issuedAtUptimeNanoseconds
             self.powerCycleEvidence = powerCycleEvidence
             self.peripheralIdentifier = peripheralIdentifier
             self.recorder = recorder
@@ -106,12 +112,14 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
     private var hasBeenConsumed = false
 
     fileprivate init(
+        issuedAtUptimeNanoseconds: UInt64,
         powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,
         peripheralIdentifier: UUID,
         recorder: PassiveCoreBluetoothCaptureRecorder
     ) {
         payload = Payload(
             admissionIdentity: UUID(),
+            issuedAtUptimeNanoseconds: issuedAtUptimeNanoseconds,
             powerCycleEvidence: powerCycleEvidence,
             peripheralIdentifier: peripheralIdentifier,
             recorder: recorder
@@ -203,7 +211,11 @@ final class PassiveBluetoothExperimentOneRun {
         }
 
         let recorder = try beginCaptureRecorder(startedAt: startedAt)
+        // Captured only after the exact run-owned recorder constructor succeeds and
+        // immediately before the sealed one-shot handoff is minted.
+        let issuedAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
         return PassiveBluetoothExperimentOneCaptureAdmission(
+            issuedAtUptimeNanoseconds: issuedAtUptimeNanoseconds,
             powerCycleEvidence: evidence,
             peripheralIdentifier: peripheralIdentifier,
             recorder: recorder
