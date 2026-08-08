@@ -36,7 +36,11 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
         XCTAssertTrue(
             app.descendants(matching: .any)["es80.capture.build-preflight"].waitForExistence(timeout: 3),
-            "The running app's independent trusted-build preflight must be visible on the field lock surface."
+            "Trusted-build preflight must become visible immediately while verification runs off the launch actor."
+        )
+        XCTAssertTrue(
+            app.staticTexts["Field build identity not accepted"].waitForExistence(timeout: 5),
+            "Without an acceptance-pipeline trusted record/build injection, async preflight must settle fail-closed rather than leaving a permanent checking state."
         )
         XCTAssertTrue(
             app.staticTexts["ES80-FINGERPRINT-v1"].waitForExistence(timeout: 3),
@@ -68,6 +72,14 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "Finish cannot exist before field authorization and accepted Horizon/seal authority."
         )
         XCTAssertFalse(
+            app.buttons["Share Capture"].exists,
+            "Share cannot exist before one accepted immutable capture artifact has actually been produced."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.share"].exists,
+            "No hidden Share action may turn a locked preflight state into apparent capture completion."
+        )
+        XCTAssertFalse(
             app.buttons["Vehicle controls"].exists,
             "Research capture must not silently expose the normal vehicle-control experience."
         )
@@ -77,7 +89,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Nembra Capture V14 — Physical + Build-Provenance NO-GO"
+        attachment.name = "Nembra Capture V14 — Async Trusted-Build + Physical NO-GO"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
