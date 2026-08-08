@@ -19,16 +19,15 @@ struct PassiveBluetoothExperimentOneCaptureEvidenceAssessmentTests {
     private let target = UUID(uuidString: "10000000-0000-0000-0000-000000000001")!
     private let otherTarget = UUID(uuidString: "20000000-0000-0000-0000-000000000002")!
     private let neighbor = UUID(uuidString: "90000000-0000-0000-0000-000000000009")!
+    private let runA = UUID(uuidString: "A0000000-0000-0000-0000-00000000000A")!
+    private let runB = UUID(uuidString: "B0000000-0000-0000-0000-00000000000B")!
 
     @Test("exact experiment-one thresholds compose into coherent software capture evidence")
     func coherentAtExactThresholds() throws {
         let result = try powerCycleResult(repeatedCandidates: [target])
         let session = try captureSession(gattIdentifiers: [target.uuidString])
 
-        let assessment = PassiveBluetoothExperimentOneCaptureEvidenceAssessment.assess(
-            powerCycleResult: result,
-            captureSession: session
-        )
+        let assessment = assessSameRun(powerCycleResult: result, captureSession: session)
 
         #expect(assessment.status == .coherentCaptureEvidence(target))
         #expect(assessment.isCaptureEvidenceCoherent)
@@ -49,6 +48,28 @@ struct PassiveBluetoothExperimentOneCaptureEvidenceAssessmentTests {
         )
     }
 
+    @Test("same UUID from a different experiment run cannot inherit later capture proof")
+    func crossRunSameUUIDFailsClosed() throws {
+        let resultFromRunA = try powerCycleResult(repeatedCandidates: [target])
+        let captureFromRunB = try captureSession(gattIdentifiers: [target.uuidString])
+
+        let assessment = PassiveBluetoothExperimentOneCaptureEvidenceAssessment.assess(
+            powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence(
+                runAuthorityID: runA,
+                result: resultFromRunA
+            ),
+            captureEvidence: PassiveBluetoothExperimentOneCaptureEvidence(
+                runAuthorityID: runB,
+                session: captureFromRunB
+            )
+        )
+
+        #expect(assessment.status == .experimentRunAuthorityMismatch)
+        #expect(assessment.correlatedPeripheralIdentifier == target)
+        #expect(assessment.capturedPeripheralIdentifier == target)
+        #expect(!assessment.isCaptureEvidenceCoherent)
+    }
+
     @Test("caller cannot weaken the ten-second power-cycle policy")
     func shortPowerCycleWindowFailsClosed() throws {
         let result = try powerCycleResult(
@@ -57,10 +78,7 @@ struct PassiveBluetoothExperimentOneCaptureEvidenceAssessmentTests {
         )
         let session = try captureSession(gattIdentifiers: [target.uuidString])
 
-        let assessment = PassiveBluetoothExperimentOneCaptureEvidenceAssessment.assess(
-            powerCycleResult: result,
-            captureSession: session
-        )
+        let assessment = assessSameRun(powerCycleResult: result, captureSession: session)
 
         #expect(assessment.status == .powerCycleDurationRejected(.insufficientDuration))
         #expect(!assessment.isCaptureEvidenceCoherent)
@@ -72,10 +90,7 @@ struct PassiveBluetoothExperimentOneCaptureEvidenceAssessmentTests {
         let result = try powerCycleResult(repeatedCandidates: [target, otherTarget])
         let session = try captureSession(gattIdentifiers: [target.uuidString])
 
-        let assessment = PassiveBluetoothExperimentOneCaptureEvidenceAssessment.assess(
-            powerCycleResult: result,
-            captureSession: session
-        )
+        let assessment = assessSameRun(powerCycleResult: result, captureSession: session)
 
         #expect(
             assessment.status == .correlationRejected(
@@ -91,10 +106,7 @@ struct PassiveBluetoothExperimentOneCaptureEvidenceAssessmentTests {
         let result = try powerCycleResult(repeatedCandidates: [target])
         let session = try captureSession(gattIdentifiers: [])
 
-        let assessment = PassiveBluetoothExperimentOneCaptureEvidenceAssessment.assess(
-            powerCycleResult: result,
-            captureSession: session
-        )
+        let assessment = assessSameRun(powerCycleResult: result, captureSession: session)
 
         #expect(assessment.status == .captureTargetUnresolved)
         #expect(assessment.captureGATTPeripheralIdentifiers.isEmpty)
@@ -109,10 +121,7 @@ struct PassiveBluetoothExperimentOneCaptureEvidenceAssessmentTests {
             gattIdentifiers: [target.uuidString, otherTarget.uuidString]
         )
 
-        let assessment = PassiveBluetoothExperimentOneCaptureEvidenceAssessment.assess(
-            powerCycleResult: result,
-            captureSession: session
-        )
+        let assessment = assessSameRun(powerCycleResult: result, captureSession: session)
 
         #expect(assessment.status == .captureTargetUnresolved)
         #expect(assessment.captureGATTPeripheralIdentifiers.count == 2)
@@ -124,10 +133,7 @@ struct PassiveBluetoothExperimentOneCaptureEvidenceAssessmentTests {
         let result = try powerCycleResult(repeatedCandidates: [target])
         let session = try captureSession(gattIdentifiers: ["not-a-corebluetooth-uuid"])
 
-        let assessment = PassiveBluetoothExperimentOneCaptureEvidenceAssessment.assess(
-            powerCycleResult: result,
-            captureSession: session
-        )
+        let assessment = assessSameRun(powerCycleResult: result, captureSession: session)
 
         #expect(
             assessment.status == .captureTargetIdentifierMalformed("not-a-corebluetooth-uuid")
@@ -141,10 +147,7 @@ struct PassiveBluetoothExperimentOneCaptureEvidenceAssessmentTests {
         let result = try powerCycleResult(repeatedCandidates: [target])
         let session = try captureSession(gattIdentifiers: [otherTarget.uuidString])
 
-        let assessment = PassiveBluetoothExperimentOneCaptureEvidenceAssessment.assess(
-            powerCycleResult: result,
-            captureSession: session
-        )
+        let assessment = assessSameRun(powerCycleResult: result, captureSession: session)
 
         #expect(
             assessment.status == .captureTargetMismatch(
@@ -165,10 +168,7 @@ struct PassiveBluetoothExperimentOneCaptureEvidenceAssessmentTests {
             postReadyDurationNanoseconds: 59_999_999_999
         )
 
-        let assessment = PassiveBluetoothExperimentOneCaptureEvidenceAssessment.assess(
-            powerCycleResult: result,
-            captureSession: session
-        )
+        let assessment = assessSameRun(powerCycleResult: result, captureSession: session)
 
         #expect(assessment.status == .observationDurationRejected(.insufficientDuration))
         #expect(assessment.powerCycleDurationAssessment.isDurationSufficient)
@@ -188,10 +188,7 @@ struct PassiveBluetoothExperimentOneCaptureEvidenceAssessmentTests {
         )
         let session = try captureSession(gattIdentifiers: [target.uuidString])
 
-        let assessment = PassiveBluetoothExperimentOneCaptureEvidenceAssessment.assess(
-            powerCycleResult: tampered,
-            captureSession: session
-        )
+        let assessment = assessSameRun(powerCycleResult: tampered, captureSession: session)
 
         #expect(assessment.status == .powerCycleEvidenceInconsistent)
         #expect(!assessment.isCaptureEvidenceCoherent)
@@ -203,14 +200,27 @@ struct PassiveBluetoothExperimentOneCaptureEvidenceAssessmentTests {
         let lowercase = target.uuidString.lowercased()
         let session = try captureSession(gattIdentifiers: [lowercase])
 
-        let assessment = PassiveBluetoothExperimentOneCaptureEvidenceAssessment.assess(
-            powerCycleResult: result,
-            captureSession: session
-        )
+        let assessment = assessSameRun(powerCycleResult: result, captureSession: session)
 
         #expect(assessment.status == .coherentCaptureEvidence(target))
         #expect(assessment.captureGATTPeripheralIdentifiers == [lowercase])
         #expect(assessment.capturedPeripheralIdentifier == target)
+    }
+
+    private func assessSameRun(
+        powerCycleResult: PassiveBluetoothPowerCycleObservationResult,
+        captureSession: PassiveBluetoothCaptureSession
+    ) -> PassiveBluetoothExperimentOneCaptureEvidenceAssessment {
+        PassiveBluetoothExperimentOneCaptureEvidenceAssessment.assess(
+            powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence(
+                runAuthorityID: runA,
+                result: powerCycleResult
+            ),
+            captureEvidence: PassiveBluetoothExperimentOneCaptureEvidence(
+                runAuthorityID: runA,
+                session: captureSession
+            )
+        )
     }
 
     private func powerCycleResult(
@@ -227,7 +237,7 @@ struct PassiveBluetoothExperimentOneCaptureEvidenceAssessmentTests {
             let start = UInt64(index) * 20_000_000_000
             let candidates: [PassiveBluetoothCandidateObservationSnapshot.Candidate]
             if phase.operatorExpectedPowerOn {
-                candidates = [candidate(neighbor)] + repeatedCandidates.map(candidate)
+                candidates = [candidate(neighbor)] + repeatedCandidates.map { candidate($0) }
             } else {
                 candidates = [candidate(neighbor)]
             }
