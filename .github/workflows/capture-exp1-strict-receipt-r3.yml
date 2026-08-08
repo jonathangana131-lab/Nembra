@@ -1,0 +1,66 @@
+name: Capture Experiment One strict receipt r3
+
+on:
+  push:
+    branches:
+      - agent/capture-exp1-strict-receipt-v14-r3
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Guard exact parent and apply narrow truth repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_parent='c3e03f82d43e0cf0bfa6f4a5fc74810ee4f35256'
+          actual_parent="$(git rev-parse HEAD^)"
+          test "$actual_parent" = "$expected_parent"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          controller = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift')
+          text = controller.read_text()
+          old = 'latestAdvertisement.receivedAtUptimeNanoseconds >= preview.issuedAtUptimeNanoseconds'
+          new = 'latestAdvertisement.receivedAtUptimeNanoseconds > preview.issuedAtUptimeNanoseconds'
+          assert text.count(old) == 1, text.count(old)
+          text = text.replace(old, new)
+          old_comment = '''// The sealed admission must be joined to a controller observation received after
+            // that handoff. Replaying an older cached advertisement would splice two software
+            // chronology lives and could enqueue evidence that predates this recorder.'''
+          new_comment = '''// The sealed admission must be joined to a controller observation received strictly
+            // after that handoff. Equal monotonic ticks do not establish receipt ordering; an
+            // older/equal cached advertisement would splice two software chronology lives.'''
+          assert old_comment in text
+          text = text.replace(old_comment, new_comment)
+          controller.write_text(text)
+
+          test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerExperimentOneRecoverableRediscoveryTests.swift')
+          source = test.read_text()
+          old_test = 'let freshness = try #require(method.range(of: "receivedAtUptimeNanoseconds >="))'
+          new_test = 'let freshness = try #require(method.range(of: "receivedAtUptimeNanoseconds > preview.issuedAtUptimeNanoseconds"))'
+          assert source.count(old_test) == 1, source.count(old_test)
+          source = source.replace(old_test, new_test)
+          marker = '        #expect(freshness.lowerBound < consume.lowerBound)\n'
+          assert source.count(marker) == 1
+          source = source.replace(marker, marker + '        #expect(method.range(of: "receivedAtUptimeNanoseconds >=") == nil)\n')
+          test.write_text(source)
+          PY
+
+          git diff --check
+          grep -F 'receivedAtUptimeNanoseconds > preview.issuedAtUptimeNanoseconds' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          ! grep -F 'receivedAtUptimeNanoseconds >= preview.issuedAtUptimeNanoseconds' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          rm .github/workflows/capture-exp1-strict-receipt-r3.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerExperimentOneRecoverableRediscoveryTests.swift .github/workflows/capture-exp1-strict-receipt-r3.yml
+          git commit -m '[Capture Experiment One v14] Require strictly post-admission receipt'
+          git push origin HEAD:agent/capture-exp1-strict-receipt-v14-r3
