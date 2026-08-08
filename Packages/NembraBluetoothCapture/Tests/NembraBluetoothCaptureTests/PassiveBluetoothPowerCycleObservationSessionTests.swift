@@ -15,7 +15,7 @@ struct PassiveBluetoothPowerCycleObservationSessionTests {
         .init(id: id, isConnectable: connectable)
     }
 
-    @Test("four completed windows keep one software authority while sequence advances")
+    @Test("four completed windows keep one software authority and replay exact correlation")
     func completesOneRepeatedSeries() throws {
         var ledger = PassiveBluetoothPowerCycleObservationLedger(
             minimumWindowDurationNanoseconds: 10
@@ -57,8 +57,28 @@ struct PassiveBluetoothPowerCycleObservationSessionTests {
         #expect(result.windows.map(\.phase) == PassiveBluetoothPowerCycleObservationPhase.allCases)
         #expect(result.windows.map { $0.windowSequence.rawValue } == [1, 2, 3, 4])
         #expect(result.windows.map(\.observedCandidateCount) == [1, 2, 1, 2])
+        #expect(result.observationSnapshots.count == 4)
+        #expect(result.observationSnapshots.map { $0.windowSequence.rawValue } == [1, 2, 3, 4])
+        #expect(result.observationSnapshots[0].candidates == [candidate(stableNeighbor)])
+        #expect(result.observationSnapshots[1].candidates == [
+            candidate(scooter),
+            candidate(stableNeighbor)
+        ].sorted { $0.id.uuidString < $1.id.uuidString })
+        #expect(result.observationSnapshots[2].candidates == [candidate(stableNeighbor)])
+        #expect(result.observationSnapshots[3].candidates == [
+            candidate(scooter),
+            candidate(stableNeighbor)
+        ].sorted { $0.id.uuidString < $1.id.uuidString })
         #expect(Set(result.correlation.observationSeriesIdentities).count == 1)
         #expect(result.correlation.disposition == .singleRepeatableCandidate(scooter))
+
+        let replayed = PassiveBluetoothPowerCycleTargetCorrelation.assess(
+            firstOff: result.observationSnapshots[0],
+            firstOn: result.observationSnapshots[1],
+            secondOff: result.observationSnapshots[2],
+            secondOn: result.observationSnapshots[3]
+        )
+        #expect(replayed == result.correlation)
     }
 
     @Test("one-off arrival cannot become repeated target evidence")
@@ -216,6 +236,56 @@ struct PassiveBluetoothPowerCycleObservationSessionTests {
         )
 
         #expect(result.correlation.disposition == .noRepeatableCandidate)
+    }
+
+    @Test("connectability merge never erases stronger negative evidence")
+    func connectabilityMergeIsEvidenceMonotonic() {
+        #expect(PassiveBluetoothPowerCycleConnectabilityMerge.merged(current: nil, incoming: nil) == nil)
+        #expect(PassiveBluetoothPowerCycleConnectabilityMerge.merged(current: nil, incoming: true) == true)
+        #expect(PassiveBluetoothPowerCycleConnectabilityMerge.merged(current: true, incoming: nil) == true)
+        #expect(PassiveBluetoothPowerCycleConnectabilityMerge.merged(current: true, incoming: true) == true)
+        #expect(PassiveBluetoothPowerCycleConnectabilityMerge.merged(current: false, incoming: nil) == false)
+        #expect(PassiveBluetoothPowerCycleConnectabilityMerge.merged(current: false, incoming: true) == false)
+        #expect(PassiveBluetoothPowerCycleConnectabilityMerge.merged(current: true, incoming: false) == false)
+        #expect(PassiveBluetoothPowerCycleConnectabilityMerge.merged(current: nil, incoming: false) == false)
+        #expect(PassiveBluetoothPowerCycleConnectabilityMerge.merged(current: false, incoming: false) == false)
+    }
+
+    @Test("callback admission requires powered-on active scan and a started receipt window")
+    func scanLivenessFailsClosed() {
+        #expect(PassiveBluetoothPowerCycleScanLiveness.isLive(
+            isPoweredOn: true,
+            isScanning: true,
+            hasStartedReceiptWindow: true
+        ))
+        #expect(!PassiveBluetoothPowerCycleScanLiveness.isLive(
+            isPoweredOn: false,
+            isScanning: true,
+            hasStartedReceiptWindow: true
+        ))
+        #expect(!PassiveBluetoothPowerCycleScanLiveness.isLive(
+            isPoweredOn: true,
+            isScanning: false,
+            hasStartedReceiptWindow: true
+        ))
+        #expect(!PassiveBluetoothPowerCycleScanLiveness.isLive(
+            isPoweredOn: true,
+            isScanning: true,
+            hasStartedReceiptWindow: false
+        ))
+    }
+
+    @Test("explicit abandonment invalidates an incomplete series even without active transport")
+    @MainActor
+    func abandonmentWithoutActiveTransportInvalidatesSeries() throws {
+        let session = try PassiveBluetoothPowerCycleObservationSession(minimumWindowDuration: 1)
+
+        session.abandonCurrentWindow()
+
+        #expect(session.progress?.isSeriesInvalidated == true)
+        #expect(throws: PassiveBluetoothPowerCycleObservationSessionError.seriesInvalidated) {
+            try session.startCurrentWindow()
+        }
     }
 
     @Test("public session policy rejects zero and non-finite observation windows")
