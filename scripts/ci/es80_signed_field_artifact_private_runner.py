@@ -43,17 +43,20 @@ def read_private_identifier(path: Path) -> str:
         raise PrivateInputError("intended-device verification file is not a readable regular file") from exc
 
     try:
-        metadata = os.fstat(descriptor)
-        if not stat.S_ISREG(metadata.st_mode):
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
             raise PrivateInputError("intended-device verification input must be one regular non-symlink file")
-        if metadata.st_size < 1 or metadata.st_size > MAX_IDENTIFIER_BYTES:
+        if before.st_size < 1 or before.st_size > MAX_IDENTIFIER_BYTES:
             raise PrivateInputError("intended-device verification input has an invalid bounded size")
-        if metadata.st_mode & 0o077:
+        if before.st_mode & 0o077:
             raise PrivateInputError("intended-device verification file must not be accessible by group/other")
 
         with os.fdopen(descriptor, "rb", closefd=False) as handle:
             raw = handle.read(MAX_IDENTIFIER_BYTES + 1)
-        if len(raw) != metadata.st_size:
+        after = os.fstat(descriptor)
+        before_identity = (before.st_dev, before.st_ino, before.st_size, before.st_mode, before.st_mtime_ns)
+        after_identity = (after.st_dev, after.st_ino, after.st_size, after.st_mode, after.st_mtime_ns)
+        if before_identity != after_identity or len(raw) != before.st_size:
             raise PrivateInputError("intended-device verification file changed while being read")
     finally:
         os.close(descriptor)
@@ -180,6 +183,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         type=Path,
         help="private mode-0600 file containing the verification-only intended field-device identifier",
     )
+    parser.add_argument(
+        "--validate-private-input",
+        action="store_true",
+        help="validate only the private verification input and exit without exposing its value",
+    )
     parser.add_argument("--self-test", action="store_true", help="run platform-independent private-input checks")
     return parser.parse_args(argv)
 
@@ -189,6 +197,13 @@ def main(argv: list[str]) -> int:
     if args.self_test:
         self_test()
         print("private signed-field inspector runner self-test: PASS")
+        return 0
+
+    if args.validate_private_input:
+        if args.intended_device_udid_file is None:
+            raise PrivateInputError("--validate-private-input requires --intended-device-udid-file")
+        read_private_identifier(args.intended_device_udid_file)
+        print("private intended-device verification input: PASS")
         return 0
 
     missing = [
