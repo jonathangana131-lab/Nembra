@@ -19,17 +19,26 @@ struct VehicleHeroView: View {
     private var vehicleArtwork: some View {
         if profile.identity.manufacturer == "AOVOPRO" && profile.identity.model == "ES80" {
             AOVOPROES80SideArtwork(
-                headlightOn: state.isHeadlightOn == true,
+                headlightOn: hasLiveHeadlightOnEvidence,
                 connected: state.connection == .connected
             )
         } else if profile.identity.manufacturer == "MAXSHOT" && profile.identity.model == "V1S Pro" {
             MaxshotV1SProSideArtwork(
-                headlightOn: state.isHeadlightOn == true,
+                headlightOn: hasLiveHeadlightOnEvidence,
                 connected: state.connection == .connected
             )
         } else {
             GenericScooterArtwork(connected: state.connection == .connected)
         }
+    }
+
+    /// Decorative illumination has no stale/retained qualifier of its own, so it
+    /// must fail closed unless the whole vehicle state is currently live. A last-
+    /// known `true` after disconnect/reconnect remains valid retained evidence for
+    /// semantic UI that labels it as such, but it must not look like a fresh
+    /// physical lamp state in artwork.
+    private var hasLiveHeadlightOnEvidence: Bool {
+        state.dataAvailability == .live && state.isHeadlightOn == true
     }
 }
 
