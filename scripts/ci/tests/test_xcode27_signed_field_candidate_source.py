@@ -78,27 +78,38 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertNotIn('NembraCaptureSignedFieldCandidateEvidence.json', self.source)
         self.assertNotIn('es80_field_candidate_verify.py', self.source)
 
-    def test_keeps_producer_provenance_outside_failure_atomic_inspector_directory(self):
-        self.assertIn('INSPECTION_DIR="$ARTIFACTS_DIR/inspection"', self.source)
-        self.assertIn('ARTIFACTS_PARENT="$(dirname "$ARTIFACTS_DIR")"', self.source)
-        self.assertIn('mkdir -p "$ARTIFACTS_PARENT"', self.source)
-        self.assertIn('if ! mkdir "$ARTIFACTS_DIR"; then', self.source)
-        self.assertIn('ARTIFACTS_DIR appeared before atomic claim', self.source)
-        self.assertIn('mkdir "$ARTIFACTS_DIR/logs"', self.source)
-        self.assertNotIn('mkdir -p "$ARTIFACTS_DIR/logs"', self.source)
-        self.assertNotIn('mkdir -p "$INSPECTION_DIR"', self.source)
-        self.assertIn('EXPORT_OPTIONS_SNAPSHOT="$ARTIFACTS_DIR/ExportOptions.plist"', self.source)
-        self.assertIn('logs/xcodebuild-archive.log', self.source)
-        self.assertIn('logs/xcodebuild-export.log', self.source)
-        self.assertIn('inspection_directory=inspection', self.source)
-        self.assertNotIn('--output-dir "$ARTIFACTS_DIR"', self.source)
+    def test_final_candidate_stays_private_until_complete_atomic_publication(self):
+        self.assertIn('LOG_DIR="$WORK_ROOT/logs"', self.source)
+        self.assertIn('INSPECTION_DIR="$WORK_ROOT/inspection"', self.source)
+        self.assertIn('EXPORT_OPTIONS_SNAPSHOT="$WORK_ROOT/ExportOptions.plist"', self.source)
+        self.assertIn('FINAL_STAGING_DIR="$ARTIFACTS_PARENT/.nembra-field-candidate-$BUILD_INSTANCE_ID.staging"', self.source)
+        self.assertNotIn('INSPECTION_DIR="$ARTIFACTS_DIR/inspection"', self.source)
+        self.assertNotIn('mkdir "$ARTIFACTS_DIR/logs"', self.source)
+        self.assertNotIn('EXPORT_OPTIONS_SNAPSHOT="$ARTIFACTS_DIR/ExportOptions.plist"', self.source)
+        self.assertIn('cp -R "$INSPECTION_DIR" "$FINAL_STAGING_DIR/inspection"', self.source)
+        self.assertIn('Final candidate staging did not preserve exact canonical inspector bytes', self.source)
+        self.assertIn('FINAL_EXPORT_OPTIONS_SHA256=', self.source)
+        self.assertIn('renamex_np', self.source)
+        self.assertIn('RENAME_EXCL', self.source)
+        self.assertIn('refusing to overwrite concurrently published field-candidate evidence', self.source)
+        self.assertIn('FINAL_STAGING_DIR=""', self.source)
+        self.assertLess(
+            self.source.index('es80_signed_field_artifact_private_runner.py'),
+            self.source.index('mkdir "$FINAL_STAGING_DIR"'),
+        )
+        self.assertLess(
+            self.source.index('mkdir "$FINAL_STAGING_DIR"'),
+            self.source.index('rename_exclusive(source, destination'),
+        )
 
     def test_retains_exact_external_export_policy_and_refuses_output_reuse(self):
         self.assertIn('ARTIFACTS_DIR already exists; refusing to mix or overwrite', self.source)
+        self.assertIn('Final field-candidate staging directory already exists; refusing reuse', self.source)
         self.assertIn('git check-ignore -q', self.source)
         self.assertIn('ExportOptions.plist', self.source)
         self.assertIn('EXPORT_OPTIONS_SHA256', self.source)
         self.assertIn('POST_EXPORT_OPTIONS_SHA256', self.source)
+        self.assertIn('FINAL_EXPORT_OPTIONS_SHA256', self.source)
         self.assertIn('teamID', self.source)
         self.assertIn('-exportOptionsPlist "$EXPORT_OPTIONS_SNAPSHOT"', self.source)
 
@@ -120,6 +131,14 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertNotIn('IPA_FILES=(', self.source)
         self.assertNotIn('shopt -s nullglob', self.source)
         self.assertNotIn('shopt -u nullglob', self.source)
+
+    def test_final_layout_preserves_existing_inspection_and_provenance_paths(self):
+        self.assertIn('archive_log=logs/xcodebuild-archive.log', self.source)
+        self.assertIn('export_log=logs/xcodebuild-export.log', self.source)
+        self.assertIn('inspection_directory=inspection', self.source)
+        self.assertIn('field-candidate-environment.txt', self.source)
+        self.assertIn('cp -p "$LOG_DIR/xcodebuild-archive.log"', self.source)
+        self.assertIn('cp -p "$LOG_DIR/xcodebuild-export.log"', self.source)
 
     def test_never_mutates_physical_authorization(self):
         self.assertIn('Independent acceptance has NOT occurred.', self.source)
