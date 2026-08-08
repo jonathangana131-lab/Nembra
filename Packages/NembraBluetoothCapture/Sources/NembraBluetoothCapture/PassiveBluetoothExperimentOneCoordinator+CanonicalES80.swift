@@ -5,18 +5,16 @@ public extension PassiveBluetoothExperimentOneCoordinator {
         case fieldExecutionNotAuthorized
     }
 
-    /// The current production construction path used by NembraApp.
+    /// Legacy/current NembraApp construction path.
     ///
-    /// It intentionally remains tied to the zero-argument package field gate, which is hard NO-GO.
-    /// A Release launch marker, app preference, environment variable, or caller Boolean therefore
-    /// cannot construct a live ES80 controller in today's build.
+    /// This zero-argument API is intentionally permanently fail-closed. It must never become a live
+    /// field path merely because the repository-wide final gate is later changed to GO: doing that
+    /// would let app code bypass the non-forgeable exact signed-field `VerifiedAdmission` entirely.
+    /// NembraApp may continue calling this while physical execution is locked; future real field
+    /// wiring must migrate to the admission-bearing overload rather than weakening this method.
     @MainActor
     static func makeAuthorizedES80() throws -> PassiveBluetoothExperimentOneCoordinator {
-        guard PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure else {
-            throw CanonicalES80ConstructionError.fieldExecutionNotAuthorized
-        }
-
-        return try makeLiveES80Coordinator()
+        throw CanonicalES80ConstructionError.fieldExecutionNotAuthorized
     }
 
     /// Future field-authorized construction seam.
