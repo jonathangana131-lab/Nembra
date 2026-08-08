@@ -8,6 +8,7 @@ import Glibc
 public enum PassiveBluetoothCaptureArtifactOutputPolicyError: Error, Equatable, Sendable {
     case outputMatchesInput(String)
     case outputAlreadyExists(String)
+    case inputChangedSinceAdmission(String)
 }
 
 extension PassiveBluetoothCaptureArtifactOutputPolicyError: CustomStringConvertible {
@@ -17,6 +18,8 @@ extension PassiveBluetoothCaptureArtifactOutputPolicyError: CustomStringConverti
             "refusing to overwrite the raw capture artifact with its derived report: \(path)"
         case let .outputAlreadyExists(path):
             "output already exists; choose another path or pass --force-output: \(path)"
+        case let .inputChangedSinceAdmission(path):
+            "raw capture path no longer names the exact filesystem subject admitted for analysis: \(path)"
         }
     }
 }
@@ -47,10 +50,48 @@ public enum PassiveBluetoothCaptureArtifactOutputPolicy {
 
     public static func writeDerivedReport(
         _ data: Data,
+        inputReceipt: PassiveBluetoothCaptureArtifactInputReceipt,
         inputURL: URL,
         outputURL: URL,
         allowReplacingExistingOutput: Bool,
         fileManager: FileManager = .default
+    ) throws {
+        try writeDerivedReport(
+            data,
+            expectedInputIdentity: inputReceipt.admittedSourceIdentity,
+            inputURL: inputURL,
+            outputURL: outputURL,
+            allowReplacingExistingOutput: allowReplacingExistingOutput,
+            fileManager: fileManager
+        )
+    }
+
+    public static func writeDerivedReport(
+        _ data: Data,
+        inputURL: URL,
+        outputURL: URL,
+        allowReplacingExistingOutput: Bool,
+        fileManager: FileManager = .default
+    ) throws {
+        let canonicalInput = canonicalFileURL(inputURL)
+        let inputIdentity = try fileIdentity(canonicalInput)
+        try writeDerivedReport(
+            data,
+            expectedInputIdentity: descriptorIdentity(inputIdentity),
+            inputURL: inputURL,
+            outputURL: outputURL,
+            allowReplacingExistingOutput: allowReplacingExistingOutput,
+            fileManager: fileManager
+        )
+    }
+
+    private static func writeDerivedReport(
+        _ data: Data,
+        expectedInputIdentity: PassiveBluetoothCaptureArtifactInputIdentity,
+        inputURL: URL,
+        outputURL: URL,
+        allowReplacingExistingOutput: Bool,
+        fileManager: FileManager
     ) throws {
         try validate(
             inputURL: inputURL,
@@ -60,6 +101,13 @@ public enum PassiveBluetoothCaptureArtifactOutputPolicy {
         )
 
         let canonicalInput = canonicalFileURL(inputURL)
+        let currentInputMetadata = try fileIdentity(canonicalInput)
+        guard descriptorIdentity(currentInputMetadata) == expectedInputIdentity else {
+            throw PassiveBluetoothCaptureArtifactOutputPolicyError.inputChangedSinceAdmission(
+                canonicalInput.path
+            )
+        }
+
         let output = outputURL.standardizedFileURL
         let outputName = output.lastPathComponent
         guard !outputName.isEmpty, outputName != ".", outputName != ".." else {
@@ -70,11 +118,10 @@ public enum PassiveBluetoothCaptureArtifactOutputPolicy {
         let parentFD = try openDirectoryCustody(outputParent)
         defer { _ = close(parentFD) }
 
-        let inputIdentity = try fileIdentity(canonicalInput)
         if allowReplacingExistingOutput,
            let outputIdentity = try existingEntryIdentity(parentFD: parentFD, name: outputName),
-           outputIdentity.st_dev == inputIdentity.st_dev,
-           outputIdentity.st_ino == inputIdentity.st_ino {
+           UInt64(outputIdentity.st_dev) == expectedInputIdentity.device,
+           UInt64(outputIdentity.st_ino) == expectedInputIdentity.inode {
             throw PassiveBluetoothCaptureArtifactOutputPolicyError.outputMatchesInput(
                 canonicalInput.path
             )
@@ -109,6 +156,16 @@ public enum PassiveBluetoothCaptureArtifactOutputPolicy {
               (stagedMetadata.st_mode & mode_t(S_IFMT)) == mode_t(S_IFREG),
               stagedMetadata.st_size == off_t(data.count) else {
             throw posixError("verify derived report staging file")
+        }
+
+        // Re-prove the admitted source subject immediately before publication so
+        // a pathname swap after report generation cannot redirect protection to a
+        // different inode while the derived bytes still describe the admitted one.
+        let prePublishInputMetadata = try fileIdentity(canonicalInput)
+        guard descriptorIdentity(prePublishInputMetadata) == expectedInputIdentity else {
+            throw PassiveBluetoothCaptureArtifactOutputPolicyError.inputChangedSinceAdmission(
+                canonicalInput.path
+            )
         }
 
         if allowReplacingExistingOutput {
@@ -201,6 +258,35 @@ public enum PassiveBluetoothCaptureArtifactOutputPolicy {
             throw posixError("verify raw capture subject")
         }
         return metadata
+    }
+
+    private static func descriptorIdentity(
+        _ metadata: stat
+    ) -> PassiveBluetoothCaptureArtifactInputIdentity {
+        #if canImport(Darwin)
+        let modifiedSeconds = Int64(metadata.st_mtimespec.tv_sec)
+        let modifiedNanoseconds = Int64(metadata.st_mtimespec.tv_nsec)
+        let changedSeconds = Int64(metadata.st_ctimespec.tv_sec)
+        let changedNanoseconds = Int64(metadata.st_ctimespec.tv_nsec)
+        #else
+        let modifiedSeconds = Int64(metadata.st_mtim.tv_sec)
+        let modifiedNanoseconds = Int64(metadata.st_mtim.tv_nsec)
+        let changedSeconds = Int64(metadata.st_ctim.tv_sec)
+        let changedNanoseconds = Int64(metadata.st_ctim.tv_nsec)
+        #endif
+
+        return PassiveBluetoothCaptureArtifactInputIdentity(
+            device: UInt64(metadata.st_dev),
+            inode: UInt64(metadata.st_ino),
+            mode: UInt64(metadata.st_mode),
+            ownerUser: UInt64(metadata.st_uid),
+            ownerGroup: UInt64(metadata.st_gid),
+            byteCount: Int64(metadata.st_size),
+            modifiedSeconds: modifiedSeconds,
+            modifiedNanoseconds: modifiedNanoseconds,
+            changedSeconds: changedSeconds,
+            changedNanoseconds: changedNanoseconds
+        )
     }
 
     private static func existingEntryIdentity(parentFD: Int32, name: String) throws -> stat? {
