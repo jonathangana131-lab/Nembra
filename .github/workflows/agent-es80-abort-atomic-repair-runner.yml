@@ -1,0 +1,111 @@
+name: Agent ES80 abort atomic repair runner
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-abort-atomic-current/chatgpt56
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/es80-v14-abort-atomic-current/chatgpt56
+          fetch-depth: 0
+      - name: Apply atomic publication repair
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift')
+          text = path.read_text()
+          old = '''        do {
+            try artifactAuthorityFence.transition(
+                from: previousAuthority,
+                to: freshAuthority
+            )
+            targetSessionGeneration = freshAuthority.targetSessionGeneration
+            artifactAuthorityGeneration = freshAuthority.authorityGeneration
+            recorder = freshSession.recorder
+            hasUsedInitialSessionIdentity = true
+            acquisitionLedger.beginTargetSession()
+            gattIdentityRegistry.reset()
+            selectedTargetCancellationPending = false
+            foregroundEvidenceIntegrityValid = true
+            committedReadyEpoch = nil
+
+            try observationBoundaryQueueGate.reopenAfterAbortedFreshTargetSession(
+                freshSession.receipt,
+                installedRecorder: freshSession.recorder,
+                currentResolvedThroughQueueSequence: lastResolvedEventSequence,
+                currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
+            )
+        } catch {
+            lastDiagnostic = Self.diagnostic(
+                error,
+                fallback: "Abort recovery failed while installing exact fresh capture authority."
+            )
+            throw ControllerError.captureFailed
+        }
+'''
+          new = '''        // Validate the exact queue-gate reopen on a value copy before advancing
+        // the reference-backed canonical authority fence. Once that fence moves,
+        // every mirrored owner publication below is synchronous and non-failable.
+        var reopenedGate = observationBoundaryQueueGate
+        do {
+            try reopenedGate.reopenAfterAbortedFreshTargetSession(
+                freshSession.receipt,
+                installedRecorder: freshSession.recorder,
+                currentResolvedThroughQueueSequence: lastResolvedEventSequence,
+                currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
+            )
+            try artifactAuthorityFence.transition(
+                from: previousAuthority,
+                to: freshAuthority
+            )
+        } catch {
+            lastDiagnostic = Self.diagnostic(
+                error,
+                fallback: "Abort recovery failed while installing exact fresh capture authority."
+            )
+            throw ControllerError.captureFailed
+        }
+
+        targetSessionGeneration = freshAuthority.targetSessionGeneration
+        artifactAuthorityGeneration = freshAuthority.authorityGeneration
+        recorder = freshSession.recorder
+        hasUsedInitialSessionIdentity = true
+        acquisitionLedger.beginTargetSession()
+        gattIdentityRegistry.reset()
+        selectedTargetCancellationPending = false
+        foregroundEvidenceIntegrityValid = true
+        committedReadyEpoch = nil
+        observationBoundaryQueueGate = reopenedGate
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one abort publication block, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Verify and checkpoint product tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          controller=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          testfile=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerAbortRecoveryAtomicityDiagnosticTests.swift
+          grep -F 'var reopenedGate = observationBoundaryQueueGate' "$controller"
+          grep -F 'try reopenedGate.reopenAfterAbortedFreshTargetSession(' "$controller"
+          grep -F 'try artifactAuthorityFence.transition(' "$controller"
+          grep -F 'observationBoundaryQueueGate = reopenedGate' "$controller"
+          grep -F 'queueGateMustPreflightBeforeIrreversibleAuthorityTransition' "$testfile"
+          git diff --check
+          rm .github/workflows/agent-es80-abort-atomic-repair-runner.yml
+          rm -f .github/workflows/agent-es80-abort-atomic-current.yml
+          git config user.name 'nembra-go-worker'
+          git config user.email 'actions@users.noreply.github.com'
+          git add "$controller" "$testfile" .github/workflows/agent-es80-abort-atomic-repair-runner.yml .github/workflows/agent-es80-abort-atomic-current.yml
+          git commit -m 'fix(capture): make abort recovery publication failure-atomic'
+          git push origin HEAD:integration/es80-v14-abort-atomic-current/chatgpt56
