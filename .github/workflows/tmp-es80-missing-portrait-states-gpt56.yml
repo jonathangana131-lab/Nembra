@@ -1,0 +1,54 @@
+name: Temporary ES80 missing portrait states patch
+
+on:
+  push:
+    branches:
+      - test/es80-v14-missing-portrait-states/gpt56-thinking
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact visual parent
+        run: test "$(git rev-parse HEAD^)" = "d6f8d13e0859740f2d151ce9e5bc0ebaa8e9459f"
+
+      - name: Add only uncovered portrait states
+        env:
+          TEST_B64: "ICAgIEBNYWluQWN0b3IKICAgIGZ1bmMgdGVzdFYxNFNpbXVsYXRvclFBUmV0YWluc1ByZXZpb3VzbHlVbmNvdmVyZWRQb3J0cmFpdFN0YXRlcygpIHsKICAgICAgICBzdHJ1Y3QgU2NlbmFyaW8gewogICAgICAgICAgICBsZXQgcmF3VmFsdWU6IFN0cmluZwogICAgICAgICAgICBsZXQgYXR0YWNobWVudE5hbWU6IFN0cmluZwogICAgICAgICAgICBsZXQgc3RhYmxlRWxlbWVudElkZW50aWZpZXI6IFN0cmluZwogICAgICAgICAgICBsZXQgc3RhYmxlVGV4dDogU3RyaW5nCiAgICAgICAgfQoKICAgICAgICBsZXQgc2NlbmFyaW9zOiBbU2NlbmFyaW9dID0gWwogICAgICAgICAgICAuaW5pdCgKICAgICAgICAgICAgICAgIHJhd1ZhbHVlOiAiZmlyc3RQb3dlcmVkT2ZmIiwKICAgICAgICAgICAgICAgIGF0dGFjaG1lbnROYW1lOiAiT0ZGIDEgUmVhZHkiLAogICAgICAgICAgICAgICAgc3RhYmxlRWxlbWVudElkZW50aWZpZXI6ICJlczgwLmNhcHR1cmUuYmVnaW4td2luZG93IiwKICAgICAgICAgICAgICAgIHN0YWJsZVRleHQ6ICJTY29vdGVyIE9GRiIKICAgICAgICAgICAgKSwKICAgICAgICAgICAgLmluaXQoCiAgICAgICAgICAgICAgICByYXdWYWx1ZTogImZpcnN0UG93ZXJlZE9uIiwKICAgICAgICAgICAgICAgIGF0dGFjaG1lbnROYW1lOiAiT04gMSBSZWFkeSIsCiAgICAgICAgICAgICAgICBzdGFibGVFbGVtZW50SWRlbnRpZmllcjogImVzODAuY2FwdHVyZS5iZWdpbi13aW5kb3ciLAogICAgICAgICAgICAgICAgc3RhYmxlVGV4dDogIlNjb290ZXIgT04iCiAgICAgICAgICAgICksCiAgICAgICAgICAgIC5pbml0KAogICAgICAgICAgICAgICAgcmF3VmFsdWU6ICJ0YXJnZXRDb25maXJtYXRpb24iLAogICAgICAgICAgICAgICAgYXR0YWNobWVudE5hbWU6ICJUYXJnZXQgQ29uZmlybWF0aW9uIiwKICAgICAgICAgICAgICAgIHN0YWJsZUVsZW1lbnRJZGVudGlmaWVyOiAiZXM4MC5jYXB0dXJlLmNvbmZpcm0tY29ycmVsYXRlZC10YXJnZXQiLAogICAgICAgICAgICAgICAgc3RhYmxlVGV4dDogIk9uZSB0YXJnZXQgcmVwZWF0ZWQgdHdpY2UiCiAgICAgICAgICAgICksCiAgICAgICAgICAgIC5pbml0KAogICAgICAgICAgICAgICAgcmF3VmFsdWU6ICJvYnNlcnZhdGlvblJlYWR5IiwKICAgICAgICAgICAgICAgIGF0dGFjaG1lbnROYW1lOiAiT2JzZXJ2YXRpb24gUmVhZHkiLAogICAgICAgICAgICAgICAgc3RhYmxlRWxlbWVudElkZW50aWZpZXI6ICJlczgwLmNhcHR1cmUuZmluaXNoIiwKICAgICAgICAgICAgICAgIHN0YWJsZVRleHQ6ICJPQlNFUlZBVElPTiBSRUFEWSIKICAgICAgICAgICAgKQogICAgICAgIF0KCiAgICAgICAgZm9yIHNjZW5hcmlvIGluIHNjZW5hcmlvcyB7CiAgICAgICAgICAgIGxldCBhcHAgPSBYQ1VJQXBwbGljYXRpb24oKQogICAgICAgICAgICBhcHAubGF1bmNoQXJndW1lbnRzID0gWwogICAgICAgICAgICAgICAgIi0tZXM4MC1wYXNzaXZlLWNhcHR1cmUtc2ltdWxhdG9yLXFhIiwKICAgICAgICAgICAgICAgICItLWVzODAtY2FwdHVyZS1xYS1zY2VuYXJpbz1cKHNjZW5hcmlvLnJhd1ZhbHVlKSIKICAgICAgICAgICAgXQogICAgICAgICAgICBhcHAubGF1bmNoKCkKCiAgICAgICAgICAgIFhDVEFzc2VydFRydWUoCiAgICAgICAgICAgICAgICBhcHAuZGVzY2VuZGFudHMobWF0Y2hpbmc6IC5hbnkpWyJlczgwLmNhcHR1cmUtc2hlbGwiXS53YWl0Rm9yRXhpc3RlbmNlKHRpbWVvdXQ6IDUpLAogICAgICAgICAgICAgICAgIlwoc2NlbmFyaW8ucmF3VmFsdWUpIG11c3QgcmVuZGVyIHRocm91Z2ggdGhlIHJlYWwgQ2FwdHVyZSBzaGVsbC4iCiAgICAgICAgICAgICkKICAgICAgICAgICAgWENUQXNzZXJ0VHJ1ZSgKICAgICAgICAgICAgICAgIGFwcC5kZXNjZW5kYW50cyhtYXRjaGluZzogLmFueSlbImVzODAuY2FwdHVyZS5zaW11bGF0b3ItcWEiXS53YWl0Rm9yRXhpc3RlbmNlKHRpbWVvdXQ6IDMpLAogICAgICAgICAgICAgICAgIlwoc2NlbmFyaW8ucmF3VmFsdWUpIG11c3QgcmV0YWluIHRoZSBzeW50aGV0aWMvbm9uLWF1dGhvcml6aW5nIFFBIGRpc2Nsb3N1cmUuIgogICAgICAgICAgICApCiAgICAgICAgICAgIFhDVEFzc2VydFRydWUoCiAgICAgICAgICAgICAgICBhcHAuZGVzY2VuZGFudHMobWF0Y2hpbmc6IC5hbnkpW3NjZW5hcmlvLnN0YWJsZUVsZW1lbnRJZGVudGlmaWVyXS53YWl0Rm9yRXhpc3RlbmNlKHRpbWVvdXQ6IDMpLAogICAgICAgICAgICAgICAgIlwoc2NlbmFyaW8ucmF3VmFsdWUpIG11c3QgZXhwb3NlIGl0cyBleHBlY3RlZCBzdGFibGUgQ2FwdHVyZSBhY3Rpb24vc3RhdGUuIgogICAgICAgICAgICApCiAgICAgICAgICAgIFhDVEFzc2VydFRydWUoCiAgICAgICAgICAgICAgICBhcHAuc3RhdGljVGV4dHNbc2NlbmFyaW8uc3RhYmxlVGV4dF0ud2FpdEZvckV4aXN0ZW5jZSh0aW1lb3V0OiAzKSwKICAgICAgICAgICAgICAgICJcKHNjZW5hcmlvLnJhd1ZhbHVlKSBtdXN0IHJlbmRlciBpdHMgZXhwZWN0ZWQgcmlkZXItZmFjaW5nIHN0YXRlLiIKICAgICAgICAgICAgKQogICAgICAgICAgICBYQ1RBc3NlcnRGYWxzZSgKICAgICAgICAgICAgICAgIGFwcC5kZXNjZW5kYW50cyhtYXRjaGluZzogLmFueSlbImVzODAuY2FwdHVyZS5maWVsZC1uby1nbyJdLmV4aXN0cywKICAgICAgICAgICAgICAgICJTeW50aGV0aWMgUUEgbXVzdCBleGVyY2lzZSB0aGUgcmVhbCBwcmVzZW50YXRpb24gc3RhdGUgaW5zdGVhZCBvZiB0aGUgZmllbGQtbG9jayBzdXJmYWNlLiIKICAgICAgICAgICAgKQogICAgICAgICAgICBYQ1RBc3NlcnRGYWxzZSgKICAgICAgICAgICAgICAgIGFwcC5idXR0b25zWyJWZWhpY2xlIGNvbnRyb2xzIl0uZXhpc3RzLAogICAgICAgICAgICAgICAgIkNhcHR1cmUgUUEgbXVzdCBuZXZlciBleHBvc2UgdGhlIG9yZGluYXJ5IHZlaGljbGUtY29udHJvbCBzdXJmYWNlLiIKICAgICAgICAgICAgKQoKICAgICAgICAgICAgbGV0IGF0dGFjaG1lbnQgPSBYQ1RBdHRhY2htZW50KHNjcmVlbnNob3Q6IGFwcC5zY3JlZW5zaG90KCkpCiAgICAgICAgICAgIGF0dGFjaG1lbnQubmFtZSA9ICJOZW1icmEgQ2FwdHVyZSBWMTQg4oCUIFNJTVVMQVRPUiBRQSDigJQgXChzY2VuYXJpby5hdHRhY2htZW50TmFtZSkg4oCUIFBvcnRyYWl0IgogICAgICAgICAgICBhdHRhY2htZW50LmxpZmV0aW1lID0gLmtlZXBBbHdheXMKICAgICAgICAgICAgYWRkKGF0dGFjaG1lbnQpCiAgICAgICAgICAgIGFwcC50ZXJtaW5hdGUoKQogICAgICAgIH0KICAgIH0KCg=="
+        run: |
+          python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+          path = Path("NembraUITests/ES80ResearchCaptureUITests.swift")
+          source = path.read_text(encoding="utf-8")
+          marker = "    func testSimulatorQAAppSeamIsCompileBoundedAndProductionRouteRemainsLocked() throws {"
+          test = base64.b64decode(os.environ["TEST_B64"]).decode("utf-8")
+          if marker not in source:
+              raise SystemExit("expected Simulator QA source-contract marker not found")
+          if "testV14SimulatorQARetainsPreviouslyUncoveredPortraitStates" in source:
+              raise SystemExit("missing-state visual gate already exists")
+          path.write_text(source.replace(marker, test + marker, 1), encoding="utf-8")
+          PY
+
+      - name: Verify exact scope
+        run: |
+          git diff --check
+          test "$(git diff --name-only)" = "NembraUITests/ES80ResearchCaptureUITests.swift"
+
+      - name: Commit test and self-delete transformer
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/tmp-es80-missing-portrait-states-gpt56.yml
+          git add NembraUITests/ES80ResearchCaptureUITests.swift
+          git commit -m "Capture visual QA: retain missing portrait states"
+          git push origin HEAD:test/es80-v14-missing-portrait-states/gpt56-thinking
