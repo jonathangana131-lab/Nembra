@@ -136,15 +136,23 @@ jobs:
           path.write_text(source, encoding="utf-8")
           PY
 
-      - name: Run focused portable custody checks
-        shell: bash
-        run: |
-          bash -n scripts/ci/xcode27_signed_field_candidate.sh
-          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py
-          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
-          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
-          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device_source.py
-          git diff --check
+      - name: Bash syntax
+        run: bash -n scripts/ci/xcode27_signed_field_candidate.sh
+
+      - name: Descriptor custody contract
+        run: python3 scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py
+
+      - name: Python custody contract
+        run: python3 scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
+
+      - name: Producer source contract
+        run: python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+
+      - name: Intended-device source contract
+        run: python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device_source.py
+
+      - name: Diff hygiene
+        run: git diff --check
 
       - name: Commit hardening and self-delete transformer
         shell: bash
