@@ -31,6 +31,7 @@ AUTHORIZATION_PAYLOAD_SCHEMA_VERSION = 2
 DECISION = "GO"
 MAX_SUBJECT_BYTES = 1024 * 1024
 MAX_PRIVATE_KEY_BYTES = 64 * 1024
+OPENSSL_COMMAND_TIMEOUT_SECONDS = 30
 DEFAULT_SELF_TEST_OPENSSL = Path("/usr/bin/openssl")
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -178,6 +179,22 @@ def require_openssl(path: Path) -> str:
     return str(resolved)
 
 
+def controlled_openssl_environment() -> dict[str, str]:
+    """Return the complete closed environment inherited by every OpenSSL subprocess.
+
+    The signer must not inherit caller-controlled OpenSSL config/provider/engine variables or
+    dynamic-loader injection variables. The absolute executable path is already selected, but a
+    closed minimal environment also prevents ambient process state from changing the executable's
+    signing behavior after custody review.
+    """
+    return {
+        "PATH": "/usr/bin:/bin",
+        "LANG": "C",
+        "LC_ALL": "C",
+        "OPENSSL_CONF": "/dev/null",
+    }
+
+
 def run_openssl(
     openssl: str,
     arguments: list[str],
@@ -189,16 +206,25 @@ def run_openssl(
         completed = subprocess.run(
             [openssl, *arguments],
             check=False,
-            stdout=subprocess.PIPE if capture_stdout else None,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=controlled_openssl_environment(),
+            cwd="/",
+            timeout=OPENSSL_COMMAND_TIMEOUT_SECONDS,
             pass_fds=pass_fds,
         )
+    except subprocess.TimeoutExpired as exc:
+        raise AuthorizationEnvelopeError("OpenSSL command exceeded its execution deadline") from exc
     except OSError as exc:
         raise AuthorizationEnvelopeError("could not execute OpenSSL") from exc
     if completed.returncode != 0:
         raise AuthorizationEnvelopeError(
             f"OpenSSL command failed with status {completed.returncode}"
         )
-    return completed.stdout or b""
+    if capture_stdout:
+        return completed.stdout or b""
+    return b""
 
 
 def snapshot_private_key(openssl: str, private_key_path: Path, directory: Path) -> Path:
