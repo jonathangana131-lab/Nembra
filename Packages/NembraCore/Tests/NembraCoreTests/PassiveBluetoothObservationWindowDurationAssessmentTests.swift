@@ -30,6 +30,7 @@ struct PassiveBluetoothObservationWindowDurationAssessmentTests {
         #expect(assessment.observedDurationNanoseconds == 60_000_000_000)
         #expect(assessment.readyBoundary?.recordSequenceWatermark == 0)
         #expect(assessment.horizonBoundary?.recordSequenceWatermark == 0)
+        #expect(assessment.continuityBreakSequenceNumbers.isEmpty)
         #expect(session.records.isEmpty)
     }
 
@@ -52,25 +53,26 @@ struct PassiveBluetoothObservationWindowDurationAssessmentTests {
         #expect(assessment.observedDurationNanoseconds == 59_000_000_000)
     }
 
-    @Test("latest ready boundary conservatively resets the duration window")
-    func latestReadyBoundaryWins() throws {
+    @Test("duplicate ready boundaries are ambiguous instead of silently choosing one")
+    func duplicateReadyFailsClosed() throws {
         let firstReady = boundary(.finiteAcquisitionReady, uptime: 1_000, date: 7_000)
-        let latestReady = boundary(.finiteAcquisitionReady, uptime: 55_000_001_000, date: 7_055)
+        let secondReady = boundary(.finiteAcquisitionReady, uptime: 55_000_001_000, date: 7_055)
         let horizon = boundary(.observationHorizon, uptime: 60_000_001_000, date: 7_060)
-        let session = try makeSession(boundaries: [firstReady, latestReady, horizon])
+        let session = try makeSession(boundaries: [firstReady, secondReady, horizon])
 
         let assessment = PassiveBluetoothObservationWindowDurationAssessment.assess(
             session: session,
             minimumDurationNanoseconds: 60_000_000_000
         )
 
-        #expect(assessment.status == .insufficientDuration)
-        #expect(assessment.readyBoundary == latestReady)
+        #expect(assessment.status == .ambiguousFiniteAcquisitionReady)
+        #expect(!assessment.isSufficient)
+        #expect(assessment.readyBoundary == nil)
         #expect(assessment.horizonBoundary == horizon)
-        #expect(assessment.observedDurationNanoseconds == 5_000_000_000)
+        #expect(assessment.observedDurationNanoseconds == nil)
     }
 
-    @Test("missing ready evidence is reported explicitly")
+    @Test("horizon without ready evidence fails closed")
     func missingReadyFailsClosed() throws {
         let horizon = boundary(.observationHorizon, uptime: 60_000_000_000, date: 8_060)
         let session = try makeSession(boundaries: [horizon])
@@ -87,7 +89,7 @@ struct PassiveBluetoothObservationWindowDurationAssessmentTests {
         #expect(assessment.observedDurationNanoseconds == nil)
     }
 
-    @Test("missing horizon evidence is reported explicitly")
+    @Test("missing horizon evidence fails closed")
     func missingHorizonFailsClosed() throws {
         let ready = boundary(.finiteAcquisitionReady, uptime: 1_000, date: 9_000)
         let session = try makeSession(boundaries: [ready])
@@ -104,10 +106,66 @@ struct PassiveBluetoothObservationWindowDurationAssessmentTests {
         #expect(assessment.observedDurationNanoseconds == nil)
     }
 
+    @Test("known byte-continuity break inside the interval blocks sufficiency")
+    func continuityBreakInsideWindowFailsClosed() throws {
+        let interruption = PassiveBluetoothCaptureRecord(
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 30_000_000_000,
+            receivedAtDate: Date(timeIntervalSince1970: 10_030),
+            event: .interruption(
+                try PassiveBluetoothCaptureInterruption(reason: "GATT invalidated; reacquisition required")
+            )
+        )
+        let ready = boundary(.finiteAcquisitionReady, watermark: 0, uptime: 1_000, date: 10_000)
+        let horizon = boundary(
+            .observationHorizon,
+            watermark: 1,
+            uptime: 60_000_001_000,
+            date: 10_060
+        )
+        let session = try makeSession(records: [interruption], boundaries: [ready, horizon])
+
+        let assessment = PassiveBluetoothObservationWindowDurationAssessment.assess(
+            session: session,
+            minimumDurationNanoseconds: 60_000_000_000
+        )
+
+        #expect(assessment.status == .continuityBreakWithinWindow)
+        #expect(!assessment.isSufficient)
+        #expect(assessment.observedDurationNanoseconds == 60_000_000_000)
+        #expect(assessment.continuityBreakSequenceNumbers == [1])
+    }
+
+    @Test("continuity break already sealed before ready does not poison the new interval")
+    func priorContinuityBreakIsOutsideWindow() throws {
+        let priorInterruption = PassiveBluetoothCaptureRecord(
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 500,
+            receivedAtDate: Date(timeIntervalSince1970: 11_000),
+            event: .interruption(try PassiveBluetoothCaptureInterruption(reason: "prior capture gap"))
+        )
+        let ready = boundary(.finiteAcquisitionReady, watermark: 1, uptime: 1_000, date: 11_001)
+        let horizon = boundary(
+            .observationHorizon,
+            watermark: 1,
+            uptime: 60_000_001_000,
+            date: 11_061
+        )
+        let session = try makeSession(records: [priorInterruption], boundaries: [ready, horizon])
+
+        let assessment = PassiveBluetoothObservationWindowDurationAssessment.assess(
+            session: session,
+            minimumDurationNanoseconds: 60_000_000_000
+        )
+
+        #expect(assessment.status == .sufficient)
+        #expect(assessment.continuityBreakSequenceNumbers.isEmpty)
+    }
+
     @Test("zero minimum cannot accidentally disable the gate")
     func zeroMinimumFailsClosed() throws {
-        let ready = boundary(.finiteAcquisitionReady, uptime: 1_000, date: 10_000)
-        let horizon = boundary(.observationHorizon, uptime: 2_000, date: 10_001)
+        let ready = boundary(.finiteAcquisitionReady, uptime: 1_000, date: 12_000)
+        let horizon = boundary(.observationHorizon, uptime: 2_000, date: 12_001)
         let session = try makeSession(boundaries: [ready, horizon])
 
         let assessment = PassiveBluetoothObservationWindowDurationAssessment.assess(
@@ -141,24 +199,27 @@ struct PassiveBluetoothObservationWindowDurationAssessmentTests {
     }
 
     private func makeSession(
+        records: [PassiveBluetoothCaptureRecord] = [],
         boundaries: [PassiveBluetoothObservationBoundary]
     ) throws -> PassiveBluetoothCaptureSession {
         try PassiveBluetoothCaptureSession(
             id: UUID(uuidString: "00000000-0000-0000-0000-000000000363")!,
             vehicleIdentity: es80,
             startedAt: Date(timeIntervalSince1970: 4_000),
+            records: records,
             observationBoundaries: boundaries
         )
     }
 
     private func boundary(
         _ kind: PassiveBluetoothObservationBoundaryKind,
+        watermark: UInt64 = 0,
         uptime: UInt64,
         date: TimeInterval
     ) -> PassiveBluetoothObservationBoundary {
         PassiveBluetoothObservationBoundary(
             kind: kind,
-            recordSequenceWatermark: 0,
+            recordSequenceWatermark: watermark,
             observedAtUptimeNanoseconds: uptime,
             observedAtDate: Date(timeIntervalSince1970: date)
         )
