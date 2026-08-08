@@ -1,0 +1,31 @@
+name: V14 narrow staging preview b818
+
+on:
+  push:
+    branches:
+      - feature/es80-v14-narrow-staging-preview-b818/gpt56-thinking
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply product repair
+        run: python3 scripts/ci/v14_narrow_staging_preview_b818_patch.py
+      - name: Validate and publish clean product tree
+        run: |
+          set -euo pipefail
+          git diff --check
+          rm .github/workflows/v14-narrow-staging-preview-b818.yml
+          rm scripts/ci/v14_narrow_staging_preview_b818_patch.py
+          git add -A
+          git diff --cached --check
+          git config user.name nembra-v14-gpt56
+          git config user.email actions@users.noreply.github.com
+          git commit -m "Capture: narrow recoverable admission staging authority"
+          git push origin HEAD:feature/es80-v14-narrow-staging-preview-b818/gpt56-thinking
