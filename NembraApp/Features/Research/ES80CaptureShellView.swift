@@ -52,6 +52,7 @@ struct ES80CaptureShellView: View {
     private static let requiredObservationGuidanceNanoseconds: UInt64 = 60_000_000_000
 
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var coordinator: PassiveBluetoothExperimentOneCoordinator
     @State private var observedScanBeganAtUptimeNanoseconds: UInt64?
@@ -190,21 +191,41 @@ struct ES80CaptureShellView: View {
                 Spacer(minLength: 0)
             }
 
-            HStack(spacing: 10) {
-                Image(systemName: statusSymbol(for: phase))
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(statusColor(for: phase))
-                    .accessibilityHidden(true)
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Image(systemName: statusSymbol(for: phase))
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(statusColor(for: phase))
+                            .accessibilityHidden(true)
 
-                Text(statusTitle(for: phase))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
+                        Text(statusTitle(for: phase))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
-                Spacer(minLength: 8)
+                    Text("PASSIVE / READ ONLY")
+                        .font(.caption2.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                HStack(spacing: 10) {
+                    Image(systemName: statusSymbol(for: phase))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(statusColor(for: phase))
+                        .accessibilityHidden(true)
 
-                Text("PASSIVE / READ ONLY")
-                    .font(.caption2.monospaced().weight(.bold))
-                    .foregroundStyle(.secondary)
+                    Text(statusTitle(for: phase))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+
+                    Spacer(minLength: 8)
+
+                    Text("PASSIVE / READ ONLY")
+                        .font(.caption2.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -261,46 +282,80 @@ struct ES80CaptureShellView: View {
     ) -> some View {
         let completed = presentationCompletedWindows(status: status)
         let current = presentationCurrentWindow(status: status)
+        let labels = ["OFF 1", "ON 1", "OFF 2", "ON 2", "READY", "SEAL"]
 
         return VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("CAPTURE PROGRESS")
-                    .font(.caption.monospaced().weight(.bold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(progressStage(status: status, completedWindows: completed))
-                    .font(.caption.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-
-            HStack(spacing: 6) {
-                ForEach(0..<6, id: \.self) { index in
-                    Capsule(style: .continuous)
-                        .fill(progressSegmentFill(
-                            index: index,
-                            completedWindows: completed,
-                            currentWindow: current,
-                            status: status
-                        ))
-                        .frame(height: 5)
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("CAPTURE PROGRESS")
+                        .font(.caption.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+                    Text(progressStage(status: status, completedWindows: completed))
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.secondary)
                 }
-            }
 
-            HStack {
-                Text("OFF 1")
-                Spacer()
-                Text("ON 1")
-                Spacer()
-                Text("OFF 2")
-                Spacer()
-                Text("ON 2")
-                Spacer()
-                Text("READY")
-                Spacer()
-                Text("SEAL")
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3),
+                    spacing: 12
+                ) {
+                    ForEach(0..<6, id: \.self) { index in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Capsule(style: .continuous)
+                                .fill(progressSegmentFill(
+                                    index: index,
+                                    completedWindows: completed,
+                                    currentWindow: current,
+                                    status: status
+                                ))
+                                .frame(height: 5)
+                            Text(labels[index])
+                                .font(.caption2.monospaced().weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            } else {
+                HStack {
+                    Text("CAPTURE PROGRESS")
+                        .font(.caption.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(progressStage(status: status, completedWindows: completed))
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack(spacing: 6) {
+                    ForEach(0..<6, id: \.self) { index in
+                        Capsule(style: .continuous)
+                            .fill(progressSegmentFill(
+                                index: index,
+                                completedWindows: completed,
+                                currentWindow: current,
+                                status: status
+                            ))
+                            .frame(height: 5)
+                    }
+                }
+
+                HStack {
+                    Text("OFF 1")
+                    Spacer()
+                    Text("ON 1")
+                    Spacer()
+                    Text("OFF 2")
+                    Spacer()
+                    Text("ON 2")
+                    Spacer()
+                    Text("READY")
+                    Spacer()
+                    Text("SEAL")
+                }
+                .font(.caption2.monospaced().weight(.semibold))
+                .foregroundStyle(.secondary)
             }
-            .font(.caption2.monospaced().weight(.semibold))
-            .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
@@ -736,12 +791,24 @@ struct ES80CaptureShellView: View {
         let observationReady = presentationObservationReady(status: status)
         let horizonReady = presentationCanFinalizeObservationHorizon(status: status)
 
-        return HStack(spacing: 12) {
-            healthItem("TARGET", value: connection == .connected ? "BOUND" : "WAIT")
-            Divider().frame(height: 28).overlay(.white.opacity(0.12))
-            healthItem("DISCOVERY", value: observationReady ? "READY" : "WAIT")
-            Divider().frame(height: 28).overlay(.white.opacity(0.12))
-            healthItem("SEAL", value: horizonReady ? "READY" : "HOLD")
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    healthItem("TARGET", value: connection == .connected ? "BOUND" : "WAIT")
+                    Divider().overlay(.white.opacity(0.12))
+                    healthItem("DISCOVERY", value: observationReady ? "READY" : "WAIT")
+                    Divider().overlay(.white.opacity(0.12))
+                    healthItem("SEAL", value: horizonReady ? "READY" : "HOLD")
+                }
+            } else {
+                HStack(spacing: 12) {
+                    healthItem("TARGET", value: connection == .connected ? "BOUND" : "WAIT")
+                    Divider().frame(height: 28).overlay(.white.opacity(0.12))
+                    healthItem("DISCOVERY", value: observationReady ? "READY" : "WAIT")
+                    Divider().frame(height: 28).overlay(.white.opacity(0.12))
+                    healthItem("SEAL", value: horizonReady ? "READY" : "HOLD")
+                }
+            }
         }
         .padding(14)
         .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
