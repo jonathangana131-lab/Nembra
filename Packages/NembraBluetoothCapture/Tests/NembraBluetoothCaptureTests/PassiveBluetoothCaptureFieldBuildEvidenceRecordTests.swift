@@ -12,7 +12,7 @@ struct PassiveBluetoothCaptureFieldBuildEvidenceRecordTests {
     private let signedInstallableSHA256 = String(repeating: "c", count: 64)
 
     @Test
-    func canonicalEvidenceBindsExactExternalRecordAndProjectsBuildReference() throws {
+    func producerShapeBindsExactExternalRecordAndProjectsBuildReference() throws {
         let externalData = try makeExternalRecordJSON()
         let externalRecord = try PassiveBluetoothCaptureExternalBuildRecordJSON.decodeDeclaration(externalData)
         let evidenceData = try makeEvidenceJSON(externalBuildRecordSHA256: sha256Hex(externalData))
@@ -24,10 +24,17 @@ struct PassiveBluetoothCaptureFieldBuildEvidenceRecordTests {
         #expect(evidence.externalBuildRecordSHA256 == sha256Hex(externalData))
         #expect(evidence.signedInstallableSHA256 == signedInstallableSHA256)
         #expect(evidence.signedInstallableKind == "ipa")
+        #expect(evidence.signedInstallableByteCount == 123_456)
         #expect(evidence.schemaVersion == 1)
+        #expect(evidence.authority == "signed-field-artifact-evidence-not-field-authorization")
         #expect(evidence.buildIdentifier == buildIdentifier)
         #expect(evidence.buildInstanceID == buildInstanceID)
         #expect(evidence.sourceCommitSHA == sourceCommitSHA)
+        #expect(evidence.bundleIdentifier == "com.jonathangana131.nembra")
+        #expect(evidence.platformName == "iphoneos")
+        #expect(evidence.supportedPlatforms == ["iPhoneOS"])
+        #expect(evidence.teamIdentifier == "ABCDE12345")
+        #expect(evidence.signingAuthorities == ["Apple Development: Nembra Test"])
         #expect(evidence.executableSHA256 == executableSHA256)
         #expect(evidence.infoPlistSHA256 == infoPlistSHA256)
         #expect(evidence.experimentRecipeID == .es80FingerprintV1)
@@ -101,7 +108,57 @@ struct PassiveBluetoothCaptureFieldBuildEvidenceRecordTests {
     }
 
     @Test
-    func malformedHashesKindRecipeAndProcedureFailClosed() throws {
+    func producerAuthorityAndDeviceShapeFailClosedWhenDetached() throws {
+        let externalData = try makeExternalRecordJSON()
+        let externalDigest = sha256Hex(externalData)
+
+        #expect(
+            throws: PassiveBluetoothCaptureFieldBuildEvidenceRecordError.unsupportedAuthority("field-go")
+        ) {
+            _ = try PassiveBluetoothCaptureFieldBuildEvidenceRecordJSON.decodeDeclaration(
+                try makeEvidenceJSON(
+                    externalBuildRecordSHA256: externalDigest,
+                    overrides: ["authority": "field-go"]
+                )
+            )
+        }
+
+        #expect(
+            throws: PassiveBluetoothCaptureFieldBuildEvidenceRecordError
+                .unsupportedBundleIdentifier("com.example.detached")
+        ) {
+            _ = try PassiveBluetoothCaptureFieldBuildEvidenceRecordJSON.decodeDeclaration(
+                try makeEvidenceJSON(
+                    externalBuildRecordSHA256: externalDigest,
+                    overrides: ["bundleIdentifier": "com.example.detached"]
+                )
+            )
+        }
+
+        #expect(
+            throws: PassiveBluetoothCaptureFieldBuildEvidenceRecordError
+                .unsupportedPlatformName("iphonesimulator")
+        ) {
+            _ = try PassiveBluetoothCaptureFieldBuildEvidenceRecordJSON.decodeDeclaration(
+                try makeEvidenceJSON(
+                    externalBuildRecordSHA256: externalDigest,
+                    overrides: ["platformName": "iphonesimulator"]
+                )
+            )
+        }
+
+        #expect(throws: PassiveBluetoothCaptureFieldBuildEvidenceRecordError.invalidSupportedPlatforms) {
+            _ = try PassiveBluetoothCaptureFieldBuildEvidenceRecordJSON.decodeDeclaration(
+                try makeEvidenceJSON(
+                    externalBuildRecordSHA256: externalDigest,
+                    overrides: ["supportedPlatforms": ["iPhoneSimulator"]]
+                )
+            )
+        }
+    }
+
+    @Test
+    func malformedProducerEvidenceFailsClosed() throws {
         let externalData = try makeExternalRecordJSON()
         let externalDigest = sha256Hex(externalData)
 
@@ -117,19 +174,37 @@ struct PassiveBluetoothCaptureFieldBuildEvidenceRecordTests {
             _ = try PassiveBluetoothCaptureFieldBuildEvidenceRecordJSON.decodeDeclaration(
                 try makeEvidenceJSON(
                     externalBuildRecordSHA256: externalDigest,
-                    overrides: ["signedInstallableSHA256": String(repeating: "z", count: 64)]
+                    overrides: ["ipaSHA256": String(repeating: "z", count: 64)]
                 )
             )
         }
 
         #expect(
             throws: PassiveBluetoothCaptureFieldBuildEvidenceRecordError
-                .unsupportedSignedInstallableKind("app")
+                .invalidSignedInstallableByteCount(0)
         ) {
             _ = try PassiveBluetoothCaptureFieldBuildEvidenceRecordJSON.decodeDeclaration(
                 try makeEvidenceJSON(
                     externalBuildRecordSHA256: externalDigest,
-                    overrides: ["signedInstallableKind": "app"]
+                    overrides: ["ipaByteCount": 0]
+                )
+            )
+        }
+
+        #expect(throws: PassiveBluetoothCaptureFieldBuildEvidenceRecordError.invalidTeamIdentifier) {
+            _ = try PassiveBluetoothCaptureFieldBuildEvidenceRecordJSON.decodeDeclaration(
+                try makeEvidenceJSON(
+                    externalBuildRecordSHA256: externalDigest,
+                    overrides: ["teamIdentifier": "not set"]
+                )
+            )
+        }
+
+        #expect(throws: PassiveBluetoothCaptureFieldBuildEvidenceRecordError.invalidSigningAuthorities) {
+            _ = try PassiveBluetoothCaptureFieldBuildEvidenceRecordJSON.decodeDeclaration(
+                try makeEvidenceJSON(
+                    externalBuildRecordSHA256: externalDigest,
+                    overrides: ["signingAuthorities": []]
                 )
             )
         }
@@ -167,6 +242,7 @@ struct PassiveBluetoothCaptureFieldBuildEvidenceRecordTests {
         )
 
         #expect(evidence.experimentRecipeID == PassiveBluetoothExperimentOneFieldExecutionGate.recipeID)
+        #expect(evidence.authority == PassiveBluetoothCaptureFieldBuildEvidenceRecord.requiredAuthority)
         #expect(PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure == false)
         #expect(
             PassiveBluetoothExperimentOneFieldExecutionGate.status
@@ -180,14 +256,20 @@ struct PassiveBluetoothCaptureFieldBuildEvidenceRecordTests {
     ) throws -> Data {
         var object: [String: Any] = [
             "schemaVersion": 1,
-            "externalBuildRecordSHA256": externalBuildRecordSHA256,
-            "signedInstallableSHA256": signedInstallableSHA256,
-            "signedInstallableKind": "ipa",
+            "authority": "signed-field-artifact-evidence-not-field-authorization",
             "buildIdentifier": buildIdentifier,
             "buildInstanceID": buildInstanceID,
             "sourceCommitSHA": sourceCommitSHA,
+            "bundleIdentifier": "com.jonathangana131.nembra",
+            "platformName": "iphoneos",
+            "supportedPlatforms": ["iPhoneOS"],
+            "teamIdentifier": "ABCDE12345",
+            "signingAuthorities": ["Apple Development: Nembra Test"],
+            "ipaSHA256": signedInstallableSHA256,
+            "ipaByteCount": 123_456,
             "executableSHA256": executableSHA256,
             "infoPlistSHA256": infoPlistSHA256,
+            "externalBuildRecordSHA256": externalBuildRecordSHA256,
             "experimentRecipeID": "ES80-FINGERPRINT-v1",
             "procedureVersion": "V14",
         ]
