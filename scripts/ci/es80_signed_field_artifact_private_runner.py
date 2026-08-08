@@ -12,11 +12,13 @@ This is still evidence production only. It cannot authorize physical Experiment 
 from __future__ import annotations
 
 import argparse
+import io
 import importlib.util
 import os
 import stat
 import sys
 import tempfile
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import ModuleType
 
@@ -91,6 +93,22 @@ def load_canonical_inspector() -> ModuleType:
     return module
 
 
+def invoke_inspector_redacted(inspector: ModuleType, inspector_arguments: list[str]) -> int:
+    """Invoke inspector while containing every output path that can observe the private argv."""
+    inspector_stdout = io.StringIO()
+    inspector_stderr = io.StringIO()
+    try:
+        with redirect_stdout(inspector_stdout), redirect_stderr(inspector_stderr):
+            return int(inspector.main(inspector_arguments))
+    except (Exception, SystemExit):
+        # The in-memory argv intentionally contains the verification-only identifier. Inspector-owned
+        # stdout/stderr is never replayed because future parsing/diagnostics may echo argument values.
+        # SystemExit is included because argparse writes its diagnostic before raising it. Genuine
+        # operator interruption (KeyboardInterrupt) still propagates because it is not caught here.
+        print("ERROR: canonical signed-field inspector rejected the field candidate", file=sys.stderr)
+        return 2
+
+
 def run_inspector(args: argparse.Namespace) -> int:
     intended_device_identifier = read_private_identifier(args.intended_device_udid_file)
     inspector = load_canonical_inspector()
@@ -107,13 +125,7 @@ def run_inspector(args: argparse.Namespace) -> int:
         "--intended-device-udid",
         intended_device_identifier,
     ]
-    try:
-        return int(inspector.main(inspector_arguments))
-    except inspector.EvidenceError:
-        # Do not echo the inspector exception here: future inspector diagnostics must never be able
-        # to accidentally serialize the verification-only identifier supplied in memory.
-        print("ERROR: canonical signed-field inspector rejected the field candidate", file=sys.stderr)
-        return 2
+    return invoke_inspector_redacted(inspector, inspector_arguments)
 
 
 def self_test() -> None:
@@ -168,6 +180,55 @@ def self_test() -> None:
             pass
         else:
             raise AssertionError("oversized verification input must fail closed")
+
+    class ExplodingInspector:
+        def main(self, argv: list[str]) -> int:
+            if expected not in argv:
+                raise AssertionError("redaction self-test did not supply the exact private value")
+            raise RuntimeError(f"future diagnostic accidentally included {expected}")
+
+    ordinary_stderr = io.StringIO()
+    with redirect_stderr(ordinary_stderr):
+        result = invoke_inspector_redacted(
+            ExplodingInspector(),
+            ["--intended-device-udid", expected],
+        )
+    assert result == 2
+    assert expected not in ordinary_stderr.getvalue()
+    assert "future diagnostic" not in ordinary_stderr.getvalue()
+
+    class SystemExitInspector:
+        def main(self, argv: list[str]) -> int:
+            print(f"argparse rejected {expected}", file=sys.stderr)
+            raise SystemExit(2)
+
+    system_exit_stderr = io.StringIO()
+    with redirect_stderr(system_exit_stderr):
+        result = invoke_inspector_redacted(
+            SystemExitInspector(),
+            ["--intended-device-udid", expected],
+        )
+    assert result == 2
+    assert expected not in system_exit_stderr.getvalue()
+    assert "argparse rejected" not in system_exit_stderr.getvalue()
+    assert system_exit_stderr.getvalue().strip() == "ERROR: canonical signed-field inspector rejected the field candidate"
+
+    class NoisySuccessInspector:
+        def main(self, argv: list[str]) -> int:
+            print(f"stdout accidentally included {expected}")
+            print(f"stderr accidentally included {expected}", file=sys.stderr)
+            return 0
+
+    noisy_stdout = io.StringIO()
+    noisy_stderr = io.StringIO()
+    with redirect_stdout(noisy_stdout), redirect_stderr(noisy_stderr):
+        result = invoke_inspector_redacted(
+            NoisySuccessInspector(),
+            ["--intended-device-udid", expected],
+        )
+    assert result == 0
+    assert expected not in noisy_stdout.getvalue()
+    assert expected not in noisy_stderr.getvalue()
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
