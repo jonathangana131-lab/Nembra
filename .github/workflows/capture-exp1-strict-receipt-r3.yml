@@ -15,14 +15,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
-      - name: Guard exact parent and apply narrow truth repair
+          fetch-depth: 0
+      - name: Guard workflow-only staging and apply narrow truth repair
         shell: bash
         run: |
           set -euo pipefail
-          expected_parent='c3e03f82d43e0cf0bfa6f4a5fc74810ee4f35256'
-          actual_parent="$(git rev-parse HEAD^)"
-          test "$actual_parent" = "$expected_parent"
+          base='c3e03f82d43e0cf0bfa6f4a5fc74810ee4f35256'
+          git merge-base --is-ancestor "$base" HEAD
+          changed="$(git diff --name-only "$base"...HEAD)"
+          test "$changed" = '.github/workflows/capture-exp1-strict-receipt-r3.yml'
 
           python3 - <<'PY'
           from pathlib import Path
@@ -32,16 +33,7 @@ jobs:
           old = 'latestAdvertisement.receivedAtUptimeNanoseconds >= preview.issuedAtUptimeNanoseconds'
           new = 'latestAdvertisement.receivedAtUptimeNanoseconds > preview.issuedAtUptimeNanoseconds'
           assert text.count(old) == 1, text.count(old)
-          text = text.replace(old, new)
-          old_comment = '''// The sealed admission must be joined to a controller observation received after
-            // that handoff. Replaying an older cached advertisement would splice two software
-            // chronology lives and could enqueue evidence that predates this recorder.'''
-          new_comment = '''// The sealed admission must be joined to a controller observation received strictly
-            // after that handoff. Equal monotonic ticks do not establish receipt ordering; an
-            // older/equal cached advertisement would splice two software chronology lives.'''
-          assert old_comment in text
-          text = text.replace(old_comment, new_comment)
-          controller.write_text(text)
+          controller.write_text(text.replace(old, new))
 
           test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerExperimentOneRecoverableRediscoveryTests.swift')
           source = test.read_text()
