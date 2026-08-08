@@ -45,8 +45,6 @@ run_xcodebuild() {
   fi
 }
 
-# A dirty invocation checkout is never accepted. The actual archive is built from a detached exact
-# SOURCE_SHA worktree so ignored files or concurrent workers cannot become bytes stamped as HEAD.
 REPOSITORY_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
 if [[ -n "$REPOSITORY_STATUS" ]]; then
   echo "Signed field-candidate production refuses tracked changes or non-ignored untracked files." >&2
@@ -117,8 +115,6 @@ EXPORT_OPTIONS_SNAPSHOT="$PRODUCER_AUDIT_DIR/ExportOptions.plist"
 cp -p "$EXPORT_OPTIONS_PLIST" "$EXPORT_OPTIONS_SNAPSHOT"
 /usr/bin/plutil -lint "$EXPORT_OPTIONS_SNAPSHOT" >/dev/null
 
-# Export policy is an external release input. Snapshot exactly what xcodebuild will consume, reject a
-# conflicting team when present, hash it before use, and re-hash after export.
 EXPORT_OPTIONS_SHA256="$(python3 - "$EXPORT_OPTIONS_SNAPSHOT" "$NEMBRA_DEVELOPMENT_TEAM" <<'PY'
 import hashlib
 import plistlib
@@ -179,11 +175,12 @@ run_xcodebuild \
   "INFOPLIST_KEY_NembraCaptureFieldRecipe=$FIELD_RECIPE_ID" \
   archive \
   2>&1 | tee "$PRODUCER_AUDIT_DIR/logs/xcodebuild-archive.log"
-ARCHIVE_XCODE_STATUS="${PIPESTATUS[0]}"
-ARCHIVE_TEE_STATUS="${PIPESTATUS[1]}"
+# This array is always non-empty because the immediately preceding pipeline has exactly two commands.
+# Snapshot PIPESTATUS in one assignment: any later shell command would replace PIPESTATUS.
+ARCHIVE_PIPESTATUS=("${PIPESTATUS[@]}")
 set -e
-if [[ "$ARCHIVE_XCODE_STATUS" -ne 0 || "$ARCHIVE_TEE_STATUS" -ne 0 ]]; then
-  echo "Signed field-candidate archive/log capture failed: xcodebuild=$ARCHIVE_XCODE_STATUS tee=$ARCHIVE_TEE_STATUS." >&2
+if [[ "${ARCHIVE_PIPESTATUS[0]}" -ne 0 || "${ARCHIVE_PIPESTATUS[1]}" -ne 0 ]]; then
+  echo "Signed field-candidate archive/log capture failed: xcodebuild=${ARCHIVE_PIPESTATUS[0]} tee=${ARCHIVE_PIPESTATUS[1]}." >&2
   exit 15
 fi
 
@@ -195,11 +192,10 @@ run_xcodebuild \
   -exportPath "$EXPORT_DIR" \
   -exportOptionsPlist "$EXPORT_OPTIONS_SNAPSHOT" \
   2>&1 | tee "$PRODUCER_AUDIT_DIR/logs/xcodebuild-export.log"
-EXPORT_XCODE_STATUS="${PIPESTATUS[0]}"
-EXPORT_TEE_STATUS="${PIPESTATUS[1]}"
+EXPORT_PIPESTATUS=("${PIPESTATUS[@]}")
 set -e
-if [[ "$EXPORT_XCODE_STATUS" -ne 0 || "$EXPORT_TEE_STATUS" -ne 0 ]]; then
-  echo "Signed field-candidate export/log capture failed: xcodebuild=$EXPORT_XCODE_STATUS tee=$EXPORT_TEE_STATUS." >&2
+if [[ "${EXPORT_PIPESTATUS[0]}" -ne 0 || "${EXPORT_PIPESTATUS[1]}" -ne 0 ]]; then
+  echo "Signed field-candidate export/log capture failed: xcodebuild=${EXPORT_PIPESTATUS[0]} tee=${EXPORT_PIPESTATUS[1]}." >&2
   exit 16
 fi
 
@@ -223,7 +219,6 @@ if [[ "$POST_BUILD_HEAD" != "$SOURCE_SHA" || -n "$POST_BUILD_SOURCE_STATUS" ]]; 
   exit 18
 fi
 
-# Python performs closed-world IPA selection so Bash 3.2 never expands an optionally-empty array.
 IPA_PATH="$(python3 - "$EXPORT_DIR" <<'PY'
 import sys
 from pathlib import Path
