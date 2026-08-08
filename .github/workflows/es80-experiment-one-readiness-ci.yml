@@ -17,6 +17,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
 
       - name: Verify immutable pushed head
         env:
@@ -28,8 +29,9 @@ jobs:
 
       - name: Verify clean dependency-relative product shape
         run: |
-          test "$(git rev-parse HEAD^)" = "320de702c607312cfac7bce05999e3dc5b44a30d"
-          changed="$(git diff --name-only HEAD^ HEAD | sort)"
+          base="320de702c607312cfac7bce05999e3dc5b44a30d"
+          git merge-base --is-ancestor "$base" HEAD
+          changed="$(git diff --name-only "$base" HEAD | sort)"
           expected="$(printf '%s\n' \
             '.github/workflows/es80-experiment-one-readiness-ci.yml' \
             'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCaptureEvidenceAssessment.swift' \
@@ -54,15 +56,26 @@ jobs:
         run: |
           compact_run="$(tr -d '[:space:]' < Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneRun.swift)"
           compact_assessment="$(tr -d '[:space:]' < Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCaptureEvidenceAssessment.swift)"
-          case "$compact_run" in
-            *publicfinalclassPassiveBluetoothExperimentOneRun*|*publicfuncbeginCaptureRecorder\(*|*publicfunccaptureEvidenceAssessment\(*)
-              echo 'Unfinished Experiment One authority became public.' >&2
+          forbidden_run=(
+            'publicfinalclassPassiveBluetoothExperimentOneRun'
+            'publicstructPassiveBluetoothExperimentOnePowerCycleEvidence'
+            'publicstructPassiveBluetoothExperimentOneCaptureEvidence'
+            'publicfuncbeginCaptureRecorder('
+            'publicfunccaptureEvidenceAssessment('
+          )
+          for token in "${forbidden_run[@]}"; do
+            if printf '%s' "$compact_run" | grep -Fq "$token"; then
+              echo "Unfinished Experiment One authority became public: $token" >&2
               exit 1
-              ;;
-          esac
-          case "$compact_assessment" in
-            *publicstructPassiveBluetoothExperimentOneCaptureEvidenceAssessment*|*publicstaticfuncassess\(*)
-              echo 'Unfinished Experiment One PASS evaluator became public.' >&2
+            fi
+          done
+          forbidden_assessment=(
+            'publicstructPassiveBluetoothExperimentOneCaptureEvidenceAssessment'
+            'publicstaticfuncassess('
+          )
+          for token in "${forbidden_assessment[@]}"; do
+            if printf '%s' "$compact_assessment" | grep -Fq "$token"; then
+              echo "Unfinished Experiment One PASS evaluator became public: $token" >&2
               exit 1
-              ;;
-          esac
+            fi
+          done
