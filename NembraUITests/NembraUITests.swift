@@ -88,6 +88,40 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testVehicleControlsPrimaryES80UnverifiedVisualTruth() {
+        let app = launchProduction(orientation: .portrait)
+
+        XCTAssertTrue(app.staticTexts["AOVOPRO ES80"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.staticTexts["Scooter software not recognized"].waitForExistence(timeout: 3))
+
+        let controls = app.buttons["Vehicle controls"]
+        XCTAssertTrue(controls.waitForExistence(timeout: 2))
+        controls.tap()
+
+        XCTAssertTrue(app.navigationBars["Vehicle Controls"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["AOVOPRO ES80"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Vehicle configuration"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Controls unavailable"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["This vehicle configuration is not verified for control commands."].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.buttons["Reconnect"].exists, "Unverified ES80 production state must not offer a fake reconnect-to-controls path.")
+        XCTAssertFalse(
+            app.descendants(matching: .any)["vehicle-controls.retained-state"].exists,
+            "An ordinary unverified ES80 launch has no confirmed vehicle session to label as retained."
+        )
+
+        let cruiseOn = app.buttons["vehicle-controls.cruise.on"]
+        if cruiseOn.waitForExistence(timeout: 1) {
+            XCTAssertFalse(cruiseOn.isEnabled, "Unverified ES80 cruise controls must remain read-only.")
+        }
+        let zeroStart = app.buttons["vehicle-controls.start.zeroStart"]
+        if zeroStart.waitForExistence(timeout: 1) {
+            XCTAssertFalse(zeroStart.isEnabled, "Unverified ES80 start behavior controls must remain read-only.")
+        }
+
+        keepScreenshot(named: "Vehicle Controls AOVOPRO ES80 Unverified")
+    }
+
+    @MainActor
     func testUnavailableScooterCanRecoverWithoutInventingLiveState() {
         let app = launch(scenario: "scooter-unavailable", orientation: .portrait)
 
@@ -234,6 +268,14 @@ final class NembraUITests: XCTestCase {
         XCUIDevice.shared.orientation = orientation
         let app = XCUIApplication()
         app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = scenario
+        app.launch()
+        return app
+    }
+
+    @MainActor
+    private func launchProduction(orientation: UIDeviceOrientation) -> XCUIApplication {
+        XCUIDevice.shared.orientation = orientation
+        let app = XCUIApplication()
         app.launch()
         return app
     }
