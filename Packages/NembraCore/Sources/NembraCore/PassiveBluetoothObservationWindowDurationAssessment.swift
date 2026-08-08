@@ -32,9 +32,10 @@ public struct PassiveBluetoothObservationWindowDurationAssessment: Equatable, Se
     /// after readiness and at/before the terminal horizon watermark.
     public let continuityBreakSequenceNumbers: [UInt64]
 
-    /// Convenience only; the assessment itself remains a narrow lifecycle gate
-    /// rather than a declaration that the wider capture experiment is healthy.
-    public var isSufficient: Bool {
+    /// Convenience only; this explicitly names duration sufficiency so callers
+    /// do not accidentally treat it as proof that the whole physical capture
+    /// experiment is accepted.
+    public var isDurationSufficient: Bool {
         status == .sufficient
     }
 
