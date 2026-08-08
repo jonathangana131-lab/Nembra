@@ -97,12 +97,16 @@ jobs:
         run: |
           python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
           python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py
+          python3 scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
 
       - name: Validate signed field candidate producer source
         run: |
           bash -n scripts/ci/xcode27_signed_field_candidate.sh
           python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
           python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
 
       - name: Build, test, and capture Simulator states
         run: scripts/ci/xcode27_simulator_capture.sh
