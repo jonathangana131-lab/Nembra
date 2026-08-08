@@ -76,10 +76,6 @@ public enum PassiveBluetoothExperimentOneSoftwareExportError: Error, Equatable, 
 }
 
 public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
-    /// The accepted Experiment One recipe requires a 10-second minimum local callback-receipt
-    /// interval per OFF/ON window. This is software chronology, not RF completeness or BLE cadence.
-    private static let minimumCorrelationWindowDurationNanoseconds: UInt64 = 10_000_000_000
-
     public static func make(
         finalizedArtifact: PassiveBluetoothExperimentOneCoordinator.FinalizedArtifact,
         runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity,
@@ -274,24 +270,48 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
         }
     }
 
+    /// Reuses the product-owned Experiment One duration policy/assessment instead of creating a
+    /// second export-specific threshold. Cross-window overlap remains checked here because the
+    /// duration assessor intentionally evaluates each receipt independently, while the accepted
+    /// producer chronology cannot issue a later window before the previous window has ended.
     private static func validateCorrelationWindowTiming(
         _ windows: [PassiveBluetoothExperimentOneSoftwareExport.CorrelationWindow]
     ) throws {
-        for (index, window) in windows.enumerated() {
-            guard window.endedAtUptimeNanoseconds >= window.startedAtUptimeNanoseconds else {
-                throw PassiveBluetoothExperimentOneSoftwareExportError
-                    .correlationWindowClockInvalid(index: index)
+        let replayedResult = try replayedPowerCycleResult(windows)
+        let duration = PassiveBluetoothPowerCycleObservationWindowDurationAssessment.assess(
+            result: replayedResult,
+            minimumDurationNanoseconds:
+                PassiveBluetoothExperimentOneCapturePolicy.minimumPowerCycleWindowDurationNanoseconds
+        )
+
+        switch duration.status {
+        case .sufficient:
+            break
+        case .nonMonotonicWindowClock:
+            let index = windows.firstIndex(where: {
+                $0.endedAtUptimeNanoseconds < $0.startedAtUptimeNanoseconds
+            }) ?? 0
+            throw PassiveBluetoothExperimentOneSoftwareExportError
+                .correlationWindowClockInvalid(index: index)
+        case .insufficientDuration:
+            let minimum = PassiveBluetoothExperimentOneCapturePolicy
+                .minimumPowerCycleWindowDurationNanoseconds
+            guard let index = windows.firstIndex(where: { window in
+                window.endedAtUptimeNanoseconds >= window.startedAtUptimeNanoseconds
+                    && window.endedAtUptimeNanoseconds - window.startedAtUptimeNanoseconds < minimum
+            }) else {
+                throw PassiveBluetoothExperimentOneSoftwareExportError.correlationEvidenceInvalid
             }
-            guard window.endedAtUptimeNanoseconds - window.startedAtUptimeNanoseconds
-                    >= minimumCorrelationWindowDurationNanoseconds else {
+            throw PassiveBluetoothExperimentOneSoftwareExportError
+                .correlationWindowTooShort(index: index)
+        case .invalidMinimumDuration, .invalidWindowSet:
+            throw PassiveBluetoothExperimentOneSoftwareExportError.correlationEvidenceInvalid
+        }
+
+        for index in windows.indices.dropFirst() {
+            guard windows[index].startedAtUptimeNanoseconds >= windows[index - 1].endedAtUptimeNanoseconds else {
                 throw PassiveBluetoothExperimentOneSoftwareExportError
-                    .correlationWindowTooShort(index: index)
-            }
-            if index > 0 {
-                guard window.startedAtUptimeNanoseconds >= windows[index - 1].endedAtUptimeNanoseconds else {
-                    throw PassiveBluetoothExperimentOneSoftwareExportError
-                        .correlationWindowOverlap(index: index)
-                }
+                    .correlationWindowOverlap(index: index)
             }
         }
     }
@@ -299,6 +319,12 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
     private static func replayCorrelation(
         _ windows: [PassiveBluetoothExperimentOneSoftwareExport.CorrelationWindow]
     ) throws -> PassiveBluetoothPowerCycleTargetCorrelationReport {
+        try replayedPowerCycleResult(windows).correlation
+    }
+
+    private static func replayedPowerCycleResult(
+        _ windows: [PassiveBluetoothExperimentOneSoftwareExport.CorrelationWindow]
+    ) throws -> PassiveBluetoothPowerCycleObservationResult {
         let snapshots = try windows.enumerated().map { index, window in
             guard window.phase.rawValue == index else {
                 throw PassiveBluetoothExperimentOneSoftwareExportError
@@ -312,11 +338,25 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
                 }
             )
         }
-        return PassiveBluetoothPowerCycleTargetCorrelation.assess(
+        let receipts = windows.map { window in
+            PassiveBluetoothPowerCycleObservationWindowReceipt(
+                phase: window.phase,
+                windowSequence: .init(rawValue: window.windowSequence),
+                startedAtUptimeNanoseconds: window.startedAtUptimeNanoseconds,
+                endedAtUptimeNanoseconds: window.endedAtUptimeNanoseconds,
+                observedCandidateCount: window.candidates.count
+            )
+        }
+        let correlation = PassiveBluetoothPowerCycleTargetCorrelation.assess(
             firstOff: snapshots[0],
             firstOn: snapshots[1],
             secondOff: snapshots[2],
             secondOn: snapshots[3]
+        )
+        return PassiveBluetoothPowerCycleObservationResult(
+            windows: receipts,
+            observationSnapshots: snapshots,
+            correlation: correlation
         )
     }
 
