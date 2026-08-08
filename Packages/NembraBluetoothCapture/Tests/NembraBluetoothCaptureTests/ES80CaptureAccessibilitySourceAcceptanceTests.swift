@@ -51,7 +51,7 @@ struct ES80CaptureAccessibilitySourceAcceptanceTests {
         #expect(source.contains(".foregroundStyle(.white)"))
     }
 
-    @Test("high-frequency presentation collapses decorative children into stable semantics")
+    @Test("high-frequency presentation collapses decorative children into stable rider semantics")
     func pollingPresentationDoesNotExposeEveryChildAsAnAccessibilityElement() throws {
         let source = try Self.shellSource()
 
@@ -73,7 +73,8 @@ struct ES80CaptureAccessibilitySourceAcceptanceTests {
         #expect(progressSource.contains(".accessibilityIdentifier(\"es80.capture.experiment-progress\")"))
 
         // The live OFF/ON observation card similarly supplies one label/value/hint rather than
-        // exposing its changing visual children individually.
+        // exposing its changing visual children individually. VoiceOver is part of the primary rider
+        // surface, so it must not fall back to protocol/acquisition vocabulary hidden from sighted copy.
         let primaryStart = try #require(source.range(of: "private func primaryContent("))
         let primaryEnd = try #require(
             source.range(
@@ -85,7 +86,21 @@ struct ES80CaptureAccessibilitySourceAcceptanceTests {
         #expect(primarySource.contains("case let .correlationObserving(window):"))
         #expect(primarySource.contains(".accessibilityElement(children: .ignore)"))
         #expect(primarySource.contains(".accessibilityLabel(\"\\(phaseShortName(window)) observation\")"))
-        #expect(primarySource.contains(".accessibilityHint(\"Nembra is recording this bounded Bluetooth observation window.\")"))
+        #expect(primarySource.contains(".accessibilityHint("))
+
+        let implementationTermsThatMustStayOutOfPrimaryVoiceOver = [
+            "bounded Bluetooth observation window",
+            "Bluetooth observation",
+            "CoreBluetooth",
+            "finite acquisition",
+            "package-owned"
+        ]
+        for term in implementationTermsThatMustStayOutOfPrimaryVoiceOver {
+            #expect(
+                !primarySource.contains(term),
+                "Primary VoiceOver copy still exposes implementation vocabulary: \(term)"
+            )
+        }
     }
 
     @Test("accessibility semantics remain presentation-only and cannot mint evidence")
