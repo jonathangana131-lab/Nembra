@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 import NembraCore
 
@@ -72,8 +73,9 @@ struct PassiveBluetoothExperimentOneCaptureEvidence: Equatable, Sendable {
 ///
 /// `consume()` is MainActor-isolated and one-shot. Aliasing the reference does not create another
 /// permit; the first consumer permanently burns the handoff. The returned payload also has a
-/// producer-file-private initializer and carries a process-local admission UUID, so a future
-/// controller can bind one exact consumption event instead of trusting equal scalar fields.
+/// producer-file-private initializer and carries a process-local admission UUID plus a producer-
+/// sampled monotonic issuance boundary. That boundary is software callback chronology only: it is
+/// not BLE/RF emission time and cannot establish physical identity or protocol semantics.
 ///
 /// This is software ownership authority only. It does not authenticate the correlated physical
 /// device or assign any GATT/Tuya meaning.
@@ -88,17 +90,20 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
         let powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence
         let peripheralIdentifier: UUID
         let recorder: PassiveCoreBluetoothCaptureRecorder
+        let issuedAtUptimeNanoseconds: UInt64
 
         fileprivate init(
             admissionIdentity: UUID,
             powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,
             peripheralIdentifier: UUID,
-            recorder: PassiveCoreBluetoothCaptureRecorder
+            recorder: PassiveCoreBluetoothCaptureRecorder,
+            issuedAtUptimeNanoseconds: UInt64
         ) {
             self.admissionIdentity = admissionIdentity
             self.powerCycleEvidence = powerCycleEvidence
             self.peripheralIdentifier = peripheralIdentifier
             self.recorder = recorder
+            self.issuedAtUptimeNanoseconds = issuedAtUptimeNanoseconds
         }
     }
 
@@ -108,13 +113,15 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
     fileprivate init(
         powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,
         peripheralIdentifier: UUID,
-        recorder: PassiveCoreBluetoothCaptureRecorder
+        recorder: PassiveCoreBluetoothCaptureRecorder,
+        issuedAtUptimeNanoseconds: UInt64
     ) {
         payload = Payload(
             admissionIdentity: UUID(),
             powerCycleEvidence: powerCycleEvidence,
             peripheralIdentifier: peripheralIdentifier,
-            recorder: recorder
+            recorder: recorder,
+            issuedAtUptimeNanoseconds: issuedAtUptimeNanoseconds
         )
     }
 
@@ -203,10 +210,12 @@ final class PassiveBluetoothExperimentOneRun {
         }
 
         let recorder = try beginCaptureRecorder(startedAt: startedAt)
+        let issuedAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
         return PassiveBluetoothExperimentOneCaptureAdmission(
             powerCycleEvidence: evidence,
             peripheralIdentifier: peripheralIdentifier,
-            recorder: recorder
+            recorder: recorder,
+            issuedAtUptimeNanoseconds: issuedAtUptimeNanoseconds
         )
     }
 
