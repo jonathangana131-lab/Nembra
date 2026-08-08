@@ -31,6 +31,10 @@ public struct PassiveBluetoothExperimentOneVerifiedFinalShareArtifact: Equatable
     public let procedureVersion: String
     public let buildInstanceID: String
     public let softwareExportSHA256: String
+    /// Exact nested SoftwareExport bytes verified by the outer digest and inner closed-world codec.
+    /// Consumers that need analysis-readiness facts must inspect these bytes directly rather than
+    /// re-encoding `softwareExport`, which would create a different byte artifact.
+    public let softwareExportJSON: Data
     public let softwareExport: PassiveBluetoothExperimentOneSoftwareExport
 
     fileprivate init(
@@ -39,6 +43,7 @@ public struct PassiveBluetoothExperimentOneVerifiedFinalShareArtifact: Equatable
         procedureVersion: String,
         buildInstanceID: String,
         softwareExportSHA256: String,
+        softwareExportJSON: Data,
         softwareExport: PassiveBluetoothExperimentOneSoftwareExport
     ) {
         self.experimentID = experimentID
@@ -46,6 +51,7 @@ public struct PassiveBluetoothExperimentOneVerifiedFinalShareArtifact: Equatable
         self.procedureVersion = procedureVersion
         self.buildInstanceID = buildInstanceID
         self.softwareExportSHA256 = softwareExportSHA256
+        self.softwareExportJSON = softwareExportJSON
         self.softwareExport = softwareExport
     }
 }
@@ -198,6 +204,7 @@ public enum PassiveBluetoothExperimentOneFinalShareArtifactCodec {
             procedureVersion: wire.procedureVersion,
             buildInstanceID: wire.buildInstanceID,
             softwareExportSHA256: wire.softwareExportSHA256,
+            softwareExportJSON: softwareExportJSON,
             softwareExport: softwareExport
         )
     }
