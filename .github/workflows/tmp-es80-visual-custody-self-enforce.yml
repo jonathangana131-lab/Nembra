@@ -1,0 +1,48 @@
+name: TEMP ES80 visual custody self-enforcement
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-simulator-visual-evidence-custody-current/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  enforce:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+      - name: Make the real harness execute its custody contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("scripts/ci/xcode27_simulator_capture.sh")
+          source = path.read_text(encoding="utf-8")
+          needle = 'cd "$ROOT"\n\nARTIFACTS_DIR='
+          replacement = (
+              'cd "$ROOT"\n\n'
+              'python3 scripts/ci/tests/test_xcode27_simulator_visual_evidence_descriptor_custody_source.py\n\n'
+              'ARTIFACTS_DIR='
+          )
+          if source.count(needle) != 1:
+              raise SystemExit(f"expected one harness bootstrap insertion point, found {source.count(needle)}")
+          source = source.replace(needle, replacement, 1)
+          path.write_text(source, encoding="utf-8")
+          PY
+          bash -n scripts/ci/xcode27_simulator_capture.sh
+          python3 scripts/ci/tests/test_xcode27_simulator_visual_evidence_descriptor_custody_source.py
+          grep -q '^python3 scripts/ci/tests/test_xcode27_simulator_visual_evidence_descriptor_custody_source.py$' scripts/ci/xcode27_simulator_capture.sh
+          git diff --check
+          rm .github/workflows/tmp-es80-visual-custody-self-enforce.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "[Capture visual QA v14] Self-enforce retained evidence custody"
+          git push origin HEAD:${{ github.ref_name }}
