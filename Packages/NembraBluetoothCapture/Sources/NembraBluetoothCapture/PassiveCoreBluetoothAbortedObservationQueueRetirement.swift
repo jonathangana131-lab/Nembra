@@ -1,5 +1,5 @@
-/// Synchronous MainActor retirement of queued evidence after a pre-H Ready
-/// attempt/epoch has been intentionally abandoned.
+/// Synchronous MainActor retirement of queued evidence after a pre-terminal
+/// observation epoch has been intentionally abandoned.
 ///
 /// Abort quarantine stops ordinary draining, but an abandoned recorder must not be
 /// reopened merely because controller authority counters advance. This helper
@@ -73,10 +73,11 @@ struct PassiveCoreBluetoothAbortedObservationQueueRetirement: Sendable {
                 tail: currentLastEnqueuedEventSequence
             )
         }
-        guard currentSettledQueueSequence >= abortReceipt.abandonedReadyQueueCutoff else {
+        let abandonedEvidenceCutoff = abortReceipt.abandonedEvidenceQueueCutoff
+        guard currentSettledQueueSequence >= abandonedEvidenceCutoff else {
             throw StateError.readyPrefixNotSettled(
                 settled: currentSettledQueueSequence,
-                readyCutoff: abortReceipt.abandonedReadyQueueCutoff
+                readyCutoff: abandonedEvidenceCutoff
             )
         }
 
@@ -99,10 +100,10 @@ struct PassiveCoreBluetoothAbortedObservationQueueRetirement: Sendable {
                     actual: evidence.queueSequence
                 )
             }
-            guard evidence.queueSequence > abortReceipt.abandonedReadyQueueCutoff else {
+            guard evidence.queueSequence > abandonedEvidenceCutoff else {
                 throw StateError.readyPrefixStillPending(
                     queueSequence: evidence.queueSequence,
-                    readyCutoff: abortReceipt.abandonedReadyQueueCutoff
+                    readyCutoff: abandonedEvidenceCutoff
                 )
             }
             guard evidence.authority.targetSessionGeneration
