@@ -13,7 +13,7 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
     private let commit = "ABCDEF0123456789ABCDEF0123456789ABCDEF01"
 
     @Test
-    func manifestBindsExactCaptureBytesAndDerivedStationaryFacts() throws {
+    func manifestBindsExactCaptureBytesRecipeAndDerivedStationaryFacts() throws {
         let captureJSON = try makeCapture(includeStockAppMarker: true, includeDisconnect: true)
         let setup = PassiveBluetoothStationaryCaptureSetup(
             chargerState: .disconnected,
@@ -30,13 +30,17 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
             setup: setup
         )
 
-        #expect(manifest.schemaVersion == 1)
+        #expect(manifest.schemaVersion == 2)
+        #expect(manifest.recipeID == .es80FingerprintV1)
         #expect(manifest.experimentKind == .stationaryBaseline)
         #expect(manifest.nembraBuildCommitSHA == commit.lowercased())
         #expect(manifest.sourceArtifact.captureSessionID == sessionID)
         #expect(manifest.sourceArtifact.selectedPeripheralIdentifier == target)
         #expect(manifest.sourceArtifact.byteCount == captureJSON.count)
-        #expect(manifest.sourceArtifact.sha256 == SHA256.hash(data: captureJSON).map { String(format: "%02x", $0) }.joined())
+        #expect(
+            manifest.sourceArtifact.sha256
+                == SHA256.hash(data: captureJSON).map { String(format: "%02x", $0) }.joined()
+        )
         #expect(manifest.setup == setup)
         #expect(manifest.setup.executionContext == .foregroundUnlockedScreenOn)
         #expect(manifest.evidenceSummary.targetGATTRecordCount == 3)
@@ -50,6 +54,65 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
             captureJSON: captureJSON
         )
         #expect(verified == manifest)
+
+        let object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        #expect(object["schemaVersion"] as? Int == 2)
+        #expect(object["recipeID"] as? String == "ES80-FINGERPRINT-v1")
+    }
+
+    @Test
+    func schemaVersionOneIsExplicitlyRejectedInsteadOfInferringARecipe() throws {
+        let captureJSON = try makeCapture()
+        let manifestJSON = try PassiveBluetoothStationaryCaptureManifestJSON.encode(
+            makeManifest(captureJSON: captureJSON)
+        )
+        var object = try #require(JSONSerialization.jsonObject(with: manifestJSON) as? [String: Any])
+        object["schemaVersion"] = 1
+        object.removeValue(forKey: "recipeID")
+        let oldSchemaJSON = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+
+        #expect(throws: PassiveBluetoothStationaryCaptureManifestError.unsupportedSchemaVersion(1)) {
+            _ = try PassiveBluetoothStationaryCaptureManifestJSON.verifyCaptureBinding(
+                manifestJSON: oldSchemaJSON,
+                captureJSON: captureJSON
+            )
+        }
+    }
+
+    @Test
+    func currentSchemaMissingRecipeFailsClosed() throws {
+        let captureJSON = try makeCapture()
+        let manifestJSON = try PassiveBluetoothStationaryCaptureManifestJSON.encode(
+            makeManifest(captureJSON: captureJSON)
+        )
+        var object = try #require(JSONSerialization.jsonObject(with: manifestJSON) as? [String: Any])
+        object.removeValue(forKey: "recipeID")
+        let changedJSON = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+
+        #expect(throws: DecodingError.self) {
+            _ = try PassiveBluetoothStationaryCaptureManifestJSON.verifyCaptureBinding(
+                manifestJSON: changedJSON,
+                captureJSON: captureJSON
+            )
+        }
+    }
+
+    @Test
+    func unknownRecipeIdentifierFailsClosed() throws {
+        let captureJSON = try makeCapture()
+        let manifestJSON = try PassiveBluetoothStationaryCaptureManifestJSON.encode(
+            makeManifest(captureJSON: captureJSON)
+        )
+        var object = try #require(JSONSerialization.jsonObject(with: manifestJSON) as? [String: Any])
+        object["recipeID"] = "ES80-FINGERPRINT-v999"
+        let changedJSON = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+
+        #expect(throws: DecodingError.self) {
+            _ = try PassiveBluetoothStationaryCaptureManifestJSON.verifyCaptureBinding(
+                manifestJSON: changedJSON,
+                captureJSON: captureJSON
+            )
+        }
     }
 
     @Test
@@ -222,7 +285,7 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
     }
 
     @Test
-    func unknownSchemaVersionOneFieldsFailClosedInsteadOfBeingIgnored() throws {
+    func unknownSchemaVersionTwoFieldsFailClosedInsteadOfBeingIgnored() throws {
         let captureJSON = try makeCapture()
         let manifest = try makeManifest(captureJSON: captureJSON)
         let manifestJSON = try PassiveBluetoothStationaryCaptureManifestJSON.encode(manifest)
@@ -244,7 +307,10 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
         nested["setup"] = setup
         let nestedJSON = try JSONSerialization.data(withJSONObject: nested, options: [.sortedKeys])
 
-        #expect(throws: PassiveBluetoothStationaryCaptureManifestError.unexpectedManifestField("setup.backgroundCaptureAttested")) {
+        #expect(
+            throws: PassiveBluetoothStationaryCaptureManifestError
+                .unexpectedManifestField("setup.backgroundCaptureAttested")
+        ) {
             _ = try PassiveBluetoothStationaryCaptureManifestJSON.verifyCaptureBinding(
                 manifestJSON: nestedJSON,
                 captureJSON: captureJSON
