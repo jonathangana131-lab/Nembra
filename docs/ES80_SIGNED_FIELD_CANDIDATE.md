@@ -21,7 +21,7 @@ Required:
 
 Optional:
 
-- `NEMBRA_INSTALL_DEVICE_ID` may name one `devicectl` device identifier. If supplied, the script attempts to install the exact archived signed `.app` after all evidence checks. Installation success is only installability evidence; it does not open the physical Capture field gate.
+- `NEMBRA_INSTALL_DEVICE_ID` may name one `devicectl` device identifier. If supplied, the script attempts to install the exact archived signed `.app` after all evidence checks. Installation success is only installability evidence; it does not open the physical Capture field gate. The device identifier and raw `devicectl` output are not retained in the evidence bundle.
 
 The script does not request, print, commit, or manufacture signing certificates/private keys/provisioning secrets.
 
@@ -39,10 +39,10 @@ The script:
 8. runs strict `codesign` verification on the archived app and retains signature details;
 9. hashes the **post-sign** executable and generated `Info.plist` bytes;
 10. retains byte-identical copies of both files and re-hashes them;
-11. preserves the exact signed `.app` as a transferable zip and records that exact zip digest without calling the zip an IPA;
+11. preserves the exact signed `.app` as a transferable zip, records that exact zip digest, re-extracts it, byte-compares the executable/Info.plist to the archived originals, and strictly verifies the rehydrated signature;
 12. emits the existing closed-world `NembraCaptureExternalBuildRecord.json` schema v3 using the exact signed executable/Info.plist digests;
 13. emits `NembraCaptureSignedFieldCandidateEvidence.json` with the signed-app archive digest and explicit `signed-field-candidate-not-field-authorization` evidence class;
-14. optionally installs the exact archived `.app` through `devicectl` only when the caller explicitly supplies a device identifier.
+14. optionally installs the exact archived `.app` through `devicectl` only when the caller explicitly supplies a device identifier, retaining only success/failure state rather than the device identifier.
 
 ## Output
 
@@ -55,14 +55,14 @@ Important retained evidence includes:
 - `NembraFieldCandidate.xcarchive` — the exact local Xcode archive;
 - `build-evidence/Nembra` — retained post-sign executable bytes;
 - `build-evidence/Info.plist` — retained generated build metadata;
-- `build-evidence/Nembra.signed-app.zip` — transferable archive of the exact signed `.app`;
+- `build-evidence/Nembra.signed-app.zip` — transferable archive of the exact signed `.app`, verified by immediate re-extraction;
 - `NembraCaptureExternalBuildRecord.json` — current schema-v3 build rendezvous record;
 - `NembraCaptureSignedFieldCandidateEvidence.json` — signed candidate / bundle archive evidence;
 - `logs/xcodebuild-archive.log`;
 - `logs/codesign-verify.log`;
+- `logs/codesign-rehydrated-verify.log`;
 - `logs/codesign-details.log`;
-- optional `logs/devicectl-install.log`;
-- `environment.txt` with non-secret build/evidence identifiers and digests.
+- `environment.txt` with non-secret build/evidence identifiers, digests, and only a boolean/result for optional device installation.
 
 ## Why the final digest stays external
 
@@ -92,11 +92,11 @@ After the current final Capture software head earns exact Xcode/Simulator produc
 
 - exact source SHA and clean-source admission;
 - expected build label/build-instance tuple;
-- strict code-signature success;
+- strict code-signature success for both archived and rehydrated signed app;
 - exact post-sign executable and Info.plist digests;
 - exact schema-v3 record contents;
 - exact signed-app archive digest;
-- optional device installation evidence when used;
+- optional device installation success state when used, without treating a device identifier as artifact evidence;
 - no in-bundle executable-digest self-reference;
 - recipe/procedure identity remains `ES80-FINGERPRINT-v1` / `V14`;
 - the app-visible/runtime acceptance belongs to the same final candidate lineage.
