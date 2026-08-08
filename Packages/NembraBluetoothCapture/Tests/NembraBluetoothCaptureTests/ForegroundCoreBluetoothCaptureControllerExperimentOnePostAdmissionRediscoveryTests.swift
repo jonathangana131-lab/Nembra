@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
-/// Software monotonic ordering only; no BLE/RF emission time or physical ES80 claim.
 struct ForegroundCoreBluetoothCaptureControllerExperimentOnePostAdmissionRediscoveryTests {
     private static func source(named filename: String) throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
@@ -23,15 +22,19 @@ struct ForegroundCoreBluetoothCaptureControllerExperimentOnePostAdmissionRedisco
         #expect(source.contains("DispatchTime.now().uptimeNanoseconds"))
     }
 
-    @Test("controller requires rediscovery after admission before recorder installation")
+    @Test("controller requires strictly later rediscovery before irreversible admission consumption")
     func currentCatalogMustBePostAdmissionEvidence() throws {
         let body = try Self.consumerBody(try Self.source(named: "ForegroundCoreBluetoothCaptureController.swift"))
-        let latestAdvertisement = try #require(body.range(of: "latestAdvertisementByIdentifier[payload.peripheralIdentifier]"))
-        let freshness = try #require(body.range(of: "receivedAtUptimeNanoseconds >= payload.issuedAtUptimeNanoseconds"))
+        let latestAdvertisement = try #require(body.range(of: "latestAdvertisementByIdentifier[preview.peripheralIdentifier]"))
+        let freshness = try #require(body.range(of: "receivedAtUptimeNanoseconds > preview.issuedAtUptimeNanoseconds"))
+        let consume = try #require(body.range(of: "let payload = try admission.consume()"))
+        let previewMatch = try #require(body.range(of: "payload.issuedAtUptimeNanoseconds == preview.issuedAtUptimeNanoseconds"))
         let selectTarget = try #require(body.range(of: "targetState.selectTarget(payload.peripheralIdentifier)"))
         let installRecorder = try #require(body.range(of: "recorder = payload.recorder"))
         #expect(latestAdvertisement.lowerBound < freshness.lowerBound)
-        #expect(freshness.lowerBound < selectTarget.lowerBound)
-        #expect(freshness.lowerBound < installRecorder.lowerBound)
+        #expect(freshness.lowerBound < consume.lowerBound)
+        #expect(consume.lowerBound < previewMatch.lowerBound)
+        #expect(previewMatch.lowerBound < selectTarget.lowerBound)
+        #expect(previewMatch.lowerBound < installRecorder.lowerBound)
     }
 }
