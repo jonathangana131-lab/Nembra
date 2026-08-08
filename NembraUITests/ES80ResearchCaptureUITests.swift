@@ -479,6 +479,48 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testV14SimulatorQAForegroundInterruptionKeepsTruthAndRecoveryVisible() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=foregroundInterrupted"
+        ]
+        app.launch()
+
+        let qaDisclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
+        let stoppedState = app.staticTexts["Capture stopped safely"]
+        let restart = app.descendants(matching: .any)["es80.capture.restart-experiment"]
+
+        XCTAssertTrue(qaDisclosure.waitForExistence(timeout: 5))
+        XCTAssertTrue(stoppedState.waitForExistence(timeout: 3))
+        XCTAssertTrue(restart.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+        XCTAssertFalse(app.buttons["Vehicle controls"].exists)
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Nembra Capture V14 — SIMULATOR QA — Foreground Interrupted"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        let windowFrame = app.windows.firstMatch.frame
+        assertVisibleInScreenshotViewport(
+            qaDisclosure,
+            windowFrame: windowFrame,
+            context: "synthetic Simulator QA disclosure in interrupted state"
+        )
+        assertVisibleInScreenshotViewport(
+            stoppedState,
+            windowFrame: windowFrame,
+            context: "interrupted Capture stopped state"
+        )
+        assertVisibleInScreenshotViewport(
+            restart,
+            windowFrame: windowFrame,
+            context: "fresh-run recovery action after interruption"
+        )
+    }
+
     func testSimulatorQAAppSeamIsCompileBoundedAndProductionRouteRemainsLocked() throws {
         let appSource = try repositorySource(at: "NembraApp/App/NembraApp.swift")
         let shellSource = try captureShellSource()
