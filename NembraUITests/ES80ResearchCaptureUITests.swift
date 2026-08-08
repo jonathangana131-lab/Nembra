@@ -806,4 +806,101 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         let sourceURL = repositoryRoot.appendingPathComponent(path)
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
+
+    @MainActor
+    func testV14SimulatorQAHorizonReadyProgressIsReviewableAtAccessibilityExtraExtraExtraLarge() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=observationHorizonReady",
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+        ]
+        app.launch()
+
+        let qaDisclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
+        let progress = app.descendants(matching: .any)["es80.capture.experiment-progress"]
+        let finish = app.descendants(matching: .any)["es80.capture.finish"]
+
+        XCTAssertTrue(app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5))
+        XCTAssertTrue(qaDisclosure.waitForExistence(timeout: 3))
+        XCTAssertTrue(progress.waitForExistence(timeout: 3))
+        XCTAssertTrue(finish.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+
+        bringIntoScreenshotViewport(
+            progress,
+            in: app,
+            context: "paired positive Capture progress rail at Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            progress,
+            windowFrame: app.windows.firstMatch.frame,
+            context: "paired positive Capture progress rail at Accessibility XXXL"
+        )
+
+        let progressAttachment = XCTAttachment(screenshot: app.screenshot())
+        progressAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Paired Progress — Accessibility XXXL"
+        progressAttachment.lifetime = .keepAlways
+        add(progressAttachment)
+
+        bringIntoScreenshotViewport(
+            finish,
+            in: app,
+            context: "Seal Capture action after paired progress review at Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            finish,
+            windowFrame: app.windows.firstMatch.frame,
+            context: "Seal Capture action after paired progress review at Accessibility XXXL"
+        )
+
+        let finishAttachment = XCTAttachment(screenshot: app.screenshot())
+        finishAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Seal After Progress — Accessibility XXXL"
+        finishAttachment.lifetime = .keepAlways
+        add(finishAttachment)
+    }
+
+    @MainActor
+    func testV14SimulatorQAHorizonReadyProgressIsReviewableInLandscape() {
+        XCUIDevice.shared.orientation = .portrait
+        defer { XCUIDevice.shared.orientation = .portrait }
+
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=observationHorizonReady"
+        ]
+        app.launch()
+
+        XCTAssertTrue(app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5))
+        XCUIDevice.shared.orientation = .landscapeLeft
+
+        let progress = app.descendants(matching: .any)["es80.capture.experiment-progress"]
+        XCTAssertTrue(progress.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+
+        let landscapeFrame = app.windows.firstMatch.frame
+        XCTAssertGreaterThan(
+            landscapeFrame.width,
+            landscapeFrame.height,
+            "The progress visual gate must actually run in landscape."
+        )
+        bringIntoScreenshotViewport(
+            progress,
+            in: app,
+            context: "positive Capture progress rail in landscape"
+        )
+        assertVisibleInScreenshotViewport(
+            progress,
+            windowFrame: app.windows.firstMatch.frame,
+            context: "positive Capture progress rail in landscape"
+        )
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Nembra Capture V14 — SIMULATOR QA — Progress Rail — Landscape"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
 }

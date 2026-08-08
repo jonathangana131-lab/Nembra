@@ -52,6 +52,7 @@ struct ES80CaptureShellView: View {
     private static let requiredObservationGuidanceNanoseconds: UInt64 = 60_000_000_000
 
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var coordinator: PassiveBluetoothExperimentOneCoordinator
     @State private var observedScanBeganAtUptimeNanoseconds: UInt64?
@@ -273,34 +274,60 @@ struct ES80CaptureShellView: View {
                     .foregroundStyle(.secondary)
             }
 
-            HStack(spacing: 6) {
-                ForEach(0..<6, id: \.self) { index in
-                    Capsule(style: .continuous)
-                        .fill(progressSegmentFill(
-                            index: index,
-                            completedWindows: completed,
-                            currentWindow: current,
-                            status: status
-                        ))
-                        .frame(height: 5)
-                }
-            }
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 10) {
+                    HStack(spacing: 8) {
+                        ForEach(0..<3, id: \.self) { index in
+                            accessibilityProgressStage(
+                                index: index,
+                                completedWindows: completed,
+                                currentWindow: current,
+                                status: status
+                            )
+                        }
+                    }
 
-            HStack {
-                Text("OFF 1")
-                Spacer()
-                Text("ON 1")
-                Spacer()
-                Text("OFF 2")
-                Spacer()
-                Text("ON 2")
-                Spacer()
-                Text("READY")
-                Spacer()
-                Text("SEAL")
+                    HStack(spacing: 8) {
+                        ForEach(3..<6, id: \.self) { index in
+                            accessibilityProgressStage(
+                                index: index,
+                                completedWindows: completed,
+                                currentWindow: current,
+                                status: status
+                            )
+                        }
+                    }
+                }
+            } else {
+                HStack(spacing: 6) {
+                    ForEach(0..<6, id: \.self) { index in
+                        Capsule(style: .continuous)
+                            .fill(progressSegmentFill(
+                                index: index,
+                                completedWindows: completed,
+                                currentWindow: current,
+                                status: status
+                            ))
+                            .frame(height: 5)
+                    }
+                }
+
+                HStack {
+                    Text("OFF 1")
+                    Spacer()
+                    Text("ON 1")
+                    Spacer()
+                    Text("OFF 2")
+                    Spacer()
+                    Text("ON 2")
+                    Spacer()
+                    Text("READY")
+                    Spacer()
+                    Text("SEAL")
+                }
+                .font(.caption2.monospaced().weight(.semibold))
+                .foregroundStyle(.secondary)
             }
-            .font(.caption2.monospaced().weight(.semibold))
-            .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
@@ -311,6 +338,42 @@ struct ES80CaptureShellView: View {
             )
         )
         .accessibilityIdentifier("es80.capture.experiment-progress")
+    }
+
+    private func accessibilityProgressStage(
+        index: Int,
+        completedWindows: Int,
+        currentWindow: PassiveBluetoothPowerCycleObservationPhase?,
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> some View {
+        VStack(spacing: 6) {
+            Capsule(style: .continuous)
+                .fill(progressSegmentFill(
+                    index: index,
+                    completedWindows: completedWindows,
+                    currentWindow: currentWindow,
+                    status: status
+                ))
+                .frame(height: 5)
+
+            Text(progressStageLabel(index: index))
+                .font(.caption2.monospaced().weight(.semibold))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func progressStageLabel(index: Int) -> String {
+        switch index {
+        case 0: "OFF 1"
+        case 1: "ON 1"
+        case 2: "OFF 2"
+        case 3: "ON 2"
+        case 4: "READY"
+        case 5: "SEAL"
+        default: ""
+        }
     }
 
     @ViewBuilder
