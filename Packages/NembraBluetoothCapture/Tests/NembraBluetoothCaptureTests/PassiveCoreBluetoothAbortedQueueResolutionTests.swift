@@ -49,7 +49,8 @@ struct PassiveCoreBluetoothAbortedQueueResolutionTests {
         let resolution = try Resolution.resolve(
             currentResolvedThroughQueueSequence: 0,
             currentLastEnqueuedEventSequence: 2,
-            retirementReceipt: retirement
+            retirementReceipt: retirement,
+            abortedGate: gate
         )
 
         #expect(resolution.abortReceipt == retirement.abortReceipt)
@@ -84,7 +85,8 @@ struct PassiveCoreBluetoothAbortedQueueResolutionTests {
         let resolution = try Resolution.resolve(
             currentResolvedThroughQueueSequence: 1,
             currentLastEnqueuedEventSequence: 3,
-            retirementReceipt: retirement
+            retirementReceipt: retirement,
+            abortedGate: gate
         )
 
         #expect(resolution.previouslyResolvedThroughQueueSequence == 1)
@@ -110,7 +112,8 @@ struct PassiveCoreBluetoothAbortedQueueResolutionTests {
             _ = try Resolution.resolve(
                 currentResolvedThroughQueueSequence: 0,
                 currentLastEnqueuedEventSequence: 2,
-                retirementReceipt: retirement
+                retirementReceipt: retirement,
+                abortedGate: gate
             )
         }
         #expect(error == .controllerQueueChangedAfterRetirement(expected: 1, actual: 2))
@@ -137,7 +140,8 @@ struct PassiveCoreBluetoothAbortedQueueResolutionTests {
             _ = try Resolution.resolve(
                 currentResolvedThroughQueueSequence: 0,
                 currentLastEnqueuedEventSequence: 3,
-                retirementReceipt: retirement
+                retirementReceipt: retirement,
+                abortedGate: gate
             )
         }
         #expect(error == .resolvedFrontierDoesNotMatchRetirementSettled(current: 0, settled: 1))
@@ -160,7 +164,8 @@ struct PassiveCoreBluetoothAbortedQueueResolutionTests {
         let resolution = try Resolution.resolve(
             currentResolvedThroughQueueSequence: 0,
             currentLastEnqueuedEventSequence: 0,
-            retirementReceipt: retirement
+            retirementReceipt: retirement,
+            abortedGate: gate
         )
         #expect(resolution.previouslyResolvedThroughQueueSequence == 0)
         #expect(resolution.resolvedThroughQueueSequence == 0)
@@ -184,7 +189,8 @@ struct PassiveCoreBluetoothAbortedQueueResolutionTests {
         let first = try Resolution.resolve(
             currentResolvedThroughQueueSequence: 0,
             currentLastEnqueuedEventSequence: 1,
-            retirementReceipt: retirement
+            retirementReceipt: retirement,
+            abortedGate: gate
         )
         #expect(first.resolvedThroughQueueSequence == 1)
 
@@ -192,10 +198,43 @@ struct PassiveCoreBluetoothAbortedQueueResolutionTests {
             _ = try Resolution.resolve(
                 currentResolvedThroughQueueSequence: first.resolvedThroughQueueSequence,
                 currentLastEnqueuedEventSequence: 1,
-                retirementReceipt: retirement
+                retirementReceipt: retirement,
+                abortedGate: gate
             )
         }
         #expect(replayError == .resolvedFrontierDoesNotMatchRetirementSettled(current: 1, settled: 0))
+    }
+
+    @Test("old retirement cannot mint resolution after lifecycle reopened")
+    @MainActor
+    func postReopenRetirementProofFailsClosed() async throws {
+        var gate = try await quarantinedCommittedReadyGate()
+        var pending: [PendingEvent] = []
+        let retirement = try Retirement.retire(
+            from: &pending,
+            currentLastEnqueuedEventSequence: 0,
+            currentSettledQueueSequence: 0,
+            drainIsIdle: true,
+            abortedGate: gate,
+            identity: identity
+        )
+
+        try gate.completeAbortedObservationRecovery(
+            retirement,
+            currentLastEnqueuedEventSequence: 0,
+            freshTargetSessionGeneration: authority.targetSessionGeneration + 1
+        )
+        #expect(!gate.isAbortQuarantined)
+
+        let error = captureResolutionError {
+            _ = try Resolution.resolve(
+                currentResolvedThroughQueueSequence: 0,
+                currentLastEnqueuedEventSequence: 0,
+                retirementReceipt: retirement,
+                abortedGate: gate
+            )
+        }
+        #expect(error == .abortQuarantineRequired)
     }
 
     @MainActor
