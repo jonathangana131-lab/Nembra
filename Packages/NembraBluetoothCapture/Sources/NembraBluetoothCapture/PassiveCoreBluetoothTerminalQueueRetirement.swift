@@ -57,10 +57,12 @@ struct PassiveCoreBluetoothTerminalQueueRetirement: Sendable {
     /// - exact terminal artifact authority; and
     /// - queue sequence strictly after the immutable Horizon cutoff.
     ///
-    /// Validation is fail-closed and atomic. A malformed FIFO or any still-pending
-    /// terminal-authority item at/before H leaves the caller's array unchanged.
-    /// Newer/foreign authority events are retained even when interleaved with the
-    /// old terminal generation.
+    /// Validation is fail-closed and atomic. The terminal transaction's H is a
+    /// global controller-FIFO cutoff: every callback at or before H was required to
+    /// drain before that boundary could commit. Therefore *any* still-pending item
+    /// at/before H is an impossible prefix residue, regardless of artifact authority,
+    /// and leaves the caller's array unchanged. Newer/foreign authority events after
+    /// H are retained even when interleaved with the old terminal generation.
     ///
     /// The identity closure must project immutable authority captured on the queued
     /// event itself. It must never synthesize authority from whichever controller
@@ -95,13 +97,13 @@ struct PassiveCoreBluetoothTerminalQueueRetirement: Sendable {
             }
             previousQueueSequence = evidence.queueSequence
 
-            guard evidence.authority == transaction.authority else {
-                continue
-            }
             guard evidence.queueSequence > transaction.queueCutoff else {
                 throw StateError.terminalPrefixStillPending(
                     queueSequence: evidence.queueSequence
                 )
+            }
+            guard evidence.authority == transaction.authority else {
+                continue
             }
 
             retirementMask[index] = true
