@@ -13,7 +13,7 @@ struct RideHistoryObservedPeakConsumerProjectionTests {
         let evidence: RideObservedPeakHistoryEvidence
     }
 
-    @Test("qualified peak exposes one observed-maximum value")
+    @Test("qualified peak exposes exactly one observed-maximum state")
     func qualifiedPeak() throws {
         let presentation = try RideHistoryObservedPeakPresenter.present(
             joined(try bluetoothFixture(speeds: [3, 6, 5]))
@@ -24,12 +24,13 @@ struct RideHistoryObservedPeakConsumerProjectionTests {
 
         #expect(projection.sessionID == sessionID)
         #expect(projection.selectedSource == .scooterBluetooth)
-        #expect(projection.role == .qualifiedObservedMaximum)
-        #expect(projection.speedMetersPerSecond == 6)
-        #expect(!projection.requiresQualityDisclosure)
+        #expect(projection.state == .qualifiedObservedMaximum(metersPerSecond: 6))
+        #expect(projection.state.speedMetersPerSecond == 6)
+        #expect(projection.state.permitsObservedMaximumWording)
+        #expect(!projection.state.requiresQualityDisclosure)
     }
 
-    @Test("accepted zero remains an observation and never becomes maximum wording")
+    @Test("accepted zero remains subordinate evidence and never maximum wording")
     func acceptedZero() throws {
         let presentation = try RideHistoryObservedPeakPresenter.present(
             joined(try bluetoothFixture(speeds: [0, 0, 0]))
@@ -38,12 +39,13 @@ struct RideHistoryObservedPeakConsumerProjectionTests {
             RideHistoryObservedPeakConsumerProjector.project(presentation)
         )
 
-        #expect(projection.role == .acceptedObservation)
-        #expect(projection.speedMetersPerSecond == 0)
-        #expect(projection.requiresQualityDisclosure)
+        #expect(projection.state == .acceptedObservation(metersPerSecond: 0))
+        #expect(projection.state.speedMetersPerSecond == 0)
+        #expect(!projection.state.permitsObservedMaximumWording)
+        #expect(projection.state.requiresQualityDisclosure)
     }
 
-    @Test("missing peak exposes no numeric value")
+    @Test("missing peak exposes no numeric value or maximum wording")
     func missingPeak() throws {
         let ride = try completedRide()
         let accumulator = RideSpeedEvidenceSessionAccumulator(
@@ -63,9 +65,10 @@ struct RideHistoryObservedPeakConsumerProjectionTests {
             RideHistoryObservedPeakConsumerProjector.project(presentation)
         )
 
-        #expect(projection.role == .unavailable)
-        #expect(projection.speedMetersPerSecond == nil)
-        #expect(!projection.requiresQualityDisclosure)
+        #expect(projection.state == .unavailable)
+        #expect(projection.state.speedMetersPerSecond == nil)
+        #expect(!projection.state.permitsObservedMaximumWording)
+        #expect(!projection.state.requiresQualityDisclosure)
     }
 
     private func bluetoothFixture(speeds: [Double]) throws -> Fixture {
