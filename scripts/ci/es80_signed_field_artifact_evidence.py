@@ -376,27 +376,44 @@ def read_leaf_signing_certificate_der(app_path: Path) -> bytes:
         return data
 
 
-def _profile_value_authorizes(profile_value: object, signed_value: object) -> bool:
+WILDCARD_PROFILE_ENTITLEMENT_KEYS = frozenset({"keychain-access-groups"})
+
+
+def _profile_value_authorizes(
+    entitlement_key: str,
+    profile_value: object,
+    signed_value: object,
+) -> bool:
     if isinstance(signed_value, str):
         if isinstance(profile_value, str):
-            if profile_value.endswith("*"):
+            if (
+                entitlement_key in WILDCARD_PROFILE_ENTITLEMENT_KEYS
+                and profile_value.endswith("*")
+            ):
                 return signed_value.startswith(profile_value[:-1])
             return signed_value == profile_value
         if isinstance(profile_value, list):
-            return any(_profile_value_authorizes(candidate, signed_value) for candidate in profile_value)
+            return any(
+                _profile_value_authorizes(entitlement_key, candidate, signed_value)
+                for candidate in profile_value
+            )
         return False
     if isinstance(signed_value, list):
         if not isinstance(profile_value, list):
             return False
         return all(
-            any(_profile_value_authorizes(candidate, item) for candidate in profile_value)
+            any(
+                _profile_value_authorizes(entitlement_key, candidate, item)
+                for candidate in profile_value
+            )
             for item in signed_value
         )
     if isinstance(signed_value, dict):
         if not isinstance(profile_value, dict):
             return False
         return all(
-            key in profile_value and _profile_value_authorizes(profile_value[key], value)
+            key in profile_value
+            and _profile_value_authorizes(entitlement_key, profile_value[key], value)
             for key, value in signed_value.items()
         )
     return profile_value == signed_value
@@ -460,7 +477,7 @@ def validate_provisioning_profile(
     if signed_entitlements.get("com.apple.developer.team-identifier") != team_identifier:
         raise EvidenceError("effective signed TeamIdentifier does not match code signing")
     for key, value in signed_entitlements.items():
-        if key not in entitlements or not _profile_value_authorizes(entitlements[key], value):
+        if key not in entitlements or not _profile_value_authorizes(key, entitlements[key], value):
             raise EvidenceError(
                 f"effective signed entitlement is not authorized by provisioning profile: {key}"
             )
@@ -919,6 +936,50 @@ def self_test() -> None:
     assert profile_uuid == "PROFILE-UUID"
     assert expiration_utc == "2099-01-01T00:00:00Z"
     assert application_id == f"{team}.{BUNDLE_ID}"
+
+    # Provisioning wildcard behavior is entitlement-specific. Exact equality is the default.
+    unknown_wildcard_profile = {
+        **valid_profile,
+        "Entitlements": {
+            **valid_profile["Entitlements"],
+            "com.example.future": "allowed.*",
+        },
+    }
+    unknown_wildcard_signed = {
+        **valid_entitlements,
+        "com.example.future": "allowed.value",
+    }
+    try:
+        validate_provisioning_profile(
+            unknown_wildcard_profile,
+            team_identifier=team,
+            bundle_identifier=BUNDLE_ID,
+            signed_entitlements=unknown_wildcard_signed,
+            signing_certificate_der=leaf_certificate,
+            intended_device_udid=device,
+            now=datetime(2098, 1, 1, tzinfo=timezone.utc),
+        )
+    except EvidenceError:
+        pass
+    else:
+        raise AssertionError("unknown entitlement inherited wildcard authorization semantics")
+
+    exact_unknown_profile = {
+        **valid_profile,
+        "Entitlements": {
+            **valid_profile["Entitlements"],
+            "com.example.future": "allowed.value",
+        },
+    }
+    validate_provisioning_profile(
+        exact_unknown_profile,
+        team_identifier=team,
+        bundle_identifier=BUNDLE_ID,
+        signed_entitlements=unknown_wildcard_signed,
+        signing_certificate_der=leaf_certificate,
+        intended_device_udid=device,
+        now=datetime(2098, 1, 1, tzinfo=timezone.utc),
+    )
 
     bad_profiles = (
         {**valid_profile, "TeamIdentifier": ["OTHER12345"]},
