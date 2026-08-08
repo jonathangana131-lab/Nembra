@@ -1,0 +1,126 @@
+name: Temporary ES80 privileged Bash convergence
+
+on:
+  push:
+    branches:
+      - recovery/es80-v14-producer-path-python-custody/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  converge:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: recovery/es80-v14-producer-path-python-custody/gpt56-thinking-go
+          fetch-depth: 0
+
+      - name: Close Bash startup before producer code
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/ci/xcode27_signed_field_candidate.sh')
+          data = path.read_bytes()
+          old = b'#!/bin/bash\n'
+          new = b'#!/bin/bash -p\n'
+          if not data.startswith(old):
+              raise SystemExit('producer no longer has the expected plain Bash shebang')
+          path.write_bytes(new + data[len(old):])
+          PY
+
+      - name: Install executable startup regression
+        shell: bash
+        run: |
+          cat > scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py <<'PY'
+          #!/usr/bin/env python3
+          from pathlib import Path
+          import os
+          import subprocess
+          import tempfile
+          import unittest
+
+          PRODUCER = Path(__file__).resolve().parents[1] / "xcode27_signed_field_candidate.sh"
+          CLOSED_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
+
+
+          class SignedFieldCandidateProcessStartupCustodyTests(unittest.TestCase):
+              def setUp(self) -> None:
+                  self.source = PRODUCER.read_text(encoding="utf-8")
+
+              def test_privileged_bash_shebang_closes_bash_env_before_script_code(self) -> None:
+                  self.assertEqual(self.source.splitlines()[0], "#!/bin/bash -p")
+
+              def test_closed_path_is_the_first_command_after_shell_options(self) -> None:
+                  lines = self.source.splitlines()
+                  option_index = lines.index("set -euo pipefail")
+                  path_index = lines.index(f'PATH="{CLOSED_PATH}"')
+                  export_index = lines.index("export PATH")
+                  self.assertEqual(path_index, option_index + 4)
+                  self.assertEqual(export_index, path_index + 1)
+                  self.assertEqual(self.source.count('PATH="/usr/bin:/bin:/usr/sbin:/sbin"'), 1)
+
+              def test_direct_execution_does_not_source_caller_bash_env(self) -> None:
+                  with tempfile.TemporaryDirectory() as temporary:
+                      root = Path(temporary)
+                      marker = root / "bash-env-ran"
+                      bash_env = root / "BASH_ENV"
+                      bash_env.write_text(
+                          f'printf source-ran > "{marker}"\n'
+                          'PATH="/tmp/nembra-attacker-bin:$PATH"\n'
+                          'export PATH\n',
+                          encoding="utf-8",
+                      )
+                      bash_env.chmod(0o600)
+
+                      environment = os.environ.copy()
+                      environment["BASH_ENV"] = str(bash_env)
+                      environment["PATH"] = "/tmp/nembra-attacker-bin:/usr/bin:/bin"
+                      result = subprocess.run(
+                          [str(PRODUCER)],
+                          cwd=PRODUCER.parents[2],
+                          env=environment,
+                          stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE,
+                          text=True,
+                          check=False,
+                      )
+
+                      self.assertNotEqual(result.returncode, 0)
+                      self.assertFalse(
+                          marker.exists(),
+                          f"BASH_ENV executed before producer policy; stderr={result.stderr!r}",
+                      )
+
+              def test_python_is_pinned_and_every_invocation_is_isolated(self) -> None:
+                  self.assertIn('PYTHON3="/usr/bin/python3"', self.source)
+                  self.assertNotIn('PYTHON3="$(command -v python3', self.source)
+                  self.assertNotIn("python3 - <<", self.source)
+                  self.assertNotIn("python3 -c", self.source)
+                  self.assertGreaterEqual(self.source.count('"$PYTHON3" -I'), 1)
+
+
+          if __name__ == "__main__":
+              unittest.main()
+          PY
+
+      - name: Validate and publish product-only result
+        shell: bash
+        run: |
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_process_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/tmp-es80-producer-privileged-bash.yml
+          git add scripts/ci/xcode27_signed_field_candidate.sh scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py
+          git commit -m "Capture field: close Bash startup custody"
+          git push origin HEAD:recovery/es80-v14-producer-path-python-custody/gpt56-thinking-go
