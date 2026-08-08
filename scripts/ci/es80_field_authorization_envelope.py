@@ -151,12 +151,11 @@ def require_openssl() -> str:
     if executable_stat.st_mode & 0o111 == 0:
         raise AuthorizationEnvelopeError("configured OpenSSL file is not executable")
 
-    if hasattr(os, "geteuid"):
-        signing_uid = os.geteuid()
-        if executable_stat.st_uid not in {0, signing_uid}:
-            raise AuthorizationEnvelopeError(
-                "OpenSSL executable must be owned by root or the signing user"
-            )
+    signing_uid = os.geteuid() if hasattr(os, "geteuid") else None
+    if signing_uid is not None and executable_stat.st_uid not in {0, signing_uid}:
+        raise AuthorizationEnvelopeError(
+            "OpenSSL executable must be owned by root or the signing user"
+        )
 
     directory = resolved.parent
     while True:
@@ -169,6 +168,10 @@ def require_openssl() -> str:
         if directory_stat.st_mode & 0o022:
             raise AuthorizationEnvelopeError(
                 f"OpenSSL custody path is group/world-writable: {directory}"
+            )
+        if signing_uid is not None and directory_stat.st_uid not in {0, signing_uid}:
+            raise AuthorizationEnvelopeError(
+                f"OpenSSL custody path must be owned by root or the signing user: {directory}"
             )
         if directory == directory.parent:
             break
@@ -482,7 +485,7 @@ def self_test() -> None:
             "schemaVersion": AUTHORIZATION_PAYLOAD_SCHEMA_VERSION,
             "decision": DECISION,
             "externalBuildRecordSHA256": sha256_hex(external_bytes),
-            "fieldBuildEvidenceRecordSHA256": sha256_hex(evidence_bytes),
+            "fieldBuildEvidenceRecordSHA256": sha256_hex(field_evidence),
         }
         if payload_object != expected_payload:
             raise AssertionError("authorization payload drifted from exact subject digests")
