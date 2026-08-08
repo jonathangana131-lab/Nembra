@@ -1,0 +1,216 @@
+name: Capture terminal controller semantic exact-current convergence
+
+on:
+  push:
+    branches:
+      - feature/capture-v14-terminal-fresh-handoff-current-gpt56
+    paths:
+      - .github/workflows/capture-terminal-controller-semantic-current-gpt56.yml
+
+permissions:
+  contents: write
+
+jobs:
+  compose-controller:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/capture-v14-terminal-fresh-handoff-current-gpt56
+          fetch-depth: 2
+
+      - name: Verify exact gate checkpoint parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "3d6a8215e804aaf7f4313fd4dcadb64dc07bb540"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-terminal-controller-semantic-current-gpt56.yml"
+
+      - name: Compose controller terminal handoff on current truth
+        shell: bash
+        run: |
+          set -euo pipefail
+          controller=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          controller_test=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerTerminalFreshSessionConsumerTests.swift
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift")
+          s = p.read_text()
+
+          def replace_once(old, new, label):
+              global s
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one anchor, found {count}")
+              s = s.replace(old, new, 1)
+
+          replace_once(
+              "    private var lastFinalizedArtifactAuthority: PassiveCoreBluetoothArtifactAuthorityContext?\n    private var targetState = PassiveCoreBluetoothTargetState()",
+              "    private var lastFinalizedArtifactAuthority: PassiveCoreBluetoothArtifactAuthorityContext?\n    /// Exact successful-terminal FIFO resolution retained after immutable artifact\n    /// return. It remains inert until transport teardown crosses the real terminal\n    /// CoreBluetooth callback and a producer-created fresh recorder is installed.\n    private var pendingTerminalQueueResolution: PassiveCoreBluetoothTerminalQueueResolution.Receipt?\n    private var targetState = PassiveCoreBluetoothTargetState()",
+              "terminal-resolution storage"
+          )
+
+          replace_once(
+              "    public func teardownActiveConnectionAfterFinalization() throws {\n        guard activePeripheral != nil else { return }",
+              "    public func teardownActiveConnectionAfterFinalization() throws {\n        guard activePeripheral != nil else {\n            _ = try completeTerminalFreshTargetSessionIfReady()\n            return\n        }",
+              "finalized teardown idle recovery"
+          )
+
+          replace_once(
+              "            do {\n                _ = try resolveQueuedEvidenceAfterTerminalHorizon()\n            } catch {",
+              "            do {\n                let terminalResolution = try resolveQueuedEvidenceAfterTerminalHorizon()\n                pendingTerminalQueueResolution = terminalResolution\n            } catch {",
+              "post-seal terminal resolution retention"
+          )
+
+          helper_anchor = "    private func beginTargetSessionIfNeeded(for identifier: UUID) throws {"
+          helper = '''    /// Consumes one sealed terminal lifecycle into the exact next durable recorder only
+    /// after transport is idle and same-target terminal-callback quarantine has cleared.
+    /// There is deliberately no actor suspension from recorder/authority publication through
+    /// gate consumption, so a late callback cannot be relabeled into the fresh session.
+    @discardableResult
+    private func completeTerminalFreshTargetSessionIfReady(
+        startedAt: Date = Date()
+    ) throws -> Bool {
+        guard observationBoundaryQueueGate.isTerminal,
+              let terminalResolution = pendingTerminalQueueResolution else {
+            return false
+        }
+        guard let finalizedAuthority = lastFinalizedArtifactAuthority,
+              finalizedAuthority == terminalResolution.terminalAuthority,
+              currentArtifactAuthorityContext() == terminalResolution.terminalAuthority else {
+            throw ControllerError.artifactNotFinalized
+        }
+        guard !artifactReadBarrier.isActive,
+              observationBoundaryTask == nil,
+              activePeripheral == nil,
+              connectionPhase == .idle else {
+            return false
+        }
+        guard targetState.selectedTargetIdentifier != nil else {
+            throw ControllerError.targetNotSelected
+        }
+        guard !isSelectedTargetAwaitingTerminalCallback else {
+            return false
+        }
+        guard pendingEvents.isEmpty,
+              lastResolvedEventSequence == terminalResolution.resolvedThroughQueueSequence,
+              lastEnqueuedEventSequence == terminalResolution.resolvedThroughQueueSequence else {
+            throw ControllerError.captureIncomplete
+        }
+
+        let freshSession = try PassiveCoreBluetoothTerminalFreshTargetSession.create(
+            after: terminalResolution,
+            vehicleIdentity: vehicleIdentity,
+            startedAt: startedAt
+        )
+        let previousAuthority = currentArtifactAuthorityContext()
+        let freshAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
+            targetSessionGeneration: freshSession.receipt.targetSessionGeneration,
+            authorityGeneration: 1
+        )
+
+        do {
+            try artifactAuthorityFence.transition(
+                from: previousAuthority,
+                to: freshAuthority
+            )
+            targetSessionGeneration = freshAuthority.targetSessionGeneration
+            artifactAuthorityGeneration = freshAuthority.authorityGeneration
+            recorder = freshSession.recorder
+            hasUsedInitialSessionIdentity = true
+            acquisitionLedger.beginTargetSession()
+            gattIdentityRegistry.reset()
+            selectedTargetCancellationPending = false
+            foregroundEvidenceIntegrityValid = true
+            committedReadyEpoch = nil
+
+            try observationBoundaryQueueGate.reopenAfterTerminalFreshTargetSession(
+                freshSession.receipt,
+                installedRecorder: freshSession.recorder,
+                currentResolvedThroughQueueSequence: lastResolvedEventSequence,
+                currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
+            )
+        } catch {
+            failCapture(error)
+            throw ControllerError.captureFailed
+        }
+
+        pendingTerminalQueueResolution = nil
+        lastFinalizedArtifactAuthority = nil
+        return true
+    }
+
+'''
+          replace_once(helper_anchor, helper + helper_anchor, "fresh-session helper insertion")
+
+          old_disconnect = '''        // After Horizon admission/freeze, consume CoreBluetooth transport cleanup
+        // only. The finalized/closing artifact authority is immutable.
+        if observationBoundaryQueueGate.isTerminal || observationBoundaryBlocksArtifactMutation {
+            selectedTargetCancellationPending = false
+            if case .active = disposition {
+                clearActiveConnectionState(for: identifier)
+            }
+            return
+        }'''
+          new_disconnect = '''        // After Horizon admission/freeze, consume CoreBluetooth transport cleanup
+        // only. The finalized/closing artifact authority is immutable until a real
+        // terminal callback has released same-target quarantine. Only then may the
+        // exact producer-created fresh recorder consume terminal resolution authority.
+        if observationBoundaryQueueGate.isTerminal || observationBoundaryBlocksArtifactMutation {
+            selectedTargetCancellationPending = false
+            if case .active = disposition {
+                clearActiveConnectionState(for: identifier)
+            }
+            do {
+                _ = try completeTerminalFreshTargetSessionIfReady()
+            } catch {
+                failCapture(error)
+            }
+            return
+        }'''
+          replace_once(old_disconnect, new_disconnect, "terminal callback recovery")
+
+          p.write_text(s)
+          PY
+
+          git fetch --no-tags origin ee875d3207f456658b9967b89f80e1f7a65b4353
+          git show ee875d3207f456658b9967b89f80e1f7a65b4353:$controller_test > "$controller_test"
+          git add "$controller" "$controller_test"
+
+          rm .github/workflows/capture-terminal-controller-semantic-current-gpt56.yml
+          git add -u .github/workflows/capture-terminal-controller-semantic-current-gpt56.yml
+          git diff --cached --check
+
+          # Required terminal handoff.
+          test "$(grep -c 'pendingTerminalQueueResolution' "$controller")" -ge "4"
+          test "$(grep -c 'completeTerminalFreshTargetSessionIfReady' "$controller")" -ge "3"
+          grep -q 'PassiveCoreBluetoothTerminalFreshTargetSession.create' "$controller"
+          grep -q 'reopenAfterTerminalFreshTargetSession' "$controller"
+          grep -q 'pendingTerminalQueueResolution = terminalResolution' "$controller"
+          grep -q 'pendingTerminalQueueResolution = nil' "$controller"
+
+          # Preserve the exact-current Experiment One and Ready/Horizon truth seams.
+          test "$(grep -c 'func connectUsingExperimentOneAdmission(' "$controller")" = "1"
+          test "$(grep -c 'admission.consume()' "$controller")" = "1"
+          test "$(grep -c 'latestAdvertisement.receivedAtUptimeNanoseconds >= payload.issuedAtUptimeNanoseconds' "$controller")" = "1"
+          test "$(grep -c 'recorder = payload.recorder' "$controller")" = "1"
+          grep -q 'validateBoundaryAuthority(admission.authority)' "$controller"
+          test "$(grep -c 'try self.requireForegroundEvidenceIntegrity()' "$controller")" -ge "4"
+          grep -q 'let recordedReadyFailure = error' "$controller"
+          grep -q 'let recordedHorizonFailure = error' "$controller"
+          test "$(grep -c 'foregroundEvidenceIntegrityValid = false' "$controller")" = "1"
+          test "$(grep -c 'try? self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit' "$controller" || true)" = "0"
+          test "$(grep -c 'try? observationBoundaryQueueGate.abortRecordedHorizonBeforeGateCommit' "$controller" || true)" = "0"
+
+          test -f "$controller_test"
+          test ! -e .github/workflows/capture-terminal-controller-semantic-current-gpt56.yml
+
+      - name: Commit product-only controller convergence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-chatgpt56-thinking"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "feat: consume terminal resolution into exact fresh recorder"
+          git push origin HEAD:feature/capture-v14-terminal-fresh-handoff-current-gpt56
