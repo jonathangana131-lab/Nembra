@@ -70,6 +70,7 @@ public enum PassiveBluetoothExperimentOneSoftwareExportError: Error, Equatable, 
     case manifestBuildMismatch
     case manifestTargetMismatch
     case malformedWireData
+    case duplicateWireField(String)
     case unexpectedWireField(String)
 }
 
@@ -87,7 +88,7 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
         )
     }
 
-    /// Package-scoped deterministic seam for executable package tests. Production app clients cannot
+    /// Package-scoped deterministic seam for executable regression tests. Production app clients cannot
     /// inject a detached correlation result or arbitrary build identity through this API.
     package static func make(
         captureJSON: Data,
@@ -394,6 +395,9 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
     }
 
     private static func validateClosedWorldShape(_ data: Data) throws {
+        if let duplicate = PassiveBluetoothStrictJSON.duplicateTopLevelObjectKey(in: data) {
+            throw PassiveBluetoothExperimentOneSoftwareExportError.duplicateWireField(duplicate)
+        }
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw PassiveBluetoothExperimentOneSoftwareExportError.malformedWireData
         }
