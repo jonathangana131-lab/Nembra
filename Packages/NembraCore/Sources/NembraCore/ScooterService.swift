@@ -18,10 +18,13 @@ public enum ScooterCommandError: Error, Equatable, Sendable {
 ///
 /// Implementations must register the returned stream and yield their current
 /// `SpeedEvidenceAvailability` as its first element atomically with stream
-/// construction. That replay requirement removes the snapshot -> subscribe race
-/// that could otherwise leave a consumer holding stale `.live` authority after
-/// a disconnect or evidence gap. Raw telemetry remains a separate stream for
-/// rendering/diagnostics and is never replayed as a fresh measurement.
+/// construction. Because availability is current state rather than an event log,
+/// providers must also avoid delivering obsolete queued states after newer
+/// availability exists (for example with newest-only buffering or equivalent
+/// sequencing). Those requirements remove snapshot -> subscribe and slow-consumer
+/// races that could otherwise resurrect stale `.live` authority after a disconnect
+/// or evidence gap. Raw telemetry remains a separate stream for rendering/
+/// diagnostics and is never replayed as a fresh measurement.
 public protocol SpeedEvidenceProvider: Sendable {
     func speedEvidenceUpdates() async -> AsyncStream<SpeedEvidenceAvailability>
 }
