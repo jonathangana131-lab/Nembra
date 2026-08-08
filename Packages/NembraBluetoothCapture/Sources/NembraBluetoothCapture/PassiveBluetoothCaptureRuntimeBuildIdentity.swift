@@ -3,21 +3,26 @@ import Foundation
 
 /// Build identity read from the running Nembra application rather than rider/operator input.
 ///
-/// The embedded build identifier and source commit are declarations produced by the accepted
-/// build pipeline. `executableSHA256` is computed from the exact executable bytes visible to
-/// the running application. Together they let a later trusted build record bind the runtime
-/// bytes to the exact checkout that produced them without treating a typed Git SHA as proof.
+/// The embedded build identifier, build-instance identifier, and source commit are declarations
+/// produced by the accepted build pipeline. `executableSHA256` is computed from the exact
+/// executable bytes visible to the running application. The build-instance identifier is an
+/// opaque per-produced-build rendezvous key: it lets an independently attested external build
+/// record identify this exact build without embedding the final executable digest back into the
+/// signed app bundle and creating a code-signing self-reference.
 public struct PassiveBluetoothCaptureRuntimeBuildIdentity: Equatable, Sendable {
     public let buildIdentifier: String
+    public let buildInstanceID: String
     public let sourceCommitSHA: String
     public let executableSHA256: String
 
     fileprivate init(
         buildIdentifier: String,
+        buildInstanceID: String,
         sourceCommitSHA: String,
         executableSHA256: String
     ) {
         self.buildIdentifier = buildIdentifier
+        self.buildInstanceID = buildInstanceID
         self.sourceCommitSHA = sourceCommitSHA
         self.executableSHA256 = executableSHA256
     }
@@ -26,6 +31,8 @@ public struct PassiveBluetoothCaptureRuntimeBuildIdentity: Equatable, Sendable {
 public enum PassiveBluetoothCaptureRuntimeBuildIdentityError: Error, Equatable, Sendable {
     case missingBuildIdentifier
     case invalidBuildIdentifier
+    case missingBuildInstanceID
+    case invalidBuildInstanceID
     case missingSourceCommitSHA
     case invalidSourceCommitSHA
     case executableUnavailable
@@ -40,6 +47,7 @@ public enum PassiveBluetoothCaptureRuntimeBuildIdentityError: Error, Equatable, 
 /// package-scoped resolver below to exercise validation deterministically.
 public enum PassiveBluetoothCaptureRuntimeBuildIdentityReader {
     public static let buildIdentifierInfoDictionaryKey = "NembraCaptureBuildIdentifier"
+    public static let buildInstanceIDInfoDictionaryKey = "NembraCaptureBuildInstanceID"
     public static let sourceCommitSHAInfoDictionaryKey = "NembraCaptureBuildCommitSHA"
 
     /// Reads build identity from the running application's main bundle and hashes the exact
@@ -86,6 +94,13 @@ public enum PassiveBluetoothCaptureRuntimeBuildIdentityReader {
             throw PassiveBluetoothCaptureRuntimeBuildIdentityError.invalidBuildIdentifier
         }
 
+        guard let rawBuildInstanceID = infoDictionary[buildInstanceIDInfoDictionaryKey] as? String else {
+            throw PassiveBluetoothCaptureRuntimeBuildIdentityError.missingBuildInstanceID
+        }
+        guard let normalizedBuildInstanceID = normalizedBuildInstanceID(rawBuildInstanceID) else {
+            throw PassiveBluetoothCaptureRuntimeBuildIdentityError.invalidBuildInstanceID
+        }
+
         guard let rawCommitSHA = infoDictionary[sourceCommitSHAInfoDictionaryKey] as? String else {
             throw PassiveBluetoothCaptureRuntimeBuildIdentityError.missingSourceCommitSHA
         }
@@ -95,9 +110,26 @@ public enum PassiveBluetoothCaptureRuntimeBuildIdentityReader {
 
         return PassiveBluetoothCaptureRuntimeBuildIdentity(
             buildIdentifier: rawBuildIdentifier,
+            buildInstanceID: normalizedBuildInstanceID,
             sourceCommitSHA: normalizedCommitSHA,
             executableSHA256: sha256Hex(executableData)
         )
+    }
+
+    package static func normalizedBuildInstanceID(_ rawValue: String) -> String? {
+        let normalized = rawValue.lowercased()
+        guard normalized.utf8.count == 36 else { return nil }
+
+        let bytes = Array(normalized.utf8)
+        let hyphenOffsets: Set<Int> = [8, 13, 18, 23]
+        for (offset, byte) in bytes.enumerated() {
+            if hyphenOffsets.contains(offset) {
+                guard byte == 45 else { return nil }
+            } else {
+                guard (48...57).contains(byte) || (97...102).contains(byte) else { return nil }
+            }
+        }
+        return normalized
     }
 
     package static func normalizedFullGitCommitSHA(_ rawValue: String) -> String? {
