@@ -99,11 +99,16 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(verifiedGuard.lowerBound < liveConstruction.lowerBound)
         #expect(source.components(separatedBy: gateGuard).count - 1 == 1)
 
+        let executableSource = source
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+            .joined(separator: "\n")
+
         #expect(source.contains("private static func makeLiveES80Coordinator() throws"))
         #expect(!source.contains("authorized: Bool"))
         #expect(!source.contains("permission: Bool"))
-        #expect(!source.contains("UserDefaults"))
-        #expect(!source.contains("ProcessInfo"))
+        #expect(!executableSource.contains("UserDefaults"))
+        #expect(!executableSource.contains("ProcessInfo"))
     }
 
     @Test("current app consumes only the exact-running-build private research factory")
