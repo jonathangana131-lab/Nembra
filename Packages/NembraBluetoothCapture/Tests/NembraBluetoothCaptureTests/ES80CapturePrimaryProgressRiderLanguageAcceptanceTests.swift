@@ -42,6 +42,14 @@ struct ES80CapturePrimaryProgressRiderLanguageAcceptanceTests {
         )
     }
 
+    private static func errorCopy(_ source: String) throws -> Substring {
+        try section(
+            source,
+            from: "private func experimentErrorMessage(",
+            to: "private func bluetoothUnavailableMessage("
+        )
+    }
+
     @Test("primary cards use field language instead of research vocabulary")
     func primaryCardsStayHumanFirst() throws {
         let source = try Self.shellSource()
@@ -83,6 +91,7 @@ struct ES80CapturePrimaryProgressRiderLanguageAcceptanceTests {
     func remainingRiderCopyStaysHumanFirst() throws {
         let source = try Self.shellSource()
         let primary = try Self.primarySurface(source)
+        let errors = try Self.errorCopy(source)
 
         for leak in [
             "OFF / ON windows, connection, capture, and sealing",
@@ -102,8 +111,8 @@ struct ES80CapturePrimaryProgressRiderLanguageAcceptanceTests {
         #expect(primary.contains("Verify Capture file"))
         #expect(primary.contains("CAPTURE LOCKED"))
 
-        #expect(!primary.contains("This OFF / ON series has an evidence gap."))
-        #expect(primary.contains("These OFF / ON checks were interrupted. Start a fresh capture."))
+        #expect(!errors.contains("This OFF / ON series has an evidence gap."))
+        #expect(errors.contains("These OFF / ON checks were interrupted. Start a fresh capture."))
     }
 
     @Test("progress, hero, and status language stays rider-first")
@@ -122,7 +131,7 @@ struct ES80CapturePrimaryProgressRiderLanguageAcceptanceTests {
         let status = try Self.section(
             source,
             from: "private func statusTitle(for phase: Phase)",
-            to: "private func progressStage("
+            to: "private func statusSymbol(for phase: Phase)"
         )
 
         #expect(!progress.contains("Experiment One progress"))
