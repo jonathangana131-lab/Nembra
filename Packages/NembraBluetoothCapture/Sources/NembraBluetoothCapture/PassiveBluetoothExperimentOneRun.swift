@@ -62,6 +62,71 @@ struct PassiveBluetoothExperimentOneCaptureEvidence: Equatable, Sendable {
     }
 }
 
+/// One package-internal, one-shot handoff from the sealed Experiment One provenance root into the
+/// live Capture controller.
+///
+/// The app cannot construct or consume this type because it is not public. Construction is even
+/// narrower: only this producer file can initialize one, and the initializer accepts the exact
+/// producer-issued four-window evidence plus the recorder already owned by the same run. No UUID,
+/// observation result, recorder, or authority supplied by app/UI code can manufacture admission.
+///
+/// `consume()` is MainActor-isolated and one-shot. Aliasing the reference does not create another
+/// permit; the first consumer permanently burns the handoff. The returned payload also has a
+/// producer-file-private initializer and carries a process-local admission UUID, so a future
+/// controller can bind one exact consumption event instead of trusting equal scalar fields.
+///
+/// This is software ownership authority only. It does not authenticate the correlated physical
+/// device or assign any GATT/Tuya meaning.
+@MainActor
+final class PassiveBluetoothExperimentOneCaptureAdmission {
+    enum ConsumptionError: Error, Equatable, Sendable {
+        case alreadyConsumed
+    }
+
+    struct Payload {
+        let admissionIdentity: UUID
+        let powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence
+        let peripheralIdentifier: UUID
+        let recorder: PassiveCoreBluetoothCaptureRecorder
+
+        fileprivate init(
+            admissionIdentity: UUID,
+            powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,
+            peripheralIdentifier: UUID,
+            recorder: PassiveCoreBluetoothCaptureRecorder
+        ) {
+            self.admissionIdentity = admissionIdentity
+            self.powerCycleEvidence = powerCycleEvidence
+            self.peripheralIdentifier = peripheralIdentifier
+            self.recorder = recorder
+        }
+    }
+
+    private let payload: Payload
+    private var hasBeenConsumed = false
+
+    fileprivate init(
+        powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,
+        peripheralIdentifier: UUID,
+        recorder: PassiveCoreBluetoothCaptureRecorder
+    ) {
+        payload = Payload(
+            admissionIdentity: UUID(),
+            powerCycleEvidence: powerCycleEvidence,
+            peripheralIdentifier: peripheralIdentifier,
+            recorder: recorder
+        )
+    }
+
+    func consume() throws -> Payload {
+        guard !hasBeenConsumed else {
+            throw ConsumptionError.alreadyConsumed
+        }
+        hasBeenConsumed = true
+        return payload
+    }
+}
+
 /// Package-internal provenance root for one complete Experiment One attempt.
 ///
 /// One instance owns one four-window producer. Only after that exact producer finishes under one
@@ -81,12 +146,12 @@ struct PassiveBluetoothExperimentOneCaptureEvidence: Equatable, Sendable {
 /// declared context is still software metadata and is never physical ES80 authentication.
 ///
 /// **Critical integration boundary:** this run and all authority-bearing result types remain
-/// package-internal, while the mutable recorder handoff/finalization path below remains
-/// producer-file private. Another production file in `NembraBluetoothCapture` therefore cannot
-/// obtain the recorder that would later earn Experiment One authority. The accepted foreground
-/// controller integration must deliberately replace this sealed boundary with controller-owned
-/// mutation plus finalized H-bounded artifact issuance; until then no package consumer can call an
-/// Experiment One PASS path. Physical Experiment One remains blocked.
+/// package-internal. Raw recorder creation and Experiment One evidence promotion stay producer-file
+/// private. The sole widened seam is `issueCaptureAdmission()`: it derives the exact unique target
+/// from this run's completed four-window producer, creates this run's recorder, and returns one
+/// non-public one-shot handoff. The foreground controller still must consume that handoff and own
+/// recorder mutation plus finalized H-bounded artifact issuance before the app can legitimately
+/// expose Start/Finish/Share. Physical Experiment One remains blocked.
 @MainActor
 final class PassiveBluetoothExperimentOneRun {
     let vehicleIdentity: VehicleIdentity
@@ -119,9 +184,35 @@ final class PassiveBluetoothExperimentOneRun {
         captureRecorder != nil
     }
 
-    /// Deliberately file-private while physical Experiment One remains blocked. The future live
-    /// controller integration must establish an explicit controller-owned mutation/finalization
-    /// contract before this handoff can be widened beyond the producer implementation file.
+    /// The only same-module bridge from completed correlation into live capture ownership.
+    ///
+    /// Callers provide only a local recorder start timestamp. The target UUID, producer authority,
+    /// and mutable recorder all come from this exact run. A second call fails because the recorder is
+    /// one-shot per run, and the returned admission itself can also be consumed only once.
+    func issueCaptureAdmission(
+        startedAt: Date = Date()
+    ) throws -> PassiveBluetoothExperimentOneCaptureAdmission {
+        guard powerCycleObservationSession.result != nil else {
+            throw PassiveBluetoothExperimentOneRunError.powerCycleIncomplete
+        }
+        guard let evidence = completedPowerCycleEvidence else {
+            throw PassiveBluetoothExperimentOneRunError.powerCycleAuthorityInvalid
+        }
+        guard case let .singleRepeatableCandidate(peripheralIdentifier) = evidence.result.correlation.disposition else {
+            throw PassiveBluetoothExperimentOneRunError.powerCycleCorrelationNotUnique
+        }
+
+        let recorder = try beginCaptureRecorder(startedAt: startedAt)
+        return PassiveBluetoothExperimentOneCaptureAdmission(
+            powerCycleEvidence: evidence,
+            peripheralIdentifier: peripheralIdentifier,
+            recorder: recorder
+        )
+    }
+
+    /// Recorder creation itself remains producer-file private. The reviewed controller bridge must
+    /// go through `issueCaptureAdmission()` so a bare caller-selected UUID can never be paired with a
+    /// separately-created recorder and promoted as one Experiment One provenance life.
     @discardableResult
     fileprivate func beginCaptureRecorder(
         startedAt: Date = Date()
