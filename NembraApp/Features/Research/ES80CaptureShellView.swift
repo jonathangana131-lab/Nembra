@@ -898,7 +898,7 @@ struct ES80CaptureShellView: View {
             return .physicalProcedureLocked
         }
         if status.foregroundIntegrityLost {
-            return .failed("Nembra left the active foreground after Experiment One began. This evidence life cannot regain capture authority; start a fresh Experiment One.")
+            return .failed("Nembra left the foreground after Experiment One began. This capture cannot safely continue; start a fresh Experiment One.")
         }
         if finalizationInFlight {
             return .finalizing
@@ -920,10 +920,10 @@ struct ES80CaptureShellView: View {
             return .acquiring
         case .idle:
             if captureConnectionAttempted && !status.hasPreparedCaptureAdmission {
-                return .failed(coordinator.lastDiagnostic ?? "The passive target connection ended before an accepted observation could be sealed. Start a fresh Experiment One rather than replaying consumed authority.")
+                return .failed(coordinator.lastDiagnostic ?? "The passive connection ended before observation could be sealed. Start a fresh Experiment One.")
             }
         case .unavailable:
-            return .bluetoothUnavailable("The package-owned CoreBluetooth controller is unavailable for this coordinator.")
+            return .bluetoothUnavailable("Bluetooth capture is unavailable for this run.")
         }
 
         if status.hasPreparedCaptureAdmission {
@@ -932,7 +932,7 @@ struct ES80CaptureShellView: View {
 
         switch status.correlation {
         case .invalidEvidence:
-            return .correlationFailed("The four windows did not preserve one valid package-issued observation authority and required OFF 1, ON 1, OFF 2, ON 2 ordering.")
+            return .correlationFailed("The four windows no longer form a valid OFF 1, ON 1, OFF 2, ON 2 sequence. Start again from OFF 1.")
         case .noRepeatableCandidate:
             return .noRepeatableTarget
         case let .ambiguousRepeatableCandidates(count):
@@ -947,7 +947,7 @@ struct ES80CaptureShellView: View {
             return .bluetoothUnavailable(bluetoothUnavailableMessage(status.bluetoothState))
         }
         guard let progress = status.powerCycleProgress else {
-            return .correlationFailed("The package-owned Experiment One workflow has no active correlation progress and no final result.")
+            return .correlationFailed("Experiment One has no active OFF / ON progress. Start a fresh run.")
         }
         if progress.isSeriesInvalidated {
             return .correlationFailed("A known Bluetooth, scan-liveness, or foreground gap invalidated this four-window observation series.")
@@ -985,7 +985,7 @@ struct ES80CaptureShellView: View {
         case .captureComplete, .shareRetry:
             return .complete
         case .foregroundInterrupted:
-            return .failed("Simulator QA interruption fixture. This synthetic state represents a foreground-invalidated evidence life; it is not physical evidence.")
+            return .failed("Simulator QA interruption fixture. This synthetic state represents a foreground-interrupted Capture; it is not physical evidence.")
         }
     }
 #endif
@@ -1227,7 +1227,7 @@ struct ES80CaptureShellView: View {
         do {
             coordinator = try onFreshExperimentRequested()
         } catch {
-            localFailureMessage = "Nembra could not create a fresh package-owned Experiment One workflow: \(String(describing: error))"
+            localFailureMessage = "Nembra could not start a fresh Experiment One. Close Capture and try again."
         }
     }
 
