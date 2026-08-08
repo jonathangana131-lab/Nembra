@@ -36,91 +36,77 @@ jobs:
           path = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift")
           source = path.read_text()
 
-          old_disconnect = '''        let disposition = targetState.completeDisconnect(from: identifier)
-          guard disposition != .ignored else { return }
+          def insert_after(section_start: str, anchor: str, insertion: str, label: str) -> None:
+              global source
+              section_index = source.find(section_start)
+              if section_index < 0:
+                  raise SystemExit(f"{label}: section start missing")
+              anchor_index = source.find(anchor, section_index)
+              if anchor_index < 0:
+                  raise SystemExit(f"{label}: anchor missing")
+              next_section = source.find("\n    public func ", section_index + len(section_start))
+              if next_section >= 0 and anchor_index >= next_section:
+                  raise SystemExit(f"{label}: anchor escaped target section")
+              insertion_index = anchor_index + len(anchor)
+              if insertion.strip() in source[section_index:insertion_index + len(insertion) + 256]:
+                  raise SystemExit(f"{label}: insertion already present")
+              source = source[:insertion_index] + insertion + source[insertion_index:]
 
-          // A retired target may disconnect after the operator has already selected
-          '''
-          new_disconnect = '''        let disposition = targetState.completeDisconnect(from: identifier)
-          guard disposition != .ignored else { return }
+          insert_after(
+              "    private func handleDisconnect(\n",
+              "        guard disposition != .ignored else { return }\n\n",
+              "        // Once Horizon is terminal, transport teardown may release CoreBluetooth\n"
+              "        // state but must not revoke or mutate the already-finalized artifact authority.\n"
+              "        if observationBoundaryQueueGate.isTerminal {\n"
+              "            if targetState.selectedTargetIdentifier == identifier {\n"
+              "                selectedTargetCancellationPending = false\n"
+              "            }\n"
+              "            if case .active = disposition {\n"
+              "                clearActiveConnectionState(for: identifier)\n"
+              "            }\n"
+              "            return\n"
+              "        }\n\n",
+              "disconnect",
+          )
 
-          // Once Horizon is terminal, transport teardown may release CoreBluetooth
-          // state but must not revoke or mutate the already-finalized artifact authority.
-          if observationBoundaryQueueGate.isTerminal {
-              if targetState.selectedTargetIdentifier == identifier {
-                  selectedTargetCancellationPending = false
-              }
-              if case .active = disposition {
-                  clearActiveConnectionState(for: identifier)
-              }
-              return
-          }
+          insert_after(
+              "    public func centralManagerDidUpdateState(_ central: CBCentralManager) {\n",
+              "        bluetoothState = central.state\n\n",
+              "        // A terminal Horizon freezes capture authority. Central-state callbacks may\n"
+              "        // still clean up transport state, but they cannot create a new evidence epoch\n"
+              "        // or invalidate the sealed artifact.\n"
+              "        if observationBoundaryQueueGate.isTerminal {\n"
+              "            hasObservedInitialCentralState = true\n"
+              "            guard central.state != .poweredOn else { return }\n\n"
+              "            scanRequested = false\n"
+              "            if central.isScanning {\n"
+              "                central.stopScan()\n"
+              "            }\n"
+              "            if activePeripheral != nil {\n"
+              "                activePeripheral?.delegate = nil\n"
+              "                activePeripheral = nil\n"
+              "                connectionTimeoutTask?.cancel()\n"
+              "                connectionTimeoutTask = nil\n"
+              "                connectionPhase = .idle\n"
+              "                clearAcquisitionObjects()\n"
+              "            }\n"
+              "            selectedTargetCancellationPending = false\n"
+              "            targetState.resetForCentralInvalidation()\n"
+              "            clearCandidateCatalog()\n"
+              "            return\n"
+              "        }\n\n",
+              "central-state",
+          )
 
-          // A retired target may disconnect after the operator has already selected
-          '''
-          if source.count(old_disconnect) != 1:
-              raise SystemExit("disconnect patch anchor mismatch")
-          source = source.replace(old_disconnect, new_disconnect, 1)
-
-          old_central = '''        let previous = bluetoothState
-          bluetoothState = central.state
-
-          if hasObservedInitialCentralState, previous != central.state {
-          '''
-          new_central = '''        let previous = bluetoothState
-          bluetoothState = central.state
-
-          // A terminal Horizon freezes capture authority. Central-state callbacks may
-          // still clean up transport state, but they cannot create a new evidence epoch
-          // or invalidate the sealed artifact.
-          if observationBoundaryQueueGate.isTerminal {
-              hasObservedInitialCentralState = true
-              guard central.state != .poweredOn else { return }
-
-              scanRequested = false
-              if central.isScanning {
-                  central.stopScan()
-              }
-              if activePeripheral != nil {
-                  activePeripheral?.delegate = nil
-                  activePeripheral = nil
-                  connectionTimeoutTask?.cancel()
-                  connectionTimeoutTask = nil
-                  connectionPhase = .idle
-                  clearAcquisitionObjects()
-              }
-              selectedTargetCancellationPending = false
-              targetState.resetForCentralInvalidation()
-              clearCandidateCatalog()
-              return
-          }
-
-          if hasObservedInitialCentralState, previous != central.state {
-          '''
-          if source.count(old_central) != 1:
-              raise SystemExit("central-state patch anchor mismatch")
-          source = source.replace(old_central, new_central, 1)
-
-          old_services = '''    public func peripheral(_ peripheral: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {
-              let receipt = callbackReceipt()
-              guard targetState.acceptsActiveCallback(from: peripheral.identifier) else { return }
-
-              let uuids = invalidatedServices
-          '''
-          new_services = '''    public func peripheral(_ peripheral: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {
-              let receipt = callbackReceipt()
-              guard targetState.acceptsActiveCallback(from: peripheral.identifier) else { return }
-
-              // Service invalidation after terminal Horizon is outside the accepted
-              // observation interval. Do not advance artifact authority or restart a
-              // finite acquisition inside the sealed recorder lifecycle.
-              guard !observationBoundaryQueueGate.isTerminal else { return }
-
-              let uuids = invalidatedServices
-          '''
-          if source.count(old_services) != 1:
-              raise SystemExit("service-invalidation patch anchor mismatch")
-          source = source.replace(old_services, new_services, 1)
+          insert_after(
+              "    public func peripheral(_ peripheral: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {\n",
+              "        guard targetState.acceptsActiveCallback(from: peripheral.identifier) else { return }\n\n",
+              "        // Service invalidation after terminal Horizon is outside the accepted\n"
+              "        // observation interval. Do not advance artifact authority or restart a\n"
+              "        // finite acquisition inside the sealed recorder lifecycle.\n"
+              "        guard !observationBoundaryQueueGate.isTerminal else { return }\n\n",
+              "service-invalidation",
+          )
 
           path.write_text(source)
           PY
