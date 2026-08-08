@@ -5,27 +5,26 @@ public extension PassiveBluetoothExperimentOneCoordinator {
         case fieldExecutionNotAuthorized
     }
 
-    /// Legacy/current NembraApp construction path.
+    /// Canonical TODAY research-build construction path.
     ///
-    /// This zero-argument API is intentionally permanently fail-closed. It must never become a live
-    /// field path merely because the repository-wide final gate is later changed to GO: doing that
-    /// would let app code bypass the non-forgeable exact signed-field `VerifiedAdmission` entirely.
-    /// NembraApp may continue calling this while physical execution is locked; future real field
-    /// wiring must migrate to the admission-bearing overload rather than weakening this method.
+    /// The package itself resolves the mechanically identifiable build-time admission from the
+    /// running signed app bundle. App code cannot pass a Boolean, preference, environment value, or
+    /// imported JSON object to mint authority. Ordinary builds therefore remain fail-closed, while
+    /// the exact field-candidate producer metadata can unlock the stationary READ-ONLY recipe.
     @MainActor
     static func makeAuthorizedES80() throws -> PassiveBluetoothExperimentOneCoordinator {
-        throw CanonicalES80ConstructionError.fieldExecutionNotAuthorized
+        guard PassiveBluetoothExperimentOneFieldExecutionGate.currentResearchBuildAdmission() != nil else {
+            throw CanonicalES80ConstructionError.fieldExecutionNotAuthorized
+        }
+        return try makeLiveES80Coordinator()
     }
 
-    /// Future field-authorized construction seam.
+    /// Future public/release field-authorized construction seam.
     ///
     /// The caller must possess a `VerifiedAdmission` minted only from the package's cryptographically
-    /// verified external field authorization AND the package's final field-execution policy must have
-    /// deliberately reached GO. Signed evidence is necessary but not sufficient: while the repository
-    /// gate remains NO-GO this overload fails before CoreBluetooth is instantiated, so merely parsing
-    /// an independently signed authorization cannot cause Bluetooth permission/transport side effects.
-    /// The admission type has no public initializer, so this overload also does not create a
-    /// caller-forgeable Boolean/setting path.
+    /// verified external field authorization. This remains separate from TODAY's build-time research
+    /// exception so the future release threat model can return to independently signed authority
+    /// without widening the current app surface.
     @MainActor
     static func makeAuthorizedES80(
         verifiedAdmission _: PassiveBluetoothExperimentOneFieldExecutionGate.VerifiedAdmission
