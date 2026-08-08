@@ -50,8 +50,8 @@ struct PassiveBluetoothExperimentOnePublicAuthoritySurfaceTests {
         #expect(!compactAssessment.contains("publicstaticfuncassess("))
 
         // Authority-bearing wrappers remain producer-file private. Same-module code may consume only
-        // the reviewed one-shot admission; it still cannot wrap detached raw evidence, initialize an
-        // admission, or construct a replacement consumed payload from chosen scalar/object values.
+        // the reviewed one-shot admission. Its staging preview exposes only immutable scalar identity
+        // and chronology; recorder and power-cycle authority remain available only in the one-shot payload.
         #expect(
             compactRun.contains(
                 "fileprivateinit?(result:PassiveBluetoothPowerCycleObservationResult)"
@@ -64,7 +64,12 @@ struct PassiveBluetoothExperimentOnePublicAuthoritySurfaceTests {
         )
         #expect(
             compactRun.contains(
-                "fileprivateinit(admissionIdentity:UUID,powerCycleEvidence:PassiveBluetoothExperimentOnePowerCycleEvidence,peripheralIdentifier:UUID,recorder:PassiveCoreBluetoothCaptureRecorder)"
+                "fileprivateinit(admissionIdentity:UUID,peripheralIdentifier:UUID,issuedAtUptimeNanoseconds:UInt64)"
+            )
+        )
+        #expect(
+            compactRun.contains(
+                "fileprivateinit(admissionIdentity:UUID,powerCycleEvidence:PassiveBluetoothExperimentOnePowerCycleEvidence,peripheralIdentifier:UUID,recorder:PassiveCoreBluetoothCaptureRecorder,issuedAtUptimeNanoseconds:UInt64)"
             )
         )
         #expect(
