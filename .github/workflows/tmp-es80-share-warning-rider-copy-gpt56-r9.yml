@@ -24,7 +24,7 @@ jobs:
           from pathlib import Path
           import subprocess
 
-          expected_parent = "dbdc82d305244bd045ce428f813aa07b00777e85"
+          expected_parent = "613a801340a8b2dbac102aa54c3ded5fe0485f30"
           workflow = ".github/workflows/tmp-es80-share-warning-rider-copy-gpt56-r9.yml"
           parent = subprocess.check_output(["git", "rev-parse", "HEAD^"], text=True).strip()
           if parent != expected_parent:
@@ -62,8 +62,8 @@ jobs:
           subprocess.run(["git", "diff", "--check"], check=True)
           final_shell = shell_path.read_text(encoding="utf-8")
           final_tests = test_path.read_text(encoding="utf-8")
-          if "Start a fresh Experiment One" in final_shell:
-              raise SystemExit("stale rider-facing Experiment One restart warning remains")
+          if old_warning in final_shell:
+              raise SystemExit("stale rider-facing Share warning remains")
           if final_shell.count("missing the setup confirmation needed to prepare a Share file") != 1:
               raise SystemExit("new Share warning missing or duplicated")
           for phrase in ['"Experiment One"', '"package-owned"', '"CoreBluetooth"']:
