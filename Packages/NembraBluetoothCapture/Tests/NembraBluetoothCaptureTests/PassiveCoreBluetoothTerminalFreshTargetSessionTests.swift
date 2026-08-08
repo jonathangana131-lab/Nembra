@@ -42,6 +42,7 @@ struct PassiveCoreBluetoothTerminalFreshTargetSessionTests {
         #expect(fresh.receipt.terminalResolution == resolution)
         #expect(fresh.receipt.targetSessionGeneration == 8)
         #expect(fresh.receipt.sessionID == sessionID)
+        #expect(fresh.receipt.recorderIdentity == ObjectIdentifier(fresh.recorder))
 
         let snapshot = await fresh.recorder.snapshot()
         #expect(snapshot.id == sessionID)
@@ -50,7 +51,7 @@ struct PassiveCoreBluetoothTerminalFreshTargetSessionTests {
         #expect(snapshot.records.isEmpty)
     }
 
-    @Test("equal-scalar sessions still carry distinct producer identity")
+    @Test("equal-scalar sessions still carry distinct recorder and producer identity")
     @MainActor
     func separateProvisioningCannotBecomeTheSameProof() async throws {
         let authority = PassiveCoreBluetoothArtifactAuthorityContext(
@@ -72,6 +73,9 @@ struct PassiveCoreBluetoothTerminalFreshTargetSessionTests {
 
         #expect(first.receipt.targetSessionGeneration == second.receipt.targetSessionGeneration)
         #expect(first.receipt.terminalResolution == second.receipt.terminalResolution)
+        #expect(first.receipt.recorderIdentity == ObjectIdentifier(first.recorder))
+        #expect(second.receipt.recorderIdentity == ObjectIdentifier(second.recorder))
+        #expect(first.receipt.recorderIdentity != second.receipt.recorderIdentity)
         #expect(first.receipt.provisioningIdentity != second.receipt.provisioningIdentity)
         #expect(first.receipt != second.receipt)
     }
