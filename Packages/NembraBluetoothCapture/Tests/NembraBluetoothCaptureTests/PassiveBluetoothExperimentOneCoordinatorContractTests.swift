@@ -48,22 +48,10 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
     func futureGateCannotUnlockOrdinaryConstruction() {
         let policy = PassiveBluetoothExperimentOneCoordinatorConstructionPolicy.self
 
-        #expect(policy.permitsPhysicalProcedure(
-            hasCanonicalLiveController: false,
-            fieldGatePermitsPhysicalProcedure: false
-        ) == false)
-        #expect(policy.permitsPhysicalProcedure(
-            hasCanonicalLiveController: false,
-            fieldGatePermitsPhysicalProcedure: true
-        ) == false)
-        #expect(policy.permitsPhysicalProcedure(
-            hasCanonicalLiveController: true,
-            fieldGatePermitsPhysicalProcedure: false
-        ) == false)
-        #expect(policy.permitsPhysicalProcedure(
-            hasCanonicalLiveController: true,
-            fieldGatePermitsPhysicalProcedure: true
-        ) == true)
+        #expect(policy.permitsPhysicalProcedure(hasCanonicalLiveController: false, fieldGatePermitsPhysicalProcedure: false) == false)
+        #expect(policy.permitsPhysicalProcedure(hasCanonicalLiveController: false, fieldGatePermitsPhysicalProcedure: true) == false)
+        #expect(policy.permitsPhysicalProcedure(hasCanonicalLiveController: true, fieldGatePermitsPhysicalProcedure: false) == false)
+        #expect(policy.permitsPhysicalProcedure(hasCanonicalLiveController: true, fieldGatePermitsPhysicalProcedure: true) == true)
     }
 
     @Test("public coordinator construction never creates the live CoreBluetooth controller")
@@ -113,9 +101,11 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
         let source = try Self.coordinatorSource()
         let start = try #require(source.range(of: "    public func connectPreparedCapture()")?.lowerBound)
         let connection = source[start...]
-        let catalogGuard = try #require(connection.range(of: "controller.discoveredPeripherals.first(where: { $0.id == identifier })"))
+        let catalogGuard = try #require(connection.range(of: "controller.hasDiscoveredPeripheral(identifier: identifier)"))
+        let exactLookup = try #require(connection.range(of: "controller.discoveredPeripheral(identifier: identifier)"))
         let connect = try #require(connection.range(of: "controller.connectUsingExperimentOneAdmission(admission, timeout: 12)"))
-        #expect(catalogGuard.lowerBound < connect.lowerBound)
+        #expect(catalogGuard.lowerBound < exactLookup.lowerBound)
+        #expect(exactLookup.lowerBound < connect.lowerBound)
         #expect(connection.contains("throw CoordinatorError.targetNotRediscovered"))
         #expect(connection.contains("throw CoordinatorError.targetNotConnectable"))
     }
