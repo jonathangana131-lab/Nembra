@@ -22,14 +22,14 @@ struct PassiveBluetoothExperimentOneCanonicalES80ConstructionTests {
         )
     }
 
-    @Test("current NO-GO prevents canonical live-controller construction")
+    @Test("ordinary test-host NO-GO prevents canonical live-controller construction")
     @MainActor
     func currentNoGoStopsFactoryBeforeControllerExists() {
         #expect(PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure == false)
 
         do {
             _ = try Coordinator.makeAuthorizedES80()
-            Issue.record("expected canonical ES80 construction to remain field-locked")
+            Issue.record("expected ordinary test-host construction to remain field-locked")
         } catch let error as ConstructionError {
             #expect(error == .fieldExecutionNotAuthorized)
         } catch {
@@ -37,11 +37,16 @@ struct PassiveBluetoothExperimentOneCanonicalES80ConstructionTests {
         }
     }
 
-    @Test("factory checks package field authority before CoreBluetooth construction")
+    @Test("TODAY factory requires package research authority before CoreBluetooth construction")
     func fieldGatePrecedesCanonicalControllerCreation() throws {
         let source = try Self.factorySource()
-        let gate = try #require(
-            source.range(of: "guard PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure")
+        let researchStatus = try #require(
+            source.range(
+                of: "guard case .researchBuildAuthorized = PassiveBluetoothExperimentOneFieldExecutionGate.status"
+            )
+        )
+        let permit = try #require(
+            source.range(of: "PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure")
         )
         let controller = try #require(
             source.range(of: "ForegroundCoreBluetoothCaptureController(")
@@ -50,7 +55,8 @@ struct PassiveBluetoothExperimentOneCanonicalES80ConstructionTests {
             source.range(of: "PassiveBluetoothExperimentOneCoordinator(controller: controller)")
         )
 
-        #expect(gate.lowerBound < controller.lowerBound)
+        #expect(researchStatus.lowerBound < permit.lowerBound)
+        #expect(permit.lowerBound < controller.lowerBound)
         #expect(controller.lowerBound < initializer.lowerBound)
         #expect(source.contains("throw CanonicalES80ConstructionError.fieldExecutionNotAuthorized"))
         #expect(!source.contains("try? ForegroundCoreBluetoothCaptureController("))
