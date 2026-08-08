@@ -14,7 +14,9 @@ public struct PassiveBluetoothFinalizedArtifactIntegrityReport: Equatable, Senda
     public let recordCount: Int
     public let rawValueRecordCount: Int
 
-    public init(
+    // This value represents an earned decode/readability result, so construction stays inside the
+    // package inspector while public clients retain read-only access to the verified facts.
+    init(
         sha256: String,
         byteCount: Int,
         captureSessionID: UUID,
