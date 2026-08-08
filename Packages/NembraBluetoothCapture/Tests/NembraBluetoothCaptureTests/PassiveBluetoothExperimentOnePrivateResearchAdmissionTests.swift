@@ -36,6 +36,11 @@ struct PassiveBluetoothExperimentOnePrivateResearchAdmissionTests {
         #expect(!PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure)
     }
 
+    @Test("ordinary package build does not compile the TODAY live research capability")
+    func ordinaryBuildRemainsCompileTimeNoGo() {
+        #expect(!PassiveBluetoothExperimentOneFieldExecutionGate.hasCompiledTodayResearchCapability)
+    }
+
     @Test("missing or wrong field recipe cannot mint research admission")
     func fieldRecipeIsMandatoryAndExact() throws {
         let identity = try makeRuntimeIdentity()
@@ -105,8 +110,8 @@ struct PassiveBluetoothExperimentOnePrivateResearchAdmissionTests {
         }
     }
 
-    @Test("live research admission exists only in physical iOS Release builds")
-    func liveResearchAdmissionIsMechanicallyFencedFromDebugAndSimulator() throws {
+    @Test("live research admission requires dedicated compiled capability plus physical iOS Release")
+    func liveResearchAdmissionIsMechanicallyFencedFromOrdinaryBuildsDebugAndSimulator() throws {
         let source = try sourceFile(
             "Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneFieldExecutionGate.swift"
         )
@@ -121,10 +126,10 @@ struct PassiveBluetoothExperimentOnePrivateResearchAdmissionTests {
         )
         let liveProducer = source[liveStart..<deterministicStart]
         let deterministicSeam = source[deterministicStart...]
+        let requiredFence =
+            "#if NEMBRA_ES80_TODAY_RESEARCH && os(iOS) && !targetEnvironment(simulator) && !DEBUG"
 
-        let fence = try #require(
-            liveProducer.range(of: "#if os(iOS) && !targetEnvironment(simulator) && !DEBUG")
-        )
+        let fence = try #require(liveProducer.range(of: requiredFence))
         let rejection = try #require(
             liveProducer.range(of: "throw ResearchAdmissionError.nonResearchBuildConfiguration")
         )
@@ -132,7 +137,25 @@ struct PassiveBluetoothExperimentOnePrivateResearchAdmissionTests {
 
         #expect(fence.lowerBound < rejection.lowerBound)
         #expect(rejection.lowerBound < fenceEnd.lowerBound)
-        #expect(!deterministicSeam.contains("#if os(iOS) && !targetEnvironment(simulator) && !DEBUG"))
+        #expect(!deterministicSeam.contains(requiredFence))
+        #expect(source.contains("static var hasCompiledTodayResearchCapability: Bool"))
+    }
+
+    @Test("TODAY signed-field wrapper injects only the dedicated compile capability before delegation")
+    func todaySignedFieldWrapperOwnsCompileCapabilityInjection() throws {
+        let source = try repositorySourceFile(
+            "scripts/ci/xcode27_today_research_field_candidate.sh"
+        )
+
+        #expect(source.contains("unset SWIFT_ACTIVE_COMPILATION_CONDITIONS"))
+        #expect(
+            source.contains(
+                "export OTHER_SWIFT_FLAGS='$(inherited) -DNEMBRA_ES80_TODAY_RESEARCH'"
+            )
+        )
+        #expect(source.contains("exec \"$CANONICAL_PRODUCER\" \"$@\""))
+        #expect(source.contains("xcode27_signed_field_candidate.sh"))
+        #expect(!source.contains("INFOPLIST_KEY_NembraCaptureFieldRecipe"))
     }
 
     @Test("research factory acquires package admission before any CoreBluetooth construction")
@@ -203,6 +226,20 @@ struct PassiveBluetoothExperimentOnePrivateResearchAdmissionTests {
             .deletingLastPathComponent()
         return try String(
             contentsOf: packageRoot.appendingPathComponent(relativePath),
+            encoding: .utf8
+        )
+    }
+
+    private func repositorySourceFile(_ relativePath: String) throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let repositoryRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: repositoryRoot.appendingPathComponent(relativePath),
             encoding: .utf8
         )
     }
