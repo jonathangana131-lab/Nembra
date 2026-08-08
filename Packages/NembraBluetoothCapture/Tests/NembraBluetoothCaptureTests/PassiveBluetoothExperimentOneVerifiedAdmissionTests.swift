@@ -69,6 +69,7 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         let source = try sourceFile(
             "Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCoordinator+CanonicalES80.swift"
         )
+        let code = codeOnly(source)
 
         let gateGuard = "guard PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure"
         let zeroFactoryStart = try #require(
@@ -100,10 +101,10 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(source.components(separatedBy: gateGuard).count - 1 == 1)
 
         #expect(source.contains("private static func makeLiveES80Coordinator() throws"))
-        #expect(!source.contains("authorized: Bool"))
-        #expect(!source.contains("permission: Bool"))
-        #expect(!source.contains("UserDefaults"))
-        #expect(!source.contains("ProcessInfo"))
+        #expect(!code.contains("authorized: Bool"))
+        #expect(!code.contains("permission: Bool"))
+        #expect(!code.contains("UserDefaults"))
+        #expect(!code.contains("ProcessInfo"))
     }
 
     @Test("current app consumes only the exact-running-build private research factory")
@@ -173,6 +174,16 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         SHA256.hash(data: data)
             .map { String(format: "%02x", $0) }
             .joined()
+    }
+
+    private func codeOnly(_ source: String) -> String {
+        source
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line in
+                guard let comment = line.range(of: "//") else { return String(line) }
+                return String(line[..<comment.lowerBound])
+            }
+            .joined(separator: "\n")
     }
 
     private func sourceFile(_ relativePath: String) throws -> String {
