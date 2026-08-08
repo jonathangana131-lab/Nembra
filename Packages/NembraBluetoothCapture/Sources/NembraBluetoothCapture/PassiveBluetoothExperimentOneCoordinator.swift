@@ -10,8 +10,9 @@ import NembraCore
 /// GATT acquisition, Ready, Horizon, and immutable finalization.
 ///
 /// Physical execution is subordinate to `PassiveBluetoothExperimentOneFieldExecutionGate`.
-/// While the repository gate is NO-GO this type does not instantiate a live CoreBluetooth capture
-/// controller and every procedure-advancing API fails before Bluetooth work begins.
+/// The default initializer remains mechanically NO-GO and never instantiates a live CoreBluetooth
+/// controller. The only public initializer that may create live transport requires the package's
+/// non-forgeable `PassiveBluetoothCaptureVerifiedFieldAuthorization` for this exact running build.
 @MainActor
 public final class PassiveBluetoothExperimentOneCoordinator {
     public enum CoordinatorError: Error, Equatable, Sendable {
@@ -81,6 +82,7 @@ public final class PassiveBluetoothExperimentOneCoordinator {
 
     private let run: PassiveBluetoothExperimentOneRun
     private let controller: ForegroundCoreBluetoothCaptureController?
+    private let fieldExecutionStatus: PassiveBluetoothExperimentOneFieldExecutionGate.Status
     private var pendingCaptureAdmission: PassiveBluetoothExperimentOneCaptureAdmission?
     private var preparedCorrelatedTargetIdentifier: UUID?
     private var foregroundIntegrityWasLost = false
@@ -88,11 +90,37 @@ public final class PassiveBluetoothExperimentOneCoordinator {
     private var finalizationCleanupStatusStorage: FinalizationCleanupStatus = .notAttempted
     private var experimentHasBegun = false
 
-    /// Canonical ES80 only. No caller-selected vehicle/controller can enter the field authority path.
-    public init() throws {
+    /// Default/repository construction remains locked and cannot create live Bluetooth transport.
+    public convenience init() throws {
+        try self.init(fieldAuthorization: nil)
+    }
+
+    /// Canonical ES80 only. The only live-controller construction path requires a verified external
+    /// authorization for the exact running build; no caller-selected vehicle/controller/Boolean can
+    /// enter the field-authority path.
+    public convenience init(
+        fieldAuthorization: PassiveBluetoothCaptureVerifiedFieldAuthorization
+    ) throws {
+        try self.init(fieldAuthorization: Optional(fieldAuthorization))
+    }
+
+    private init(
+        fieldAuthorization: PassiveBluetoothCaptureVerifiedFieldAuthorization?
+    ) throws {
         let identity = VehicleProfile.aovoproES80.identity
         run = try PassiveBluetoothExperimentOneRun(vehicleIdentity: identity)
-        if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure {
+
+        if let fieldAuthorization {
+            fieldExecutionStatus = PassiveBluetoothExperimentOneFieldExecutionGate.status(
+                for: fieldAuthorization
+            )
+        } else {
+            fieldExecutionStatus = PassiveBluetoothExperimentOneFieldExecutionGate.status
+        }
+
+        if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure(
+            status: fieldExecutionStatus
+        ) {
             controller = try ForegroundCoreBluetoothCaptureController(vehicleIdentity: identity)
         } else {
             controller = nil
@@ -101,8 +129,11 @@ public final class PassiveBluetoothExperimentOneCoordinator {
 
     public var status: Status {
         Status(
-            fieldExecutionStatus: PassiveBluetoothExperimentOneFieldExecutionGate.status,
-            physicalProcedurePermitted: PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure,
+            fieldExecutionStatus: fieldExecutionStatus,
+            physicalProcedurePermitted:
+                PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure(
+                    status: fieldExecutionStatus
+                ),
             powerCycleProgress: run.powerCycleObservationSession.progress,
             correlation: correlationStatus,
             hasPreparedCaptureAdmission: pendingCaptureAdmission != nil,
@@ -298,7 +329,9 @@ public final class PassiveBluetoothExperimentOneCoordinator {
     }
 
     private func requireExecutionAuthority() throws {
-        guard PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure else {
+        guard PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure(
+            status: fieldExecutionStatus
+        ) else {
             throw CoordinatorError.physicalProcedureLocked
         }
         guard !foregroundIntegrityWasLost else { throw CoordinatorError.foregroundIntegrityLost }
