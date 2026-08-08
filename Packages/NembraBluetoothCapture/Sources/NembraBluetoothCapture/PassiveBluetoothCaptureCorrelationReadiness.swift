@@ -43,6 +43,14 @@ public struct PassiveBluetoothCaptureCorrelationReadinessReport: Equatable, Send
     public let supportedMarkerCount: Int
     public let targetValueObservationCount: Int
 
+    /// Backward-compatible descriptive count from the original readiness API.
+    ///
+    /// This counts explicit disconnects attributed to the selected target plus
+    /// generic capture interruptions. It is useful attribution provenance, but it
+    /// is NOT the raw-byte continuity authority because another peripheral's
+    /// structured disconnect is still a capture-wide known byte-continuity break.
+    public let targetContinuityBreakCount: Int
+
     /// Number of captured events that NembraCore classifies as raw-byte continuity breaks.
     ///
     /// This deliberately follows `PassiveBluetoothCaptureEvent.breaksByteContinuity`
@@ -66,6 +74,7 @@ public struct PassiveBluetoothCaptureCorrelationReadinessReport: Equatable, Send
         stockAppMarkerCount: Int,
         supportedMarkerCount: Int,
         targetValueObservationCount: Int,
+        targetContinuityBreakCount: Int,
         knownByteContinuityBreakCount: Int,
         correlationLookbackNanoseconds: UInt64,
         correlationLookaheadNanoseconds: UInt64,
@@ -78,6 +87,7 @@ public struct PassiveBluetoothCaptureCorrelationReadinessReport: Equatable, Send
         self.stockAppMarkerCount = stockAppMarkerCount
         self.supportedMarkerCount = supportedMarkerCount
         self.targetValueObservationCount = targetValueObservationCount
+        self.targetContinuityBreakCount = targetContinuityBreakCount
         self.knownByteContinuityBreakCount = knownByteContinuityBreakCount
         self.correlationLookbackNanoseconds = correlationLookbackNanoseconds
         self.correlationLookaheadNanoseconds = correlationLookaheadNanoseconds
@@ -180,6 +190,7 @@ public enum PassiveBluetoothCaptureCorrelationReadiness {
         var stockAppMarkerCount = 0
         var distinctMarkerFields: Set<String> = []
         var targetValueObservationCount = 0
+        var targetContinuityBreakCount = 0
         var knownByteContinuityBreakCount = 0
         var targetValueOrigins: Set<PassiveBluetoothValueOrigin> = []
     }
@@ -203,6 +214,14 @@ public enum PassiveBluetoothCaptureCorrelationReadiness {
             case let .value(value) where value.peripheralIdentifier == peripheralIdentifier:
                 summary.targetValueObservationCount += 1
                 summary.targetValueOrigins.insert(value.origin)
+
+            case let .connection(observation)
+                where observation.state == .disconnected
+                    && observation.peripheralIdentifier == peripheralIdentifier:
+                summary.targetContinuityBreakCount += 1
+
+            case .interruption:
+                summary.targetContinuityBreakCount += 1
 
             default:
                 continue
@@ -248,6 +267,7 @@ public enum PassiveBluetoothCaptureCorrelationReadiness {
             stockAppMarkerCount: sessionSummary.stockAppMarkerCount,
             supportedMarkerCount: supportedMarkerCount,
             targetValueObservationCount: sessionSummary.targetValueObservationCount,
+            targetContinuityBreakCount: sessionSummary.targetContinuityBreakCount,
             knownByteContinuityBreakCount: sessionSummary.knownByteContinuityBreakCount,
             correlationLookbackNanoseconds: lookbackNanoseconds,
             correlationLookaheadNanoseconds: lookaheadNanoseconds,

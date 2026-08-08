@@ -38,6 +38,7 @@ struct PassiveBluetoothCaptureCorrelationReadinessTests {
         #expect(report.disposition == .invalidPeripheralScope)
         #expect(!report.isReadyForOfflineCorrelation)
         #expect(report.supportedMarkerCount == 0)
+        #expect(report.targetContinuityBreakCount == 0)
         #expect(report.knownByteContinuityBreakCount == 0)
     }
 
@@ -71,6 +72,7 @@ struct PassiveBluetoothCaptureCorrelationReadinessTests {
         #expect(report.disposition == .readyForOfflineCorrelation)
         #expect(report.supportedMarkerCount == 1)
         #expect(report.targetValueObservationCount == 1)
+        #expect(report.targetContinuityBreakCount == 0)
         #expect(report.knownByteContinuityBreakCount == 0)
         #expect(report.targetValueOrigins == [.notification])
     }
@@ -111,6 +113,7 @@ struct PassiveBluetoothCaptureCorrelationReadinessTests {
         #expect(report.disposition == .noMarkerLocalTargetValues)
         #expect(report.targetValueObservationCount == 1)
         #expect(report.supportedMarkerCount == 0)
+        #expect(report.targetContinuityBreakCount == 0)
         #expect(report.knownByteContinuityBreakCount == 1)
     }
 
@@ -149,6 +152,7 @@ struct PassiveBluetoothCaptureCorrelationReadinessTests {
 
         #expect(report.disposition == .noMarkerLocalTargetValues)
         #expect(report.supportedMarkerCount == 0)
+        #expect(report.targetContinuityBreakCount == 1)
         #expect(report.knownByteContinuityBreakCount == 1)
     }
 
@@ -186,6 +190,7 @@ struct PassiveBluetoothCaptureCorrelationReadinessTests {
 
         #expect(report.disposition == .noMarkerLocalTargetValues)
         #expect(report.supportedMarkerCount == 0)
+        #expect(report.targetContinuityBreakCount == 1)
         #expect(report.knownByteContinuityBreakCount == 1)
     }
 
