@@ -1,1 +1,0 @@
-fresh advertisement enqueue: expected 1 occurrence of '        if let latestAdvertisement {\n            enqueue(\n                .advertisement(latestAdvertisement.observation),\n                receivedAtUptimeNanoseconds: latestAdvertisement.receivedAtUptimeNanoseconds,\n                receivedAtDate: latestAdvertisement.receivedAtDate\n            )\n        }\n', found 2
