@@ -291,3 +291,56 @@ final class NembraAppTests: XCTestCase {
         )
     }
 }
+
+/// Executable app wiring contract for the V14 ES80 field vertical.
+///
+/// This lives in the already-wired NembraAppTests compilation unit so the authority contract runs
+/// without changing the high-contention Xcode project file. It establishes software authority only.
+extension NembraAppTests {
+    private func repositorySource(at relativePath: String) throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let repositoryRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: repositoryRoot.appendingPathComponent(relativePath),
+            encoding: .utf8
+        )
+    }
+
+    func testCaptureShellDoesNotMintStandalonePublicCorrelationProducer() throws {
+        let shell = try repositorySource(at: "NembraApp/Features/Research/ES80CaptureShellView.swift")
+        XCTAssertFalse(
+            shell.contains("PassiveBluetoothPowerCycleObservationSession("),
+            "The field shell must consume one package-owned Experiment One workflow instead of minting a separate public four-window producer."
+        )
+    }
+
+    func testResearchLaunchDoesNotMintGenericControllerAsFieldAuthority() throws {
+        let app = try repositorySource(at: "NembraApp/App/NembraApp.swift")
+        XCTAssertFalse(
+            app.contains("try? ForegroundCoreBluetoothCaptureController("),
+            "Field authority must come through the package-owned Experiment One workflow, not direct generic-controller construction."
+        )
+    }
+
+    func testBindingLockedStateCannotBeAuthorizedGoTerminal() throws {
+        let shell = try repositorySource(at: "NembraApp/Features/Research/ES80CaptureShellView.swift")
+        XCTAssertFalse(
+            shell.contains("Passive capture binding not available in this build"),
+            "Before physical GO can be earned, one package-owned authority must continue through passive acquisition, Ready, Horizon, immutable seal, analysis, and Share."
+        )
+    }
+
+    func testCaptureCompletionOwnsFinalHorizonAndShareAction() throws {
+        let shell = try repositorySource(at: "NembraApp/Features/Research/ES80CaptureShellView.swift")
+        XCTAssertTrue(
+            shell.contains("encodedFinalizedObservationHorizonJSON"),
+            "The product shell must terminate through the package-owned immutable Horizon finalizer."
+        )
+        XCTAssertTrue(
+            shell.contains("es80.capture.share"),
+            "A sealed product artifact must surface the primary Share Capture action."
+        )
+    }
+}
