@@ -317,7 +317,7 @@ extension NembraAppTests {
 
         XCTAssertFalse(shell.contains("PassiveBluetoothPowerCycleObservationSession("))
         XCTAssertFalse(shell.contains("Passive capture binding not available in this build"))
-        XCTAssertTrue(shell.contains("coordinator.prepareCaptureRediscovery()"))
+        XCTAssertTrue(shell.contains("coordinator.confirmCorrelatedTargetAndBeginRediscovery()"))
         XCTAssertTrue(shell.contains("coordinator.connectPreparedCapture()"))
         XCTAssertTrue(shell.contains("coordinator.finalizeObservationHorizon()"))
         XCTAssertTrue(shell.contains("coordinator.finalizedShareArtifactForCurrentApplication(setup: setup)"))
