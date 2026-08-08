@@ -32,6 +32,11 @@ DECISION = "GO"
 MAX_SUBJECT_BYTES = 1024 * 1024
 MAX_PRIVATE_KEY_BYTES = 64 * 1024
 DEFAULT_OPENSSL_PATH = "/usr/bin/openssl"
+OPENSSL_SUBPROCESS_ENVIRONMENT = {
+    "LANG": "C",
+    "LC_ALL": "C",
+    "OPENSSL_CONF": "/dev/null",
+}
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 P256_SPKI_PREFIX = bytes.fromhex(
@@ -196,6 +201,7 @@ def run_openssl(
             check=False,
             stdout=subprocess.PIPE if capture_stdout else None,
             pass_fds=pass_fds,
+            env=OPENSSL_SUBPROCESS_ENVIRONMENT,
         )
     except OSError as exc:
         raise AuthorizationEnvelopeError("could not execute OpenSSL") from exc
