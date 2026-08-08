@@ -13,7 +13,7 @@ This runbook does **not** authorize a field run until the approval block below i
 - Terminal Xcode 27 exact-head workflow/run: `UNFILLED`
 - Xcode conclusion: `UNFILLED — must be SUCCESS`
 - Recipe: `ES80-FINGERPRINT-v1`
-- Procedure version: `UNFILLED`
+- Procedure version: `V14`
 - Human-readable Capture build identifier: `UNFILLED`
 - Build-instance UUID: `UNFILLED`
 - Signed installable kind/path reference: `UNFILLED`
@@ -26,6 +26,15 @@ This runbook does **not** authorize a field run until the approval block below i
 - Exact build installed on intended device: `UNFILLED`
 - Retained pre-field screenshots/artifacts inspected: `UNFILLED`
 - Approver/freeze checkpoint: `UNFILLED`
+
+Canonical signed-field producer evidence expected for the accepted build:
+- `NembraCaptureExternalBuildRecord.json`
+- `NembraCaptureFieldBuildEvidenceRecord.json`
+- `NembraCaptureSignedFieldArtifactInspection.json`
+- retained signed IPA `inspection/build-evidence/NembraField.ipa`
+- `field-candidate-environment.txt`
+
+The producer intentionally records `physical_authorization=not-granted`; successful IPA production and signing inspection are build evidence, not physical GO by themselves.
 
 **Do not change Decision to GO unless every required item above is concrete and mutually consistent.** The installed app must be the exact signed research build produced from the accepted source SHA; the recipe/build identity embedded in the signed app must match the independently retained evidence.
 
