@@ -223,8 +223,8 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateTests {
         #expect(horizonGate.phase == .horizonBoundaryRecorded(horizon))
     }
 
-    @Test("fresh target session reset does not make an old transaction current")
-    func newSessionResetKeepsOldTransactionsStale() throws {
+    @Test("terminal freeze cannot reopen lifecycle before old queue retirement")
+    func terminalResetFailsClosedUntilQueueRetirementExists() throws {
         var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
         let oldReady = try gate.begin(
             .finiteAcquisitionReady,
@@ -252,27 +252,38 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateTests {
             currentAuthority: authority
         )
 
-        gate.resetForNewCaptureSession()
+        #expect(gate.phase == .terminal(horizon))
+        #expect(gate.permittedDrainUpperBound(firstPending: 3, pendingTail: 5) == nil)
+        #expect(
+            gate.shouldDiscardQueuedEvidenceAfterTerminalHorizon(
+                queueSequence: 3,
+                authority: authority
+            )
+        )
+
+        #expect(!gate.resetForNewCaptureSession())
+        #expect(gate.phase == .terminal(horizon))
+        #expect(gate.permittedDrainUpperBound(firstPending: 3, pendingTail: 5) == nil)
+        #expect(
+            gate.shouldDiscardQueuedEvidenceAfterTerminalHorizon(
+                queueSequence: 3,
+                authority: authority
+            )
+        )
+
         let freshAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
             targetSessionGeneration: authority.targetSessionGeneration + 1,
             authorityGeneration: authority.authorityGeneration + 1
         )
-        let freshReady = try gate.begin(
-            .finiteAcquisitionReady,
-            through: 5,
-            authority: freshAuthority
-        )
-
-        let staleError = capturedStateError {
-            try gate.markBoundaryRecorded(
-                oldReady,
-                lastProcessedQueueSequence: 5,
-                currentAuthority: freshAuthority
+        #expect(
+            throws: PassiveCoreBluetoothObservationBoundaryQueueGate.StateError.invalidTransition
+        ) {
+            _ = try gate.begin(
+                .finiteAcquisitionReady,
+                through: 5,
+                authority: freshAuthority
             )
         }
-        #expect(staleError == .authorityChanged)
-        #expect(gate.phase == .drainingReady(freshReady))
-        #expect(freshReady.revision > oldReady.revision)
     }
 }
 
