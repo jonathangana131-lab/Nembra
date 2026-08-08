@@ -261,7 +261,8 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateTests {
             )
         )
 
-        #expect(!gate.resetForNewCaptureSession())
+        let resetAccepted = gate.resetForNewCaptureSession()
+        #expect(!resetAccepted)
         #expect(gate.phase == .terminal(horizon))
         #expect(gate.permittedDrainUpperBound(firstPending: 3, pendingTail: 5) == nil)
         #expect(
