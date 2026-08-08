@@ -78,7 +78,6 @@ struct ES80CapturePrimaryProgressRiderLanguageAcceptanceTests {
         #expect(primary.contains("healthItem(\"SEAL\""))
     }
 
-
     @Test("remaining field, ready, completion, and error copy avoids research jargon")
     func remainingRiderCopyStaysHumanFirst() throws {
         let source = try Self.shellSource()
@@ -104,7 +103,7 @@ struct ES80CapturePrimaryProgressRiderLanguageAcceptanceTests {
         #expect(primary.contains("signal matching and read-only capture"))
         #expect(primary.contains("Begin read-only observation"))
         #expect(primary.contains("Verify Capture file"))
-        #expect(primary.contains("Capture locked"))
+        #expect(source.contains("case .physicalProcedureLocked: return \"Capture locked\""))
 
         #expect(!source.contains("This OFF / ON series has an evidence gap."))
         #expect(source.contains("These OFF / ON checks were interrupted. Start a fresh capture."))
@@ -126,7 +125,7 @@ struct ES80CapturePrimaryProgressRiderLanguageAcceptanceTests {
         let status = try Self.slice(
             source,
             from: "private func statusTitle(for phase: Phase)",
-            to: "private func phaseShortName("
+            to: "private func statusSymbol("
         )
 
         #expect(!progress.contains("Experiment One progress"))
