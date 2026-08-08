@@ -36,6 +36,42 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
         #expect(!source.contains("public init(\n        controller: ForegroundCoreBluetoothCaptureController,\n        vehicleIdentity:"))
     }
 
+    @Test("canonical app construction creates controller and run under one ES80 package owner")
+    func canonicalConstructionKeepsDeclaredVehicleContextInsideCoordinator() throws {
+        let source = try Self.coordinatorSource()
+        let start = try #require(source.range(of: "    public convenience init() throws {")?.lowerBound)
+        let end = try #require(
+            source.range(
+                of: "    public init(controller: ForegroundCoreBluetoothCaptureController) throws",
+                range: start..<source.endIndex
+            )?.lowerBound
+        )
+        let construction = source[start..<end]
+
+        #expect(construction.contains("let controller = try ForegroundCoreBluetoothCaptureController("))
+        #expect(construction.contains("vehicleIdentity: VehicleProfile.aovoproES80.identity"))
+        #expect(construction.contains("try self.init(controller: controller)"))
+        #expect(!construction.contains("PassiveBluetoothPowerCycleObservationSession("))
+        #expect(!construction.contains("PassiveCoreBluetoothCaptureRecorder("))
+    }
+
+    @Test("injected construction still fixes the internal Experiment One run to ES80 declared context")
+    func injectedConstructionCannotSelectAnotherRunVehicleIdentity() throws {
+        let source = try Self.coordinatorSource()
+        let start = try #require(
+            source.range(of: "    public init(controller: ForegroundCoreBluetoothCaptureController) throws")?.lowerBound
+        )
+        let end = try #require(
+            source.range(of: "    public func prepareCaptureRediscovery(", range: start..<source.endIndex)?.lowerBound
+        )
+        let construction = source[start..<end]
+
+        #expect(construction.contains("run = try PassiveBluetoothExperimentOneRun("))
+        #expect(construction.contains("vehicleIdentity: VehicleProfile.aovoproES80.identity"))
+        #expect(!construction.contains("vehicleIdentity: VehicleIdentity"))
+        #expect(!construction.contains("vehicleIdentity: String"))
+    }
+
     @Test("admission is issued before a fresh controller scan epoch")
     func preparationForcesPostAdmissionRediscovery() throws {
         let source = try Self.coordinatorSource()
