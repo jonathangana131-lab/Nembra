@@ -213,7 +213,7 @@ def main() -> int:
     api = GitHubAPI(args.token, args.repository)
     runs = api.queued_runs()
     now = dt.datetime.now(dt.timezone.utc)
-    branch_cache: dict[str, list[dict[str, Any]]] = {}
+    branch_cache: dict[str, list[dict[str, Any]] | None] = {}
     candidates: list[tuple[dict[str, Any], Decision]] = []
     protected = 0
     ambiguous = 0
@@ -228,12 +228,16 @@ def main() -> int:
                     branch_cache[branch] = api.open_prs_for_branch(branch)
                 except RuntimeError as exc:
                     print(f"PRESERVE branch={branch!r}: open-PR lookup failed: {exc}")
-                    branch_cache[branch] = []
-                    ambiguous += 1
-                    continue
+                    branch_cache[branch] = None
+
+            open_prs = branch_cache[branch]
+            if open_prs is None:
+                ambiguous += 1
+                continue
+
             decision = classify_run(
                 run,
-                branch_cache[branch],
+                open_prs,
                 now=now,
                 minimum_age_seconds=args.minimum_age_seconds,
             )
