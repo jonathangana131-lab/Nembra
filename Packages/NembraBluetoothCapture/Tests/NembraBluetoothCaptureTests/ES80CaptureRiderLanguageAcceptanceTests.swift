@@ -62,7 +62,6 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
             "application characteristic-value writes",
             "package producer",
             "HORIZON READY",
-            "FIELD AUTHORITY",
             "healthItem(\"FINITE\"",
             "healthItem(\"HORIZON\""
         ]
@@ -131,11 +130,16 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         let helperSurface = source[phaseStart.lowerBound..<errorStart.lowerBound]
 
         let implementationPhrasesThatMustStayOutOfHelpers = [
-            "evidence life cannot regain capture authority",
-            "package-owned CoreBluetooth controller",
+            "Experiment One",
+            "package-owned",
+            "CoreBluetooth",
+            "evidence life",
+            "capture authority",
             "package-issued observation authority",
-            "package-owned Experiment One workflow",
-            "fresh package-owned Experiment One workflow"
+            "consumed authority",
+            "scan-liveness",
+            "coordinator.lastDiagnostic",
+            "String(describing: error)"
         ]
 
         for phrase in implementationPhrasesThatMustStayOutOfHelpers {
@@ -144,6 +148,10 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
                 "Rendered Capture helper still exposes implementation vocabulary: \(phrase)"
             )
         }
+
+        #expect(helperSurface.contains("start a fresh capture"))
+        #expect(helperSurface.contains("Bluetooth scanning or a foreground interruption invalidated this OFF / ON series."))
+        #expect(helperSurface.contains("Nembra could not start a fresh capture."))
     }
 
     @Test("engineering truth remains available in Details instead of being deleted")
