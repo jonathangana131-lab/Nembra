@@ -107,8 +107,8 @@ struct ES80CaptureAccessibilitySourceAcceptanceTests {
     func accessibilityLayerDoesNotBecomeCaptureAuthority() throws {
         let source = try Self.shellSource()
 
-        #expect(source.contains("The capture system, not this display timer, decides whether the window has enough evidence."))
-        #expect(source.contains("This countdown is display guidance only."))
+        #expect(source.contains("This timer is guidance only. Nembra verifies the required observation before accepting this check."))
+        #expect(source.contains("This countdown is guidance only. Nembra accepts the check only after the required observation time is recorded; finishing early cannot create a valid result."))
         #expect(source.contains("The displayed timer is guidance only."))
 
         // The view may request package operations, but accessibility modifiers and the 0.5-second
