@@ -24,7 +24,7 @@ The source SHA is an explicit acceptance input. The tool does not guess that a n
 Before producing evidence, the inspector requires all of the following:
 
 - the input is one readable IPA/ZIP with exactly one top-level `Payload/*.app`;
-- archive extraction rejects absolute paths, `..` traversal, and symbolic-link members;
+- archive extraction rejects absolute paths, `..` traversal, symbolic-link members, and duplicate normalized ZIP member paths;
 - bundle identifier is exactly `com.jonathangana131.nembra`;
 - device platform is `iphoneos`, `CFBundleSupportedPlatforms` contains `iPhoneOS`, and no Simulator platform is admitted;
 - `NembraCaptureBuildIdentifier` is canonical and exactly `Capture Build V14-<first 12 chars of accepted SHA>`;
@@ -33,10 +33,12 @@ Before producing evidence, the inspector requires all of the following:
 - `CFBundleExecutable` resolves to one bundle-local executable file;
 - `codesign --verify --deep --strict` succeeds on the extracted signed app;
 - the signature is not ad-hoc;
-- code-signing metadata contains a concrete TeamIdentifier and authority chain;
+- code-signing metadata contains one canonical TeamIdentifier and an authority chain;
+- `embedded.mobileprovision` decodes successfully, is unexpired, carries the same TeamIdentifier, and has the exact application identifier for the Nembra bundle;
+- the signed app's effective `application-identifier` and developer-team entitlement match the code-signing team, bundle, and provisioning profile;
 - no executable-digest/trusted-field record is embedded inside the signed app bundle.
 
-The inspector never repairs malformed metadata, trims source identities, substitutes Simulator values, or accepts a caller-provided digest instead of hashing the exact artifact bytes.
+The inspector never repairs malformed metadata, trims source identities, substitutes Simulator values, resolves duplicate archive entries by overwrite order, or accepts a caller-provided digest instead of hashing the exact artifact bytes.
 
 ## Exact retained evidence
 
@@ -82,11 +84,11 @@ It does **not** prove that:
 - any GATT/Tuya/DP/telemetry semantic is known;
 - any command/write is safe or acknowledged.
 
-The next trusted pipeline rung must independently attest/accept the exact retained IPA plus the exact external evidence subjects and bind that accepted result to the deliberate package-owned physical field gate. Arbitrary parsed JSON, a matching UUID/SHA spelling, or this script's exit code must never unlock Experiment One.
+The next trusted pipeline rung must independently attest/accept the exact retained IPA plus the exact external evidence subjects and bind that accepted result to the deliberate package-owned physical field gate. Arbitrary parsed JSON, a matching UUID/SHA spelling, a valid local provisioning profile, or this script's exit code must never unlock Experiment One.
 
 ## Development-only self-test
 
-The script has a platform-independent contract smoke test for canonical SHA/UUID/build-label handling and unsafe ZIP paths:
+The script has a platform-independent contract smoke test for canonical SHA/UUID/build-label handling, unsafe/duplicate ZIP paths, and pure signing-profile/entitlement agreement rules:
 
 ```sh
 python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
