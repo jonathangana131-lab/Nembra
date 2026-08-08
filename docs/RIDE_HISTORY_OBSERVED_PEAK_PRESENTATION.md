@@ -23,11 +23,13 @@ No accepted selected-source peak exists.
 - the selected source remains available as provenance;
 - observed-maximum wording is forbidden.
 
+A legitimately accepted `0 m/s` observation is different from missing evidence. It may remain a real numeric observation, and may qualify only when the retained caller-supplied policy is actually satisfied. Do not weaken a policy merely to make zero qualify: for example, an all-zero trace cannot establish a nonzero empirical speed-resolution step if that policy requires one.
+
 ### `unqualifiedAcceptedObservation`
 
 A real accepted selected-source speed observation exists, but the retained quality evidence does not pass the complete observed-maximum gate.
 
-Examples include recorded selected-source interruption, foreign-source traffic, or another retained quality failure.
+Examples include recorded selected-source interruption, foreign-source traffic, or another retained quality failure. Clean continuity alone is not sufficient when the telemetry benchmark fails its retained quality policy.
 
 The accepted observation remains available as subordinate evidence because it is real. It is **not** copied into `qualifiedObservedMaximumMetersPerSecond`, `permitsObservedMaximumWording` is false, and `requiresQualityDisclosure` is true.
 
