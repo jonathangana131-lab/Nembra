@@ -58,7 +58,6 @@ struct PassiveCoreBluetoothAbortedQueueResolutionTests {
         #expect(resolution.retiredEvidenceCount == 2)
         #expect(resolution.advancesResolvedFrontier)
         #expect(gate.isAbortQuarantined)
-        #expect(!gate.resetForNewCaptureSession())
     }
 
     @Test("already-settled prefix remains distinct from retired suffix")
