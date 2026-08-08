@@ -1,0 +1,162 @@
+name: Temporary Capture primary-helper copy transform
+
+on:
+  push:
+    branches:
+      - agent/capture-primary-helper-copy-v14
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/capture-primary-helper-copy-v14
+          fetch-depth: 0
+
+      - name: Close surviving primary/helper copy leaks
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          shell_path = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")
+          shell = shell_path.read_text(encoding="utf-8")
+          app_path = Path("NembraApp/App/NembraApp.swift")
+          app = app_path.read_text(encoding="utf-8")
+
+          shell_replacements = [
+              ('eyebrow: "FIELD AUTHORITY",', 'eyebrow: "FIELD STATUS",'),
+              ('title: "Learning the readable surface",', 'title: "Reading available data",'),
+              ('title: "Freezing final evidence",', 'title: "Sealing capture",'),
+              (
+                  'message: "Nembra is sealing the final evidence cutoff, checking capture integrity, and preparing the final capture artifact. Do not leave the app while this finishes.",',
+                  'message: "Nembra is finishing the accepted read-only observations, checking capture integrity, and preparing the final Share file. Keep Nembra open until this finishes.",',
+              ),
+              (
+                  'Text("The exact \\(report.finalShareByteCount.formatted())-byte final Share artifact passed the final Share and nested capture integrity checks. No protocol field meaning is claimed yet.")',
+                  'Text("The exact \\(report.finalShareByteCount.formatted())-byte Capture passed every required integrity check and is ready to share for analysis. No protocol field meaning is claimed yet.")',
+              ),
+              (
+                  'Text("\\(artifact.captureJSON.count.formatted()) capture bytes are sealed from this run. Analysis readiness is not earned until Nembra verifies the exact final Share bytes and their nested evidence.")',
+                  'Text("\\(artifact.captureJSON.count.formatted()) capture bytes are sealed from this run. Nembra still needs to verify the final Share file before this capture is ready for analysis.")',
+              ),
+              (
+                  'return .failed("Nembra left the active foreground after Experiment One began. This evidence life cannot regain capture authority; start a fresh Experiment One.")',
+                  'return .failed("Nembra left the foreground after capture began, so this run can no longer be trusted. Start a fresh Experiment One.")',
+              ),
+              (
+                  'return .failed(coordinator.lastDiagnostic ?? "The passive target connection ended before an accepted observation could be sealed. Start a fresh Experiment One rather than replaying consumed authority.")',
+                  'return .failed(coordinator.lastDiagnostic ?? "The passive Bluetooth connection ended before the observation could be sealed. Start a fresh Experiment One; this session cannot be reused.")',
+              ),
+              (
+                  'return .bluetoothUnavailable("The package-owned CoreBluetooth controller is unavailable for this coordinator.")',
+                  'return .bluetoothUnavailable("Bluetooth capture is unavailable for this run. Check Bluetooth and start a fresh Experiment One.")',
+              ),
+              (
+                  'return .correlationFailed("The four windows did not preserve one valid package-issued observation authority and required OFF 1, ON 1, OFF 2, ON 2 ordering.")',
+                  'return .correlationFailed("The four windows did not remain one continuous valid observation series in the required OFF 1, ON 1, OFF 2, ON 2 order.")',
+              ),
+              (
+                  'return .correlationFailed("The package-owned Experiment One workflow has no active correlation progress and no final result.")',
+                  'return .correlationFailed("Nembra lost the active OFF / ON sequence before it produced a result. Start again from OFF 1.")',
+              ),
+              (
+                  'return .correlationFailed("A known Bluetooth, scan-liveness, or foreground gap invalidated this four-window observation series.")',
+                  'return .correlationFailed("A Bluetooth, scanning, or foreground interruption invalidated this four-window observation series.")',
+              ),
+              (
+                  'localFailureMessage = "Nembra could not create a fresh package-owned Experiment One workflow: \\(String(describing: error))"',
+                  'localFailureMessage = "Nembra could not create a fresh Capture run: \\(experimentErrorMessage(error))"',
+              ),
+              ('case .complete: return "Evidence, sealed."', 'case .complete: return "Capture, sealed."'),
+              ('case .readyToSeal, .observing: return "Hold the evidence line."', 'case .readyToSeal, .observing: return "Keep it steady."'),
+              ('case .acquiring, .connecting, .rediscoveringTarget, .targetReacquired: return "Bind the real signal."', 'case .acquiring, .connecting, .rediscoveringTarget, .targetReacquired: return "Stay with this signal."'),
+              ('default: return "Find the real scooter signal."', 'default: return "Find the scooter signal."'),
+          ]
+
+          for old, new in shell_replacements:
+              count = shell.count(old)
+              if count != 1:
+                  raise SystemExit(f"shell guard failed: expected one occurrence, found {count}: {old}")
+              shell = shell.replace(old, new)
+
+          preflight_old = 'detail: "Required for ES80-FINGERPRINT-v1",'
+          preflight_new = 'detail: "Required for this capture",'
+          if app.count(preflight_old) != 1:
+              raise SystemExit(f"app guard failed: expected one recipe-bearing preflight detail, found {app.count(preflight_old)}")
+          app = app.replace(preflight_old, preflight_new)
+
+          forbidden_shell = [
+              "FIELD AUTHORITY",
+              "Learning the readable surface",
+              "Freezing final evidence",
+              "final evidence cutoff",
+              "This evidence life cannot regain capture authority",
+              "replaying consumed authority",
+              "package-owned CoreBluetooth controller",
+              "package-issued observation authority",
+              "package-owned Experiment One workflow",
+              "scan-liveness",
+              "fresh package-owned Experiment One workflow",
+              'case .complete: return "Evidence, sealed."',
+              'case .readyToSeal, .observing: return "Hold the evidence line."',
+              'return "Bind the real signal."',
+              'return "Find the real scooter signal."',
+          ]
+          leaked = [value for value in forbidden_shell if value in shell]
+          if leaked:
+              raise SystemExit(f"shell guard failed: surviving primary/helper engineering copy: {leaked}")
+
+          preflight_start = app.index("private struct ES80ExperimentOneStationaryPreflightView")
+          preflight_end = app.index("private struct ES80ExperimentOneFieldNoGoView", preflight_start)
+          preflight = app[preflight_start:preflight_end]
+          if "ES80-FINGERPRINT-v1" in preflight:
+              raise SystemExit("app guard failed: engineering recipe token remains in stationary preflight")
+
+          required = [
+              "PASSIVE / READ ONLY",
+              "Share Capture",
+              "View Details",
+              "guard status.physicalProcedurePermitted else",
+              "PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)",
+              "finalShareIntegrityReport != nil",
+              "Truth boundary",
+              "CoreBluetooth",
+              "Software Export SHA-256",
+              "Runtime executable SHA-256",
+              "does not authenticate the physical ES80",
+          ]
+          missing = [value for value in required if value not in shell]
+          if missing:
+              raise SystemExit(f"shell guard failed: truth/action contract disappeared: {missing}")
+
+          required_preflight = [
+              'detail: "Required for this capture"',
+              'title: "Disconnected"',
+              'title: "Connected"',
+              'Text("Disconnect charger to continue")',
+              'PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure',
+              'selectedChargerState = nil',
+              'disconnectedDeclarationAccepted = false',
+          ]
+          missing_preflight = [value for value in required_preflight if value not in app]
+          if missing_preflight:
+              raise SystemExit(f"app guard failed: preflight truth/action contract disappeared: {missing_preflight}")
+
+          shell_path.write_text(shell, encoding="utf-8")
+          app_path.write_text(app, encoding="utf-8")
+          PY
+          git diff --check
+
+      - name: Commit product-only delta and remove transformer
+        run: |
+          git config user.name "nembra-v14-primary-helper-copy"
+          git config user.email "noreply@github.com"
+          git add NembraApp/App/NembraApp.swift NembraApp/Features/Research/ES80CaptureShellView.swift
+          git rm .github/workflows/temporary-primary-helper-copy-transform.yml
+          git diff --cached --check
+          git commit -m "capture: finish human-first primary helper copy"
+          git push origin HEAD:agent/capture-primary-helper-copy-v14
