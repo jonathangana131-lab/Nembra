@@ -105,6 +105,24 @@ final class NembraUITests: XCTestCase {
         )
         XCTAssertTrue(app.buttons["Vehicle controls"].exists)
         XCTAssertFalse(app.buttons["Reconnect scooter"].exists)
+
+        let battery = app.descendants(matching: .any)["home.metric.battery"]
+        let trip = app.descendants(matching: .any)["home.metric.trip"]
+        let mode = app.descendants(matching: .any)["home.metric.mode"]
+        XCTAssertTrue(battery.waitForExistence(timeout: 2))
+        XCTAssertTrue(trip.waitForExistence(timeout: 2))
+        XCTAssertTrue(mode.waitForExistence(timeout: 2))
+        XCTAssertGreaterThan(
+            trip.frame.minY,
+            battery.frame.maxY,
+            "Accessibility Dynamic Type must recompose Home metrics vertically rather than leaving the compact horizontal row."
+        )
+        XCTAssertGreaterThan(
+            mode.frame.minY,
+            trip.frame.maxY,
+            "Accessibility Dynamic Type must keep the final metric below the trip metric."
+        )
+
         keepScreenshot(named: "AOVOPRO ES80 Home Unverified Accessibility XXXL")
     }
 
