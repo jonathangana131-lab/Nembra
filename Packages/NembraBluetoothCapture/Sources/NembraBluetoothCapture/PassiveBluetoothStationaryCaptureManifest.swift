@@ -22,6 +22,7 @@ public enum PassiveBluetoothStationaryCaptureManifestError: Error, Equatable, Se
     case unsupportedExperimentRecipe(PassiveBluetoothExperimentRecipeID)
     case unsupportedSchemaVersion(Int)
     case unexpectedManifestField(String)
+    case duplicateManifestField(String)
     case manifestDoesNotMatchCapture
 }
 
@@ -626,6 +627,11 @@ public enum PassiveBluetoothStationaryCaptureManifestJSON {
     ]
 
     private static func validateSchemaShape(_ data: Data) throws {
+        if let duplicatePath = PassiveBluetoothStationaryCaptureManifestStrictJSON
+            .duplicateObjectKeyPath(in: data) {
+            throw PassiveBluetoothStationaryCaptureManifestError
+                .duplicateManifestField(duplicatePath)
+        }
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return
         }
