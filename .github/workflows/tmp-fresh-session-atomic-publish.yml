@@ -1,0 +1,43 @@
+name: Agent ES80 fresh-session failure-atomic publish
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-current-spine-failure-atomic-recovery/chatgpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/es80-v14-current-spine-failure-atomic-recovery/chatgpt56-thinking-go
+          fetch-depth: 0
+      - name: Apply reviewed terminal and abort repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/patches/apply_fresh_session_atomic.py
+          controller=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -F 'try reopenedGate.reopenAfterTerminalFreshTargetSession(' "$controller"
+          grep -F 'try reopenedGate.reopenAfterAbortedFreshTargetSession(' "$controller"
+          ! grep -F 'try observationBoundaryQueueGate.reopenAfterTerminalFreshTargetSession(' "$controller"
+          ! grep -F 'try observationBoundaryQueueGate.reopenAfterAbortedFreshTargetSession(' "$controller"
+          test "$(grep -c 'observationBoundaryQueueGate = reopenedGate' "$controller")" = 2
+          git diff --check
+      - name: Remove temporary machinery and checkpoint product repair
+        shell: bash
+        run: |
+          rm .github/workflows/tmp-fresh-session-atomic-publish.yml
+          rm .github/patches/apply_fresh_session_atomic.py
+          git config user.name 'nembra-go-worker'
+          git config user.email 'actions@users.noreply.github.com'
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerFreshSessionRecoveryAtomicityTests.swift \
+            .github/workflows/tmp-fresh-session-atomic-publish.yml \
+            .github/patches/apply_fresh_session_atomic.py
+          git commit -m 'fix(capture): publish fresh recovery sessions failure-atomically'
+          git push origin HEAD:integration/es80-v14-current-spine-failure-atomic-recovery/chatgpt56-thinking-go
