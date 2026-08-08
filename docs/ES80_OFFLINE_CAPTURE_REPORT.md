@@ -114,7 +114,7 @@ The outer artifact-report schema v1 includes:
 - exact source capture JSON byte count; and
 - one deterministic framing-analysis report.
 
-The nested framing-analysis schema v1 includes:
+The nested framing-analysis schema **v2** includes:
 
 - immutable capture session ID;
 - captured `VehicleIdentity` metadata;
@@ -124,18 +124,22 @@ The nested framing-analysis schema v1 includes:
 - deterministic first-observed GATT + value-origin stream order;
 - exact service and characteristic identifiers;
 - exact `PassiveBluetoothValueOrigin`;
-- every stream-local fragment's source capture record index and sequence number;
+- every stream-local fragment's source capture record index and immutable capture sequence number;
+- accepted receipt-sequence scope plus receipt-sequence number for each projected raw value observation;
 - boot-relative receipt uptime;
 - wall-clock receipt date as correlation metadata only;
 - continuity generation;
 - raw callback payload byte count without duplicating the raw payload itself;
-- completed framing candidates;
-- typed candidate rejections;
+- completed framing candidates with receipt-sequence scope plus first/last receipt sequence numbers;
+- typed candidate rejections, including receipt-order/scope failures;
 - explicit continuity boundaries;
+- explicit `candidatePacketZeroRestart` truncation when packet index zero starts a new candidate before the prior one completes;
 - end-of-capture truncation;
 - source-record mappings for every analyzer event.
 
-The library also exposes a deterministic `outcomeSummary` over those retained event kinds. It counts streams, fragments, completed candidates, rejected candidates, boundary-truncated candidates, end-truncated candidates, and unexpected analyzer failures. The summary derives only from the already-retained report; it does not reinterpret bytes or add protocol meaning.
+The scoped receipt sequence is capture chronology/provenance only. It does not assign packet, DP, command, or vehicle meaning. The report keeps it because flattening accepted sequence scope back to uptime-only chronology would weaken the current bridge/analyzer evidence contract.
+
+The library also exposes a deterministic `outcomeSummary` over those retained event kinds. It counts streams, fragments, completed candidates, rejected candidates, boundary-truncated candidates, end-truncated candidates, and unexpected analyzer failures. A packet-zero restart remains an `incompleteAtBoundary` event and is therefore counted as an incomplete candidate while retaining its explicit boundary reason and next-source mapping. The summary derives only from the already-retained report; it does not reinterpret bytes or add protocol meaning.
 
 A `completed` event means only that the captured raw bytes satisfy the selected bounded public-family reassembly hypothesis. It does **not** mean the bytes are an ES80 message or that any field has been identified.
 
