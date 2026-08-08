@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+unset NEMBRA_INTENDED_FIELD_DEVICE_UDID
+
 # Produce one exact signed iOS Nembra Capture field-build CANDIDATE.
 # This script cannot authorize physical ES80 Experiment One.
 
