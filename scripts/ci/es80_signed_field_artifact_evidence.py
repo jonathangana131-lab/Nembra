@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import plistlib
 import re
 import shutil
@@ -27,8 +26,10 @@ RECIPE_ID = "ES80-FINGERPRINT-v1"
 PROCEDURE_VERSION = "V14"
 BUNDLE_ID = "com.jonathangana131.nembra"
 EXTERNAL_RECORD_SCHEMA_VERSION = 3
-FIELD_EVIDENCE_SCHEMA_VERSION = 1
-AUTHORITY_LABEL = "signed-field-artifact-evidence-not-field-authorization"
+FIELD_BUILD_EVIDENCE_SCHEMA_VERSION = 1
+SIGNING_INSPECTION_SCHEMA_VERSION = 1
+SIGNED_INSTALLABLE_KIND = "ipa"
+INSPECTION_AUTHORITY_LABEL = "signed-field-artifact-inspection-not-field-authorization"
 
 SHA40_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -90,10 +91,31 @@ def _safe_member_path(name: str) -> PurePosixPath:
     return path
 
 
-def _require_unique_member_path(member: PurePosixPath, seen_members: set[PurePosixPath]) -> None:
-    if member in seen_members:
-        raise EvidenceError(f"IPA contains duplicate ZIP member path: {str(member)!r}")
-    seen_members.add(member)
+def _validated_unique_member_paths(infos: list[zipfile.ZipInfo]) -> dict[str, PurePosixPath]:
+    """Reject archive ambiguity before any member is read or extracted.
+
+    Exact duplicate member names are ambiguous to zip readers, while case-fold collisions can
+    overwrite one another on the default case-insensitive filesystems commonly used by macOS.
+    """
+    exact: set[str] = set()
+    folded: dict[str, str] = {}
+    result: dict[str, PurePosixPath] = {}
+    for info in infos:
+        raw_name = info.filename.rstrip("/")
+        member = _safe_member_path(raw_name)
+        canonical = str(member)
+        if canonical in exact:
+            raise EvidenceError(f"IPA contains duplicate ZIP member path: {canonical!r}")
+        exact.add(canonical)
+        casefolded = canonical.casefold()
+        previous = folded.get(casefolded)
+        if previous is not None and previous != canonical:
+            raise EvidenceError(
+                f"IPA contains case-fold-colliding ZIP member paths: {previous!r} and {canonical!r}"
+            )
+        folded[casefolded] = canonical
+        result[info.filename] = member
+    return result
 
 
 def extract_ipa_safely(ipa_path: Path, destination: Path) -> Path:
@@ -103,12 +125,11 @@ def extract_ipa_safely(ipa_path: Path, destination: Path) -> Path:
         raise EvidenceError("input is not a readable IPA/ZIP archive") from exc
 
     app_roots: set[str] = set()
-    seen_members: set[PurePosixPath] = set()
     with archive:
-        for info in archive.infolist():
-            member = _safe_member_path(info.filename.rstrip("/"))
-            _require_unique_member_path(member, seen_members)
-
+        infos = archive.infolist()
+        validated_paths = _validated_unique_member_paths(infos)
+        for info in infos:
+            member = validated_paths[info.filename]
             mode = (info.external_attr >> 16) & 0o177777
             if stat.S_ISLNK(mode):
                 raise EvidenceError(f"IPA contains unsupported symbolic-link member: {info.filename}")
@@ -226,7 +247,9 @@ def reject_embedded_external_authority(app_path: Path) -> None:
     forbidden = {
         "NembraCaptureTrustedBuildRecord.json",
         "NembraCaptureExternalBuildRecord.json",
+        "NembraCaptureFieldBuildEvidenceRecord.json",
         "NembraCaptureSignedFieldArtifactEvidence.json",
+        "NembraCaptureSignedFieldArtifactInspection.json",
     }
     hits = sorted(path.name for path in app_path.rglob("*") if path.is_file() and path.name in forbidden)
     if hits:
@@ -298,10 +321,34 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
         "procedureVersion": PROCEDURE_VERSION,
     }
     external_bytes = canonical_json_bytes(external_record)
+    external_sha = hashlib.sha256(external_bytes).hexdigest()
 
-    field_evidence = {
-        "schemaVersion": FIELD_EVIDENCE_SCHEMA_VERSION,
-        "authority": AUTHORITY_LABEL,
+    # This record intentionally matches PassiveBluetoothCaptureFieldBuildEvidenceRecordJSON's
+    # closed-world schema exactly. Signing/platform diagnostics live in the separate inspection
+    # companion below so the package rendezvous has one unambiguous machine-readable contract.
+    field_build_record = {
+        "schemaVersion": FIELD_BUILD_EVIDENCE_SCHEMA_VERSION,
+        "externalBuildRecordSHA256": external_sha,
+        "signedInstallableSHA256": ipa_sha,
+        "signedInstallableKind": SIGNED_INSTALLABLE_KIND,
+        "buildIdentifier": build_identifier,
+        "buildInstanceID": build_instance_id,
+        "sourceCommitSHA": source_sha,
+        "executableSHA256": executable_sha,
+        "infoPlistSHA256": info_plist_sha,
+        "experimentRecipeID": RECIPE_ID,
+        "procedureVersion": PROCEDURE_VERSION,
+    }
+    field_build_bytes = canonical_json_bytes(field_build_record)
+
+    signing_inspection = {
+        "schemaVersion": SIGNING_INSPECTION_SCHEMA_VERSION,
+        "authority": INSPECTION_AUTHORITY_LABEL,
+        "fieldBuildEvidenceRecordSHA256": hashlib.sha256(field_build_bytes).hexdigest(),
+        "externalBuildRecordSHA256": external_sha,
+        "signedInstallableSHA256": ipa_sha,
+        "signedInstallableKind": SIGNED_INSTALLABLE_KIND,
+        "ipaByteCount": ipa_size,
         "buildIdentifier": build_identifier,
         "buildInstanceID": build_instance_id,
         "sourceCommitSHA": source_sha,
@@ -310,18 +357,17 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
         "supportedPlatforms": supported_platforms,
         "teamIdentifier": team_identifier,
         "signingAuthorities": signing_authorities,
-        "ipaSHA256": ipa_sha,
-        "ipaByteCount": ipa_size,
         "executableSHA256": executable_sha,
         "infoPlistSHA256": info_plist_sha,
-        "externalBuildRecordSHA256": hashlib.sha256(external_bytes).hexdigest(),
         "experimentRecipeID": RECIPE_ID,
         "procedureVersion": PROCEDURE_VERSION,
     }
     return {
         "external_record": external_record,
         "external_bytes": external_bytes,
-        "field_evidence": field_evidence,
+        "field_build_record": field_build_record,
+        "field_build_bytes": field_build_bytes,
+        "signing_inspection": signing_inspection,
     }
 
 
@@ -332,27 +378,34 @@ def write_outputs(ipa_path: Path, output_dir: Path, inspection: dict) -> dict[st
 
     retained_ipa = retained_dir / "NembraField.ipa"
     external_path = output_dir / "NembraCaptureExternalBuildRecord.json"
-    field_path = output_dir / "NembraCaptureSignedFieldArtifactEvidence.json"
-    targets = (retained_ipa, external_path, field_path)
+    field_build_path = output_dir / "NembraCaptureFieldBuildEvidenceRecord.json"
+    signing_inspection_path = output_dir / "NembraCaptureSignedFieldArtifactInspection.json"
+    targets = (retained_ipa, external_path, field_build_path, signing_inspection_path)
     existing = [str(path) for path in targets if path.exists()]
     if existing:
         raise EvidenceError(f"refusing to overwrite existing field evidence: {existing!r}")
 
     shutil.copy2(ipa_path, retained_ipa)
-    if sha256_file(retained_ipa) != inspection["field_evidence"]["ipaSHA256"]:
+    if sha256_file(retained_ipa) != inspection["field_build_record"]["signedInstallableSHA256"]:
         retained_ipa.unlink(missing_ok=True)
         raise EvidenceError("retained IPA bytes diverged from inspected input")
 
     external_path.write_bytes(inspection["external_bytes"])
     actual_external_sha = sha256_file(external_path)
-    if actual_external_sha != inspection["field_evidence"]["externalBuildRecordSHA256"]:
-        raise EvidenceError("written external build record digest diverged from field evidence")
+    if actual_external_sha != inspection["field_build_record"]["externalBuildRecordSHA256"]:
+        raise EvidenceError("written external build record digest diverged from field-build evidence")
 
-    field_path.write_bytes(canonical_json_bytes(inspection["field_evidence"]))
+    field_build_path.write_bytes(inspection["field_build_bytes"])
+    actual_field_build_sha = sha256_file(field_build_path)
+    if actual_field_build_sha != inspection["signing_inspection"]["fieldBuildEvidenceRecordSHA256"]:
+        raise EvidenceError("written field-build evidence digest diverged from signing inspection")
+
+    signing_inspection_path.write_bytes(canonical_json_bytes(inspection["signing_inspection"]))
     return {
         "retained_ipa": retained_ipa,
         "external_record": external_path,
-        "field_evidence": field_path,
+        "field_build_record": field_build_path,
+        "signing_inspection": signing_inspection_path,
     }
 
 
@@ -379,15 +432,65 @@ def self_test() -> None:
         else:
             raise AssertionError(f"unsafe ZIP member was accepted: {bad}")
 
-    duplicate_member = _safe_member_path("Payload/Nembra.app/Info.plist")
-    seen_members: set[PurePosixPath] = set()
-    _require_unique_member_path(duplicate_member, seen_members)
+    duplicate = [zipfile.ZipInfo("Payload/Nembra.app/Nembra"), zipfile.ZipInfo("Payload/Nembra.app/Nembra")]
     try:
-        _require_unique_member_path(duplicate_member, seen_members)
+        _validated_unique_member_paths(duplicate)
     except EvidenceError:
         pass
     else:
-        raise AssertionError("duplicate ZIP member path was accepted")
+        raise AssertionError("duplicate ZIP member path must fail closed")
+
+    case_collision = [
+        zipfile.ZipInfo("Payload/Nembra.app/Info.plist"),
+        zipfile.ZipInfo("payload/nembra.app/info.plist"),
+    ]
+    try:
+        _validated_unique_member_paths(case_collision)
+    except EvidenceError:
+        pass
+    else:
+        raise AssertionError("case-fold-colliding ZIP member paths must fail closed")
+
+    exact_field_keys = {
+        "schemaVersion",
+        "externalBuildRecordSHA256",
+        "signedInstallableSHA256",
+        "signedInstallableKind",
+        "buildIdentifier",
+        "buildInstanceID",
+        "sourceCommitSHA",
+        "executableSHA256",
+        "infoPlistSHA256",
+        "experimentRecipeID",
+        "procedureVersion",
+    }
+    fixture_external = {
+        "schemaVersion": EXTERNAL_RECORD_SCHEMA_VERSION,
+        "buildIdentifier": expected_build_identifier(sha),
+        "buildInstanceID": good_uuid,
+        "sourceCommitSHA": sha,
+        "executableSHA256": "b" * 64,
+        "infoPlistSHA256": "c" * 64,
+        "experimentRecipeID": RECIPE_ID,
+        "procedureVersion": PROCEDURE_VERSION,
+    }
+    fixture_external_sha = hashlib.sha256(canonical_json_bytes(fixture_external)).hexdigest()
+    fixture_field = {
+        "schemaVersion": FIELD_BUILD_EVIDENCE_SCHEMA_VERSION,
+        "externalBuildRecordSHA256": fixture_external_sha,
+        "signedInstallableSHA256": "d" * 64,
+        "signedInstallableKind": SIGNED_INSTALLABLE_KIND,
+        "buildIdentifier": expected_build_identifier(sha),
+        "buildInstanceID": good_uuid,
+        "sourceCommitSHA": sha,
+        "executableSHA256": "b" * 64,
+        "infoPlistSHA256": "c" * 64,
+        "experimentRecipeID": RECIPE_ID,
+        "procedureVersion": PROCEDURE_VERSION,
+    }
+    assert set(fixture_field) == exact_field_keys
+    assert "physicalGO" not in fixture_field
+    assert "authorized" not in fixture_field
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -425,11 +528,12 @@ def main(argv: list[str]) -> int:
     paths = write_outputs(args.ipa.resolve(), args.output_dir.resolve(), inspection)
     summary = {
         "status": "EVIDENCE_ONLY_NOT_FIELD_AUTHORIZATION",
-        "sourceCommitSHA": inspection["field_evidence"]["sourceCommitSHA"],
-        "buildInstanceID": inspection["field_evidence"]["buildInstanceID"],
-        "ipaSHA256": inspection["field_evidence"]["ipaSHA256"],
+        "sourceCommitSHA": inspection["field_build_record"]["sourceCommitSHA"],
+        "buildInstanceID": inspection["field_build_record"]["buildInstanceID"],
+        "signedInstallableSHA256": inspection["field_build_record"]["signedInstallableSHA256"],
         "externalBuildRecord": str(paths["external_record"]),
-        "signedFieldArtifactEvidence": str(paths["field_evidence"]),
+        "fieldBuildEvidenceRecord": str(paths["field_build_record"]),
+        "signedFieldArtifactInspection": str(paths["signing_inspection"]),
         "retainedIPA": str(paths["retained_ipa"]),
     }
     print(json.dumps(summary, indent=2, sort_keys=True))
