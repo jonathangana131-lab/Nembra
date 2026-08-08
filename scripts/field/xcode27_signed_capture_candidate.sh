@@ -182,13 +182,34 @@ if [[ "$(shasum -a 256 "$RETAINED_INFO_PLIST" | awk '{print $1}')" != "$INFO_PLI
 fi
 
 # Preserve the exact signed .app as one transferable file without pretending that the zip itself is
-# an App Store/exported IPA. Physical installation may use the archived .app through devicectl.
+# an App Store/exported IPA. Re-extract it immediately and prove that its critical bytes/signature
+# still match before retaining the archive as candidate evidence.
 ditto -c -k --keepParent "$APP_PATH" "$SIGNED_APP_ARCHIVE"
 SIGNED_APP_ARCHIVE_SHA256="$(shasum -a 256 "$SIGNED_APP_ARCHIVE" | awk '{print $1}')"
 if [[ ! "$SIGNED_APP_ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
   echo "Could not derive signed app archive SHA-256." >&2
   exit 22
 fi
+
+REHYDRATED_DIR="$ARTIFACTS_DIR/.signed-app-verification"
+rm -rf "$REHYDRATED_DIR"
+mkdir -p "$REHYDRATED_DIR"
+ditto -x -k "$SIGNED_APP_ARCHIVE" "$REHYDRATED_DIR"
+REHYDRATED_APP="$REHYDRATED_DIR/Nembra.app"
+if [[ ! -d "$REHYDRATED_APP" ]]; then
+  echo "Transfer archive did not rehydrate the expected Nembra.app." >&2
+  exit 23
+fi
+if ! cmp -s "$EXECUTABLE_PATH" "$REHYDRATED_APP/$EXECUTABLE_NAME" || ! cmp -s "$INFO_PLIST" "$REHYDRATED_APP/Info.plist"; then
+  echo "Transfer archive did not preserve the exact signed executable/build metadata bytes." >&2
+  exit 24
+fi
+if ! codesign --verify --deep --strict --verbose=2 "$REHYDRATED_APP" > "$LOGS_DIR/codesign-rehydrated-verify.log" 2>&1; then
+  cat "$LOGS_DIR/codesign-rehydrated-verify.log" >&2 || true
+  echo "Rehydrated signed app failed strict code-signature verification." >&2
+  exit 25
+fi
+rm -rf "$REHYDRATED_DIR"
 
 EXTERNAL_BUILD_RECORD="$ARTIFACTS_DIR/NembraCaptureExternalBuildRecord.json"
 FIELD_CANDIDATE_EVIDENCE="$ARTIFACTS_DIR/NembraCaptureSignedFieldCandidateEvidence.json"
@@ -270,19 +291,23 @@ printf '%s\n' \
   "capture_field_candidate_evidence_sha256=$FIELD_CANDIDATE_EVIDENCE_SHA256" \
   >> "$ARTIFACTS_DIR/environment.txt"
 
-# Optional installability proof. Installation does not grant Experiment One authority; the package
-# field gate remains NO-GO. A caller must explicitly supply one devicectl device identifier.
+# Optional installability proof. The caller-supplied device identifier and raw devicectl output are
+# intentionally not retained in the evidence bundle. Installation still does not authorize the
+# experiment; the package field gate and runbook remain independently NO-GO.
 if [[ -n "${NEMBRA_INSTALL_DEVICE_ID:-}" ]]; then
+  INSTALL_LOG="$(mktemp "${TMPDIR:-/tmp}/nembra-devicectl-install.XXXXXX")"
   if ! xcrun devicectl device install app \
     --device "$NEMBRA_INSTALL_DEVICE_ID" \
     "$APP_PATH" \
-    > "$LOGS_DIR/devicectl-install.log" 2>&1; then
-    cat "$LOGS_DIR/devicectl-install.log" >&2 || true
+    > "$INSTALL_LOG" 2>&1; then
+    cat "$INSTALL_LOG" >&2 || true
+    rm -f "$INSTALL_LOG"
     echo "The exact signed candidate did not install successfully on the requested device." >&2
-    exit 23
+    exit 26
   fi
+  rm -f "$INSTALL_LOG"
   echo "device_install_requested=true" >> "$ARTIFACTS_DIR/environment.txt"
-  echo "device_install_id=$NEMBRA_INSTALL_DEVICE_ID" >> "$ARTIFACTS_DIR/environment.txt"
+  echo "device_install_result=success" >> "$ARTIFACTS_DIR/environment.txt"
 else
   echo "device_install_requested=false" >> "$ARTIFACTS_DIR/environment.txt"
 fi
