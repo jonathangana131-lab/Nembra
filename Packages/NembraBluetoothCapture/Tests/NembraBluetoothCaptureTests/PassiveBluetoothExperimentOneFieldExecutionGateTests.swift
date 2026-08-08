@@ -3,8 +3,8 @@ import Testing
 
 @Suite("Experiment One field execution gate")
 struct PassiveBluetoothExperimentOneFieldExecutionGateTests {
-    @Test("current V14 field execution is mechanically NO-GO")
-    func currentPolicyIsNoGo() {
+    @Test("ordinary V14 test host remains mechanically NO-GO")
+    func ordinaryHostPolicyIsNoGo() {
         #expect(PassiveBluetoothExperimentOneFieldExecutionGate.recipeID == .es80FingerprintV1)
         #expect(
             PassiveBluetoothExperimentOneFieldExecutionGate.status
@@ -13,11 +13,15 @@ struct PassiveBluetoothExperimentOneFieldExecutionGateTests {
         #expect(!PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure)
     }
 
-    @Test("public status vocabulary exposes no caller-constructible GO state")
-    func statusVocabularyIsNoGoOnly() {
+    @Test("status vocabulary separates locked hosts from exact research-build authority")
+    func statusVocabularyPreservesFailClosedBoundary() {
         switch PassiveBluetoothExperimentOneFieldExecutionGate.status {
         case .noGo(let blocker):
             #expect(blocker == .finalComposedBuildNotAuthorized)
+            #expect(!PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure)
+        case .researchBuildAuthorized(let authorization):
+            #expect(authorization.experimentRecipeID == .es80FingerprintV1)
+            #expect(PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure)
         }
     }
 }
