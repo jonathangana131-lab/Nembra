@@ -296,6 +296,30 @@ final class NembraAppTests: XCTestCase {
 /// the already-wired NembraAppTests compilation unit; they prove product wiring shape only, never
 /// physical scooter identity or runtime BLE behavior.
 extension NembraAppTests {
+    @MainActor
+    func testSignedFieldRecipeRoutesHomeScreenLaunchIntoCapture() {
+        let mode = NembraApp.resolveLaunchMode(
+            arguments: ["Nembra"],
+            environment: [:],
+            infoDictionary: [
+                NembraApp.captureFieldRecipeInfoPlistKey: "ES80-FINGERPRINT-v1"
+            ]
+        )
+        XCTAssertEqual(mode, .es80PassiveCapture)
+    }
+
+    @MainActor
+    func testUnknownSignedFieldRecipeDoesNotRouteIntoCapture() {
+        let mode = NembraApp.resolveLaunchMode(
+            arguments: ["Nembra"],
+            environment: [:],
+            infoDictionary: [
+                NembraApp.captureFieldRecipeInfoPlistKey: "ES80-FINGERPRINT-v999"
+            ]
+        )
+        XCTAssertEqual(mode, .standard)
+    }
+
     func testCaptureFieldLaunchUsesPackageOwnedExperimentOneCoordinator() throws {
         let testFile = URL(fileURLWithPath: #filePath)
         let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
