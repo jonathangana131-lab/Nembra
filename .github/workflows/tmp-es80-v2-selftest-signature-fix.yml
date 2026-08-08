@@ -24,20 +24,18 @@ jobs:
           p = Path('scripts/ci/es80_signed_field_artifact_evidence.py')
           text = p.read_text()
           old = '''    duplicate_member = _safe_member_path("Payload/Nembra.app/Info.plist")
-              seen_members: set[PurePosixPath] = set()
-              _require_unique_member_path(duplicate_member, seen_members)
-              try:
-                  _require_unique_member_path(duplicate_member, seen_members)
-          '''
-          old = '\n'.join(line[4:] if line.startswith('    ') else line for line in old.splitlines())
+    seen_members: set[PurePosixPath] = set()
+    _require_unique_member_path(duplicate_member, seen_members)
+    try:
+        _require_unique_member_path(duplicate_member, seen_members)
+'''
           new = '''    duplicate_member = _safe_member_path("Payload/Nembra.app/Info.plist")
-              seen_members: set[PurePosixPath] = set()
-              seen_aliases: dict[tuple[str, ...], PurePosixPath] = {}
-              _require_unique_member_path(duplicate_member, seen_members, seen_aliases)
-              try:
-                  _require_unique_member_path(duplicate_member, seen_members, seen_aliases)
-          '''
-          new = '\n'.join(line[4:] if line.startswith('    ') else line for line in new.splitlines())
+    seen_members: set[PurePosixPath] = set()
+    seen_aliases: dict[tuple[str, ...], PurePosixPath] = {}
+    _require_unique_member_path(duplicate_member, seen_members, seen_aliases)
+    try:
+        _require_unique_member_path(duplicate_member, seen_members, seen_aliases)
+'''
           if old not in text:
               raise SystemExit('self-test duplicate-member block shape changed')
           p.write_text(text.replace(old, new, 1))
