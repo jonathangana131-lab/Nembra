@@ -45,8 +45,9 @@ struct ForegroundCoreBluetoothCaptureControllerHorizonIntegrationTests {
         #expect(admission.contains("!artifactReadBarrier.isActive"))
         #expect(admission.contains("observationBoundaryTask == nil"))
         #expect(admission.contains("case .observing = observationBoundaryQueueGate.phase"))
-        #expect(admission.contains("let observationReadyAuthority"))
-        #expect(admission.contains("observationReadyAuthority == currentArtifactAuthorityContext()"))
+        #expect(admission.contains("let committedReadyEpoch"))
+        #expect(admission.contains("committedReadyEpoch.authority == artifactAuthorityFence.currentAuthority"))
+        #expect(admission.contains("currentExperimentOneStatus(for: committedReadyEpoch)"))
     }
 
     @Test("terminal Horizon decision and gate transaction are synchronous before first await")
@@ -55,33 +56,30 @@ struct ForegroundCoreBluetoothCaptureControllerHorizonIntegrationTests {
         let method = try Self.section(
             in: source,
             from: "    public func encodedFinalizedObservationHorizonJSON(",
-            to: "    private func beginTargetSessionIfNeeded"
+            to: "    /// Consumes one sealed terminal lifecycle"
         )
 
-        let decisionOffset = try Self.offset(
-            of: "let decision = try PassiveCoreBluetoothObservationBoundaryDecision.capture(",
+        let permitOffset = try Self.offset(
+            of: "let durationPermit = try PassiveCoreBluetoothObservationHorizonMinimumDurationGate",
+            in: method
+        )
+        let admissionOffset = try Self.offset(
+            of: "let horizonAdmission = try durationPermit.beginHorizon(",
             in: method
         )
         let cutoffOffset = try Self.offset(of: "queueCutoff: lastEnqueuedEventSequence", in: method)
         let frontierOffset = try Self.offset(of: "processedThrough: lastProcessedEventSequence", in: method)
-        let transactionOffset = try Self.offset(
-            of: "let transaction = try observationBoundaryQueueGate.begin(",
-            in: method
-        )
-        let gateFrontierOffset = try Self.offset(
-            of: "processedThrough: decision.processedThrough",
-            in: method
-        )
+        let gateOffset = try Self.offset(of: "gate: &observationBoundaryQueueGate", in: method)
         let firstAwaitOffset = try Self.offset(
-            of: "await flushPendingEvents(through: decision.queueCutoff)",
+            of: "await flushPendingEvents(through: horizonAdmission.queueCutoff)",
             in: method
         )
 
-        #expect(decisionOffset < cutoffOffset)
+        #expect(permitOffset < admissionOffset)
+        #expect(admissionOffset < cutoffOffset)
         #expect(cutoffOffset < frontierOffset)
-        #expect(frontierOffset < transactionOffset)
-        #expect(transactionOffset < gateFrontierOffset)
-        #expect(gateFrontierOffset < firstAwaitOffset)
+        #expect(frontierOffset < gateOffset)
+        #expect(gateOffset < firstAwaitOffset)
     }
 
     @Test("Horizon drains exact prefix, records boundary, freezes JSON, then terminalizes")
@@ -90,35 +88,35 @@ struct ForegroundCoreBluetoothCaptureControllerHorizonIntegrationTests {
         let method = try Self.section(
             in: source,
             from: "    public func encodedFinalizedObservationHorizonJSON(",
-            to: "    private func beginTargetSessionIfNeeded"
+            to: "    /// Consumes one sealed terminal lifecycle"
         )
 
         let flushOffset = try Self.offset(
-            of: "await flushPendingEvents(through: decision.queueCutoff)",
+            of: "await flushPendingEvents(through: horizonAdmission.queueCutoff)",
             in: method
         )
         let recordOffset = try Self.offset(
-            of: "try await decision.recordBoundary(on: recorder)",
+            of: ".recordBoundaryWithMutationOutcome(on: recorder)",
             in: method
         )
         let markOffset = try Self.offset(
-            of: "try observationBoundaryQueueGate.markBoundaryRecorded(",
+            of: "committedHorizon = try recordedHorizon.markBoundaryRecorded(",
             in: method
         )
         let encodeOffset = try Self.offset(
-            of: "let data = try await recorder.encodedJSON(prettyPrinted: prettyPrinted)",
+            of: "data = try await recorder.encodedJSON(prettyPrinted: prettyPrinted)",
             in: method
         )
         let terminalOffset = try Self.offset(
-            of: "try observationBoundaryQueueGate.completeHorizonArtifactFreeze(",
-            in: method
-        )
-        let retirementOffset = try Self.offset(
-            of: "retireQueuedEvidenceAfterTerminalHorizon()",
+            of: "try committedHorizon.completeHorizonArtifactFreeze(",
             in: method
         )
         let finalizedAuthorityOffset = try Self.offset(
-            of: "lastFinalizedArtifactAuthority = decision.authority",
+            of: "lastFinalizedArtifactAuthority = committedHorizon.authority",
+            in: method
+        )
+        let resolutionOffset = try Self.offset(
+            of: "let terminalResolution = try resolveQueuedEvidenceAfterTerminalHorizon()",
             in: method
         )
 
@@ -126,21 +124,23 @@ struct ForegroundCoreBluetoothCaptureControllerHorizonIntegrationTests {
         #expect(recordOffset < markOffset)
         #expect(markOffset < encodeOffset)
         #expect(encodeOffset < terminalOffset)
-        #expect(terminalOffset < retirementOffset)
-        #expect(retirementOffset < finalizedAuthorityOffset)
+        #expect(terminalOffset < finalizedAuthorityOffset)
+        #expect(finalizedAuthorityOffset < resolutionOffset)
     }
 
     @Test("post-H FIFO retirement is authority-scoped and later callbacks cannot mutate sealed evidence")
     func sealedArtifactQuarantinesPostHorizonEvidence() throws {
         let source = try Self.controllerSource()
-        let retirement = try Self.section(
+        let resolution = try Self.section(
             in: source,
-            from: "    private func retireQueuedEvidenceAfterTerminalHorizon() {",
+            from: "    private func resolveQueuedEvidenceAfterTerminalHorizon() throws",
             to: "    private func scheduleConnectionTimeout"
         )
-        #expect(retirement.contains("pending.queueSequence"))
-        #expect(retirement.contains("authority: pending.authority"))
-        #expect(retirement.contains("shouldDiscardQueuedEvidenceAfterTerminalHorizon"))
+        #expect(resolution.contains("PassiveCoreBluetoothTerminalQueueRetirement.retire("))
+        #expect(resolution.contains("queueSequence: pending.queueSequence"))
+        #expect(resolution.contains("authority: pending.authority"))
+        #expect(resolution.contains("PassiveCoreBluetoothTerminalQueueResolution.resolve("))
+        #expect(resolution.contains("lastResolvedEventSequence = resolution.resolvedThroughQueueSequence"))
 
         let enqueue = try Self.section(
             in: source,
@@ -171,7 +171,7 @@ struct ForegroundCoreBluetoothCaptureControllerHorizonIntegrationTests {
         #expect(context.contains("eventWatermark = lastEnqueuedEventSequence"))
         #expect(context.contains("case .terminal:"))
         #expect(context.contains("terminalQueueCutoff"))
-        #expect(context.contains("case .awaitingReady, .drainingReady, .drainingHorizon, .horizonBoundaryRecorded:"))
+        #expect(context.contains("case .awaitingReady, .drainingReady, .abortQuarantined, .drainingHorizon, .horizonBoundaryRecorded:"))
         #expect(context.contains("throw ControllerError.captureIncomplete"))
     }
 
