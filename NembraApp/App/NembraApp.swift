@@ -96,16 +96,13 @@ struct NembraApp: App {
 @MainActor
 private struct ES80ExperimentOneFieldNoGoView: View {
     private enum RuntimeBuildIdentityState: Equatable {
+        case loading
         case available(PassiveBluetoothCaptureRuntimeBuildIdentity)
         case unavailable(String)
     }
 
     @State private var showsBuildDetails = false
-    private let runtimeBuildIdentityState: RuntimeBuildIdentityState
-
-    init() {
-        runtimeBuildIdentityState = Self.readRuntimeBuildIdentity()
-    }
+    @State private var runtimeBuildIdentityState: RuntimeBuildIdentityState = .loading
 
     private var recipeID: String {
         PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue
@@ -236,6 +233,18 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                 Divider().overlay(.white.opacity(0.12))
 
                 switch runtimeBuildIdentityState {
+                case .loading:
+                    HStack(spacing: 10) {
+                        ProgressView()
+                            .tint(.white)
+                            .accessibilityHidden(true)
+                        Text("Checking the running build…")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.white)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("es80.capture.build-provenance-loading")
+
                 case let .available(identity):
                     buildProvenanceStatus(
                         symbol: "checkmark.circle",
@@ -283,6 +292,10 @@ private struct ES80ExperimentOneFieldNoGoView: View {
         .padding(18)
         .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .accessibilityIdentifier("es80.capture.view-details")
+        .task(id: showsBuildDetails) {
+            guard showsBuildDetails, runtimeBuildIdentityState == .loading else { return }
+            runtimeBuildIdentityState = await Self.readRuntimeBuildIdentity()
+        }
     }
 
     private func buildProvenanceStatus(
@@ -322,17 +335,25 @@ private struct ES80ExperimentOneFieldNoGoView: View {
         }
     }
 
-    private static func readRuntimeBuildIdentity() -> RuntimeBuildIdentityState {
-        do {
-            return .available(try PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication())
-        } catch let error as PassiveBluetoothCaptureRuntimeBuildIdentityError {
-            return .unavailable(runtimeBuildIdentityFailureMessage(for: error))
-        } catch {
-            return .unavailable("Nembra could not verify the running build identity.")
-        }
+    private static func readRuntimeBuildIdentity() async -> RuntimeBuildIdentityState {
+        await Task.detached(priority: .utility) {
+            do {
+                return RuntimeBuildIdentityState.available(
+                    try PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()
+                )
+            } catch let error as PassiveBluetoothCaptureRuntimeBuildIdentityError {
+                return RuntimeBuildIdentityState.unavailable(
+                    runtimeBuildIdentityFailureMessage(for: error)
+                )
+            } catch {
+                return RuntimeBuildIdentityState.unavailable(
+                    "Nembra could not verify the running build identity."
+                )
+            }
+        }.value
     }
 
-    private static func runtimeBuildIdentityFailureMessage(
+    nonisolated private static func runtimeBuildIdentityFailureMessage(
         for error: PassiveBluetoothCaptureRuntimeBuildIdentityError
     ) -> String {
         switch error {
