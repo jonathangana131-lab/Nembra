@@ -51,6 +51,7 @@ Until those conditions are closed, all procedures below are **supporting experim
 15. Never promote Simulator, public research, display interpolation, or derived UI motion into physical telemetry evidence.
 16. Never treat a parsed external build record, digest equality, artifact self-report, or unsigned/unaccepted device build as field authorization. Build rendezvous and independent acceptance are separate authority layers.
 17. Never treat “signature valid” or a signer-generated summary alone as the final field handoff. Final GO must bind the exact retained authorization-envelope bytes and the exact reviewed package trust root by independently recomputed digests, and those identities must agree with the exact subjects accepted for the signed device build.
+18. For `ES80-FINGERPRINT-v1`, charger state is an explicit fresh-run **operator declaration**, not measured or sensed vehicle truth. The accepted recipe requires the charger to be **Disconnected** for the entire capture; Nembra must never infer that condition from a generic confirmation tap or carry it across a fresh experiment.
 
 ## Final GO record — intentionally blank while NO-GO
 
@@ -88,6 +89,8 @@ Before the first scan, the accepted app must mechanically verify or clearly bloc
 - the package-owned P-256 trust anchor compiled into the accepted build is the exact reviewed public key whose X9.63 SHA-256 is recorded in the final GO record;
 - storage/export readiness;
 - the exact versioned experiment recipe;
+- an explicit fresh-run operator declaration of charger state; `ES80-FINGERPRINT-v1` requires **Disconnected**, and a Connected declaration must block continuation;
+- the app must state that charger state is **not measured or sensed by Nembra** and must not promote the operator declaration into telemetry, attestation, or continuous-condition proof;
 - any required stock-app/reference-marker setup;
 - no unknown Nembra command path enabled;
 - scooter stationary and safe to test;
@@ -245,6 +248,7 @@ Stop the experiment and preserve only legitimate evidence if any required condit
 
 - Bluetooth becomes unavailable or the accepted target cannot be correlated unambiguously;
 - the selected target/session changes unexpectedly;
+- the `ES80-FINGERPRINT-v1` charger declaration is not **Disconnected**, the charger becomes connected, or the operator can no longer truthfully maintain the declared disconnected setup; stop the current experiment, restore the required setup, and restart from a fresh preflight rather than carrying the old declaration forward;
 - acquisition never earns accepted Ready;
 - foreground integrity required by the recipe is lost;
 - a discontinuity/authority transition invalidates the current recipe stage;
