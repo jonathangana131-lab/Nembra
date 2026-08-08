@@ -1,0 +1,55 @@
+name: V14 terminal restack live2
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-terminal-restack-live2/gpt56-thinking
+
+permissions:
+  contents: write
+
+jobs:
+  restack:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: integration/es80-v14-terminal-restack-live2/gpt56-thinking
+      - name: Re-anchor exact terminal product delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          git fetch origin 50732571e01929ef22c79bd7f99178cf4f78a6bf 28c9dde0398d14f353415b860d806215d597792b
+          paths=(
+            Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+            Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerTerminalFreshSessionConsumerTests.swift
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothTerminalRealRecorderReopenTests.swift
+          )
+          git diff --binary 50732571e01929ef22c79bd7f99178cf4f78a6bf 28c9dde0398d14f353415b860d806215d597792b -- "${paths[@]}" > /tmp/terminal.patch
+          test -s /tmp/terminal.patch
+          git apply --3way /tmp/terminal.patch
+          ! git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- "${paths[@]}"
+          controller=${paths[0]}
+          gate=${paths[1]}
+          grep -q 'connectUsingExperimentOneAdmission' "$controller"
+          grep -q 'issuedAtUptimeNanoseconds' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneRun.swift
+          grep -q 'latestAdvertisement.receivedAtUptimeNanoseconds >= payload.issuedAtUptimeNanoseconds' "$controller"
+          grep -q 'pendingTerminalQueueResolution' "$controller"
+          grep -q 'PassiveCoreBluetoothTerminalFreshTargetSession.create' "$controller"
+          grep -q 'reopenAfterTerminalFreshTargetSession' "$gate"
+          grep -q 'try self.validateBoundaryAuthority(admission.authority)' "$controller"
+          grep -A12 -F 'case let .recorded(recordedReady):' "$controller" | grep -q 'try self.requireForegroundEvidenceIntegrity()'
+          test "$(grep -c 'try? self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit' "$controller" || true)" = "0"
+          test "$(grep -c 'try? observationBoundaryQueueGate.abortRecordedHorizonBeforeGateCommit' "$controller" || true)" = "0"
+          git diff --check
+          rm .github/workflows/v14-terminal-restack-live2.yml
+          git add "${paths[@]}" .github/workflows/v14-terminal-restack-live2.yml
+          git diff --cached --check
+          git commit -m "[Capture v14] Restack terminal recovery on latest flagship"
+          git push origin HEAD:integration/es80-v14-terminal-restack-live2/gpt56-thinking
