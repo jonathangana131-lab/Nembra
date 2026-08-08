@@ -50,9 +50,9 @@ struct PassiveCoreBluetoothPreHObservationRecoveryTests {
         return (recorder, fence, epoch)
     }
 
-    @Test("committed Ready abort preserves exact identity and reopens only for bound fresh session")
+    @Test("committed Ready abort preserves exact identity and raw retirement cannot reopen lifecycle")
     @MainActor
-    func committedReadyAbortRequiresRetirementAndExactFreshSession() async throws {
+    func committedReadyAbortRemainsQuarantinedAfterRawRetirement() async throws {
         var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
         let fixture = try await committedReady(gate: &gate)
         let abort = try gate.abortObservationEpoch(fixture.epoch)
@@ -84,33 +84,31 @@ struct PassiveCoreBluetoothPreHObservationRecoveryTests {
         )
         #expect(pending.isEmpty)
         #expect(retirement.abortReceipt.abandonedReadyTransactionIdentity == fixture.epoch.transactionIdentity)
+        #expect(retirement.validatedSettledQueueSequence == 2)
+        #expect(retirement.validatedQueueTailSequence == 3)
+        #expect(retirement.retiredEvidenceCount == 1)
 
-        try gate.completeAbortedObservationRecovery(
-            retirement,
-            currentLastEnqueuedEventSequence: 3,
-            freshTargetSessionGeneration: 8
-        )
-        #expect(gate.phase == .awaitingReady)
-
-        #expect(throws: PassiveCoreBluetoothObservationBoundaryQueueGate.StateError.freshTargetSessionRequired) {
+        // Raw retirement resolves no lifecycle authority by itself. The gate must
+        // remain hard-quarantined until #450/equivalent global resolved-frontier
+        // authority is composed into a successor recovery admission.
+        #expect(gate.phase == .abortQuarantined(abort))
+        #expect(gate.permittedDrainUpperBound(firstPending: 4, pendingTail: 4) == nil)
+        #expect(!gate.resetForNewCaptureSession())
+        #expect(throws: PassiveCoreBluetoothObservationBoundaryQueueGate.StateError.invalidTransition) {
             _ = try gate.begin(
                 .finiteAcquisitionReady,
                 through: 4,
-                authority: .init(targetSessionGeneration: 7, authorityGeneration: 99)
+                authority: .init(targetSessionGeneration: 8, authorityGeneration: 1)
             )
         }
-        #expect(throws: PassiveCoreBluetoothObservationBoundaryQueueGate.StateError.freshTargetSessionRequired) {
-            _ = try gate.begin(
-                .finiteAcquisitionReady,
-                through: 4,
-                authority: .init(targetSessionGeneration: 9, authorityGeneration: 1)
+        #expect(throws: PassiveCoreBluetoothObservationBoundaryQueueGate.StateError.invalidTransition) {
+            _ = try fixture.epoch.beginHorizon(
+                queueCutoff: 4,
+                processedThrough: 3,
+                gate: &gate
             )
         }
-        _ = try gate.begin(
-            .finiteAcquisitionReady,
-            through: 4,
-            authority: .init(targetSessionGeneration: 8, authorityGeneration: 1)
-        )
+        #expect(gate.phase == .abortQuarantined(abort))
     }
 
     @Test("canonical fence rejection proves zero Ready mutation and consumes one-shot admission")
