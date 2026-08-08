@@ -24,6 +24,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         case transactionRevisionExhausted
         case staleTransaction
         case authorityChanged
+        case horizonCutoffPrecedesReady
         case cutoffNotDrained
         case horizonArtifactNotReady
     }
@@ -46,6 +47,14 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
 
     private(set) var phase: Phase = .awaitingReady
     private var nextRevision: UInt64 = 1
+
+    /// The exact ready transaction that established the observation epoch.
+    ///
+    /// `phase == .observing` deliberately remains lightweight for callers, but the
+    /// committed ready cutoff and authority must survive that phase internally. A
+    /// later horizon may reuse neither an older raw-event prefix nor another artifact
+    /// authority merely because the public phase name is the same.
+    private var committedReadyTransaction: Transaction?
 
     var isTerminal: Bool {
         if case .terminal = phase { return true }
@@ -70,11 +79,33 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
 
     /// Starts the one legal next boundary transaction for this capture session.
     /// Ready may occur once. Horizon may occur once and only after ready.
+    ///
+    /// Cross-boundary invariants are validated before allocating a transaction
+    /// revision or mutating phase so rejected horizon attempts are fully atomic.
     mutating func begin(
         _ boundaryKind: BoundaryKind,
         through queueCutoff: UInt64,
         authority: PassiveCoreBluetoothArtifactAuthorityContext
     ) throws -> Transaction {
+        switch (phase, boundaryKind) {
+        case (.awaitingReady, .finiteAcquisitionReady):
+            break
+
+        case (.observing, .observationHorizon):
+            guard let ready = committedReadyTransaction else {
+                throw StateError.invalidTransition
+            }
+            guard authority == ready.authority else {
+                throw StateError.authorityChanged
+            }
+            guard queueCutoff >= ready.queueCutoff else {
+                throw StateError.horizonCutoffPrecedesReady
+            }
+
+        default:
+            throw StateError.invalidTransition
+        }
+
         guard nextRevision != UInt64.max else {
             throw StateError.transactionRevisionExhausted
         }
@@ -86,13 +117,11 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
             revision: nextRevision
         )
 
-        switch (phase, boundaryKind) {
-        case (.awaitingReady, .finiteAcquisitionReady):
+        switch boundaryKind {
+        case .finiteAcquisitionReady:
             phase = .drainingReady(transaction)
-        case (.observing, .observationHorizon):
+        case .observationHorizon:
             phase = .drainingHorizon(transaction)
-        default:
-            throw StateError.invalidTransition
         }
 
         nextRevision += 1
@@ -140,6 +169,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
 
         switch phase {
         case let .drainingReady(current) where current == transaction:
+            committedReadyTransaction = transaction
             phase = .observing
         case let .drainingHorizon(current) where current == transaction:
             phase = .horizonBoundaryRecorded(transaction)
@@ -179,9 +209,28 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         return queueSequence > transaction.queueCutoff
     }
 
-    /// A fresh durable target session receives a fresh lifecycle grammar. This is
-    /// an explicit controller action; terminal evidence never silently reopens.
-    mutating func resetForNewCaptureSession() {
-        phase = .awaitingReady
+    /// Requests a fresh lifecycle grammar after the previous capture has either not
+    /// started its ready transaction or has reached terminal immutable-artifact freeze.
+    ///
+    /// An unresolved ready/horizon transaction must never lose its cutoff merely
+    /// because another capture session is being prepared. Likewise, `.observing`
+    /// retains the committed ready authority until a terminal horizon is established.
+    /// A future explicit abort/detach contract may add another authorized reset path;
+    /// absent that authority, refusing the reset is the fail-closed behavior.
+    @discardableResult
+    mutating func resetForNewCaptureSession() -> Bool {
+        switch phase {
+        case .awaitingReady:
+            committedReadyTransaction = nil
+            return true
+
+        case .terminal:
+            committedReadyTransaction = nil
+            phase = .awaitingReady
+            return true
+
+        case .drainingReady, .observing, .drainingHorizon, .horizonBoundaryRecorded:
+            return false
+        }
     }
 }
