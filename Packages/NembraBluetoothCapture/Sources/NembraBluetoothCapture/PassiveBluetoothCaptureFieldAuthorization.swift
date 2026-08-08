@@ -34,12 +34,14 @@ public struct PassiveBluetoothCaptureVerifiedFieldAuthorization: Equatable, Send
 public enum PassiveBluetoothCaptureFieldAuthorizationError: Error, Equatable, Sendable {
     case malformedEnvelope
     case unexpectedEnvelopeField(String)
+    case duplicateEnvelopeField(String)
     case unsupportedEnvelopeSchemaVersion(Int)
     case invalidExternalBuildRecordBase64
     case invalidAuthorizationPayloadBase64
     case invalidSignatureBase64
     case malformedAuthorizationPayload
     case unexpectedAuthorizationPayloadField(String)
+    case duplicateAuthorizationPayloadField(String)
     case unsupportedAuthorizationPayloadSchemaVersion(Int)
     case unsupportedDecision(String)
     case invalidExternalBuildRecordSHA256
@@ -221,6 +223,9 @@ public enum PassiveBluetoothCaptureFieldAuthorizationVerifier {
 
     private static func validateClosedWorldEnvelope(_ data: Data) throws {
         let root = try jsonObject(data, malformed: .malformedEnvelope)
+        if let duplicateKey = PassiveBluetoothStrictJSONObject.duplicateTopLevelKey(in: data) {
+            throw PassiveBluetoothCaptureFieldAuthorizationError.duplicateEnvelopeField(duplicateKey)
+        }
         let allowed: Set<String> = [
             "schemaVersion",
             "externalBuildRecordBase64",
@@ -234,6 +239,10 @@ public enum PassiveBluetoothCaptureFieldAuthorizationVerifier {
 
     private static func validateClosedWorldAuthorizationPayload(_ data: Data) throws {
         let root = try jsonObject(data, malformed: .malformedAuthorizationPayload)
+        if let duplicateKey = PassiveBluetoothStrictJSONObject.duplicateTopLevelKey(in: data) {
+            throw PassiveBluetoothCaptureFieldAuthorizationError
+                .duplicateAuthorizationPayloadField(duplicateKey)
+        }
         let allowed: Set<String> = [
             "schemaVersion",
             "decision",
