@@ -167,6 +167,7 @@ struct PassiveBluetoothExperimentOneFinalShareArtifactTests {
 
     private func makePowerCycleResult() throws -> PassiveBluetoothPowerCycleObservationResult {
         let authority = PassiveBluetoothCandidateObservationSeriesIdentity(rawValue: seriesID)
+        let duration = PassiveBluetoothExperimentOneCapturePolicy.minimumPowerCycleWindowDurationNanoseconds
         var receipts: [PassiveBluetoothPowerCycleObservationWindowReceipt] = []
         var snapshots: [PassiveBluetoothCandidateObservationSnapshot] = []
 
@@ -187,11 +188,12 @@ struct PassiveBluetoothExperimentOneFinalShareArtifactTests {
                 candidates: candidates
             )
             snapshots.append(snapshot)
+            let start = UInt64(index) * 20_000_000_000 + 1_000
             receipts.append(.init(
                 phase: phase,
                 windowSequence: sequence,
-                startedAtUptimeNanoseconds: UInt64(1_000 + index * 1_000),
-                endedAtUptimeNanoseconds: UInt64(1_500 + index * 1_000),
+                startedAtUptimeNanoseconds: start,
+                endedAtUptimeNanoseconds: start + duration,
                 observedCandidateCount: snapshot.candidates.count
             ))
         }
