@@ -193,8 +193,8 @@ struct PassiveBluetoothCaptureComparisonTests {
         #expect(stream.rawDifferenceScore == nil)
     }
 
-    @Test("connection-only neighbor does not fragment a resolved GATT target; target disconnect does")
-    func scopesDisconnectContinuityToResolvedGATTTarget() throws {
+    @Test("every structured disconnect is a capture-wide comparison boundary")
+    func structuredDisconnectAlwaysBreaksComparisonContinuity() throws {
         var baseline = try makeSession()
         try appendValue(service: "A201", characteristic: "2B10", payload: [0xAA], sequence: 1, to: &baseline)
         try appendDisconnect(peripheral: "noise-device", sequence: 2, to: &baseline)
@@ -208,13 +208,13 @@ struct PassiveBluetoothCaptureComparisonTests {
             comparison: comparison
         )
         #expect(report.baselinePeripheralIdentifier == "physical-es80-placeholder")
-        #expect(report.baselineContinuityBreakCount == 0)
-        #expect(report.differenceAvailability == .comparable)
-        let uninterrupted = try #require(report.streamComparisons.first)
-        #expect(uninterrupted.baseline?.continuitySegmentCount == 1)
-        #expect(uninterrupted.sharedPayloadCount == 1)
-        #expect(uninterrupted.baselineOnlyPayloadCount == 1)
-        #expect(uninterrupted.rawDifferenceScore == 1)
+        #expect(report.baselineContinuityBreakCount == 1)
+        #expect(report.differenceAvailability == .continuityAmbiguous)
+        let unrelatedBreak = try #require(report.streamComparisons.first)
+        #expect(unrelatedBreak.baseline?.continuitySegmentCount == 2)
+        #expect(unrelatedBreak.sharedPayloadCount == nil)
+        #expect(unrelatedBreak.baselineOnlyPayloadCount == nil)
+        #expect(unrelatedBreak.rawDifferenceScore == nil)
 
         baseline = try makeSession()
         try appendValue(service: "A201", characteristic: "2B10", payload: [0xAA], sequence: 1, to: &baseline)
