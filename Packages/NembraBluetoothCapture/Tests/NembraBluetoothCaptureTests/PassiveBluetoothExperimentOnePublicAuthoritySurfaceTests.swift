@@ -64,7 +64,12 @@ struct PassiveBluetoothExperimentOnePublicAuthoritySurfaceTests {
         )
         #expect(
             compactRun.contains(
-                "fileprivateinit(admissionIdentity:UUID,powerCycleEvidence:PassiveBluetoothExperimentOnePowerCycleEvidence,peripheralIdentifier:UUID,recorder:PassiveCoreBluetoothCaptureRecorder)"
+                "fileprivateinit(admissionIdentity:UUID,powerCycleEvidence:PassiveBluetoothExperimentOnePowerCycleEvidence,peripheralIdentifier:UUID,recorder:PassiveCoreBluetoothCaptureRecorder,issuedAtUptimeNanoseconds:UInt64)"
+            )
+        )
+        #expect(
+            compactRun.contains(
+                "fileprivateinit(admissionIdentity:UUID,peripheralIdentifier:UUID,issuedAtUptimeNanoseconds:UInt64)"
             )
         )
         #expect(
