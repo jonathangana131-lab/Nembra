@@ -16,11 +16,11 @@ struct PassiveBluetoothExperimentOneStructuralExactSequenceTests {
         let sequences: [UInt64] = [10, 20, 30, 40]
         let phases = PassiveBluetoothPowerCycleObservationPhase.allCases
 
-        let snapshots = try zip(phases, sequences).map { phase, sequence in
+        let snapshots = try zip(phases, sequences).map { pair in
             try PassiveBluetoothCandidateObservationSnapshot(
                 observationSeriesIdentity: series,
-                windowSequence: .init(rawValue: sequence),
-                candidates: phase.operatorExpectedPowerOn
+                windowSequence: .init(rawValue: pair.1),
+                candidates: pair.0.operatorExpectedPowerOn
                     ? [candidate(neighbor), candidate(target)]
                     : [candidate(neighbor)]
             )
