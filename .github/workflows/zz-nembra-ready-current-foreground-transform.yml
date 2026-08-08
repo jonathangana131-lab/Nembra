@@ -1,6 +1,6 @@
 name: Nembra Ready current-spine transform
 
-on:
+"on":
   push:
     branches:
       - integration/es80-v14-ready-current-foreground/chat-gpt56-go3
@@ -29,34 +29,35 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift")
           source = path.read_text()
-          needle = '''                do {
-                    try self.ensureCaptureHealthy()
-                    let outcome = try await admission.recordBoundaryWithMutationOutcome(on: recorder)
-'''
-          replacement = '''                do {
-                    do {
-                        try self.requireForegroundEvidenceIntegrity()
-                        try self.ensureCaptureHealthy()
-                        try self.validateBoundaryAuthority(admission.authority)
-                    } catch {
-                        let preAttemptFailure = error
-                        do {
-                            let abandonment = try admission.abandonBeforeRecorderMutation()
-                            try self.observationBoundaryQueueGate.abortUncommittedReady(after: abandonment)
-                        } catch {
-                            // Exact quarantine failure is stronger than the triggering
-                            // pre-attempt failure because allocated Ready could not be
-                            // proven abandoned before recorder mutation.
-                            throw error
-                        }
-                        throw preAttemptFailure
-                    }
-
-                    let outcome = try await admission.recordBoundaryWithMutationOutcome(on: recorder)
-'''
+          needle = (
+              "                do {\n"
+              "                    try self.ensureCaptureHealthy()\n"
+              "                    let outcome = try await admission.recordBoundaryWithMutationOutcome(on: recorder)\n"
+          )
+          replacement = (
+              "                do {\n"
+              "                    do {\n"
+              "                        try self.requireForegroundEvidenceIntegrity()\n"
+              "                        try self.ensureCaptureHealthy()\n"
+              "                        try self.validateBoundaryAuthority(admission.authority)\n"
+              "                    } catch {\n"
+              "                        let preAttemptFailure = error\n"
+              "                        do {\n"
+              "                            let abandonment = try admission.abandonBeforeRecorderMutation()\n"
+              "                            try self.observationBoundaryQueueGate.abortUncommittedReady(after: abandonment)\n"
+              "                        } catch {\n"
+              "                            // Exact quarantine failure is stronger than the triggering\n"
+              "                            // pre-attempt failure because allocated Ready could not be\n"
+              "                            // proven abandoned before recorder mutation.\n"
+              "                            throw error\n"
+              "                        }\n"
+              "                        throw preAttemptFailure\n"
+              "                    }\n"
+              "\n"
+              "                    let outcome = try await admission.recordBoundaryWithMutationOutcome(on: recorder)\n"
+          )
           count = source.count(needle)
           if count != 1:
               raise SystemExit(f"expected exactly one pinned Ready pre-attempt block, found {count}")
