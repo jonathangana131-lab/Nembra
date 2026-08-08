@@ -16,12 +16,27 @@ fi
 : "${NEMBRA_EXPORT_OPTIONS_PLIST:?Set NEMBRA_EXPORT_OPTIONS_PLIST to an existing Xcode export-options plist.}"
 : "${NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE:?Set NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE to an absolute private mode-0600 file containing the verification-only intended field iPhone UDID.}"
 
+# Never let retired raw-value aliases leak into archive/export children. Older field invocations used
+# both names before the path-only boundary existed; remove either inherited value before any child
+# process is launched.
+unset NEMBRA_INTENDED_FIELD_DEVICE_UDID || true
+unset NEMBRA_FIELD_DEVICE_UDID || true
+
 if [[ ! "$NEMBRA_DEVELOPMENT_TEAM" =~ ^[A-Z0-9]{10}$ ]]; then
   echo "NEMBRA_DEVELOPMENT_TEAM must be one canonical 10-character Apple TeamIdentifier." >&2
   exit 3
 fi
-if [[ "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" != /* || ! -f "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" || -L "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" ]]; then
-  echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE must name one absolute regular non-symlink private verification file." >&2
+if [[ "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" != /* ]]; then
+  echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE must name one canonical absolute private verification file." >&2
+  exit 4
+fi
+# Fail before an expensive archive/export if the private verification input is unsafe. Only the file
+# path is OS-visible; the runner reads the value in-process and prints no identifier on success/failure.
+if ! python3 scripts/ci/es80_signed_field_artifact_private_runner.py \
+  --validate-private-input-only \
+  --intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"
+then
+  echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE failed the private verification-input contract." >&2
   exit 4
 fi
 if [[ ! -f "$NEMBRA_EXPORT_OPTIONS_PLIST" ]]; then
@@ -234,9 +249,10 @@ print(candidates[0])
 PY
 )"
 
-# The intended-device UDID is verification-only input. The producer passes only an absolute private
-# file path to the runner; the runner opens it once with O_NOFOLLOW and hands the value to the
-# canonical inspector only in process memory. INSPECTION_DIR remains absent until atomic publication.
+# The intended-device UDID is verification-only input. The producer passes only a canonical private
+# file path to the runner; the runner opens every path component without following symlinks, reads
+# the value only in memory, and calls the canonical inspector in-process. INSPECTION_DIR remains
+# absent until atomic publication.
 python3 scripts/ci/es80_signed_field_artifact_private_runner.py \
   --ipa "$IPA_PATH" \
   --expected-source-sha "$SOURCE_SHA" \

@@ -16,24 +16,37 @@ class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
             source,
         )
         self.assertIn('es80_signed_field_artifact_private_runner.py', source)
+        self.assertIn('--validate-private-input-only', source)
         self.assertIn(
             '--intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"',
             source,
+        )
+        self.assertIn('unset NEMBRA_INTENDED_FIELD_DEVICE_UDID || true', source)
+        self.assertIn('unset NEMBRA_FIELD_DEVICE_UDID || true', source)
+        self.assertLess(
+            source.index('unset NEMBRA_INTENDED_FIELD_DEVICE_UDID || true'),
+            source.index('run_xcodebuild()'),
+        )
+        self.assertLess(
+            source.index('unset NEMBRA_FIELD_DEVICE_UDID || true'),
+            source.index('run_xcodebuild()'),
         )
         self.assertNotIn('NEMBRA_INTENDED_FIELD_DEVICE_UDID:?Set', source)
         self.assertNotIn('python3 - "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', source)
         self.assertNotIn('--intended-device-udid "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', source)
 
-        # The verification value is read only inside the runner after a no-follow descriptor open.
-        # It must never become an OS-visible child-process argument or environment value.
         self.assertIn('os.O_NOFOLLOW', runner)
+        self.assertIn('os.open not in os.supports_dir_fd', runner)
+        self.assertIn('dir_fd=parent_descriptor', runner)
         self.assertIn('os.fstat(descriptor)', runner)
+        self.assertIn('metadata.st_uid != os.geteuid()', runner)
+        self.assertIn('metadata.st_nlink != 1', runner)
+        self.assertIn('metadata.st_mode & 0o077', runner)
+        self.assertIn('value in os.fspath(path)', runner)
         self.assertIn('inspector.main(inspector_arguments)', runner)
         self.assertNotIn('subprocess', runner)
         self.assertNotIn('os.environ', runner)
 
-        # The intended device remains an admission input, not artifact provenance. Do not serialize,
-        # echo, hash, or derive an output path from the private verification file or its contents.
         self.assertNotIn('intended_device_udid=', source)
         self.assertNotIn('field_device_udid=', source)
         self.assertNotIn('echo "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"', source)
