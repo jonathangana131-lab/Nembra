@@ -14,22 +14,42 @@ fi
 
 : "${NEMBRA_DEVELOPMENT_TEAM:?Set NEMBRA_DEVELOPMENT_TEAM to the Apple signing TeamIdentifier.}"
 : "${NEMBRA_EXPORT_OPTIONS_PLIST:?Set NEMBRA_EXPORT_OPTIONS_PLIST to an existing Xcode export-options plist.}"
-: "${NEMBRA_INTENDED_FIELD_DEVICE_UDID:?Set NEMBRA_INTENDED_FIELD_DEVICE_UDID to the intended field iPhone UDID for verification only.}"
+: "${NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE:?Set NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE to an absolute path for a private mode-0600 intended-device verification file.}"
+
+# Retire the legacy raw-value environment seam before any child process is started. A caller that
+# still exports the old variable cannot accidentally propagate the device identifier into xcodebuild,
+# Python, logs, or the process environment inherited by later tooling.
+unset NEMBRA_INTENDED_FIELD_DEVICE_UDID || true
 
 if [[ ! "$NEMBRA_DEVELOPMENT_TEAM" =~ ^[A-Z0-9]{10}$ ]]; then
   echo "NEMBRA_DEVELOPMENT_TEAM must be one canonical 10-character Apple TeamIdentifier." >&2
   exit 3
 fi
-if ! python3 - "$NEMBRA_INTENDED_FIELD_DEVICE_UDID" <<'PY'
+case "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" in
+  /*) ;;
+  *)
+    echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE must be an absolute path." >&2
+    exit 4
+    ;;
+esac
+if ! python3 - "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" <<'PY'
+import importlib.util
 import sys
-value = sys.argv[1]
-if not value or len(value.encode("utf-8")) > 128 or value != value.strip():
+from pathlib import Path
+
+runner_path = Path("scripts/ci/es80_signed_field_artifact_private_runner.py")
+spec = importlib.util.spec_from_file_location("nembra_private_field_runner_preflight", runner_path)
+if spec is None or spec.loader is None:
     raise SystemExit(1)
-if any(ord(character) < 33 or ord(character) == 127 for character in value):
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+try:
+    module.read_private_identifier(Path(sys.argv[1]))
+except module.PrivateInputError:
     raise SystemExit(1)
 PY
 then
-  echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID is not a valid bounded verification input." >&2
+  echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE is not a valid private verification input." >&2
   exit 4
 fi
 if [[ ! -f "$NEMBRA_EXPORT_OPTIONS_PLIST" ]]; then
@@ -233,13 +253,14 @@ print(candidates[0])
 PY
 )"
 
-# The intended-device UDID is verification-only input. It is forwarded to the canonical inspector
-# and is deliberately never persisted, echoed, hashed, embedded into filenames, or copied into
-# candidate evidence. INSPECTION_DIR must remain absent until the failure-atomic inspector publishes.
-python3 scripts/ci/es80_signed_field_artifact_evidence.py \
+# The intended-device identifier is verification-only input. The producer passes only the private
+# file path through OS-visible argv; the private runner reads the value in memory and invokes the
+# canonical inspector in-process. The raw value is never persisted, echoed, hashed, embedded into
+# filenames, or copied into candidate evidence. INSPECTION_DIR remains absent until publication.
+python3 scripts/ci/es80_signed_field_artifact_private_runner.py \
   --ipa "$IPA_PATH" \
   --expected-source-sha "$SOURCE_SHA" \
-  --intended-device-udid "$NEMBRA_INTENDED_FIELD_DEVICE_UDID" \
+  --intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" \
   --output-dir "$INSPECTION_DIR"
 
 EXTERNAL_RECORD="$INSPECTION_DIR/NembraCaptureExternalBuildRecord.json"
@@ -395,8 +416,8 @@ if hashlib.sha256(raw_info_plist).hexdigest() != field.get("infoPlistSHA256"):
     raise SystemExit("Signed field-launch recipe was not verified on the exact Info.plist evidence bytes")
 PY
 
-# Never persist the intended-device UDID. Candidate provenance records only non-sensitive build and
-# export-policy facts plus paths to the failure-atomic inspector evidence directory.
+# Never persist the intended-device identifier or its private input path. Candidate provenance records
+# only non-sensitive build/export-policy facts plus paths to the failure-atomic inspector evidence.
 {
   echo "source_commit_sha=$SOURCE_SHA"
   echo "build_identifier=$BUILD_IDENTIFIER"
