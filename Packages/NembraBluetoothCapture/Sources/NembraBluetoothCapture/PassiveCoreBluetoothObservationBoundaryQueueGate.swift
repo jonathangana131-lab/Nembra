@@ -32,6 +32,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         case cutoffOverrun
         case horizonArtifactNotReady
         case staleTerminalRetirementReceipt
+        case retainedEvidenceRoutingRequired(retainedCount: Int)
         case terminalRetirementQueueAdvanced(expectedTail: UInt64, currentTail: UInt64)
     }
 
@@ -255,8 +256,10 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
     /// post-H FIFO evidence was synchronously retired by the package-owned producer.
     ///
     /// The receipt must bind the current terminal transaction's authority, revision,
-    /// and Horizon cutoff. The controller's monotonic queue tail must also still equal
-    /// the exact tail validated by retirement. Any callback accepted between retirement
+    /// and Horizon cutoff. Standalone reopening also requires retirement to leave no
+    /// retained pending evidence; preserved nonterminal evidence needs separate routing
+    /// authority before the gate may release it. The controller's monotonic queue tail
+    /// must still equal the exact tail validated by retirement. Any callback accepted between retirement
     /// and this transition makes the receipt stale and leaves the terminal quarantine
     /// unchanged.
     ///
@@ -276,6 +279,11 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
               receipt.terminalTransactionRevision == transaction.revision,
               receipt.horizonQueueCutoff == transaction.queueCutoff else {
             throw StateError.staleTerminalRetirementReceipt
+        }
+        guard !receipt.requiresRetainedEvidenceRoutingBeforeReopen else {
+            throw StateError.retainedEvidenceRoutingRequired(
+                retainedCount: receipt.retainedPendingEvidenceCount
+            )
         }
         guard currentLastEnqueuedEventSequence == receipt.validatedQueueTailSequence else {
             throw StateError.terminalRetirementQueueAdvanced(
