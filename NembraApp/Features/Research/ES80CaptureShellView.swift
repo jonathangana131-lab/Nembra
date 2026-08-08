@@ -48,6 +48,7 @@ struct ES80CaptureShellView: View {
     @State private var coordinator: PassiveBluetoothExperimentOneCoordinator
     @State private var observedScanBeganAtUptimeNanoseconds: UInt64?
     @State private var observationReadyBeganAtUptimeNanoseconds: UInt64?
+    @State private var declaredStationarySetup: PassiveBluetoothStationaryCaptureSetup?
     @State private var captureConnectionAttempted = false
     @State private var finalizationInFlight = false
     @State private var diagnosticMessage: String?
@@ -272,13 +273,24 @@ struct ES80CaptureShellView: View {
             ) {}
 
         case let .correlationReady(window):
-            correlationReadyPanel(window)
-            primaryButton(
-                "Begin \(phaseShortName(window)) window",
-                systemImage: window.operatorExpectedPowerOn ? "power.circle.fill" : "power.circle",
-                identifier: "es80.capture.begin-window"
-            ) {
-                beginCorrelationWindow()
+            if window == .firstPoweredOff && declaredStationarySetup == nil {
+                stationarySetupDeclarationPanel
+                primaryButton(
+                    "Confirm stationary setup",
+                    systemImage: "checkmark.shield",
+                    identifier: "es80.capture.confirm-stationary-setup"
+                ) {
+                    declareStationarySetup()
+                }
+            } else {
+                correlationReadyPanel(window)
+                primaryButton(
+                    "Begin \(phaseShortName(window)) window",
+                    systemImage: window.operatorExpectedPowerOn ? "power.circle.fill" : "power.circle",
+                    identifier: "es80.capture.begin-window"
+                ) {
+                    beginCorrelationWindow()
+                }
             }
 
         case let .correlationStarting(window):
@@ -526,6 +538,51 @@ struct ES80CaptureShellView: View {
         }
     }
 
+    private var stationarySetupDeclarationPanel: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("STATIONARY SETUP")
+                    .font(.caption.monospaced().weight(.bold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Image(systemName: "checklist")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+
+            Text("Declare the starting conditions")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.white)
+
+            Text("Confirm only when the charger is disconnected, the stock scooter app is closed with no stock-app reference markers planned for this run, and Nembra is foregrounded on an unlocked screen. This declaration is setup provenance—not proof the conditions remain true by itself.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 10) {
+                setupConditionRow("Charger disconnected")
+                setupConditionRow("Stock app closed / no reference markers")
+                setupConditionRow("Nembra foreground / unlocked / screen on")
+            }
+        }
+        .padding(18)
+        .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("es80.capture.stationary-setup")
+    }
+
+    private func setupConditionRow(_ title: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "circle")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.white)
+        }
+    }
+
     private func correlationReadyPanel(_ window: PassiveBluetoothPowerCycleObservationPhase) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("\(phaseShortName(window)) / READY")
@@ -647,6 +704,11 @@ struct ES80CaptureShellView: View {
                         detailRow("Capture bytes", value: artifact.captureJSON.count.formatted())
                         detailRow("Observation windows", value: artifact.powerCycleResult.windows.count.formatted())
                     }
+                    if declaredStationarySetup != nil {
+                        detailRow("Charger", value: "Disconnected — declared")
+                        detailRow("Stock app reference", value: "None — declared")
+                        detailRow("Execution context", value: "Foreground / unlocked / screen on")
+                    }
                     if let softwareExportByteCount {
                         detailRow("Share bundle bytes", value: softwareExportByteCount.formatted())
                     }
@@ -655,7 +717,7 @@ struct ES80CaptureShellView: View {
 
                     Text("Truth boundary")
                         .font(.headline)
-                    Text("This export is passive software evidence. Repeated full-UUID correlation does not authenticate the physical ES80, and the package-owned build rendezvous does not authorize a field run. This screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics.")
+                    Text("This export is passive software evidence. The setup rows are operator-declared provenance, not continuous-condition attestation. Repeated full-UUID correlation does not authenticate the physical ES80, and the package-owned build rendezvous does not authorize a field run. This screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics.")
                         .font(.body)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -747,8 +809,27 @@ struct ES80CaptureShellView: View {
         return .correlationReady(progress.phase)
     }
 
+    private func declareStationarySetup() {
+        diagnosticMessage = nil
+        guard coordinator.status.powerCycleProgress?.phase == .firstPoweredOff,
+              coordinator.powerCycleResult == nil else {
+            diagnosticMessage = "Stationary setup can be declared only before OFF 1 begins."
+            return
+        }
+
+        declaredStationarySetup = PassiveBluetoothStationaryCaptureSetup(
+            chargerState: .disconnected,
+            executionContext: .foregroundUnlockedScreenOn,
+            stockAppReferenceSetup: .none
+        )
+    }
+
     private func beginCorrelationWindow() {
         diagnosticMessage = nil
+        guard declaredStationarySetup != nil else {
+            diagnosticMessage = "Confirm the stationary setup before beginning OFF 1."
+            return
+        }
         do {
             try coordinator.startCurrentPowerCycleWindow()
         } catch {
@@ -818,10 +899,16 @@ struct ES80CaptureShellView: View {
             diagnosticMessage = "Share preparation is available only after the immutable capture is sealed."
             return
         }
+        guard let declaredStationarySetup else {
+            diagnosticMessage = "Capture is sealed, but its original stationary setup declaration is unavailable. Share remains blocked rather than inventing setup provenance after the run."
+            return
+        }
 
         diagnosticMessage = nil
         do {
-            let exportJSON = try coordinator.encodedFinalizedSoftwareExportForCurrentApplication()
+            let exportJSON = try coordinator.encodedFinalizedSoftwareExportForCurrentApplication(
+                setup: declaredStationarySetup
+            )
             let newURL = try persistSoftwareExport(exportJSON)
             if let previousURL = softwareExportURL, previousURL != newURL {
                 try? FileManager.default.removeItem(at: previousURL)
@@ -839,6 +926,7 @@ struct ES80CaptureShellView: View {
         coordinator.abandonExperiment()
         diagnosticMessage = nil
         localFailureMessage = nil
+        declaredStationarySetup = nil
         captureConnectionAttempted = false
         finalizationInFlight = false
         if let softwareExportURL {
