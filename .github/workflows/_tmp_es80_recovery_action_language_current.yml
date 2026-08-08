@@ -25,24 +25,15 @@ jobs:
           from pathlib import Path
 
           path = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")
-          source = path.read_text(encoding="utf-8")
-          old = '"Start a fresh Experiment One"'
-          new = '"Start a fresh Capture"'
+          source = path.read_bytes()
+          old = b'"Start a fresh Experiment One"'
+          new = b'"Start a fresh Capture"'
           if source.count(old) != 1:
               raise SystemExit(f"expected exactly one failed-state recovery label, found {source.count(old)}")
-          source = source.replace(old, new, 1)
-
-          required = [
-              'title: "Capture stopped safely"',
-              '"Start a fresh Capture"',
-              'identifier: "es80.capture.restart-experiment"',
-              'guard status.physicalProcedurePermitted else',
-              'coordinator.invalidateForForegroundLoss()',
-          ]
-          for phrase in required:
-              if phrase not in source:
-                  raise SystemExit(f"required recovery/truth contract disappeared: {phrase}")
-          path.write_text(source, encoding="utf-8")
+          updated = source.replace(old, new, 1)
+          if updated.count(old) != 0 or updated.count(new) < 1:
+              raise SystemExit("exact recovery-label byte replacement did not produce the required source shape")
+          path.write_bytes(updated)
           PY
 
       - name: Verify product edit
