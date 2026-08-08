@@ -5,7 +5,7 @@ import Testing
 /// Expected-red provenance contract for the Experiment One handoff.
 /// Software monotonic ordering only; no BLE/RF emission time or physical ES80 claim.
 struct ForegroundCoreBluetoothCaptureControllerExperimentOnePostAdmissionRediscoveryTests {
-    private static func source(named filename: String, under directory: String) throws -> String {
+    private static func source(named filename: String) throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let packageRoot = testFile
             .deletingLastPathComponent()
@@ -21,17 +21,11 @@ struct ForegroundCoreBluetoothCaptureControllerExperimentOnePostAdmissionRedisco
     }
 
     private static func controllerSource() throws -> String {
-        try source(
-            named: "ForegroundCoreBluetoothCaptureController.swift",
-            under: "NembraBluetoothCapture"
-        )
+        try source(named: "ForegroundCoreBluetoothCaptureController.swift")
     }
 
     private static func runSource() throws -> String {
-        try source(
-            named: "PassiveBluetoothExperimentOneRun.swift",
-            under: "NembraBluetoothCapture"
-        )
+        try source(named: "PassiveBluetoothExperimentOneRun.swift")
     }
 
     private static func consumerBody(_ source: String) throws -> Substring {
