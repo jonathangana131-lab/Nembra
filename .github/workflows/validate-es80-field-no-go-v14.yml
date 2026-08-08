@@ -1,0 +1,74 @@
+name: ES80 V14 Field NO-GO Exact Product QA
+
+on:
+  push:
+    branches:
+      - parallel/validate-es80-field-no-go-v14/gpt56-go2
+
+permissions:
+  contents: read
+
+jobs:
+  validate-exact-product:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - name: Checkout immutable NO-GO product
+        uses: actions/checkout@v6
+        with:
+          ref: 9d8de640730bda9e4a0d2b0efcf06a15111d9c74
+          fetch-depth: 0
+
+      - name: Verify exact product and dependency
+        run: |
+          product='9d8de640730bda9e4a0d2b0efcf06a15111d9c74'
+          base='da8fe53cff09f82972e41795c44f30aa34e35c4c'
+          test "$(git rev-parse HEAD)" = "$product"
+          git merge-base --is-ancestor "$base" "$product"
+          test "$(git diff --name-only "$base" "$product" | wc -l | tr -d ' ')" = '2'
+          git diff --name-only "$base" "$product" | grep -Fxq 'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneFieldExecutionGate.swift'
+          git diff --name-only "$base" "$product" | grep -Fxq 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOneFieldExecutionGateTests.swift'
+
+      - name: Test NembraCore with warnings as errors
+        working-directory: Packages/NembraCore
+        run: swift test -Xswiftc -warnings-as-errors
+
+      - name: Test NembraBluetoothCapture with warnings as errors
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test -Xswiftc -warnings-as-errors
+
+      - name: Build capture package for generic iOS Simulator
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          xcodebuild \
+            -scheme NembraBluetoothCapture \
+            -destination 'generic/platform=iOS Simulator' \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+            build
+
+      - name: Guard passive Capture against application characteristic writes
+        run: |
+          if grep -R -n -E 'writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Passive Capture package must not add application characteristic writes.' >&2
+            exit 1
+          fi
+
+      - name: Prove field gate is mechanically NO-GO only
+        run: |
+          gate='Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneFieldExecutionGate.swift'
+          grep -Fq 'public static let recipeID: PassiveBluetoothExperimentRecipeID = .es80FingerprintV1' "$gate"
+          grep -Fq 'public static let status: Status = .noGo(.finalComposedBuildNotAuthorized)' "$gate"
+          grep -Fq 'public static let permitsPhysicalProcedure = false' "$gate"
+          grep -Fq 'case noGo(NoGoBlocker)' "$gate"
+          grep -Fq 'case finalComposedBuildNotAuthorized' "$gate"
+          if grep -E -n 'case[[:space:]]+go\b|permitsPhysicalProcedure[[:space:]]*=[[:space:]]*true|public[[:space:]]+init|static[[:space:]]+var[[:space:]]+(status|permitsPhysicalProcedure)' "$gate"; then
+            echo 'Current field gate exposes a GO/mutable/caller-constructible authorization path.' >&2
+            exit 1
+          fi
+
+      - name: Prove V14 runbook is still NO-GO on dependency tree
+        run: |
+          runbook='docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md'
+          grep -Fq 'NO-GO — PHYSICAL EXPERIMENT ONE MUST NOT RUN FROM THE CURRENT SOFTWARE LINEAGE' "$runbook"
+          grep -Fq 'Accepted exact build/commit: **NOT YET AUTHORIZED**' "$runbook"
+          grep -Fq '**NO-GO.**' "$runbook"
