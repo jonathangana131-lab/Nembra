@@ -1,0 +1,68 @@
+name: Capture recorded Ready precedence convergence
+
+on:
+  push:
+    branches:
+      - agent/es80-controller-native-convergence-v14
+    paths:
+      - .github/workflows/capture-ready-pre-attempt-product-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/es80-controller-native-convergence-v14
+          fetch-depth: 2
+
+      - name: Verify exact parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "00ded83e0a233e92b59fc2a072d80ccbdc221dec"
+
+      - name: Apply exact precedence repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          p = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift")
+          s = p.read_text()
+          old = "                            _ = try? self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit(recordedReady)\n                            throw error\n"
+          new = """                            let recordedReadyFailure = error
+                            do {
+                                _ = try self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit(
+                                    recordedReady
+                                )
+                            } catch {
+                                // Exact quarantine failure is stronger lifecycle evidence than
+                                // the triggering queue-commit failure. Never suppress it.
+                                throw error
+                            }
+                            throw recordedReadyFailure
+"""
+          if s.count(old) != 1:
+              raise SystemExit(f"expected one recorded Ready patch site, found {s.count(old)}")
+          p.write_text(s.replace(old, new, 1))
+          Path(".github/workflows/capture-ready-pre-attempt-product-patch.yml").unlink()
+          PY
+          git diff --check
+          grep -q 'let recordedReadyFailure = error' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -q 'admission.abandonBeforeRecorderAttempt()' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -q 'try self.requireForegroundEvidenceIntegrity()' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          test ! -e .github/workflows/capture-ready-pre-attempt-product-patch.yml
+
+      - name: Commit exact product delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-gpt56"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: preserve recorded Ready recovery precedence on converged controller"
+          git push origin HEAD:agent/es80-controller-native-convergence-v14
