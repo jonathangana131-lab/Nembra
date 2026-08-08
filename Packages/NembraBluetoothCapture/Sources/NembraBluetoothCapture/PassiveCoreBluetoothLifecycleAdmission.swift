@@ -12,6 +12,18 @@ struct PassiveCoreBluetoothDiscoveryAdmissionPolicy: Equatable, Sendable {
     }
 }
 
+/// Legacy private controller boundary retained until the cause-aware controller
+/// call-site rewrite lands atomically. New product-facing semantics use the fixed
+/// `PassiveCoreBluetoothCancellationCause` contract below.
+enum PassiveCoreBluetoothCancellationBoundary: Equatable, Sendable {
+    case recordCancellationRequest
+    case interruptionAlreadyRecorded
+
+    var shouldRecordCancellationRequest: Bool {
+        self == .recordCancellationRequest
+    }
+}
+
 /// Fixed evidence semantics for the shared transport-cancellation mechanics.
 /// Callers choose a concrete product cause rather than supplying arbitrary text,
 /// so teardown cannot silently mint misleading continuity evidence.
