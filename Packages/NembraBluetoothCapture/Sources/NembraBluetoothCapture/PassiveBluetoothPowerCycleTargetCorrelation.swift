@@ -1,12 +1,13 @@
 import Foundation
 
-/// Package-issued identity for one authoritative broad-scan candidate epoch.
+/// Package-issued local ordering for one candidate-observation window.
 ///
-/// The initializer is intentionally not public. App/UI code must not invent scan
-/// generations merely to make two catalog snapshots look independent. A future
-/// controller integration should issue these tokens only after the CoreBluetooth
-/// callback acceptance path is generation-fenced.
-public struct PassiveBluetoothCandidateScanEpoch: Equatable, Hashable, Sendable {
+/// This sequence is deliberately **not** a CoreBluetooth callback generation ID.
+/// `didDiscover` does not expose the scan request that originated a callback, so
+/// incrementing a local counter cannot prove that a delayed callback belongs to a
+/// later scan. The initializer is not public so app/UI code cannot mint ordering
+/// tokens and turn two arbitrary catalogs into authoritative physical evidence.
+public struct PassiveBluetoothCandidateObservationWindowSequence: Equatable, Hashable, Sendable {
     public let rawValue: UInt64
 
     init(rawValue: UInt64) {
@@ -14,11 +15,16 @@ public struct PassiveBluetoothCandidateScanEpoch: Equatable, Hashable, Sendable 
     }
 }
 
-/// Immutable candidate catalog from one authoritative scan epoch.
+/// Immutable candidate catalog from one package-issued observation window.
 ///
-/// This is presentation/research targeting evidence only. It is not a durable
-/// scooter identity and it does not prove that any candidate is an AOVOPRO ES80.
-public struct PassiveBluetoothCandidateScanSnapshot: Equatable, Sendable {
+/// Construction is intentionally package-internal. A future live producer may
+/// expose snapshots only after its CoreBluetooth lifecycle policy can honestly
+/// establish a bounded observation window and isolation from the prior window.
+/// A sequence number alone never establishes that isolation.
+///
+/// This remains presentation/research targeting evidence only. It is not a
+/// durable scooter identity and does not prove any candidate is an AOVOPRO ES80.
+public struct PassiveBluetoothCandidateObservationSnapshot: Equatable, Sendable {
     public struct Candidate: Equatable, Sendable {
         public let id: UUID
         public let isConnectable: Bool?
@@ -29,44 +35,51 @@ public struct PassiveBluetoothCandidateScanSnapshot: Equatable, Sendable {
         }
     }
 
-    public let epoch: PassiveBluetoothCandidateScanEpoch
+    public let windowSequence: PassiveBluetoothCandidateObservationWindowSequence
     public let candidates: [Candidate]
 
     init(
-        epoch: PassiveBluetoothCandidateScanEpoch,
+        windowSequence: PassiveBluetoothCandidateObservationWindowSequence,
         candidates: [Candidate]
     ) throws {
         var seen = Set<UUID>()
         for candidate in candidates {
             guard seen.insert(candidate.id).inserted else {
-                throw PassiveBluetoothCandidateScanSnapshotError
+                throw PassiveBluetoothCandidateObservationSnapshotError
                     .duplicatePeripheralIdentifier(candidate.id)
             }
         }
 
-        self.epoch = epoch
+        self.windowSequence = windowSequence
         self.candidates = candidates.sorted {
             $0.id.uuidString < $1.id.uuidString
         }
     }
 }
 
-enum PassiveBluetoothCandidateScanSnapshotError: Error, Equatable, Sendable {
+enum PassiveBluetoothCandidateObservationSnapshotError: Error, Equatable, Sendable {
     case duplicatePeripheralIdentifier(UUID)
 }
 
 /// Evidence summary for the minimal physical target-correlation experiment:
-/// snapshot nearby candidates with the intended scooter OFF, then snapshot a
-/// fresh scan epoch after the operator powers only that scooter ON.
+/// observe nearby candidates with the intended scooter OFF, then compare against
+/// a separately established later observation window after the operator powers
+/// only that scooter ON.
+///
+/// The set-difference algorithm does not prove the observation windows were
+/// isolated. That authority belongs to the package producer that constructs the
+/// otherwise non-public snapshots. Until the live CoreBluetooth lifecycle can
+/// prove that boundary, app code cannot drive this report honestly.
 ///
 /// A single delta candidate is still only a physical-correlation candidate for
 /// explicit operator selection. It is not authentication, permanent identity,
 /// GATT/protocol verification, or permission to issue vehicle commands.
 public struct PassiveBluetoothPowerCycleTargetCorrelationReport: Equatable, Sendable {
     public enum Disposition: Equatable, Sendable {
-        /// The powered-on snapshot does not come from a strictly later scan epoch.
-        /// Reusing one catalog cannot establish an OFF -> ON candidate delta.
-        case invalidScanEpochOrder
+        /// The powered-on snapshot is not locally ordered after the baseline.
+        /// This rejects accidental reuse/backward inputs but does not itself
+        /// prove CoreBluetooth callback isolation between otherwise later values.
+        case invalidObservationWindowOrder
 
         /// No newly selectable candidate appeared after the intended power-on.
         case noNewSelectableCandidate
@@ -79,8 +92,8 @@ public struct PassiveBluetoothPowerCycleTargetCorrelationReport: Equatable, Send
         case singleNewSelectableCandidate(UUID)
     }
 
-    public let baselineEpoch: PassiveBluetoothCandidateScanEpoch
-    public let poweredOnEpoch: PassiveBluetoothCandidateScanEpoch
+    public let baselineWindowSequence: PassiveBluetoothCandidateObservationWindowSequence
+    public let poweredOnWindowSequence: PassiveBluetoothCandidateObservationWindowSequence
 
     /// Every peripheral UUID observed during the OFF baseline, irrespective of
     /// connectability. This prevents a previously sighted device from becoming
@@ -97,15 +110,15 @@ public struct PassiveBluetoothPowerCycleTargetCorrelationReport: Equatable, Send
     public let disposition: Disposition
 
     fileprivate init(
-        baselineEpoch: PassiveBluetoothCandidateScanEpoch,
-        poweredOnEpoch: PassiveBluetoothCandidateScanEpoch,
+        baselineWindowSequence: PassiveBluetoothCandidateObservationWindowSequence,
+        poweredOnWindowSequence: PassiveBluetoothCandidateObservationWindowSequence,
         baselineObservedIdentifiers: [UUID],
         poweredOnSelectableIdentifiers: [UUID],
         newSelectableIdentifiers: [UUID],
         disposition: Disposition
     ) {
-        self.baselineEpoch = baselineEpoch
-        self.poweredOnEpoch = poweredOnEpoch
+        self.baselineWindowSequence = baselineWindowSequence
+        self.poweredOnWindowSequence = poweredOnWindowSequence
         self.baselineObservedIdentifiers = baselineObservedIdentifiers
         self.poweredOnSelectableIdentifiers = poweredOnSelectableIdentifiers
         self.newSelectableIdentifiers = newSelectableIdentifiers
@@ -114,16 +127,17 @@ public struct PassiveBluetoothPowerCycleTargetCorrelationReport: Equatable, Send
 }
 
 public enum PassiveBluetoothPowerCycleTargetCorrelation {
-    /// Compare two already-authoritative scan snapshots without using names,
+    /// Compare two package-issued observation snapshots without using names,
     /// RSSI, UUID prefixes, or any guessed product signature.
     ///
-    /// The caller cannot publicly mint either snapshot or epoch. Until the live
-    /// controller exposes generation-fenced snapshot production, this algorithm
-    /// deliberately remains impossible to drive from app code with invented
-    /// generation numbers.
+    /// The caller cannot publicly construct snapshots or local sequence values.
+    /// This intentionally prevents app/UI code from manufacturing apparent window
+    /// authority. The future snapshot producer must separately prove its bounded
+    /// CoreBluetooth observation/isolation policy; the sequence check below is
+    /// only a local ordering sanity check and never callback provenance.
     public static func assess(
-        baseline: PassiveBluetoothCandidateScanSnapshot,
-        poweredOn: PassiveBluetoothCandidateScanSnapshot
+        baseline: PassiveBluetoothCandidateObservationSnapshot,
+        poweredOn: PassiveBluetoothCandidateObservationSnapshot
     ) -> PassiveBluetoothPowerCycleTargetCorrelationReport {
         let baselineObserved = sortedIdentifiers(
             Set(baseline.candidates.map(\.id))
@@ -136,14 +150,14 @@ public enum PassiveBluetoothPowerCycleTargetCorrelation {
             )
         )
 
-        guard poweredOn.epoch.rawValue > baseline.epoch.rawValue else {
+        guard poweredOn.windowSequence.rawValue > baseline.windowSequence.rawValue else {
             return .init(
-                baselineEpoch: baseline.epoch,
-                poweredOnEpoch: poweredOn.epoch,
+                baselineWindowSequence: baseline.windowSequence,
+                poweredOnWindowSequence: poweredOn.windowSequence,
                 baselineObservedIdentifiers: baselineObserved,
                 poweredOnSelectableIdentifiers: poweredOnSelectable,
                 newSelectableIdentifiers: [],
-                disposition: .invalidScanEpochOrder
+                disposition: .invalidObservationWindowOrder
             )
         }
 
@@ -163,8 +177,8 @@ public enum PassiveBluetoothPowerCycleTargetCorrelation {
         }
 
         return .init(
-            baselineEpoch: baseline.epoch,
-            poweredOnEpoch: poweredOn.epoch,
+            baselineWindowSequence: baseline.windowSequence,
+            poweredOnWindowSequence: poweredOn.windowSequence,
             baselineObservedIdentifiers: baselineObserved,
             poweredOnSelectableIdentifiers: poweredOnSelectable,
             newSelectableIdentifiers: newSelectable,
