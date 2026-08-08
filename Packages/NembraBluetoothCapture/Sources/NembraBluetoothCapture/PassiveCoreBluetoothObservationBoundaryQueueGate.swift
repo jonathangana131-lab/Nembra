@@ -133,10 +133,10 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         }
 
         switch phase {
-        case .drainingReady(transaction):
-            self.phase = .observing
-        case .drainingHorizon(transaction):
-            self.phase = .horizonBoundaryRecorded(transaction)
+        case let .drainingReady(current) where current == transaction:
+            phase = .observing
+        case let .drainingHorizon(current) where current == transaction:
+            phase = .horizonBoundaryRecorded(transaction)
         default:
             throw StateError.staleTransaction
         }
@@ -151,7 +151,8 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         guard transaction.authority == currentAuthority else {
             throw StateError.authorityChanged
         }
-        guard case .horizonBoundaryRecorded(transaction) = phase else {
+        guard case let .horizonBoundaryRecorded(current) = phase,
+              current == transaction else {
             throw StateError.horizonArtifactNotReady
         }
         phase = .terminal(transaction)
