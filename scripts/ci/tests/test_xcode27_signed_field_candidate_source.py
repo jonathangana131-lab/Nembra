@@ -11,6 +11,7 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
 
     def test_targets_real_ios_and_injects_exact_build_rendezvous(self):
         self.assertIn('generic/platform=iOS', self.source)
+        self.assertIn('-exportArchive', self.source)
         self.assertNotIn('CODE_SIGNING_ALLOWED=NO', self.source)
         self.assertIn('Capture Build V14-${SOURCE_SHA:0:12}', self.source)
         self.assertIn('INFOPLIST_KEY_NembraCaptureBuildIdentifier', self.source)
@@ -19,9 +20,17 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
 
     def test_reuses_canonical_signed_field_artifact_evidence_owner(self):
         self.assertIn('es80_signed_field_artifact_evidence.py', self.source)
+        self.assertIn('--ipa "$IPA_PATH"', self.source)
         self.assertIn('--expected-source-sha "$SOURCE_SHA"', self.source)
         self.assertIn('signed-field-artifact-evidence-not-field-authorization', self.source)
+        self.assertNotIn('NembraCaptureSignedFieldCandidateEvidence.json', self.source)
         self.assertNotIn('es80_field_candidate_verify.py', self.source)
+
+    def test_preserves_exact_checkout_before_evidence_emission(self):
+        self.assertIn('$ROOT/artifacts/Xcode27FieldCandidate', self.source)
+        self.assertIn('git check-ignore -q', self.source)
+        self.assertIn('POST_BUILD_REPOSITORY_STATUS=', self.source)
+        self.assertIn('Archive/export changed non-ignored repository state', self.source)
 
     def test_never_mutates_physical_authorization(self):
         self.assertIn('Independent acceptance has NOT occurred.', self.source)
