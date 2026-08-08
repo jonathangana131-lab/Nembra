@@ -292,7 +292,6 @@ final class NembraAppTests: XCTestCase {
     }
 }
 
-
 /// V14 app-visible Experiment One authority regression. These source checks intentionally live in
 /// the already-wired NembraAppTests compilation unit; they prove product wiring shape only, never
 /// physical scooter identity or runtime BLE behavior.
@@ -308,18 +307,34 @@ extension NembraAppTests {
         XCTAssertFalse(app.contains("try? ForegroundCoreBluetoothCaptureController("))
     }
 
-    func testCaptureShellContinuesSameAuthorityThroughSealAndShare() throws {
+    func testCaptureShellContinuesSameAuthorityThroughSealFinalShareAndAnalysisReadiness() throws {
         let testFile = URL(fileURLWithPath: #filePath)
         let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
         let shell = try String(
             contentsOf: root.appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift"),
             encoding: .utf8
         )
+
         XCTAssertFalse(shell.contains("PassiveBluetoothPowerCycleObservationSession("))
         XCTAssertFalse(shell.contains("Passive capture binding not available in this build"))
         XCTAssertTrue(shell.contains("coordinator.prepareCaptureRediscovery()"))
         XCTAssertTrue(shell.contains("coordinator.connectPreparedCapture()"))
-        XCTAssertTrue(shell.contains("encodedFinalizedObservationHorizonJSON"))
-        XCTAssertTrue(shell.contains("ShareLink(item: finalizedCaptureURL)"))
+        XCTAssertTrue(shell.contains("coordinator.finalizeObservationHorizon()"))
+        XCTAssertTrue(shell.contains("coordinator.finalizedShareArtifactForCurrentApplication(setup: setup)"))
+        XCTAssertTrue(shell.contains("PassiveBluetoothExperimentOneFinalShareArtifactCodec"))
+        XCTAssertTrue(shell.contains(".decodeAndVerify(artifact.json)"))
+        XCTAssertTrue(shell.contains("artifact.suggestedFilename"))
+        XCTAssertTrue(shell.contains("ShareLink(item: shareURL)"))
+        XCTAssertTrue(shell.contains("finalShareVerification == nil ? \"Capture sealed\" : \"Ready for analysis\""))
+        XCTAssertTrue(shell.contains("final analysis artifact not ready"))
+
+        XCTAssertFalse(
+            shell.contains("encodedFinalizedSoftwareExportForCurrentApplication"),
+            "The app primary Share must not stop at the inner SoftwareExport once the final V14 wrapper exists."
+        )
+        XCTAssertFalse(
+            shell.contains("persistShareArtifact(artifact.captureJSON"),
+            "Raw sealed controller JSON must never masquerade as the final analysis Share artifact."
+        )
     }
 }
