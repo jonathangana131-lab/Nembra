@@ -24,7 +24,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
         XCTAssertTrue(
             app.staticTexts["Capture locked"].waitForExistence(timeout: 3),
-            "The current package-owned lock must remain the primary rider-facing product state."
+            "The current package-owned NO-GO must remain the primary product state."
         )
         XCTAssertTrue(
             app.descendants(matching: .any)["es80.capture.field-no-go"].waitForExistence(timeout: 3),
@@ -35,8 +35,12 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "The physical NO-GO boundary must be exposed as one stable accessibility element."
         )
         XCTAssertTrue(
-            app.staticTexts["ES80-FINGERPRINT-v1"].waitForExistence(timeout: 3),
-            "The installed versioned procedure must be identified without becoming executable."
+            app.descendants(matching: .any)["es80.capture.engineering-details"].waitForExistence(timeout: 3),
+            "Exact recipe vocabulary must remain available behind secondary engineering details."
+        )
+        XCTAssertFalse(
+            app.staticTexts["ES80-FINGERPRINT-v1"].exists,
+            "Raw recipe vocabulary must not compete with the primary locked-state message before details are requested."
         )
 
         XCTAssertFalse(
@@ -89,7 +93,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Nembra Capture V14 — Package-Owned Physical NO-GO"
+        attachment.name = "Nembra Capture V14 — Product Physical NO-GO"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
@@ -106,17 +110,17 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
         let lockedState = app.descendants(matching: .any)["es80.capture.field-no-go"]
         let physicalBoundary = app.descendants(matching: .any)["es80.capture.physical-run-locked"]
-        let recipe = app.staticTexts["ES80-FINGERPRINT-v1"]
+        let engineeringDetails = app.descendants(matching: .any)["es80.capture.engineering-details"]
 
         XCTAssertTrue(lockedState.waitForExistence(timeout: 5))
         XCTAssertTrue(physicalBoundary.waitForExistence(timeout: 3))
-        XCTAssertTrue(recipe.waitForExistence(timeout: 3))
+        XCTAssertTrue(engineeringDetails.waitForExistence(timeout: 3))
         XCTAssertTrue(lockedState.isHittable || lockedState.frame.height > 0)
         XCTAssertTrue(physicalBoundary.frame.height > 0)
-        XCTAssertTrue(recipe.frame.height > 0)
+        XCTAssertTrue(engineeringDetails.frame.height > 0)
 
         let windowFrame = app.windows.firstMatch.frame
-        for element in [lockedState, physicalBoundary, recipe] {
+        for element in [lockedState, physicalBoundary, engineeringDetails] {
             XCTAssertGreaterThanOrEqual(
                 element.frame.minX,
                 windowFrame.minX - 1,
@@ -129,17 +133,18 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             )
         }
 
+        XCTAssertFalse(app.staticTexts["ES80-FINGERPRINT-v1"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.begin-window"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.stationary-preflight"].exists)
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Nembra Capture V14 — NO-GO — Accessibility XXXL"
+        attachment.name = "Nembra Capture V14 — Product NO-GO — Accessibility XXXL"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
 
     @MainActor
-    func testV14NoGoLandscapeKeepsAuthorityAndProcedureVisible() {
+    func testV14NoGoLandscapeKeepsAuthorityAndFieldStatusVisible() {
         XCUIDevice.shared.orientation = .portrait
         defer { XCUIDevice.shared.orientation = .portrait }
 
@@ -154,18 +159,28 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
 
         let physicalBoundary = app.descendants(matching: .any)["es80.capture.physical-run-locked"]
-        let recipe = app.staticTexts["ES80-FINGERPRINT-v1"]
+        let engineeringDetails = app.descendants(matching: .any)["es80.capture.engineering-details"]
         XCTAssertTrue(physicalBoundary.waitForExistence(timeout: 3))
-        XCTAssertTrue(recipe.waitForExistence(timeout: 3))
+        XCTAssertTrue(engineeringDetails.waitForExistence(timeout: 3))
         XCTAssertGreaterThan(physicalBoundary.frame.height, 0)
-        XCTAssertGreaterThan(recipe.frame.height, 0)
+        XCTAssertGreaterThan(engineeringDetails.frame.height, 0)
+        XCTAssertFalse(app.staticTexts["ES80-FINGERPRINT-v1"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.begin-window"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.stationary-preflight"].exists)
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Nembra Capture V14 — NO-GO — Landscape"
+        attachment.name = "Nembra Capture V14 — Product NO-GO — Landscape"
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    func testNoGoPrimaryCopyKeepsRecipeVocabularySecondary() throws {
+        let source = try nembraAppSource()
+
+        XCTAssertTrue(source.contains("Text(\"Capture locked\")"))
+        XCTAssertTrue(source.contains("DisclosureGroup(\"Engineering details\")"))
+        XCTAssertTrue(source.contains("Text(recipeID)"))
+        XCTAssertFalse(source.contains("Text(\"CAPTURE RECIPE\")"))
     }
 
     func testCompletionSourceRequiresExactFinalShareIntegrityBeforeAnalysisReady() throws {
@@ -212,6 +227,16 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             .deletingLastPathComponent()
         let sourceURL = repositoryRoot
             .appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private func nembraAppSource() throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let repositoryRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = repositoryRoot
+            .appendingPathComponent("NembraApp/App/NembraApp.swift")
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }
