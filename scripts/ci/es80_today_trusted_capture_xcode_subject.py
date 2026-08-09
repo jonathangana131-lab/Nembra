@@ -26,6 +26,18 @@ TRUSTED_WORKFLOW_BLOB_SHA = "e5ef72f50bed279e98ad28b94930831b747d0c20"
 TRUSTED_JOB_NAME = "Build, test, and capture trusted exact Capture head"
 TRUSTED_ARTIFACT_PREFIX = "nembra-capture-xcode27-"
 EXTERNAL_RECORD_NAME = "NembraCaptureExternalBuildRecord.json"
+RECIPE = "ES80-FINGERPRINT-v1"
+PROCEDURE = "V14"
+EXTERNAL_KEYS = {
+    "schemaVersion",
+    "buildIdentifier",
+    "buildInstanceID",
+    "sourceCommitSHA",
+    "executableSHA256",
+    "infoPlistSHA256",
+    "experimentRecipeID",
+    "procedureVersion",
+}
 REQUIRED_SUCCESSFUL_STEPS = (
     "Reject stale or detached Capture head before scarce Mac work",
     "Verify immutable trusted Capture head",
@@ -36,6 +48,7 @@ REQUIRED_SUCCESSFUL_STEPS = (
 
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
+_UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 
 class TrustedCaptureXcodeError(RuntimeError):
@@ -59,6 +72,17 @@ def _normalized_sha(value: Any, label: str) -> str:
     return lowered
 
 
+def _reject_duplicate_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise TrustedCaptureXcodeError(
+                f"trusted Xcode external build record contains duplicate key: {key}"
+            )
+        result[key] = value
+    return result
+
+
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -67,18 +91,74 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _single_external_record(archive_path: Path) -> dict[str, Any]:
+def _single_external_record(archive_path: Path, source: str) -> dict[str, Any]:
     _require(archive_path.is_file(), "trusted Xcode artifact archive is missing")
-    with zipfile.ZipFile(archive_path, "r") as archive:
-        names = [name for name in archive.namelist() if not name.endswith("/")]
-        matches = [name for name in names if Path(name).name == EXTERNAL_RECORD_NAME]
-        _require(len(matches) == 1, "trusted Xcode artifact must contain exactly one external build record")
-        raw = archive.read(matches[0])
     try:
-        decoded = json.loads(raw)
+        with zipfile.ZipFile(archive_path, "r") as archive:
+            names = [name for name in archive.namelist() if not name.endswith("/")]
+            matches = [name for name in names if Path(name).name == EXTERNAL_RECORD_NAME]
+            _require(
+                len(matches) == 1,
+                "trusted Xcode artifact must contain exactly one external build record",
+            )
+            raw = archive.read(matches[0])
+    except (OSError, zipfile.BadZipFile, KeyError) as error:
+        raise TrustedCaptureXcodeError(
+            "trusted Xcode artifact is not a readable retained ZIP"
+        ) from error
+
+    try:
+        decoded = json.loads(raw, object_pairs_hook=_reject_duplicate_pairs)
+    except TrustedCaptureXcodeError:
+        raise
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise TrustedCaptureXcodeError("trusted Xcode external build record is not valid JSON") from error
-    _require(isinstance(decoded, dict), "trusted Xcode external build record must be an object")
+        raise TrustedCaptureXcodeError(
+            "trusted Xcode external build record is not valid JSON"
+        ) from error
+
+    _require(
+        isinstance(decoded, dict),
+        "trusted Xcode external build record must be an object",
+    )
+    _require(
+        set(decoded) == EXTERNAL_KEYS,
+        "trusted Xcode external build record schema shape drifted",
+    )
+    _require(
+        decoded.get("schemaVersion") == 3,
+        "trusted Xcode external build record schema version drifted",
+    )
+    _require(
+        decoded.get("sourceCommitSHA") == source,
+        "trusted retained artifact is for a different Capture source",
+    )
+    _require(
+        decoded.get("buildIdentifier") == f"Capture Build V14-{source[:12]}",
+        "trusted external build identifier does not match exact Capture source",
+    )
+    _require(
+        decoded.get("experimentRecipeID") == RECIPE,
+        "trusted external build record recipe is not canonical",
+    )
+    _require(
+        decoded.get("procedureVersion") == PROCEDURE,
+        "trusted external build record procedure is not canonical",
+    )
+    build_instance = decoded.get("buildInstanceID")
+    _require(
+        isinstance(build_instance, str) and _UUID.fullmatch(build_instance) is not None,
+        "trusted external build instance is not one canonical lowercase UUID",
+    )
+    executable_sha = decoded.get("executableSHA256")
+    _require(
+        isinstance(executable_sha, str) and _HEX64.fullmatch(executable_sha) is not None,
+        "trusted external executable SHA-256 is not canonical",
+    )
+    info_plist_sha = decoded.get("infoPlistSHA256")
+    _require(
+        isinstance(info_plist_sha, str) and _HEX64.fullmatch(info_plist_sha) is not None,
+        "trusted external Info.plist SHA-256 is not canonical",
+    )
     return decoded
 
 
@@ -112,27 +192,60 @@ def verify_trusted_capture_xcode_subject(
     _require(pr.get("state") == "open", "trusted Capture PR must still be open")
     head = pr.get("head") or {}
     base = pr.get("base") or {}
-    _require(_normalized_sha(head.get("sha"), "live PR head SHA") == source, "live PR head no longer matches candidate source")
-    _require((head.get("repo") or {}).get("full_name") == REPOSITORY, "trusted Capture PR head repository mismatch")
-    _require((base.get("repo") or {}).get("full_name") == REPOSITORY, "trusted Capture PR base repository mismatch")
+    _require(
+        _normalized_sha(head.get("sha"), "live PR head SHA") == source,
+        "live PR head no longer matches candidate source",
+    )
+    _require(
+        (head.get("repo") or {}).get("full_name") == REPOSITORY,
+        "trusted Capture PR head repository mismatch",
+    )
+    _require(
+        (base.get("repo") or {}).get("full_name") == REPOSITORY,
+        "trusted Capture PR base repository mismatch",
+    )
 
     _, run = github_get_json(f"/actions/runs/{run_id}")
     _require(isinstance(run, dict), "GitHub run payload must be an object")
     _require(run.get("id") == run_id, "trusted Xcode run ID mismatch")
     _require(run.get("name") == TRUSTED_WORKFLOW_NAME, "wrong trusted Xcode workflow name")
     _require(run.get("path") == TRUSTED_WORKFLOW_PATH, "wrong trusted Xcode workflow path")
-    _require(run.get("event") == "issue_comment", "trusted Xcode run must originate from default-branch issue_comment command")
-    _require(run.get("status") == "completed" and run.get("conclusion") == "success", "trusted Xcode run is not successful")
-    _require((run.get("repository") or {}).get("full_name") == REPOSITORY, "trusted Xcode run repository mismatch")
-    _require((run.get("head_repository") or {}).get("full_name") == REPOSITORY, "trusted Xcode run head repository mismatch")
-    _require(run.get("head_branch") == DEFAULT_BRANCH, "trusted Xcode workflow did not execute from the default branch")
-    _require((run.get("actor") or {}).get("login") == REPOSITORY_OWNER, "trusted Xcode command actor is not repository owner")
-    _require((run.get("triggering_actor") or {}).get("login") == REPOSITORY_OWNER, "trusted Xcode triggering actor is not repository owner")
+    _require(
+        run.get("event") == "issue_comment",
+        "trusted Xcode run must originate from default-branch issue_comment command",
+    )
+    _require(
+        run.get("status") == "completed" and run.get("conclusion") == "success",
+        "trusted Xcode run is not successful",
+    )
+    _require(
+        (run.get("repository") or {}).get("full_name") == REPOSITORY,
+        "trusted Xcode run repository mismatch",
+    )
+    _require(
+        (run.get("head_repository") or {}).get("full_name") == REPOSITORY,
+        "trusted Xcode run head repository mismatch",
+    )
+    _require(
+        run.get("head_branch") == DEFAULT_BRANCH,
+        "trusted Xcode workflow did not execute from the default branch",
+    )
+    _require(
+        (run.get("actor") or {}).get("login") == REPOSITORY_OWNER,
+        "trusted Xcode command actor is not repository owner",
+    )
+    _require(
+        (run.get("triggering_actor") or {}).get("login") == REPOSITORY_OWNER,
+        "trusted Xcode triggering actor is not repository owner",
+    )
 
     workflow_source = _normalized_sha(run.get("head_sha"), "trusted workflow source SHA")
     workflow_blob = workflow_blob_sha_at_commit(workflow_source, TRUSTED_WORKFLOW_PATH).lower()
     _require(_HEX40.fullmatch(workflow_blob) is not None, "invalid trusted workflow blob SHA")
-    _require(workflow_blob == TRUSTED_WORKFLOW_BLOB_SHA, "trusted Xcode workflow implementation blob is not pinned authority")
+    _require(
+        workflow_blob == TRUSTED_WORKFLOW_BLOB_SHA,
+        "trusted Xcode workflow implementation blob is not pinned authority",
+    )
 
     run_attempt = _positive_int(run.get("run_attempt"), "trusted Xcode run attempt")
     run_number = _positive_int(run.get("run_number"), "trusted Xcode run number")
@@ -144,8 +257,14 @@ def verify_trusted_capture_xcode_subject(
     _require(job.get("run_attempt") == run_attempt, "trusted Xcode job run-attempt mismatch")
     _require(job.get("workflow_name") == TRUSTED_WORKFLOW_NAME, "trusted Xcode job workflow mismatch")
     _require(job.get("name") == TRUSTED_JOB_NAME, "wrong trusted Xcode job name")
-    _require(_normalized_sha(job.get("head_sha"), "trusted Xcode job workflow SHA") == workflow_source, "trusted Xcode job did not execute the trusted workflow source")
-    _require(job.get("status") == "completed" and job.get("conclusion") == "success", "trusted Xcode job is not successful")
+    _require(
+        _normalized_sha(job.get("head_sha"), "trusted Xcode job workflow SHA") == workflow_source,
+        "trusted Xcode job did not execute the trusted workflow source",
+    )
+    _require(
+        job.get("status") == "completed" and job.get("conclusion") == "success",
+        "trusted Xcode job is not successful",
+    )
     labels = job.get("labels") or []
     _require("xcode-27" in labels, "trusted Xcode job did not run on xcode-27")
 
@@ -156,29 +275,44 @@ def verify_trusted_capture_xcode_subject(
         if isinstance(step, dict) and step.get("conclusion") == "success"
     }
     for required in REQUIRED_SUCCESSFUL_STEPS:
-        _require(required in successful_steps, f"trusted Xcode job did not successfully execute required step: {required}")
+        _require(
+            required in successful_steps,
+            f"trusted Xcode job did not successfully execute required step: {required}",
+        )
 
     _, artifact = github_get_json(f"/actions/artifacts/{artifact_id}")
     _require(isinstance(artifact, dict), "GitHub artifact payload must be an object")
     _require(artifact.get("id") == artifact_id, "trusted Xcode artifact ID mismatch")
     expected_artifact_name = f"{TRUSTED_ARTIFACT_PREFIX}{pr_number}-{run_number}-{run_attempt}"
-    _require(artifact.get("name") == expected_artifact_name, "trusted Xcode artifact name mismatch")
+    _require(
+        artifact.get("name") == expected_artifact_name,
+        "trusted Xcode artifact name mismatch",
+    )
     _require(artifact.get("expired") is False, "trusted Xcode artifact is expired")
 
     archive_sha = _sha256_file(artifact_archive_path)
     server_digest = artifact.get("digest")
-    _require(isinstance(server_digest, str) and server_digest.lower() == f"sha256:{archive_sha}", "trusted Xcode artifact archive digest mismatch")
-    _require(artifact.get("size_in_bytes") == artifact_archive_path.stat().st_size, "trusted Xcode artifact archive size mismatch")
+    _require(
+        isinstance(server_digest, str)
+        and server_digest.lower() == f"sha256:{archive_sha}",
+        "trusted Xcode artifact archive digest mismatch",
+    )
+    _require(
+        artifact.get("size_in_bytes") == artifact_archive_path.stat().st_size,
+        "trusted Xcode artifact archive size mismatch",
+    )
     artifact_run = artifact.get("workflow_run") or {}
-    _require(artifact_run.get("id") == run_id, "trusted Xcode artifact workflow-run mismatch")
-    _require(_normalized_sha(artifact_run.get("head_sha"), "trusted artifact workflow SHA") == workflow_source, "trusted Xcode artifact did not originate from the trusted workflow source")
+    _require(
+        artifact_run.get("id") == run_id,
+        "trusted Xcode artifact workflow-run mismatch",
+    )
+    _require(
+        _normalized_sha(artifact_run.get("head_sha"), "trusted artifact workflow SHA")
+        == workflow_source,
+        "trusted Xcode artifact did not originate from the trusted workflow source",
+    )
 
-    external_record = _single_external_record(artifact_archive_path)
-    _require(_normalized_sha(external_record.get("sourceCommitSHA"), "trusted external source SHA") == source, "trusted retained artifact is for a different Capture source")
-    build_identifier = external_record.get("buildIdentifier")
-    build_instance = external_record.get("buildInstanceID")
-    _require(isinstance(build_identifier, str) and build_identifier.startswith("Capture Build V14-"), "trusted external build identifier is invalid")
-    _require(isinstance(build_instance, str) and len(build_instance.strip()) > 0, "trusted external build instance is missing")
+    external_record = _single_external_record(artifact_archive_path, source)
 
     return {
         "authority": "default-branch-owner-command-v1",
