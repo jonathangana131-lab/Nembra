@@ -1,292 +1,290 @@
-import Dispatch
 import Foundation
 
-public enum ScooterSimulationScenario: String, CaseIterable, Sendable {
-    case coldDisconnected = "cold-disconnected"
-    case reconnecting
-    case connectedStopped = "connected-stopped"
-    case riding
-    case lowBattery = "low-battery"
-    case bluetoothOff = "bluetooth-off"
-    case permissionDenied = "permission-denied"
-    case scooterUnavailable = "scooter-unavailable"
-    case unsupportedConfiguration = "unsupported-configuration"
-
-    public var shouldAutoConnectOnLaunch: Bool {
-        switch self {
-        case .coldDisconnected, .reconnecting, .bluetoothOff, .permissionDenied, .scooterUnavailable, .unsupportedConfiguration:
-            false
-        case .connectedStopped, .riding, .lowBattery:
-            true
-        }
-    }
-}
-
 public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
-    public nonisolated let profile: VehicleProfile
-
-    /// Synthetic QA values that exercise all three limiter slots without
-    /// attributing their ranges or mode relationship to any physical scooter.
-    private static let representativeSpeedLimits: [SpeedLimitSlot: Int] = [
-        .limit1: 12,
-        .limit2: 18,
-        .limit3: 35
-    ]
-
-    public static func state(for scenario: ScooterSimulationScenario) -> VehicleState {
-        switch scenario {
-        case .coldDisconnected:
-            VehicleState(
-                connection: .disconnected,
-                batteryPercent: nil,
-                speedKilometersPerHour: nil,
-                odometerKilometers: nil,
-                tripKilometers: nil,
-                rideMode: nil,
-                startMode: nil,
-                speedLimitsKilometersPerHour: [:],
-                isLocked: nil,
-                isHeadlightOn: nil,
-                isCruiseEnabled: nil,
-                powerWatts: nil,
-                currentAmps: nil
-            )
-        case .reconnecting:
-            VehicleState(
-                connection: .reconnecting,
-                batteryPercent: 71,
-                speedKilometersPerHour: 0,
-                odometerKilometers: 231.4,
-                tripKilometers: 4.6,
-                rideMode: .drive,
-                startMode: .zeroStart,
-                speedLimitsKilometersPerHour: representativeSpeedLimits,
-                isLocked: false,
-                isHeadlightOn: false,
-                isCruiseEnabled: false,
-                powerWatts: 0,
-                currentAmps: 0
-            )
-        case .connectedStopped:
-            VehicleState(
-                connection: .connected,
-                batteryPercent: 92,
-                speedKilometersPerHour: 0,
-                odometerKilometers: 231.4,
-                tripKilometers: 4.6,
-                rideMode: .sport,
-                startMode: .zeroStart,
-                speedLimitsKilometersPerHour: representativeSpeedLimits,
-                isLocked: false,
-                isHeadlightOn: false,
-                isCruiseEnabled: false,
-                powerWatts: 0,
-                currentAmps: 0
-            )
-        case .riding:
-            VehicleState(
-                connection: .connected,
-                batteryPercent: 68,
-                speedKilometersPerHour: 18.4,
-                odometerKilometers: 232.0,
-                tripKilometers: 5.2,
-                rideMode: .drive,
-                startMode: .zeroStart,
-                speedLimitsKilometersPerHour: representativeSpeedLimits,
-                isLocked: false,
-                isHeadlightOn: true,
-                isCruiseEnabled: false,
-                powerWatts: 356,
-                currentAmps: 9.9
-            )
-        case .lowBattery:
-            VehicleState(
-                connection: .connected,
-                batteryPercent: 14,
-                speedKilometersPerHour: 0,
-                odometerKilometers: 238.8,
-                tripKilometers: 3.1,
-                rideMode: .eco,
-                startMode: .kickStart,
-                speedLimitsKilometersPerHour: representativeSpeedLimits,
-                isLocked: true,
-                isHeadlightOn: false,
-                isCruiseEnabled: false,
-                powerWatts: 0,
-                currentAmps: 0
-            )
-        case .bluetoothOff:
-            VehicleState(
-                connection: .disconnected,
-                connectionIssue: .bluetoothPoweredOff,
-                batteryPercent: nil,
-                speedKilometersPerHour: nil,
-                odometerKilometers: nil,
-                tripKilometers: nil,
-                rideMode: nil,
-                startMode: nil,
-                speedLimitsKilometersPerHour: [:],
-                isLocked: nil,
-                isHeadlightOn: nil,
-                isCruiseEnabled: nil,
-                powerWatts: nil,
-                currentAmps: nil
-            )
-        case .permissionDenied:
-            VehicleState(
-                connection: .disconnected,
-                connectionIssue: .bluetoothPermissionDenied,
-                batteryPercent: nil,
-                speedKilometersPerHour: nil,
-                odometerKilometers: nil,
-                tripKilometers: nil,
-                rideMode: nil,
-                startMode: nil,
-                speedLimitsKilometersPerHour: [:],
-                isLocked: nil,
-                isHeadlightOn: nil,
-                isCruiseEnabled: nil,
-                powerWatts: nil,
-                currentAmps: nil
-            )
-        case .scooterUnavailable:
-            VehicleState(
-                connection: .disconnected,
-                connectionIssue: .scooterUnavailable,
-                batteryPercent: 71,
-                speedKilometersPerHour: 0,
-                odometerKilometers: 231.4,
-                tripKilometers: 4.6,
-                rideMode: .drive,
-                startMode: .zeroStart,
-                speedLimitsKilometersPerHour: representativeSpeedLimits,
-                isLocked: false,
-                isHeadlightOn: false,
-                isCruiseEnabled: false,
-                powerWatts: 0,
-                currentAmps: 0
-            )
-        case .unsupportedConfiguration:
-            VehicleState(
-                connection: .disconnected,
-                connectionIssue: .unsupportedConfiguration,
-                batteryPercent: nil,
-                speedKilometersPerHour: nil,
-                odometerKilometers: nil,
-                tripKilometers: nil,
-                rideMode: nil,
-                startMode: nil,
-                speedLimitsKilometersPerHour: [:],
-                isLocked: nil,
-                isHeadlightOn: nil,
-                isCruiseEnabled: nil,
-                powerWatts: nil,
-                currentAmps: nil
-            )
-        }
-    }
-
     private var state: VehicleState
     private var continuations: [UUID: AsyncStream<VehicleState>.Continuation] = [:]
     private var speedTelemetryContinuations: [UUID: AsyncStream<SpeedTelemetrySample>.Continuation] = [:]
     private var speedEvidenceContinuations: [UUID: AsyncStream<SpeedEvidenceAvailability>.Continuation] = [:]
+    private var commandInProgress = false
+    private var connectionGeneration: UInt64 = 0
     private var speedEvidenceTruth: SpeedEvidenceLiveTruth
+    private var nextSpeedObservationSequence: UInt64
+    private var lastSpeedObservationUptimeNanoseconds: UInt64?
 
-    /// Tracks the last raw packet-arrival timestamp only to guarantee strict
-    /// monotonic ordering if two simulated packets are emitted in the same tick.
-    /// Ride `elapsedSeconds` is distance/time evidence and must not be used as a
-    /// fake packet-arrival clock.
-    private var lastTelemetryUptimeNanoseconds: UInt64
-    private var commandInFlight = false
-    private var connectionGeneration: UInt64
+    public let profile: VehicleProfile
     private let commandLatencyNanoseconds: UInt64
-    private let commandAcknowledgementGate: (@Sendable () async throws -> Void)?
 
     public init(
         profile: VehicleProfile = .simulatorQA,
-        initialState: VehicleState? = nil,
-        commandLatencyNanoseconds: UInt64 = 120_000_000
+        initialState: VehicleState = .simulatorFixture(),
+        commandLatencyNanoseconds: UInt64 = 250_000_000
     ) {
-        let resolvedState = initialState ?? Self.defaultInitialState()
-        let initialEvidence = Self.initialSpeedEvidence(for: resolvedState)
-
         self.profile = profile
+        self.state = initialState
         self.commandLatencyNanoseconds = commandLatencyNanoseconds
-        self.commandAcknowledgementGate = nil
-        self.state = resolvedState
-        self.speedEvidenceTruth = initialEvidence.truth
-        self.connectionGeneration = initialEvidence.connectionGeneration
-        self.lastTelemetryUptimeNanoseconds = initialEvidence.lastTelemetryUptimeNanoseconds
+        let seededTruth = Self.makeInitialSpeedEvidenceTruth(from: initialState)
+        self.speedEvidenceTruth = seededTruth.truth
+        self.nextSpeedObservationSequence = seededTruth.nextSequence
+        self.lastSpeedObservationUptimeNanoseconds = seededTruth.lastUptime
     }
 
-    /// Test-only timing injection used to prove command ordering without relying
-    /// on scheduler-sensitive wall-clock sleeps. Kept internal so production
-    /// callers continue to use the real simulated latency contract above.
-    init(
-        profile: VehicleProfile = .simulatorQA,
-        initialState: VehicleState? = nil,
-        commandAcknowledgementGate: @escaping @Sendable () async throws -> Void
-    ) {
-        let resolvedState = initialState ?? Self.defaultInitialState()
-        let initialEvidence = Self.initialSpeedEvidence(for: resolvedState)
-
-        self.profile = profile
-        self.commandLatencyNanoseconds = 0
-        self.commandAcknowledgementGate = commandAcknowledgementGate
-        self.state = resolvedState
-        self.speedEvidenceTruth = initialEvidence.truth
-        self.connectionGeneration = initialEvidence.connectionGeneration
-        self.lastTelemetryUptimeNanoseconds = initialEvidence.lastTelemetryUptimeNanoseconds
+    public static func state(for scenario: SimulationScenario) -> VehicleState {
+        switch scenario {
+        case .connectedStopped:
+            return VehicleState(
+                connection: .connected,
+                connectionIssue: nil,
+                batteryPercent: 73,
+                speedKilometersPerHour: 0,
+                odometerKilometers: 1_842.7,
+                tripKilometers: 0,
+                rideMode: .drive,
+                startMode: .kick,
+                speedLimitsKilometersPerHour: [.drive: 19],
+                isLocked: false,
+                isHeadlightOn: true,
+                isCruiseEnabled: false,
+                powerWatts: 0,
+                currentAmps: nil
+            )
+        case .connectedMoving:
+            return VehicleState(
+                connection: .connected,
+                connectionIssue: nil,
+                batteryPercent: 68,
+                speedKilometersPerHour: 17.5,
+                odometerKilometers: 1_845.4,
+                tripKilometers: 6.8,
+                rideMode: .drive,
+                startMode: .kick,
+                speedLimitsKilometersPerHour: [.drive: 19],
+                isLocked: false,
+                isHeadlightOn: true,
+                isCruiseEnabled: true,
+                powerWatts: 312,
+                currentAmps: nil
+            )
+        case .connecting:
+            return VehicleState(
+                connection: .connecting,
+                connectionIssue: nil,
+                batteryPercent: 71,
+                speedKilometersPerHour: 0,
+                odometerKilometers: 1_842.7,
+                tripKilometers: 0,
+                rideMode: .drive,
+                startMode: .kick,
+                speedLimitsKilometersPerHour: [.drive: 19],
+                isLocked: false,
+                isHeadlightOn: false,
+                isCruiseEnabled: false,
+                powerWatts: 0,
+                currentAmps: nil
+            )
+        case .disconnectedRetained:
+            return VehicleState(
+                connection: .disconnected,
+                connectionIssue: .linkLost,
+                batteryPercent: 64,
+                speedKilometersPerHour: 12.4,
+                odometerKilometers: 1_846.2,
+                tripKilometers: 7.6,
+                rideMode: .drive,
+                startMode: .kick,
+                speedLimitsKilometersPerHour: [.drive: 19],
+                isLocked: false,
+                isHeadlightOn: true,
+                isCruiseEnabled: false,
+                powerWatts: 118,
+                currentAmps: nil
+            )
+        case .connectionFailed:
+            return VehicleState(
+                connection: .disconnected,
+                connectionIssue: .connectionFailed,
+                batteryPercent: nil,
+                speedKilometersPerHour: nil,
+                odometerKilometers: nil,
+                tripKilometers: nil,
+                rideMode: nil,
+                startMode: nil,
+                speedLimitsKilometersPerHour: [:],
+                isLocked: nil,
+                isHeadlightOn: nil,
+                isCruiseEnabled: nil,
+                powerWatts: nil,
+                currentAmps: nil
+            )
+        }
     }
 
-    private static func defaultInitialState() -> VehicleState {
-        VehicleState(
-            connection: .disconnected,
-            batteryPercent: 92,
-            speedKilometersPerHour: 0,
-            odometerKilometers: 231.4,
-            tripKilometers: 4.6,
-            rideMode: .sport,
-            startMode: .zeroStart,
-            speedLimitsKilometersPerHour: representativeSpeedLimits,
+    public static func simulatorQADriveCycleState(for frameIndex: Int) -> VehicleState {
+        let clampedIndex = max(frameIndex, 0)
+        let phase = Double(clampedIndex % 360) / 360.0
+        let speedKilometersPerHour: Double
+        let powerWatts: Double
+
+        switch phase {
+        case 0..<0.2:
+            let t = phase / 0.2
+            speedKilometersPerHour = 17.5 * t
+            powerWatts = 420 * t
+        case 0.2..<0.55:
+            let t = (phase - 0.2) / 0.35
+            speedKilometersPerHour = 17.5 + (2.5 * t)
+            powerWatts = 420 - (130 * t)
+        case 0.55..<0.78:
+            speedKilometersPerHour = 20
+            powerWatts = 290
+        default:
+            let t = (phase - 0.78) / 0.22
+            speedKilometersPerHour = max(0, 20 * (1 - t))
+            powerWatts = max(0, 290 * (1 - t))
+        }
+
+        return VehicleState(
+            connection: .connected,
+            connectionIssue: nil,
+            batteryPercent: 68,
+            speedKilometersPerHour: speedKilometersPerHour,
+            odometerKilometers: 1_845.4,
+            tripKilometers: 6.8,
+            rideMode: .drive,
+            startMode: .kick,
+            speedLimitsKilometersPerHour: [.drive: 19],
             isLocked: false,
-            isHeadlightOn: false,
-            isCruiseEnabled: false,
-            powerWatts: 0,
-            currentAmps: 0
+            isHeadlightOn: true,
+            isCruiseEnabled: phase >= 0.4 && phase < 0.7,
+            powerWatts: powerWatts,
+            currentAmps: nil
         )
     }
 
-    private static func initialSpeedEvidence(
-        for state: VehicleState
-    ) -> (
-        truth: SpeedEvidenceLiveTruth,
-        connectionGeneration: UInt64,
-        lastTelemetryUptimeNanoseconds: UInt64
-    ) {
-        var truth = SpeedEvidenceLiveTruth()
-        let hasSpeed = state.speedKilometersPerHour.map { $0.isFinite && $0 >= 0 } ?? false
-        let needsSyntheticContinuity = state.connection == .connected || hasSpeed
-        guard needsSyntheticContinuity else {
-            return (truth, 0, 0)
+    public func installSimulatorQADriveCycleFrame(_ frameIndex: Int) {
+        state = Self.simulatorQADriveCycleState(for: frameIndex)
+        guard state.connection == .connected else {
+            demoteSpeedEvidenceForConnectionLoss()
+            publish()
+            return
+        }
+        let generation = ensureConnectedGeneration()
+        beginSpeedEvidenceForConnectedGeneration(generation)
+        if let speed = state.speedKilometersPerHour {
+            recordSyntheticSpeedObservation(speed, publishRawTelemetry: true)
+        }
+        state.lastUpdated = .now
+        publish()
+    }
+
+    public func simulateRide(speedKilometersPerHour: Double, elapsedSeconds: TimeInterval) {
+        guard state.connection == .connected else { return }
+        let generation = ensureConnectedGeneration()
+        beginSpeedEvidenceForConnectedGeneration(generation)
+        state.speedKilometersPerHour = speedKilometersPerHour
+        state.tripKilometers = (state.tripKilometers ?? 0) + speedKilometersPerHour * elapsedSeconds / 3_600
+        recordSyntheticSpeedObservation(speedKilometersPerHour, publishRawTelemetry: true)
+        state.lastUpdated = .now
+        publish()
+    }
+
+    public func simulateConnectionDrop() {
+        demoteSpeedEvidenceForConnectionLoss()
+        connectionGeneration &+= 1
+        state.connection = .disconnected
+        state.connectionIssue = .linkLost
+        state.lastUpdated = .now
+        publish()
+    }
+
+    public func simulateConnectionFailure() {
+        demoteSpeedEvidenceForConnectionLoss()
+        connectionGeneration &+= 1
+        state.connection = .disconnected
+        state.connectionIssue = .connectionFailed
+        state.batteryPercent = nil
+        state.speedKilometersPerHour = nil
+        state.odometerKilometers = nil
+        state.tripKilometers = nil
+        state.rideMode = nil
+        state.startMode = nil
+        state.speedLimitsKilometersPerHour = [:]
+        state.isLocked = nil
+        state.isHeadlightOn = nil
+        state.isCruiseEnabled = nil
+        state.powerWatts = nil
+        state.currentAmps = nil
+        state.lastUpdated = .now
+        publish()
+    }
+
+    public func simulateReconnected() {
+        connectionGeneration &+= 1
+        let generation = connectionGeneration
+        state.connection = .connected
+        state.connectionIssue = nil
+        hydrateMissingVehicleDataAfterSuccessfulConnection()
+        beginSpeedEvidenceForConnectedGeneration(generation)
+        state.lastUpdated = .now
+        publish()
+    }
+
+    public func simulateSpeedEvidenceGap() {
+        guard state.connection == .connected else { return }
+        guard speedEvidenceTruth.invalidateLiveEvidence() else { return }
+        publishSpeedEvidenceAvailability()
+    }
+
+    /// Deterministic adversarial hook: preserves the aggregate connected state
+    /// while ending the current speed-source continuity generation. This models
+    /// the speed characteristic/source becoming unavailable without pretending
+    /// that the whole vehicle disconnected or that a zero-speed packet arrived.
+    public func simulateSpeedSourceContinuityLossWhileConnected() {
+        guard state.connection == .connected else { return }
+        guard let token = speedEvidenceTruth.activeContinuityToken else { return }
+        guard speedEvidenceTruth.endContinuity(token) else { return }
+        publishSpeedEvidenceAvailability()
+    }
+
+    /// Deterministic adversarial hook: starts a fresh speed-source continuity
+    /// generation while aggregate transport remains connected. Currentness is
+    /// still retained/unavailable until a new observation is accepted in this
+    /// generation.
+    public func simulateSpeedSourceContinuityRestartWhileConnected() {
+        guard state.connection == .connected else { return }
+        _ = speedEvidenceTruth.beginContinuity()
+        publishSpeedEvidenceAvailability()
+    }
+
+    public func simulateFreshSpeedObservation(_ speedKilometersPerHour: Double) {
+        guard state.connection == .connected else { return }
+        recordSyntheticSpeedObservation(speedKilometersPerHour, publishRawTelemetry: true)
+        state.lastUpdated = .now
+        publish()
+    }
+
+    private static func makeInitialSpeedEvidenceTruth(
+        from state: VehicleState
+    ) -> (truth: SpeedEvidenceLiveTruth, nextSequence: UInt64, lastUptime: UInt64?) {
+        var truth = SpeedEvidenceLiveTruth(source: .simulatorQA)
+        guard state.connection == .connected else {
+            return (truth, 0, nil)
         }
 
-        let generation = SpeedEvidenceConnectionGeneration(rawValue: 1)
-        guard case .success = truth.beginConnectedGeneration(generation) else {
-            return (truth, 0, 0)
+        let generation = UInt64(1)
+        guard let token = truth.beginConnectedGeneration(generation) else {
+            return (truth, 0, nil)
         }
 
-        var lastUptime: UInt64 = 0
+        var lastUptime: UInt64?
         if let speed = state.speedKilometersPerHour, speed.isFinite, speed >= 0 {
             let uptime = DispatchTime.now().uptimeNanoseconds
-            if let token = truth.activeContinuityToken,
-               let sample = try? SpeedTelemetrySample(
-                   source: .simulatorQA,
-                   provenance: .absoluteMeasurement,
-                   metersPerSecond: speed / 3.6,
-                   receivedAtUptimeNanoseconds: uptime,
-                   receivedAtDate: .now
-               ) {
+            if let sample = try? SpeedTelemetrySample(
+                source: .simulatorQA,
+                provenance: .absoluteMeasurement,
+                metersPerSecond: speed / 3.6,
+                receivedAtUptimeNanoseconds: uptime,
+                receivedAtDate: .now
+            ) {
                 _ = truth.accept(sample, attributedTo: token)
                 lastUptime = uptime
             }
@@ -339,6 +337,14 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
                 Task { await self?.removeSpeedEvidenceContinuation(id) }
             }
         }
+    }
+
+    /// Source-current speed authority for truth-sensitive cross-stream joins.
+    /// Unlike the protocol's generic replay-based default, this actor already
+    /// owns the canonical currentness state and can expose it directly without
+    /// allocating a transient continuation for every refresh.
+    public func speedEvidenceSnapshot() -> SpeedEvidenceAvailability {
+        speedEvidenceTruth.availability
     }
 
     public func snapshot() -> VehicleState { state }
@@ -429,6 +435,9 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
 
     public func setStartMode(_ mode: StartMode) async throws {
         guard profile.capabilities.supportsStartMode else { throw ScooterCommandError.unsupportedCapability }
+        guard profile.capabilities.supportedStartModes.contains(mode) else {
+            throw ScooterCommandError.unsupportedCapability
+        }
         let generation = try beginCommand()
         defer { finishCommand() }
         try await acknowledgeLatency(expectedConnectionGeneration: generation)
@@ -438,10 +447,10 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
 
     public func setSpeedLimit(kilometersPerHour: Int, slot: SpeedLimitSlot) async throws {
         guard profile.capabilities.supportsSpeedLimit else { throw ScooterCommandError.unsupportedCapability }
-        guard let range = profile.capabilities.speedLimitRangesBySlot[slot] else {
+        guard profile.capabilities.speedLimitSlots.contains(slot) else {
             throw ScooterCommandError.unsupportedSpeedLimitSlot(slot)
         }
-        guard range.contains(kilometersPerHour) else {
+        guard kilometersPerHour > 0, kilometersPerHour <= 80 else {
             throw ScooterCommandError.valueOutOfRange
         }
         let generation = try beginCommand()
@@ -451,148 +460,76 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
         publish()
     }
 
-    // MARK: - QA scenario controls
-
-    public func simulateRide(speedKilometersPerHour: Double, elapsedSeconds: Double) {
-        guard state.connection == .connected, state.isLocked != true else { return }
-        guard speedKilometersPerHour.isFinite,
-              speedKilometersPerHour >= 0,
-              elapsedSeconds.isFinite,
-              elapsedSeconds >= 0 else { return }
-
-        let speed = speedKilometersPerHour
-        let distance = speed * elapsedSeconds / 3600
-        guard distance.isFinite else { return }
-        state.speedKilometersPerHour = speed
-        state.tripKilometers = (state.tripKilometers ?? 0) + distance
-        state.odometerKilometers = (state.odometerKilometers ?? 0) + distance
-        state.powerWatts = speed == 0 ? 0 : Int(min(620, 80 + speed * 15))
-        state.currentAmps = state.powerWatts.map { Double($0) / 36.0 }
-        if speed > 0, let battery = state.batteryPercent {
-            let drain = Int(min(Double(battery), floor(distance / 1.5)))
-            state.batteryPercent = max(0, battery - drain)
-        }
-
-        recordSyntheticSpeedObservation(speed, publishRawTelemetry: true)
-        state.lastUpdated = .now
-        publish()
-    }
-
-    /// Explicit Simulator-only loss of speed observation continuity. The cached
-    /// `VehicleState` speed remains available as retained presentation data, but
-    /// stopped-only authority is retired until a new synthetic observation.
-    public func simulateSpeedEvidenceGap() {
-        guard let token = speedEvidenceTruth.activeContinuityToken else { return }
-        guard case .success = speedEvidenceTruth.markEvidenceGap(after: token) else { return }
-        publishSpeedEvidenceAvailability()
-    }
-
-    public func simulateConnectionIssue(_ issue: VehicleConnectionIssue?) {
-        demoteSpeedEvidenceForConnectionLoss()
-        connectionGeneration &+= 1
-        state.connectionIssue = issue
-        state.connection = .disconnected
-        // Connection failures carry no new telemetry evidence. Keep the last
-        // confirmed vehicle values intact and let connection state mark them stale.
-        publish()
-    }
-
-    public func simulateConnectionDrop() {
-        demoteSpeedEvidenceForConnectionLoss()
-        connectionGeneration &+= 1
-        state.connection = .reconnecting
-        state.lastUpdated = .now
-        publish()
-    }
-
-    public func simulateReconnected() {
-        demoteSpeedEvidenceForConnectionLoss()
-        connectionGeneration &+= 1
-        state.connectionIssue = nil
-        state.connection = .connected
-        beginSpeedEvidenceForConnectedGeneration(connectionGeneration)
-        state.lastUpdated = .now
-        publish()
-    }
-
-    private func hydrateMissingVehicleDataAfterSuccessfulConnection() {
-        let fixture = Self.state(for: .connectedStopped)
-        if state.batteryPercent == nil { state.batteryPercent = fixture.batteryPercent }
-        if state.speedKilometersPerHour == nil { state.speedKilometersPerHour = fixture.speedKilometersPerHour }
-        if state.odometerKilometers == nil { state.odometerKilometers = fixture.odometerKilometers }
-        if state.tripKilometers == nil { state.tripKilometers = fixture.tripKilometers }
-        if state.rideMode == nil { state.rideMode = fixture.rideMode }
-        if state.startMode == nil { state.startMode = fixture.startMode }
-        if state.speedLimitsKilometersPerHour.isEmpty {
-            state.speedLimitsKilometersPerHour = fixture.speedLimitsKilometersPerHour
-        }
-        if state.isLocked == nil { state.isLocked = fixture.isLocked }
-        if state.isHeadlightOn == nil { state.isHeadlightOn = fixture.isHeadlightOn }
-        if state.isCruiseEnabled == nil { state.isCruiseEnabled = fixture.isCruiseEnabled }
-        if state.powerWatts == nil { state.powerWatts = fixture.powerWatts }
-        if state.currentAmps == nil { state.currentAmps = fixture.currentAmps }
-    }
-
-    private func cancelConnectionAttemptIfCurrent(_ attemptGeneration: UInt64) {
-        guard connectionGeneration == attemptGeneration, state.connection == .connecting else { return }
-        demoteSpeedEvidenceForConnectionLoss()
-        connectionGeneration &+= 1
-        state.connection = .disconnected
-        publish()
-    }
-
     private func beginCommand() throws -> UInt64 {
-        guard !commandInFlight else { throw ScooterCommandError.commandInProgress }
-        try ensureConnected()
-        commandInFlight = true
+        guard state.connection == .connected else { throw ScooterCommandError.disconnected }
+        guard !commandInProgress else { throw ScooterCommandError.commandInProgress }
+        commandInProgress = true
         return connectionGeneration
     }
 
     private func finishCommand() {
-        commandInFlight = false
-    }
-
-    private func ensureConnected() throws {
-        guard state.connection == .connected else { throw ScooterCommandError.disconnected }
-    }
-
-    private func ensureQualifiedLiveStoppedSpeed() throws {
-        guard profile == .simulatorQA,
-              case let .live(sample) = speedEvidenceTruth.availability,
-              sample.source == .simulatorQA,
-              sample.provenance == .absoluteMeasurement else {
-            throw ScooterCommandError.commandRejected
-        }
-        let speedKilometersPerHour = sample.kilometersPerHour
-        guard speedKilometersPerHour.isFinite,
-              speedKilometersPerHour >= 0,
-              speedKilometersPerHour < 0.5 else {
-            throw ScooterCommandError.commandRejected
-        }
+        commandInProgress = false
     }
 
     private func acknowledgeLatency(expectedConnectionGeneration: UInt64) async throws {
-        if let commandAcknowledgementGate {
-            try await commandAcknowledgementGate()
-        } else {
+        do {
             try await Task.sleep(nanoseconds: commandLatencyNanoseconds)
+        } catch {
+            throw ScooterCommandError.commandRejected
         }
-        guard connectionGeneration == expectedConnectionGeneration else {
+        guard !Task.isCancelled else { throw ScooterCommandError.commandRejected }
+        guard state.connection == .connected,
+              connectionGeneration == expectedConnectionGeneration else {
             throw ScooterCommandError.disconnected
         }
-        try ensureConnected()
-        state.lastUpdated = .now
     }
 
-    private func beginSpeedEvidenceForConnectedGeneration(_ rawGeneration: UInt64) {
-        let generation = SpeedEvidenceConnectionGeneration(rawValue: rawGeneration)
-        _ = speedEvidenceTruth.beginConnectedGeneration(generation)
-        publishSpeedEvidenceAvailability()
+    private func ensureQualifiedLiveStoppedSpeed() throws {
+        guard let sample = speedEvidenceTruth.qualifiedLiveSample,
+              sample.source == .simulatorQA,
+              sample.kilometersPerHour.isFinite,
+              sample.kilometersPerHour >= 0,
+              sample.kilometersPerHour <= 0.1 else {
+            throw ScooterCommandError.commandRejected
+        }
+    }
+
+    private func hydrateMissingVehicleDataAfterSuccessfulConnection() {
+        let defaults = Self.state(for: .connectedStopped)
+        if state.batteryPercent == nil { state.batteryPercent = defaults.batteryPercent }
+        if state.speedKilometersPerHour == nil { state.speedKilometersPerHour = defaults.speedKilometersPerHour }
+        if state.odometerKilometers == nil { state.odometerKilometers = defaults.odometerKilometers }
+        if state.tripKilometers == nil { state.tripKilometers = defaults.tripKilometers }
+        if state.rideMode == nil { state.rideMode = defaults.rideMode }
+        if state.startMode == nil { state.startMode = defaults.startMode }
+        if state.speedLimitsKilometersPerHour.isEmpty {
+            state.speedLimitsKilometersPerHour = defaults.speedLimitsKilometersPerHour
+        }
+        if state.isLocked == nil { state.isLocked = defaults.isLocked }
+        if state.isHeadlightOn == nil { state.isHeadlightOn = defaults.isHeadlightOn }
+        if state.isCruiseEnabled == nil { state.isCruiseEnabled = defaults.isCruiseEnabled }
+        if state.powerWatts == nil { state.powerWatts = defaults.powerWatts }
+    }
+
+    private func ensureConnectedGeneration() -> UInt64 {
+        if connectionGeneration == 0 {
+            connectionGeneration = 1
+        }
+        return connectionGeneration
+    }
+
+    private func beginSpeedEvidenceForConnectedGeneration(_ generation: UInt64) {
+        if speedEvidenceTruth.connectedGeneration != generation || speedEvidenceTruth.activeContinuityToken == nil {
+            _ = speedEvidenceTruth.beginConnectedGeneration(generation)
+        }
     }
 
     private func demoteSpeedEvidenceForConnectionLoss() {
-        guard let generation = speedEvidenceTruth.activeConnectionGeneration else { return }
-        _ = speedEvidenceTruth.endConnectedGeneration(generation)
+        if let generation = speedEvidenceTruth.connectedGeneration {
+            _ = speedEvidenceTruth.endConnectedGeneration(generation)
+        } else {
+            _ = speedEvidenceTruth.invalidateLiveEvidence()
+        }
         publishSpeedEvidenceAvailability()
     }
 
@@ -600,64 +537,55 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
         _ speedKilometersPerHour: Double,
         publishRawTelemetry: Bool
     ) {
-        guard speedKilometersPerHour.isFinite, speedKilometersPerHour >= 0,
-              let token = speedEvidenceTruth.activeContinuityToken,
-              let sample = makeSyntheticSpeedSample(speedKilometersPerHour: speedKilometersPerHour) else {
+        guard state.connection == .connected,
+              speedKilometersPerHour.isFinite,
+              speedKilometersPerHour >= 0 else {
             return
         }
+        let generation = ensureConnectedGeneration()
+        beginSpeedEvidenceForConnectedGeneration(generation)
 
-        if case .success = speedEvidenceTruth.accept(sample, attributedTo: token) {
-            publishSpeedEvidenceAvailability()
-        }
-        if publishRawTelemetry {
-            publishSpeedTelemetry(sample)
-        }
-    }
-
-    private func makeSyntheticSpeedSample(
-        speedKilometersPerHour: Double
-    ) -> SpeedTelemetrySample? {
-        let currentUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
-        let sampleUptimeNanoseconds: UInt64
-        if currentUptimeNanoseconds > lastTelemetryUptimeNanoseconds {
-            sampleUptimeNanoseconds = currentUptimeNanoseconds
-        } else if lastTelemetryUptimeNanoseconds < UInt64.max {
-            sampleUptimeNanoseconds = lastTelemetryUptimeNanoseconds + 1
-        } else {
-            return nil
-        }
-
+        let uptime = nextSpeedObservationUptimeNanoseconds()
         guard let sample = try? SpeedTelemetrySample(
             source: .simulatorQA,
             provenance: .absoluteMeasurement,
             metersPerSecond: speedKilometersPerHour / 3.6,
-            receivedAtUptimeNanoseconds: sampleUptimeNanoseconds,
+            receivedAtUptimeNanoseconds: uptime,
             receivedAtDate: .now
         ) else {
-            return nil
+            return
         }
-        lastTelemetryUptimeNanoseconds = sampleUptimeNanoseconds
-        return sample
+        guard let token = speedEvidenceTruth.activeContinuityToken,
+              speedEvidenceTruth.accept(sample, attributedTo: token) else {
+            return
+        }
+        nextSpeedObservationSequence &+= 1
+        if publishRawTelemetry {
+            publishSpeedTelemetry(sample)
+        }
+        publishSpeedEvidenceAvailability()
     }
 
-    private func publish() {
-        state.lastUpdated = .now
-        for continuation in continuations.values {
-            continuation.yield(state)
-        }
+    private func nextSpeedObservationUptimeNanoseconds() -> UInt64 {
+        let now = DispatchTime.now().uptimeNanoseconds
+        let minimumNext = (lastSpeedObservationUptimeNanoseconds ?? 0) &+ 1
+        let next = max(now, minimumNext)
+        lastSpeedObservationUptimeNanoseconds = next
+        return next
     }
 
     private func publishSpeedTelemetry(_ sample: SpeedTelemetrySample) {
-        for continuation in speedTelemetryContinuations.values {
-            continuation.yield(sample)
-        }
+        speedTelemetryContinuations.values.forEach { $0.yield(sample) }
     }
 
     private func publishSpeedEvidenceAvailability() {
         let availability = speedEvidenceTruth.availability
-        for continuation in speedEvidenceContinuations.values {
-            continuation.yield(availability)
-        }
+        speedEvidenceContinuations.values.forEach { $0.yield(availability) }
+    }
+
+    private func publish() {
+        let current = state
+        continuations.values.forEach { $0.yield(current) }
     }
 
     private func removeContinuation(_ id: UUID) {
