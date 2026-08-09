@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from dataclasses import replace
 import importlib.util
 import json
 from pathlib import Path
@@ -203,6 +204,58 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertFalse(report["checks"]["privateIntendedDeviceInput"])
         self.assertIn("private-intended-device-input-invalid", report["problems"])
         self.assertNotIn(self.PRIVATE_UDID, json.dumps(report))
+
+    def test_repository_contained_udid_file_is_rejected_to_match_frozen_private_runner(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inputs = self.make_inputs(root)
+            repository_private = inputs.source_repo / "private-intended-device.txt"
+            repository_private.write_text(self.PRIVATE_UDID, encoding="utf-8")
+            repository_private.chmod(0o600)
+            inputs = replace(inputs, intended_device_udid_file=repository_private)
+
+            report, exit_code = preflight.evaluate_preflight(
+                inputs,
+                runner=FakeRunner(self.SOURCE),
+                system_name="Darwin",
+            )
+
+        self.assertEqual(exit_code, 2)
+        self.assertFalse(report["checks"]["privateIntendedDeviceInput"])
+        self.assertIn("private-intended-device-input-invalid", report["problems"])
+        self.assertNotIn(self.PRIVATE_UDID, json.dumps(report))
+        self.assertNotIn(str(repository_private), json.dumps(report))
+
+    def test_symlinked_udid_parent_is_rejected_to_match_frozen_private_runner(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inputs = self.make_inputs(root)
+            real_parent = root / "real-private-parent"
+            real_parent.mkdir()
+            private_file = real_parent / "private-intended-device.txt"
+            private_file.write_text(self.PRIVATE_UDID, encoding="utf-8")
+            private_file.chmod(0o600)
+            symlink_parent = root / "symlink-private-parent"
+            try:
+                symlink_parent.symlink_to(real_parent, target_is_directory=True)
+            except (OSError, NotImplementedError) as error:
+                self.skipTest(f"symlink creation unavailable: {error}")
+            inputs = replace(
+                inputs,
+                intended_device_udid_file=symlink_parent / "private-intended-device.txt",
+            )
+
+            report, exit_code = preflight.evaluate_preflight(
+                inputs,
+                runner=FakeRunner(self.SOURCE),
+                system_name="Darwin",
+            )
+
+        self.assertEqual(exit_code, 2)
+        self.assertFalse(report["checks"]["privateIntendedDeviceInput"])
+        self.assertIn("private-intended-device-input-invalid", report["problems"])
+        self.assertNotIn(self.PRIVATE_UDID, json.dumps(report))
+        self.assertNotIn(str(symlink_parent), json.dumps(report))
 
     def test_non_xcode_27_selection_fails_closed(self):
         with tempfile.TemporaryDirectory() as temporary:
