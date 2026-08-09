@@ -53,6 +53,11 @@ public struct PropulsionGaugeCockpitSnapshot: Equatable, Sendable {
 
     /// Render-only position for the live propulsion band. Never telemetry evidence.
     public let visualPropulsionFraction: Double?
+    /// Display-only target geometry derived directly from the accepted measurement plus the same
+    /// compatible scale admitted by this frame. This is stable across 60 Hz interpolation and exists
+    /// so Reduce Motion can snap to accepted-target presentation without reconstructing watts from
+    /// moving geometry. It is still presentation state, never telemetry/evidence.
+    public let acceptedTargetPropulsionFraction: Double?
     /// Render-only marker derived from accepted peak samples inside the canonical hold window.
     public let recentAcceptedPeakMarkerFraction: Double?
     /// The compatible presentation-scale origin admitted by the canonical gauge frame.
@@ -63,12 +68,14 @@ public struct PropulsionGaugeCockpitSnapshot: Equatable, Sendable {
         identity: PropulsionGaugeIdentity,
         measurement: PropulsionGaugeCockpitMeasurement,
         visualPropulsionFraction: Double?,
+        acceptedTargetPropulsionFraction: Double?,
         recentAcceptedPeakMarkerFraction: Double?,
         scaleOrigin: PropulsionGaugeScaleOrigin?
     ) {
         self.identity = identity
         self.measurement = measurement
         self.visualPropulsionFraction = visualPropulsionFraction
+        self.acceptedTargetPropulsionFraction = acceptedTargetPropulsionFraction
         self.recentAcceptedPeakMarkerFraction = recentAcceptedPeakMarkerFraction
         self.scaleOrigin = scaleOrigin
     }
@@ -92,6 +99,7 @@ public extension PropulsionGaugeDisplayModel {
                 identity: frame.identity,
                 measurement: .unavailable,
                 visualPropulsionFraction: nil,
+                acceptedTargetPropulsionFraction: nil,
                 recentAcceptedPeakMarkerFraction: nil,
                 scaleOrigin: nil
             )
@@ -102,15 +110,28 @@ public extension PropulsionGaugeDisplayModel {
                 identity: frame.identity,
                 measurement: measurement,
                 visualPropulsionFraction: nil,
+                acceptedTargetPropulsionFraction: nil,
                 recentAcceptedPeakMarkerFraction: nil,
                 scaleOrigin: nil
             )
+        }
+
+        let acceptedTargetPropulsionFraction: Double?
+        if let scale,
+           let admittedScaleOrigin = frame.scaleOrigin,
+           scale.identity == frame.identity,
+           scale.origin == admittedScaleOrigin,
+           case let .live(accepted) = measurement {
+            acceptedTargetPropulsionFraction = min(1, max(0, accepted.watts / scale.ceilingWatts))
+        } else {
+            acceptedTargetPropulsionFraction = nil
         }
 
         return PropulsionGaugeCockpitSnapshot(
             identity: frame.identity,
             measurement: measurement,
             visualPropulsionFraction: frame.normalizedPropulsion,
+            acceptedTargetPropulsionFraction: acceptedTargetPropulsionFraction,
             recentAcceptedPeakMarkerFraction: frame.acceptedPeakNormalized,
             scaleOrigin: frame.scaleOrigin
         )
