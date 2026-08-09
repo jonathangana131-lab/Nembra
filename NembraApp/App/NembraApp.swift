@@ -108,10 +108,12 @@ struct NembraApp: App {
     }
 
     /// Routes the exact field-build recipe marker into Capture even in a Release archive.
-    /// Explicit synthetic Capture QA and ordinary app Simulator scenarios win only in a Debug
+    /// Explicit synthetic Capture QA and ordinary app Simulator requests win only in a Debug
     /// iOS Simulator build so the provenance-bound field recipe cannot steal either retained QA
-    /// surface. Release/physical builds compile these overrides out and continue to route the
-    /// canonical recipe to field Capture.
+    /// surface. A present-but-invalid ordinary simulation request also stays on the standard app
+    /// path, preserving the simulation resolver's fail-closed contract instead of falling through
+    /// to private Capture. Release/physical builds compile these overrides out and continue to
+    /// route the canonical recipe to field Capture.
     static func resolveLaunchMode(
         arguments: [String] = ProcessInfo.processInfo.arguments,
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -127,8 +129,14 @@ struct NembraApp: App {
                 ?? .stationaryPreflight
             return .es80PassiveCaptureSimulatorQA(scenario.rawValue)
         }
-        if AppBootstrap.simulationScenario(arguments: arguments, environment: environment) != nil {
+        switch ScooterSimulationConfiguration.resolve(
+            arguments: arguments,
+            environment: environment
+        ) {
+        case .selected, .invalid:
             return .standard
+        case .disabled:
+            break
         }
 #endif
         if let fieldRecipe = infoDictionary[captureFieldRecipeInfoPlistKey] as? String,
