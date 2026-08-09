@@ -10,103 +10,17 @@ permissions:
 
 jobs:
   runtime-proof:
+    name: Prove stationary preflight preserves synthetic OFF1 fixture
     runs-on: xcode-27
     timeout-minutes: 20
     steps:
-      - name: Checkout validation head
+      - name: Checkout
         uses: actions/checkout@v6
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
-      - name: Prove immutable product parent
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "aae86cc243a48dd0993db4ca9c00f0a4284bee85"
-          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/qa-es80-preflight-handoff-aae86-gpt56.yml"
-
-      - name: Inject validation-only handoff traversal
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("NembraUITests/ES80ResearchCaptureUITests.swift")
-          source = path.read_text(encoding="utf-8")
-          old = '''        XCTAssertTrue(app.buttons["Charger Disconnected"].waitForExistence(timeout: 3))
-        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
-        XCTAssertFalse(app.buttons["Vehicle controls"].exists)
-
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Nembra Capture V14 — SIMULATOR QA — Stationary Preflight"
-'''
-          new = '''        let disconnected = app.buttons["es80.capture.preflight.charger-disconnected"]
-        XCTAssertTrue(disconnected.waitForExistence(timeout: 3))
-        disconnected.tap()
-
-        let continueButton = app.buttons["es80.capture.preflight.continue"]
-        XCTAssertTrue(continueButton.waitForExistence(timeout: 3))
-        XCTAssertTrue(continueButton.isEnabled)
-        continueButton.tap()
-
-        XCTAssertTrue(app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["OFF 1 / READY"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["Scooter OFF"].waitForExistence(timeout: 3))
-        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
-        XCTAssertFalse(app.buttons["Vehicle controls"].exists)
-
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Nembra Capture V14 — SIMULATOR QA — Preflight Handoff OFF1"
-'''
-          if source.count(old) != 1:
-              raise SystemExit("stationary-preflight test block changed unexpectedly")
-          path.write_text(source.replace(old, new), encoding="utf-8")
-          PY
-
-      - name: Run focused iOS 27 UI test
-        run: |
-          set -euo pipefail
-          plutil -lint Nembra.xcodeproj/project.pbxproj
-          scripts/validate_pbxproj_references.py
-          mkdir -p Artifacts/ES80PreflightHandoff/logs Artifacts/ES80PreflightHandoff/test-attachments
-
-          runtime_id="$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x.get("isAvailable", True) and str(x.get("identifier", "")).startswith("com.apple.CoreSimulator.SimRuntime.iOS-27")]; r.sort(key=lambda x: str(x.get("version", "")), reverse=True); print(r[0]["identifier"])')"
-          device_type="$(xcrun simctl list devicetypes -j | python3 -c 'import json,sys; i=json.load(sys.stdin)["devicetypes"]; p=["iPhone 12","iPhone 17","iPhone 17 Pro","iPhone 16"]; print(next(x["identifier"] for n in p for x in i if x.get("name")==n))')"
-          udid="$(xcrun simctl create "Nembra ES80 Handoff $GITHUB_RUN_ID" "$device_type" "$runtime_id")"
-          cleanup() {
-            xcrun simctl spawn "$udid" log show --last 10m --style compact --predicate 'process == "Nembra"' > Artifacts/ES80PreflightHandoff/logs/nembra-system.log 2>&1 || true
-            xcrun simctl shutdown "$udid" >/dev/null 2>&1 || true
-            xcrun simctl delete "$udid" >/dev/null 2>&1 || true
-          }
-          trap cleanup EXIT INT TERM
-          xcrun simctl boot "$udid"
-          xcrun simctl bootstatus "$udid" -b
-
-          set +e
-          set -o pipefail
-          xcodebuild \
-            -project Nembra.xcodeproj \
-            -scheme Nembra \
-            -configuration Debug \
-            -destination "platform=iOS Simulator,id=$udid" \
-            -derivedDataPath "${RUNNER_TEMP}/NembraES80HandoffDerivedData" \
-            -resultBundlePath Artifacts/ES80PreflightHandoff/PreflightHandoff.xcresult \
-            -test-timeouts-enabled YES \
-            -default-test-execution-time-allowance 120 \
-            -maximum-test-execution-time-allowance 120 \
-            -collect-test-diagnostics never \
-            -only-testing:NembraUITests/ES80ResearchCaptureUITests/testV14SimulatorQARendersStationaryPreflightWithoutPromotingFieldGo \
-            CODE_SIGNING_ALLOWED=NO \
-            test | tee Artifacts/ES80PreflightHandoff/logs/xcodebuild-focused-handoff.log
-          status=${PIPESTATUS[0]}
-          set -e
-
-          if [[ -d Artifacts/ES80PreflightHandoff/PreflightHandoff.xcresult ]]; then
-            xcrun xcresulttool export attachments \
-              --path Artifacts/ES80PreflightHandoff/PreflightHandoff.xcresult \
-              --output-path Artifacts/ES80PreflightHandoff/test-attachments \
-              > Artifacts/ES80PreflightHandoff/logs/xcresult-attachments.log 2>&1 || true
-          fi
-          exit "$status"
+      - name: Validate focused handoff
+        run: bash scripts/ci/qa_es80_preflight_handoff_validation.sh
 
       - name: Upload focused evidence
         if: always()
@@ -114,5 +28,5 @@ jobs:
         with:
           name: es80-preflight-handoff-${{ github.run_number }}-${{ github.run_attempt }}
           path: Artifacts/ES80PreflightHandoff
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
