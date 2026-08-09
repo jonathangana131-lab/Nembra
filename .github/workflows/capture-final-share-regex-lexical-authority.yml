@@ -1,0 +1,128 @@
+name: Capture Final Share Regex Lexical Authority QA
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - NembraApp/Features/Research/ES80CaptureShellView.swift
+      - .github/workflows/capture-final-share-conditional-authority.yml
+      - .github/workflows/capture-final-share-regex-lexical-authority.yml
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head-regex-lexical-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Verify exact PR head
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          printf 'Expected exact PR head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual"
+          test "$actual" = "$EXPECTED_HEAD_SHA"
+
+      - name: Reject regex-literal brace ambiguity in final Share authority
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          class ContractViolation(Exception):
+              pass
+
+          signature = "private func prepareFinalShareForAnalysisAndSharing()"
+          next_member = "\n    private func restartExperiment()"
+          extended_regex_opener = re.compile(r"#+/")
+
+          def authority_source(source: str) -> tuple[int, int, str]:
+              starts = [
+                  match.start()
+                  for match in re.finditer(re.escape(signature), source)
+              ]
+              if len(starts) != 1:
+                  raise ContractViolation(
+                      "expected exactly one prepareFinalShareForAnalysisAndSharing declaration"
+                  )
+
+              start = starts[0]
+              end = source.find(next_member, start + len(signature))
+              if end < 0:
+                  raise ContractViolation(
+                      "missing stable restartExperiment boundary after final Share authority"
+                  )
+              return start, end, source[start:end]
+
+          def validate_source(source: str) -> tuple[int, int]:
+              start, end, function_source = authority_source(source)
+
+              # The companion conditional-authority checker brace-matches this Swift function.
+              # Extended regex literals are valid Swift syntax and may contain literal `}` bytes
+              # that are not structural braces. Until that checker has a full Swift lexer/parser,
+              # keep this authority-critical function mechanically free of extended regex syntax
+              # so regex payload bytes cannot truncate its apparent brace range and hide a later
+              # conditional-compilation directive.
+              if extended_regex_opener.search(function_source):
+                  raise ContractViolation(
+                      "final Share authority must not contain Swift extended regex literals"
+                  )
+              return start, end
+
+          source = Path(
+              "NembraApp/Features/Research/ES80CaptureShellView.swift"
+          ).read_text()
+
+          try:
+              start, end = validate_source(source)
+          except ContractViolation as error:
+              raise SystemExit(str(error)) from error
+
+          # Self-red-team the exact demonstrated false-green class. Swift 6.2 accepts #/\}/#
+          # without the bare-slash-regex feature flag. The older brace matcher can treat the regex
+          # payload `}` as the function close and then miss a real #if later in the function.
+          regex_only = (
+              source[:end]
+              + "\n        let lexicalBraceProbe = #/\\}/#\n"
+              + "        _ = lexicalBraceProbe\n"
+              + source[end:]
+          )
+          try:
+              validate_source(regex_only)
+          except ContractViolation:
+              pass
+          else:
+              raise SystemExit(
+                  "checker self-test accepted a Swift extended regex literal in final Share authority"
+              )
+
+          regex_bypass = (
+              source[:end]
+              + "\n        let lexicalBraceProbe = #/\\}/#\n"
+              + "        _ = lexicalBraceProbe\n"
+              + "#if NEVER_ENABLED_IN_RELEASE\n"
+              + "        let hiddenConditionalProbe = true\n"
+              + "        _ = hiddenConditionalProbe\n"
+              + "#endif\n"
+              + source[end:]
+          )
+          try:
+              validate_source(regex_bypass)
+          except ContractViolation:
+              pass
+          else:
+              raise SystemExit(
+                  "checker self-test accepted a conditional branch hidden after a regex-literal brace"
+              )
+
+          print("final Share regex lexical authority source contract: PASS")
+          PY
