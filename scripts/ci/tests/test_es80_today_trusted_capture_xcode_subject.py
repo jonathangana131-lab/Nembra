@@ -8,6 +8,7 @@ import unittest
 import zipfile
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "es80_today_trusted_capture_xcode_subject.py"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 spec = importlib.util.spec_from_file_location("trusted_xcode", MODULE_PATH)
 trusted_xcode = importlib.util.module_from_spec(spec)
 assert spec and spec.loader
@@ -134,6 +135,15 @@ class TrustedCaptureXcodeSubjectTests(unittest.TestCase):
             github_get_json=get,
             workflow_blob_sha_at_commit=blob_at,
         )
+
+    def test_required_successful_steps_exist_in_pinned_workflow_source(self):
+        workflow = (REPOSITORY_ROOT / trusted_xcode.TRUSTED_WORKFLOW_PATH).read_text(encoding="utf-8")
+        for required in trusted_xcode.REQUIRED_SUCCESSFUL_STEPS:
+            self.assertIn(
+                f"- name: {required}\n",
+                workflow,
+                f"trusted verifier requires a job step absent from pinned workflow source: {required}",
+            )
 
     def test_accepts_owner_issued_default_branch_subject_and_binds_candidate_separately(self):
         with tempfile.TemporaryDirectory() as temporary:
