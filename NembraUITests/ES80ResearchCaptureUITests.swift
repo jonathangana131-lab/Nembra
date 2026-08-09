@@ -625,13 +625,13 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             ),
             ScenarioExpectation(
                 scenario: "secondPoweredOn",
-                requiredText: "One target repeated twice",
+                requiredText: "One signal matched twice",
                 requiredIdentifier: "es80.capture.confirm-correlated-target",
                 screenshotName: "Nembra Capture V14 — SIMULATOR QA — Scooter Signal Found"
             ),
             ScenarioExpectation(
                 scenario: "passiveDiscovery",
-                requiredText: "Opening the correlated target",
+                requiredText: "Opening the matched signal",
                 requiredIdentifier: nil,
                 screenshotName: "Nembra Capture V14 — SIMULATOR QA — Passive Connection"
             ),
@@ -643,7 +643,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             ),
             ScenarioExpectation(
                 scenario: "horizonSealed",
-                requiredText: "Freezing final evidence",
+                requiredText: "Securing capture",
                 requiredIdentifier: nil,
                 screenshotName: "Nembra Capture V14 — SIMULATOR QA — Sealing"
             ),
@@ -799,8 +799,16 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "Horizon seal alone must not render Ready for analysis."
         )
         XCTAssertTrue(
-            source.contains("if let data = finalShareData"),
-            "A temporary Share-file retry must reuse retained verified bytes rather than mint a new evidence artifact."
+            source.contains("if finalShareData != nil,"),
+            "A temporary Share-file retry must require retained verified final Share bytes."
+        )
+        XCTAssertTrue(
+            source.contains("finalShareIntegrityReport != nil,"),
+            "A temporary Share-file retry must retain the exact integrity report rather than mint new evidence."
+        )
+        XCTAssertTrue(
+            source.contains("finalShareFilename != nil {"),
+            "A temporary Share-file retry must retain the verified filename alongside the verified bytes."
         )
         XCTAssertTrue(
             source.contains("finalShareIntegrityReport = report"),
