@@ -1,0 +1,39 @@
+name: Capture TODAY Final GO Operator Attestation Validation
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - scripts/ci/es80_today_final_go_record.py
+      - scripts/ci/tests/test_es80_today_final_go_operator_attestation_authority.py
+      - .github/workflows/capture-today-final-go-operator-attestation-validation.yml
+
+permissions:
+  contents: read
+
+jobs:
+  reject-caller-authored-field-authority:
+    name: Reject caller-authored Final GO field authority
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout immutable validation head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify immutable validation head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+
+      - name: Compile Final GO verifier and authority regression
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/es80_today_final_go_record.py
+          python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_operator_attestation_authority.py
+
+      - name: Plain local JSON must not mint field authority
+        run: python3 scripts/ci/tests/test_es80_today_final_go_operator_attestation_authority.py -v
