@@ -17,7 +17,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: fix/capture-ax-sentinel-selfref-c00d-gpt56
-          fetch-depth: 3
+          fetch-depth: 4
 
       - name: Verify exact flagship base and bootstrap-only drift
         shell: bash
@@ -42,38 +42,22 @@ jobs:
           path = Path('NembraUITests/ES80ResearchCaptureUITests.swift')
           source = path.read_text()
 
-          old = '''    func testAccessibilityLaunchUsesSupportedXXXLCategoryName() throws {
-              let source = try repositorySource(at: "NembraUITests/ES80ResearchCaptureUITests.swift")
-              XCTAssertFalse(
-                  source.contains("UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"),
-                  "Capture UI tests must not use the unsupported long-form content-size token that silently falls back to normal text size."
-              )
-              let supportedToken = "UICTContentSizeCategoryAccessibilityXXXL"
-              XCTAssertEqual(
-                  source.components(separatedBy: supportedToken).count - 1,
-                  4,
-                  "Every Capture Accessibility XXXL launch must use the supported UIKit category token."
-              )
-          }'''
+          forbidden_expr = 'source.contains("UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge")'
+          if source.count(forbidden_expr) != 1:
+              raise SystemExit(f'expected exactly one self-referential forbidden-token expression, found {source.count(forbidden_expr)}')
+          source = source.replace(
+              '        XCTAssertFalse(\n            ' + forbidden_expr + ',',
+              '        let unsupportedToken = "UICTContentSizeCategoryAccessibility" + "ExtraExtraExtraLarge"\n'
+              '        XCTAssertFalse(\n            source.contains(unsupportedToken),',
+          )
 
-          new = '''    func testAccessibilityLaunchUsesSupportedXXXLCategoryName() throws {
-              let source = try repositorySource(at: "NembraUITests/ES80ResearchCaptureUITests.swift")
-              let unsupportedToken = "UICTContentSizeCategoryAccessibility" + "ExtraExtraExtraLarge"
-              XCTAssertFalse(
-                  source.contains(unsupportedToken),
-                  "Capture UI tests must not use the unsupported long-form content-size token that silently falls back to normal text size."
-              )
-              let supportedToken = "UICTContentSizeCategoryAccessibility" + "XXXL"
-              XCTAssertEqual(
-                  source.components(separatedBy: supportedToken).count - 1,
-                  4,
-                  "Every Capture Accessibility XXXL launch must use the supported UIKit category token."
-              )
-          }'''
-
-          if source.count(old) != 1:
-              raise SystemExit(f'expected exactly one self-referential AX sentinel block, found {source.count(old)}')
-          source = source.replace(old, new)
+          supported_decl = 'let supportedToken = "UICTContentSizeCategoryAccessibilityXXXL"'
+          if source.count(supported_decl) != 1:
+              raise SystemExit(f'expected exactly one self-referential supported-token declaration, found {source.count(supported_decl)}')
+          source = source.replace(
+              supported_decl,
+              'let supportedToken = "UICTContentSizeCategoryAccessibility" + "XXXL"',
+          )
           path.write_text(source)
           PY
 
