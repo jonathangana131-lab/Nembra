@@ -2,59 +2,102 @@
 
 This file is the active execution lock for the one-time Nembra Capture utility.
 
-## Frozen candidate
-- PR: #833
-- exact product head: `8efdc2946f784c2bf2130d4c3447baeb15e895a6`
-- exact-head portable/source Capture guards: **7 / 7 SUCCESS**
-- current PR-local Xcode run: `31292505064`
-- resolver job: `93191988901` — **SUCCESS**
-- field-authority tooling job: `93191996586` — **SUCCESS**
-- Mac job: `93191996583` — **QUEUED / NON-EVIDENCE** at this checkpoint
-- `Capture Simulator Visual Custody Source QA` run `31292505047` / job `93191988843` — **SUCCESS**, including the repaired composed routing source contract
-- `21f859aa4c3feaaeed32437bd94be6e7bebcadff` was an intentionally red/misaligned regression checkpoint and is not acceptance
-- every Xcode result before exact `8efdc294...` is ancestor evidence only
+## Frozen candidate — live accepted authority
 
-The exact Capture product head is frozen while current exact-head runtime acceptance is alive. The deployed trusted default-branch workflow content was last changed at `a1433d683fcf1e15f34c38bedac6a8f591723aff`; later `main` movement has been coordination/documentation only unless live GitHub shows otherwise. Always inspect the current workflow before a fresh trusted command.
+- Flagship PR: **#833**
+- Exact frozen product head: **`a0f4a33451f61411d6e0541f2e70edea5438342d`**
+- Product gate: **EXACT APP/RUNTIME + RETAINED VISUAL ACCEPTED — KEEP FROZEN**
+- Ordinary exact Xcode 27 app/runtime run: **`31310396405` — SUCCESS**
+- Trusted owner-command run: **`31312741465` — ACCEPTED**
+  - resolver job `93242986211` — **SUCCESS**
+  - isolated prevalidation job `93243000285` — **SUCCESS**
+  - trusted Mac authority job `93243212531` — **SUCCESS**
+- Trusted retained artifact: ID `9038098282`, digest `sha256:f128a9bd05b2ceff7be47addce103028d7bc6982ede17ad0bc8894983e826e72`
+- Accepted Capture build: `Capture Build V14-a0f4a33451f6`
+- Recipe / procedure: `ES80-FINGERPRINT-v1` / `V14`
+- Physical status: **NO-GO / DO NOT SCAN / DO NOT RUN EXPERIMENT ONE**
 
-## Why `8efdc294...` replaced `9c7a2048...`
+Live #833 durable state outranks older Capture coordination prose. If this file ever disagrees with the exact live #833 head or its newest accepted exact-head evidence, stop and reconcile before acting.
 
-The product behavior at `9c7a2048...` was already the intended two-layer fail-closed design:
-- `NembraApp.resolveLaunchMode(...)` keeps explicit Capture QA first and routes `.selected` plus `.invalid` ordinary Debug-Simulator requests to `.standard` before the embedded `ES80-FINGERPRINT-v1` recipe;
-- `AppBootstrap.simulationScenario(...)` maps `.invalid` to the existing `.unsupportedConfiguration` fixture in Debug Simulator, while Release/physical returns `nil`.
+## What is already closed
 
-A later test-only checkpoint `21f859aa...` accidentally demanded the older removed optional-helper line in `NembraApp.swift`, making the portable gate red despite the stronger composed production path. Exact `8efdc294...` repairs only that regression contract: it verifies the direct launch-mode switch and the bootstrap invalid->unsupported fallback independently. No product/BLE/controller/recorder/ResearchAdmission/signed-field producer/command behavior changed.
+The software/Simulator acceptance rung is closed for exact `a0f4a334…`.
 
-All seven portable/source Capture gates on exact `8efdc294...` are terminal green.
+Accepted evidence includes:
 
-## Prime rule
+- exact-head Xcode 27 app/runtime success;
+- trusted default-branch owner-command success on the same unchanged product subject;
+- retained artifact byte/digest verification;
+- retained manifest verification with all 64 manifest-bound subjects exact;
+- source/build/build-instance/recipe/procedure provenance binding;
+- retained iPhone-12-class visual evidence, including Accessibility XXXL and deliberate landscape states;
+- explicit Simulator / synthetic QA labeling that is not promoted to physical evidence;
+- source-safety review preserving the passive/read-only Experiment One boundary;
+- deterministic OFF1 -> ON1 -> OFF2 -> ON2 target-correlation contract;
+- minimum 10-second power-cycle observation windows and minimum 60-second post-Ready monotonic horizon;
+- exact final Share-byte integrity/provenance checks;
+- private TODAY ResearchAdmission constrained to the dedicated physical-iOS Release research build.
 
-**DO NOT MOVE #833 WHILE CURRENT EXACT-HEAD XCODE RUN `31292505064` / MAC JOB `93191996583` IS QUEUED OR IN PROGRESS, unless a newly demonstrated TODAY blocker requires a bounded repair.**
+Do **not** issue another `/xcode27` or `/capture-xcode27` for unchanged `a0f4a334…` merely to accumulate evidence. Queued, skipped, cancelled, ancestor, child-only, package-only, or unrelated green results do not strengthen the already accepted exact product subject.
 
-Do not mutate the Capture flagship for speculative hardening, cosmetics, documentation, duplicate validation, test cleanup, branch hygiene, post-capture security work, or a theoretically stronger implementation while this exact run is alive.
+## Prime rule — keep `a0f4a334…` frozen
 
-Move the frozen candidate only for a newly demonstrated normal-path TODAY blocker under `CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md`: build/install/launch failure; Capture crash/hang/corruption/mis-target/export failure; application characteristic-write authority; Stationary/Charger Disconnected bypass; an exact-head acceptance false-green/failure; real Accessibility XXXL runtime failure; signed intended-device installation failure; missing package-owned `PRIVATE RESEARCH BUILD / Runtime provenance ready` on the exact retained IPA; or inability to deliberately authorize the exact safe Research Field Build.
+Do not move #833 for speculative hardening, cosmetics, documentation, duplicate validation, branch hygiene, post-capture security work, or theoretically stronger implementations.
 
-Do not issue another `/xcode27` or `/capture-xcode27` merely because the Mac job is queued. After PR-local runtime acceptance, issue exactly one trusted default-branch `/capture-xcode27` for the unchanged current head only if no current-head trusted run already exists.
+Move the frozen product candidate only for a newly demonstrated normal-path TODAY blocker that makes the exact retained Research Field Build unsafe, unbuildable, un-installable, unable to launch/rendezvous, unable to execute the accepted passive Capture flow, or unable to preserve/export the required exact raw artifact.
 
-## What happens when the exact-head run finishes
+Documentation and external operator evidence may advance independently without changing the accepted app source SHA. That is intentional.
 
-### If terminal SUCCESS
-Do not reopen software polishing. Continue immediately on this same exact accepted source:
-1. inspect retained logs, xcresult, screenshots, and build/provenance evidence rather than treating workflow green alone as acceptance;
-2. confirm ordinary Home/Dashboard Simulator routing, invalid Simulator unsupported-state routing, true Accessibility XXXL geometry, landscape, Stationary/Charger Disconnected preflight, representative correlation/acquisition/recovery states, Horizon/seal, Capture Complete, Share/Retry, and explicit SIMULATOR/QA labeling;
-3. earn the trusted default-branch exact-head command gate on the same unchanged SHA;
-4. produce one exact signed `ES80-FINGERPRINT-v1` private Research Field Build via `scripts/ci/xcode27_today_research_field_candidate.sh` on the private signing surface;
-5. independently inspect retained IPA signing/provisioning/intended-device membership and exact source/build/build-instance/recipe/executable/Info.plist/evidence-record/IPA hashes;
-6. install exactly that retained IPA without rebuilding or re-exporting using `docs/ES80_TODAY_EXACT_RETAINED_IPA_INSTALL.md`;
-7. launch from the Home Screen and require package-owned `PRIVATE RESEARCH BUILD / Runtime provenance ready`; visible recipe/build/source/build-instance must rendezvous exactly with retained inspection evidence before any scan;
-8. complete the external TODAY Final GO record from independently checked retained evidence;
-9. only then run the one-time stationary, charger-disconnected, passive/read-only ES80 capture, observe at least 60 seconds after accepted Ready, seal Horizon, and preserve the exact raw Share artifact unchanged.
+## NEXT CRITICAL PATH — private signed intended-device candidate
 
-### If terminal FAILURE
-Only the demonstrated failing step becomes Capture work. Assign the minimum crew needed to repair that exact failure, compose one bounded fix, freeze the new exact SHA, and run one new exact-head acceptance. All unrelated findings remain deferred.
+The next legal rung requires a **private macOS/Xcode 27 signing surface plus the intended iPhone 12 / iOS 27**. It is not another GitHub/Simulator run.
 
-### If cancelled or skipped
-First determine why. A stale-head janitor cancellation after a legitimate #833 move is expected non-evidence. A cancelled/skipped run on an unchanged exact current head is not green and must be diagnosed before another command is issued. Do not create duplicate Mac work merely because a run is queued.
+1. Keep exact source `a0f4a33451f61411d6e0541f2e70edea5438342d` frozen.
+2. On the private signing surface, run `scripts/ci/xcode27_today_research_field_candidate.sh` with the accepted private Apple Team, export-options, and intended-device inputs.
+3. Produce one immutable retained `inspection/build-evidence/NembraField.ipa`.
+4. Independently inspect signing, provisioning, Team/application identity, intended-device authorization, exact source/build/build-instance/recipe, executable SHA-256, raw Info.plist SHA-256, and IPA SHA-256.
+5. Complete the pinned independent retained-candidate cross-check in `docs/ES80_TODAY_EXACT_RETAINED_IPA_INSTALL.md`. `PASS_NOT_FINAL_GO` remains explicitly non-authorizing.
+6. SHA-256 the exact retained IPA before installation.
+7. Install **that same retained IPA** on the intended iPhone 12 / iOS 27 through Xcode device management without rebuilding or re-exporting.
+8. Launch Nembra from the Home Screen and require package-owned `PRIVATE RESEARCH BUILD / Runtime provenance ready` plus exact source/build/build-instance/recipe rendezvous.
+9. Re-hash the original retained IPA and require exact equality with the pre-install/accepted digest.
+10. Complete the external TODAY Final GO Record from independently checked retained signing/install/runtime evidence.
+11. Only after every Final GO field is deliberately closed may one stationary, charger-disconnected, passive/read-only Experiment One become eligible.
+
+Never put the raw intended-device UDID in GitHub comments, command arguments, artifact names, screenshots, or public durable notes.
+
+## If the private field-candidate ladder fails
+
+Only the demonstrated failing rung becomes Capture work.
+
+Examples that justify a bounded repair include:
+
+- private Research Field Build cannot archive/export/sign for the accepted intended device;
+- canonical signed-field inspection rejects the retained candidate for a real producer/inspector defect;
+- the independent retained-candidate cross-check exposes a real mismatch;
+- exact retained IPA cannot be installed without rebuild/re-export/substitution;
+- the Home-Screen-launched app does not report the exact accepted runtime provenance tuple;
+- ResearchAdmission is missing or appears outside its dedicated accepted build boundary;
+- the normal Capture flow crashes, hangs, corrupts chronology, mis-targets, violates passive/read-only policy, cannot seal, or cannot preserve exact Share bytes.
+
+Do not broaden a field failure into unrelated Capture refactoring. Preserve the accepted source whenever the failure is operator/environmental rather than a product defect.
 
 ## Physical boundary
-This hard freeze does not itself authorize hardware. Physical Experiment One remains **NO-GO / DO NOT RUN** until terminal exact-head trusted acceptance, retained artifact/screenshot inspection, exact signed retained IPA inspection, intended-device installation/runtime rendezvous, fresh Stationary + Charger Disconnected preflight, and the external Final GO record are all complete.
+
+This hard freeze does not authorize hardware.
+
+Physical Experiment One remains **NO-GO / DO NOT SCAN / DO NOT RUN** until all of the following are complete for the exact retained signed candidate:
+
+- accepted signed IPA production and independent inspection;
+- intended-device authorization;
+- pinned external retained-candidate `PASS_NOT_FINAL_GO` cross-check;
+- exact retained IPA digest before install;
+- exact retained IPA installation without rebuild/re-export;
+- Home-Screen runtime provenance rendezvous;
+- exact retained IPA digest after install;
+- external TODAY Final GO Record;
+- fresh Stationary + Charger Disconnected preflight.
+
+When Final GO is eventually earned, Experiment One remains only the one-time **stationary, charger-disconnected, passive/read-only** fingerprint procedure: OFF1 -> ON1 -> OFF2 -> ON2, explicit correlated-target confirmation, passive GATT acquisition, at least 60 seconds after accepted Ready, exact Horizon/seal, and preservation of the raw Share artifact unchanged.
+
+Simulator evidence is not physical truth. Installation evidence is not ES80 identity. `PASS_NOT_FINAL_GO` is not GO. No battery/current/power/speed/protocol semantics are established until later physical evidence earns them.
