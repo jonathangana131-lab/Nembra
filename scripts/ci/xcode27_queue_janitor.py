@@ -1,111 +1,320 @@
 #!/usr/bin/env python3
 """Fail-closed cleanup for stale Xcode 27 PR QA runs.
 
-The xcode-27 runner is scarce. ThhÈ[\ˆÛ›HØ[˜Ù[ÈH]Y]YYÜˆ[‹\›ÙÜ™\ÜÂžÛÙLË\‹XÛÛ[X[™[ˆÚ[ˆÚ]X‰ÜÈÝ\œ™[Ü[‹TˆÝ]H›Ý™\È]Bœ[‰ÜÈ^XÝœ˜[˜ÚÔÒH\È›ÈÛ™Ù\ˆH^XÝXYÙˆ[žHÜ[ˆ‹‚‚Ý\œ™[^XÝÜ[ˆˆXYÈ\™H[Ø^\È™\Ù\™Yˆ[XšYÝ[Ý\ÈTKÜÝ]H˜Z[\™\Â™˜Z[ÛÜÙY[™™\Ù\™HH[‹‚ˆˆˆ‚‚™œ›ÛH×Ù]\™W×È[\Ü[››Ý][ÛœÂ‚š[\Ü\™Ü\œÙBš[\Ü]][YH\Èš[\ÜœÛÛ‚š[\ÜÜÂš[\ÜÞ\Âš[\Ü\›X‹™\œ›Ü‚š[\Ü\›X‹œ\œÙBš[\Ü\›X‹œ™\]Y\Ý™œ›ÛH]XÛ\ÜÙ\È[\Ü]XÛ\ÜÂ™œ›ÛH\[™È[\Ü[žK]\˜X›B‚TWÔ“ÓÕHšÎ‹ËØ\K™Ú]X‹˜ÛÛH‚•ÓÔ’Ñ“ÕÈHžÛÙLË\‹XÛÛ[X[™ž[[‚SÕÑQÑU‘S•ÈHÈœ[Ü™\]Y\Ý‹š\ÜÝYWØÛÛ[Y[ŸBÐSÑSP“WÔÕUTÑTÈHÈœ]Y]YY‹š[—Ü›ÙÜ™\ÜÈŸB‚‚]XÛ\ÜÊœ›Þ™[UYJB˜Û\ÜÈXÚ\Ú[ÛŽ‚ˆØ[˜Ù[ˆ›ÛÛˆ™X\ÛÛŽˆÝ‚‚‚™YˆÜ\œÙWÙÚ]X—Ý[YJ˜[YNˆÝŠHOˆ™]][YN‚ˆ\œÙYH™]][YK™œ›ÛZ\ÛÙ›Ü›X]
-˜[YKœ™\XÙJ–ˆ‹ŠÌŒŠJBˆYˆ\œÙYš[™›È\È›Û™N‚ˆ\œÙYH\œÙYœ™\XÙJš[™›ÏY[Y^›Û™K]ÊBˆ™]\›ˆ\œÙY˜\Ý[Y^›Û™J[Y^›Û™K]ÊB‚‚™YˆÛ\ÜÚYžWÜ[Šˆ[ŽˆXÝÜÝ‹[žWKˆÜ[—ÜœÎˆ]\˜X›VÙXÝÜÝ‹[žWWKˆ
-‹ˆ›ÝÎˆ™]][YKˆZ[š[][WØYÙWÜÙXÛÛ™Îˆ[ŠHOˆXÚ\Ú[ÛŽ‚ˆˆˆ”™]\›ˆH˜Z[XÛÜÙYØ[˜Ù[][ÛˆXÚ\Ú[Ûˆ\Ú[™ÈÛ›HÝ\œ™[ˆ]ˆˆˆ‚‚ˆÝ]\ÈH[‹™Ù]
-œÝ]\ÈŠBˆYˆÝ]\È›Ý[ˆÐSÑSP“WÔÕUTÑTÎ‚ˆ™]\›ˆXÚ\Ú[ÛŠ˜[ÙKœÝ]\È\È›ÝØ[˜Ù[X›HŠBˆYˆ[‹™Ù]
-™]™[ŠH›Ý[ˆSÕÑQÑU‘S•Î‚ˆ™]\›ˆXÚ\Ú[ÛŠ˜[ÙK[œÝ\ÜY]™[È™\Ù\™HŠB‚ˆœ˜[˜ÚH[‹™Ù]
-šXYØœ˜[˜ÚŠBˆXYÜÚHH[‹™Ù]
-šXYÜÚHŠBˆÜ™X]YØ]H[‹™Ù]
-˜Ü™X]YØ]ŠBˆYˆ›Ýœ˜[˜ÚÜˆ›ÝXYÜÚHÜˆ›ÝÜ™X]YØ]‚ˆ™]\›ˆXÚ\Ú[ÛŠ˜[ÙK›Z\ÜÚ[™Èœ˜[˜ÚÔÒKÝ[YNÈ™\Ù\™HŠB‚ˆžN‚ˆYÙHH
-›ÝÈHÜ\œÙWÙÚ]X—Ý[YJÜ™X]YØ]
-JKÝ[ÜÙXÛÛ™Ê
-Bˆ^Ù\
-\Q\œ›Ü‹˜[YQ\œ›ÜŠN‚ˆ™]\›ˆXÚ\Ú[ÛŠ˜[ÙKš[˜[YÜ™X][Ûˆ[YNÈ™\Ù\™HŠB‚ˆYˆYÙHZ[š[][WØYÙWÜÙXÛÛ™Î‚ˆ™]\›ˆXÚ\Ú[ÛŠ˜[ÙKš[œÚYHTKXÛÛœÚ\Ý[˜ÞHÜ˜XÙH\š[ÙŠB‚ˆœÈH\Ý
-Ü[—ÜœÊBˆ›Üˆˆ[ˆœÎ‚ˆXYH‹™Ù]
-šXYŠHÜˆßBˆYˆXY™Ù]
-œ™YˆŠHOHœ˜[˜Ú[™XY™Ù]
-œÚHŠHOHXYÜÚN‚ˆ™]\›ˆXÚ\Ú[ÛŠ˜[ÙKœ›ÝXÝYÝ\œ™[^XÝXYÙˆ[ˆÜ[ˆˆŠB‚ˆYˆ›ÝœÎ‚ˆ™]\›ˆXÚ\Ú[ÛŠYKˆ››ÈÜ[ˆˆ™[XZ[œÈ›ÜˆÜÝ]\ßHœ˜[˜ÚŠB‚ˆ™]\›ˆXÚ\Ú[ÛŠYKˆžÜÝ]\ßHÒH\È›ÝHÝ\œ™[^XÝXYÙˆ[žHÜ[ˆˆÛˆœ˜[˜ÚŠB‚‚˜Û\ÜÈÚ]XTN‚ˆYˆ×Ú[š]×ÊÙ[‹ÚÙ[ŽˆÝ‹™\ÜÚ]ÜžNˆÝŠHOˆ›Û™N‚ˆYˆ‹Èˆ›Ý[ˆ™\ÜÚ]ÜžN‚ˆ˜Z\ÙH˜[YQ\œ›ÜŠœ™\ÜÚ]ÜžH]\Ý™HÝÛ™\‹Û˜[YHŠBˆÙ[‹ÚÙ[ˆHÚÙ[‚ˆÙ[‹œ™\ÜÚ]ÜžHH™\ÜÚ]ÜžBˆÙ[‹›ÝÛ™\‹Ù[‹œ™\ÈH™\ÜÚ]ÜžKœÜ]
-‹È‹JB‚ˆYˆ™\]Y\Ý
-Ù[‹Y]ÙˆÝ‹]ˆÝŠHOˆ[žN‚ˆ™\]Y\ÝH\›X‹œ™\]Y\Ý”™\]Y\Ý
-ˆˆžÐTWÔ“ÓÕ^Ü]H‹ˆY]Ù[Y]ÙˆXY\œÏ^Âˆ]]Üš^˜][ÛˆŽˆˆ™X\™\ˆÜÙ[‹ÚÙ[ŸH‹ˆXØÙ\Žˆ˜\XØ][Û‹Ý›™™Ú]XŠÚœÛÛˆ‹ˆ–QÚ]X‹P\KU™\œÚ[ÛˆŽˆŒŒŒ‹LLKLŽ‹ˆ•\Ù\‹PYÙ[Žˆ›™[Xœ˜K^ÛÙLË\]Y]YKZ˜[š]Üˆ‹ˆKˆ
-BˆžN‚ˆÚ]\›X‹œ™\]Y\Ý\›Ü[Š™\]Y\Ý[Y[Ý]LÌ
-H\È™\ÜÛœÙN‚ˆ›ÙHH™\ÜÛœÙKœ™XY
+The xcode-27 runner is scarce. This helper only cancels a queued or in-progress
+xcode27-pr-command run when GitHub's current open-PR state proves that the
+run's exact branch/SHA is no longer the exact head of any open PR.
 
-BˆYˆ›Ý›ÙN‚ˆ™]\›ˆ›Û™Bˆ™]\›ˆœÛÛ‹›ØYÊ›ÙK™XÛÙJ]‹NŠJBˆ^Ù\\›X‹™\œ›Ü‹’\œ›Üˆ\È^Î‚ˆ›ÙHH^Ëœ™XY
+Current exact open PR heads are always preserved. Ambiguous API/state failures
+fail closed and preserve the run.
+"""
 
-K™XÛÙJ]‹N‹\œ›ÜœÏHœ™\XÙHŠBˆ˜Z\ÙH[[YQ\œ›ÜŠˆ‘Ú]XˆTHÛY]ÙHÜ]H˜Z[YˆÙ^Ë˜ÛÙ_NˆØ›Ù_HŠHœ›ÛH^Â‚ˆYˆ[œ×ÝÚ]ÜÝ]\ÊÙ[‹Ý]\ÎˆÝŠHOˆ\ÝÙXÝÜÝ‹[žWWN‚ˆYˆÝ]\È›Ý[ˆÐSÑSP“WÔÕUTÑTÎ‚ˆ˜Z\ÙH˜[YQ\œ›ÜŠˆ[œÝ\ÜYØ[˜Ù[X›HÝ]\ÎˆÜÝ]\ßHŠBˆ[œÎˆ\ÝÙXÝÜÝ‹[žWWHH×Bˆ›ÜˆYÙH[ˆ˜[™ÙJKŒJN‚ˆ]Y\žHH\›X‹œ\œÙK\›[˜ÛÙJˆÈœÝ]\ÈŽˆÝ]\Ëœ\—ÜYÙHŽˆLœYÙHŽˆYÙ_Bˆ
-Bˆ^[ØYHÙ[‹œ™\]Y\Ý
-ˆ‘ÑU‹ˆˆ‹Ü™\ÜËÞÜÙ[‹›ÝÛ™\ŸKÞÜÙ[‹œ™\ßKØXÝ[ÛœËÝÛÜšÙ›ÝÜËÞÕÓÔ’Ñ“ÕßKÜ[œÏÞÜ]Y\ž_H‹ˆ
-Bˆ˜]ÚH\Ý
+from __future__ import annotations
 
-^[ØYÜˆßJK™Ù]
-ÛÜšÙ›Ý×Ü[œÈŠHÜˆ×JBˆ[œË™^[™
-˜]Ú
-BˆYˆ[Š˜]Ú
-HL‚ˆœ™XZÂˆ™]\›ˆ[œÂ‚ˆYˆØ[™Y]WÜ[œÊÙ[ŠHOˆ\ÝÙXÝÜÝ‹[žWWN‚ˆ[œÎˆ\ÝÙXÝÜÝ‹[žWWHH×BˆÙY[—ÚYÎˆÙ]Ú[HHÙ]
+import argparse
+import datetime as dt
+import json
+import os
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from dataclasses import dataclass
+from typing import Any, Iterable
 
-Bˆ›ÜˆÝ]\È[ˆ
-œ]Y]YY‹š[—Ü›ÙÜ™\ÜÈŠN‚ˆ›Üˆ[ˆ[ˆÙ[‹œ[œ×ÝÚ]ÜÝ]\ÊÝ]\ÊN‚ˆ[—ÚYH[
-[‹™Ù]
-šY‹LJJBˆYˆ[—ÚY[ˆÙY[—ÚYÎ‚ˆÛÛ[YBˆÙY[—ÚYË˜Y
-[—ÚY
-Bˆ[œË˜\[™
-[ŠBˆ™]\›ˆ[œÂ‚ˆYˆÜ[—Üœ×Ù›Ü—Øœ˜[˜Ú
-Ù[‹œ˜[˜ÚˆÝŠHOˆ\ÝÙXÝÜÝ‹[žWWN‚ˆ]Y\žHH\›X‹œ\œÙK\›[˜ÛÙJˆÈœÝ]HŽˆ›Ü[ˆ‹šXYŽˆˆžÜÙ[‹›ÝÛ™\ŸNžØœ˜[˜ÚH‹œ\—ÜYÙHŽˆLBˆ
-Bˆ^[ØYHÙ[‹œ™\]Y\Ý
-ˆ‘ÑU‹ˆ‹Ü™\ÜËÞÜÙ[‹›ÝÛ™\ŸKÞÜÙ[‹œ™\ßKÜ[ÏÞÜ]Y\ž_H‚ˆ
-Bˆ™]\›ˆ\Ý
-^[ØYÜˆ×JB‚ˆYˆØ[˜Ù[Ü[ŠÙ[‹[—ÚYˆ[
-HOˆ›Û™N‚ˆÙ[‹œ™\]Y\Ý
-ˆ”ÔÕ‹ˆ‹Ü™\ÜËÞÜÙ[‹›ÝÛ™\ŸKÞÜÙ[‹œ™\ßKØXÝ[ÛœËÜ[œËÞÜ[—ÚYKØØ[˜Ù[‚ˆ
-B‚‚™YˆÙ[—Ý\Ý
+API_ROOT = "https://api.github.com"
+WORKFLOW = "xcode27-pr-command.yml"
+ALLOWED_EVENTS = {"pull_request", "issue_comment"}
+CANCELLABLE_STATUSES = {"queued", "in_progress"}
 
-HOˆ›Û™N‚ˆ›ÝÈH™]][YJŒ‹L‹Ìš[™›ÏY[Y^›Û™K]ÊB‚ˆYˆ[Š
-Š›Ý™\œšY\Îˆ[žJHOˆXÝÜÝ‹[žWN‚ˆ˜\ÙHHÂˆšYŽˆKˆœÝ]\ÈŽˆœ]Y]YY‹ˆ™]™[Žˆœ[Ü™\]Y\Ý‹ˆšXYØœ˜[˜ÚŽˆœ\˜[[Ù^[\H‹ˆšXYÜÚHŽˆ˜XXH‹ˆ˜Ü™X]YØ]ŽˆŒŒ‹LLLŽŒŒˆ‹ˆBˆ˜\ÙK\]JÝ™\œšY\ÊBˆ™]\›ˆ˜\ÙB‚ˆÝ\œ™[ÜˆHÈšXYŽˆÈœ™YˆŽˆœ\˜[[Ù^[\H‹œÚHŽˆ˜XXHŸ_Bˆ™]Ù\—ÜˆHÈšXYŽˆÈœ™YˆŽˆœ\˜[[Ù^[\H‹œÚHŽˆ˜˜˜ˆŸ_B‚ˆ\ÜÙ\Û\ÜÚYžWÜ[Šˆ[Š
-KØÝ\œ™[Ü—K›ÝÏ[›ÝËZ[š[][WØYÙWÜÙXÛÛ™ÏLLŒˆ
-HOHXÚ\Ú[ÛŠ˜[ÙKœ›ÝXÝYÝ\œ™[^XÝXYÙˆ[ˆÜ[ˆˆŠBˆ\ÜÙ\Û\ÜÚYžWÜ[Šˆ[Š
-KÛ™]Ù\—Ü—K›ÝÏ[›ÝËZ[š[][WØYÙWÜÙXÛÛ™ÏLLŒˆ
-K˜Ø[˜Ù[ˆ\ÜÙ\Û\ÜÚYžWÜ[Šˆ[Š
-K×K›ÝÏ[›ÝËZ[š[][WØYÙWÜÙXÛÛ™ÏLLŒˆ
-K˜Ø[˜Ù[ˆ\ÜÙ\Û\ÜÚYžWÜ[Šˆ[ŠÝ]\ÏHš[—Ü›ÙÜ™\ÜÈŠK×K›ÝÏ[›ÝËZ[š[][WØYÙWÜÙXÛÛ™ÏLLŒˆ
-K˜Ø[˜Ù[ˆ\ÜÙ\Û\ÜÚYžWÜ[Šˆ[ŠÝ]\ÏHš[—Ü›ÙÜ™\ÜÈŠKØÝ\œ™[Ü—K›ÝÏ[›ÝËZ[š[][WØYÙWÜÙXÛÛ™ÏLLŒˆ
-HOHXÚ\Ú[ÛŠ˜[ÙKœ›ÝXÝYÝ\œ™[^XÝXYÙˆ[ˆÜ[ˆˆŠBˆ\ÜÙ\›ÝÛ\ÜÚYžWÜ[Šˆ[ŠÜ™X]YØ]HŒŒ‹LLLŽŒŽNŒÌˆŠKˆ×Kˆ›ÝÏ[›ÝËˆZ[š[][WØYÙWÜÙXÛÛ™ÏLLŒˆ
-K˜Ø[˜Ù[ˆ\ÜÙ\›ÝÛ\ÜÚYžWÜ[Šˆ[Š]™[HÛÜšÙ›Ý×Ù\Ü]ÚŠK×K›ÝÏ[›ÝËZ[š[][WØYÙWÜÙXÛÛ™ÏLLŒˆ
-K˜Ø[˜Ù[ˆ\ÜÙ\›ÝÛ\ÜÚYžWÜ[Šˆ[ŠXYØœ˜[˜ÚS›Û™JK×K›ÝÏ[›ÝËZ[š[][WØYÙWÜÙXÛÛ™ÏLLŒˆ
-K˜Ø[˜Ù[ˆ\ÜÙ\›ÝÛ\ÜÚYžWÜ[Šˆ[ŠÝ]\ÏH˜ÛÛ\]YŠK×K›ÝÏ[›ÝËZ[š[][WØYÙWÜÙXÛÛ™ÏLLŒˆ
-K˜Ø[˜Ù[‚ˆš[
-žÛÙL×Ü]Y]YWÚ˜[š]ÜˆÙ[‹]\ÝˆTÔÈŠB‚‚™YˆXZ[Š
-HOˆ[‚ˆ\œÙ\ˆH\™Ü\œÙK\™Ý[Y[\œÙ\Š
-Bˆ\œÙ\‹˜YØ\™Ý[Y[
-‹KX\H‹XÝ[ÛHœÝÜ™WÝYH‹[H˜Ø[˜Ù[›Ý™[‹\Ý[H]Y]YYÚ[‹\›ÙÜ™\ÜÈ[œÈŠBˆ\œÙ\‹˜YØ\™Ý[Y[
-‹K\Ù[‹]\Ý‹XÝ[ÛHœÝÜ™WÝYHŠBˆ\œÙ\‹˜YØ\™Ý[Y[
-‹K\™\ÜÚ]ÜžH‹Y˜][[ÜË™[š\›Û‹™Ù]
-‘ÒUP—Ô‘TÔÒUÔ–HŠJBˆ\œÙ\‹˜YØ\™Ý[Y[
-‹K]ÚÙ[ˆ‹Y˜][[ÜË™[š\›Û‹™Ù]
-‘ÒUP—ÕÒÑSˆŠJBˆ\œÙ\‹˜YØ\™Ý[Y[
-‹K[Z[š[][KXYÙK\ÙXÛÛ™È‹\OZ[Y˜][LLŒ
-Bˆ\œÙ\‹˜YØ\™Ý[Y[
-‹K[X^XØ[˜Ù[][ÛœÈ‹\OZ[Y˜][LŒ
-Bˆ\™ÜÈH\œÙ\‹œ\œÙWØ\™ÜÊ
-B‚ˆYˆ\™ÜËœÙ[—Ý\Ý‚ˆÙ[—Ý\Ý
 
-BˆYˆ›Ý\™ÜË˜\N‚ˆ™]\›ˆ‚ˆYˆ›Ý\™ÜËœ™\ÜÚ]ÜžN‚ˆ\œÙ\‹™\œ›ÜŠ‹K\™\ÜÚ]ÜžHÜˆÒUP—Ô‘TÔÒUÔ–H\È™\]Z\™YŠBˆYˆ›Ý\™ÜËÚÙ[Ž‚ˆ\œÙ\‹™\œ›ÜŠ‹K]ÚÙ[ˆÜˆÒUP—ÕÒÑSˆ\È™\]Z\™YŠBˆYˆ\™ÜË›Z[š[][WØYÙWÜÙXÛÛ™È‚ˆ\œÙ\‹™\œ›ÜŠ‹K[Z[š[][KXYÙK\ÙXÛÛ™È]\Ý™HHŠBˆYˆ\™ÜË›X^ØØ[˜Ù[][ÛœÈN‚ˆ\œÙ\‹™\œ›ÜŠ‹K[X^XØ[˜Ù[][ÛœÈ]\Ý™HHHŠB‚ˆ\HHÚ]XTJ\™ÜËÚÙ[‹\™ÜËœ™\ÜÚ]ÜžJBˆ[œÈH\K˜Ø[™Y]WÜ[œÊ
-Bˆ›ÝÈH™]][YK››ÝÊ[Y^›Û™K]ÊBˆœ˜[˜ÚØØXÚNˆXÝÜÝ‹\ÝÙXÝÜÝ‹[žWWH›Û™WHHßBˆØ[™Y]\Îˆ\ÝÝ\VÙXÝÜÝ‹[žWKXÚ\Ú[Û—WHH×Bˆ›ÝXÝYHˆ[XšYÝ[Ý\ÈH‚ˆ›Üˆ[ˆ[ˆ[œÎ‚ˆœ˜[˜ÚH[‹™Ù]
-šXYØœ˜[˜ÚŠBˆYˆ›Ýœ˜[˜Ú‚ˆXÚ\Ú[ÛˆHXÚ\Ú[ÛŠ˜[ÙK›Z\ÜÚ[™Èœ˜[˜ÚÔÒKÝ[YNÈ™\Ù\™HŠBˆ[ÙN‚ˆYˆœ˜[˜Ú›Ý[ˆœ˜[˜ÚØØXÚN‚ˆžN‚ˆœ˜[˜ÚØØXÚVØœ˜[˜ÚHH\K›Ü[—Üœ×Ù›Ü—Øœ˜[˜Ú
-œ˜[˜Ú
-Bˆ^Ù\[[YQ\œ›Üˆ\È^Î‚ˆš[
-ˆ”‘TÑT•‘Hœ˜[˜Ú^Øœ˜[˜Ú\ŸNˆÜ[‹TˆÛÚÝ\˜Z[YˆÙ^ßHŠBˆœ˜[˜ÚØØXÚVØœ˜[˜ÚHH›Û™B‚ˆÜ[—ÜœÈHœ˜[˜ÚØØXÚVØœ˜[˜ÚBˆYˆÜ[—ÜœÈ\È›Û™N‚ˆ[XšYÝ[Ý\È
-ÏHBˆÛÛ[YB‚ˆXÚ\Ú[ÛˆHÛ\ÜÚYžWÜ[Šˆ[‹ˆÜ[—ÜœËˆ›ÝÏ[›ÝËˆZ[š[][WØYÙWÜÙXÛÛ™ÏX\™ÜË›Z[š[][WØYÙWÜÙXÛÛ™Ëˆ
-B‚ˆYˆXÚ\Ú[Û‹˜Ø[˜Ù[‚ˆØ[™Y]\Ë˜\[™
+@dataclass(frozen=True)
+class Decision:
+    cancel: bool
+    reason: str
 
-[‹XÚ\Ú[ÛŠJBˆ[Yˆœ›ÝXÝYÝ\œ™[^XÝXYˆ[ˆXÚ\Ú[Û‹œ™X\ÛÛŽ‚ˆ›ÝXÝY
-ÏHB‚ˆ]Y]YYHÝ[J[‹™Ù]
-œÝ]\ÈŠHOHœ]Y]YYˆ›Üˆ[ˆ[ˆ[œÊBˆ[—Ü›ÙÜ™\ÜÈHÝ[J[‹™Ù]
-œÝ]\ÈŠHOHš[—Ü›ÙÜ™\ÜÈˆ›Üˆ[ˆ[ˆ[œÊBˆš[
-ˆˆ˜Ø[™Y]WÜ[œÏ^Û[Š[œÊ_H]Y]YY^Ü]Y]YYH[—Ü›ÙÜ™\ÜÏ^Ú[—Ü›ÙÜ™\ÜßH‚ˆˆœÝ[WØØ[™Y]\Ï^Û[ŠØ[™Y]\Ê_H›ÝXÝYÙ^XÝÛÜ[—ÚXYÏ^Ü›ÝXÝYH‚ˆˆ›ÛÚÝ\Ù˜Z[\™\×Ü™\Ù\™Y^Ø[XšYÝ[Ý\ßH‚ˆ
-B‚ˆØ[˜Ù[YHˆ›Üˆ[‹XÚ\Ú[Ûˆ[ˆØ[™Y]\ÖÎˆ\™ÜË›X^ØØ[˜Ù[][Ûœ×N‚ˆ[—ÚYH[
-[–ÈšY—JBˆœ˜[˜ÚH[‹™Ù]
-šXYØœ˜[˜ÚŠBˆÚHH[‹™Ù]
-šXYÜÚHŠBˆÝ]\ÈH[‹™Ù]
-œÝ]\ÈŠBˆ™Yš^HÐSÑSˆYˆ\™ÜË˜\H[ÙH•ÓÕSÐÐSÑS‚ˆš[
-ˆˆžÜ™Yš^H[^Ü[—ÚYHÝ]\Ï^ÜÝ]\ßHœ˜[˜Ú^Øœ˜[˜ÚHÚO^ÜÚ_H‚ˆˆœ™X\ÛÛ^ÙXÚ\Ú[Û‹œ™X\ÛÛŸH‚ˆ
-BˆYˆ›Ý\™ÜË˜\N‚ˆÛÛ[YBˆžN‚ˆ\K˜Ø[˜Ù[Ü[Š[—ÚY
-BˆØ[˜Ù[Y
-ÏHBˆ^Ù\[[YQ\œ›Üˆ\È^Î‚ˆÈHØ[˜Ù[X›H[ˆØ[ˆ˜XÙHÈÛÛ\][Û‹ØØ[˜Ù[][ÛˆY\ˆ\Ý[™Ëˆ™\Ù\™BˆÈH˜Z[XÛÜÙYÛ\ÜÚYšXØ][ÛˆÙÈ[™ÛÛ[YHÚ][™\[™[[œË‚ˆš[
-ˆÐSÑSÔPÑH[^Ü[—ÚYNˆÙ^ßH‹š[O\Þ\ËœÝ\œŠB‚ˆYˆ\™ÜË˜\N‚ˆš[
-ˆ˜Ø[˜Ù[Y^ØØ[˜Ù[YHØ\^Ø\™ÜË›X^ØØ[˜Ù[][ÛœßHŠBˆ[ÙN‚ˆš[
-™žK\[ˆÛ›NÈ\ÜÈKX\HÈØ[˜Ù[›Ý™[‹\Ý[H]Y]YYÚ[‹\›ÙÜ™\ÜÈ[œÈŠBˆ™]\›ˆ‚‚šYˆ×Û˜[YW×ÈOH—×ÛXZ[—×ÈŽ‚ˆ˜Z\ÙHÞ\Ý[Q^]
-XZ[Š
-JB
+
+def _parse_github_time(value: str) -> dt.datetime:
+    parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt.timezone.utc)
+    return parsed.astimezone(dt.timezone.utc)
+
+
+def classify_run(
+    run: dict[str, Any],
+    open_prs: Iterable[dict[str, Any]],
+    *,
+    now: dt.datetime,
+    minimum_age_seconds: int,
+) -> Decision:
+    """Return a fail-closed cancellation decision using only current PR truth."""
+
+    status = run.get("status")
+    if status not in CANCELLABLE_STATUSES:
+        return Decision(False, "status is not cancellable")
+    if run.get("event") not in ALLOWED_EVENTS:
+        return Decision(False, "unsupported event; preserve")
+
+    branch = run.get("head_branch")
+    head_sha = run.get("head_sha")
+    created_at = run.get("created_at")
+    if not branch or not head_sha or not created_at:
+        return Decision(False, "missing branch/SHA/time; preserve")
+
+    try:
+        age = (now - _parse_github_time(created_at)).total_seconds()
+    except (TypeError, ValueError):
+        return Decision(False, "invalid creation time; preserve")
+
+    if age < minimum_age_seconds:
+        return Decision(False, "inside API-consistency grace period")
+
+    prs = list(open_prs)
+    for pr in prs:
+        head = pr.get("head") or {}
+        if head.get("ref") == branch and head.get("sha") == head_sha:
+            return Decision(False, "protected current exact head of an open PR")
+
+    if not prs:
+        return Decision(True, f"no open PR remains for {status} branch")
+
+    return Decision(
+        True,
+        f"{status} SHA is not the current exact head of any open PR on branch",
+    )
+
+
+class GitHubAPI:
+    def __init__(self, token: str, repository: str) -> None:
+        if "/" not in repository:
+            raise ValueError("repository must be owner/name")
+        self.token = token
+        self.repository = repository
+        self.owner, self.repo = repository.split("/", 1)
+
+    def request(self, method: str, path: str) -> Any:
+        request = urllib.request.Request(
+            f"{API_ROOT}{path}",
+            method=method,
+            headers={
+                "Authorization": f"Bearer {self.token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "nembra-xcode27-queue-janitor",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                body = response.read()
+                if not body:
+                    return None
+                return json.loads(body.decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(
+                f"GitHub API {method} {path} failed: HTTP {exc.code}: {body}"
+            ) from exc
+
+    def runs_with_status(self, status: str) -> list[dict[str, Any]]:
+        if status not in CANCELLABLE_STATUSES:
+            raise ValueError(f"unsupported cancellable status: {status}")
+        runs: list[dict[str, Any]] = []
+        for page in range(1, 21):
+            query = urllib.parse.urlencode(
+                {"status": status, "per_page": 100, "page": page}
+            )
+            payload = self.request(
+                "GET",
+                f"/repos/{self.owner}/{self.repo}/actions/workflows/{WORKFLOW}/runs?{query}",
+            )
+            batch = list((payload or {}).get("workflow_runs") or [])
+            runs.extend(batch)
+            if len(batch) < 100:
+                break
+        return runs
+
+    def candidate_runs(self) -> list[dict[str, Any]]:
+        runs: list[dict[str, Any]] = []
+        seen_ids: set[int] = set()
+        for status in ("queued", "in_progress"):
+            for run in self.runs_with_status(status):
+                run_id = int(run.get("id", -1))
+                if run_id in seen_ids:
+                    continue
+                seen_ids.add(run_id)
+                runs.append(run)
+        return runs
+
+    def open_prs_for_branch(self, branch: str) -> list[dict[str, Any]]:
+        query = urllib.parse.urlencode(
+            {"state": "open", "head": f"{self.owner}:{branch}", "per_page": 100}
+        )
+        payload = self.request(
+            "GET", f"/repos/{self.owner}/{self.repo}/pulls?{query}"
+        )
+        return list(payload or [])
+
+    def cancel_run(self, run_id: int) -> None:
+        self.request(
+            "POST", f"/repos/{self.owner}/{self.repo}/actions/runs/{run_id}/cancel"
+        )
+
+
+def self_test() -> None:
+    now = dt.datetime(2026, 8, 8, 12, 30, tzinfo=dt.timezone.utc)
+
+    def run(**overrides: Any) -> dict[str, Any]:
+        base = {
+            "id": 1,
+            "status": "queued",
+            "event": "pull_request",
+            "head_branch": "parallel/example",
+            "head_sha": "aaa",
+            "created_at": "2026-08-08T12:00:00Z",
+        }
+        base.update(overrides)
+        return base
+
+    current_pr = {"head": {"ref": "parallel/example", "sha": "aaa"}}
+    newer_pr = {"head": {"ref": "parallel/example", "sha": "bbb"}}
+
+    assert classify_run(
+        run(), [current_pr], now=now, minimum_age_seconds=120
+    ) == Decision(False, "protected current exact head of an open PR")
+    assert classify_run(
+        run(), [newer_pr], now=now, minimum_age_seconds=120
+    ).cancel
+    assert classify_run(
+        run(), [], now=now, minimum_age_seconds=120
+    ).cancel
+    assert classify_run(
+        run(status="in_progress"), [], now=now, minimum_age_seconds=120
+    ).cancel
+    assert classify_run(
+        run(status="in_progress"), [current_pr], now=now, minimum_age_seconds=120
+    ) == Decision(False, "protected current exact head of an open PR")
+    assert not classify_run(
+        run(created_at="2026-08-08T12:29:30Z"),
+        [],
+        now=now,
+        minimum_age_seconds=120,
+    ).cancel
+    assert not classify_run(
+        run(event="workflow_dispatch"), [], now=now, minimum_age_seconds=120
+    ).cancel
+    assert not classify_run(
+        run(head_branch=None), [], now=now, minimum_age_seconds=120
+    ).cancel
+    assert not classify_run(
+        run(status="completed"), [], now=now, minimum_age_seconds=120
+    ).cancel
+
+    print("xcode27_queue_janitor self-test: PASS")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="cancel proven-stale queued/in-progress runs",
+    )
+    parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY"))
+    parser.add_argument("--token", default=os.environ.get("GITHUB_TOKEN"))
+    parser.add_argument("--minimum-age-seconds", type=int, default=120)
+    parser.add_argument("--max-cancellations", type=int, default=200)
+    args = parser.parse_args()
+
+    if args.self_test:
+        self_test()
+        if not args.apply:
+            return 0
+
+    if not args.repository:
+        parser.error("--repository or GITHUB_REPOSITORY is required")
+    if not args.token:
+        parser.error("--token or GITHUB_TOKEN is required")
+    if args.minimum_age_seconds < 0:
+        parser.error("--minimum-age-seconds must be >= 0")
+    if args.max_cancellations < 1:
+        parser.error("--max-cancellations must be >= 1")
+
+    api = GitHubAPI(args.token, args.repository)
+    runs = api.candidate_runs()
+    now = dt.datetime.now(dt.timezone.utc)
+    branch_cache: dict[str, list[dict[str, Any]] | None] = {}
+    candidates: list[tuple[dict[str, Any], Decision]] = []
+    protected = 0
+    ambiguous = 0
+
+    for run in runs:
+        branch = run.get("head_branch")
+        if not branch:
+            decision = Decision(False, "missing branch/SHA/time; preserve")
+        else:
+            if branch not in branch_cache:
+                try:
+                    branch_cache[branch] = api.open_prs_for_branch(branch)
+                except RuntimeError as exc:
+                    print(f"PRESERVE branch={branch!r}: open-PR lookup failed: {exc}")
+                    branch_cache[branch] = None
+
+            open_prs = branch_cache[branch]
+            if open_prs is None:
+                ambiguous += 1
+                continue
+
+            decision = classify_run(
+                run,
+                open_prs,
+                now=now,
+                minimum_age_seconds=args.minimum_age_seconds,
+            )
+
+        if decision.cancel:
+            candidates.append((run, decision))
+        elif "protected current exact head" in decision.reason:
+            protected += 1
+
+    queued = sum(run.get("status") == "queued" for run in runs)
+    in_progress = sum(run.get("status") == "in_progress" for run in runs)
+    print(
+        f"candidate_runs={len(runs)} queued={queued} in_progress={in_progress} "
+        f"stale_candidates={len(candidates)} "
+        f"protected_exact_open_heads={protected} "
+        f"lookup_failures_preserved={ambiguous}"
+    )
+
+    cancelled = 0
+    for run, decision in candidates[: args.max_cancellations]:
+        run_id = int(run["id"])
+        branch = run.get("head_branch")
+        sha = run.get("head_sha")
+        status = run.get("status")
+        prefix = "CANCEL" if args.apply else "WOULD_CANCEL"
+        print(
+            f"{prefix} run={run_id} status={status} branch={branch} sha={sha} "
+            f"reason={decision.reason}"
+        )
+        if not args.apply:
+            continue
+        try:
+            api.cancel_run(run_id)
+            cancelled += 1
+        except RuntimeError as exc:
+            print(f"CANCEL_RACE run={run_id}: {exc}", file=sys.stderr)
+
+    if args.apply:
+        print(f"cancelled={cancelled} cap={args.max_cancellations}")
+    else:
+        print(
+            "dry-run only; pass --apply to cancel proven-stale "
+            "queued/in-progress runs"
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
