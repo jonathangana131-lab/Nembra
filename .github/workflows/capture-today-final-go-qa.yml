@@ -16,6 +16,7 @@ on:
       - scripts/ci/es80_today_trusted_capture_xcode_subject.py
       - scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
       - scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py
+      - scripts/ci/tests/test_capture_trusted_xcode_runner_worktree_custody.py
       - scripts/ci/es80_today_final_go_publication.py
       - scripts/ci/tests/test_es80_today_final_go_publication.py
       - .github/workflows/capture-xcode27-trusted-command.yml
@@ -49,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile scripts/ci/es80_today_final_go_record.py scripts/ci/es80_today_final_go_foundation.py scripts/ci/_es80_today_final_go_foundation_impl.py scripts/ci/tests/test_es80_today_final_go_record.py scripts/ci/tests/test_es80_today_final_go_foundation.py scripts/ci/tests/test_es80_today_final_go_direct_execution_disabled.py
-          python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py
+          python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py scripts/ci/tests/test_capture_trusted_xcode_runner_worktree_custody.py
           python3 -m py_compile scripts/ci/es80_today_final_go_publication.py scripts/ci/tests/test_es80_today_final_go_publication.py
           python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_git_custody.py
 
@@ -64,6 +65,9 @@ jobs:
 
       - name: Preserve retained artifact admission contract
         run: python3 scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py -v
+
+      - name: Require final runner worktree-byte custody
+        run: python3 scripts/ci/tests/test_capture_trusted_xcode_runner_worktree_custody.py -v
 
       - name: Require failure-atomic no-replace publication
         run: python3 scripts/ci/tests/test_es80_today_final_go_publication.py -v
@@ -89,13 +93,15 @@ jobs:
           set -euo pipefail
           grep -Fq 'TRUSTED_WORKFLOW_NAME = "Capture Trusted Xcode 27 Exact-Head QA"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'TRUSTED_WORKFLOW_PATH = ".github/workflows/capture-xcode27-trusted-command.yml"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
-          grep -Fq 'TRUSTED_WORKFLOW_BLOB_SHA = "f139e236bdd1ff1f70afc257898a35e32d3d02db"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          grep -Fq 'TRUSTED_WORKFLOW_BLOB_SHA = "2e3b18ed5993d7f1e61429f8947d58e0d69870c7"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_PATH = "scripts/ci/xcode27_simulator_capture.sh"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_BLOB_SHA = "4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'name: Capture Trusted Xcode 27 Exact-Head QA' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq 'name: Build, test, and capture trusted exact Capture head' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq 'name: Verify trusted Simulator evidence-producer custody' .github/workflows/capture-xcode27-trusted-command.yml
-          grep -Fq 'expected_blob="4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"' .github/workflows/capture-xcode27-trusted-command.yml
+          grep -Fq 'TRUSTED_CAPTURE_SIMULATOR_RUNNER_BLOB_SHA: 4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9' .github/workflows/capture-xcode27-trusted-command.yml
+          grep -Fq 'rev-parse --verify "HEAD:$runner"' .github/workflows/capture-xcode27-trusted-command.yml
+          grep -Fq 'hash-object --no-filters "$runner"' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq 'PINNED_CROSSCHECK_COMMIT = "d827a296048386bda62024ea3278775d5344c47c"' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'PINNED_CROSSCHECK_BLOB = "c3b2b620280484c05316fc5c2fa2ca451f1fdc83"' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'RESEARCH_COMPILE_MODE = "private-today-v1"' scripts/ci/es80_today_final_go_foundation.py
