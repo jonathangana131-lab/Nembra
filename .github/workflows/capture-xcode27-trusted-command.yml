@@ -144,6 +144,28 @@ jobs:
           python3 scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
           python3 scripts/ci/es80_field_authorization_envelope.py --self-test
 
+      - name: Verify trusted Simulator evidence-producer custody
+        env:
+          TRUSTED_CAPTURE_SIMULATOR_RUNNER_BLOB_SHA: 4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9
+        run: |
+          set -euo pipefail
+          runner="scripts/ci/xcode27_simulator_capture.sh"
+          git_env=(
+            /usr/bin/env -i
+            PATH=/usr/bin:/bin
+            HOME=/tmp
+            LC_ALL=C
+            GIT_CONFIG_NOSYSTEM=1
+            GIT_CONFIG_GLOBAL=/dev/null
+            GIT_NO_REPLACE_OBJECTS=1
+          )
+          tracked_blob="$("${git_env[@]}" /usr/bin/git rev-parse --verify "HEAD:$runner")"
+          worktree_blob="$("${git_env[@]}" /usr/bin/git hash-object --no-filters "$runner")"
+          printf 'Trusted Simulator runner blob: %s\nCandidate HEAD runner blob: %s\nWorktree runner blob: %s\n' \
+            "$TRUSTED_CAPTURE_SIMULATOR_RUNNER_BLOB_SHA" "$tracked_blob" "$worktree_blob"
+          test "$tracked_blob" = "$TRUSTED_CAPTURE_SIMULATOR_RUNNER_BLOB_SHA"
+          test "$worktree_blob" = "$TRUSTED_CAPTURE_SIMULATOR_RUNNER_BLOB_SHA"
+
       - name: Build, test, and capture Simulator states
         run: scripts/ci/xcode27_simulator_capture.sh
 
