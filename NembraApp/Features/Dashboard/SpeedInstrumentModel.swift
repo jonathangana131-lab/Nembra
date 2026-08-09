@@ -311,7 +311,9 @@ struct DashboardSpeedInstrumentView: View {
         TimelineView(
             .animation(
                 minimumInterval: 1.0 / 60.0,
-                paused: reduceMotion || !model.isAnimationActive
+                paused: reduceMotion
+                    || !model.isAnimationActive
+                    || !isLivePresentation(speedAvailability)
             )
         ) { _ in
             let frame = model.presentationFrame(
@@ -339,6 +341,13 @@ struct DashboardSpeedInstrumentView: View {
         .onDisappear {
             model.stop()
         }
+    }
+
+    private func isLivePresentation(_ availability: SpeedEvidenceAvailability) -> Bool {
+        if case .live = availability {
+            return true
+        }
+        return false
     }
 
     private func instrumentContent(
