@@ -1,0 +1,63 @@
+name: TEMP ES80 Final Share Contract Fix f853
+
+on:
+  push:
+    branches:
+      - agent/es80-fix-final-share-source-contract-f853
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact applicator head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply validation-only source-contract repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          test_path = Path("NembraUITests/ES80ResearchCaptureUITests.swift")
+          shell_path = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")
+          text = test_path.read_text(encoding="utf-8")
+          shell = shell_path.read_text(encoding="utf-8")
+
+          old = 'source.contains("if let data = finalShareData")'
+          new = 'source.contains("guard let data = finalShareData")'
+          if text.count(old) != 1:
+              raise SystemExit(f"expected exactly one stale assertion, found {text.count(old)}")
+          if new in text:
+              raise SystemExit("replacement assertion already present")
+          for required in (
+              'guard let data = finalShareData,',
+              'coordinator.finalizedShareArtifactForCurrentApplication(setup: setup)',
+              'PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)',
+              'finalShareIntegrityReport = report',
+          ):
+              if required not in shell:
+                  raise SystemExit(f"reviewed final Share authority marker missing: {required}")
+
+          test_path.write_text(text.replace(old, new), encoding="utf-8")
+          PY
+
+          rm .github/workflows/temp-es80-final-share-source-contract-f853.yml
+          git diff --check
+          git diff -- NembraUITests/ES80ResearchCaptureUITests.swift .github/workflows/temp-es80-final-share-source-contract-f853.yml
+
+      - name: Commit clean net test-only repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-go-applicator"
+          git config user.email "nembra-go-applicator@users.noreply.github.com"
+          git add NembraUITests/ES80ResearchCaptureUITests.swift .github/workflows/temp-es80-final-share-source-contract-f853.yml
+          git commit -m "test(capture): follow retained Share helper spelling"
+          git push origin HEAD:"$GITHUB_REF_NAME"
