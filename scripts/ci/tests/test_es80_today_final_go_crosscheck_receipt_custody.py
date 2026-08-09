@@ -59,7 +59,9 @@ class CrosscheckReceiptCustodyTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with mock.patch.object(final_go, "_git", side_effect=self.git_result):
+            # Direct `_crosscheck_subject` consumes the implementation's closed Git seam. The
+            # higher-level build composer is what temporarily maps the public seam into it.
+            with mock.patch.object(final_go._impl, "_git", side_effect=self.git_result):
                 with self.assertRaisesRegex(
                     final_go.FinalGoError,
                     "were not emitted by the pinned producer",
