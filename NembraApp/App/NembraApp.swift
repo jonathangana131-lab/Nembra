@@ -530,12 +530,17 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
 @MainActor
 private struct ES80ExperimentOneFieldNoGoView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var engineeringDetailsExpanded = false
     @State private var runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity?
     @State private var runtimeBuildIdentityCheckFinished = false
 
     private var recipeID: String {
         PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue
+    }
+
+    private var usesAccessibilityComposition: Bool {
+        dynamicTypeSize.isAccessibilitySize
     }
 
     private var physicalLockAccessibilityLabel: String {
@@ -553,77 +558,136 @@ private struct ES80ExperimentOneFieldNoGoView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: verticalSizeClass == .compact ? 10 : 28) {
-                VStack(alignment: .leading, spacing: verticalSizeClass == .compact ? 6 : 14) {
-                    HStack(spacing: 12) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                                .fill(.white.opacity(0.08))
-                                .frame(
-                                    width: verticalSizeClass == .compact ? 44 : 52,
-                                    height: verticalSizeClass == .compact ? 44 : 52
-                                )
+            VStack(
+                alignment: .leading,
+                spacing: usesAccessibilityComposition ? 12 : (verticalSizeClass == .compact ? 10 : 28)
+            ) {
+                noGoHero
+                physicalLockPanel
+                engineeringDetailsPanel
 
-                            Image(systemName: "lock.shield.fill")
-                                .font(.system(
-                                    size: verticalSizeClass == .compact ? 20 : 23,
-                                    weight: .semibold
-                                ))
-                                .foregroundStyle(.white)
-                        }
-                        .accessibilityHidden(true)
+                Text("No scooter action is required yet. Capture can only unlock on a Nembra build explicitly cleared for this physical procedure; changing a setting or preference cannot bypass this lock.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: 660)
+            .padding(.horizontal, usesAccessibilityComposition ? 18 : 22)
+            .padding(.top, usesAccessibilityComposition ? 6 : (verticalSizeClass == .compact ? 8 : 18))
+            .padding(.bottom, usesAccessibilityComposition ? 20 : (verticalSizeClass == .compact ? 20 : 42))
+            .frame(maxWidth: .infinity)
+        }
+        .accessibilityIdentifier("es80.capture.field-no-go-scroll")
+        .background(Color.black.ignoresSafeArea())
+        .navigationTitle("Nembra Capture")
+        .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("es80.capture.field-no-go")
+        .task { await loadRuntimeBuildIdentity() }
+    }
 
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("NEMBRA CAPTURE")
-                                .font(.caption.monospaced().weight(.bold))
-                                .tracking(1.4)
-                                .foregroundStyle(.secondary)
+    @ViewBuilder
+    private var noGoHero: some View {
+        VStack(alignment: .leading, spacing: usesAccessibilityComposition ? 7 : (verticalSizeClass == .compact ? 6 : 14)) {
+            if usesAccessibilityComposition {
+                Text("NEMBRA CAPTURE")
+                    .font(.caption2.monospaced().weight(.bold))
+                    .tracking(1.1)
+                    .foregroundStyle(.secondary)
 
-                            Text("Capture locked")
-                                .font(.system(
-                                    verticalSizeClass == .compact ? .title2 : .largeTitle,
-                                    design: .rounded,
-                                    weight: .semibold
-                                ))
-                                .foregroundStyle(.white)
-                        }
+                Text("Capture locked")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .accessibilityAddTraits(.isHeader)
+            } else {
+                HStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 15, style: .continuous)
+                            .fill(.white.opacity(0.08))
+                            .frame(
+                                width: verticalSizeClass == .compact ? 44 : 52,
+                                height: verticalSizeClass == .compact ? 44 : 52
+                            )
+
+                        Image(systemName: "lock.shield.fill")
+                            .font(.system(
+                                size: verticalSizeClass == .compact ? 20 : 23,
+                                weight: .semibold
+                            ))
+                            .foregroundStyle(.white)
                     }
+                    .accessibilityHidden(true)
 
-                    Text("This build is still finishing its final checks before it can collect real ES80 data.")
-                        .font(
-                            verticalSizeClass == .compact
-                                ? .subheadline.weight(.medium)
-                                : .title3.weight(.medium)
-                        )
-                        .foregroundStyle(.white)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("BUILD")
-                            .font(.caption2.monospaced().weight(.bold))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("NEMBRA CAPTURE")
+                            .font(.caption.monospaced().weight(.bold))
+                            .tracking(1.4)
                             .foregroundStyle(.secondary)
 
-                        if let runtimeBuildIdentity {
-                            Text(runtimeBuildIdentity.buildIdentifier)
-                                .font(.caption.monospaced().weight(.semibold))
-                                .foregroundStyle(.white)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.75)
-                        } else if runtimeBuildIdentityCheckFinished {
-                            Text("Identity unavailable")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.orange)
-                        } else {
-                            Text("Checking…")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                        }
+                        Text("Capture locked")
+                            .font(.system(
+                                verticalSizeClass == .compact ? .title2 : .largeTitle,
+                                design: .rounded,
+                                weight: .semibold
+                            ))
+                            .foregroundStyle(.white)
                     }
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(buildIdentityAccessibilityLabel)
-                    .accessibilityIdentifier("es80.capture.build-identity")
                 }
+            }
 
+            Text(
+                usesAccessibilityComposition
+                    ? "Final checks are still in progress before real ES80 data can be collected."
+                    : "This build is still finishing its final checks before it can collect real ES80 data."
+            )
+            .font(
+                usesAccessibilityComposition
+                    ? .footnote.weight(.medium)
+                    : (verticalSizeClass == .compact ? .subheadline.weight(.medium) : .title3.weight(.medium))
+            )
+            .foregroundStyle(.white)
+            .fixedSize(horizontal: false, vertical: true)
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("BUILD")
+                    .font(.caption2.monospaced().weight(.bold))
+                    .foregroundStyle(.secondary)
+
+                if let runtimeBuildIdentity {
+                    Text(runtimeBuildIdentity.buildIdentifier)
+                        .font(.caption.monospaced().weight(.semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(usesAccessibilityComposition ? 0.55 : 0.75)
+                } else if runtimeBuildIdentityCheckFinished {
+                    Text("Identity unavailable")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
+                } else {
+                    Text("Checking…")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(buildIdentityAccessibilityLabel)
+            .accessibilityIdentifier("es80.capture.build-identity")
+        }
+    }
+
+    @ViewBuilder
+    private var physicalLockPanel: some View {
+        Group {
+            if usesAccessibilityComposition {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Not ready for scooter capture yet")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                    Text("Physical ES80 capture stays locked until this exact build is explicitly cleared.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "exclamationmark.lock.fill")
                         .font(.title3.weight(.semibold))
@@ -641,146 +705,134 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .padding(verticalSizeClass == .compact ? 12 : 18)
-                .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(physicalLockAccessibilityLabel)
-                .accessibilityIdentifier("es80.capture.physical-run-locked")
+            }
+        }
+        .padding(usesAccessibilityComposition ? 12 : (verticalSizeClass == .compact ? 12 : 18))
+        .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(physicalLockAccessibilityLabel)
+        .accessibilityIdentifier("es80.capture.physical-run-locked")
+    }
 
-                VStack(alignment: .leading, spacing: 14) {
-                    Button {
-                        engineeringDetailsExpanded.toggle()
-                    } label: {
-                        HStack(spacing: 10) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("Engineering details")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.white)
-                                Text("Recipe, build provenance, and authorization")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Spacer(minLength: 8)
-
-                            Image(systemName: engineeringDetailsExpanded ? "chevron.up" : "chevron.down")
-                                .font(.caption.weight(.bold))
+    private var engineeringDetailsPanel: some View {
+        VStack(alignment: .leading, spacing: usesAccessibilityComposition ? 9 : 14) {
+            Button {
+                engineeringDetailsExpanded.toggle()
+            } label: {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Engineering details")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                        if !usesAccessibilityComposition {
+                            Text("Recipe, build provenance, and authorization")
+                                .font(.footnote)
                                 .foregroundStyle(.secondary)
-                                .accessibilityHidden(true)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityValue(engineeringDetailsExpanded ? "Expanded" : "Collapsed")
-                    .accessibilityHint("Shows the exact software recipe, build provenance, and authorization state. It does not unlock scooter capture.")
-                    .accessibilityIdentifier("es80.capture.engineering-details")
 
-                    if engineeringDetailsExpanded {
+                    Spacer(minLength: 8)
+
+                    Image(systemName: engineeringDetailsExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(engineeringDetailsExpanded ? "Expanded" : "Collapsed")
+            .accessibilityHint("Shows the exact software recipe, build provenance, and authorization state. It does not unlock scooter capture.")
+            .accessibilityIdentifier("es80.capture.engineering-details")
+
+            if engineeringDetailsExpanded {
+                Divider().overlay(.white.opacity(0.12))
+
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Recipe")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 12)
+                        Text(recipeID)
+                            .font(.subheadline.monospaced().weight(.semibold))
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.trailing)
+                            .accessibilityIdentifier("es80.capture.recipe-id")
+                    }
+
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Physical authorization")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 12)
+                        Text("NO-GO")
+                            .font(.subheadline.monospaced().weight(.bold))
+                            .foregroundStyle(.orange)
+                    }
+
+                    if let runtimeBuildIdentity {
                         Divider().overlay(.white.opacity(0.12))
 
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(alignment: .firstTextBaseline) {
-                                Text("Recipe")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                Spacer(minLength: 12)
-                                Text(recipeID)
-                                    .font(.subheadline.monospaced().weight(.semibold))
-                                    .foregroundStyle(.white)
-                                    .multilineTextAlignment(.trailing)
-                                    .accessibilityIdentifier("es80.capture.recipe-id")
-                            }
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("SOURCE COMMIT")
+                                .font(.caption2.monospaced().weight(.bold))
+                                .foregroundStyle(.secondary)
+                            Text(runtimeBuildIdentity.sourceCommitSHA)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.white)
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("es80.capture.build-source-sha")
 
-                            HStack(alignment: .firstTextBaseline) {
-                                Text("Physical authorization")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                Spacer(minLength: 12)
-                                Text("NO-GO")
-                                    .font(.subheadline.monospaced().weight(.bold))
-                                    .foregroundStyle(.orange)
-                            }
+                            Text("BUILD INSTANCE")
+                                .font(.caption2.monospaced().weight(.bold))
+                                .foregroundStyle(.secondary)
+                            Text(runtimeBuildIdentity.buildInstanceID)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.white)
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("es80.capture.build-instance-id")
+                        }
+                    } else if runtimeBuildIdentityCheckFinished {
+                        Divider().overlay(.white.opacity(0.12))
 
-                            if let runtimeBuildIdentity {
-                                Divider().overlay(.white.opacity(0.12))
-
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("SOURCE COMMIT")
-                                        .font(.caption2.monospaced().weight(.bold))
-                                        .foregroundStyle(.secondary)
-                                    Text(runtimeBuildIdentity.sourceCommitSHA)
-                                        .font(.caption.monospaced())
-                                        .foregroundStyle(.white)
-                                        .textSelection(.enabled)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                        .accessibilityIdentifier("es80.capture.build-source-sha")
-
-                                    Text("BUILD INSTANCE")
-                                        .font(.caption2.monospaced().weight(.bold))
-                                        .foregroundStyle(.secondary)
-                                    Text(runtimeBuildIdentity.buildInstanceID)
-                                        .font(.caption.monospaced())
-                                        .foregroundStyle(.white)
-                                        .textSelection(.enabled)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                        .accessibilityIdentifier("es80.capture.build-instance-id")
-                                }
-                            } else if runtimeBuildIdentityCheckFinished {
-                                Divider().overlay(.white.opacity(0.12))
-
-                                VStack(alignment: .leading, spacing: 5) {
-                                    Text("Build identity unavailable")
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(.orange)
-                                    Text("Nembra could not verify this running build's embedded identity. Capture stays locked and no exact source or build-instance claim is shown.")
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                            } else {
-                                Divider().overlay(.white.opacity(0.12))
-
-                                HStack(spacing: 8) {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                        .accessibilityHidden(true)
-                                    Text("Checking build identity…")
-                                        .font(.footnote.weight(.semibold))
-                                        .foregroundStyle(.secondary)
-                                }
-                                .accessibilityElement(children: .combine)
-                                .accessibilityLabel("Checking capture build identity")
-                            }
-
-                            Text("Software evidence only. This does not verify a physical ES80 or unlock scooter controls.")
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("Build identity unavailable")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.orange)
+                            Text("Nembra could not verify this running build's embedded identity. Capture stays locked and no exact source or build-instance claim is shown.")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
-                    }
-                }
-                .padding(verticalSizeClass == .compact ? 12 : 18)
-                .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    } else {
+                        Divider().overlay(.white.opacity(0.12))
 
-                Text("No scooter action is required yet. Capture can only unlock on a Nembra build explicitly cleared for this physical procedure; changing a setting or preference cannot bypass this lock.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                                .accessibilityHidden(true)
+                            Text("Checking build identity…")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Checking capture build identity")
+                    }
+
+                    Text("Software evidence only. This does not verify a physical ES80 or unlock scooter controls.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            .frame(maxWidth: 660)
-            .padding(.horizontal, 22)
-            .padding(.top, verticalSizeClass == .compact ? 8 : 18)
-            .padding(.bottom, verticalSizeClass == .compact ? 20 : 42)
-            .frame(maxWidth: .infinity)
         }
-        .accessibilityIdentifier("es80.capture.field-no-go-scroll")
-        .background(Color.black.ignoresSafeArea())
-        .navigationTitle("Nembra Capture")
-        .navigationBarTitleDisplayMode(.inline)
-        .accessibilityIdentifier("es80.capture.field-no-go")
-        .task { await loadRuntimeBuildIdentity() }
+        .padding(usesAccessibilityComposition ? 10 : (verticalSizeClass == .compact ? 12 : 18))
+        .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     private func loadRuntimeBuildIdentity() async {
