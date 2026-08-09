@@ -1,4 +1,4 @@
-name: Capture Cancel Superseded Xcconfig Probe Once
+name: Capture Cancel Exact Stale Xcode Run Once
 
 on:
   pull_request:
@@ -12,20 +12,20 @@ permissions:
   actions: write
 
 jobs:
-  cancel-exact-superseded-probe:
+  cancel-exact-stale-run:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
       GH_API: https://api.github.com
       REPOSITORY: jonathangana131-lab/Nembra
-      STALE_PR: "1511"
-      STALE_RUN: "31293266189"
-      STALE_SHA: d2fe4a2c3b00cb8f80b2efc8fa3790ecac4c6fa9
-      STALE_BRANCH: validation/v14-today-xcconfig-fd-821-stage
-      STALE_WORKFLOW: Capture TODAY Xcconfig Descriptor Probe
-      STALE_WORKFLOW_PATH: .github/workflows/capture-today-xcconfig-descriptor-probe.yml
+      STALE_PR: "198"
+      STALE_RUN: "31164679035"
+      STALE_SHA: 3bf0e6c647a8424412181dc1cde95be3aeac42e3
+      STALE_BRANCH: parallel/ride-bound-peak-speed/chat-t6v9m
+      STALE_WORKFLOW: Xcode 27 PR Exact-Head QA
+      STALE_WORKFLOW_PATH: .github/workflows/xcode27-pr-command.yml
     steps:
-      - name: Cancel only the exact closed superseded probe
+      - name: Cancel only the exact closed or merged stale run
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -39,25 +39,25 @@ jobs:
           run = json.loads(sys.argv[1])
           pr = json.loads(sys.argv[2])
           expected = {
-              "id": 31293266189,
-              "name": "Capture TODAY Xcconfig Descriptor Probe",
-              "path": ".github/workflows/capture-today-xcconfig-descriptor-probe.yml",
+              "id": 31164679035,
+              "name": "Xcode 27 PR Exact-Head QA",
+              "path": ".github/workflows/xcode27-pr-command.yml",
               "event": "pull_request",
-              "head_branch": "validation/v14-today-xcconfig-fd-821-stage",
-              "head_sha": "d2fe4a2c3b00cb8f80b2efc8fa3790ecac4c6fa9",
+              "head_branch": "parallel/ride-bound-peak-speed/chat-t6v9m",
+              "head_sha": "3bf0e6c647a8424412181dc1cde95be3aeac42e3",
           }
           for key, value in expected.items():
               if run.get(key) != value:
                   raise SystemExit(f"refusing cancellation: run {key} mismatch {run.get(key)!r} != {value!r}")
-          if pr.get("number") != 1511 or pr.get("state") != "closed":
-              raise SystemExit("refusing cancellation: PR #1511 is not closed")
+          if pr.get("number") != 198 or pr.get("state") != "closed" or not pr.get("merged"):
+              raise SystemExit("refusing cancellation: PR #198 is not closed and merged")
           if (pr.get("head") or {}).get("sha") != expected["head_sha"]:
-              raise SystemExit("refusing cancellation: closed PR head does not bind stale run SHA")
+              raise SystemExit("refusing cancellation: merged PR head does not bind stale run SHA")
           if (pr.get("head") or {}).get("ref") != expected["head_branch"]:
-              raise SystemExit("refusing cancellation: closed PR branch does not bind stale run branch")
+              raise SystemExit("refusing cancellation: merged PR branch does not bind stale run branch")
           status = run.get("status")
           if status == "completed":
-              print(f"stale probe is already terminal: conclusion={run.get('conclusion')}")
+              print(f"stale run is already terminal: conclusion={run.get('conclusion')}")
               raise SystemExit(0)
           if status not in {"queued", "in_progress"}:
               raise SystemExit(f"refusing cancellation: unexpected run status {status!r}")
@@ -71,14 +71,14 @@ jobs:
 
           code="$(curl --silent --show-error --output /tmp/cancel-body --write-out '%{http_code}' --location --request POST "${auth[@]}" "$GH_API/repos/$REPOSITORY/actions/runs/$STALE_RUN/cancel")"
           if [[ "$code" == "202" ]]; then
-            echo "Cancellation accepted for exact superseded run $STALE_RUN."
+            echo "Cancellation accepted for exact stale run $STALE_RUN."
             exit 0
           fi
           cat /tmp/cancel-body >&2 || true
           if [[ "$code" == "500" ]]; then
             force_code="$(curl --silent --show-error --output /tmp/force-body --write-out '%{http_code}' --location --request POST "${auth[@]}" "$GH_API/repos/$REPOSITORY/actions/runs/$STALE_RUN/force-cancel")"
             if [[ "$force_code" == "202" ]]; then
-              echo "Force-cancellation accepted after ordinary HTTP 500 for exact superseded run $STALE_RUN."
+              echo "Force-cancellation accepted after ordinary HTTP 500 for exact stale run $STALE_RUN."
               exit 0
             fi
             cat /tmp/force-body >&2 || true
