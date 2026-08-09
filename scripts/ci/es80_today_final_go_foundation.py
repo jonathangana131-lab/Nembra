@@ -37,15 +37,18 @@ def build_final_go_record(*args: Any, **kwargs: Any) -> dict[str, Any]:
     """Delegate only as an imported library while honoring the accepted injectable trust seams."""
     original_git = _impl._git
     original_trusted_xcode_subject = _impl._trusted_xcode_subject
+    original_crosscheck_subject = _impl._crosscheck_subject
     _impl._git = globals().get("_git", original_git)
     _impl._trusted_xcode_subject = globals().get(
         "_trusted_xcode_subject", original_trusted_xcode_subject
     )
+    _impl._crosscheck_subject = globals().get("_crosscheck_subject", original_crosscheck_subject)
     try:
         return _impl.build_final_go_record(*args, **kwargs)
     finally:
         _impl._git = original_git
         _impl._trusted_xcode_subject = original_trusted_xcode_subject
+        _impl._crosscheck_subject = original_crosscheck_subject
 
 
 def publish_record_no_replace(*args: Any, **kwargs: Any) -> str:
