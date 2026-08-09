@@ -81,7 +81,7 @@ struct NembraApp: App {
                         if scenario == .stationaryPreflight {
                             ES80ExperimentOneStationaryPreflightView(
                                 coordinator: researchCoordinator,
-                                simulatorQAEvidenceLabel: snapshot.evidenceLabel,
+                                simulatorQASnapshot: snapshot,
                                 freshExperimentCoordinatorFactory: { try PassiveBluetoothExperimentOneCoordinator() }
                             )
                         } else {
@@ -157,6 +157,9 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
     @State private var selectedChargerState: PassiveBluetoothStationaryCaptureChargerState?
     @State private var disconnectedDeclarationAccepted = false
     private let simulatorQAEvidenceLabel: String?
+#if DEBUG && targetEnvironment(simulator)
+    private let simulatorQASnapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot?
+#endif
     private let freshExperimentCoordinatorFactory: () throws -> PassiveBluetoothExperimentOneCoordinator
 
     init(
@@ -168,15 +171,48 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
     ) {
         _coordinator = State(initialValue: coordinator)
         self.simulatorQAEvidenceLabel = simulatorQAEvidenceLabel
+#if DEBUG && targetEnvironment(simulator)
+        simulatorQASnapshot = nil
+#endif
         self.freshExperimentCoordinatorFactory = freshExperimentCoordinatorFactory
     }
 
+#if DEBUG && targetEnvironment(simulator)
+    init(
+        coordinator: PassiveBluetoothExperimentOneCoordinator,
+        simulatorQASnapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot,
+        freshExperimentCoordinatorFactory: @escaping () throws -> PassiveBluetoothExperimentOneCoordinator = {
+            try PassiveBluetoothExperimentOneCoordinator()
+        }
+    ) {
+        _coordinator = State(initialValue: coordinator)
+        simulatorQAEvidenceLabel = simulatorQASnapshot.evidenceLabel
+        self.simulatorQASnapshot = simulatorQASnapshot
+        self.freshExperimentCoordinatorFactory = freshExperimentCoordinatorFactory
+    }
+#endif
+
     var body: some View {
         if disconnectedDeclarationAccepted {
+#if DEBUG && targetEnvironment(simulator)
+            if let simulatorQASnapshot {
+                ES80CaptureShellView(
+                    coordinator: coordinator,
+                    simulatorQASnapshot: simulatorQASnapshot,
+                    onFreshExperimentRequested: makeFreshExperimentCoordinator
+                )
+            } else {
+                ES80CaptureShellView(
+                    coordinator: coordinator,
+                    onFreshExperimentRequested: makeFreshExperimentCoordinator
+                )
+            }
+#else
             ES80CaptureShellView(
                 coordinator: coordinator,
                 onFreshExperimentRequested: makeFreshExperimentCoordinator
             )
+#endif
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
