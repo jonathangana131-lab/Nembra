@@ -253,6 +253,28 @@ jobs:
               "Packages/NembraCore/Package.swift": "26544e273397020fae34c7034992071a9861c131",
               "Packages/NembraBluetoothCapture/Package.swift": "3bcda7fa8a350ade75bd8b7b228c3c95ca319bda",
           }
+          project_root = root / "Nembra.xcodeproj"
+          source_controlled_user_data = sorted(
+              str(path.relative_to(root))
+              for path in project_root.rglob("*")
+              if path.name.casefold() == "xcuserdata"
+          )
+          if source_controlled_user_data:
+              raise SystemExit(
+                  "trusted build graph forbids source-controlled Xcode user data: "
+                  + ", ".join(source_controlled_user_data)
+              )
+          nembra_schemes = sorted(
+              str(path.relative_to(root))
+              for path in project_root.rglob("*")
+              if path.is_file() and path.name.casefold() == "nembra.xcscheme"
+          )
+          expected_nembra_schemes = ["Nembra.xcodeproj/xcshareddata/xcschemes/Nembra.xcscheme"]
+          if nembra_schemes != expected_nembra_schemes:
+              raise SystemExit(
+                  "trusted build graph requires exactly the reviewed shared Nembra scheme: "
+                  + repr(nembra_schemes)
+              )
           for relative, expected_blob in expected.items():
               path = root / relative
               if not path.is_file() or path.is_symlink():

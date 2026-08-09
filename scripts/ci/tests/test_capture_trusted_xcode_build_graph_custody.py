@@ -41,6 +41,23 @@ class TrustedXcodeBuildGraphCustodyTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertIn(f'"{path}": "{blob}"', self.workflow)
 
+    def test_authority_rejects_user_scheme_shadowing(self) -> None:
+        authority = self.workflow.index("  capture-simulator-qa:\n")
+        authority_block = self.workflow[authority:]
+        custody = authority_block.index("- name: Verify trusted build graph custody")
+        build = authority_block.index("- name: Build, test, and capture Simulator states")
+        between = authority_block[custody:build]
+        user_guard = between.index('path.name.casefold() == "xcuserdata"')
+        scheme_guard = between.index('path.name.casefold() == "nembra.xcscheme"')
+        hash_loop = between.index("for relative, expected_blob in expected.items():")
+        self.assertLess(user_guard, hash_loop)
+        self.assertLess(scheme_guard, hash_loop)
+        self.assertIn(
+            'expected_nembra_schemes = ["Nembra.xcodeproj/xcshareddata/xcschemes/Nembra.xcscheme"]',
+            between,
+        )
+        self.assertIn("trusted build graph forbids source-controlled Xcode user data", between)
+
     def test_candidate_prevalidation_does_not_share_authority_runner(self) -> None:
         prevalidation = self.workflow.index("  prevalidate-candidate:\n")
         authority = self.workflow.index("  capture-simulator-qa:\n")
