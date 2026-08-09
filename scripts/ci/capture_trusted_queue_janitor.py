@@ -233,6 +233,9 @@ class GH:
             raise RuntimeError(f"trusted workflow at {ref} returned no Git blob SHA")
         return sha
 
+    def live_workflow_blob(self) -> str:
+        return self.workflow_blob(self.default_branch())
+
     def cancel(self, run_id: int) -> None:
         self.json(
             "POST",
@@ -318,8 +321,7 @@ def main() -> int:
     # Current workflow generation is global mutation authority. If it cannot be
     # established exactly, refuse the sweep rather than cancelling anything.
     try:
-        default_branch = gh.default_branch()
-        current_workflow_blob = gh.workflow_blob(default_branch)
+        current_workflow_blob = gh.live_workflow_blob()
     except RuntimeError as exc:
         print(
             f"REFUSE_MUTATION: current trusted workflow generation unavailable: {exc}",
@@ -401,6 +403,21 @@ def main() -> int:
         )
         if not args.apply:
             continue
+        try:
+            live_workflow_blob = gh.live_workflow_blob()
+        except RuntimeError as exc:
+            print(
+                f"REFUSE_MUTATION: live trusted workflow generation unavailable before run={run_id}: {exc}",
+                file=sys.stderr,
+            )
+            return 2
+        if live_workflow_blob != current_workflow_blob:
+            print(
+                "REFUSE_MUTATION: trusted workflow generation changed during sweep "
+                f"expected={current_workflow_blob} live={live_workflow_blob}",
+                file=sys.stderr,
+            )
+            return 2
         try:
             gh.cancel(run_id)
             cancelled += 1
