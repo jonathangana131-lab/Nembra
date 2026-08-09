@@ -9,6 +9,7 @@ on:
       - scripts/ci/tests/test_es80_today_final_go_record.py
       - scripts/ci/es80_today_final_go_hardened.py
       - scripts/ci/tests/test_es80_today_final_go_hardened.py
+      - scripts/ci/tests/test_es80_today_final_go_git_custody.py
       - scripts/ci/es80_today_trusted_capture_xcode_subject.py
       - scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
       - scripts/ci/es80_today_final_go_publication.py
@@ -45,7 +46,7 @@ jobs:
           python3 -m py_compile scripts/ci/es80_today_final_go_record.py scripts/ci/es80_today_final_go_foundation.py scripts/ci/tests/test_es80_today_final_go_record.py
           python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
           python3 -m py_compile scripts/ci/es80_today_final_go_publication.py scripts/ci/tests/test_es80_today_final_go_publication.py
-          python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py
+          python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_git_custody.py
 
       - name: Preserve foundation adversarial coverage
         run: python3 scripts/ci/tests/test_es80_today_final_go_record.py -v
@@ -58,6 +59,9 @@ jobs:
 
       - name: Verify hardened composition seam
         run: python3 scripts/ci/tests/test_es80_today_final_go_hardened.py -v
+
+      - name: Reject caller-forged Git authority
+        run: python3 scripts/ci/tests/test_es80_today_final_go_git_custody.py -v
 
       - name: Reject naked Boolean Final GO CLI authority
         run: |
@@ -82,4 +86,5 @@ jobs:
           grep -Fq 'RESEARCH_COMPILE_MODE = "private-today-v1"' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'RESEARCH_COMPILE_AUTHORITY = "canonical-producer-explicit-mode"' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'RESEARCH_COMPILE_CONDITION = "NEMBRA_ES80_TODAY_RESEARCH"' scripts/ci/es80_today_final_go_foundation.py
+          grep -Fq 'foundation._git(tooling_repo, "rev-parse"' scripts/ci/es80_today_final_go_hardened.py
           grep -Fq 'publication.publish_record_no_replace' scripts/ci/es80_today_final_go_hardened.py
