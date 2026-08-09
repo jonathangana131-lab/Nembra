@@ -606,53 +606,64 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
     @MainActor
     func testV14SimulatorQACapturesRepresentativeInProgressAndRecoveryStates() {
-        XCUIDevice.shared.orientation = .portrait
-        struct ScenarioExpectation {
-            let scenario: String
-            let requiredText: String
-            let requiredIdentifier: String?
-            let screenshotName: String
-        }
-
-        let scenarios = [
-            ScenarioExpectation(
+        captureRepresentativeSimulatorQAStates([
+            RepresentativeScenarioExpectation(
                 scenario: "secondPoweredOff",
                 requiredText: "Scooter OFF",
                 requiredIdentifier: "es80.capture.begin-window",
                 screenshotName: "Nembra Capture V14 — SIMULATOR QA — OFF 2 Ready"
             ),
-            ScenarioExpectation(
+            RepresentativeScenarioExpectation(
                 scenario: "secondPoweredOn",
                 requiredText: "One signal matched twice",
                 requiredIdentifier: "es80.capture.confirm-correlated-target",
                 screenshotName: "Nembra Capture V14 — SIMULATOR QA — Scooter Signal Found"
             ),
-            ScenarioExpectation(
+            RepresentativeScenarioExpectation(
                 scenario: "passiveDiscovery",
                 requiredText: "Opening the matched signal",
                 requiredIdentifier: nil,
                 screenshotName: "Nembra Capture V14 — SIMULATOR QA — Passive Connection"
-            ),
-            ScenarioExpectation(
+            )
+        ])
+    }
+
+    @MainActor
+    func testV14SimulatorQACapturesRepresentativeSealingAndInterruptionStates() {
+        captureRepresentativeSimulatorQAStates([
+            RepresentativeScenarioExpectation(
                 scenario: "captureInProgress",
                 requiredText: "OBSERVATION READY",
                 requiredIdentifier: "es80.capture.finish",
                 screenshotName: "Nembra Capture V14 — SIMULATOR QA — Observation In Progress"
             ),
-            ScenarioExpectation(
+            RepresentativeScenarioExpectation(
                 scenario: "horizonSealed",
                 requiredText: "Securing capture",
                 requiredIdentifier: nil,
                 screenshotName: "Nembra Capture V14 — SIMULATOR QA — Sealing"
             ),
-            ScenarioExpectation(
+            RepresentativeScenarioExpectation(
                 scenario: "foregroundInterrupted",
                 requiredText: "Capture stopped safely",
                 requiredIdentifier: "es80.capture.restart-experiment",
                 screenshotName: "Nembra Capture V14 — SIMULATOR QA — Foreground Interrupted"
             )
-        ]
+        ])
+    }
 
+    private struct RepresentativeScenarioExpectation {
+        let scenario: String
+        let requiredText: String
+        let requiredIdentifier: String?
+        let screenshotName: String
+    }
+
+    @MainActor
+    private func captureRepresentativeSimulatorQAStates(
+        _ scenarios: [RepresentativeScenarioExpectation]
+    ) {
+        XCUIDevice.shared.orientation = .portrait
         for expectation in scenarios {
             let app = XCUIApplication()
             app.launchArguments = [
