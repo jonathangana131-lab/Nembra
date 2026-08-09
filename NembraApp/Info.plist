@@ -3,9 +3,11 @@
 <plist version="1.0">
 <dict>
     <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>Nembra Capture uses Bluetooth once to read the scooter's advertised and GATT data so Nembra can learn the ES80 protocol.</string>
+    <string>Nembra Capture uses Bluetooth to learn this scooter's advertised and GATT data during a guided calibration.</string>
     <key>NSBluetoothPeripheralUsageDescription</key>
-    <string>Nembra Capture uses Bluetooth once to read the scooter's advertised and GATT data so Nembra can learn the ES80 protocol.</string>
+    <string>Nembra Capture uses Bluetooth to learn this scooter's advertised and GATT data during a guided calibration.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Nembra Capture can use iPhone location speed as an independent reference while learning which Bluetooth values represent scooter speed.</string>
     <key>NembraCaptureBuildIdentifier</key>
     <string>$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)</string>
     <key>NembraCaptureBuildInstanceID</key>
