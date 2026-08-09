@@ -77,9 +77,15 @@ jobs:
             const repository = `${context.repo.owner}/${context.repo.repo}`
             core.info(`Trusted resolver head: ${process.env.EXPECTED_HEAD_SHA}`)
             core.info(`Current live PR head: ${pr.head.sha}`)
-            if (pr.state !== 'open') core.setFailed('PR closed before Capture prevalidation started.')
-            if (pr.head.repo.full_name !== repository) core.setFailed('PR source repository changed before Capture prevalidation started.')
-            if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) core.setFailed('PR head moved before Capture prevalidation started; stale run is non-evidence.')
+            if (pr.state !== 'open') {
+              core.setFailed('PR closed before Capture prevalidation started.')
+            }
+            if (pr.head.repo.full_name !== repository) {
+              core.setFailed('PR source repository changed before Capture prevalidation started.')
+            }
+            if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) {
+              core.setFailed('PR head moved before Capture prevalidation started; stale run is non-evidence.')
+            }
 
       - name: Checkout immutable exact Capture head for prevalidation
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -142,12 +148,22 @@ jobs:
           PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
         with:
           script: |
-            const response = await github.rest.pulls.get({owner: context.repo.owner, repo: context.repo.repo, pull_number: Number(process.env.PR_NUMBER)})
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            })
             const pr = response.data
             const repository = `${context.repo.owner}/${context.repo.repo}`
-            if (pr.state !== 'open') core.setFailed('PR closed during Capture prevalidation.')
-            if (pr.head.repo.full_name !== repository) core.setFailed('PR source repository changed during Capture prevalidation.')
-            if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) core.setFailed('PR head moved during Capture prevalidation; stale run is non-evidence.')
+            if (pr.state !== 'open') {
+              core.setFailed('PR closed during Capture prevalidation.')
+            }
+            if (pr.head.repo.full_name !== repository) {
+              core.setFailed('PR source repository changed during Capture prevalidation.')
+            }
+            if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) {
+              core.setFailed('PR head moved during Capture prevalidation; stale run is non-evidence.')
+            }
 
   capture-simulator-qa:
     name: Build, test, and capture trusted exact Capture head
@@ -167,14 +183,24 @@ jobs:
           PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
         with:
           script: |
-            const response = await github.rest.pulls.get({owner: context.repo.owner, repo: context.repo.repo, pull_number: Number(process.env.PR_NUMBER)})
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            })
             const pr = response.data
             const repository = `${context.repo.owner}/${context.repo.repo}`
             core.info(`Trusted resolver head: ${process.env.EXPECTED_HEAD_SHA}`)
             core.info(`Current live PR head: ${pr.head.sha}`)
-            if (pr.state !== 'open') core.setFailed('PR closed before Capture Mac acceptance started.')
-            if (pr.head.repo.full_name !== repository) core.setFailed('PR source repository changed before Capture Mac acceptance started.')
-            if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) core.setFailed('PR head moved before Capture Mac acceptance started; stale run is non-evidence.')
+            if (pr.state !== 'open') {
+              core.setFailed('PR closed before Capture Mac acceptance started.')
+            }
+            if (pr.head.repo.full_name !== repository) {
+              core.setFailed('PR source repository changed before Capture Mac acceptance started.')
+            }
+            if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) {
+              core.setFailed('PR head moved before Capture Mac acceptance started; stale run is non-evidence.')
+            }
 
       - name: Checkout immutable trusted Capture head
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -194,8 +220,18 @@ jobs:
           set -euo pipefail
           producer_path="scripts/ci/xcode27_simulator_capture.sh"
           expected_blob="4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"
-          actual_blob="$(env -i PATH=/usr/bin:/bin HOME=/tmp LC_ALL=C GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git rev-parse --verify "HEAD:${producer_path}")"
-          printf 'Trusted Simulator producer: %s\nExpected blob: %s\nActual blob: %s\n' "$producer_path" "$expected_blob" "$actual_blob"
+          actual_blob="$(
+            env -i \
+              PATH=/usr/bin:/bin \
+              HOME=/tmp \
+              LC_ALL=C \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              /usr/bin/git rev-parse --verify "HEAD:${producer_path}"
+          )"
+          printf 'Trusted Simulator producer: %s\nExpected blob: %s\nActual blob: %s\n' \
+            "$producer_path" "$expected_blob" "$actual_blob"
           test "$actual_blob" = "$expected_blob"
 
       - name: Reject host-executable candidate build hooks
@@ -209,30 +245,43 @@ jobs:
           from pathlib import Path
           import xml.etree.ElementTree as ET
 
-          project = Path("Nembra.xcodeproj/project.pbxproj").read_text(encoding="utf-8")
-          for marker in (
-              "PBXShellScriptBuildPhase", "PBXBuildRule", "PBXLegacyTarget",
-              "XCRemoteSwiftPackageReference", "XCLocalSwiftPackageReference",
-              "XCSwiftPackageProductDependency", "baseConfigurationReference",
-          ):
+          project_path = Path("Nembra.xcodeproj/project.pbxproj")
+          project = project_path.read_text(encoding="utf-8")
+
+          forbidden_project_markers = (
+              "PBXShellScriptBuildPhase",
+              "PBXBuildRule",
+              "PBXLegacyTarget",
+              "XCRemoteSwiftPackageReference",
+              "XCLocalSwiftPackageReference",
+              "XCSwiftPackageProductDependency",
+              "baseConfigurationReference",
+          )
+          for marker in forbidden_project_markers:
               if marker in project:
                   raise SystemExit(f"trusted Xcode authority refuses host-executable build surface: {marker}")
 
-          setting = re.compile(
-              r"(?m)^\s*(?:SWIFT_EXEC|SWIFT_DRIVER_SWIFT_FRONTEND_EXEC|CC|CXX|LD|LDPLUSPLUS|LIBTOOL|"
-              r"OTHER_SWIFT_FLAGS|OTHER_CFLAGS|OTHER_CPLUSPLUSFLAGS|OTHER_LDFLAGS)(?:\[[^\]]+\])?\s*="
-          ).search(project)
-          if setting is not None:
-              raise SystemExit("trusted Xcode authority refuses custom tool/code-loading build setting")
+          tool_or_code_loading_setting = re.compile(
+              r"(?m)^\s*(?:SWIFT_EXEC|SWIFT_DRIVER_SWIFT_FRONTEND_EXEC|CC|CXX|LD|LDPLUSPLUS|"
+              r"LIBTOOL|OTHER_SWIFT_FLAGS|OTHER_CFLAGS|OTHER_CPLUSPLUSFLAGS|OTHER_LDFLAGS)"
+              r"(?:\[[^\]]+\])?\s*="
+          )
+          match = tool_or_code_loading_setting.search(project)
+          if match is not None:
+              key = match.group(0).split("=", 1)[0].strip()
+              raise SystemExit(f"trusted Xcode authority refuses custom tool/code-loading setting: {key}")
 
-          product_types = set(re.findall(r'productType = "([^"]+)";', project))
           allowed_product_types = {
               "com.apple.product-type.application",
               "com.apple.product-type.bundle.unit-test",
               "com.apple.product-type.bundle.ui-testing",
           }
+          product_types = set(re.findall(r'productType = "([^"]+)";', project))
           if product_types != allowed_product_types:
-              raise SystemExit("trusted Xcode authority refuses unexpected native target product types")
+              raise SystemExit(
+                  "trusted Xcode authority refuses unexpected native target product types: "
+                  + repr(sorted(product_types))
+              )
 
           scheme_path = Path("Nembra.xcodeproj/xcshareddata/xcschemes/Nembra.xcscheme")
           try:
@@ -260,48 +309,236 @@ jobs:
           set -euo pipefail
           producer_path="scripts/ci/xcode27_simulator_capture.sh"
           expected_blob="4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"
+
+          # Candidate-controlled validation executes only in the completed predecessor job above.
+          # This authority job begins on a fresh runner process boundary, then independently binds
+          # Git to the resolver-approved workspace before any repository-controlled executable runs.
           trusted_index="$(/usr/bin/mktemp -t nembra-capture-index)"
           /bin/rm -f -- "$trusted_index"
           trap '/bin/rm -f -- "$trusted_index"' EXIT
-          /usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp LC_ALL=C GIT_DIR="$GITHUB_WORKSPACE/.git" GIT_WORK_TREE="$GITHUB_WORKSPACE" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_NO_REPLACE_OBJECTS=1 GIT_INDEX_FILE="$trusted_index" GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=core.worktree GIT_CONFIG_VALUE_0="$GITHUB_WORKSPACE" GIT_CONFIG_KEY_1=core.bare GIT_CONFIG_VALUE_1=false /usr/bin/git read-tree "$EXPECTED_HEAD_SHA"
-          /usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp LC_ALL=C GIT_DIR="$GITHUB_WORKSPACE/.git" GIT_WORK_TREE="$GITHUB_WORKSPACE" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_NO_REPLACE_OBJECTS=1 GIT_INDEX_FILE="$trusted_index" GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=core.worktree GIT_CONFIG_VALUE_0="$GITHUB_WORKSPACE" GIT_CONFIG_KEY_1=core.bare GIT_CONFIG_VALUE_1=false /usr/bin/git clean -ffdx
-          trusted_status="$(/usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp LC_ALL=C GIT_DIR="$GITHUB_WORKSPACE/.git" GIT_WORK_TREE="$GITHUB_WORKSPACE" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_NO_REPLACE_OBJECTS=1 GIT_INDEX_FILE="$trusted_index" GIT_CONFIG_COUNT=5 GIT_CONFIG_KEY_0=core.worktree GIT_CONFIG_VALUE_0="$GITHUB_WORKSPACE" GIT_CONFIG_KEY_1=core.bare GIT_CONFIG_VALUE_1=false GIT_CONFIG_KEY_2=core.fsmonitor GIT_CONFIG_VALUE_2=false GIT_CONFIG_KEY_3=core.ignorestat GIT_CONFIG_VALUE_3=false GIT_CONFIG_KEY_4=core.filemode GIT_CONFIG_VALUE_4=true /usr/bin/git -c core.fsmonitor=false -c core.ignorestat=false -c core.filemode=true status --porcelain=v1 --untracked-files=all)"
-          if [[ -n "$trusted_status" ]]; then printf 'Trusted resolver-bound worktree is not clean:\n%s\n' "$trusted_status" >&2; exit 1; fi
+          /usr/bin/env -i \
+            PATH=/usr/bin:/bin \
+            HOME=/tmp \
+            LC_ALL=C \
+            GIT_DIR="$GITHUB_WORKSPACE/.git" \
+            GIT_WORK_TREE="$GITHUB_WORKSPACE" \
+            GIT_CONFIG_NOSYSTEM=1 \
+            GIT_CONFIG_GLOBAL=/dev/null \
+            GIT_NO_REPLACE_OBJECTS=1 \
+            GIT_INDEX_FILE="$trusted_index" \
+            GIT_CONFIG_COUNT=2 \
+            GIT_CONFIG_KEY_0=core.worktree \
+            GIT_CONFIG_VALUE_0="$GITHUB_WORKSPACE" \
+            GIT_CONFIG_KEY_1=core.bare \
+            GIT_CONFIG_VALUE_1=false \
+            /usr/bin/git read-tree "$EXPECTED_HEAD_SHA"
 
-          /usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp LC_ALL=C EXPECTED_HEAD_SHA="$EXPECTED_HEAD_SHA" GIT_DIR="$GITHUB_WORKSPACE/.git" GIT_WORK_TREE="$GITHUB_WORKSPACE" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_NO_REPLACE_OBJECTS=1 /usr/bin/python3 -I - <<'PY'
-          import hashlib, os, stat, subprocess
+          /usr/bin/env -i \
+            PATH=/usr/bin:/bin \
+            HOME=/tmp \
+            LC_ALL=C \
+            GIT_DIR="$GITHUB_WORKSPACE/.git" \
+            GIT_WORK_TREE="$GITHUB_WORKSPACE" \
+            GIT_CONFIG_NOSYSTEM=1 \
+            GIT_CONFIG_GLOBAL=/dev/null \
+            GIT_NO_REPLACE_OBJECTS=1 \
+            GIT_INDEX_FILE="$trusted_index" \
+            GIT_CONFIG_COUNT=2 \
+            GIT_CONFIG_KEY_0=core.worktree \
+            GIT_CONFIG_VALUE_0="$GITHUB_WORKSPACE" \
+            GIT_CONFIG_KEY_1=core.bare \
+            GIT_CONFIG_VALUE_1=false \
+            /usr/bin/git clean -ffdx
+
+          trusted_status="$(
+            /usr/bin/env -i \
+              PATH=/usr/bin:/bin \
+              HOME=/tmp \
+              LC_ALL=C \
+              GIT_DIR="$GITHUB_WORKSPACE/.git" \
+              GIT_WORK_TREE="$GITHUB_WORKSPACE" \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              GIT_INDEX_FILE="$trusted_index" \
+              GIT_CONFIG_COUNT=5 \
+              GIT_CONFIG_KEY_0=core.worktree \
+              GIT_CONFIG_VALUE_0="$GITHUB_WORKSPACE" \
+              GIT_CONFIG_KEY_1=core.bare \
+              GIT_CONFIG_VALUE_1=false \
+              GIT_CONFIG_KEY_2=core.fsmonitor \
+              GIT_CONFIG_VALUE_2=false \
+              GIT_CONFIG_KEY_3=core.ignorestat \
+              GIT_CONFIG_VALUE_3=false \
+              GIT_CONFIG_KEY_4=core.filemode \
+              GIT_CONFIG_VALUE_4=true \
+              /usr/bin/git \
+                -c core.fsmonitor=false \
+                -c core.ignorestat=false \
+                -c core.filemode=true \
+                status --porcelain=v1 --untracked-files=all
+          )"
+          if [[ -n "$trusted_status" ]]; then
+            printf 'Trusted resolver-bound worktree is not clean:\n%s\n' "$trusted_status" >&2
+            exit 1
+          fi
+          test -z "$trusted_status"
+
+          /usr/bin/env -i \
+            PATH=/usr/bin:/bin \
+            HOME=/tmp \
+            LC_ALL=C \
+            EXPECTED_HEAD_SHA="$EXPECTED_HEAD_SHA" \
+            GIT_DIR="$GITHUB_WORKSPACE/.git" \
+            GIT_WORK_TREE="$GITHUB_WORKSPACE" \
+            GIT_CONFIG_NOSYSTEM=1 \
+            GIT_CONFIG_GLOBAL=/dev/null \
+            GIT_NO_REPLACE_OBJECTS=1 \
+            /usr/bin/python3 -I - <<'PY'
+          import hashlib
+          import os
+          import stat
+          import subprocess
+
           expected_head = os.environ["EXPECTED_HEAD_SHA"]
           workspace = os.environ["GIT_WORK_TREE"]
-          git_env = {"PATH":"/usr/bin:/bin","HOME":"/tmp","LC_ALL":"C","GIT_DIR":os.environ["GIT_DIR"],"GIT_WORK_TREE":workspace,"GIT_CONFIG_NOSYSTEM":"1","GIT_CONFIG_GLOBAL":"/dev/null","GIT_NO_REPLACE_OBJECTS":"1","GIT_CONFIG_COUNT":"2","GIT_CONFIG_KEY_0":"core.worktree","GIT_CONFIG_VALUE_0":workspace,"GIT_CONFIG_KEY_1":"core.bare","GIT_CONFIG_VALUE_1":"false"}
-          tree = subprocess.check_output(["/usr/bin/git","ls-tree","-r","-z",expected_head], cwd=workspace, env=git_env)
-          workspace_bytes = os.fsencode(workspace); checked = 0
+          git_env = {
+              "PATH": "/usr/bin:/bin",
+              "HOME": "/tmp",
+              "LC_ALL": "C",
+              "GIT_DIR": os.environ["GIT_DIR"],
+              "GIT_WORK_TREE": workspace,
+              "GIT_CONFIG_NOSYSTEM": "1",
+              "GIT_CONFIG_GLOBAL": "/dev/null",
+              "GIT_NO_REPLACE_OBJECTS": "1",
+              "GIT_CONFIG_COUNT": "2",
+              "GIT_CONFIG_KEY_0": "core.worktree",
+              "GIT_CONFIG_VALUE_0": workspace,
+              "GIT_CONFIG_KEY_1": "core.bare",
+              "GIT_CONFIG_VALUE_1": "false",
+          }
+          tree = subprocess.check_output(
+              ["/usr/bin/git", "ls-tree", "-r", "-z", expected_head],
+              cwd=workspace,
+              env=git_env,
+          )
+          workspace_bytes = os.fsencode(workspace)
+          checked = 0
+
           for record in tree.split(b"\0"):
-              if not record: continue
-              metadata, relative_path = record.split(b"\t",1); mode, object_type, expected_oid = metadata.split(b" ",2)
-              if object_type != b"blob" or mode not in {b"100644",b"100755",b"120000"}: raise SystemExit("raw workspace audit refuses unsupported tracked object")
-              absolute_path = os.path.join(workspace_bytes, relative_path); metadata_now = os.lstat(absolute_path)
+              if not record:
+                  continue
+              metadata, relative_path = record.split(b"\t", 1)
+              mode, object_type, expected_oid = metadata.split(b" ", 2)
+              if object_type != b"blob" or mode not in {b"100644", b"100755", b"120000"}:
+                  raise SystemExit(
+                      "raw workspace audit refuses unsupported tracked object "
+                      + repr((mode, object_type, relative_path))
+                  )
+
+              absolute_path = os.path.join(workspace_bytes, relative_path)
+              metadata_now = os.lstat(absolute_path)
               if mode == b"120000":
-                  if not stat.S_ISLNK(metadata_now.st_mode): raise SystemExit("raw workspace audit expected symlink")
-                  payload = os.readlink(absolute_path); payload = os.fsencode(payload) if isinstance(payload,str) else payload
+                  if not stat.S_ISLNK(metadata_now.st_mode):
+                      raise SystemExit("raw workspace audit expected symlink: " + os.fsdecode(relative_path))
+                  payload = os.readlink(absolute_path)
+                  if isinstance(payload, str):
+                      payload = os.fsencode(payload)
               else:
-                  if not stat.S_ISREG(metadata_now.st_mode): raise SystemExit("raw workspace audit expected regular file")
-                  if bool(metadata_now.st_mode & 0o111) != (mode == b"100755"): raise SystemExit("raw workspace executable mode mismatch")
-                  with open(absolute_path,"rb") as handle: payload = handle.read()
-              actual_oid = hashlib.sha1(b"blob "+str(len(payload)).encode("ascii")+b"\0"+payload).hexdigest().encode("ascii")
-              if actual_oid != expected_oid: raise SystemExit("raw workspace blob mismatch: "+os.fsdecode(relative_path))
+                  if not stat.S_ISREG(metadata_now.st_mode):
+                      raise SystemExit("raw workspace audit expected regular file: " + os.fsdecode(relative_path))
+                  expected_executable = mode == b"100755"
+                  actual_executable = bool(metadata_now.st_mode & 0o111)
+                  if actual_executable != expected_executable:
+                      raise SystemExit("raw workspace executable mode mismatch: " + os.fsdecode(relative_path))
+                  with open(absolute_path, "rb") as handle:
+                      payload = handle.read()
+
+              actual_oid = hashlib.sha1(
+                  b"blob " + str(len(payload)).encode("ascii") + b"\0" + payload
+              ).hexdigest().encode("ascii")
+              if actual_oid != expected_oid:
+                  raise SystemExit("raw workspace blob mismatch: " + os.fsdecode(relative_path))
               checked += 1
-          if checked == 0: raise SystemExit("raw workspace audit found no tracked blobs")
+
+          if checked == 0:
+              raise SystemExit("raw workspace audit found no tracked blobs")
           print(f"raw workspace audit accepted {checked} resolver-bound tracked blobs")
           PY
 
-          worktree_blob="$(/usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp LC_ALL=C GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git -C /tmp hash-object -- "$GITHUB_WORKSPACE/$producer_path")"
+          worktree_blob="$(
+            /usr/bin/env -i \
+              PATH=/usr/bin:/bin \
+              HOME=/tmp \
+              LC_ALL=C \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              /usr/bin/git -C /tmp hash-object -- "$GITHUB_WORKSPACE/$producer_path"
+          )"
           test "$worktree_blob" = "$expected_blob"
+
           sentinel="__NEMBRA_TRUSTED_PRODUCER_EOF_4e9ae0cb__"
-          producer_bytes="$(/usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp LC_ALL=C GIT_DIR="$GITHUB_WORKSPACE/.git" GIT_WORK_TREE="$GITHUB_WORKSPACE" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=core.worktree GIT_CONFIG_VALUE_0="$GITHUB_WORKSPACE" GIT_CONFIG_KEY_1=core.bare GIT_CONFIG_VALUE_1=false /usr/bin/git cat-file blob "$expected_blob" && builtin printf '%s' "$sentinel")"
-          case "$producer_bytes" in *"$sentinel") producer_bytes="${producer_bytes%"$sentinel"}" ;; *) builtin printf 'Trusted producer sentinel missing after Git-object materialization.\n' >&2; exit 2 ;; esac
-          materialized_blob="$(builtin printf '%s' "$producer_bytes" | /usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp LC_ALL=C GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git -C /tmp hash-object --stdin)"
+          producer_bytes="$(
+            /usr/bin/env -i \
+              PATH=/usr/bin:/bin \
+              HOME=/tmp \
+              LC_ALL=C \
+              GIT_DIR="$GITHUB_WORKSPACE/.git" \
+              GIT_WORK_TREE="$GITHUB_WORKSPACE" \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              GIT_CONFIG_COUNT=2 \
+              GIT_CONFIG_KEY_0=core.worktree \
+              GIT_CONFIG_VALUE_0="$GITHUB_WORKSPACE" \
+              GIT_CONFIG_KEY_1=core.bare \
+              GIT_CONFIG_VALUE_1=false \
+              /usr/bin/git cat-file blob "$expected_blob" &&
+            builtin printf '%s' "$sentinel"
+          )"
+          case "$producer_bytes" in
+            *"$sentinel") producer_bytes="${producer_bytes%"$sentinel"}" ;;
+            *) builtin printf 'Trusted producer sentinel missing after Git-object materialization.\n' >&2; exit 2 ;;
+          esac
+
+          materialized_blob="$(
+            builtin printf '%s' "$producer_bytes" |
+              /usr/bin/env -i \
+                PATH=/usr/bin:/bin \
+                HOME=/tmp \
+                LC_ALL=C \
+                GIT_CONFIG_NOSYSTEM=1 \
+                GIT_CONFIG_GLOBAL=/dev/null \
+                GIT_NO_REPLACE_OBJECTS=1 \
+                /usr/bin/git -C /tmp hash-object --stdin
+          )"
+          builtin printf 'Trusted Simulator execution blob: %s\n' "$materialized_blob"
           test "$materialized_blob" = "$expected_blob"
-          builtin printf '%s' "$producer_bytes" | /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME=/tmp LC_ALL=C GIT_DIR="$GITHUB_WORKSPACE/.git" GIT_WORK_TREE="$GITHUB_WORKSPACE" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_NO_REPLACE_OBJECTS=1 GIT_INDEX_FILE="$trusted_index" GIT_CONFIG_COUNT=5 GIT_CONFIG_KEY_0=core.worktree GIT_CONFIG_VALUE_0="$GITHUB_WORKSPACE" GIT_CONFIG_KEY_1=core.bare GIT_CONFIG_VALUE_1=false GIT_CONFIG_KEY_2=core.fsmonitor GIT_CONFIG_VALUE_2=false GIT_CONFIG_KEY_3=core.ignorestat GIT_CONFIG_VALUE_3=false GIT_CONFIG_KEY_4=core.filemode GIT_CONFIG_VALUE_4=true /bin/bash --noprofile --norc -p -c 'source /dev/stdin' "$GITHUB_WORKSPACE/$producer_path"
+
+          builtin printf '%s' "$producer_bytes" |
+            /usr/bin/env -i \
+              PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+              HOME=/tmp \
+              LC_ALL=C \
+              GIT_DIR="$GITHUB_WORKSPACE/.git" \
+              GIT_WORK_TREE="$GITHUB_WORKSPACE" \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              GIT_INDEX_FILE="$trusted_index" \
+              GIT_CONFIG_COUNT=5 \
+              GIT_CONFIG_KEY_0=core.worktree \
+              GIT_CONFIG_VALUE_0="$GITHUB_WORKSPACE" \
+              GIT_CONFIG_KEY_1=core.bare \
+              GIT_CONFIG_VALUE_1=false \
+              GIT_CONFIG_KEY_2=core.fsmonitor \
+              GIT_CONFIG_VALUE_2=false \
+              GIT_CONFIG_KEY_3=core.ignorestat \
+              GIT_CONFIG_VALUE_3=false \
+              GIT_CONFIG_KEY_4=core.filemode \
+              GIT_CONFIG_VALUE_4=true \
+              /bin/bash --noprofile --norc -p -c 'source /dev/stdin' "$GITHUB_WORKSPACE/$producer_path"
 
       - name: Verify retained Capture evidence against trusted resolver authority
         shell: "/bin/bash --noprofile --norc -p -e -o pipefail {0}"
@@ -311,36 +548,148 @@ jobs:
           EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
         run: |
           /usr/bin/python3 -I - <<'PY'
-          import hashlib, json, os, plistlib, re, subprocess
+          import hashlib
+          import json
+          import os
+          import plistlib
+          import re
+          import subprocess
           from pathlib import Path
-          root=Path("Artifacts/Xcode27Simulator"); record_path=root/"NembraCaptureExternalBuildRecord.json"; executable=root/"build-evidence"/"Nembra"; info_plist=root/"build-evidence"/"Info.plist"
-          expected_head=os.environ.get("EXPECTED_HEAD_SHA","").strip()
-          if re.fullmatch(r"[0-9a-f]{40}", expected_head) is None: raise SystemExit("Trusted resolver did not supply one canonical lowercase 40-hex SHA")
-          git_environment={"PATH":"/usr/bin:/bin","HOME":"/tmp","LC_ALL":"C","GIT_CONFIG_NOSYSTEM":"1","GIT_CONFIG_GLOBAL":"/dev/null","GIT_NO_REPLACE_OBJECTS":"1"}
-          actual_head=subprocess.check_output(["/usr/bin/git","rev-parse","--verify","HEAD^{commit}"],text=True,cwd=Path.cwd(),env=git_environment).strip()
-          if actual_head != expected_head: raise SystemExit("Checkout HEAD changed after trusted resolution/build; refusing retained evidence")
-          record=json.loads(record_path.read_text(encoding="utf-8")); expected_keys={"schemaVersion","buildIdentifier","buildInstanceID","sourceCommitSHA","executableSHA256","infoPlistSHA256","experimentRecipeID","procedureVersion"}
-          if set(record)!=expected_keys or record.get("schemaVersion")!=3: raise SystemExit("Capture external build record is not the exact closed-world schema v3 shape")
-          retained_plist=plistlib.loads(info_plist.read_bytes()); expected_recipe="ES80-FINGERPRINT-v1"; expected_procedure="V14"; build_instance_pattern=re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+          root = Path("Artifacts/Xcode27Simulator")
+          record_path = root / "NembraCaptureExternalBuildRecord.json"
+          executable = root / "build-evidence" / "Nembra"
+          info_plist = root / "build-evidence" / "Info.plist"
+
+          expected_head = os.environ.get("EXPECTED_HEAD_SHA", "").strip()
+          if re.fullmatch(r"[0-9a-f]{40}", expected_head) is None:
+              raise SystemExit("Trusted resolver did not supply one canonical lowercase 40-hex SHA")
+
+          git_environment = {
+              "PATH": "/usr/bin:/bin",
+              "HOME": "/tmp",
+              "LC_ALL": "C",
+              "GIT_CONFIG_NOSYSTEM": "1",
+              "GIT_CONFIG_GLOBAL": "/dev/null",
+              "GIT_NO_REPLACE_OBJECTS": "1",
+          }
+          actual_head = subprocess.check_output(
+              ["/usr/bin/git", "rev-parse", "--verify", "HEAD^{commit}"],
+              text=True,
+              cwd=Path.cwd(),
+              env=git_environment,
+          ).strip()
+          if actual_head != expected_head:
+              raise SystemExit("Checkout HEAD changed after trusted resolution/build; refusing retained evidence")
+
+          record = json.loads(record_path.read_text(encoding="utf-8"))
+          expected_keys = {
+              "schemaVersion",
+              "buildIdentifier",
+              "buildInstanceID",
+              "sourceCommitSHA",
+              "executableSHA256",
+              "infoPlistSHA256",
+              "experimentRecipeID",
+              "procedureVersion",
+          }
+          if set(record) != expected_keys or record.get("schemaVersion") != 3:
+              raise SystemExit("Capture external build record is not the exact closed-world schema v3 shape")
+
+          retained_plist = plistlib.loads(info_plist.read_bytes())
+          expected_recipe = "ES80-FINGERPRINT-v1"
+          expected_procedure = "V14"
+          build_instance_pattern = re.compile(
+              r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+          )
+
           def verify_semantic_tuple(subject, plist, authority_head):
-              if subject.get("sourceCommitSHA")!=authority_head: raise ValueError("external record sourceCommitSHA does not match trusted resolver SHA")
-              if subject.get("buildIdentifier")!=f"Capture Build V14-{authority_head[:12]}": raise ValueError("external record buildIdentifier does not match trusted resolver SHA")
-              if subject.get("experimentRecipeID")!=expected_recipe: raise ValueError("external record experimentRecipeID is not canonical ES80-FINGERPRINT-v1")
-              if subject.get("procedureVersion")!=expected_procedure: raise ValueError("external record procedureVersion is not canonical V14")
-              instance=subject.get("buildInstanceID")
-              if not isinstance(instance,str) or build_instance_pattern.fullmatch(instance) is None: raise ValueError("external record buildInstanceID is not one canonical lowercase UUID")
-              embedded={"buildIdentifier":plist.get("NembraCaptureBuildIdentifier"),"buildInstanceID":plist.get("NembraCaptureBuildInstanceID"),"sourceCommitSHA":plist.get("NembraCaptureBuildCommitSHA"),"experimentRecipeID":plist.get("NembraCaptureFieldRecipe")}
-              for key,value in embedded.items():
-                  if value!=subject.get(key): raise ValueError(f"retained Info.plist {key} does not match external record")
-          try: verify_semantic_tuple(record,retained_plist,expected_head)
-          except ValueError as error: raise SystemExit(str(error)) from error
-          def sha256(path):
-              digest=hashlib.sha256()
+              expected_label = f"Capture Build V14-{authority_head[:12]}"
+              if subject.get("sourceCommitSHA") != authority_head:
+                  raise ValueError("external record sourceCommitSHA does not match trusted resolver SHA")
+              if subject.get("buildIdentifier") != expected_label:
+                  raise ValueError("external record buildIdentifier does not match trusted resolver SHA")
+              if subject.get("experimentRecipeID") != expected_recipe:
+                  raise ValueError("external record experimentRecipeID is not canonical ES80-FINGERPRINT-v1")
+              if subject.get("procedureVersion") != expected_procedure:
+                  raise ValueError("external record procedureVersion is not canonical V14")
+
+              build_instance = subject.get("buildInstanceID")
+              if not isinstance(build_instance, str) or build_instance_pattern.fullmatch(build_instance) is None:
+                  raise ValueError("external record buildInstanceID is not one canonical lowercase UUID")
+
+              embedded = {
+                  "buildIdentifier": plist.get("NembraCaptureBuildIdentifier"),
+                  "buildInstanceID": plist.get("NembraCaptureBuildInstanceID"),
+                  "sourceCommitSHA": plist.get("NembraCaptureBuildCommitSHA"),
+                  "experimentRecipeID": plist.get("NembraCaptureFieldRecipe"),
+              }
+              for key, value in embedded.items():
+                  if value != subject.get(key):
+                      raise ValueError(f"retained Info.plist {key} does not match external record")
+
+          try:
+              verify_semantic_tuple(record, retained_plist, expected_head)
+          except ValueError as error:
+              raise SystemExit(str(error)) from error
+
+          def require_rejected(label, mutated_record=None, mutated_plist=None, authority_head=None):
+              candidate_record = record if mutated_record is None else mutated_record
+              candidate_plist = retained_plist if mutated_plist is None else mutated_plist
+              candidate_head = expected_head if authority_head is None else authority_head
+              try:
+                  verify_semantic_tuple(candidate_record, candidate_plist, candidate_head)
+              except ValueError:
+                  return
+              raise SystemExit(f"semantic verifier self-test accepted {label}")
+
+          wrong_source = dict(record)
+          wrong_source["sourceCommitSHA"] = "0" * 40 if expected_head != "0" * 40 else "1" * 40
+          wrong_source["buildIdentifier"] = f"Capture Build V14-{wrong_source['sourceCommitSHA'][:12]}"
+          require_rejected("a detached source/build label", mutated_record=wrong_source)
+
+          wrong_instance = dict(record)
+          wrong_instance["buildInstanceID"] = (
+              "00000000-0000-0000-0000-000000000000"
+              if record["buildInstanceID"] != "00000000-0000-0000-0000-000000000000"
+              else "11111111-1111-1111-1111-111111111111"
+          )
+          require_rejected("a detached build-instance ID", mutated_record=wrong_instance)
+
+          wrong_recipe = dict(record)
+          wrong_recipe["experimentRecipeID"] = "ES80-FINGERPRINT-v2"
+          require_rejected("a detached experiment recipe", mutated_record=wrong_recipe)
+
+          wrong_procedure = dict(record)
+          wrong_procedure["procedureVersion"] = "V15"
+          require_rejected("a detached procedure version", mutated_record=wrong_procedure)
+
+          wrong_plist = dict(retained_plist)
+          wrong_plist["NembraCaptureBuildInstanceID"] = (
+              "22222222-2222-2222-2222-222222222222"
+              if record["buildInstanceID"] != "22222222-2222-2222-2222-222222222222"
+              else "33333333-3333-3333-3333-333333333333"
+          )
+          require_rejected("detached retained Info.plist metadata", mutated_plist=wrong_plist)
+
+          wrong_recipe_plist = dict(retained_plist)
+          wrong_recipe_plist["NembraCaptureFieldRecipe"] = "ES80-FINGERPRINT-v2"
+          require_rejected("detached retained Info.plist recipe", mutated_plist=wrong_recipe_plist)
+
+          alternate_authority = "0" * 40 if expected_head != "0" * 40 else "1" * 40
+          require_rejected("a PR-controlled post-build HEAD authority", authority_head=alternate_authority)
+
+          def sha256(path: Path) -> str:
+              digest = hashlib.sha256()
               with path.open("rb") as handle:
-                  for chunk in iter(lambda:handle.read(1024*1024),b""): digest.update(chunk)
+                  for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                      digest.update(chunk)
               return digest.hexdigest()
-          if sha256(executable)!=record["executableSHA256"]: raise SystemExit("Retained Capture executable no longer matches the exact-head external record")
-          if sha256(info_plist)!=record["infoPlistSHA256"]: raise SystemExit("Retained Capture Info.plist no longer matches the exact-head external record")
+
+          if sha256(executable) != record["executableSHA256"]:
+              raise SystemExit("Retained Capture executable no longer matches the exact-head external record")
+          if sha256(info_plist) != record["infoPlistSHA256"]:
+              raise SystemExit("Retained Capture Info.plist no longer matches the exact-head external record")
           PY
 
       - name: Upload trusted Capture Simulator screenshots and logs
@@ -359,11 +708,21 @@ jobs:
           PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
         with:
           script: |
-            const response = await github.rest.pulls.get({owner: context.repo.owner, repo: context.repo.repo, pull_number: Number(process.env.PR_NUMBER)})
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            })
             const pr = response.data
             const repository = `${context.repo.owner}/${context.repo.repo}`
             core.info(`Trusted resolver head: ${process.env.EXPECTED_HEAD_SHA}`)
             core.info(`Final live PR head: ${pr.head.sha}`)
-            if (pr.state !== 'open') core.setFailed('PR closed before trusted Capture acceptance completed.')
-            if (pr.head.repo.full_name !== repository) core.setFailed('PR source repository changed before trusted Capture acceptance completed.')
-            if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) core.setFailed('PR head moved during trusted Capture acceptance; stale run is non-evidence.')
+            if (pr.state !== 'open') {
+              core.setFailed('PR closed before trusted Capture acceptance completed.')
+            }
+            if (pr.head.repo.full_name !== repository) {
+              core.setFailed('PR source repository changed before trusted Capture acceptance completed.')
+            }
+            if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) {
+              core.setFailed('PR head moved during trusted Capture acceptance; stale run is non-evidence.')
+            }
