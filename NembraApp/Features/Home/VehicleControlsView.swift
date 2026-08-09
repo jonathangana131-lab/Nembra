@@ -117,17 +117,21 @@ struct VehicleControlsView: View {
                 title: "Locked",
                 selected: vehicle.state.isLocked == true,
                 pending: vehicle.pendingCommands.contains(.lock),
-                enabled: !isVehicleMoving
+                enabled: vehicle.canLockFromCurrentSpeedEvidence
             ) {
                 await vehicle.setLocked(true)
             }
         } header: {
             Text("Vehicle Lock")
         } footer: {
-            if isVehicleMoving && vehicle.state.isLocked != true {
+            if vehicle.state.isLocked == true {
+                Text("Unlocking does not require Nembra to claim that the scooter is stopped. Lock state changes appear only after the scooter service confirms them.")
+            } else if vehicle.simulatorQualifiedLiveSpeedKilometersPerHour == nil {
+                Text("Live stopped-speed evidence is required before Nembra can lock the scooter. Unlock remains available when the scooter is connected.")
+            } else if !vehicle.canLockFromCurrentSpeedEvidence {
                 Text("Stop the scooter before locking it. Unlock remains available when the scooter is connected.")
             } else {
-                Text("Lock state changes appear only after the scooter service confirms them.")
+                Text("Current stopped-speed evidence is available. Nembra changes lock state only after the scooter service confirms the command.")
             }
         }
     }
@@ -247,10 +251,6 @@ struct VehicleControlsView: View {
 
     private var commandsAvailable: Bool {
         vehicle.state.connection == .connected
-    }
-
-    private var isVehicleMoving: Bool {
-        (vehicle.state.speedKilometersPerHour ?? 0) >= 0.5
     }
 
     private var connectionText: String {

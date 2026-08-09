@@ -601,22 +601,20 @@ struct HomeView: View {
     }
 
     private var lockControlTitle: String {
-        if isVehicleMoving && vehicle.state.isLocked != true { return "Lock" }
-        return vehicle.state.isLocked == true ? "Unlock" : "Lock"
+        vehicle.state.isLocked == true ? "Unlock" : "Lock"
     }
 
     private var lockSubtitle: String {
         guard let locked = vehicle.state.isLocked else { return "Unknown" }
-        if !locked && isVehicleMoving { return "Stop to lock" }
-        return locked ? "Secured" : "Ready"
-    }
-
-    private var isVehicleMoving: Bool {
-        (vehicle.state.speedKilometersPerHour ?? 0) >= 0.5
+        if locked { return "Secured" }
+        guard let speed = vehicle.simulatorQualifiedLiveSpeedKilometersPerHour else {
+            return "Live speed required"
+        }
+        return speed >= 0.5 ? "Stop to lock" : "Ready"
     }
 
     private var canChangeLockState: Bool {
-        vehicle.state.isLocked == true || !isVehicleMoving
+        vehicle.state.isLocked == true || vehicle.canLockFromCurrentSpeedEvidence
     }
 
     private var isBatteryLow: Bool {
@@ -651,7 +649,7 @@ struct HomeView: View {
 
         switch vehicle.state.connection {
         case .connected:
-            if let speed = vehicle.state.speedKilometersPerHour, speed > 0.5 {
+            if let speed = vehicle.simulatorQualifiedLiveSpeedKilometersPerHour, speed > 0.5 {
                 return "Riding · \(VehicleDisplayFormatting.speed(kilometersPerHour: speed))"
             }
             return "Connected"
