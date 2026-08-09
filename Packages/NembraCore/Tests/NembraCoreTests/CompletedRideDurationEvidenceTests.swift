@@ -208,23 +208,54 @@ struct CompletedRideDurationEvidenceTests {
         }
     }
 
-    @Test("durable round trip preserves bound evidence")
-    func codableRoundTrip() throws {
+    @Test("authoritative evidence exports a structurally stable non-authoritative archive")
+    func archiveRoundTripPreservesFields() throws {
         let original = try CompletedRideDurationEvidence(
             completedRide: completedRide(),
             duration: partialDuration()
         )
+        let archive = original.persistenceArchive
 
-        let data = try JSONEncoder().encode(original)
+        let data = try JSONEncoder().encode(archive)
         let decoded = try JSONDecoder().decode(
-            CompletedRideDurationEvidence.self,
+            CompletedRideDurationEvidenceArchive.self,
             from: data
         )
 
-        #expect(decoded == original)
+        #expect(decoded == archive)
+        #expect(decoded.sessionID == original.sessionID)
+        #expect(decoded.rideContinuity == original.rideContinuity)
+        #expect(decoded.observedDurationNanoseconds == original.observedDurationNanoseconds)
+        #expect(decoded.coverage == original.coverage)
+        #expect(decoded.observationSegmentCount == original.observationSegmentCount)
     }
 
-    @Test("decoded unavailable evidence cannot claim coverage or segments")
+    @Test("caller-authored matching JSON decodes only as non-authoritative archive")
+    func callerAuthoredJSONStaysArchive() throws {
+        let data = Data(
+            """
+            {
+              "sessionID": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+              "rideContinuity": "uninterruptedProcess",
+              "observedDurationNanoseconds": 999999999999,
+              "coverage": "complete",
+              "observationSegmentCount": 1
+            }
+            """.utf8
+        )
+
+        let decoded = try JSONDecoder().decode(
+            CompletedRideDurationEvidenceArchive.self,
+            from: data
+        )
+
+        #expect(decoded.sessionID == sessionID)
+        #expect(decoded.observedDurationNanoseconds == 999_999_999_999)
+        #expect(decoded.coverage == .complete)
+        #expect(decoded.observationSegmentCount == 1)
+    }
+
+    @Test("decoded unavailable archive cannot claim coverage or segments")
     func malformedUnavailablePersistenceRejected() {
         let data = Data(
             """
@@ -238,11 +269,11 @@ struct CompletedRideDurationEvidenceTests {
         )
 
         #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(CompletedRideDurationEvidence.self, from: data)
+            try JSONDecoder().decode(CompletedRideDurationEvidenceArchive.self, from: data)
         }
     }
 
-    @Test("decoded observed duration cannot claim unknown coverage")
+    @Test("decoded observed archive cannot claim unknown coverage")
     func malformedObservedUnknownPersistenceRejected() {
         let data = Data(
             """
@@ -257,11 +288,11 @@ struct CompletedRideDurationEvidenceTests {
         )
 
         #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(CompletedRideDurationEvidence.self, from: data)
+            try JSONDecoder().decode(CompletedRideDurationEvidenceArchive.self, from: data)
         }
     }
 
-    @Test("decoded observed duration requires at least one observation segment")
+    @Test("decoded observed archive requires at least one observation segment")
     func malformedObservedSegmentCountRejected() {
         let data = Data(
             """
@@ -276,11 +307,11 @@ struct CompletedRideDurationEvidenceTests {
         )
 
         #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(CompletedRideDurationEvidence.self, from: data)
+            try JSONDecoder().decode(CompletedRideDurationEvidenceArchive.self, from: data)
         }
     }
 
-    @Test("decoded recovered ride cannot fabricate complete duration coverage")
+    @Test("decoded recovered archive cannot fabricate complete duration coverage")
     func malformedRecoveredCompletePersistenceRejected() {
         let data = Data(
             """
@@ -295,7 +326,7 @@ struct CompletedRideDurationEvidenceTests {
         )
 
         #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(CompletedRideDurationEvidence.self, from: data)
+            try JSONDecoder().decode(CompletedRideDurationEvidenceArchive.self, from: data)
         }
     }
 

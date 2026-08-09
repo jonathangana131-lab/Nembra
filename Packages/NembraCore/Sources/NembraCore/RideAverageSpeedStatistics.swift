@@ -61,7 +61,7 @@ public struct RideAverageSpeedStatisticsRide: Equatable, Sendable {
                 throw RideAverageSpeedStatisticsError.sessionMismatch
             case .continuityMismatch:
                 throw RideAverageSpeedStatisticsError.continuityMismatch
-            case .invalidDurationEvidence:
+            case .completedRideMismatch, .invalidDurationEvidence:
                 throw RideAverageSpeedStatisticsError.invalidRide
             }
         }

@@ -3,31 +3,34 @@ import Foundation
 public enum CompletedRideDurationEvidenceError: Error, Equatable, Sendable {
     case sessionMismatch
     case continuityMismatch
+    case completedRideMismatch
     case invalidDurationEvidence
 }
 
 /// Durable elapsed-time evidence bound to one immutable completed ride.
 ///
-/// This type exists specifically so History/Statistics never need to infer ride
-/// duration by subtracting `CompletedRideEvidence` wall-clock dates. Those dates
-/// remain timeline/presentation evidence and may legitimately move backward or
-/// jump forward when the system clock changes during a ride.
+/// This authoritative type is deliberately **not Decodable**. Generic persisted,
+/// imported, or caller-authored bytes cannot become observed monotonic-duration
+/// authority merely by matching a ride UUID and continuity label.
 ///
 /// `observedDurationNanoseconds` is the sum of process-local monotonic intervals
 /// Nembra actually observed. `coverage == .partial` means at least one elapsed
 /// interval is explicitly unknown; that missing time must not be reconstructed
 /// from wall-clock timestamps. `nil` with `.unknown` is unavailable evidence,
 /// not a measured zero-duration ride.
-public struct CompletedRideDurationEvidence: Codable, Equatable, Sendable {
+public struct CompletedRideDurationEvidence: Equatable, Sendable {
+    /// Exact immutable completed-ride subject that this duration was bound to.
+    /// Session UUID + continuity alone are insufficient because a conflicting
+    /// completed snapshot can reuse both while differing in dates/distance fields.
+    public let completedRideEvidence: CompletedRideEvidence
     public let sessionID: UUID
     public let rideContinuity: RideSessionContinuity
     public let observedDurationNanoseconds: UInt64?
     public let coverage: RideSessionDurationCoverage
     public let observationSegmentCount: Int
 
-    /// Binds duration evidence to a completed ride without consulting wall-clock
-    /// deltas. The completed ride's continuity is retained as a cross-check at
-    /// future persistence/read boundaries.
+    /// Binds package-produced duration evidence to one exact completed ride without
+    /// consulting wall-clock deltas to manufacture elapsed time.
     public init(
         completedRide: CompletedRideEvidence,
         duration: RideSessionDurationEvidenceSnapshot
@@ -36,17 +39,24 @@ public struct CompletedRideDurationEvidence: Codable, Equatable, Sendable {
             throw CompletedRideDurationEvidenceError.sessionMismatch
         }
 
-        try self.init(
-            sessionID: completedRide.sessionID,
+        try CompletedRideDurationEvidenceValidation.validate(
             rideContinuity: completedRide.continuity,
             observedDurationNanoseconds: duration.observedDurationNanoseconds,
             coverage: duration.coverage,
             observationSegmentCount: duration.observationSegmentCount
         )
+
+        self.completedRideEvidence = completedRide
+        self.sessionID = completedRide.sessionID
+        self.rideContinuity = completedRide.continuity
+        self.observedDurationNanoseconds = duration.observedDurationNanoseconds
+        self.coverage = duration.coverage
+        self.observationSegmentCount = duration.observationSegmentCount
     }
 
-    /// Verifies that this immutable duration projection still belongs to the
-    /// supplied completed-ride evidence before a caller joins the two records.
+    /// Verifies that this already-authoritative immutable projection still belongs
+    /// to the exact supplied completed ride, not merely another record that reused
+    /// its UUID and continuity label.
     public func validate(against completedRide: CompletedRideEvidence) throws {
         guard completedRide.sessionID == sessionID else {
             throw CompletedRideDurationEvidenceError.sessionMismatch
@@ -54,10 +64,136 @@ public struct CompletedRideDurationEvidence: Codable, Equatable, Sendable {
         guard completedRide.continuity == rideContinuity else {
             throw CompletedRideDurationEvidenceError.continuityMismatch
         }
+        guard completedRide == completedRideEvidence else {
+            throw CompletedRideDurationEvidenceError.completedRideMismatch
+        }
     }
 
-    private init(
+    /// Non-authoritative Codable representation for durable storage and offline QA.
+    ///
+    /// Converting accepted evidence to an archive is one-way in this contract.
+    /// The archive retains the exact completed-ride subject for provenance joining,
+    /// but that does not make decoded duration bytes authoritative.
+    public var persistenceArchive: CompletedRideDurationEvidenceArchive {
+        CompletedRideDurationEvidenceArchive(
+            validatedSessionID: sessionID,
+            rideContinuity: rideContinuity,
+            completedRideEvidence: completedRideEvidence,
+            observedDurationNanoseconds: observedDurationNanoseconds,
+            coverage: coverage,
+            observationSegmentCount: observationSegmentCount
+        )
+    }
+}
+
+/// Structurally validated but **non-authoritative** persisted representation of
+/// completed ride duration fields.
+///
+/// `completedRideEvidence` is an optional provenance subject for compatibility with
+/// older/imported archives. A missing subject is still valid archival data, but it
+/// cannot be joined as an exact `RideHistoryDurationAttachment`. Presence of an exact
+/// subject likewise does not promote the duration fields to runtime authority.
+public struct CompletedRideDurationEvidenceArchive: Codable, Equatable, Sendable {
+    public let sessionID: UUID
+    public let rideContinuity: RideSessionContinuity
+    public let completedRideEvidence: CompletedRideEvidence?
+    public let observedDurationNanoseconds: UInt64?
+    public let coverage: RideSessionDurationCoverage
+    public let observationSegmentCount: Int
+
+    public init(
         sessionID: UUID,
+        rideContinuity: RideSessionContinuity,
+        completedRideEvidence: CompletedRideEvidence? = nil,
+        observedDurationNanoseconds: UInt64?,
+        coverage: RideSessionDurationCoverage,
+        observationSegmentCount: Int
+    ) throws {
+        try CompletedRideDurationEvidenceValidation.validate(
+            rideContinuity: rideContinuity,
+            observedDurationNanoseconds: observedDurationNanoseconds,
+            coverage: coverage,
+            observationSegmentCount: observationSegmentCount
+        )
+
+        if let completedRideEvidence {
+            guard completedRideEvidence.sessionID == sessionID else {
+                throw CompletedRideDurationEvidenceError.sessionMismatch
+            }
+            guard completedRideEvidence.continuity == rideContinuity else {
+                throw CompletedRideDurationEvidenceError.continuityMismatch
+            }
+        }
+
+        self.sessionID = sessionID
+        self.rideContinuity = rideContinuity
+        self.completedRideEvidence = completedRideEvidence
+        self.observedDurationNanoseconds = observedDurationNanoseconds
+        self.coverage = coverage
+        self.observationSegmentCount = observationSegmentCount
+    }
+
+    fileprivate init(
+        validatedSessionID sessionID: UUID,
+        rideContinuity: RideSessionContinuity,
+        completedRideEvidence: CompletedRideEvidence,
+        observedDurationNanoseconds: UInt64?,
+        coverage: RideSessionDurationCoverage,
+        observationSegmentCount: Int
+    ) {
+        self.sessionID = sessionID
+        self.rideContinuity = rideContinuity
+        self.completedRideEvidence = completedRideEvidence
+        self.observedDurationNanoseconds = observedDurationNanoseconds
+        self.coverage = coverage
+        self.observationSegmentCount = observationSegmentCount
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionID
+        case rideContinuity
+        case completedRideEvidence
+        case observedDurationNanoseconds
+        case coverage
+        case observationSegmentCount
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        do {
+            try self.init(
+                sessionID: container.decode(UUID.self, forKey: .sessionID),
+                rideContinuity: container.decode(RideSessionContinuity.self, forKey: .rideContinuity),
+                completedRideEvidence: container.decodeIfPresent(
+                    CompletedRideEvidence.self,
+                    forKey: .completedRideEvidence
+                ),
+                observedDurationNanoseconds: container.decodeIfPresent(
+                    UInt64.self,
+                    forKey: .observedDurationNanoseconds
+                ),
+                coverage: container.decode(
+                    RideSessionDurationCoverage.self,
+                    forKey: .coverage
+                ),
+                observationSegmentCount: container.decode(
+                    Int.self,
+                    forKey: .observationSegmentCount
+                )
+            )
+        } catch let error as CompletedRideDurationEvidenceError {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "Completed ride duration archive is structurally invalid: \(error)."
+                )
+            )
+        }
+    }
+}
+
+private enum CompletedRideDurationEvidenceValidation {
+    static func validate(
         rideContinuity: RideSessionContinuity,
         observedDurationNanoseconds: UInt64?,
         coverage: RideSessionDurationCoverage,
@@ -83,9 +219,7 @@ public struct CompletedRideDurationEvidence: Codable, Equatable, Sendable {
             // The duration accumulator can report complete coverage only when
             // exactly one contiguous observation segment exists. Every segment
             // after sequence zero must explicitly follow an unobserved interval,
-            // which makes coverage partial. Reject impossible durable states at
-            // this binding/decoding boundary instead of letting forged history
-            // claim complete process-local elapsed-time coverage.
+            // which makes coverage partial.
             if coverage == .complete,
                observationSegmentCount != 1 {
                 throw CompletedRideDurationEvidenceError.invalidDurationEvidence
@@ -100,60 +234,5 @@ public struct CompletedRideDurationEvidence: Codable, Equatable, Sendable {
            coverage == .complete {
             throw CompletedRideDurationEvidenceError.invalidDurationEvidence
         }
-
-        self.sessionID = sessionID
-        self.rideContinuity = rideContinuity
-        self.observedDurationNanoseconds = observedDurationNanoseconds
-        self.coverage = coverage
-        self.observationSegmentCount = observationSegmentCount
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case sessionID
-        case rideContinuity
-        case observedDurationNanoseconds
-        case coverage
-        case observationSegmentCount
-    }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        do {
-            try self.init(
-                sessionID: container.decode(UUID.self, forKey: .sessionID),
-                rideContinuity: container.decode(RideSessionContinuity.self, forKey: .rideContinuity),
-                observedDurationNanoseconds: container.decodeIfPresent(
-                    UInt64.self,
-                    forKey: .observedDurationNanoseconds
-                ),
-                coverage: container.decode(
-                    RideSessionDurationCoverage.self,
-                    forKey: .coverage
-                ),
-                observationSegmentCount: container.decode(
-                    Int.self,
-                    forKey: .observationSegmentCount
-                )
-            )
-        } catch let error as CompletedRideDurationEvidenceError {
-            throw DecodingError.dataCorrupted(
-                .init(
-                    codingPath: decoder.codingPath,
-                    debugDescription: "Completed ride duration evidence is structurally invalid: \(error)."
-                )
-            )
-        }
-    }
-
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(sessionID, forKey: .sessionID)
-        try container.encode(rideContinuity, forKey: .rideContinuity)
-        try container.encodeIfPresent(
-            observedDurationNanoseconds,
-            forKey: .observedDurationNanoseconds
-        )
-        try container.encode(coverage, forKey: .coverage)
-        try container.encode(observationSegmentCount, forKey: .observationSegmentCount)
     }
 }
