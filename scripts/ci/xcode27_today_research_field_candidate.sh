@@ -49,4 +49,30 @@ XCCONFIG
 
 export XCODE_XCCONFIG_FILE="$TODAY_XCCONFIG"
 
-"$CANONICAL_PRODUCER" "$@"
+# The active TODAY directive requires this exact wrapper to produce the private candidate from the
+# already accepted Nembra source. Preserve the real signing/Xcode/keychain environment, but do not
+# allow caller Git repository/config/object redirection to change which repository, commit, tools,
+# or detached worktree the canonical producer treats as SOURCE_SHA authority. Repository-local Git
+# semantics remain the canonical producer's responsibility; this boundary closes inherited process
+# authority for the only producer entry point authorized by the first private Research procedure.
+/usr/bin/env \
+  -u GIT_DIR \
+  -u GIT_WORK_TREE \
+  -u GIT_COMMON_DIR \
+  -u GIT_INDEX_FILE \
+  -u GIT_OBJECT_DIRECTORY \
+  -u GIT_ALTERNATE_OBJECT_DIRECTORIES \
+  -u GIT_NAMESPACE \
+  -u GIT_SHALLOW_FILE \
+  -u GIT_GRAFT_FILE \
+  -u GIT_CEILING_DIRECTORIES \
+  -u GIT_DISCOVERY_ACROSS_FILESYSTEM \
+  -u GIT_CONFIG \
+  -u GIT_CONFIG_SYSTEM \
+  -u GIT_CONFIG_COUNT \
+  -u GIT_CONFIG_PARAMETERS \
+  GIT_CONFIG_NOSYSTEM=1 \
+  GIT_CONFIG_GLOBAL=/dev/null \
+  GIT_NO_REPLACE_OBJECTS=1 \
+  GIT_ATTR_NOSYSTEM=1 \
+  "$CANONICAL_PRODUCER" "$@"
