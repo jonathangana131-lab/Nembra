@@ -573,11 +573,11 @@ private struct ES80ExperimentOneFieldNoGoView: View {
         ScrollView {
             VStack(
                 alignment: .leading,
-                spacing: verticalSizeClass == .compact ? 10 : (isAccessibilityLayout ? 8 : 28)
+                spacing: verticalSizeClass == .compact ? 10 : (isAccessibilityLayout ? 6 : 28)
             ) {
                 VStack(
                     alignment: .leading,
-                    spacing: verticalSizeClass == .compact ? 6 : (isAccessibilityLayout ? 4 : 14)
+                    spacing: verticalSizeClass == .compact ? 6 : (isAccessibilityLayout ? 3 : 14)
                 ) {
                     HStack(spacing: isAccessibilityLayout ? 0 : 12) {
                         if !isAccessibilityLayout {
@@ -609,7 +609,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
 
                             Text("Capture locked")
                                 .font(.system(
-                                    isAccessibilityLayout || verticalSizeClass == .compact ? .title2 : .largeTitle,
+                                    isAccessibilityLayout || verticalSizeClass == .compact ? .headline : .largeTitle,
                                     design: .rounded,
                                     weight: .semibold
                                 ))
@@ -619,8 +619,8 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                     }
 
                     if isAccessibilityLayout {
-                        Text("Final exact-build checks are still in progress.")
-                            .font(.caption.weight(.semibold))
+                        Text("Final checks in progress.")
+                            .font(.caption2.weight(.semibold))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -667,15 +667,15 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                     }
                 }
 
-                HStack(alignment: .top, spacing: isAccessibilityLayout ? 8 : 12) {
+                HStack(alignment: .top, spacing: isAccessibilityLayout ? 6 : 12) {
                     Image(systemName: "exclamationmark.lock.fill")
-                        .font(isAccessibilityLayout ? .body.weight(.semibold) : .title3.weight(.semibold))
+                        .font(isAccessibilityLayout ? .caption.weight(.semibold) : .title3.weight(.semibold))
                         .foregroundStyle(.orange)
                         .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: 6) {
                         Text(isAccessibilityLayout ? "PHYSICAL CAPTURE · NO-GO" : "Not ready for scooter capture yet")
-                            .font(.headline)
+                            .font(isAccessibilityLayout ? .caption.weight(.bold) : .headline)
                             .foregroundStyle(.white)
 
                         if !isAccessibilityLayout {
@@ -686,7 +686,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         }
                     }
                 }
-                .padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 10 : 18))
+                .padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 6 : 18))
                 .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(physicalLockAccessibilityLabel)
@@ -808,7 +808,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         }
                     }
                 }
-                .padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 10 : 18))
+                .padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 6 : 18))
                 .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
                 if !isAccessibilityLayout {
@@ -820,8 +820,8 @@ private struct ES80ExperimentOneFieldNoGoView: View {
             }
             .frame(maxWidth: 660)
             .padding(.horizontal, isAccessibilityLayout ? 16 : 22)
-            .padding(.top, verticalSizeClass == .compact ? 8 : (isAccessibilityLayout ? 8 : 18))
-            .padding(.bottom, verticalSizeClass == .compact ? 20 : (isAccessibilityLayout ? 12 : 42))
+            .padding(.top, verticalSizeClass == .compact ? 8 : (isAccessibilityLayout ? 2 : 18))
+            .padding(.bottom, verticalSizeClass == .compact ? 20 : (isAccessibilityLayout ? 8 : 42))
             .frame(maxWidth: .infinity)
         }
         .accessibilityIdentifier("es80.capture.field-no-go-scroll")
