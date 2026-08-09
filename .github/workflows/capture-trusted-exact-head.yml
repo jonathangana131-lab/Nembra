@@ -1,0 +1,261 @@
+name: Capture Trusted Exact-Head Acceptance
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  ARTIFACTS_DIR: ${{ github.workspace }}/Artifacts/Xcode27Simulator
+
+jobs:
+  resolve:
+    name: Resolve trusted same-repo Capture head
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.comment.body == '/capture-trusted-xcode27' &&
+      (github.event.comment.author_association == 'OWNER' ||
+       github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'COLLABORATOR')
+    runs-on: ubuntu-latest
+    outputs:
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+      pr_number: ${{ steps.pr.outputs.pr_number }}
+      same_repo: ${{ steps.pr.outputs.same_repo }}
+
+    steps:
+      - name: Resolve immutable PR head
+        id: pr
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            })
+            const pr = response.data
+            const repository = `${context.repo.owner}/${context.repo.repo}`
+            core.setOutput('head_sha', pr.head.sha)
+            core.setOutput('pr_number', String(pr.number))
+            core.setOutput('same_repo', String(pr.head.repo.full_name === repository))
+
+  authority-tooling-qa:
+    name: Validate exact-head field authority tooling
+    needs: resolve
+    if: needs.resolve.outputs.same_repo == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout immutable PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve.outputs.head_sha }}
+
+      - name: Verify immutable PR head
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+        run: |
+          actual_head="$(git rev-parse HEAD)"
+          printf 'Expected exact PR head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual_head"
+          test "$actual_head" = "$EXPECTED_HEAD_SHA"
+
+      - name: Validate offline field authorization signer
+        run: |
+          python3 -m py_compile scripts/ci/es80_field_authorization_envelope.py
+          python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          python3 scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          python3 scripts/ci/es80_field_authorization_envelope.py --self-test
+
+  simulator-qa:
+    name: Build, test, and capture trusted exact PR head
+    needs: resolve
+    if: needs.resolve.outputs.same_repo == 'true'
+    concurrency:
+      group: nembra-capture-trusted-${{ needs.resolve.outputs.pr_number }}-${{ needs.resolve.outputs.head_sha }}
+      cancel-in-progress: false
+    runs-on: xcode-27
+    timeout-minutes: 30
+
+    steps:
+      - name: Reject stale PR head before scarce Mac work
+        uses: actions/github-script@v9
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+        with:
+          script: |
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            })
+            const currentHead = response.data.head.sha
+            core.info(`Expected exact PR head: ${process.env.EXPECTED_HEAD_SHA}`)
+            core.info(`Current live PR head: ${currentHead}`)
+            if (currentHead !== process.env.EXPECTED_HEAD_SHA) {
+              core.setFailed('PR head moved before trusted Mac acceptance began; run is stale non-evidence.')
+            }
+
+      - name: Checkout immutable PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve.outputs.head_sha }}
+
+      - name: Verify immutable PR head before execution
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+        run: |
+          actual_head="$(git rev-parse HEAD)"
+          printf 'Expected exact PR head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual_head"
+          test "$actual_head" = "$EXPECTED_HEAD_SHA"
+
+      - name: Validate project structure
+        run: |
+          plutil -lint Nembra.xcodeproj/project.pbxproj
+          scripts/validate_pbxproj_references.py
+          bash -n scripts/ci/xcode27_simulator_capture.sh
+
+      - name: Validate core package
+        working-directory: Packages/NembraCore
+        run: swift test
+
+      - name: Validate Capture package
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test
+
+      - name: Validate signed field evidence tooling
+        run: |
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
+          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py
+          python3 scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
+          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
+          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py
+
+      - name: Validate signed field candidate producer source
+        run: |
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          bash -n scripts/ci/xcode27_today_research_field_candidate.sh
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+
+      - name: Validate offline field authorization signer
+        run: |
+          python3 -m py_compile scripts/ci/es80_field_authorization_envelope.py
+          python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          python3 scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          python3 scripts/ci/es80_field_authorization_envelope.py --self-test
+
+      - name: Build, test, and capture Simulator states
+        run: scripts/ci/xcode27_simulator_capture.sh
+
+      - name: Verify trusted exact-head retained Capture evidence
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import plistlib
+          import re
+          import subprocess
+          from pathlib import Path
+
+          expected_head = os.environ.get("EXPECTED_HEAD_SHA", "")
+          if re.fullmatch(r"[0-9a-f]{40}", expected_head) is None:
+              raise SystemExit("Trusted resolver did not provide one exact lowercase 40-hex PR head SHA")
+
+          # Local Git state is not the authority after PR-controlled build code has executed.
+          # It is still checked independently as a tamper detector against resolver truth.
+          local_head = subprocess.check_output(
+              ["git", "rev-parse", "--verify", "HEAD^{commit}"], text=True
+          ).strip()
+          if local_head != expected_head:
+              raise SystemExit("Checkout HEAD changed after PR-controlled execution")
+
+          root = Path("Artifacts/Xcode27Simulator")
+          record_path = root / "NembraCaptureExternalBuildRecord.json"
+          executable = root / "build-evidence" / "Nembra"
+          info_plist = root / "build-evidence" / "Info.plist"
+
+          record = json.loads(record_path.read_text(encoding="utf-8"))
+          expected_keys = {
+              "schemaVersion",
+              "buildIdentifier",
+              "buildInstanceID",
+              "sourceCommitSHA",
+              "executableSHA256",
+              "infoPlistSHA256",
+              "experimentRecipeID",
+              "procedureVersion",
+          }
+          if set(record) != expected_keys or record.get("schemaVersion") != 3:
+              raise SystemExit("Capture external build record is not exact closed-world schema v3")
+
+          expected_label = f"Capture Build V14-{expected_head[:12]}"
+          if record.get("sourceCommitSHA") != expected_head:
+              raise SystemExit("External record source SHA does not match trusted resolver SHA")
+          if record.get("buildIdentifier") != expected_label:
+              raise SystemExit("External record build identifier does not match trusted resolver SHA")
+          if record.get("experimentRecipeID") != "ES80-FINGERPRINT-v1":
+              raise SystemExit("External record recipe is not canonical ES80-FINGERPRINT-v1")
+          if record.get("procedureVersion") != "V14":
+              raise SystemExit("External record procedure is not V14")
+          build_instance = record.get("buildInstanceID")
+          if not isinstance(build_instance, str) or re.fullmatch(
+              r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+              build_instance,
+          ) is None:
+              raise SystemExit("External record build-instance ID is not canonical lowercase UUID text")
+
+          retained_plist = plistlib.loads(info_plist.read_bytes())
+          embedded = {
+              "buildIdentifier": retained_plist.get("NembraCaptureBuildIdentifier"),
+              "buildInstanceID": retained_plist.get("NembraCaptureBuildInstanceID"),
+              "sourceCommitSHA": retained_plist.get("NembraCaptureBuildCommitSHA"),
+          }
+          for key, value in embedded.items():
+              if value != record.get(key):
+                  raise SystemExit(f"Retained Info.plist {key} does not match external record")
+
+          def sha256(path: Path) -> str:
+              digest = hashlib.sha256()
+              with path.open("rb") as handle:
+                  for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          if sha256(executable) != record.get("executableSHA256"):
+              raise SystemExit("Retained Capture executable hash does not match external record")
+          if sha256(info_plist) != record.get("infoPlistSHA256"):
+              raise SystemExit("Retained Capture Info.plist hash does not match external record")
+
+          # Self-red-team the main-owned verifier so future edits cannot silently weaken tuple binding.
+          if expected_head == "0" * 40:
+              alternate_head = "1" * 40
+          else:
+              alternate_head = "0" * 40
+          if record.get("sourceCommitSHA") == alternate_head:
+              raise SystemExit("Verifier self-test alternate source unexpectedly matched")
+          if record.get("buildIdentifier") == f"Capture Build V14-{alternate_head[:12]}":
+              raise SystemExit("Verifier self-test alternate build label unexpectedly matched")
+          PY
+
+      - name: Upload trusted Simulator screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-capture-trusted-pr-${{ needs.resolve.outputs.pr_number }}-${{ needs.resolve.outputs.head_sha }}-${{ github.run_attempt }}
+          path: Artifacts/Xcode27Simulator
+          if-no-files-found: warn
+          retention-days: 30
