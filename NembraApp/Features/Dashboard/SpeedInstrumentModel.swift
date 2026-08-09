@@ -321,7 +321,10 @@ struct DashboardSpeedInstrumentView: View {
             // separate raw stream because that stream carries no continuity token.
             model.setSpeedEvidenceAvailability(vehicle.speedEvidenceAvailability)
         }
-        .onChange(of: vehicle.speedEvidenceAvailability, initial: true) { _, availability in
+        .onChange(of: vehicle.speedEvidenceAvailability) { _, availability in
+            // Do not request an initial callback here: the `.task` above must
+            // install the injected interpolation policy before the first live
+            // sample can advance `measurementRevision`.
             model.setSpeedEvidenceAvailability(availability)
         }
         .onChange(of: vehicle.state.connection, initial: true) { _, connection in
