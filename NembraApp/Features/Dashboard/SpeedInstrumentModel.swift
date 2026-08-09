@@ -71,6 +71,7 @@ final class SpeedInstrumentModel {
     private(set) var latestMeasurementUptimeNanoseconds: UInt64?
     private(set) var isAnimationActive = false
 
+    @ObservationIgnored private var latestAcceptedSample: SpeedTelemetrySample?
     @ObservationIgnored private var interpolator = SpeedDisplayInterpolator()
     @ObservationIgnored private var previousMeasurementUptimeNanoseconds: UInt64?
     @ObservationIgnored private var interpolationPolicy: SpeedInstrumentInterpolationPolicy = .disabled
@@ -125,6 +126,7 @@ final class SpeedInstrumentModel {
         }
 
         previousMeasurementUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
+        latestAcceptedSample = sample
         latestMeasurementSource = sample.source
         latestMeasuredKilometersPerHour = sample.kilometersPerHour
         latestMeasurementUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
@@ -200,11 +202,12 @@ final class SpeedInstrumentModel {
             )
 
         case let .live(sample):
-            let isInterpolatorTargetCurrent = latestMeasurementSource == sample.source
-                && latestMeasurementUptimeNanoseconds == sample.receivedAtUptimeNanoseconds
-                && latestMeasuredKilometersPerHour == sample.kilometersPerHour
-
-            guard isInterpolatorTargetCurrent else {
+            // Match the entire immutable accepted sample, not only a convenient
+            // source/uptime/value tuple. Caller-constructible wrappers may preserve
+            // those three fields while changing other evidence identity fields;
+            // such a sample must snap to current accepted truth until lifecycle
+            // admission retargets the interpolator to that exact sample.
+            guard latestAcceptedSample == sample else {
                 return acceptedSourceFallbackFrame(
                     kilometersPerHour: sample.kilometersPerHour
                 )
@@ -279,6 +282,7 @@ final class SpeedInstrumentModel {
         animationEndTask?.cancel()
         animationEndTask = nil
         isAnimationActive = false
+        latestAcceptedSample = nil
         interpolator = SpeedDisplayInterpolator()
         previousMeasurementUptimeNanoseconds = nil
         latestMeasurementSource = nil
