@@ -17,6 +17,8 @@ spec.loader.exec_module(hardened)
 class HardenedFinalGoCompositionTests(unittest.TestCase):
     SOURCE = "a" * 40
     WORKFLOW_SOURCE = "b" * 40
+    IPA = "c" * 64
+    INSTANCE = "12345678-1234-1234-1234-123456789abc"
 
     def kwargs(self, root: Path):
         return {
@@ -31,7 +33,15 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             "frozen_source_repo": root / "source",
             "tooling_repo": root / "tooling",
             "operator_attestation": root / "attestation.json",
+            "operator_attestation_comment_id": 4004,
             "github_get_json": lambda path: (b"{}", {}),
+        }
+
+    def candidate(self):
+        return {
+            "sourceCommitSHA": self.SOURCE,
+            "retainedIPASHA256": self.IPA,
+            "buildInstanceID": self.INSTANCE,
         }
 
     def fake_foundation(self, **kwargs):
@@ -44,9 +54,15 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             artifact_archive_path=kwargs["trusted_xcode_artifact_archive"],
             github_get_json=kwargs["github_get_json"],
         )
+        candidate = self.candidate()
+        operator = hardened.foundation._operator_attestation(
+            kwargs["operator_attestation"], candidate, None
+        )
         return {
             "acceptedSourceCommitSHA": kwargs["expected_source_sha"],
             "trustedXcodeAcceptance": subject,
+            "acceptedSignedFieldCandidate": candidate,
+            "exactRetainedIPAInstallAndRuntimeAttestation": operator,
         }
 
     def trusted_subject(self):
@@ -56,32 +72,105 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             "workflowSourceCommitSHA": self.WORKFLOW_SOURCE,
         }
 
-    def test_composition_replaces_foundation_trust_seam_and_restores_it(self):
+    def trusted_operator_subject(self):
+        return {
+            "authority": hardened.trusted_operator.AUTHORITY,
+            "classification": hardened.trusted_operator.CLASSIFICATION,
+            "candidateBinding": {
+                "sourceCommitSHA": self.SOURCE,
+                "retainedIPASHA256": self.IPA,
+                "buildInstanceID": self.INSTANCE,
+                "recipe": hardened.trusted_operator.RECIPE,
+                "procedure": hardened.trusted_operator.PROCEDURE,
+            },
+        }
+
+    def patch_operator(self):
+        return mock.patch.object(
+            hardened.trusted_operator,
+            "verify_trusted_operator_attestation_subject",
+            return_value=self.trusted_operator_subject(),
+        )
+
+    def test_composition_replaces_both_authority_seams_and_restores_them(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            original = hardened.foundation._trusted_xcode_subject
+            original_xcode = hardened.foundation._trusted_xcode_subject
+            original_operator = hardened.foundation._operator_attestation
             with mock.patch.object(
                 hardened.foundation,
                 "build_final_go_record",
                 side_effect=self.fake_foundation,
             ), mock.patch.object(
+                hardened.foundation,
+                "_operator_attestation",
+                return_value={"recordSHA256": "d" * 64},
+            ) as original_operator_parser, mock.patch.object(
                 hardened.trusted_xcode,
                 "verify_trusted_capture_xcode_subject",
                 return_value=self.trusted_subject(),
-            ) as verify:
+            ) as verify_xcode, self.patch_operator() as verify_operator:
+                # Capture the parser object after patching because the hardened function must restore
+                # exactly the seam it received, not the module's import-time implementation.
+                patched_operator = hardened.foundation._operator_attestation
                 record = hardened.build_final_go_record(**self.kwargs(root))
+                self.assertIs(hardened.foundation._operator_attestation, patched_operator)
 
-            self.assertIs(hardened.foundation._trusted_xcode_subject, original)
+            self.assertIs(hardened.foundation._trusted_xcode_subject, original_xcode)
+            self.assertIs(hardened.foundation._operator_attestation, original_operator)
             self.assertEqual(record["trustedXcodeAcceptance"], self.trusted_subject())
-            verify.assert_called_once()
-            call = verify.call_args.kwargs
-            self.assertEqual(call["source_commit_sha"], self.SOURCE)
-            self.assertEqual(call["expected_pr_number"], 833)
+            self.assertEqual(
+                record["exactRetainedIPAInstallAndRuntimeAttestation"],
+                self.trusted_operator_subject(),
+            )
+            verify_xcode.assert_called_once()
+            xcode_call = verify_xcode.call_args.kwargs
+            self.assertEqual(xcode_call["source_commit_sha"], self.SOURCE)
+            self.assertEqual(xcode_call["expected_pr_number"], 833)
+            original_operator_parser.assert_called_once()
+            verify_operator.assert_called_once()
+            operator_call = verify_operator.call_args.kwargs
+            self.assertEqual(operator_call["expected_pr_number"], 833)
+            self.assertEqual(operator_call["comment_id"], 4004)
+            self.assertEqual(operator_call["candidate"], self.candidate())
 
-    def test_trusted_subject_failure_becomes_foundation_final_go_error_and_restores_seam(self):
+    def test_plain_local_operator_record_without_trusted_owner_subject_fails_closed(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            original = hardened.foundation._trusted_xcode_subject
+            original_xcode = hardened.foundation._trusted_xcode_subject
+            original_operator = hardened.foundation._operator_attestation
+            with mock.patch.object(
+                hardened.foundation,
+                "build_final_go_record",
+                side_effect=self.fake_foundation,
+            ), mock.patch.object(
+                hardened.foundation,
+                "_operator_attestation",
+                return_value={"recordSHA256": "d" * 64},
+            ) as patched_parser, mock.patch.object(
+                hardened.trusted_xcode,
+                "verify_trusted_capture_xcode_subject",
+                return_value=self.trusted_subject(),
+            ), mock.patch.object(
+                hardened.trusted_operator,
+                "verify_trusted_operator_attestation_subject",
+                side_effect=hardened.trusted_operator.TrustedOperatorAttestationError(
+                    "owner attestation unavailable"
+                ),
+            ):
+                patched_operator = hardened.foundation._operator_attestation
+                with self.assertRaisesRegex(hardened.FinalGoError, "owner attestation unavailable"):
+                    hardened.build_final_go_record(**self.kwargs(root))
+                self.assertIs(hardened.foundation._operator_attestation, patched_operator)
+                patched_parser.assert_called_once()
+            self.assertIs(hardened.foundation._trusted_xcode_subject, original_xcode)
+            self.assertIs(hardened.foundation._operator_attestation, original_operator)
+
+    def test_trusted_subject_failure_becomes_foundation_final_go_error_and_restores_seams(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            original_xcode = hardened.foundation._trusted_xcode_subject
+            original_operator = hardened.foundation._operator_attestation
             with mock.patch.object(
                 hardened.foundation,
                 "build_final_go_record",
@@ -93,7 +182,8 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(hardened.FinalGoError, "untrusted workflow"):
                     hardened.build_final_go_record(**self.kwargs(root))
-            self.assertIs(hardened.foundation._trusted_xcode_subject, original)
+            self.assertIs(hardened.foundation._trusted_xcode_subject, original_xcode)
+            self.assertIs(hardened.foundation._operator_attestation, original_operator)
 
     def test_rejects_subject_that_aliases_workflow_source_to_candidate_source(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -105,11 +195,41 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
                 "build_final_go_record",
                 side_effect=self.fake_foundation,
             ), mock.patch.object(
+                hardened.foundation,
+                "_operator_attestation",
+                return_value={"recordSHA256": "d" * 64},
+            ), mock.patch.object(
                 hardened.trusted_xcode,
                 "verify_trusted_capture_xcode_subject",
                 return_value=aliased,
-            ):
+            ), self.patch_operator():
                 with self.assertRaisesRegex(hardened.FinalGoError, "remain independent"):
+                    hardened.build_final_go_record(**self.kwargs(root))
+
+    def test_rejects_operator_subject_detached_from_candidate(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            detached = self.trusted_operator_subject()
+            detached["candidateBinding"] = dict(detached["candidateBinding"])
+            detached["candidateBinding"]["retainedIPASHA256"] = "e" * 64
+            with mock.patch.object(
+                hardened.foundation,
+                "build_final_go_record",
+                side_effect=self.fake_foundation,
+            ), mock.patch.object(
+                hardened.foundation,
+                "_operator_attestation",
+                return_value={"recordSHA256": "d" * 64},
+            ), mock.patch.object(
+                hardened.trusted_xcode,
+                "verify_trusted_capture_xcode_subject",
+                return_value=self.trusted_subject(),
+            ), mock.patch.object(
+                hardened.trusted_operator,
+                "verify_trusted_operator_attestation_subject",
+                return_value=detached,
+            ):
+                with self.assertRaisesRegex(hardened.FinalGoError, "retained IPA diverged"):
                     hardened.build_final_go_record(**self.kwargs(root))
 
     def test_workflow_blob_lookup_reuses_foundation_closed_git_boundary(self):
@@ -155,6 +275,24 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
                         "c" * 40,
                         hardened.trusted_xcode.TRUSTED_WORKFLOW_PATH,
                     )
+
+    def test_operator_comment_id_environment_is_required_and_positive(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(hardened.FinalGoError, "is required"):
+                hardened._operator_comment_id_from_environment()
+        with mock.patch.dict(
+            os.environ,
+            {hardened.OPERATOR_COMMENT_ID_ENV: "0"},
+            clear=True,
+        ):
+            with self.assertRaisesRegex(hardened.FinalGoError, "positive integer"):
+                hardened._operator_comment_id_from_environment()
+        with mock.patch.dict(
+            os.environ,
+            {hardened.OPERATOR_COMMENT_ID_ENV: "123"},
+            clear=True,
+        ):
+            self.assertEqual(hardened._operator_comment_id_from_environment(), 123)
 
     def test_publication_delegates_only_to_failure_atomic_primitive(self):
         with tempfile.TemporaryDirectory() as temporary:
