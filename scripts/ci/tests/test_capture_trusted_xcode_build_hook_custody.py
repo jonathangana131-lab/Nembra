@@ -38,6 +38,11 @@ class TrustedXcodeBuildHookCustodyTests(unittest.TestCase):
             "OTHER_CFLAGS",
             "OTHER_CPLUSPLUSFLAGS",
             "OTHER_LDFLAGS",
+            "Nembra.xcodeproj/xcshareddata/xcschemes/Nembra.xcscheme",
+            "ExecutionAction",
+            "PreActions",
+            "PostActions",
+            "ActionContent",
         )
         for marker in required_markers:
             with self.subTest(marker=marker):
@@ -51,6 +56,9 @@ class TrustedXcodeBuildHookCustodyTests(unittest.TestCase):
         block = workflow[fence:build]
         self.assertIn("/usr/bin/python3 -I - <<'PY'", block)
         self.assertIn('Path("Nembra.xcodeproj/project.pbxproj")', block)
+        self.assertIn('Path("Nembra.xcodeproj/xcshareddata/xcschemes/Nembra.xcscheme")', block)
+        self.assertIn("xml.etree.ElementTree", block)
+        self.assertIn("scheme_root.iter(\"ExecutionAction\")", block)
         self.assertNotIn("scripts/ci/", block)
 
 
