@@ -147,13 +147,22 @@ struct PassiveBluetoothExperimentOnePrivateResearchAdmissionTests {
             "scripts/ci/xcode27_today_research_field_candidate.sh"
         )
 
-        #expect(source.contains("unset SWIFT_ACTIVE_COMPILATION_CONDITIONS"))
         #expect(
             source.contains(
-                "export OTHER_SWIFT_FLAGS='$(inherited) -DNEMBRA_ES80_TODAY_RESEARCH'"
+                "unset SWIFT_ACTIVE_COMPILATION_CONDITIONS OTHER_SWIFT_FLAGS XCODE_XCCONFIG_FILE"
             )
         )
-        #expect(source.contains("exec \"$CANONICAL_PRODUCER\" \"$@\""))
+        #expect(
+            source.contains(
+                "OTHER_SWIFT_FLAGS = $(inherited) -DNEMBRA_ES80_TODAY_RESEARCH"
+            )
+        )
+        #expect(source.contains("/bin/chmod 0400 \"$TODAY_XCCONFIG\""))
+        #expect(source.contains("export XCODE_XCCONFIG_FILE=\"$TODAY_XCCONFIG\""))
+        #expect(source.contains("trap cleanup EXIT"))
+        #expect(source.contains("\"$CANONICAL_PRODUCER\" \"$@\""))
+        #expect(!source.contains("export OTHER_SWIFT_FLAGS="))
+        #expect(!source.contains("export SWIFT_ACTIVE_COMPILATION_CONDITIONS="))
         #expect(source.contains("xcode27_signed_field_candidate.sh"))
         #expect(!source.contains("INFOPLIST_KEY_NembraCaptureFieldRecipe"))
     }
