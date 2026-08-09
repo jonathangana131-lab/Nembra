@@ -1,0 +1,249 @@
+name: V14 Capture selector provenance compose once
+
+on:
+  push:
+    branches:
+      - 'repair/v14-capture-selector-provenance-current-main/gpt56-go'
+    paths:
+      - '.github/workflows/v14-capture-selector-provenance-compose-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact pushed head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Compose selector and run-provenance custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "eca82912295d1b775b8594aa2012bb230e6842a0"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow_path = Path('.github/workflows/capture-xcode27-trusted-command.yml')
+          workflow = workflow_path.read_text(encoding='utf-8')
+
+          selector_needle = '''          if nembra_schemes != expected_nembra_schemes:
+              raise SystemExit(
+                  "trusted build graph requires exactly the reviewed shared Nembra scheme: "
+                  + repr(nembra_schemes)
+              )
+          for relative, expected_blob in expected.items():
+'''
+          selector_replacement = '''          if nembra_schemes != expected_nembra_schemes:
+              raise SystemExit(
+                  "trusted build graph requires exactly the reviewed shared Nembra scheme: "
+                  + repr(nembra_schemes)
+              )
+          reviewed_package_roots = (
+              root / "Packages/NembraCore",
+              root / "Packages/NembraBluetoothCapture",
+          )
+          alternate_package_manifests = sorted(
+              str(path.relative_to(root))
+              for package_root in reviewed_package_roots
+              for path in package_root.glob("*")
+              if path.name.casefold().startswith("package@swift-")
+              and path.name.casefold().endswith(".swift")
+          )
+          if alternate_package_manifests:
+              raise SystemExit(
+                  "trusted build graph forbids unreviewed Package@swift-* selectors: "
+                  + ", ".join(alternate_package_manifests)
+              )
+          for relative, expected_blob in expected.items():
+'''
+          if workflow.count(selector_needle) != 1:
+              raise SystemExit('expected exactly one scheme-custody insertion seam')
+          workflow = workflow.replace(selector_needle, selector_replacement, 1)
+
+          run_id_expr = '$' + '{{ github.run_id }}'
+          run_attempt_expr = '$' + '{{ github.run_attempt }}'
+          provenance_needle = '''          builtin printf '%s' "$producer_bytes" |
+            /usr/bin/env -i \\
+              PATH=/usr/bin:/bin:/usr/sbin:/sbin \\
+              HOME=/tmp \\
+              LC_ALL=C \\
+              GIT_DIR="$GITHUB_WORKSPACE/.git" \\
+'''
+          provenance_replacement = f'''          builtin printf '%s' "$producer_bytes" |
+            /usr/bin/env -i \\
+              PATH=/usr/bin:/bin:/usr/sbin:/sbin \\
+              HOME=/tmp \\
+              LC_ALL=C \\
+              GITHUB_RUN_ID="{run_id_expr}" \\
+              GITHUB_RUN_ATTEMPT="{run_attempt_expr}" \\
+              GIT_DIR="$GITHUB_WORKSPACE/.git" \\
+'''
+          if workflow.count(provenance_needle) != 1:
+              raise SystemExit('expected exactly one trusted producer env-i seam')
+          workflow_path.write_text(workflow.replace(provenance_needle, provenance_replacement, 1), encoding='utf-8')
+
+          graph_test_path = Path('scripts/ci/tests/test_capture_trusted_xcode_build_graph_custody.py')
+          graph_test = graph_test_path.read_text(encoding='utf-8')
+          graph_test_needle = '''    def test_candidate_prevalidation_does_not_share_authority_runner(self) -> None:
+'''
+          graph_test_insert = '''    def test_authority_rejects_version_specific_package_manifest_selectors(self) -> None:
+        authority = self.workflow.index("  capture-simulator-qa:\\n")
+        authority_block = self.workflow[authority:]
+        custody = authority_block.index("- name: Verify trusted build graph custody")
+        build = authority_block.index("- name: Build, test, and capture Simulator states")
+        between = authority_block[custody:build]
+        self.assertIn('root / "Packages/NembraCore"', between)
+        self.assertIn('root / "Packages/NembraBluetoothCapture"', between)
+        self.assertIn('package_root.glob("*")', between)
+        self.assertIn('package@swift-', between)
+        self.assertIn('alternate_package_manifests', between)
+        self.assertIn('trusted build graph forbids unreviewed Package@swift-* selectors', between)
+
+    def test_candidate_prevalidation_does_not_share_authority_runner(self) -> None:
+'''
+          if graph_test.count(graph_test_needle) != 1:
+              raise SystemExit('expected exactly one build-graph regression insertion seam')
+          graph_test_path.write_text(graph_test.replace(graph_test_needle, graph_test_insert, 1), encoding='utf-8')
+
+          bash_test_path = Path('scripts/ci/tests/test_capture_trusted_xcode_bash_environment_custody.py')
+          bash_test = bash_test_path.read_text(encoding='utf-8')
+          old_doc = '''BASH_ENV, ENV, exported shell functions, or GITHUB_PATH command substitution cannot run before the
+pinned producer or its retained-evidence verifier.
+'''
+          new_doc = '''BASH_ENV, ENV, exported shell functions, or GITHUB_PATH command substitution cannot run before the
+pinned producer or its retained-evidence verifier. The clean inner environment must still receive
+the trusted GitHub run identity that the frozen producer records as retained provenance.
+'''
+          if bash_test.count(old_doc) != 1:
+              raise SystemExit('expected Bash custody doc seam')
+          bash_test = bash_test.replace(old_doc, new_doc, 1)
+          constants_needle = '''ROOT = Path(__file__).resolve().parents[3]
+WORKFLOW = ROOT / ".github/workflows/capture-xcode27-trusted-command.yml"
+PRIVILEGED_SHELL = 'shell: "/bin/bash --noprofile --norc -p -e -o pipefail {0}"'
+'''
+          constants_replacement = '''ROOT = Path(__file__).resolve().parents[3]
+WORKFLOW = ROOT / ".github/workflows/capture-xcode27-trusted-command.yml"
+TRUSTED_PRODUCER_PATH = "scripts/ci/xcode27_simulator_capture.sh"
+TRUSTED_PRODUCER_BLOB_SHA = "4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"
+PRIVILEGED_SHELL = 'shell: "/bin/bash --noprofile --norc -p -e -o pipefail {0}"'
+'''
+          if bash_test.count(constants_needle) != 1:
+              raise SystemExit('expected Bash custody constants seam')
+          bash_test = bash_test.replace(constants_needle, constants_replacement, 1)
+          regex_needle = '''        closed_bash = re.compile(
+            r"\\|\\s*/usr/bin/env\\s+-i\\b(?:(?!^      - name: ).){0,1200}?/bin/bash\\b",
+            re.MULTILINE | re.DOTALL,
+        )
+'''
+          regex_replacement = '''        closed_bash = re.compile(
+            r"builtin printf '%s' \\\"\\$producer_bytes\\\" \\|\\s*/usr/bin/env\\s+-i\\b"
+            r"(?:(?!builtin printf).)*?GITHUB_RUN_ID=\\\"\\$\\{\\{ github\\.run_id \\}\\}\\\""
+            r"(?:(?!builtin printf).)*?/bin/bash\\s+--noprofile\\s+--norc\\s+-p\\s+-c\\s+"
+            r"'source /dev/stdin'",
+            re.MULTILINE | re.DOTALL,
+        )
+'''
+          if bash_test.count(regex_needle) != 1:
+              raise SystemExit('expected Bash closed-boundary regex seam')
+          bash_test = bash_test.replace(regex_needle, regex_replacement, 1)
+          method_needle = '''    def test_retained_evidence_step_cannot_reopen_candidate_bash_startup_authority(self) -> None:
+'''
+          method_insert = '''    def test_clean_inner_environment_preserves_trusted_run_identity_for_pinned_producer(self) -> None:
+        custody_step = self._step("Verify trusted Simulator evidence-producer custody")
+        build_step = self._step("Build, test, and capture Simulator states")
+        expected_path = f'producer_path="{TRUSTED_PRODUCER_PATH}"'
+        expected_blob = f'expected_blob="{TRUSTED_PRODUCER_BLOB_SHA}"'
+        self.assertIn(expected_path, custody_step)
+        self.assertIn(expected_blob, custody_step)
+        self.assertIn('/usr/bin/git rev-parse --verify "HEAD:${producer_path}"', custody_step)
+        self.assertIn('test "$actual_blob" = "$expected_blob"', custody_step)
+        self.assertIn(expected_path, build_step)
+        self.assertIn(expected_blob, build_step)
+        self.assertIn('/usr/bin/git cat-file blob "$expected_blob"', build_step)
+        self.assertIn('test "$materialized_blob" = "$expected_blob"', build_step)
+        self.assertIn('GITHUB_RUN_ID="${{ github.run_id }}"', build_step)
+        self.assertIn('GITHUB_RUN_ATTEMPT="${{ github.run_attempt }}"', build_step)
+        self.assertNotIn('GITHUB_RUN_ID="$GITHUB_RUN_ID"', build_step)
+        self.assertNotIn('GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT"', build_step)
+
+    def test_retained_evidence_step_cannot_reopen_candidate_bash_startup_authority(self) -> None:
+'''
+          if bash_test.count(method_needle) != 1:
+              raise SystemExit('expected Bash provenance test seam')
+          bash_test_path.write_text(bash_test.replace(method_needle, method_insert, 1), encoding='utf-8')
+          PY
+
+          new_blob="$(git hash-object .github/workflows/capture-xcode27-trusted-command.yml)"
+          test -n "$new_blob"
+          export NEW_TRUSTED_WORKFLOW_BLOB="$new_blob"
+
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          old = 'a8250ffd683db129d85010fb227ea1c7439eacab'
+          new = os.environ['NEW_TRUSTED_WORKFLOW_BLOB']
+          run_id_expr = '$' + '{{ github.run_id }}'
+          run_attempt_expr = '$' + '{{ github.run_attempt }}'
+          pin_paths = (
+              Path('scripts/ci/es80_today_trusted_capture_xcode_subject.py'),
+              Path('.github/workflows/capture-today-final-go-qa.yml'),
+              Path('.github/workflows/capture-today-trusted-default-xcode-subject-qa.yml'),
+          )
+          for path in pin_paths:
+              text = path.read_text(encoding='utf-8')
+              if text.count(old) != 1:
+                  raise SystemExit(f'{path}: expected exactly one old workflow pin')
+              text = text.replace(old, new, 1)
+              if path.suffix == '.yml':
+                  text = text.replace(
+                      '      - name: Preserve closed Bash startup custody\n',
+                      '      - name: Preserve closed Bash startup custody and run provenance\n',
+                      1,
+                  )
+                  anchor = '''          grep -Fq 'test "$materialized_blob" = "$expected_blob"' .github/workflows/capture-xcode27-trusted-command.yml
+'''
+                  extra = (
+                      anchor
+                      + "          grep -Fq 'Package@swift-' .github/workflows/capture-xcode27-trusted-command.yml\n"
+                      + "          grep -Fq 'GITHUB_RUN_ID=\"$''{{ github.run_id }}\"' .github/workflows/capture-xcode27-trusted-command.yml\n"
+                      + "          grep -Fq 'GITHUB_RUN_ATTEMPT=\"$''{{ github.run_attempt }}\"' .github/workflows/capture-xcode27-trusted-command.yml\n"
+                  )
+                  if text.count(anchor) != 1:
+                      raise SystemExit(f'{path}: expected one hardened-boundary grep seam')
+                  text = text.replace(anchor, extra, 1)
+              path.write_text(text, encoding='utf-8')
+          PY
+
+          python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py \
+            scripts/ci/tests/test_capture_trusted_xcode_build_graph_custody.py \
+            scripts/ci/tests/test_capture_trusted_xcode_bash_environment_custody.py
+          python3 scripts/ci/tests/test_capture_trusted_xcode_build_graph_custody.py -v
+          python3 scripts/ci/tests/test_capture_trusted_xcode_bash_environment_custody.py -v
+          python3 scripts/ci/tests/test_capture_trusted_xcode_prevalidation_process_custody.py -v
+          python3 scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py -v
+          grep -Fq "TRUSTED_WORKFLOW_BLOB_SHA = \"$new_blob\"" scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          grep -Fq "TRUSTED_WORKFLOW_BLOB_SHA = \"$new_blob\"" .github/workflows/capture-today-final-go-qa.yml
+          grep -Fq "TRUSTED_WORKFLOW_BLOB_SHA = \"$new_blob\"" .github/workflows/capture-today-trusted-default-xcode-subject-qa.yml
+
+          rm -- .github/workflows/v14-capture-selector-provenance-compose-once.yml
+          git diff --check
+          git status --short
+          git config user.name 'nembra-v14-bot'
+          git config user.email 'nembra-v14-bot@users.noreply.github.com'
+          git add .github/workflows/capture-xcode27-trusted-command.yml \
+                  .github/workflows/capture-today-final-go-qa.yml \
+                  .github/workflows/capture-today-trusted-default-xcode-subject-qa.yml \
+                  scripts/ci/es80_today_trusted_capture_xcode_subject.py \
+                  scripts/ci/tests/test_capture_trusted_xcode_build_graph_custody.py \
+                  scripts/ci/tests/test_capture_trusted_xcode_bash_environment_custody.py \
+                  .github/workflows/v14-capture-selector-provenance-compose-once.yml
+          git diff --cached --check
+          git commit -m 'fix(capture): compose trusted selector and run provenance custody'
+          git push origin HEAD:repair/v14-capture-selector-provenance-current-main/gpt56-go
