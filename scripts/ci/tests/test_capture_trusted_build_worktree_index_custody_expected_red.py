@@ -22,7 +22,7 @@ AUTHORITY_STEP = "      - name: Build, test, and capture Simulator states"
 
 
 class TrustedBuildWorktreeIndexCustodyExpectedRedTests(unittest.TestCase):
-    def test_git_assume_unchanged_can_hide_a_tracked_source_rewrite(self) -> None:
+    def _hidden_rewrite_fixture(self, index_flag: str, expected_tag: str) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
             subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
@@ -33,11 +33,7 @@ class TrustedBuildWorktreeIndexCustodyExpectedRedTests(unittest.TestCase):
             subprocess.run(["git", "add", "Tracked.swift"], cwd=repo, check=True)
             subprocess.run(["git", "commit", "-qm", "fixture"], cwd=repo, check=True)
 
-            subprocess.run(
-                ["git", "update-index", "--assume-unchanged", "Tracked.swift"],
-                cwd=repo,
-                check=True,
-            )
+            subprocess.run(["git", "update-index", index_flag, "Tracked.swift"], cwd=repo, check=True)
             source.write_text("let authority = 999\n", encoding="utf-8")
 
             status = subprocess.check_output(
@@ -45,12 +41,18 @@ class TrustedBuildWorktreeIndexCustodyExpectedRedTests(unittest.TestCase):
                 cwd=repo,
                 text=True,
             )
-            self.assertEqual(status, "", "attack witness no longer bypasses porcelain cleanliness")
+            self.assertEqual(status, "", f"{index_flag} attack witness no longer bypasses porcelain cleanliness")
             self.assertEqual(source.read_text(encoding="utf-8"), "let authority = 999\n")
             self.assertEqual(
                 subprocess.check_output(["git", "ls-files", "-v", "Tracked.swift"], cwd=repo, text=True),
-                "h Tracked.swift\n",
+                f"{expected_tag} Tracked.swift\n",
             )
+
+    def test_git_assume_unchanged_can_hide_a_tracked_source_rewrite(self) -> None:
+        self._hidden_rewrite_fixture("--assume-unchanged", "h")
+
+    def test_git_skip_worktree_can_hide_a_tracked_source_rewrite(self) -> None:
+        self._hidden_rewrite_fixture("--skip-worktree", "S")
 
     def test_current_frozen_runner_relies_on_index_sensitive_porcelain_cleanliness(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
