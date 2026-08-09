@@ -146,6 +146,109 @@ final class NembraAppTests: XCTestCase {
     }
 
     @MainActor
+    func testVehicleStoreRetiresQualifiedSpeedAcrossReconnectUntilFreshEvidence() async throws {
+        let initialState = SimulatedScooterService.state(for: .riding)
+        let service = SimulatedScooterService(
+            initialState: initialState,
+            commandLatencyNanoseconds: 0
+        )
+        let store = VehicleStore(
+            service: service,
+            initialState: initialState,
+            shouldAutoConnectOnStart: false,
+            speedInstrumentInterpolationPolicy: .simulatorQA
+        )
+        await store.start()
+
+        let admittedInitialEvidence = await waitForStoreCondition {
+            store.simulatorQualifiedLiveSpeedKilometersPerHour != nil
+        }
+        XCTAssertTrue(admittedInitialEvidence)
+        XCTAssertEqual(try XCTUnwrap(store.simulatorQualifiedLiveSpeedKilometersPerHour), 18.4, accuracy: 0.000_1)
+
+        await service.simulateConnectionDrop()
+        let retiredOnDrop = await waitForStoreCondition {
+            store.state.connection == .reconnecting
+                && store.simulatorQualifiedLiveSpeedKilometersPerHour == nil
+        }
+        XCTAssertTrue(retiredOnDrop)
+        XCTAssertEqual(try XCTUnwrap(store.state.speedKilometersPerHour), 18.4, accuracy: 0.000_1)
+
+        await service.simulateReconnected()
+        let reconnectRemainsFailClosed = await waitForStoreCondition {
+            store.state.connection == .connected
+                && store.simulatorQualifiedLiveSpeedKilometersPerHour == nil
+        }
+        XCTAssertTrue(reconnectRemainsFailClosed)
+        XCTAssertEqual(try XCTUnwrap(store.state.speedKilometersPerHour), 18.4, accuracy: 0.000_1)
+
+        await service.simulateRide(speedKilometersPerHour: 18.4, elapsedSeconds: 0)
+        let freshEvidenceReadmits = await waitForStoreCondition {
+            store.simulatorQualifiedLiveSpeedKilometersPerHour != nil
+        }
+        XCTAssertTrue(freshEvidenceReadmits)
+        XCTAssertEqual(try XCTUnwrap(store.simulatorQualifiedLiveSpeedKilometersPerHour), 18.4, accuracy: 0.000_1)
+    }
+
+    @MainActor
+    func testVehicleStoreConnectedCachedSpeedCannotOutrankEvidenceGap() async throws {
+        let initialState = SimulatedScooterService.state(for: .riding)
+        let service = SimulatedScooterService(
+            initialState: initialState,
+            commandLatencyNanoseconds: 0
+        )
+        let store = VehicleStore(
+            service: service,
+            initialState: initialState,
+            shouldAutoConnectOnStart: false,
+            speedInstrumentInterpolationPolicy: .simulatorQA
+        )
+        await store.start()
+
+        let admittedInitialEvidence = await waitForStoreCondition {
+            store.simulatorQualifiedLiveSpeedKilometersPerHour != nil
+        }
+        XCTAssertTrue(admittedInitialEvidence)
+
+        await service.simulateSpeedEvidenceGap()
+        let gapFailsClosed = await waitForStoreCondition {
+            store.state.connection == .connected
+                && store.simulatorQualifiedLiveSpeedKilometersPerHour == nil
+        }
+        XCTAssertTrue(gapFailsClosed)
+        XCTAssertEqual(try XCTUnwrap(store.state.speedKilometersPerHour), 18.4, accuracy: 0.000_1)
+
+        await service.simulateRide(speedKilometersPerHour: 19.2, elapsedSeconds: 0)
+        let freshEvidenceReadmits = await waitForStoreCondition {
+            store.simulatorQualifiedLiveSpeedKilometersPerHour.map { abs($0 - 19.2) < 0.000_1 } == true
+        }
+        XCTAssertTrue(freshEvidenceReadmits)
+    }
+
+    @MainActor
+    func testVehicleStoreRejectsSimulatorEvidenceUnderProductionProfile() async {
+        let initialState = SimulatedScooterService.state(for: .riding)
+        let service = SimulatedScooterService(
+            profile: .maxshotV1SPro,
+            initialState: initialState,
+            commandLatencyNanoseconds: 0
+        )
+        let store = VehicleStore(
+            service: service,
+            initialState: initialState,
+            shouldAutoConnectOnStart: false
+        )
+        await store.start()
+
+        let providerPublishedLive = await waitForStoreCondition {
+            if case .live = store.speedEvidenceAvailability { return true }
+            return false
+        }
+        XCTAssertTrue(providerPublishedLive)
+        XCTAssertNil(store.simulatorQualifiedLiveSpeedKilometersPerHour)
+    }
+
+    @MainActor
     func testSpeedInstrumentUsesConfirmedVehicleStateUntilFreshRawTelemetryArrives() throws {
         let model = SpeedInstrumentModel()
         let frame = try XCTUnwrap(model.frame(
@@ -276,6 +379,18 @@ final class NembraAppTests: XCTestCase {
         XCTAssertEqual(frame.kilometersPerHour, 20, accuracy: 0.000_1)
         XCTAssertEqual(frame.origin, .measuredTelemetry)
         XCTAssertFalse(model.isAnimationActive)
+    }
+
+    @MainActor
+    private func waitForStoreCondition(
+        maxYields: Int = 1_000,
+        _ condition: () -> Bool
+    ) async -> Bool {
+        for _ in 0..<maxYields {
+            if condition() { return true }
+            await Task.yield()
+        }
+        return condition()
     }
 
     private func speedSample(
