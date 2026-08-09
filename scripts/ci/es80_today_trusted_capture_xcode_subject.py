@@ -94,7 +94,9 @@ def _read_archive_snapshot(path: Path) -> bytes:
 
     Digest, byte-count, and ZIP inspection are all derived from the returned bytes. The pathname
     is never re-opened after this function returns, so a later path replacement cannot mix two
-    downloaded GitHub artifact generations into one Final GO subject.
+    downloaded GitHub artifact generations into one Final GO subject. Descriptor metadata is
+    checked before and after the read so an in-place writer cannot preserve only inode/size while
+    silently changing bytes during the snapshot.
     """
 
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
@@ -125,9 +127,25 @@ def _read_archive_snapshot(path: Path) -> bytes:
 
         after = os.fstat(descriptor)
         _require(
-            (before.st_dev, before.st_ino, before.st_size)
-            == (after.st_dev, after.st_ino, after.st_size),
-            "trusted Xcode artifact archive identity changed while reading",
+            (
+                before.st_dev,
+                before.st_ino,
+                before.st_mode,
+                before.st_nlink,
+                before.st_size,
+                before.st_mtime_ns,
+                before.st_ctime_ns,
+            )
+            == (
+                after.st_dev,
+                after.st_ino,
+                after.st_mode,
+                after.st_nlink,
+                after.st_size,
+                after.st_mtime_ns,
+                after.st_ctime_ns,
+            ),
+            "trusted Xcode artifact archive identity or contents changed while reading",
         )
         _require(
             len(raw) == before.st_size,
