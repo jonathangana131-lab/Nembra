@@ -25,8 +25,28 @@ public enum ScooterCommandError: Error, Equatable, Sendable {
 /// races that could otherwise resurrect stale `.live` authority after a disconnect
 /// or evidence gap. Raw telemetry remains a separate stream for rendering/
 /// diagnostics and is never replayed as a fresh measurement.
+///
+/// A stream element that was already handed to a consumer can still be delayed
+/// behind another independently consumed vehicle-state stream. Truth-sensitive
+/// consumers must therefore re-read `speedEvidenceSnapshot()` at the point where
+/// they combine speed currentness with transport state rather than treating an old
+/// delivered stream element as present source authority.
 public protocol SpeedEvidenceProvider: Sendable {
     func speedEvidenceUpdates() async -> AsyncStream<SpeedEvidenceAvailability>
+    func speedEvidenceSnapshot() async -> SpeedEvidenceAvailability
+}
+
+public extension SpeedEvidenceProvider {
+    /// Reads the provider's current availability through the same atomic initial
+    /// replay contract as `speedEvidenceUpdates()`. Providers with a cheaper
+    /// source-owned snapshot may override this requirement, while the default
+    /// implementation remains correct for state-style streams that satisfy the
+    /// protocol contract.
+    func speedEvidenceSnapshot() async -> SpeedEvidenceAvailability {
+        let stream = await speedEvidenceUpdates()
+        var iterator = stream.makeAsyncIterator()
+        return await iterator.next() ?? .unavailable
+    }
 }
 
 public protocol ScooterService: SpeedTelemetryProvider, Sendable {
