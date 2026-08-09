@@ -133,24 +133,29 @@ struct ES80CaptureShellView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: captureVerticalSpacing) {
-#if DEBUG && targetEnvironment(simulator)
-                    if dynamicTypeSize.isAccessibilitySize, let simulatorQASnapshot {
-                        simulatorQABadge(simulatorQASnapshot)
-                    }
-#endif
                     hero(for: currentPhase)
 #if DEBUG && targetEnvironment(simulator)
-                    if !dynamicTypeSize.isAccessibilitySize, let simulatorQASnapshot {
+                    if let simulatorQASnapshot {
                         simulatorQABadge(simulatorQASnapshot)
                     }
 #endif
-                    passiveSafetyPanel
-                    progressRail(status: status)
-                    primaryContent(
-                        for: currentPhase,
-                        status: status,
-                        nowUptimeNanoseconds: now
-                    )
+                    if dynamicTypeSize.isAccessibilitySize {
+                        primaryContent(
+                            for: currentPhase,
+                            status: status,
+                            nowUptimeNanoseconds: now
+                        )
+                        passiveSafetyPanel
+                        progressRail(status: status)
+                    } else {
+                        passiveSafetyPanel
+                        progressRail(status: status)
+                        primaryContent(
+                            for: currentPhase,
+                            status: status,
+                            nowUptimeNanoseconds: now
+                        )
+                    }
 
                     if let diagnosticMessage {
                         diagnosticBanner(diagnosticMessage)
@@ -209,12 +214,12 @@ struct ES80CaptureShellView: View {
 
     private var captureVerticalSpacing: CGFloat {
         if verticalSizeClass == .compact { return 16 }
-        return dynamicTypeSize.isAccessibilitySize ? 16 : 24
+        return dynamicTypeSize.isAccessibilitySize ? 10 : 24
     }
 
     private var captureTopPadding: CGFloat {
         if verticalSizeClass == .compact { return 10 }
-        return dynamicTypeSize.isAccessibilitySize ? 12 : 18
+        return dynamicTypeSize.isAccessibilitySize ? 8 : 18
     }
 
     private var captureBottomPadding: CGFloat { verticalSizeClass == .compact ? 20 : 42 }
@@ -307,7 +312,11 @@ struct ES80CaptureShellView: View {
         HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: 9) {
             Image(systemName: "hammer.fill")
                 .accessibilityHidden(true)
-            Text("\(snapshot.evidenceLabel) · SYNTHETIC SOFTWARE STATE")
+            Text(
+                dynamicTypeSize.isAccessibilitySize
+                    ? "SIMULATOR QA · SYNTHETIC"
+                    : "\(snapshot.evidenceLabel) · SYNTHETIC SOFTWARE STATE"
+            )
                 .fixedSize(horizontal: false, vertical: true)
         }
         .font(.caption.monospaced().weight(.bold))
