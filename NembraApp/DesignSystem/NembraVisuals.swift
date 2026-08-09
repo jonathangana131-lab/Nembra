@@ -113,23 +113,21 @@ struct NembraEnergyRailVisualState: Equatable {
     let peakMarkerFraction: Double?
     let allowsLiveMotion: Bool
 
-    /// The only construction seam is the package-owned canonical cockpit projection.
-    /// This keeps future app wiring from rebuilding propulsion truth out of unrelated
-    /// values while still treating every normalized fraction as presentation-only.
-    init(presentation: PropulsionEnergyRailPresentation) {
-        switch presentation.currentness {
-        case .live:
-            currentness = .live
-        case .retained:
-            currentness = .retained
-        case .unavailable:
-            currentness = .unavailable
-        }
-
-        acceptedWatts = presentation.acceptedWatts
-        railFraction = presentation.railFraction
-        peakMarkerFraction = presentation.acceptedPeakMarkerFraction
-        allowsLiveMotion = presentation.allowsLiveMotion
+    /// Intentionally sealed until the canonical Energy Rail package projection is
+    /// compiled into the app target. Future wiring should add the canonical adapter
+    /// in an extension of this type rather than exposing a general raw constructor.
+    private init(
+        currentness: NembraEnergyRailVisualCurrentness,
+        acceptedWatts: Double?,
+        railFraction: Double?,
+        peakMarkerFraction: Double?,
+        allowsLiveMotion: Bool
+    ) {
+        self.currentness = currentness
+        self.acceptedWatts = acceptedWatts
+        self.railFraction = railFraction
+        self.peakMarkerFraction = peakMarkerFraction
+        self.allowsLiveMotion = allowsLiveMotion
     }
 
     var semanticWatts: Double? {
