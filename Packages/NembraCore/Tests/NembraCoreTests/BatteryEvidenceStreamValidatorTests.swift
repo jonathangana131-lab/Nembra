@@ -66,13 +66,13 @@ struct BatteryEvidenceStreamValidatorTests {
         #expect(validator.lastAcceptedUptimeNanoseconds == 21)
     }
 
-    @Test("known missed evidence requires an explicit post-gap boundary")
+    @Test("known missed evidence requires an explicit post-gap boundary and retains ordering baseline")
     func markedGapRequiresBoundary() throws {
         var validator = BatteryEvidenceStreamValidator()
         try validator.accept(try observation(uptime: 100))
         validator.markUnobservedInterval()
 
-        #expect(validator.lastAcceptedUptimeNanoseconds == nil)
+        #expect(validator.lastAcceptedUptimeNanoseconds == 100)
         #expect(validator.requiresContinuityBoundary)
 
         var captured: BatteryEvidenceStreamValidationError?
@@ -83,15 +83,67 @@ struct BatteryEvidenceStreamValidatorTests {
         }
 
         #expect(captured == .missingContinuityBoundary)
-        #expect(validator.lastAcceptedUptimeNanoseconds == nil)
+        #expect(validator.lastAcceptedUptimeNanoseconds == 100)
         #expect(validator.requiresContinuityBoundary)
     }
 
-    @Test("post-gap boundary can establish a lower new uptime epoch")
-    func boundaryResetsUptimeEpoch() throws {
+    @Test("post-gap boundary cannot rewind an existing process uptime epoch")
+    func boundaryCannotResetUptimeEpoch() throws {
         var validator = BatteryEvidenceStreamValidator()
         try validator.accept(try observation(uptime: 9_000))
         validator.markUnobservedInterval()
+
+        var captured: BatteryEvidenceStreamValidationError?
+        do {
+            try validator.accept(
+                try observation(uptime: 4, continuity: .afterUnobservedInterval)
+            )
+        } catch let error as BatteryEvidenceStreamValidationError {
+            captured = error
+        }
+
+        #expect(captured == .nonMonotonicUptime)
+        #expect(validator.lastAcceptedUptimeNanoseconds == 9_000)
+        #expect(validator.requiresContinuityBoundary)
+
+        try validator.accept(
+            try observation(uptime: 9_001, continuity: .afterUnobservedInterval)
+        )
+        #expect(validator.lastAcceptedUptimeNanoseconds == 9_001)
+        #expect(!validator.requiresContinuityBoundary)
+
+        try validator.accept(try observation(uptime: 9_002))
+        #expect(validator.lastAcceptedUptimeNanoseconds == 9_002)
+    }
+
+    @Test("explicit conservative boundary still obeys process-local monotonic uptime")
+    func explicitBoundaryCannotRewindBaseline() throws {
+        var validator = BatteryEvidenceStreamValidator()
+        try validator.accept(try observation(uptime: 800))
+
+        var captured: BatteryEvidenceStreamValidationError?
+        do {
+            try validator.accept(
+                try observation(uptime: 2, continuity: .afterUnobservedInterval)
+            )
+        } catch let error as BatteryEvidenceStreamValidationError {
+            captured = error
+        }
+
+        #expect(captured == .nonMonotonicUptime)
+        #expect(validator.lastAcceptedUptimeNanoseconds == 800)
+        #expect(!validator.requiresContinuityBoundary)
+
+        try validator.accept(
+            try observation(uptime: 801, continuity: .afterUnobservedInterval)
+        )
+        #expect(validator.lastAcceptedUptimeNanoseconds == 801)
+        #expect(!validator.requiresContinuityBoundary)
+    }
+
+    @Test("fresh validator establishes a new process uptime epoch")
+    func freshValidatorAcceptsNewEpochBoundary() throws {
+        var validator = BatteryEvidenceStreamValidator()
 
         try validator.accept(
             try observation(uptime: 4, continuity: .afterUnobservedInterval)
@@ -99,21 +151,34 @@ struct BatteryEvidenceStreamValidatorTests {
 
         #expect(validator.lastAcceptedUptimeNanoseconds == 4)
         #expect(!validator.requiresContinuityBoundary)
-
         try validator.accept(try observation(uptime: 5))
         #expect(validator.lastAcceptedUptimeNanoseconds == 5)
     }
 
-    @Test("an explicit conservative boundary is valid even without a prior marker")
-    func explicitBoundaryCanResetBaseline() throws {
+    @Test("retained baseline blocks delayed pre-gap evidence after a valid boundary")
+    func delayedPreGapEvidenceCannotReenterAfterBoundary() throws {
         var validator = BatteryEvidenceStreamValidator()
-        try validator.accept(try observation(uptime: 800))
+        let preGap = try observation(uptime: 900, field: .voltageVolts)
 
+        try validator.accept(preGap)
+        validator.markUnobservedInterval()
         try validator.accept(
-            try observation(uptime: 2, continuity: .afterUnobservedInterval)
+            try observation(
+                uptime: 901,
+                continuity: .afterUnobservedInterval,
+                field: .stateOfChargePercent
+            )
         )
 
-        #expect(validator.lastAcceptedUptimeNanoseconds == 2)
+        var captured: BatteryEvidenceStreamValidationError?
+        do {
+            try validator.accept(preGap)
+        } catch let error as BatteryEvidenceStreamValidationError {
+            captured = error
+        }
+
+        #expect(captured == .nonMonotonicUptime)
+        #expect(validator.lastAcceptedUptimeNanoseconds == 901)
         #expect(!validator.requiresContinuityBoundary)
     }
 

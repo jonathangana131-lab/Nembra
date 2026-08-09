@@ -5,13 +5,17 @@ public enum BatteryEvidenceStreamValidationError: Error, Equatable, Sendable {
 
 /// Process-local ordering guard for normalized battery evidence.
 ///
-/// `receivedAtUptimeNanoseconds` is ordering evidence only inside one uptime epoch.
-/// Wall-clock dates are deliberately ignored for ordering because the system clock can
-/// move. Equal uptimes are allowed because one transport callback may legitimately
+/// `receivedAtUptimeNanoseconds` is ordering evidence only inside one process/boot uptime
+/// epoch. Wall-clock dates are deliberately ignored for ordering because the system clock
+/// can move. Equal uptimes are allowed because one transport callback may legitimately
 /// produce several normalized semantic fields from the same received packet.
 ///
-/// An explicit `.afterUnobservedInterval` observation starts a fresh ordering baseline,
-/// including after process relaunch where the new uptime epoch may be numerically lower.
+/// An explicit `.afterUnobservedInterval` observation starts a fresh continuity segment,
+/// but it does not switch an existing validator into a different uptime epoch. A process
+/// relaunch must create a fresh validator. Keeping that boundary prevents old pre-gap
+/// observations with numerically larger uptimes from being re-admitted after a lower-uptime
+/// reset and masquerading as current-segment evidence.
+///
 /// Call `markUnobservedInterval()` when a higher layer knows evidence was missed before
 /// the first post-gap observation arrives; that next observation must then carry the
 /// explicit continuity boundary.
@@ -26,10 +30,11 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
 
     /// Records that battery evidence continuity is no longer known.
     ///
-    /// The old uptime baseline is intentionally discarded. Uptime values from another
-    /// process/boot epoch must never be compared as though they shared one clock.
+    /// The existing process-local uptime baseline is intentionally retained. Disconnects,
+    /// missed callbacks, and other continuity gaps do not reset system uptime. Retaining the
+    /// baseline prevents delayed pre-gap evidence from being accepted after the boundary.
+    /// A true process relaunch starts with a new validator instead of reusing this state.
     public mutating func markUnobservedInterval() {
-        lastAcceptedUptimeNanoseconds = nil
         requiresContinuityBoundary = true
     }
 
@@ -39,6 +44,11 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
     /// decides whether an observation is suitable for adaptive-range learning.
     public mutating func accept(_ observation: BatteryEvidenceObservation) throws {
         if observation.continuity == .afterUnobservedInterval {
+            if let lastAcceptedUptimeNanoseconds,
+               observation.receivedAtUptimeNanoseconds < lastAcceptedUptimeNanoseconds {
+                throw BatteryEvidenceStreamValidationError.nonMonotonicUptime
+            }
+
             lastAcceptedUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
             requiresContinuityBoundary = false
             return
