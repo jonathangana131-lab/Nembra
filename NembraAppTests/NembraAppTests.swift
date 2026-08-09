@@ -146,7 +146,7 @@ final class NembraAppTests: XCTestCase {
     }
 
     @MainActor
-    func testSpeedInstrumentUsesAcceptedSourceFallbackBeforeLiveFrame() throws {
+    func testSpeedInstrumentUsesAcceptedSourceFallbackUntilFreshTelemetryArrives() throws {
         let model = SpeedInstrumentModel()
         let frame = try XCTUnwrap(model.frame(
             atUptimeNanoseconds: 1_000_000_000,
@@ -329,7 +329,7 @@ final class NembraAppTests: XCTestCase {
     }
 
     @MainActor
-    func testDisplayProjectionFailsClosedBeforeDemotionSideEffectRuns() throws {
+    func testPresentationFrameFailsClosedBeforeUnavailableCleanupCallback() throws {
         let model = SpeedInstrumentModel()
         model.configureInterpolationPolicy(.simulatorQA)
         let first = try speedSample(kilometersPerHour: 10, uptimeNanoseconds: 1_000_000_000)
@@ -337,29 +337,60 @@ final class NembraAppTests: XCTestCase {
 
         model.setSpeedEvidenceAvailability(.live(first))
         model.setSpeedEvidenceAvailability(.live(second))
+        XCTAssertTrue(model.isAnimationActive)
 
-        // Deliberately do not tell the model about the demotion. This models the
-        // SwiftUI render transaction in which source availability has already
-        // changed but `.onChange` has not yet cleared the old interpolator.
-        let staleLiveFrame = try XCTUnwrap(model.frame(
+        XCTAssertNil(model.presentationFrame(
             atUptimeNanoseconds: 1_280_000_000,
-            fallbackAcceptedKilometersPerHour: second.kilometersPerHour
+            speedAvailability: .unavailable
         ))
-        XCTAssertEqual(staleLiveFrame.kilometersPerHour, 15, accuracy: 0.000_1)
-        XCTAssertEqual(staleLiveFrame.origin, .visuallyInterpolated)
+        XCTAssertTrue(
+            model.isAnimationActive,
+            "The synchronous render gate must fail closed even before lifecycle cleanup mutates model state."
+        )
+    }
 
-        let retained = try XCTUnwrap(SpeedInstrumentDisplayProjection.frame(
-            for: .retained(second),
-            liveFrame: staleLiveFrame
+    @MainActor
+    func testPresentationFrameUsesExactRetainedSampleBeforeCleanupCallback() throws {
+        let model = SpeedInstrumentModel()
+        model.configureInterpolationPolicy(.simulatorQA)
+        let first = try speedSample(kilometersPerHour: 10, uptimeNanoseconds: 1_000_000_000)
+        let second = try speedSample(kilometersPerHour: 20, uptimeNanoseconds: 1_200_000_000)
+
+        model.setSpeedEvidenceAvailability(.live(first))
+        model.setSpeedEvidenceAvailability(.live(second))
+        XCTAssertTrue(model.isAnimationActive)
+
+        let retained = try XCTUnwrap(model.presentationFrame(
+            atUptimeNanoseconds: 1_280_000_000,
+            speedAvailability: .retained(second)
         ))
-        XCTAssertEqual(retained.kilometersPerHour, 20, accuracy: 0.000_1)
+        XCTAssertEqual(retained.kilometersPerHour, second.kilometersPerHour, accuracy: 0.000_1)
         XCTAssertEqual(retained.origin, .acceptedSourceFallback)
         XCTAssertNil(retained.latestMeasuredKilometersPerHour)
+        XCTAssertTrue(
+            model.isAnimationActive,
+            "The test intentionally proves rendering no longer depends on onChange cleanup ordering."
+        )
+    }
 
-        XCTAssertNil(SpeedInstrumentDisplayProjection.frame(
-            for: .unavailable,
-            liveFrame: staleLiveFrame
+    @MainActor
+    func testPresentationFrameShowsNewAcceptedLiveSampleBeforeInterpolatorRetarget() throws {
+        let model = SpeedInstrumentModel()
+        model.configureInterpolationPolicy(.simulatorQA)
+        let first = try speedSample(kilometersPerHour: 10, uptimeNanoseconds: 1_000_000_000)
+        let second = try speedSample(kilometersPerHour: 20, uptimeNanoseconds: 1_200_000_000)
+        let third = try speedSample(kilometersPerHour: 24, uptimeNanoseconds: 1_400_000_000)
+
+        model.setSpeedEvidenceAvailability(.live(first))
+        model.setSpeedEvidenceAvailability(.live(second))
+
+        let frame = try XCTUnwrap(model.presentationFrame(
+            atUptimeNanoseconds: 1_280_000_000,
+            speedAvailability: .live(third)
         ))
+        XCTAssertEqual(frame.kilometersPerHour, third.kilometersPerHour, accuracy: 0.000_1)
+        XCTAssertEqual(frame.latestMeasuredKilometersPerHour, third.kilometersPerHour, accuracy: 0.000_1)
+        XCTAssertEqual(frame.origin, .measuredTelemetry)
     }
 
     private func speedSample(

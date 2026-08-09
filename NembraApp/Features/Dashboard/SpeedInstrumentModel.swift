@@ -19,31 +19,6 @@ struct SpeedInstrumentDisplayFrame: Equatable {
     }
 }
 
-/// Pure availability gate between source-owned speed truth and render-only frames.
-///
-/// SwiftUI may observe a retained/unavailable source state before an `.onChange`
-/// side effect has cleared a previously live interpolator. The current source
-/// state therefore decides synchronously whether a numeric frame is allowed.
-enum SpeedInstrumentDisplayProjection {
-    static func frame(
-        for availability: SpeedEvidenceAvailability,
-        liveFrame: SpeedInstrumentDisplayFrame?
-    ) -> SpeedInstrumentDisplayFrame? {
-        switch availability {
-        case .unavailable:
-            return nil
-        case let .retained(sample):
-            return SpeedInstrumentDisplayFrame(
-                kilometersPerHour: sample.kilometersPerHour,
-                latestMeasuredKilometersPerHour: nil,
-                origin: .acceptedSourceFallback
-            )
-        case .live:
-            return liveFrame
-        }
-    }
-}
-
 /// Main-actor presentation state for the landscape speed instrument.
 ///
 /// Accepted speed evidence enters through `SpeedTelemetrySample`. High-frequency
@@ -57,6 +32,7 @@ final class SpeedInstrumentModel {
     private(set) var latestMeasuredKilometersPerHour: Double?
     private(set) var isAnimationActive = false
 
+    @ObservationIgnored private var latestAcceptedSample: SpeedTelemetrySample?
     @ObservationIgnored private var interpolator = SpeedDisplayInterpolator()
     @ObservationIgnored private var previousMeasurementUptimeNanoseconds: UInt64?
     @ObservationIgnored private var interpolationPolicy: SpeedInstrumentInterpolationPolicy = .disabled
@@ -107,6 +83,7 @@ final class SpeedInstrumentModel {
         }
 
         previousMeasurementUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
+        latestAcceptedSample = sample
         latestMeasurementSource = sample.source
         latestMeasuredKilometersPerHour = sample.kilometersPerHour
         measurementRevision &+= 1
@@ -118,6 +95,40 @@ final class SpeedInstrumentModel {
             active: startsInterpolating,
             durationNanoseconds: transitionDuration
         )
+    }
+
+    /// Chooses the numeric frame from the same field-specific authority captured
+    /// for this SwiftUI render. This is deliberately synchronous: `.onChange`
+    /// lifecycle cleanup may execute after `body` observes a demotion, so stale
+    /// interpolator state must not survive even one retained/unavailable frame.
+    ///
+    /// A newly accepted live sample may also become visible before `onChange`
+    /// has retargeted the interpolator. In that ordering, render the accepted
+    /// sample statically rather than showing an older interpolation target.
+    func presentationFrame(
+        atUptimeNanoseconds uptimeNanoseconds: UInt64,
+        speedAvailability: SpeedEvidenceAvailability,
+        prefersReducedMotion: Bool = false
+    ) -> SpeedInstrumentDisplayFrame? {
+        switch speedAvailability {
+        case .unavailable:
+            return nil
+        case let .retained(sample):
+            return acceptedSourceFallbackFrame(kilometersPerHour: sample.kilometersPerHour)
+        case let .live(sample):
+            guard latestAcceptedSample == sample else {
+                return SpeedInstrumentDisplayFrame(
+                    kilometersPerHour: sample.kilometersPerHour,
+                    latestMeasuredKilometersPerHour: sample.kilometersPerHour,
+                    origin: .measuredTelemetry
+                )
+            }
+            return frame(
+                atUptimeNanoseconds: uptimeNanoseconds,
+                fallbackAcceptedKilometersPerHour: sample.kilometersPerHour,
+                prefersReducedMotion: prefersReducedMotion
+            )
+        }
     }
 
     /// Returns a render-only frame. The fallback is a caller-owned accepted
@@ -157,8 +168,15 @@ final class SpeedInstrumentModel {
             return nil
         }
 
+        return acceptedSourceFallbackFrame(kilometersPerHour: fallbackAcceptedKilometersPerHour)
+    }
+
+    private func acceptedSourceFallbackFrame(
+        kilometersPerHour: Double
+    ) -> SpeedInstrumentDisplayFrame? {
+        guard kilometersPerHour.isFinite, kilometersPerHour >= 0 else { return nil }
         return SpeedInstrumentDisplayFrame(
-            kilometersPerHour: fallbackAcceptedKilometersPerHour,
+            kilometersPerHour: kilometersPerHour,
             latestMeasuredKilometersPerHour: nil,
             origin: .acceptedSourceFallback
         )
@@ -209,6 +227,7 @@ final class SpeedInstrumentModel {
         animationEndTask?.cancel()
         animationEndTask = nil
         isAnimationActive = false
+        latestAcceptedSample = nil
         interpolator = SpeedDisplayInterpolator()
         previousMeasurementUptimeNanoseconds = nil
         latestMeasurementSource = nil
@@ -231,7 +250,6 @@ struct DashboardSpeedInstrumentView: View {
 
     var body: some View {
         let speedAvailability = vehicle.speedEvidenceAvailability
-        let fallbackAcceptedKilometersPerHour = speedAvailability.lastAcceptedSample?.kilometersPerHour
 
         TimelineView(
             .animation(
@@ -239,14 +257,10 @@ struct DashboardSpeedInstrumentView: View {
                 paused: reduceMotion || !model.isAnimationActive
             )
         ) { _ in
-            let liveFrame = model.frame(
+            let frame = model.presentationFrame(
                 atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
-                fallbackAcceptedKilometersPerHour: fallbackAcceptedKilometersPerHour,
+                speedAvailability: speedAvailability,
                 prefersReducedMotion: reduceMotion
-            )
-            let frame = SpeedInstrumentDisplayProjection.frame(
-                for: speedAvailability,
-                liveFrame: liveFrame
             )
 
             instrumentContent(frame: frame, speedAvailability: speedAvailability)
