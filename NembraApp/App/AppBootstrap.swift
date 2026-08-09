@@ -1,4 +1,27 @@
 import Foundation
+#if NEMBRA_ES80_TODAY_RESEARCH_APP
+@_spi(NembraES80PrivateResearch) import NembraBluetoothCapture
+#else
+import NembraBluetoothCapture
+#endif
+
+/// App-module bridge for the one private TODAY field archive.
+///
+/// Ordinary exact-source Nembra builds compile this method as a hard NO-GO and import no private
+/// package SPI. The TODAY wrapper defines `NEMBRA_ES80_TODAY_RESEARCH_APP` on the app target, which
+/// makes the exact accepted app source call the package-owned SPI. The package still independently
+/// derives ResearchAdmission from Bundle.main plus executable/Info.plist hashes before CoreBluetooth.
+extension PassiveBluetoothExperimentOneCoordinator {
+    @MainActor
+    static func makeResearchAuthorizedES80ForCurrentApplication() throws
+        -> PassiveBluetoothExperimentOneCoordinator {
+#if NEMBRA_ES80_TODAY_RESEARCH_APP && os(iOS) && !targetEnvironment(simulator) && !DEBUG
+        return try Self.makePackageResearchAuthorizedES80ForCurrentApplication()
+#else
+        throw CanonicalES80ConstructionError.fieldExecutionNotAuthorized
+#endif
+    }
+}
 
 @MainActor
 final class AppRuntime {
