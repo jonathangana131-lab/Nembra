@@ -104,19 +104,23 @@ final class NembraUITests: XCTestCase {
     @MainActor
     func testLandscapeDashboardRetainedTruthIsVisibleAndCapturable() {
         defer { XCUIDevice.shared.orientation = .portrait }
-        let app = launch(scenario: "scooter-unavailable", orientation: .landscapeRight)
+        XCUIDevice.shared.orientation = .landscapeRight
+        let app = XCUIApplication()
+        app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = "connected-stopped"
+        app.launchEnvironment["NEMBRA_SIMULATION_SPEED_EVIDENCE_GAP"] = "1"
+        app.launch()
 
         let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
         XCTAssertTrue(
             cockpit.waitForExistence(timeout: 4),
-            "Landscape must still render the real Cockpit when the scooter is unavailable."
+            "Landscape must render the real Cockpit after a connected speed-evidence gap."
         )
 
         let speed = app.descendants(matching: .any)["dashboard.speed"]
         XCTAssertTrue(speed.waitForExistence(timeout: 2))
         XCTAssertTrue(
             (speed.value as? String ?? "").localizedCaseInsensitiveContains("last known"),
-            "A disconnected last accepted speed must remain explicitly retained, not promoted to live or erased as unavailable."
+            "A connected field-specific speed gap must retain the last accepted speed without promoting it to live."
         )
         XCTAssertTrue(
             app.staticTexts["LAST KNOWN"].waitForExistence(timeout: 2),
@@ -127,10 +131,11 @@ final class NembraUITests: XCTestCase {
 
         let vehicleStatus = app.descendants(matching: .any)["dashboard.vehicle-status"]
         XCTAssertTrue(vehicleStatus.waitForExistence(timeout: 2))
-        XCTAssertFalse(
-            app.staticTexts["WAITING FOR DATA"].exists,
-            "A disconnected fixture with confirmed retained vehicle values must not be mislabeled as having no vehicle data."
+        XCTAssertTrue(
+            app.staticTexts["LIVE DATA"].waitForExistence(timeout: 2),
+            "A speed-only evidence gap must not falsely demote unrelated connected vehicle data."
         )
+        XCTAssertFalse(app.staticTexts["WAITING FOR DATA"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
 
