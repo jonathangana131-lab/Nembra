@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import os
 from pathlib import Path
 import plistlib
 import sys
@@ -51,7 +50,13 @@ class FieldCandidatePreflightTests(unittest.TestCase):
     TEAM = "ABCDE12345"
     PRIVATE_UDID = "00008110-PRIVATE-DEVICE-SUBJECT"
 
-    def make_inputs(self, root: Path, *, udid_mode: int = 0o600):
+    def make_inputs(
+        self,
+        root: Path,
+        *,
+        udid_mode: int = 0o600,
+        udid_suffix: str = "",
+    ):
         repo = root / "repo"
         (repo / "scripts" / "ci").mkdir(parents=True)
         for relative in (preflight.TODAY_WRAPPER, preflight.CANONICAL_PRODUCER):
@@ -64,7 +69,7 @@ class FieldCandidatePreflightTests(unittest.TestCase):
             plistlib.dump({"method": "development"}, handle)
 
         udid = root / "private-intended-device.txt"
-        udid.write_text(self.PRIVATE_UDID + "\n", encoding="utf-8")
+        udid.write_text(self.PRIVATE_UDID + udid_suffix, encoding="utf-8")
         udid.chmod(udid_mode)
 
         return preflight.Inputs(
@@ -125,6 +130,21 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             inputs = self.make_inputs(root, udid_mode=0o644)
+            report, exit_code = preflight.evaluate_preflight(
+                inputs,
+                runner=FakeRunner(self.SOURCE),
+                system_name="Darwin",
+            )
+
+        self.assertEqual(exit_code, 2)
+        self.assertFalse(report["checks"]["privateIntendedDeviceInput"])
+        self.assertIn("private-intended-device-input-invalid", report["problems"])
+        self.assertNotIn(self.PRIVATE_UDID, json.dumps(report))
+
+    def test_trailing_newline_is_rejected_to_match_frozen_private_runner(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inputs = self.make_inputs(root, udid_suffix="\n")
             report, exit_code = preflight.evaluate_preflight(
                 inputs,
                 runner=FakeRunner(self.SOURCE),
