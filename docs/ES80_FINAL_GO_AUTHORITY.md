@@ -2,13 +2,13 @@
 
 Status: **NO-GO — THIS DOCUMENT DOES NOT AUTHORIZE PHYSICAL EXPERIMENT ONE.**
 
-This document closes a source-provenance contradiction without broadening TODAY scope.
+This document closes the source-provenance contradiction without broadening TODAY scope, and it must remain executable by the accepted product.
 
 Nembra build provenance binds the exact Git `SOURCE_SHA`. Therefore a signed developer/research build cannot be accepted by a required **post-build tracked runbook edit** that names that same build: editing tracked source changes `SOURCE_SHA` and turns the already-signed artifact into ancestor evidence.
 
 The physical GO decision must therefore be **post-build and external to the repository source tree**. It may bind exact repository source and exact signed bytes, but it must not mutate the source it is authorizing.
 
-This model must also preserve the active `CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md`: the first private stationary passive ES80 artifact may use the deliberately compiled, exact-build-bound **Research Field Build** authority. Full external P-256 release authorization remains POST-CAPTURE unless it is independently promoted by a demonstrated TODAY blocker.
+This model preserves the active `CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md`: the first private stationary passive ES80 artifact may use the deliberately compiled, exact-build-bound **Research Field Build** authority. Full external P-256 release authorization remains POST-CAPTURE unless it is independently promoted by a demonstrated TODAY blocker.
 
 Experiment One remains NO-GO until the applicable TODAY gates below are deliberately closed.
 
@@ -72,18 +72,20 @@ The retained TODAY Final GO Record must identify, directly or through independen
 - exact accepted source commit SHA;
 - exact accepted build identifier and build-instance ID;
 - exact retained IPA SHA-256;
-- exact executable SHA-256;
-- exact raw processed Info.plist SHA-256;
+- exact executable SHA-256 from independent retained-candidate inspection;
+- exact raw processed Info.plist SHA-256 from independent retained-candidate inspection;
 - exact recipe `ES80-FINGERPRINT-v1`;
 - procedure version `V14`;
 - baseline device: iPhone 12 / iOS 27;
 - evidence that the exact retained IPA was installed on the intended device without rebuilding/substitution;
-- evidence that the running app's build/source/build-instance/executable/raw-Info.plist tuple matches the retained accepted build evidence before any Bluetooth scan;
-- evidence that the package-owned Research Field Build admission is present for this exact build/recipe and ordinary builds remain NO-GO;
+- evidence that, **before any Bluetooth scan**, the running app visibly matched the accepted recipe/build/source/build-instance tuple and successfully reached package-owned Research Field Build admission for that exact running instance;
+- evidence that ordinary/non-research builds remain NO-GO;
 - expected Capture Share artifact contract;
 - exact stop/failure conditions from the accepted V14 physical procedure.
 
-The record is an acceptance/handoff artifact, not a caller-constructible capability. The app still obtains authority only through its package-owned Research Field Build admission and exact runtime provenance checks. Human-readable text cannot mint physical authority.
+The executable and raw Info.plist hashes are retained-candidate acceptance evidence. The current app does **not** import the external evidence record or display those hashes for operator comparison. Do not turn those retained hashes into a fictional operator-visible runtime comparison requirement.
+
+The record is an acceptance/handoff artifact, not a caller-constructible capability. The app still obtains authority only through its package-owned Research Field Build admission and runtime provenance checks. Human-readable text cannot mint physical authority.
 
 ## TODAY physical GO decision
 
@@ -95,12 +97,12 @@ Physical Experiment One may be `GO` only when **all** of these are true at the s
 4. the Experiment One application path contains no characteristic-value writes/commands;
 5. fresh stationary + charger-disconnected preflight is mandatory and cannot be bypassed by the research authority;
 6. >=60-second same-authority passive observation, exact Horizon/seal, final Share integrity, and export/analyzer readiness remain accepted;
-7. one exact signed developer/research IPA is produced from that frozen source using the canonical producer and independently inspected for signing/provisioning/intended-device membership and exact retained bytes;
+7. one exact signed developer/research IPA is produced from that frozen source using the canonical producer and independently inspected for signing/provisioning/intended-device membership, exact retained bytes, executable SHA-256, raw processed Info.plist SHA-256, and canonical evidence;
 8. that exact retained IPA is installed without rebuild/substitution on the intended iPhone 12 / iOS 27 device;
-9. pre-scan runtime rendezvous matches build identifier, build-instance, source SHA, executable digest, and raw Info.plist digest to the retained accepted build evidence;
-10. the package-owned Research Field Build authority admits exactly `ES80-FINGERPRINT-v1`, ordinary builds remain NO-GO, and explicit operator action is still required;
+9. before scan, the app-visible rendezvous matches the accepted `ES80-FINGERPRINT-v1` recipe, build identifier, build-instance ID, and source SHA, and the package-owned Research Field Build admission is live for that exact running instance;
+10. ordinary/non-research builds remain NO-GO and explicit operator action is still required;
 11. Bluetooth/preflight/storage/foreground/stationary/charger-disconnected/recipe requirements pass;
-12. the external TODAY Final GO Record is retained for those exact subjects and accepted stop conditions.
+12. the external TODAY Final GO Record is retained for those exact subjects and accepted stop conditions, including the independently inspected executable/raw-Info.plist hashes without claiming the current UI externally compared them.
 
 Until all twelve are closed: **NO-GO / DO NOT RUN PHYSICAL EXPERIMENT ONE.**
 
@@ -124,9 +126,11 @@ Final GO does not authorize protocol exploration by writes. Experiment One remai
 
 No application characteristic write, writable-property inference, protocol semantic claim, or physical telemetry claim is created by this authority model.
 
-## Source-immutability rule
+## Source-immutability and precedence rule
 
 `docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md` is tracked procedure source. It must describe the exact accepted procedure and GO prerequisites **before** build production, but it must not require a post-build edit that becomes a different source SHA.
+
+For the first private Research artifact, `CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md` is the controlling TODAY override. If older or lower-precedence wording in a field document says the operator-visible pre-scan app must externally compare executable/raw-Info.plist hashes, the active directive governs instead: those hashes are independently inspected retained-candidate evidence, while the executable app rendezvous is the visible recipe/build/source/build-instance tuple plus successful package-owned ResearchAdmission.
 
 `docs/ES80_FIELD_AUTHORIZATION_OFFLINE_SIGNING.md` documents the later P-256 release boundary. It must not be treated as a TODAY prerequisite while the active field-ready directive classifies that ceremony as POST-CAPTURE.
 
