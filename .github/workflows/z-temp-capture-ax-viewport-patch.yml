@@ -40,54 +40,40 @@ jobs:
               "User-Agent": "nembra-capture-ax-viewport-repair",
           }
 
-          with urllib.request.urlopen(urllib.request.Request(api, headers=headers)) as response:
-              current = json.load(response)
+          try:
+              with urllib.request.urlopen(urllib.request.Request(api, headers=headers)) as response:
+                  current = json.load(response)
 
-          source = base64.b64decode(current["content"]).decode("utf-8")
-          old = '''                    if isAccessibilityLayout {
-                        Text("Final exact-build checks are still in progress.")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-          '''
-          new = '''                    if isAccessibilityLayout {
-                        Text("Final checks in progress.")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-          '''
-
-          # The YAML-safe closing indentation above is part of the Python string. Normalize only
-          # that final indentation so the exact Swift block remains the sole admissible subject.
-          old = old.removesuffix("          ")
-          new = new.removesuffix("          ")
-
-          if old not in source:
-              if new in source:
+              source = base64.b64decode(current["content"]).decode("utf-8")
+              old = 'Text("Final exact-build checks are still in progress.")'
+              new = 'Text("Final checks in progress.")'
+              old_count = source.count(old)
+              new_count = source.count(new)
+              if old_count == 0 and new_count == 1:
                   print("Accessibility viewport copy is already repaired.")
                   raise SystemExit(0)
-              raise SystemExit("Expected exact Accessibility copy block was not found; refusing to patch.")
-          if source.count(old) != 1:
-              raise SystemExit("Expected Accessibility copy block is not unique; refusing to patch.")
+              if old_count != 1:
+                  raise RuntimeError(f"Expected exactly one visible AX copy literal, found {old_count}.")
 
-          updated = source.replace(old, new, 1)
-          payload = json.dumps(
-              {
-                  "message": "fix(capture): keep AX physical lock above fold",
-                  "content": base64.b64encode(updated.encode("utf-8")).decode("ascii"),
-                  "sha": current["sha"],
-                  "branch": branch,
-              }
-          ).encode("utf-8")
-          request = urllib.request.Request(
-              f"https://api.github.com/repos/{repository}/contents/{path}",
-              data=payload,
-              headers={**headers, "Content-Type": "application/json"},
-              method="PUT",
-          )
-          with urllib.request.urlopen(request) as response:
-              result = json.load(response)
-          print("Created repair commit", result["commit"]["sha"])
+              updated = source.replace(old, new, 1)
+              payload = json.dumps(
+                  {
+                      "message": "fix(capture): keep AX physical lock above fold",
+                      "content": base64.b64encode(updated.encode("utf-8")).decode("ascii"),
+                      "sha": current["sha"],
+                      "branch": branch,
+                  }
+              ).encode("utf-8")
+              request = urllib.request.Request(
+                  f"https://api.github.com/repos/{repository}/contents/{path}",
+                  data=payload,
+                  headers={**headers, "Content-Type": "application/json"},
+                  method="PUT",
+              )
+              with urllib.request.urlopen(request) as response:
+                  result = json.load(response)
+              print("Created repair commit", result["commit"]["sha"])
+          except Exception as error:
+              print(f"::error title=Capture AX patch failed::{type(error).__name__}: {error}")
+              raise
           PY
