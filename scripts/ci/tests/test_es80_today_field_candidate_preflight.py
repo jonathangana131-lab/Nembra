@@ -10,6 +10,8 @@ import tempfile
 import unittest
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "es80_today_field_candidate_preflight.py"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+PRODUCTION_HANDOFF = REPOSITORY_ROOT / "docs" / "ES80_TODAY_SIGNED_FIELD_CANDIDATE_PRODUCTION.md"
 spec = importlib.util.spec_from_file_location("field_candidate_preflight", MODULE_PATH)
 preflight = importlib.util.module_from_spec(spec)
 assert spec and spec.loader
@@ -155,6 +157,12 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertFalse(report["checks"]["privateIntendedDeviceInput"])
         self.assertIn("private-intended-device-input-invalid", report["problems"])
         self.assertNotIn(self.PRIVATE_UDID, json.dumps(report))
+
+    def test_production_handoff_writes_private_udid_without_trailing_newline(self):
+        content = PRODUCTION_HANDOFF.read_text(encoding="utf-8")
+        self.assertIn('printf \'%s\' "$INTENDED_UDID" > "$UDID_FILE"', content)
+        self.assertNotIn('printf \'%s\\n\' "$INTENDED_UDID" > "$UDID_FILE"', content)
+        self.assertIn("no trailing newline", content)
 
     def test_non_xcode_27_selection_fails_closed(self):
         with tempfile.TemporaryDirectory() as temporary:
