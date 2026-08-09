@@ -84,6 +84,24 @@ class FinalGoPublicationTests(unittest.TestCase):
             self.assertFalse(output.exists() or output.is_symlink())
             self.assertEqual(list(root.glob(".FinalGO.json.*.staging")), [])
 
+    def test_publisher_failure_after_destination_creation_retracts_go_destination(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "FinalGO.json"
+
+            def publish_then_fail(staging: Path, destination: Path):
+                publication._publish_file_no_replace(staging, destination)
+                raise OSError("simulated post-link publisher failure")
+
+            with self.assertRaisesRegex(OSError, "simulated post-link publisher failure"):
+                publication.publish_record_no_replace(
+                    output,
+                    self.RAW,
+                    publisher=publish_then_fail,
+                )
+            self.assertFalse(output.exists() or output.is_symlink())
+            self.assertEqual(list(root.glob(".FinalGO.json.*.staging")), [])
+
     def test_existing_destination_is_never_replaced(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
