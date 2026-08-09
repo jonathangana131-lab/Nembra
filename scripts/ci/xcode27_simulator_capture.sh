@@ -120,9 +120,9 @@ xcodebuild \
   -maximum-test-execution-time-allowance 120 \
   -collect-test-diagnostics never \
   CODE_SIGNING_ALLOWED=NO \
-  "INFOPLIST_KEY_NembraCaptureBuildIdentifier=$CAPTURE_BUILD_IDENTIFIER" \
-  "INFOPLIST_KEY_NembraCaptureBuildInstanceID=$CAPTURE_BUILD_INSTANCE_ID" \
-  "INFOPLIST_KEY_NembraCaptureBuildCommitSHA=$CAPTURE_BUILD_COMMIT_SHA" \
+  "NEMBRA_CAPTURE_BUILD_IDENTIFIER=$CAPTURE_BUILD_IDENTIFIER" \
+  "NEMBRA_CAPTURE_BUILD_INSTANCE_ID=$CAPTURE_BUILD_INSTANCE_ID" \
+  "NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$CAPTURE_BUILD_COMMIT_SHA" \
   test \
   | tee "$ARTIFACTS_DIR/logs/xcodebuild-test.log"
 TEST_STATUS=${PIPESTATUS[0]}
