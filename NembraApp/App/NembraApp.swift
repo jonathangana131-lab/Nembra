@@ -667,11 +667,13 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                     }
                 }
 
-                HStack(alignment: .top, spacing: isAccessibilityLayout ? 8 : 12) {
-                    Image(systemName: "exclamationmark.lock.fill")
-                        .font(isAccessibilityLayout ? .body.weight(.semibold) : .title3.weight(.semibold))
-                        .foregroundStyle(.orange)
-                        .accessibilityHidden(true)
+                HStack(alignment: .top, spacing: isAccessibilityLayout ? 0 : 12) {
+                    if !isAccessibilityLayout {
+                        Image(systemName: "exclamationmark.lock.fill")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(.orange)
+                            .accessibilityHidden(true)
+                    }
 
                     VStack(alignment: .leading, spacing: 6) {
                         Text(isAccessibilityLayout ? "PHYSICAL CAPTURE · NO-GO" : "Not ready for scooter capture yet")
@@ -686,7 +688,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         }
                     }
                 }
-                .padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 10 : 18))
+                .padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 6 : 18))
                 .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(physicalLockAccessibilityLabel)
