@@ -15,6 +15,8 @@ on:
       - scripts/ci/es80_today_final_go_hardened.py
       - scripts/ci/tests/test_es80_today_final_go_hardened.py
       - scripts/ci/tests/test_es80_today_final_go_git_custody.py
+      - scripts/ci/es80_today_signed_candidate_reinspection.py
+      - scripts/ci/tests/test_es80_today_final_go_signed_reinspection_composition.py
       - scripts/ci/es80_today_trusted_capture_xcode_subject.py
       - scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
       - scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py
@@ -55,7 +57,7 @@ jobs:
           python3 -m py_compile scripts/ci/es80_today_final_go_record.py scripts/ci/es80_today_final_go_foundation.py scripts/ci/_es80_today_final_go_foundation_impl.py scripts/ci/tests/test_es80_today_final_go_record.py scripts/ci/tests/test_es80_today_final_go_foundation.py scripts/ci/tests/test_es80_today_final_go_direct_execution_disabled.py scripts/ci/tests/test_es80_today_final_go_private_impl_execution_disabled.py scripts/ci/tests/test_es80_today_final_go_local_evidence_descriptor_custody.py
           python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py scripts/ci/tests/test_capture_trusted_xcode_producer_execution_custody.py scripts/ci/tests/test_capture_trusted_xcode_bash_environment_custody.py
           python3 -m py_compile scripts/ci/es80_today_final_go_publication.py scripts/ci/tests/test_es80_today_final_go_publication.py
-          python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_git_custody.py
+          python3 -m py_compile scripts/ci/es80_today_signed_candidate_reinspection.py scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_signed_reinspection_composition.py scripts/ci/tests/test_es80_today_final_go_git_custody.py
 
       - name: Preserve foundation adversarial coverage
         run: python3 scripts/ci/tests/test_es80_today_final_go_foundation.py
@@ -86,6 +88,9 @@ jobs:
 
       - name: Verify hardened composition seam
         run: python3 scripts/ci/tests/test_es80_today_final_go_hardened.py -v
+
+      - name: Require signed candidate native reinspection composition
+        run: python3 scripts/ci/tests/test_es80_today_final_go_signed_reinspection_composition.py -v
 
       - name: Reject caller-forged Git authority
         run: python3 scripts/ci/tests/test_es80_today_final_go_git_custody.py -v
@@ -130,5 +135,8 @@ jobs:
           grep -Fq 'public Final GO foundation builder is non-authorizing' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'foundation = _load(' scripts/ci/es80_today_final_go_hardened.py
           grep -Fq '"_es80_today_final_go_foundation_impl.py"' scripts/ci/es80_today_final_go_hardened.py
+          grep -Fq '"es80_today_signed_candidate_reinspection.py"' scripts/ci/es80_today_final_go_hardened.py
+          grep -Fq 'signed_candidate_reinspection.verify_signed_candidate_reinspection' scripts/ci/es80_today_final_go_hardened.py
+          grep -Fq '_cross_bind_signed_candidate(record, signed_reinspection)' scripts/ci/es80_today_final_go_hardened.py
           grep -Fq 'foundation._git(tooling_repo, "rev-parse"' scripts/ci/es80_today_final_go_hardened.py
           grep -Fq 'publication.publish_record_no_replace' scripts/ci/es80_today_final_go_hardened.py
