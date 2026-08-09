@@ -1,5 +1,6 @@
 import Foundation
 
+#if SWIFT_PACKAGE
 public enum AcceptedAdaptiveBatteryRangePersistenceError: Error, Equatable, Sendable {
     case unsupportedSchemaVersion(Int)
     case invalidVehicleIdentityKey
@@ -60,7 +61,6 @@ public struct AcceptedAdaptiveBatteryRangePersistenceScope: Codable, Equatable, 
         )
     }
 
-#if SWIFT_PACKAGE
     package static func verifiedVehicleIdentity(
         vehicleIdentityKey: String,
         operatingModeKey: String? = nil
@@ -71,7 +71,6 @@ public struct AcceptedAdaptiveBatteryRangePersistenceScope: Codable, Equatable, 
             authority: .verifiedVehicleIdentity
         )
     }
-#endif
 }
 
 public enum AcceptedAdaptiveBatteryRangeCandidateIdentityAuthority: String, Codable, Equatable, Hashable, Sendable {
@@ -86,8 +85,9 @@ public enum AcceptedAdaptiveBatteryRangeCandidateIdentityAuthority: String, Coda
 /// source session plus deterministic candidate ordinal that a trusted ride/evidence owner can
 /// reproduce when the same durable evidence is replayed.
 ///
-/// If replay under a changed policy produces different candidate bytes for the same identity,
-/// persistence fails with `candidateIdentityConflict` instead of silently double-learning.
+/// If replay under changed assembly semantics produces different candidate evidence for the
+/// same identity, persistence fails with `candidateIdentityConflict` rather than silently
+/// double-learning.
 public struct AcceptedAdaptiveBatteryRangeCandidateIdentity: Codable, Equatable, Hashable, Sendable {
     public let sourceSessionID: UUID
     public let candidateOrdinal: UInt64
@@ -114,7 +114,6 @@ public struct AcceptedAdaptiveBatteryRangeCandidateIdentity: Codable, Equatable,
         )
     }
 
-#if SWIFT_PACKAGE
     package static func verifiedDurableSource(
         sourceSessionID: UUID,
         candidateOrdinal: UInt64
@@ -125,15 +124,14 @@ public struct AcceptedAdaptiveBatteryRangeCandidateIdentity: Codable, Equatable,
             authority: .verifiedDurableSource
         )
     }
-#endif
 }
 
 /// One immutable accepted-learning journal record.
 ///
-/// The record intentionally stores normalized learning inputs, not live receipt/currentness
-/// authority. On restore these inputs are replayed through the raw validated math model inside
-/// the package and only then wrapped by `AcceptedAdaptiveBatteryRangeModel`'s trusted restore
-/// hook. Generic Codable import alone never produces an accepted live model.
+/// The record intentionally stores normalized learning facts, not process-local receipt IDs or
+/// uptimes. On restore these facts are replayed with synthetic ordering timestamps through the
+/// raw validated math model inside the package and only then wrapped by the accepted model's
+/// trusted restore hook. Generic Codable import alone never produces accepted live authority.
 public struct AcceptedAdaptiveBatteryRangeCandidateCheckpoint: Codable, Equatable, Sendable {
     public let sequenceIndex: UInt64
     public let identity: AcceptedAdaptiveBatteryRangeCandidateIdentity
@@ -142,8 +140,6 @@ public struct AcceptedAdaptiveBatteryRangeCandidateCheckpoint: Codable, Equatabl
     public let transportGapOccurred: Bool
     public let startSOCPercent: Double
     public let endSOCPercent: Double
-    public let startUptimeNanoseconds: UInt64
-    public let endUptimeNanoseconds: UInt64
     public let policy: AdaptiveBatteryRangePolicy
     public let plausibilityMaximumFullChargeEquivalentMeters: Double?
 
@@ -161,10 +157,20 @@ public struct AcceptedAdaptiveBatteryRangeCandidateCheckpoint: Codable, Equatabl
         transportGapOccurred = window.transportGapOccurred
         startSOCPercent = window.startSOC.percentage
         endSOCPercent = window.endSOC.percentage
-        startUptimeNanoseconds = window.startSOC.receivedAtUptimeNanoseconds
-        endUptimeNanoseconds = window.endSOC.receivedAtUptimeNanoseconds
         self.policy = policy
         plausibilityMaximumFullChargeEquivalentMeters = plausibilityPolicy.maximumFullChargeEquivalentMeters
+    }
+
+    /// Durable identity binds evidence, not the software policy that happened to accept it.
+    /// A later replay under different tuning is still the same already-consumed physical span;
+    /// silently learning it twice would be worse than preserving the original committed result.
+    fileprivate func hasSameCandidateEvidence(as other: Self) -> Bool {
+        identity == other.identity
+            && distanceMeters == other.distanceMeters
+            && distanceCoverage == other.distanceCoverage
+            && transportGapOccurred == other.transportGapOccurred
+            && startSOCPercent == other.startSOCPercent
+            && endSOCPercent == other.endSOCPercent
     }
 }
 
@@ -256,7 +262,6 @@ public struct AcceptedAdaptiveBatteryRangePersistentModel: Sendable {
         )
     }
 
-#if SWIFT_PACKAGE
     package static func verifiedVehicleIdentity(
         vehicleIdentityKey: String,
         operatingModeKey: String? = nil
@@ -268,7 +273,6 @@ public struct AcceptedAdaptiveBatteryRangePersistentModel: Sendable {
             )
         )
     }
-#endif
 
     public var hasLearnedEfficiency: Bool { model.hasLearnedEfficiency }
     public var historicalConsumedPercentagePoints: Double { model.historicalConsumedPercentagePoints }
@@ -292,9 +296,8 @@ public struct AcceptedAdaptiveBatteryRangePersistentModel: Sendable {
         )
     }
 
-#if SWIFT_PACKAGE
     /// Package-trusted mutation path. Candidate identity must come from the same authority class
-    /// as the persistent scope. Replaying the exact same committed candidate is idempotent;
+    /// as the persistent scope. Replaying the exact same committed evidence is idempotent;
     /// reusing its identity for different evidence fails closed.
     package mutating func ingest(
         _ window: AcceptedBatteryRangeLearningWindow,
@@ -315,7 +318,7 @@ public struct AcceptedAdaptiveBatteryRangePersistentModel: Sendable {
                 policy: policy,
                 plausibilityPolicy: plausibilityPolicy
             )
-            guard replay == existing else {
+            guard replay.hasSameCandidateEvidence(as: existing) else {
                 throw AcceptedAdaptiveBatteryRangePersistenceError.candidateIdentityConflict
             }
 
@@ -332,6 +335,12 @@ public struct AcceptedAdaptiveBatteryRangePersistentModel: Sendable {
             )
         }
 
+        // Establish every throwing journal precondition before mutating the accepted model.
+        guard acceptedCandidates.count < Int.max,
+              let sequenceIndex = UInt64(exactly: acceptedCandidates.count) else {
+            throw AcceptedAdaptiveBatteryRangePersistenceError.invalidCandidateSequence
+        }
+
         let result = model.ingest(
             window,
             policy: policy,
@@ -339,10 +348,6 @@ public struct AcceptedAdaptiveBatteryRangePersistentModel: Sendable {
         )
 
         if case .accepted = result.disposition {
-            guard acceptedCandidates.count < Int.max,
-                  let sequenceIndex = UInt64(exactly: acceptedCandidates.count) else {
-                throw AcceptedAdaptiveBatteryRangePersistenceError.invalidCandidateSequence
-            }
             acceptedCandidates.append(
                 AcceptedAdaptiveBatteryRangeCandidateCheckpoint(
                     sequenceIndex: sequenceIndex,
@@ -373,7 +378,6 @@ public struct AcceptedAdaptiveBatteryRangePersistentModel: Sendable {
             requiredCandidateAuthority: .verifiedDurableSource
         )
     }
-#endif
 
     public static func restoringSimulatorQA(
         _ checkpoint: AcceptedAdaptiveBatteryRangePersistenceCheckpoint,
@@ -420,15 +424,17 @@ public struct AcceptedAdaptiveBatteryRangePersistentModel: Sendable {
             let end: BatterySOCReading
             let rawWindow: BatteryRangeLearningWindow
             do {
+                // Persistence never restores live/current receipt time. The raw math model only
+                // needs a valid ordered pair, so deterministic synthetic timestamps are used.
                 start = try BatterySOCReading(
                     percentage: record.startSOCPercent,
                     provenance: .authoritativeMeasurement,
-                    receivedAtUptimeNanoseconds: record.startUptimeNanoseconds
+                    receivedAtUptimeNanoseconds: 1
                 )
                 end = try BatterySOCReading(
                     percentage: record.endSOCPercent,
                     provenance: .authoritativeMeasurement,
-                    receivedAtUptimeNanoseconds: record.endUptimeNanoseconds
+                    receivedAtUptimeNanoseconds: 2
                 )
                 rawWindow = try BatteryRangeLearningWindow(
                     distanceMeters: record.distanceMeters,
@@ -495,3 +501,4 @@ public struct AcceptedAdaptiveBatteryRangePersistentModel: Sendable {
         }
     }
 }
+#endif
