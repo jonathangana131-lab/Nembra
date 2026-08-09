@@ -263,6 +263,53 @@ final class NembraAppTests: XCTestCase {
     }
 
     @MainActor
+    func testCallerConstructedEstimatedAvailabilityFailsClosedAndRetiresLiveContinuity() throws {
+        let model = SpeedInstrumentModel()
+        model.configureInterpolationPolicy(.simulatorQA)
+        let first = try speedSample(kilometersPerHour: 10, uptimeNanoseconds: 1_000_000_000)
+        let second = try speedSample(kilometersPerHour: 20, uptimeNanoseconds: 1_200_000_000)
+
+        model.setSpeedEvidenceAvailability(.live(first))
+        model.setSpeedEvidenceAvailability(.live(second))
+        XCTAssertTrue(model.isAnimationActive)
+
+        let estimate = try SpeedTelemetrySample(
+            source: .motionAssist,
+            provenance: .shortHorizonEstimate,
+            metersPerSecond: 9,
+            receivedAtUptimeNanoseconds: 1_300_000_000,
+            receivedAtDate: Date(timeIntervalSince1970: 0)
+        )
+        let forgedLive: SpeedEvidenceAvailability = .live(estimate)
+        let forgedRetained: SpeedEvidenceAvailability = .retained(estimate)
+
+        XCTAssertFalse(estimate.isAuthoritativeMeasurement)
+        XCTAssertEqual(forgedLive.dashboardPresentationAvailability, .unavailable)
+        XCTAssertEqual(forgedRetained.dashboardPresentationAvailability, .unavailable)
+        XCTAssertNil(model.presentationFrame(
+            for: forgedLive,
+            atUptimeNanoseconds: 1_280_000_000
+        ))
+        XCTAssertNil(model.presentationFrame(
+            for: forgedRetained,
+            atUptimeNanoseconds: 1_280_000_000
+        ))
+
+        // Synchronous projection alone does not mutate render state, but lifecycle
+        // admission of the forged live wrapper must retire the old live interpolator.
+        XCTAssertTrue(model.isAnimationActive)
+        model.setSpeedEvidenceAvailability(forgedLive)
+        XCTAssertFalse(model.isAnimationActive)
+        XCTAssertNil(model.latestMeasuredKilometersPerHour)
+        XCTAssertNil(model.latestMeasurementSource)
+        XCTAssertNil(model.latestMeasurementUptimeNanoseconds)
+        XCTAssertNil(model.presentationFrame(
+            for: forgedLive,
+            atUptimeNanoseconds: 1_300_000_000
+        ))
+    }
+
+    @MainActor
     func testQAProfileSnapsAcrossLongTelemetryGap() throws {
         let model = SpeedInstrumentModel()
         model.configureInterpolationPolicy(.simulatorQA)
