@@ -1,0 +1,37 @@
+name: Capture Trusted Runner Worktree Custody Expected Red
+
+on:
+  push:
+    branches:
+      - validation/v14-trusted-runner-worktree-toctou/gpt56-go
+    paths:
+      - scripts/ci/tests/test_capture_trusted_xcode_runner_worktree_custody.py
+      - .github/workflows/capture-xcode27-trusted-command.yml
+      - .github/workflows/capture-trusted-runner-worktree-custody-expected-red.yml
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_trusted_xcode_runner_worktree_custody.py
+      - .github/workflows/capture-xcode27-trusted-command.yml
+      - .github/workflows/capture-trusted-runner-worktree-custody-expected-red.yml
+
+permissions:
+  contents: read
+
+jobs:
+  expected-red:
+    name: Reject stale worktree runner substitution
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout immutable validation head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - name: Verify immutable validation head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+      - name: Compile worktree-custody regression
+        run: python3 -m py_compile scripts/ci/tests/test_capture_trusted_xcode_runner_worktree_custody.py
+      - name: Require final working-tree byte custody
+        run: python3 scripts/ci/tests/test_capture_trusted_xcode_runner_worktree_custody.py -v
