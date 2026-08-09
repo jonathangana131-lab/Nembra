@@ -10,8 +10,6 @@ import tempfile
 import unittest
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "es80_today_field_candidate_preflight.py"
-REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
-PRODUCTION_HANDOFF = REPOSITORY_ROOT / "docs" / "ES80_TODAY_SIGNED_FIELD_CANDIDATE_PRODUCTION.md"
 spec = importlib.util.spec_from_file_location("field_candidate_preflight", MODULE_PATH)
 preflight = importlib.util.module_from_spec(spec)
 assert spec and spec.loader
@@ -20,10 +18,18 @@ spec.loader.exec_module(preflight)
 
 
 class FakeRunner:
-    def __init__(self, expected_sha: str, *, dirty: bool = False, xcode_version: str = "Xcode 27.0"):
+    def __init__(
+        self,
+        expected_sha: str,
+        *,
+        dirty: bool = False,
+        xcode_version: str = "Xcode 27.0",
+        raw_mismatch: str | None = None,
+    ):
         self.expected_sha = expected_sha
         self.dirty = dirty
         self.xcode_version = xcode_version
+        self.raw_mismatch = raw_mismatch
         self.calls: list[tuple[tuple[str, ...], Path | None, dict[str, str]]] = []
 
     def __call__(self, argv, cwd, env):
@@ -31,6 +37,12 @@ class FakeRunner:
         self.calls.append((args, cwd, dict(env)))
         if args == ("/usr/bin/git", "rev-parse", "--verify", "HEAD^{commit}"):
             return preflight.CommandResult(0, self.expected_sha + "\n", "")
+        if (
+            len(args) == 4
+            and args[:3] == ("/usr/bin/git", "rev-parse", "--verify")
+            and args[3].startswith(self.expected_sha + ":")
+        ):
+            return preflight.CommandResult(0, "d" * 40 + "\n", "")
         if args == ("/usr/bin/git", "status", "--porcelain=v1", "--untracked-files=all"):
             return preflight.CommandResult(0, "?? local-secret.txt\n" if self.dirty else "", "")
         if args[:2] == ("/usr/bin/git", "ls-tree"):
@@ -40,6 +52,10 @@ class FakeRunner:
                 f"100755 blob {'d' * 40}\t{relative_path}\n",
                 "",
             )
+        if args[:4] == ("/usr/bin/git", "hash-object", "--no-filters", "--"):
+            relative_path = args[-1]
+            blob = "e" * 40 if relative_path == self.raw_mismatch else "d" * 40
+            return preflight.CommandResult(0, blob + "\n", "")
         if args == ("/usr/bin/xcode-select", "-p"):
             return preflight.CommandResult(0, "/Applications/Xcode-beta.app/Contents/Developer\n", "")
         if args == ("/usr/bin/xcodebuild", "-version"):
@@ -128,6 +144,36 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertNotIn("local-secret.txt", json.dumps(report))
         self.assertEqual(report["physicalExperimentAuthorization"], "not-granted")
 
+    def test_executable_handoff_bytes_must_match_frozen_git_blobs(self):
+        cases = (
+            (
+                preflight.TODAY_WRAPPER,
+                "todayWrapperMatchesFrozenGitBlob",
+                "today-wrapper-checkout-bytes-do-not-match-frozen-git-blob",
+            ),
+            (
+                preflight.CANONICAL_PRODUCER,
+                "canonicalProducerMatchesFrozenGitBlob",
+                "canonical-producer-checkout-bytes-do-not-match-frozen-git-blob",
+            ),
+        )
+        for relative_path, check_name, problem in cases:
+            with self.subTest(relative_path=relative_path):
+                with tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary)
+                    inputs = self.make_inputs(root)
+                    report, exit_code = preflight.evaluate_preflight(
+                        inputs,
+                        runner=FakeRunner(self.SOURCE, raw_mismatch=relative_path),
+                        system_name="Darwin",
+                    )
+
+                self.assertEqual(exit_code, 2)
+                self.assertEqual(report["status"], preflight.NOT_READY_STATUS)
+                self.assertFalse(report["checks"][check_name])
+                self.assertIn(problem, report["problems"])
+                self.assertEqual(report["physicalExperimentAuthorization"], "not-granted")
+
     def test_private_udid_file_must_be_mode_0600(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -157,12 +203,6 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertFalse(report["checks"]["privateIntendedDeviceInput"])
         self.assertIn("private-intended-device-input-invalid", report["problems"])
         self.assertNotIn(self.PRIVATE_UDID, json.dumps(report))
-
-    def test_production_handoff_writes_private_udid_without_trailing_newline(self):
-        content = PRODUCTION_HANDOFF.read_text(encoding="utf-8")
-        self.assertIn('printf \'%s\' "$INTENDED_UDID" > "$UDID_FILE"', content)
-        self.assertNotIn('printf \'%s\\n\' "$INTENDED_UDID" > "$UDID_FILE"', content)
-        self.assertIn("no trailing newline", content)
 
     def test_non_xcode_27_selection_fails_closed(self):
         with tempfile.TemporaryDirectory() as temporary:

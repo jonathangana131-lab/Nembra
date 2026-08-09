@@ -189,6 +189,41 @@ def _git_subject_is_executable(
     return len(fields) == 4 and fields[0] == "100755" and fields[1] == "blob"
 
 
+def _checkout_file_matches_frozen_blob(
+    runner: Runner,
+    repo: Path,
+    expected_source_sha: str,
+    relative_path: str,
+) -> bool:
+    """Require raw checkout bytes to equal the exact frozen Git blob.
+
+    `git status` remains a broad hygiene check, but repository-local clean filters can influence its
+    worktree view. These two executable handoff scripts run from the outer checkout before the
+    canonical producer creates its own fresh worktree, so their raw bytes need an independent
+    exact-object check that bypasses clean/smudge filters.
+    """
+    expected = _git(
+        runner,
+        repo,
+        "rev-parse",
+        "--verify",
+        f"{expected_source_sha}:{relative_path}",
+    )
+    expected_blob = expected.stdout.strip()
+    if expected.returncode != 0 or SHA_RE.fullmatch(expected_blob) is None:
+        return False
+
+    actual = _git(
+        runner,
+        repo,
+        "hash-object",
+        "--no-filters",
+        "--",
+        relative_path,
+    )
+    return actual.returncode == 0 and actual.stdout.strip() == expected_blob
+
+
 def _selected_xcode_27_is_ready(runner: Runner) -> bool:
     selected = runner(("/usr/bin/xcode-select", "-p"), None, _closed_env())
     if selected.returncode != 0:
@@ -247,6 +282,12 @@ def evaluate_preflight(
         checks["canonicalProducerExecutableInCheckout"] = (
             _regular_nonsymlink(producer_path) is not None and os.access(producer_path, os.X_OK)
         )
+        checks["todayWrapperMatchesFrozenGitBlob"] = _checkout_file_matches_frozen_blob(
+            runner, source_repo, expected, TODAY_WRAPPER
+        )
+        checks["canonicalProducerMatchesFrozenGitBlob"] = _checkout_file_matches_frozen_blob(
+            runner, source_repo, expected, CANONICAL_PRODUCER
+        )
     else:
         for key in (
             "exactFrozenSourceHEAD",
@@ -255,6 +296,8 @@ def evaluate_preflight(
             "canonicalProducerAtFrozenSource",
             "todayWrapperExecutableInCheckout",
             "canonicalProducerExecutableInCheckout",
+            "todayWrapperMatchesFrozenGitBlob",
+            "canonicalProducerMatchesFrozenGitBlob",
         ):
             checks[key] = False
 
@@ -277,6 +320,8 @@ def evaluate_preflight(
         "canonicalProducerAtFrozenSource": "canonical-producer-not-executable-in-frozen-git-tree",
         "todayWrapperExecutableInCheckout": "today-wrapper-not-executable-in-checkout",
         "canonicalProducerExecutableInCheckout": "canonical-producer-not-executable-in-checkout",
+        "todayWrapperMatchesFrozenGitBlob": "today-wrapper-checkout-bytes-do-not-match-frozen-git-blob",
+        "canonicalProducerMatchesFrozenGitBlob": "canonical-producer-checkout-bytes-do-not-match-frozen-git-blob",
         "macOSSigningSurface": "private-signing-surface-is-not-macos",
         "selectedXcode27": "selected-xcode-is-not-xcode-27",
     }
