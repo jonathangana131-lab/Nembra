@@ -166,7 +166,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         app.launchArguments = [
             "--es80-passive-capture",
             "-UIPreferredContentSizeCategoryName",
-            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+            "UICTContentSizeCategoryAccessibilityXXXL"
         ]
         app.launch()
 
@@ -387,7 +387,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "--es80-passive-capture-simulator-qa",
             "--es80-capture-qa-scenario=captureComplete",
             "-UIPreferredContentSizeCategoryName",
-            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+            "UICTContentSizeCategoryAccessibilityXXXL"
         ]
         app.launch()
 
@@ -472,7 +472,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "--es80-passive-capture-simulator-qa",
             "--es80-capture-qa-scenario=observationHorizonReady",
             "-UIPreferredContentSizeCategoryName",
-            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+            "UICTContentSizeCategoryAccessibilityXXXL"
         ]
         app.launch()
 
@@ -956,7 +956,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "--es80-passive-capture-simulator-qa",
             "--es80-capture-qa-scenario=observationHorizonReady",
             "-UIPreferredContentSizeCategoryName",
-            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+            "UICTContentSizeCategoryAccessibilityXXXL"
         ]
         app.launch()
 
@@ -969,6 +969,13 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5))
         XCTAssertTrue(qaDisclosure.waitForExistence(timeout: 3))
         XCTAssertTrue(passiveMode.waitForExistence(timeout: 3))
+        let heroStatus = app.staticTexts["Ready to seal"]
+        XCTAssertTrue(heroStatus.waitForExistence(timeout: 3))
+        XCTAssertGreaterThan(
+            passiveMode.frame.minY,
+            heroStatus.frame.maxY,
+            "Accessibility XXXL must activate the stacked Capture hero layout before visual acceptance."
+        )
         XCTAssertTrue(progress.waitForExistence(timeout: 3))
         XCTAssertTrue(health.waitForExistence(timeout: 3))
         XCTAssertTrue(finish.waitForExistence(timeout: 3))
