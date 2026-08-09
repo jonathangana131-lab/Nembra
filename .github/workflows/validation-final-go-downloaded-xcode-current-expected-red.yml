@@ -1,0 +1,33 @@
+name: Validation Final GO Downloaded Xcode Snapshot Current Expected Red
+
+on:
+  push:
+    branches:
+      - validation/v14-downloaded-xcode-snapshot-current/gpt56-go
+
+permissions:
+  contents: read
+
+jobs:
+  downloaded-artifact-snapshot:
+    name: Reprove one downloaded artifact byte subject
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout immutable validation head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+      - name: Verify exact validation ancestry
+        env:
+          EXPECTED_PARENT: bf933af29659bef61aeb84277d6d53ded9bd5343
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+      - name: Compile current-head custody regression
+        run: python3 -m py_compile scripts/ci/tests/test_es80_today_trusted_xcode_download_snapshot_custody.py
+      - name: Server digest and embedded record must share one archive snapshot
+        run: python3 scripts/ci/tests/test_es80_today_trusted_xcode_download_snapshot_custody.py -v
