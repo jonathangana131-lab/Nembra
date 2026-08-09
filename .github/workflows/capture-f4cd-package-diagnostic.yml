@@ -1,0 +1,60 @@
+name: Capture f4cd Package Diagnostic
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - .github/workflows/capture-f4cd-package-diagnostic.yml
+
+permissions:
+  contents: read
+
+env:
+  EXACT_PRODUCT_PARENT: f4cd76e301334ce96824d0b150ef03d2d2cb606b
+  ARTIFACTS_DIR: ${{ github.workspace }}/Artifacts/CapturePackageDiagnostic
+
+jobs:
+  capture-package-diagnostic:
+    name: Retain exact frozen Capture package swift test output
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - name: Checkout diagnostic head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+
+      - name: Prove workflow-only child of frozen flagship
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(/usr/bin/git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(/usr/bin/git rev-parse HEAD^)" = "$EXACT_PRODUCT_PARENT"
+          changed="$(/usr/bin/git diff --name-only HEAD^ HEAD)"
+          printf 'Diagnostic delta:\n%s\n' "$changed"
+          test "$changed" = ".github/workflows/capture-f4cd-package-diagnostic.yml"
+          mkdir -p "$ARTIFACTS_DIR"
+          {
+            printf 'diagnosticHead=%s\n' "$EXPECTED_HEAD_SHA"
+            printf 'exactProductParent=%s\n' "$EXACT_PRODUCT_PARENT"
+            /usr/bin/xcodebuild -version
+            /usr/bin/swift --version
+          } > "$ARTIFACTS_DIR/toolchain.txt" 2>&1
+
+      - name: Reproduce and retain Capture package failure
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -o pipefail
+          /usr/bin/swift test -v 2>&1 | /usr/bin/tee "$ARTIFACTS_DIR/capture-swift-test.log"
+
+      - name: Upload exact package diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-f4cd-package-diagnostic-${{ github.run_number }}-${{ github.run_attempt }}
+          path: Artifacts/CapturePackageDiagnostic
+          if-no-files-found: error
+          retention-days: 14
