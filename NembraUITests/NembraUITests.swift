@@ -102,6 +102,51 @@ final class NembraUITests: XCTestCase {
             )
 
             try app.performAccessibilityAudit()
+
+            if scenario == "stationaryPreflight" {
+                let chargerDisconnected = app.buttons["es80.capture.preflight.charger-disconnected"]
+                XCTAssertTrue(
+                    chargerDisconnected.waitForExistence(timeout: 2),
+                    "Stationary preflight must expose the explicit charger-disconnected declaration."
+                )
+                chargerDisconnected.tap()
+
+                let continueButton = app.buttons["es80.capture.preflight.continue"]
+                XCTAssertTrue(continueButton.waitForExistence(timeout: 2))
+                XCTAssertTrue(
+                    continueButton.isEnabled,
+                    "Declaring charger disconnected must unlock the stationary preflight continuation."
+                )
+                continueButton.tap()
+
+                XCTAssertTrue(
+                    app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 3),
+                    "Stationary preflight must hand off into the real Capture shell."
+                )
+                XCTAssertTrue(
+                    app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 2),
+                    "The selected synthetic QA snapshot must survive the preflight-to-shell handoff."
+                )
+
+                let confirmSetup = app.buttons["es80.capture.confirm-setup"]
+                XCTAssertTrue(
+                    confirmSetup.waitForExistence(timeout: 2),
+                    "The retained stationary fixture must map to the OFF 1 setup-confirmation phase."
+                )
+                confirmSetup.tap()
+
+                let beginOff1 = app.buttons["es80.capture.begin-window"]
+                XCTAssertTrue(beginOff1.waitForExistence(timeout: 2))
+                XCTAssertEqual(
+                    beginOff1.label,
+                    "Begin OFF 1 check",
+                    "After the setup declaration, the retained fixture must expose OFF 1 rather than a generic locked shell."
+                )
+
+                try app.performAccessibilityAudit()
+                keepScreenshot(named: "Capture Stationary Preflight to OFF 1 Synthetic")
+            }
+
             app.terminate()
         }
     }
