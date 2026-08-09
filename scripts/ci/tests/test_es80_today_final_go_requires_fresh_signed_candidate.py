@@ -21,8 +21,8 @@ class FreshSignedCandidateCompositionTests(unittest.TestCase):
     WORKFLOW_SOURCE = "b" * 40
     RECEIPT_SHA = "c" * 64
 
-    def test_malformed_retained_ipa_is_rejected_before_foundation_authority(self) -> None:
-        """Caller-consistent foundation evidence must not bypass fresh IPA reinspection."""
+    def test_malformed_retained_ipa_cannot_return_go_without_fresh_reinspection(self) -> None:
+        """Caller-consistent foundation evidence must not become GO without fresh IPA truth."""
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             candidate = root / "candidate"
@@ -30,9 +30,10 @@ class FreshSignedCandidateCompositionTests(unittest.TestCase):
             build_evidence = inspection / "build-evidence"
             build_evidence.mkdir(parents=True)
 
-            # Deliberately not an IPA. A mocked private foundation below represents the historical
-            # caller-consistent evidence path: without a fresh independently executed signed-IPA
-            # inspection in the canonical hardened composer, these bytes can reach authority.
+            # Deliberately not an IPA. The mocked private foundation below represents a malicious
+            # or bypassed caller-consistent candidate path. The hardened composer may authenticate
+            # a candidate seam *inside* the foundation, but it must never return GO when that seam
+            # is bypassed and these malformed bytes were not freshly reinspected.
             (build_evidence / "NembraField.ipa").write_bytes(b"caller-forged-not-an-ipa")
             (inspection / "NembraCaptureSignedFieldArtifactInspection.json").write_text(
                 '{"signedInstallableKind":"ipa"}\n',
@@ -55,8 +56,8 @@ class FreshSignedCandidateCompositionTests(unittest.TestCase):
             }
 
             # A stronger successor may make intended-device membership an explicit private input.
-            # Supply a mode-0600 placeholder only when that contract exists; the malformed IPA must
-            # still fail before any foundation authority regardless of the chosen implementation.
+            # Supply a mode-0600 placeholder only when that contract exists; malformed IPA bytes
+            # must still be unable to produce GO regardless of the chosen composition architecture.
             parameters = inspect.signature(hardened.build_final_go_record).parameters
             if "intended_device_udid_file" in parameters:
                 device_file = root / "intended-device.txt"
@@ -76,6 +77,7 @@ class FreshSignedCandidateCompositionTests(unittest.TestCase):
                 "executionCustody": "pinned-git-object-stdout-v1",
             }
             foundation_record = {
+                "decision": "GO",
                 "acceptedSourceCommitSHA": self.SOURCE,
                 "trustedXcodeAcceptance": trusted_subject,
                 "independentRetainedCandidateCrosscheck": {
@@ -83,8 +85,9 @@ class FreshSignedCandidateCompositionTests(unittest.TestCase):
                     for key, value in crosscheck_execution.items()
                     if key != "executionCustody"
                 },
-                # Deliberately caller-constructible placeholder. The validation is that the
-                # canonical composer must reject malformed IPA bytes before trusting this record.
+                # Deliberately caller-constructible placeholder. A hardened composer may enter the
+                # foundation, but it must detect that authenticated native reinspection was bypassed
+                # before allowing this GO-shaped record to escape.
                 "acceptedSignedFieldCandidate": {"authority": "caller-consistent-placeholder"},
             }
 
@@ -104,7 +107,7 @@ class FreshSignedCandidateCompositionTests(unittest.TestCase):
                 with self.assertRaises(hardened.FinalGoError):
                     hardened.build_final_go_record(**kwargs)
 
-            foundation_builder.assert_not_called()
+            foundation_builder.assert_called_once()
 
 
 if __name__ == "__main__":
