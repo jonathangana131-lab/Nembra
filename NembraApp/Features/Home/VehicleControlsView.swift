@@ -7,6 +7,7 @@ struct VehicleControlsView: View {
 
     var body: some View {
         Form {
+            batteryRangeSection
             connectionSection
 
             if vehicle.profile.capabilities.supportsHeadlight {
@@ -28,7 +29,6 @@ struct VehicleControlsView: View {
             if vehicle.profile.capabilities.supportsStartMode {
                 startModeSection
             }
-
         }
         .navigationTitle("Vehicle Controls")
         .navigationBarTitleDisplayMode(.inline)
@@ -37,6 +37,18 @@ struct VehicleControlsView: View {
             Button("OK", role: .cancel) { vehicle.lastErrorMessage = nil }
         } message: {
             Text(vehicle.lastErrorMessage ?? "The scooter did not confirm the change.")
+        }
+    }
+
+    private var batteryRangeSection: some View {
+        Section {
+            NavigationLink {
+                BatteryRangeView()
+            } label: {
+                Label("Battery & Range", systemImage: "battery.75percent")
+            }
+            .accessibilityHint("Shows authority-gated battery state and range availability.")
+            .accessibilityIdentifier("vehicle-controls.battery-range")
         }
     }
 
@@ -270,5 +282,285 @@ struct VehicleControlsView: View {
         case .disconnected: return "Offline"
         }
     }
+}
 
+/// Product-facing Battery/Range surface.
+///
+/// Battery consumes only `VehicleStore`'s battery-specific authority gate. Range is
+/// intentionally unavailable until the accepted learned-range model is both wired
+/// into the app target and backed by verified ES80 evidence. This view never derives
+/// miles from advertised range, battery percentage, voltage, trip distance, or a
+/// guessed efficiency value.
+private struct BatteryRangeView: View {
+    @Environment(VehicleStore.self) private var vehicle
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                batteryHero
+                rangeCard
+                evidenceCard
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 12)
+            .safeAreaPadding(.bottom, 36)
+        }
+        .background(Color(uiColor: .systemGroupedBackground))
+        .navigationTitle("Battery & Range")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar)
+        .accessibilityIdentifier("battery-range.surface")
+    }
+
+    private var batteryHero: some View {
+        VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 18 : 14) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("BATTERY")
+                        .font(.caption.weight(.bold))
+                        .tracking(1.5)
+                        .foregroundStyle(.secondary)
+
+                    Text(batteryPrimaryText)
+                        .font(.system(.largeTitle, design: .rounded, weight: .bold).monospacedDigit())
+                        .foregroundStyle(batteryPrimaryColor)
+                        .contentTransition(reduceMotion ? .identity : .numericText())
+                }
+
+                Spacer(minLength: 12)
+                dataBadge
+            }
+
+            batteryGauge
+                .frame(height: colorSchemeContrast == .increased ? 18 : 14)
+
+            Text(batterySupportingText)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(20)
+        .background(heroBackground, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .strokeBorder(
+                    Color.primary.opacity(colorSchemeContrast == .increased ? 0.22 : 0.07),
+                    lineWidth: colorSchemeContrast == .increased ? 1.5 : 1
+                )
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Battery")
+        .accessibilityValue(batteryAccessibilityValue)
+        .accessibilityHint("Battery values appear only when Nembra has battery-specific authority for the observation.")
+        .accessibilityIdentifier("battery-range.battery")
+    }
+
+    private var batteryGauge: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule(style: .continuous)
+                    .fill(Color.primary.opacity(colorSchemeContrast == .increased ? 0.18 : 0.09))
+
+                if let fill = batteryFillFraction {
+                    Capsule(style: .continuous)
+                        .fill(batteryFillColor)
+                        .frame(width: max(4, proxy.size.width * fill))
+                        .animation(reduceMotion ? nil : .snappy(duration: 0.28), value: fill)
+                }
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private var rangeCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Range", systemImage: "location.fill")
+                    .font(.headline)
+                Spacer()
+                Text("NOT CALIBRATED")
+                    .font(.caption2.weight(.bold))
+                    .tracking(0.9)
+                    .foregroundStyle(.secondary)
+            }
+
+            Text("—")
+                .font(
+                    .system(
+                        size: dynamicTypeSize.isAccessibilitySize ? 46 : 58,
+                        weight: .bold,
+                        design: .rounded
+                    )
+                    .monospacedDigit()
+                )
+                .foregroundStyle(.primary)
+
+            Text("Nembra will show learned remaining range here only after verified battery evidence and an accepted range model are available in the app. Until then, no estimate is manufactured.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(20)
+        .background(
+            Color(uiColor: .secondarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(Color.primary.opacity(colorSchemeContrast == .increased ? 0.20 : 0.06))
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Remaining range")
+        .accessibilityValue("Unavailable, not calibrated")
+        .accessibilityHint("No manufacturer range, battery-percentage multiplication, or guessed efficiency is used.")
+        .accessibilityIdentifier("battery-range.range")
+    }
+
+    private var evidenceCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Data confidence", systemImage: "checkmark.shield")
+                .font(.headline)
+
+            evidenceRow(title: "Battery", value: batteryEvidenceText, symbol: batteryEvidenceIcon)
+            Divider()
+            evidenceRow(
+                title: "Range model",
+                value: "Waiting for verified learning evidence",
+                symbol: "hourglass"
+            )
+
+            if vehicle.batteryDataAvailability == .retained,
+               let observedAt = vehicle.retainedBatteryObservedAt {
+                Divider()
+                evidenceRow(
+                    title: "Battery observed",
+                    value: observedAt.formatted(date: .abbreviated, time: .shortened),
+                    symbol: "clock.arrow.circlepath"
+                )
+            }
+        }
+        .padding(20)
+        .background(
+            Color(uiColor: .secondarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(Color.primary.opacity(colorSchemeContrast == .increased ? 0.20 : 0.06))
+        }
+        .accessibilityIdentifier("battery-range.evidence")
+    }
+
+    private func evidenceRow(title: String, value: String, symbol: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: symbol)
+                .frame(width: 22)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+
+            Spacer(minLength: 12)
+
+            Text(value)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityValue(value)
+    }
+
+    @ViewBuilder
+    private var dataBadge: some View {
+        switch vehicle.batteryDataAvailability {
+        case .live:
+            Label("LIVE", systemImage: "wave.3.right")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(colorSchemeContrast == .increased ? Color.primary : Color.green)
+        case .retained:
+            Label("LAST KNOWN", systemImage: "clock.arrow.circlepath")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.orange)
+        case .unavailable:
+            Label("WAITING", systemImage: "ellipsis")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var heroBackground: Color {
+        if reduceTransparency {
+            return Color(uiColor: .secondarySystemGroupedBackground)
+        }
+        return Color.primary.opacity(colorSchemeContrast == .increased ? 0.10 : 0.055)
+    }
+
+    private var batteryPrimaryText: String {
+        guard let percent = vehicle.batteryDisplayPercent else { return "—" }
+        return "\(percent)%"
+    }
+
+    private var batteryFillFraction: CGFloat? {
+        guard let percent = vehicle.batteryDisplayPercent else { return nil }
+        return CGFloat(percent) / 100
+    }
+
+    private var batteryPrimaryColor: Color {
+        guard let percent = vehicle.batteryDisplayPercent else { return .secondary }
+        return percent <= 15 ? .red : .primary
+    }
+
+    private var batteryFillColor: Color {
+        guard let percent = vehicle.batteryDisplayPercent else { return .secondary }
+        if percent <= 15 { return .red }
+        return colorSchemeContrast == .increased ? .primary : .green
+    }
+
+    private var batterySupportingText: String {
+        switch vehicle.batteryDataAvailability {
+        case .live:
+            return "Current battery evidence accepted for display."
+        case .retained:
+            return "Last confirmed battery value. It may be stale until fresh battery evidence arrives."
+        case .unavailable:
+            return "No battery-specific display authority is available yet."
+        }
+    }
+
+    private var batteryAccessibilityValue: String {
+        guard let percent = vehicle.batteryDisplayPercent else {
+            return "Unavailable"
+        }
+        switch vehicle.batteryDataAvailability {
+        case .live:
+            return "\(percent) percent, live"
+        case .retained:
+            return "\(percent) percent, last known"
+        case .unavailable:
+            return "Unavailable"
+        }
+    }
+
+    private var batteryEvidenceText: String {
+        switch vehicle.batteryDataAvailability {
+        case .live: return "Accepted current observation"
+        case .retained: return "Accepted retained observation"
+        case .unavailable: return "No display-authoritative observation"
+        }
+    }
+
+    private var batteryEvidenceIcon: String {
+        switch vehicle.batteryDataAvailability {
+        case .live: return "checkmark.circle.fill"
+        case .retained: return "clock.arrow.circlepath"
+        case .unavailable: return "questionmark.circle"
+        }
+    }
 }
