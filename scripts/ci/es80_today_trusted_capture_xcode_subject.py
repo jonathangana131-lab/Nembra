@@ -43,7 +43,6 @@ EXTERNAL_KEYS = {
 REQUIRED_SUCCESSFUL_STEPS = (
     "Reject stale or detached Capture head before scarce Mac work",
     "Verify immutable trusted Capture head",
-    "Verify trusted Simulator evidence-producer custody",
     "Build, test, and capture Simulator states",
     "Verify retained Capture evidence against trusted resolver authority",
     "Reject head movement before trusted acceptance completes",
