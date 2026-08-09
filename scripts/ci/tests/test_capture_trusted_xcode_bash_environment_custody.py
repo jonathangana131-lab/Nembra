@@ -93,12 +93,15 @@ class TrustedRunnerBashEnvironmentCustodyTests(unittest.TestCase):
             "pinned Git bytes are piped into Bash inheriting candidate-controlled startup state",
         )
         closed_bash = re.compile(
-            r"\|\s*/usr/bin/env\s+-i\b(?:(?!^      - name: ).){0,1400}?/bin/bash\b",
+            r"builtin printf '%s' \"\$producer_bytes\" \|\s*/usr/bin/env\s+-i\b"
+            r"(?:(?!builtin printf).)*?GITHUB_RUN_ID=\"\$\{\{ github\.run_id \}\}\""
+            r"(?:(?!builtin printf).)*?/bin/bash\s+--noprofile\s+--norc\s+-p\s+-c\s+"
+            r"'source /dev/stdin'",
             re.MULTILINE | re.DOTALL,
         )
         self.assertIsNotNone(
             closed_bash.search(step),
-            "authority-producing Bash must run behind an absolute env -i boundary",
+            "authority-producing Bash must consume pinned producer bytes behind the closed env -i boundary",
         )
 
     def test_clean_inner_environment_preserves_trusted_run_identity_for_retained_metadata(self) -> None:
