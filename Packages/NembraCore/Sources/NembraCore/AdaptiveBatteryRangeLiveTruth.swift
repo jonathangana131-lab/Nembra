@@ -181,11 +181,29 @@ public struct AcceptedBatterySOCStream: Equatable, Sendable {
     public private(set) var validator: BatteryEvidenceStreamValidator
     public private(set) var continuitySegmentStartReceiptIdentity: BatteryEvidenceReceiptIdentity?
 
+    /// Strong lifetime owner for the exact stream lineage. Validators and leases intentionally keep
+    /// only the weak-backed handle so a retained anchor/estimate cannot keep authority alive after
+    /// every real stream copy has been released.
+    private let currentnessOwner: BatteryEvidenceCurrentnessOwner
+
     public init() {
+        let currentnessOwner = BatteryEvidenceCurrentnessOwner()
+        self.currentnessOwner = currentnessOwner
         validator = BatteryEvidenceStreamValidator(
-            currentnessOwner: BatteryEvidenceCurrentnessOwner()
+            currentnessOwner: currentnessOwner
         )
         continuitySegmentStartReceiptIdentity = nil
+    }
+
+    /// Preserve the stream's pre-owner value equality contract. Owner identity is authority, not
+    /// diagnostic value state: two streams with equal chronology/segment values remain equal even
+    /// though each fresh lineage has an independent currentness owner.
+    public static func == (
+        lhs: AcceptedBatterySOCStream,
+        rhs: AcceptedBatterySOCStream
+    ) -> Bool {
+        lhs.validator == rhs.validator
+            && lhs.continuitySegmentStartReceiptIdentity == rhs.continuitySegmentStartReceiptIdentity
     }
 
     /// Records an explicit observation gap while preserving the prior segment as retained history.
