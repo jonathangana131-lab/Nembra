@@ -1,0 +1,98 @@
+name: One-shot Capture AX build-key recovery
+
+on:
+  push:
+    branches:
+      - capture-v14-ax-build-key-recovery/chatgpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.event.head_commit.message == 'ci: stage Capture AX build-key recovery'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact recovery head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Apply focused AX build-row repair and regression contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app_path = Path('NembraApp/App/NembraApp.swift')
+          app = app_path.read_text(encoding='utf-8')
+          old = '''                        Text("BUILD")
+                              .font(.caption2.monospaced().weight(.bold))
+                              .foregroundStyle(.secondary)
+
+                          if let buildIdentityVisualLabel {
+          '''
+          new = '''                        Text("BUILD")
+                              .font(.caption2.monospaced().weight(.bold))
+                              .foregroundStyle(.secondary)
+                              .lineLimit(1)
+                              .fixedSize(horizontal: true, vertical: false)
+
+                          if let buildIdentityVisualLabel {
+          '''
+          count = app.count(old)
+          if count != 1:
+              raise SystemExit(f'expected one BUILD row anchor, found {count}')
+          app = app.replace(old, new, 1)
+          app_path.write_text(app, encoding='utf-8')
+
+          test_path = Path('NembraUITests/ES80ResearchCaptureUITests.swift')
+          tests = test_path.read_text(encoding='utf-8')
+          old_test = '''        XCTAssertTrue(physicalBoundary.waitForExistence(timeout: 3))
+                  XCTAssertTrue(engineeringDetails.waitForExistence(timeout: 3))
+                  XCTAssertFalse(
+          '''
+          new_test = '''        XCTAssertTrue(physicalBoundary.waitForExistence(timeout: 3))
+                  XCTAssertTrue(engineeringDetails.waitForExistence(timeout: 3))
+                  XCTAssertLessThan(
+                      buildIdentity.frame.height,
+                      physicalBoundary.frame.height,
+                      "Build identity must remain a compact single-row rendezvous at Accessibility XXXL."
+                  )
+                  XCTAssertFalse(
+          '''
+          count = tests.count(old_test)
+          if count != 1:
+              raise SystemExit(f'expected one XXXL test anchor, found {count}')
+          tests = tests.replace(old_test, new_test, 1)
+          test_path.write_text(tests, encoding='utf-8')
+          PY
+
+          git diff --check
+          grep -Fq '.fixedSize(horizontal: true, vertical: false)' NembraApp/App/NembraApp.swift
+          grep -Fq 'Build identity must remain a compact single-row rendezvous at Accessibility XXXL.' NembraUITests/ES80ResearchCaptureUITests.swift
+
+      - name: Commit only the focused recovery and remove this one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$GITHUB_REF_NAME"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+
+          git rm .github/workflows/tmp-capture-v14-ax-build-key-recovery.yml
+          git add NembraApp/App/NembraApp.swift NembraUITests/ES80ResearchCaptureUITests.swift
+
+          staged="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/tmp-capture-v14-ax-build-key-recovery.yml' \
+            'NembraApp/App/NembraApp.swift' \
+            'NembraUITests/ES80ResearchCaptureUITests.swift' | LC_ALL=C sort)"
+          test "$staged" = "$expected"
+          git diff --cached --check
+
+          git config user.name 'nembra-v14-recovery'
+          git config user.email 'nembra-v14-recovery@users.noreply.github.com'
+          git commit -m 'fix(capture): keep AX build rendezvous horizontal'
+          git push origin "HEAD:$GITHUB_REF_NAME"
