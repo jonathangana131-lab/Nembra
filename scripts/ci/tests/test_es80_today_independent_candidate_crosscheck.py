@@ -83,7 +83,11 @@ class CandidateCrosscheckTests(unittest.TestCase):
             f"source_commit_sha={self.SOURCE}", f"build_identifier={self.BUILD}",
             f"build_instance_id={self.INSTANCE}", f"development_team={self.TEAM}",
             "allow_provisioning_updates=0", f"field_launch_recipe_id={MODULE.RECIPE_ID}",
-            f"experiment_recipe_id={MODULE.RECIPE_ID}", "export_options_file=ExportOptions.plist",
+            f"experiment_recipe_id={MODULE.RECIPE_ID}",
+            f"research_compile_mode={MODULE.RESEARCH_COMPILE_MODE}",
+            f"research_compile_authority={MODULE.RESEARCH_COMPILE_AUTHORITY}",
+            f"research_compile_condition={MODULE.RESEARCH_COMPILE_CONDITION}",
+            "export_options_file=ExportOptions.plist",
             f"export_options_sha256={export_sha}", "archive_log=logs/xcodebuild-archive.log",
             "export_log=logs/xcodebuild-export.log", "inspection_directory=inspection",
             f"private_runner_source_git_blob={'d' * 40}", f"canonical_inspector_source_git_blob={'e' * 40}",
@@ -103,6 +107,10 @@ class CandidateCrosscheckTests(unittest.TestCase):
             self.assertEqual(receipt["status"], "PASS_NOT_FINAL_GO")
             self.assertEqual(receipt["physicalExperimentAuthorization"], "not-granted")
             self.assertEqual(receipt["xcodeVersion"], "Xcode 27.0")
+            self.assertEqual(receipt["researchCompileMode"], MODULE.RESEARCH_COMPILE_MODE)
+            self.assertEqual(receipt["researchCompileAuthority"], MODULE.RESEARCH_COMPILE_AUTHORITY)
+            self.assertEqual(receipt["researchCompileCondition"], MODULE.RESEARCH_COMPILE_CONDITION)
+            self.assertTrue(receipt["researchCompileTupleVerified"])
             self.assertTrue(receipt["crossRecordDigestLinksVerified"])
             self.assertTrue(receipt["singleRetainedIPA"])
 
@@ -130,6 +138,36 @@ class CandidateCrosscheckTests(unittest.TestCase):
             candidate = self.make_candidate(Path(temporary)); path = candidate / "field-candidate-environment.txt"
             path.write_text(path.read_text().replace("physical_authorization=not-granted", "physical_authorization=granted"))
             with self.assertRaisesRegex(MODULE.CrosscheckError, "physical_authorization"):
+                self.crosscheck(candidate)
+
+    def test_research_compile_mode_must_be_private_today(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = self.make_candidate(Path(temporary)); path = candidate / "field-candidate-environment.txt"
+            path.write_text(path.read_text().replace(
+                f"research_compile_mode={MODULE.RESEARCH_COMPILE_MODE}",
+                "research_compile_mode=standard",
+            ))
+            with self.assertRaisesRegex(MODULE.CrosscheckError, "research_compile_mode"):
+                self.crosscheck(candidate)
+
+    def test_research_compile_authority_must_be_canonical_producer(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = self.make_candidate(Path(temporary)); path = candidate / "field-candidate-environment.txt"
+            path.write_text(path.read_text().replace(
+                f"research_compile_authority={MODULE.RESEARCH_COMPILE_AUTHORITY}",
+                "research_compile_authority=caller-environment",
+            ))
+            with self.assertRaisesRegex(MODULE.CrosscheckError, "research_compile_authority"):
+                self.crosscheck(candidate)
+
+    def test_research_compile_condition_must_be_exact_today_capability(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = self.make_candidate(Path(temporary)); path = candidate / "field-candidate-environment.txt"
+            path.write_text(path.read_text().replace(
+                f"research_compile_condition={MODULE.RESEARCH_COMPILE_CONDITION}",
+                "research_compile_condition=DEBUG",
+            ))
+            with self.assertRaisesRegex(MODULE.CrosscheckError, "research_compile_condition"):
                 self.crosscheck(candidate)
 
     def test_duplicate_environment_authority_key_fails_closed(self):
