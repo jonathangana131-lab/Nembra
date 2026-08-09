@@ -99,6 +99,16 @@ class FieldCandidatePreflightTests(unittest.TestCase):
             allow_provisioning_updates="0",
         )
 
+    def with_private_path(self, inputs, path: Path):
+        return preflight.Inputs(
+            source_repo=inputs.source_repo,
+            expected_source_sha=inputs.expected_source_sha,
+            development_team=inputs.development_team,
+            export_options_plist=inputs.export_options_plist,
+            intended_device_udid_file=path,
+            allow_provisioning_updates=inputs.allow_provisioning_updates,
+        )
+
     def test_ready_report_is_explicitly_non_authorizing_and_secret_minimizing(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -203,6 +213,55 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertFalse(report["checks"]["privateIntendedDeviceInput"])
         self.assertIn("private-intended-device-input-invalid", report["problems"])
         self.assertNotIn(self.PRIVATE_UDID, json.dumps(report))
+
+    def test_symlinked_private_parent_is_rejected_without_leaking_private_path(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inputs = self.make_inputs(root)
+            real_parent = root / "real-private-parent"
+            real_parent.mkdir()
+            private_file = real_parent / "device-id"
+            private_file.write_text(self.PRIVATE_UDID, encoding="utf-8")
+            private_file.chmod(0o600)
+            alias = root / "private-parent-alias"
+            alias.symlink_to(real_parent, target_is_directory=True)
+            aliased_private_file = alias / "device-id"
+            inputs = self.with_private_path(inputs, aliased_private_file)
+
+            report, exit_code = preflight.evaluate_preflight(
+                inputs,
+                runner=FakeRunner(self.SOURCE),
+                system_name="Darwin",
+            )
+            encoded = json.dumps(report, sort_keys=True)
+
+        self.assertEqual(exit_code, 2)
+        self.assertFalse(report["checks"]["privateIntendedDeviceInput"])
+        self.assertIn("private-intended-device-input-invalid", report["problems"])
+        self.assertNotIn(self.PRIVATE_UDID, encoded)
+        self.assertNotIn(str(aliased_private_file), encoded)
+
+    def test_repository_contained_private_file_is_rejected_without_leaking_path(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inputs = self.make_inputs(root)
+            repository_private_file = inputs.source_repo / "private-device-id"
+            repository_private_file.write_text(self.PRIVATE_UDID, encoding="utf-8")
+            repository_private_file.chmod(0o600)
+            inputs = self.with_private_path(inputs, repository_private_file)
+
+            report, exit_code = preflight.evaluate_preflight(
+                inputs,
+                runner=FakeRunner(self.SOURCE),
+                system_name="Darwin",
+            )
+            encoded = json.dumps(report, sort_keys=True)
+
+        self.assertEqual(exit_code, 2)
+        self.assertFalse(report["checks"]["privateIntendedDeviceInput"])
+        self.assertIn("private-intended-device-input-invalid", report["problems"])
+        self.assertNotIn(self.PRIVATE_UDID, encoded)
+        self.assertNotIn(str(repository_private_file), encoded)
 
     def test_non_xcode_27_selection_fails_closed(self):
         with tempfile.TemporaryDirectory() as temporary:
