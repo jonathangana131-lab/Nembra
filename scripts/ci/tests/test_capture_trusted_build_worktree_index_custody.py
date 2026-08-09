@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""V14 acceptance for exact-source worktree/index custody at trusted Xcode authority.
+"""V14 acceptance for exact-source worktree/index/process custody at trusted Xcode authority.
 
 The frozen Simulator producer uses Git status to prove source cleanliness. Candidate-controlled
 validation must never be able to hide worktree divergence behind mutable index flags, repository-
-local Git metadata, or ignored/untracked source. The trusted workflow must bind authority to the
-resolver-approved commit *and* the real GitHub workspace bytes immediately before execution.
+local Git metadata, ignored/untracked source, or a same-UID process that survives point-in-time
+audits. The trusted workflow must bind authority to the resolver-approved commit and the real GitHub
+workspace bytes before any repository-controlled validation can spawn a process in that runner.
 """
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path
 import re
 import shutil
@@ -109,6 +111,66 @@ class TrustedBuildWorktreeIndexCustodyTests(unittest.TestCase):
             )
             self.assertEqual(source.read_text(encoding="utf-8"), "let authority = 999\n")
 
+    def test_delayed_same_uid_mutation_can_land_after_green_prebuild_audits(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "repo"
+            source = self._initialize_fixture(repo)
+            reviewed_head = subprocess.check_output(
+                ["/usr/bin/git", "-C", str(repo), "rev-parse", "HEAD"], text=True
+            ).strip()
+            expected_oid = subprocess.check_output(
+                ["/usr/bin/git", "-C", str(repo), "rev-parse", "HEAD:Tracked.swift"], text=True
+            ).strip()
+
+            marker = repo / ".mutation-admitted"
+            attacker_program = """
+import pathlib
+import sys
+import time
+marker = pathlib.Path(sys.argv[1])
+target = pathlib.Path(sys.argv[2])
+while not marker.exists():
+    time.sleep(0.005)
+target.write_bytes(b"let authority = 999\\n")
+"""
+            attacker = subprocess.Popen(
+                ["/usr/bin/python3", "-c", attacker_program, str(marker), str(source)]
+            )
+            self.addCleanup(lambda: attacker.poll() is None and attacker.kill())
+
+            trusted_index = repo / ".git" / "nembra-private-index"
+            env = os.environ.copy()
+            env["GIT_INDEX_FILE"] = str(trusted_index)
+            subprocess.run(
+                ["/usr/bin/git", "-C", str(repo), "read-tree", reviewed_head],
+                check=True,
+                env=env,
+            )
+            self.assertEqual(
+                subprocess.check_output(
+                    ["/usr/bin/git", "-C", str(repo), "status", "--porcelain=v1", "--untracked-files=all"],
+                    text=True,
+                    env=env,
+                ),
+                "",
+            )
+            self.assertEqual(
+                hashlib.sha1(
+                    b"blob " + str(source.stat().st_size).encode("ascii") + b"\0" + source.read_bytes()
+                ).hexdigest(),
+                expected_oid,
+            )
+
+            marker.write_text("go\n", encoding="utf-8")
+            attacker.wait(timeout=5)
+            self.assertEqual(source.read_text(encoding="utf-8"), "let authority = 999\n")
+            self.assertNotEqual(
+                hashlib.sha1(
+                    b"blob " + str(source.stat().st_size).encode("ascii") + b"\0" + source.read_bytes()
+                ).hexdigest(),
+                expected_oid,
+            )
+
     def _authority_step(self) -> str:
         source = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(AUTHORITY_STEP, source)
@@ -116,6 +178,25 @@ class TrustedBuildWorktreeIndexCustodyTests(unittest.TestCase):
         remainder = source[start + len(AUTHORITY_STEP):]
         next_step = remainder.find("\n      - name: ")
         return remainder if next_step < 0 else remainder[:next_step]
+
+    def test_authority_build_precedes_repository_controlled_prevalidation_in_same_job(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        authority = source.index(AUTHORITY_STEP)
+        repository_controlled_steps = (
+            "      - name: Validate project structure",
+            "      - name: Validate core package",
+            "      - name: Validate Capture package",
+            "      - name: Validate signed field evidence tooling",
+            "      - name: Validate signed field candidate producer source",
+            "      - name: Validate offline field authorization signer",
+        )
+        for step in repository_controlled_steps:
+            with self.subTest(step=step):
+                self.assertLess(
+                    authority,
+                    source.index(step),
+                    "trusted authority build must precede repository-controlled validation in the same runner namespace",
+                )
 
     def test_authority_build_uses_fresh_resolver_bound_index(self) -> None:
         step = self._authority_step()
