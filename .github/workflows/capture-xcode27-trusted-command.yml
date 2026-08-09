@@ -337,9 +337,26 @@ jobs:
           PY
 
           # Re-prove the mutable worktree producer file after every earlier candidate-controlled
-          # validation. This is diagnostic defense-in-depth; authority-producing interpreter input
-          # below is the immutable pinned Git object itself, not this pathname.
+          # validation. This remains diagnostic defense-in-depth. Authority-producing interpreter
+          # input below is independently authenticated from the exact pinned-object bytes returned.
           worktree_blob="$(
+            /usr/bin/env -i \
+              PATH=/usr/bin:/bin \
+              HOME=/tmp \
+              LC_ALL=C \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              /usr/bin/git -C /tmp hash-object -- "$GITHUB_WORKSPACE/$producer_path"
+          )"
+          test "$worktree_blob" = "$expected_blob"
+
+          # Same-UID candidate code may replace a loose Git object beneath its expected pathname;
+          # `cat-file <expected oid>` does not independently authenticate returned bytes. Materialize
+          # once, preserve exact trailing newlines behind a sentinel, re-hash those exact bytes in a
+          # repository-independent Git context, and execute only the same authenticated byte subject.
+          sentinel="__NEMBRA_TRUSTED_PRODUCER_EOF_4e9ae0cb__"
+          producer_bytes="$(
             /usr/bin/env -i \
               PATH=/usr/bin:/bin \
               HOME=/tmp \
@@ -354,47 +371,51 @@ jobs:
               GIT_CONFIG_VALUE_0="$GITHUB_WORKSPACE" \
               GIT_CONFIG_KEY_1=core.bare \
               GIT_CONFIG_VALUE_1=false \
-              /usr/bin/git hash-object -- "$producer_path"
+              /usr/bin/git cat-file blob "$expected_blob" &&
+            builtin printf '%s' "$sentinel"
           )"
-          test "$worktree_blob" = "$expected_blob"
+          case "$producer_bytes" in
+            *"$sentinel") producer_bytes="${producer_bytes%"$sentinel"}" ;;
+            *) builtin printf 'Trusted producer sentinel missing after Git-object materialization.\n' >&2; exit 2 ;;
+          esac
 
-          # Stream the accepted Git object directly into a separately sanitized Bash interpreter.
-          # The candidate pathname is only $0 so the frozen runner's dirname($0)/../.. ROOT
-          # calculation still resolves the exact checkout. The producer inherits the same explicit
-          # real-workspace Git binding and resolver-owned index; repository-local redirection cannot
-          # become source-clean authority inside the frozen runner.
-          /usr/bin/env -i \
-            PATH=/usr/bin:/bin \
-            HOME=/tmp \
-            LC_ALL=C \
-            GIT_DIR="$GITHUB_WORKSPACE/.git" \
-            GIT_WORK_TREE="$GITHUB_WORKSPACE" \
-            GIT_CONFIG_NOSYSTEM=1 \
-            GIT_CONFIG_GLOBAL=/dev/null \
-            GIT_NO_REPLACE_OBJECTS=1 \
-            /usr/bin/git cat-file blob "$expected_blob" \
-            | /usr/bin/env -i \
-                PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+          materialized_blob="$(
+            builtin printf '%s' "$producer_bytes" |
+              /usr/bin/env -i \
+                PATH=/usr/bin:/bin \
                 HOME=/tmp \
                 LC_ALL=C \
-                GIT_DIR="$GITHUB_WORKSPACE/.git" \
-                GIT_WORK_TREE="$GITHUB_WORKSPACE" \
                 GIT_CONFIG_NOSYSTEM=1 \
                 GIT_CONFIG_GLOBAL=/dev/null \
                 GIT_NO_REPLACE_OBJECTS=1 \
-                GIT_INDEX_FILE="$trusted_index" \
-                GIT_CONFIG_COUNT=5 \
-                GIT_CONFIG_KEY_0=core.worktree \
-                GIT_CONFIG_VALUE_0="$GITHUB_WORKSPACE" \
-                GIT_CONFIG_KEY_1=core.bare \
-                GIT_CONFIG_VALUE_1=false \
-                GIT_CONFIG_KEY_2=core.fsmonitor \
-                GIT_CONFIG_VALUE_2=false \
-                GIT_CONFIG_KEY_3=core.ignorestat \
-                GIT_CONFIG_VALUE_3=false \
-                GIT_CONFIG_KEY_4=core.filemode \
-                GIT_CONFIG_VALUE_4=true \
-                /bin/bash -c 'source /dev/stdin' "$GITHUB_WORKSPACE/$producer_path"
+                /usr/bin/git -C /tmp hash-object --stdin
+          )"
+          builtin printf 'Trusted Simulator execution blob: %s\n' "$materialized_blob"
+          test "$materialized_blob" = "$expected_blob"
+
+          builtin printf '%s' "$producer_bytes" |
+            /usr/bin/env -i \
+              PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+              HOME=/tmp \
+              LC_ALL=C \
+              GIT_DIR="$GITHUB_WORKSPACE/.git" \
+              GIT_WORK_TREE="$GITHUB_WORKSPACE" \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              GIT_INDEX_FILE="$trusted_index" \
+              GIT_CONFIG_COUNT=5 \
+              GIT_CONFIG_KEY_0=core.worktree \
+              GIT_CONFIG_VALUE_0="$GITHUB_WORKSPACE" \
+              GIT_CONFIG_KEY_1=core.bare \
+              GIT_CONFIG_VALUE_1=false \
+              GIT_CONFIG_KEY_2=core.fsmonitor \
+              GIT_CONFIG_VALUE_2=false \
+              GIT_CONFIG_KEY_3=core.ignorestat \
+              GIT_CONFIG_VALUE_3=false \
+              GIT_CONFIG_KEY_4=core.filemode \
+              GIT_CONFIG_VALUE_4=true \
+              /bin/bash --noprofile --norc -p -c 'source /dev/stdin' "$GITHUB_WORKSPACE/$producer_path"
 
       - name: Verify retained Capture evidence against trusted resolver authority
         shell: "/bin/bash --noprofile --norc -p -e -o pipefail {0}"
