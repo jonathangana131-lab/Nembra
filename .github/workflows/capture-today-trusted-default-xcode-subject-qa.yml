@@ -8,6 +8,8 @@ on:
       - scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
       - scripts/ci/es80_today_final_go_publication.py
       - scripts/ci/tests/test_es80_today_final_go_publication.py
+      - scripts/ci/es80_today_final_go_hardened.py
+      - scripts/ci/tests/test_es80_today_final_go_hardened.py
       - .github/workflows/capture-today-trusted-default-xcode-subject-qa.yml
 
 permissions:
@@ -15,7 +17,7 @@ permissions:
 
 jobs:
   hardening:
-    name: Validate Final GO trust and publication primitives
+    name: Validate hardened Final GO composition
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -25,26 +27,22 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 1
-
       - name: Verify immutable validation head
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
-
       - name: Compile Final GO hardening modules and tests
         run: |
-          python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py
-          python3 -m py_compile scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
-          python3 -m py_compile scripts/ci/es80_today_final_go_publication.py
-          python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_publication.py
-
+          python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
+          python3 -m py_compile scripts/ci/es80_today_final_go_publication.py scripts/ci/tests/test_es80_today_final_go_publication.py
+          python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py
       - name: Run trusted subject adversarial suite
         run: python3 scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py -v
-
       - name: Run failure-atomic publication adversarial suite
         run: python3 scripts/ci/tests/test_es80_today_final_go_publication.py -v
-
-      - name: Pin exact default-branch workflow authority
+      - name: Run hardened composition suite
+        run: python3 scripts/ci/tests/test_es80_today_final_go_hardened.py -v
+      - name: Pin hardened authority boundaries
         run: |
           set -euo pipefail
           grep -Fq 'TRUSTED_WORKFLOW_NAME = "Capture Trusted Xcode 27 Exact-Head QA"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
@@ -53,4 +51,5 @@ jobs:
           grep -Fq 'run.get("event") == "issue_comment"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'run.get("head_branch") == DEFAULT_BRANCH' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'AMBIGUOUS NO-GO' scripts/ci/es80_today_final_go_publication.py
-          grep -Fq 'QUARANTINED-NO-GO' scripts/ci/es80_today_final_go_publication.py
+          grep -Fq 'foundation._trusted_xcode_subject = trusted_subject_adapter' scripts/ci/es80_today_final_go_hardened.py
+          grep -Fq 'publication.publish_record_no_replace' scripts/ci/es80_today_final_go_hardened.py
