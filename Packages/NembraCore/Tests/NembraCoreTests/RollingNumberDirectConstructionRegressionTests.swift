@@ -30,7 +30,7 @@ struct RollingNumberDirectConstructionRegressionTests {
 
         #expect(snapshot.scaledValue == 123_456_789_012_345)
         #expect(snapshot.digits.map(\.digit) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5])
-        #expect(snapshot.digits.allSatisfy(\.isVisible))
+        #expect(snapshot.digits.allSatisfy { $0.isVisible })
     }
 
     @Test("fractional slots remain visible while leading integer slots stay reserved")
