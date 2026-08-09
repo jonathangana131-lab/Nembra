@@ -6,6 +6,11 @@ reopen that compatibility surface for tests, this harness loads the existing tes
 its module-global `final_go` reference to the real foundation before test discovery/execution.
 Class constants already captured from the compatibility export are identical foundation constants;
 all runtime builder, Git, validation, and publication calls resolve through this replacement.
+
+The historical fixtures predate producer-execution custody and intentionally use synthetic candidate
+bytes that the real pinned crosscheck rejects. This harness stubs only that newly added producer
+execution seam; dedicated `test_es80_today_final_go_crosscheck_execution.py` owns its adversarial
+coverage. Every historical semantic/digest/Git/operator assertion continues to run unchanged.
 """
 from __future__ import annotations
 
@@ -36,6 +41,11 @@ legacy_suite = _load(
     TEST_DIR / "test_es80_today_final_go_record.py",
 )
 legacy_suite.final_go = foundation
+foundation._verify_crosscheck_execution = lambda **kwargs: {
+    "authority": "legacy-fixture-producer-execution-stub",
+    "toolCommit": foundation.PINNED_CROSSCHECK_COMMIT,
+    "toolGitBlob": foundation.PINNED_CROSSCHECK_BLOB,
+}
 
 
 def main() -> int:
