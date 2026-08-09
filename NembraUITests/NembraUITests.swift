@@ -159,6 +159,51 @@ final class NembraUITests: XCTestCase {
         )
     }
 
+    /// The workflow runs this once with Accessibility XXXL + Increased Contrast
+    /// enabled at the Simulator level. The assertions intentionally remain valid
+    /// at default settings too so this test never fakes accessibility state in app code.
+    @MainActor
+    func testLandscapeDashboardAccessibilityRuntimeClosure() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(scenario: "connected-stopped", orientation: .landscapeRight)
+
+        let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
+        XCTAssertTrue(cockpit.waitForExistence(timeout: 4))
+
+        let speed = app.descendants(matching: .any)["dashboard.speed"]
+        XCTAssertTrue(speed.waitForExistence(timeout: 3))
+        XCTAssertFalse((speed.value as? String ?? "").isEmpty)
+
+        assertMinimumTouchTarget(app.buttons["dashboard.mode.walk"], named: "Dashboard Walk mode")
+        assertMinimumTouchTarget(app.buttons["dashboard.mode.eco"], named: "Dashboard Eco mode")
+        assertMinimumTouchTarget(app.buttons["dashboard.mode.drive"], named: "Dashboard Drive mode")
+        assertMinimumTouchTarget(app.buttons["dashboard.mode.sport"], named: "Dashboard Sport mode")
+        assertMinimumTouchTarget(app.buttons["dashboard.control.light"], named: "Dashboard light")
+        assertMinimumTouchTarget(app.buttons["dashboard.control.lock"], named: "Dashboard lock")
+
+        keepScreenshot(named: "Dashboard Accessibility XXXL Increased Contrast Landscape")
+    }
+
+    /// Records launch-to-responsive timing for the actual landscape cockpit.
+    /// This is a presentation performance metric only; it never mutates telemetry.
+    @MainActor
+    func testLandscapeDashboardLaunchPerformance() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        XCUIDevice.shared.orientation = .landscapeRight
+
+        let app = XCUIApplication()
+        app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = "connected-stopped"
+
+        measure(metrics: [XCTApplicationLaunchMetric(waitUntilResponsive: true)]) {
+            app.launch()
+            XCTAssertTrue(
+                app.descendants(matching: .any)["dashboard.cockpit"].waitForExistence(timeout: 4),
+                "The measured launch must reach the real Dashboard cockpit."
+            )
+            app.terminate()
+        }
+    }
+
     @MainActor
     private func selectDashboardMode(
         identifier: String,
