@@ -1,0 +1,41 @@
+name: Capture Trusted Xcode Runner Custody QA
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - .github/workflows/capture-xcode27-trusted-command.yml
+      - scripts/ci/es80_today_trusted_capture_xcode_subject.py
+      - scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
+      - scripts/ci/tests/test_capture_trusted_xcode_runner_blob_custody.py
+      - .github/workflows/capture-trusted-xcode-runner-custody-qa.yml
+
+permissions:
+  contents: read
+
+jobs:
+  runner-custody:
+    name: Require trusted Simulator runner blob custody
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact repair head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+      - name: Verify immutable repair head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+      - name: Compile trust verifier and custody regressions
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          python3 -m py_compile scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
+          python3 -m py_compile scripts/ci/tests/test_capture_trusted_xcode_runner_blob_custody.py
+      - name: Validate trusted Xcode subject behavior
+        run: python3 scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py -v
+      - name: Validate authority-bearing runner custody
+        run: python3 scripts/ci/tests/test_capture_trusted_xcode_runner_blob_custody.py -v
