@@ -324,7 +324,10 @@ private struct RideHistoryRowView: View {
 
     private var odometerDeltaKilometers: Double? {
         guard let start = record.evidence.startingOdometerKilometers,
-              let end = record.evidence.endingOdometerKilometers else {
+              let end = record.evidence.endingOdometerKilometers,
+              start.isFinite,
+              end.isFinite,
+              end > start else {
             return nil
         }
         return end - start
@@ -818,7 +821,9 @@ private struct RideHistoryDetailView: View {
     private var odometerDeltaKilometers: Double? {
         guard let start = record.evidence.startingOdometerKilometers,
               let end = record.evidence.endingOdometerKilometers,
-              end >= start else {
+              start.isFinite,
+              end.isFinite,
+              end > start else {
             return nil
         }
         return end - start
