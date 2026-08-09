@@ -142,17 +142,19 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
             }
 
             if receiptIdentity.sequenceNumber == lastSeenReceiptIdentity.sequenceNumber {
-                guard observation.receivedAtUptimeNanoseconds == lastSeenReceiptUptimeNanoseconds,
-                      observation.continuity == lastSeenReceiptContinuity else {
-                    throw BatteryEvidenceStreamValidationError.inconsistentReceiptMetadata
-                }
-
-                // Sibling semantic fields are legal only for a receipt that already passed
-                // stream admission. A receipt first seen through a rejected observation is
-                // permanently consumed and cannot be retried into acceptance.
+                // Only an already-accepted receipt may admit semantic siblings. A receipt first
+                // seen through a rejected observation is permanently consumed, and a pre-gap
+                // receipt cannot be rewritten into the required boundary. Classify those replay
+                // attempts as stale before comparing caller-supplied metadata so altered uptime or
+                // continuity cannot turn a consumed receipt into a different rejection class.
                 guard acceptedReceiptIdentity == receiptIdentity,
                       !continuityBoundaryRequired else {
                     throw BatteryEvidenceStreamValidationError.staleReceiptIdentity
+                }
+
+                guard observation.receivedAtUptimeNanoseconds == lastSeenReceiptUptimeNanoseconds,
+                      observation.continuity == lastSeenReceiptContinuity else {
+                    throw BatteryEvidenceStreamValidationError.inconsistentReceiptMetadata
                 }
 
                 try requirePublishedCurrentnessIfBound(
