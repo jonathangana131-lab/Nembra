@@ -151,6 +151,11 @@ struct ES80CaptureShellView: View {
                         diagnosticBanner(diagnosticMessage)
                     }
                 }
+                // Keep the real Accessibility-size recomposition selected above, but bound visual
+                // glyph growth inside the Capture content subtree. At Accessibility XXXL the
+                // iPhone 12 must still expose the synthetic-truth badge, progress/health surfaces,
+                // and required actions as reviewable controls instead of one clipped text column.
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 .frame(maxWidth: 660)
                 .padding(.horizontal, 22)
                 .padding(.top, captureTopPadding)
