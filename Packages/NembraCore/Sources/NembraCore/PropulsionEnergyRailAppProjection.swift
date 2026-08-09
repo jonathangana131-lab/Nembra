@@ -39,8 +39,9 @@ public extension PropulsionGaugeDisplayModel {
     ///
     /// The semantic projection owns accepted watts/currentness/accepted target. The render projection
     /// owns display-only watts and interpolated rail/peak geometry. The two projections must agree on
-    /// identity, currentness, and accepted numeric truth before motion is admitted. Any disagreement
-    /// fails closed to unavailable rather than allowing SwiftUI to splice mismatched generations.
+    /// identity, currentness, and accepted numeric truth before live geometry is admitted. Any
+    /// disagreement fails closed to unavailable rather than allowing SwiftUI to splice mismatched
+    /// generations.
     func energyRailAppProjection(
         atUptimeNanoseconds now: UInt64,
         scale: PropulsionGaugeScale?
@@ -68,9 +69,13 @@ public extension PropulsionGaugeDisplayModel {
                 return unavailableEnergyRailAppProjection(identity: semantic.identity)
             }
 
-            let motionAllowed = semantic.allowsLiveMotion
-                && render.allowsRailMotion
-                && render.allowsDisplayWattsMotion
+            // The rail remains a valid live presentation after interpolation settles. Do not couple
+            // rail visibility to `allowsDisplayWattsMotion`: that flag only says whether the watt
+            // numeral is currently between accepted measurements. The sealed SwiftUI state has one
+            // live-motion admission bit, so bind it to complete live rail geometry; a settled
+            // `displayWatts == acceptedWatts` value is static naturally because its value no longer
+            // changes.
+            let motionAllowed = semantic.allowsLiveMotion && render.allowsRailMotion
 
             return PropulsionEnergyRailAppProjection(
                 identity: semantic.identity,
