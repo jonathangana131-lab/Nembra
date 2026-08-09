@@ -32,6 +32,7 @@ RESEARCH_COMPILE_AUTHORITY = "canonical-producer-explicit-mode"
 RESEARCH_COMPILE_CONDITION = "NEMBRA_ES80_TODAY_RESEARCH"
 RECIPE = "ES80-FINGERPRINT-v1"
 PROCEDURE = "V14"
+MAX_PRIVATE_IDENTIFIER_BYTES = 128
 
 TODAY_WRAPPER = "scripts/ci/xcode27_today_research_field_candidate.sh"
 CANONICAL_PRODUCER = "scripts/ci/xcode27_signed_field_candidate.sh"
@@ -75,16 +76,21 @@ def _closed_env(extra: Mapping[str, str] | None = None) -> dict[str, str]:
 def _default_runner(
     argv: Sequence[str], cwd: Path | None, env: Mapping[str, str]
 ) -> CommandResult:
-    completed = subprocess.run(
-        list(argv),
-        cwd=str(cwd) if cwd is not None else None,
-        env=dict(env),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(
+            list(argv),
+            cwd=str(cwd) if cwd is not None else None,
+            env=dict(env),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        # Never leak a caller path or private process diagnostic merely because one required system
+        # command is unavailable. The named readiness check will fail closed instead.
+        return CommandResult(127, "", "")
     return CommandResult(completed.returncode, completed.stdout, completed.stderr)
 
 
@@ -99,19 +105,43 @@ def _regular_nonsymlink(path: Path) -> os.stat_result | None:
 
 
 def _private_udid_file_is_ready(path: Path) -> bool:
+    """Mirror the normal-path privacy/format contract enforced by frozen a0f4's private runner.
+
+    This remains only an early operator check. The frozen producer reopens and independently
+    validates the file component-by-component before signed evidence admission.
+    """
     if not path.is_absolute():
         return False
     info = _regular_nonsymlink(path)
-    if info is None or stat.S_IMODE(info.st_mode) != 0o600:
+    if info is None:
+        return False
+    if stat.S_IMODE(info.st_mode) != 0o600:
+        return False
+    if info.st_size < 1 or info.st_size > MAX_PRIVATE_IDENTIFIER_BYTES:
+        return False
+    if info.st_nlink != 1:
+        return False
+    if hasattr(os, "geteuid") and info.st_uid != os.geteuid():
         return False
     try:
-        raw = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeError):
+        raw = path.read_bytes()
+    except OSError:
         return False
-    # Keep the verifier format deliberately generic: the canonical Apple/provisioning inspector owns
-    # device identity. Here we only prevent empty/multiline/whitespace-bearing private input.
-    lines = raw.splitlines()
-    return len(lines) == 1 and bool(lines[0]) and lines[0] == lines[0].strip()
+    if len(raw) != info.st_size or len(raw) > MAX_PRIVATE_IDENTIFIER_BYTES:
+        return False
+    try:
+        value = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    # Frozen a0f4's exact private runner rejects a trailing newline and every other leading/trailing
+    # whitespace byte. Do not normalize the value here: doing so would create a false READY state.
+    if not value or value != value.strip():
+        return False
+    if any(ord(character) < 33 or ord(character) == 127 for character in value):
+        return False
+    if value in os.fspath(path):
+        return False
+    return True
 
 
 def _export_options_are_ready(path: Path) -> bool:
