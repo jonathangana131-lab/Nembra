@@ -1,0 +1,106 @@
+name: Capture V14 Accessibility XXXL one-shot repair
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-current-closure-spine/chatgpt56-thinking-go
+    paths:
+      - .github/workflows/capture-v14-xxxl-repair-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@v5
+        with:
+          ref: integration/es80-v14-current-closure-spine/chatgpt56-thinking-go
+          fetch-depth: 0
+
+      - name: Recompose locked Capture surface for Accessibility XXXL
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraApp.swift")
+          source = path.read_text(encoding="utf-8")
+
+          replacements = [
+              (
+                  "spacing: verticalSizeClass == .compact ? 10 : (isAccessibilityLayout ? 8 : 28)",
+                  "spacing: verticalSizeClass == .compact ? 10 : (isAccessibilityLayout ? 6 : 28)",
+                  1,
+              ),
+              (
+                  "spacing: verticalSizeClass == .compact ? 6 : (isAccessibilityLayout ? 4 : 14)",
+                  "spacing: verticalSizeClass == .compact ? 6 : (isAccessibilityLayout ? 2 : 14)",
+                  1,
+              ),
+              (
+                  "isAccessibilityLayout || verticalSizeClass == .compact ? .title2 : .largeTitle,",
+                  "isAccessibilityLayout ? .headline : (verticalSizeClass == .compact ? .title2 : .largeTitle),",
+                  1,
+              ),
+              (
+                  """Text(\"Final exact-build checks are still in progress.\")
+                            .font(.caption.weight(.semibold))""",
+                  """Text(\"Final checks in progress.\")
+                            .font(.caption2.weight(.semibold))""",
+                  1,
+              ),
+              (
+                  """Text(isAccessibilityLayout ? \"PHYSICAL CAPTURE · NO-GO\" : \"Not ready for scooter capture yet\")
+                            .font(.headline)""",
+                  """Text(isAccessibilityLayout ? \"PHYSICAL CAPTURE · NO-GO\" : \"Not ready for scooter capture yet\")
+                            .font(isAccessibilityLayout ? .subheadline.weight(.semibold) : .headline)""",
+                  1,
+              ),
+              (
+                  """Text(\"Engineering details\")
+                                    .font(.subheadline.weight(.semibold))""",
+                  """Text(\"Engineering details\")
+                                    .font(isAccessibilityLayout ? .footnote.weight(.semibold) : .subheadline.weight(.semibold))""",
+                  1,
+              ),
+              (
+                  ".padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 10 : 18))",
+                  ".padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 8 : 18))",
+                  2,
+              ),
+              (
+                  ".padding(.top, verticalSizeClass == .compact ? 8 : (isAccessibilityLayout ? 8 : 18))",
+                  ".padding(.top, verticalSizeClass == .compact ? 8 : (isAccessibilityLayout ? 4 : 18))",
+                  1,
+              ),
+          ]
+
+          for old, new, expected_count in replacements:
+              actual_count = source.count(old)
+              if actual_count != expected_count:
+                  raise SystemExit(
+                      f"Refusing ambiguous repair for {old!r}: expected {expected_count}, found {actual_count}"
+                  )
+              source = source.replace(old, new)
+
+          path.write_text(source, encoding="utf-8")
+          PY
+
+          git diff --check
+          git diff -- NembraApp/App/NembraApp.swift
+
+      - name: Commit product repair and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-v14-closure-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/capture-v14-xxxl-repair-once.yml
+          git add NembraApp/App/NembraApp.swift
+          git diff --cached --check
+          git commit -m "fix(capture): fit locked state at Accessibility XXXL"
+          git push origin HEAD:"$GITHUB_REF_NAME"
