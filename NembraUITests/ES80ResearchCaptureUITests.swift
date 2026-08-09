@@ -166,7 +166,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         app.launchArguments = [
             "--es80-passive-capture",
             "-UIPreferredContentSizeCategoryName",
-            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+            "UICTContentSizeCategoryAccessibilityXXXL"
         ]
         app.launch()
 
@@ -387,7 +387,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "--es80-passive-capture-simulator-qa",
             "--es80-capture-qa-scenario=captureComplete",
             "-UIPreferredContentSizeCategoryName",
-            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+            "UICTContentSizeCategoryAccessibilityXXXL"
         ]
         app.launch()
 
@@ -472,7 +472,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "--es80-passive-capture-simulator-qa",
             "--es80-capture-qa-scenario=observationHorizonReady",
             "-UIPreferredContentSizeCategoryName",
-            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+            "UICTContentSizeCategoryAccessibilityXXXL"
         ]
         app.launch()
 
@@ -484,6 +484,8 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             .matching(NSPredicate(format: "label BEGINSWITH %@", "Capture health."))
             .firstMatch
         let finish = app.descendants(matching: .any)["es80.capture.finish"]
+        let readyToSealStatus = app.staticTexts["Ready to seal"]
+        let passiveMode = app.staticTexts["PASSIVE / READ ONLY"]
 
         XCTAssertTrue(shell.waitForExistence(timeout: 5))
         XCTAssertTrue(qaDisclosure.waitForExistence(timeout: 3))
@@ -491,6 +493,13 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         XCTAssertTrue(readyState.waitForExistence(timeout: 3))
         XCTAssertTrue(health.waitForExistence(timeout: 3))
         XCTAssertTrue(finish.waitForExistence(timeout: 3))
+        XCTAssertTrue(readyToSealStatus.waitForExistence(timeout: 3))
+        XCTAssertTrue(passiveMode.waitForExistence(timeout: 3))
+        XCTAssertGreaterThan(
+            passiveMode.frame.minY,
+            readyToSealStatus.frame.maxY,
+            "Accessibility XXXL must activate the Capture hero's vertical status recomposition; same-row geometry is a false-green Dynamic Type launch."
+        )
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
         XCTAssertFalse(app.buttons["Vehicle controls"].exists)
 
@@ -829,6 +838,20 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
     }
 
+    func testAccessibilityLaunchUsesSupportedXXXLCategoryName() throws {
+        let source = try repositorySource(at: "NembraUITests/ES80ResearchCaptureUITests.swift")
+        XCTAssertFalse(
+            source.contains("UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"),
+            "Capture UI tests must not use the unsupported long-form content-size token that silently falls back to normal text size."
+        )
+        let supportedToken = "UICTContentSizeCategoryAccessibilityXXXL"
+        XCTAssertEqual(
+            source.components(separatedBy: supportedToken).count - 1,
+            4,
+            "Every Capture Accessibility XXXL launch must use the supported UIKit category token."
+        )
+    }
+
     @MainActor
     private func bringIntoScreenshotViewport(
         _ element: XCUIElement,
@@ -956,12 +979,13 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "--es80-passive-capture-simulator-qa",
             "--es80-capture-qa-scenario=observationHorizonReady",
             "-UIPreferredContentSizeCategoryName",
-            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+            "UICTContentSizeCategoryAccessibilityXXXL"
         ]
         app.launch()
 
         let qaDisclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
         let passiveMode = app.staticTexts["PASSIVE / READ ONLY"]
+        let readyToSealStatus = app.staticTexts["Ready to seal"]
         let progress = app.descendants(matching: .any)["es80.capture.experiment-progress"]
         let health = app.descendants(matching: .any)["es80.capture.health"]
         let finish = app.descendants(matching: .any)["es80.capture.finish"]
@@ -969,9 +993,15 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5))
         XCTAssertTrue(qaDisclosure.waitForExistence(timeout: 3))
         XCTAssertTrue(passiveMode.waitForExistence(timeout: 3))
+        XCTAssertTrue(readyToSealStatus.waitForExistence(timeout: 3))
         XCTAssertTrue(progress.waitForExistence(timeout: 3))
         XCTAssertTrue(health.waitForExistence(timeout: 3))
         XCTAssertTrue(finish.waitForExistence(timeout: 3))
+        XCTAssertGreaterThan(
+            passiveMode.frame.minY,
+            readyToSealStatus.frame.maxY,
+            "Accessibility XXXL must activate the Capture hero's vertical status recomposition."
+        )
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
 
         let topFrame = app.windows.firstMatch.frame
