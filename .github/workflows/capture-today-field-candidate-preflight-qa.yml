@@ -1,0 +1,43 @@
+name: Capture TODAY Field Candidate Preflight QA
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - scripts/ci/es80_today_field_candidate_preflight.py
+      - scripts/ci/tests/test_es80_today_field_candidate_preflight.py
+      - .github/workflows/capture-today-field-candidate-preflight-qa.yml
+
+permissions:
+  contents: read
+
+jobs:
+  field-candidate-preflight:
+    name: Validate non-authorizing private signing preflight
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    concurrency:
+      group: nembra-capture-today-field-preflight-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout immutable PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify immutable PR head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+
+      - name: Compile preflight and focused tests
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_today_field_candidate_preflight.py \
+            scripts/ci/tests/test_es80_today_field_candidate_preflight.py
+
+      - name: Run focused preflight regressions
+        run: python3 scripts/ci/tests/test_es80_today_field_candidate_preflight.py -v
