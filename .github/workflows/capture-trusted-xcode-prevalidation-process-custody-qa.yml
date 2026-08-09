@@ -6,13 +6,14 @@ on:
       - '.github/workflows/capture-xcode27-trusted-command.yml'
       - '.github/workflows/capture-trusted-xcode-prevalidation-process-custody-qa.yml'
       - 'scripts/ci/tests/test_capture_trusted_xcode_prevalidation_process_custody.py'
+      - 'scripts/ci/tests/test_capture_trusted_xcode_build_hook_custody.py'
 
 permissions:
   contents: read
 
 jobs:
   prevalidation-process-custody:
-    name: Verify trusted prevalidation runner boundary
+    name: Verify trusted prevalidation and build-hook boundaries
     runs-on: ubuntu-latest
     steps:
       - name: Checkout exact PR head
@@ -28,7 +29,9 @@ jobs:
           printf 'Expected PR head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual_head"
           test "$actual_head" = "$EXPECTED_HEAD_SHA"
 
-      - name: Verify process-custody source contract
+      - name: Verify process-custody source contracts
         run: |
           python3 -m py_compile scripts/ci/tests/test_capture_trusted_xcode_prevalidation_process_custody.py
           python3 scripts/ci/tests/test_capture_trusted_xcode_prevalidation_process_custody.py
+          python3 -m py_compile scripts/ci/tests/test_capture_trusted_xcode_build_hook_custody.py
+          python3 scripts/ci/tests/test_capture_trusted_xcode_build_hook_custody.py
