@@ -147,6 +147,59 @@ struct PropulsionGaugeAcceptedTargetProjectionTests {
         #expect(snapshot.scaleOrigin == nil)
     }
 
+    @Test("missing scale preserves accepted numeric truth without target geometry")
+    func missingScaleHasNoAcceptedTarget() throws {
+        let identity = try makeIdentity()
+        var model = try model(identity: identity)
+
+        try model.accept(simulatorSample(
+            identity: identity,
+            watts: 375,
+            receipt: 6,
+            uptime: 1_000_000_000
+        ))
+
+        let snapshot = model.cockpitSnapshot(
+            atUptimeNanoseconds: 1_000_000_000,
+            scale: nil
+        )
+
+        guard case let .live(accepted) = snapshot.measurement else {
+            #expect(Bool(false))
+            return
+        }
+
+        #expect(accepted.watts == 375)
+        #expect(snapshot.visualPropulsionFraction == nil)
+        #expect(snapshot.acceptedPropulsionFraction == nil)
+        #expect(snapshot.scaleOrigin == nil)
+    }
+
+    @Test("render clock before accepted receipt fails all cockpit truth closed")
+    func invalidRenderClockHasNoAcceptedTarget() throws {
+        let identity = try makeIdentity()
+        var model = try model(identity: identity)
+        let scale = try PropulsionGaugeScale.simulator(identity: identity, ceilingWatts: 1_000)
+
+        try model.accept(simulatorSample(
+            identity: identity,
+            watts: 500,
+            receipt: 7,
+            uptime: 1_000_000_000
+        ))
+
+        let snapshot = model.cockpitSnapshot(
+            atUptimeNanoseconds: 999_999_999,
+            scale: scale
+        )
+
+        #expect(snapshot.measurement == .unavailable)
+        #expect(snapshot.visualPropulsionFraction == nil)
+        #expect(snapshot.acceptedPropulsionFraction == nil)
+        #expect(snapshot.recentAcceptedPeakMarkerFraction == nil)
+        #expect(snapshot.scaleOrigin == nil)
+    }
+
     @Test("retained and unavailable evidence remove accepted target geometry")
     func nonLiveEvidenceHasNoAcceptedTarget() throws {
         let identity = try makeIdentity()
@@ -156,7 +209,7 @@ struct PropulsionGaugeAcceptedTargetProjectionTests {
         try model.accept(simulatorSample(
             identity: identity,
             watts: 640,
-            receipt: 6,
+            receipt: 8,
             uptime: 1_000_000_000
         ))
 
