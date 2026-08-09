@@ -210,12 +210,16 @@ private struct NembraRollingPowerValueView: View {
                         .contentTransition(
                             reduceMotion ? .identity : .numericText(value: value)
                         )
+                        .animation(
+                            reduceMotion ? nil : .linear(duration: 0.08),
+                            value: digit.digit
+                        )
+                        .animation(
+                            reduceMotion ? nil : .linear(duration: 0.08),
+                            value: digit.isVisible
+                        )
                 }
             }
-            .animation(
-                reduceMotion ? nil : .linear(duration: 0.08),
-                value: snapshot.scaledValue
-            )
         } else if let fallbackText {
             Text(fallbackText)
                 .font(.system(size: fontSize, weight: .semibold, design: .rounded))
