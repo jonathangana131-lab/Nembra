@@ -20,20 +20,33 @@ struct SpeedInstrumentDisplayFrame: Equatable {
 }
 
 extension SpeedEvidenceAvailability {
-    /// Dashboard presentation accepts only absolute-measurement speed evidence.
+    /// Dashboard presentation accepts only absolute-measurement speed evidence
+    /// whose source is permitted for the active app profile.
     ///
-    /// `SpeedEvidenceAvailability` is public/caller-constructible, so the enum
-    /// wrapper alone cannot prove that a buggy provider preserved the accepted
-    /// source contract. Fail closed before numeric fallback, interpolation,
-    /// status text, or VoiceOver can consume a short-horizon estimate.
-    var dashboardPresentationAvailability: SpeedEvidenceAvailability {
+    /// `SpeedEvidenceAvailability` and `SpeedTelemetrySample` are public/caller-
+    /// constructible, so neither the enum wrapper nor absolute provenance alone
+    /// proves that a buggy provider preserved the source contract. Synthetic
+    /// `.simulatorQA` evidence is eligible only when the app explicitly owns the
+    /// Simulator QA profile. Physical/unverified profiles therefore cannot borrow
+    /// synthetic speed merely by wrapping it as `.live` or `.retained`.
+    func dashboardPresentationAvailability(
+        allowsSimulatorQA: Bool = false
+    ) -> SpeedEvidenceAvailability {
+        func admits(_ sample: SpeedTelemetrySample) -> Bool {
+            guard sample.isAuthoritativeMeasurement else { return false }
+            if sample.source == .simulatorQA {
+                return allowsSimulatorQA
+            }
+            return true
+        }
+
         switch self {
         case .unavailable:
             return .unavailable
         case let .retained(sample):
-            return sample.isAuthoritativeMeasurement ? .retained(sample) : .unavailable
+            return admits(sample) ? .retained(sample) : .unavailable
         case let .live(sample):
-            return sample.isAuthoritativeMeasurement ? .live(sample) : .unavailable
+            return admits(sample) ? .live(sample) : .unavailable
         }
     }
 }
@@ -75,8 +88,11 @@ final class SpeedInstrumentModel {
     /// Source-owned speed currentness is the Dashboard's positive presentation
     /// authority. Retained/unavailable immediately retire interpolation. A new
     /// live absolute measurement can reopen motion without guessing a freshness timeout.
-    func setSpeedEvidenceAvailability(_ availability: SpeedEvidenceAvailability) {
-        switch availability.dashboardPresentationAvailability {
+    func setSpeedEvidenceAvailability(
+        _ availability: SpeedEvidenceAvailability,
+        allowsSimulatorQA: Bool = false
+    ) {
+        switch availability.dashboardPresentationAvailability(allowsSimulatorQA: allowsSimulatorQA) {
         case .unavailable, .retained:
             clearPresentationContinuity()
         case let .live(sample):
@@ -85,8 +101,9 @@ final class SpeedInstrumentModel {
     }
 
     /// Internal test seam for the interpolation primitive. Production Dashboard
-    /// code admits samples only through `setSpeedEvidenceAvailability(_:)` so
-    /// currentness remains source-owned rather than recreated from a raw stream.
+    /// code admits samples only through `setSpeedEvidenceAvailability` so
+    /// currentness and source eligibility remain app-owned rather than recreated
+    /// from a raw stream.
     func accept(_ sample: SpeedTelemetrySample) {
         guard sample.isAuthoritativeMeasurement else { return }
 
@@ -156,7 +173,7 @@ final class SpeedInstrumentModel {
     /// SwiftUI may render a newly observed availability value before `.onChange`
     /// retires or retargets the local interpolator. Do not let callback scheduling
     /// decide what numeric truth is visible during that render:
-    /// - unavailable or non-authoritative evidence renders no number immediately;
+    /// - unavailable or source-ineligible evidence renders no number immediately;
     /// - retained renders exactly its accepted last-known sample;
     /// - live may consume local interpolation only when that interpolation is already
     ///   targeted at the exact current accepted sample. Otherwise it snaps to the
@@ -164,9 +181,10 @@ final class SpeedInstrumentModel {
     func presentationFrame(
         for availability: SpeedEvidenceAvailability,
         atUptimeNanoseconds uptimeNanoseconds: UInt64,
-        prefersReducedMotion: Bool = false
+        prefersReducedMotion: Bool = false,
+        allowsSimulatorQA: Bool = false
     ) -> SpeedInstrumentDisplayFrame? {
-        switch availability.dashboardPresentationAvailability {
+        switch availability.dashboardPresentationAvailability(allowsSimulatorQA: allowsSimulatorQA) {
         case .unavailable:
             return nil
 
@@ -277,7 +295,11 @@ struct DashboardSpeedInstrumentView: View {
     let modePersonality: DashboardModePersonality
 
     var body: some View {
-        let speedAvailability = vehicle.speedEvidenceAvailability.dashboardPresentationAvailability
+        let allowsSimulatorQA = vehicle.profile == .simulatorQA
+        let rawSpeedAvailability = vehicle.speedEvidenceAvailability
+        let speedAvailability = rawSpeedAvailability.dashboardPresentationAvailability(
+            allowsSimulatorQA: allowsSimulatorQA
+        )
 
         TimelineView(
             .animation(
@@ -286,19 +308,26 @@ struct DashboardSpeedInstrumentView: View {
             )
         ) { _ in
             let frame = model.presentationFrame(
-                for: speedAvailability,
+                for: rawSpeedAvailability,
                 atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
-                prefersReducedMotion: reduceMotion
+                prefersReducedMotion: reduceMotion,
+                allowsSimulatorQA: allowsSimulatorQA
             )
 
             instrumentContent(frame: frame, speedAvailability: speedAvailability)
         }
         .task {
             model.configureInterpolationPolicy(vehicle.speedInstrumentInterpolationPolicy)
-            model.setSpeedEvidenceAvailability(vehicle.speedEvidenceAvailability)
+            model.setSpeedEvidenceAvailability(
+                vehicle.speedEvidenceAvailability,
+                allowsSimulatorQA: vehicle.profile == .simulatorQA
+            )
         }
         .onChange(of: vehicle.speedEvidenceAvailability) { _, availability in
-            model.setSpeedEvidenceAvailability(availability)
+            model.setSpeedEvidenceAvailability(
+                availability,
+                allowsSimulatorQA: vehicle.profile == .simulatorQA
+            )
         }
         .onDisappear {
             model.stop()
@@ -333,7 +362,8 @@ struct DashboardSpeedInstrumentView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Speed")
             // VoiceOver consumes the same sanitized field-specific speed state,
-            // never a 60 Hz render midpoint, estimate, or cached aggregate speed.
+            // never a 60 Hz render midpoint, estimate, or synthetic source that
+            // is ineligible for the active vehicle profile.
             .accessibilityValue(accessibilitySpeed(speedAvailability))
             .accessibilityIdentifier("dashboard.speed")
 
