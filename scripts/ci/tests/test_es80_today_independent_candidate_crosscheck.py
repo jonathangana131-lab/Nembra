@@ -140,6 +140,14 @@ class CandidateCrosscheckTests(unittest.TestCase):
             with self.assertRaisesRegex(MODULE.CrosscheckError, "duplicate key"):
                 self.crosscheck(candidate)
 
+    def test_unknown_environment_authority_key_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = self.make_candidate(Path(temporary)); path = candidate / "field-candidate-environment.txt"
+            text = path.read_text(); text = text.replace("Xcode 27.0", "final_go=true\nXcode 27.0")
+            path.write_text(text)
+            with self.assertRaisesRegex(MODULE.CrosscheckError, "environment schema shape drifted"):
+                self.crosscheck(candidate)
+
     def test_duplicate_json_key_fails_closed(self):
         with tempfile.TemporaryDirectory() as temporary:
             candidate = self.make_candidate(Path(temporary)); path = candidate / "inspection/NembraCaptureExternalBuildRecord.json"
