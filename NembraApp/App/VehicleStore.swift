@@ -77,7 +77,7 @@ final class VehicleStore {
 
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
     @ObservationIgnored private var speedEvidenceTask: Task<Void, Never>?
-    @ObservationIgnored private var speedEvidenceRefreshGeneration: UInt64 = 0
+    @ObservationIgnored private var speedEvidenceConsumerAuthority = SpeedEvidenceConsumerAuthority()
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private let shouldAutoConnectOnStart: Bool
 
@@ -135,9 +135,9 @@ final class VehicleStore {
 
                 // A transport transition immediately revokes any previously
                 // projected speed authority. Revalidation below samples current
-                // service state first and current source-owned speed state second,
-                // so a newer reconnect cannot combine with an older dequeued
-                // `.live` availability from the previous connection.
+                // service state first and current source-owned speed state second.
+                // The consumer authority token also prevents an older suspended
+                // refresh from publishing after this transition has been observed.
                 if state.connection != previousConnection {
                     self.invalidateSpeedEvidenceAuthority()
                     await self.refreshSpeedEvidenceAuthority(using: speedEvidenceProvider)
@@ -235,40 +235,36 @@ final class VehicleStore {
     }
 
     /// Retires current speed authority and invalidates every in-flight refresh.
-    /// Generation invalidation prevents an older suspended snapshot read from
-    /// overwriting a newer connection/evidence decision when it resumes.
     private func invalidateSpeedEvidenceAuthority() {
-        speedEvidenceRefreshGeneration &+= 1
-        speedEvidenceAvailability = .unavailable
+        speedEvidenceConsumerAuthority.invalidate()
+        speedEvidenceAvailability = speedEvidenceConsumerAuthority.availability
     }
 
     /// Rebuilds the app projection from current source-owned state instead of
     /// trusting whichever availability event happened to wake the consumer.
     ///
-    /// Service connection is sampled before field availability. If source state
-    /// advances between those two awaits, the second sample can only be equally
-    /// new or newer for the trusted provider; that ordering fails closed rather
-    /// than pairing a newer reconnect with an older `.live` speed value.
+    /// Service connection is sampled before field availability. If a newer
+    /// connection transition is observed by either consumer task while these
+    /// awaits are suspended, its invalidation rotates the opaque refresh token;
+    /// this older refresh then cannot publish when it resumes.
     private func refreshSpeedEvidenceAuthority(
         using speedEvidenceProvider: any SpeedEvidenceProvider
     ) async {
-        speedEvidenceRefreshGeneration &+= 1
-        let refreshGeneration = speedEvidenceRefreshGeneration
-        speedEvidenceAvailability = .unavailable
+        let refreshToken = speedEvidenceConsumerAuthority.beginRefresh()
+        speedEvidenceAvailability = speedEvidenceConsumerAuthority.availability
 
         let connection = await service.snapshot().connection
         let currentAvailability = await speedEvidenceProvider.speedEvidenceSnapshot()
 
-        guard !Task.isCancelled,
-              refreshGeneration == speedEvidenceRefreshGeneration else {
+        guard !Task.isCancelled else { return }
+        guard speedEvidenceConsumerAuthority.commit(
+            currentAvailability,
+            connectionIsConnected: connection == .connected,
+            for: refreshToken
+        ) else {
             return
         }
-        guard connection == .connected else {
-            speedEvidenceAvailability = .unavailable
-            return
-        }
-
-        speedEvidenceAvailability = currentAvailability
+        speedEvidenceAvailability = speedEvidenceConsumerAuthority.availability
     }
 
     private func perform(_ command: PendingCommand, operation: () async throws -> Void) async {
