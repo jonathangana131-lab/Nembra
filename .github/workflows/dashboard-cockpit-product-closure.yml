@@ -28,10 +28,10 @@ jobs:
           set -euo pipefail
           test "${GITHUB_REF_NAME}" = "agent/v14-dashboard-currentness-current-main"
           echo "Product head: $(git rev-parse HEAD)"
-          git diff --quiet HEAD^ -- NembraApp/Features/Research || {
-            echo "ERROR: Dashboard product closure must not edit disposable Capture/Research source."
+          if git show --format= --name-only HEAD | grep -Eq '^NembraApp/Features/Research/'; then
+            echo "ERROR: Dashboard product closure commit must not edit disposable Capture/Research source."
             exit 1
-          }
+          fi
 
       - name: Show Xcode and available simulators
         shell: bash
