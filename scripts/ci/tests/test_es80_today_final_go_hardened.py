@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import importlib.util
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -109,6 +110,78 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(hardened.FinalGoError, "remain independent"):
                     hardened.build_final_go_record(**self.kwargs(root))
+
+    def test_workflow_blob_lookup_uses_closed_git_process_custody(self):
+        tooling_repo = Path("/private/nembra-tooling")
+        workflow_path = ".github/workflows/capture-xcode27-trusted-command.yml"
+        completed = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=("d" * 40) + "\n",
+            stderr="",
+        )
+
+        with mock.patch.object(hardened.subprocess, "run", return_value=completed) as run:
+            result = hardened._workflow_blob_sha_at_commit(
+                tooling_repo,
+                self.WORKFLOW_SOURCE,
+                workflow_path,
+            )
+
+        self.assertEqual(result, "d" * 40)
+        run.assert_called_once()
+        positional, keyword = run.call_args
+        self.assertEqual(
+            positional[0],
+            [
+                "/usr/bin/git",
+                "-C",
+                str(tooling_repo),
+                "rev-parse",
+                "--verify",
+                f"{self.WORKFLOW_SOURCE}:{workflow_path}",
+            ],
+        )
+        self.assertTrue(keyword["check"])
+        self.assertTrue(keyword["text"])
+        self.assertEqual(keyword["stdout"], subprocess.PIPE)
+        self.assertEqual(keyword["stderr"], subprocess.PIPE)
+        self.assertEqual(
+            keyword["env"],
+            {
+                "PATH": "/usr/bin:/bin",
+                "HOME": "/tmp",
+                "LC_ALL": "C",
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_CONFIG_GLOBAL": "/dev/null",
+                "GIT_NO_REPLACE_OBJECTS": "1",
+            },
+        )
+        for ambient_authority in (
+            "GIT_DIR",
+            "GIT_WORK_TREE",
+            "GIT_OBJECT_DIRECTORY",
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+            "GIT_CONFIG_COUNT",
+            "GIT_CONFIG_KEY_0",
+            "GIT_CONFIG_VALUE_0",
+            "DYLD_INSERT_LIBRARIES",
+            "LD_PRELOAD",
+        ):
+            self.assertNotIn(ambient_authority, keyword["env"])
+
+    def test_workflow_blob_lookup_maps_git_failure_to_final_go_error(self):
+        failure = subprocess.CalledProcessError(128, ["/usr/bin/git"])
+        with mock.patch.object(hardened.subprocess, "run", side_effect=failure):
+            with self.assertRaisesRegex(
+                hardened.FinalGoError,
+                "workflow Git blob is unavailable",
+            ):
+                hardened._workflow_blob_sha_at_commit(
+                    Path("/private/nembra-tooling"),
+                    self.WORKFLOW_SOURCE,
+                    ".github/workflows/capture-xcode27-trusted-command.yml",
+                )
 
     def test_publication_delegates_only_to_failure_atomic_primitive(self):
         with tempfile.TemporaryDirectory() as temporary:
