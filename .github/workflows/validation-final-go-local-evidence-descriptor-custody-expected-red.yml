@@ -23,11 +23,15 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
 
-      - name: Verify immutable validation head
+      - name: Verify immutable validation head and parent
         env:
           EXPECTED_HEAD_SHA: ${{ github.sha }}
-        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          git merge-base --is-ancestor 505e15068a76f9844d0ea1c2bd41c1d6b13b7e78 HEAD
 
       - name: Compile descriptor-custody regression
         run: python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_local_evidence_descriptor_custody.py
