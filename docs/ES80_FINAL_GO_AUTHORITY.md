@@ -78,10 +78,12 @@ The retained TODAY Final GO Record must identify, directly or through independen
 - procedure version `V14`;
 - baseline device: iPhone 12 / iOS 27;
 - evidence that the exact retained IPA was installed on the intended device without rebuilding/substitution;
-- evidence that the running app's build/source/build-instance/executable/raw-Info.plist tuple matches the retained accepted build evidence before any Bluetooth scan;
-- evidence that the package-owned Research Field Build admission is present for this exact build/recipe and ordinary builds remain NO-GO;
+- evidence that the running app's **visible recipe/build/source/build-instance tuple** matches the retained accepted build evidence before any Bluetooth scan;
+- evidence that package-owned Research Field Build admission is present for this exact running build/recipe and ordinary builds remain NO-GO;
 - expected Capture Share artifact contract;
 - exact stop/failure conditions from the accepted V14 physical procedure.
+
+The executable and raw processed Info.plist hashes remain independently inspected retained-candidate evidence. The current app does not display or externally compare those hashes before scan, and this procedure must not pretend that it does. Package Research admission independently computes those runtime hashes while constructing the running-build identity; the operator-visible rendezvous is the exact recipe/build/source/build-instance tuple defined by `CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md`.
 
 The record is an acceptance/handoff artifact, not a caller-constructible capability. The app still obtains authority only through its package-owned Research Field Build admission and exact runtime provenance checks. Human-readable text cannot mint physical authority.
 
@@ -95,9 +97,9 @@ Physical Experiment One may be `GO` only when **all** of these are true at the s
 4. the Experiment One application path contains no characteristic-value writes/commands;
 5. fresh stationary + charger-disconnected preflight is mandatory and cannot be bypassed by the research authority;
 6. >=60-second same-authority passive observation, exact Horizon/seal, final Share integrity, and export/analyzer readiness remain accepted;
-7. one exact signed developer/research IPA is produced from that frozen source using the canonical producer and independently inspected for signing/provisioning/intended-device membership and exact retained bytes;
+7. one exact signed developer/research IPA is produced from that frozen source using the canonical producer and independently inspected for signing/provisioning/intended-device membership and exact retained bytes, including executable and raw processed Info.plist digests;
 8. that exact retained IPA is installed without rebuild/substitution on the intended iPhone 12 / iOS 27 device;
-9. pre-scan runtime rendezvous matches build identifier, build-instance, source SHA, executable digest, and raw Info.plist digest to the retained accepted build evidence;
+9. before scan, the app-visible recipe/build identifier/build-instance/source SHA tuple matches the retained accepted build evidence and package-owned Research Field Build admission succeeds for that exact running build; executable/raw-Info.plist digests remain independently inspected candidate evidence rather than a nonexistent visible hash comparison;
 10. the package-owned Research Field Build authority admits exactly `ES80-FINGERPRINT-v1`, ordinary builds remain NO-GO, and explicit operator action is still required;
 11. Bluetooth/preflight/storage/foreground/stationary/charger-disconnected/recipe requirements pass;
 12. the external TODAY Final GO Record is retained for those exact subjects and accepted stop conditions.
