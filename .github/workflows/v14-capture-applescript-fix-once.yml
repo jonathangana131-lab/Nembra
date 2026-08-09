@@ -1,0 +1,100 @@
+name: V14 Capture AppleScript custody fix once
+
+on:
+  push:
+    branches:
+      - 'repair/v14-capture-applescript-custody-fd8-gpt56-go'
+    paths:
+      - '.github/workflows/v14-capture-applescript-fix-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact pushed head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Close AppleScript build-phase custody and remove bootstrap workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow_path = Path('.github/workflows/capture-xcode27-trusted-command.yml')
+          workflow = workflow_path.read_text(encoding='utf-8')
+          old = '''          forbidden_project_markers = (\n              "PBXShellScriptBuildPhase",\n              "PBXBuildRule",\n'''
+          new = '''          forbidden_project_markers = (\n              "PBXShellScriptBuildPhase",\n              "PBXAppleScriptBuildPhase",\n              "PBXBuildRule",\n'''
+          if workflow.count(old) != 1:
+              raise SystemExit('expected exactly one trusted project-marker insertion seam')
+          workflow_path.write_text(workflow.replace(old, new, 1), encoding='utf-8')
+
+          test_path = Path('scripts/ci/tests/test_capture_trusted_xcode_build_hook_custody.py')
+          test = test_path.read_text(encoding='utf-8')
+          old_test = '''            "PBXShellScriptBuildPhase",\n            "PBXBuildRule",\n'''
+          new_test = '''            "PBXShellScriptBuildPhase",\n            "PBXAppleScriptBuildPhase",\n            "PBXBuildRule",\n'''
+          if test.count(old_test) != 1:
+              raise SystemExit('expected exactly one hosted-regression marker insertion seam')
+          test_path.write_text(test.replace(old_test, new_test, 1), encoding='utf-8')
+          PY
+
+          old_blob='4e3adda3c766166df5dad579c6010991dbda6e1b'
+          new_blob="$(git hash-object .github/workflows/capture-xcode27-trusted-command.yml)"
+          test "$new_blob" != "$old_blob"
+          export OLD_TRUSTED_WORKFLOW_BLOB="$old_blob"
+          export NEW_TRUSTED_WORKFLOW_BLOB="$new_blob"
+
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          old = os.environ['OLD_TRUSTED_WORKFLOW_BLOB']
+          new = os.environ['NEW_TRUSTED_WORKFLOW_BLOB']
+          paths = (
+              Path('scripts/ci/es80_today_trusted_capture_xcode_subject.py'),
+              Path('.github/workflows/capture-today-final-go-qa.yml'),
+              Path('.github/workflows/capture-today-trusted-default-xcode-subject-qa.yml'),
+          )
+          for path in paths:
+              text = path.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one old trusted-workflow blob pin, found {count}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
+          python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          python3 -m py_compile scripts/ci/tests/test_capture_trusted_xcode_build_hook_custody.py
+          python3 scripts/ci/tests/test_capture_trusted_xcode_build_hook_custody.py -v
+          grep -Fq 'PBXAppleScriptBuildPhase' .github/workflows/capture-xcode27-trusted-command.yml
+          grep -Fq 'PBXAppleScriptBuildPhase' scripts/ci/tests/test_capture_trusted_xcode_build_hook_custody.py
+          grep -Fq "TRUSTED_WORKFLOW_BLOB_SHA = \"$new_blob\"" scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          grep -Fq "TRUSTED_WORKFLOW_BLOB_SHA = \"$new_blob\"" .github/workflows/capture-today-final-go-qa.yml
+          grep -Fq "TRUSTED_WORKFLOW_BLOB_SHA = \"$new_blob\"" .github/workflows/capture-today-trusted-default-xcode-subject-qa.yml
+
+          rm -- .github/workflows/v14-capture-build-hook-fix-once.yml
+          rm -- .github/workflows/v14-capture-applescript-fix-once.yml
+
+          git diff --check
+          git status --short
+          test ! -e .github/workflows/v14-capture-build-hook-fix-once.yml
+          test ! -e .github/workflows/v14-capture-applescript-fix-once.yml
+
+          git config user.name 'nembra-v14-bot'
+          git config user.email 'nembra-v14-bot@users.noreply.github.com'
+          git add .github/workflows/capture-xcode27-trusted-command.yml \
+                  .github/workflows/capture-today-final-go-qa.yml \
+                  .github/workflows/capture-today-trusted-default-xcode-subject-qa.yml \
+                  scripts/ci/es80_today_trusted_capture_xcode_subject.py \
+                  scripts/ci/tests/test_capture_trusted_xcode_build_hook_custody.py \
+                  .github/workflows/v14-capture-build-hook-fix-once.yml \
+                  .github/workflows/v14-capture-applescript-fix-once.yml
+          git diff --cached --check
+          git commit -m 'fix(capture): close AppleScript build-phase custody'
+          git push origin HEAD:repair/v14-capture-applescript-custody-fd8-gpt56-go
