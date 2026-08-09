@@ -180,12 +180,23 @@ public struct AcceptedBatterySOCAnchor: Equatable, Sendable {
 public struct AcceptedBatterySOCStream: Equatable, Sendable {
     public private(set) var validator: BatteryEvidenceStreamValidator
     public private(set) var continuitySegmentStartReceiptIdentity: BatteryEvidenceReceiptIdentity?
+    private let currentnessOwner: BatteryEvidenceCurrentnessOwner
 
     public init() {
+        let currentnessOwner = BatteryEvidenceCurrentnessOwner()
+        self.currentnessOwner = currentnessOwner
         validator = BatteryEvidenceStreamValidator(
-            currentnessOwner: BatteryEvidenceCurrentnessOwner()
+            currentnessOwner: currentnessOwner
         )
         continuitySegmentStartReceiptIdentity = nil
+    }
+
+    public static func == (
+        lhs: AcceptedBatterySOCStream,
+        rhs: AcceptedBatterySOCStream
+    ) -> Bool {
+        lhs.validator == rhs.validator
+            && lhs.continuitySegmentStartReceiptIdentity == rhs.continuitySegmentStartReceiptIdentity
     }
 
     /// Records an explicit observation gap while preserving the prior segment as retained history.
