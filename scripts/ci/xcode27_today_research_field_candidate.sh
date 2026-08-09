@@ -37,6 +37,8 @@ unset SWIFT_ACTIVE_COMPILATION_CONDITIONS OTHER_SWIFT_FLAGS XCODE_XCCONFIG_FILE
 TODAY_SETTINGS_ROOT="$(/usr/bin/mktemp -d "${RUNNER_TEMP:-/tmp}/NembraES80TodayResearch.XXXXXX")"
 TODAY_XCCONFIG="$TODAY_SETTINGS_ROOT/NembraES80TodayResearch.xcconfig"
 cleanup() {
+  # FD 6 is wrapper-owned. It may already be closed if setup failed before admission.
+  exec 6<&- 2>/dev/null || true
   /bin/rm -rf "$TODAY_SETTINGS_ROOT"
 }
 trap cleanup EXIT
@@ -47,6 +49,20 @@ OTHER_SWIFT_FLAGS = $(inherited) -DNEMBRA_ES80_TODAY_RESEARCH
 XCCONFIG
 /bin/chmod 0400 "$TODAY_XCCONFIG"
 
-export XCODE_XCCONFIG_FILE="$TODAY_XCCONFIG"
+# Bind the exact overlay bytes to one inherited descriptor, then remove every mutable pathname
+# before the canonical signed-field producer starts. Mode 0400 alone does not protect a same-user
+# producer from chmod/replacement races: the owning account can still reopen or replace that path.
+# `/dev/fd/6` instead names this already-open file description in the delegated producer/xcodebuild
+# process tree. The unlinked inode remains readable for the archive while no pathname remains that a
+# concurrent process can swap into the Xcode settings channel.
+exec 6< "$TODAY_XCCONFIG"
+/bin/rm -f "$TODAY_XCCONFIG"
+/bin/rmdir "$TODAY_SETTINGS_ROOT"
+export XCODE_XCCONFIG_FILE="/dev/fd/6"
+
+if [[ ! -r "$XCODE_XCCONFIG_FILE" ]]; then
+  echo "TODAY Research Xcode settings descriptor is unavailable before signed production." >&2
+  exit 3
+fi
 
 "$CANONICAL_PRODUCER" "$@"
