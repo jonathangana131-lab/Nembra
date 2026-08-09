@@ -278,6 +278,9 @@ struct DashboardSpeedInstrumentView: View {
     private func accessibilitySpeed(frame: SpeedInstrumentDisplayFrame?) -> String {
         let authoritativeKilometersPerHour = frame?.latestMeasuredKilometersPerHour
             ?? vehicle.state.speedKilometersPerHour
+        guard authoritativeKilometersPerHour != nil else {
+            return "Unavailable"
+        }
         return VehicleDisplayFormatting.speed(kilometersPerHour: authoritativeKilometersPerHour)
     }
 
