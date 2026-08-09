@@ -67,6 +67,53 @@ class FinalGoPublicationTests(unittest.TestCase):
                     publication.publish_record_no_replace(output, self.RAW)
             self.assertFalse(output.exists() or output.is_symlink())
 
+    def test_publisher_that_creates_exact_destination_then_raises_retracts_it(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "FinalGO.json"
+
+            def publish_then_raise(staging: Path, destination: Path):
+                publication._publish_file_no_replace(staging, destination)
+                raise OSError("simulated publisher failure after destination creation")
+
+            with self.assertRaisesRegex(
+                OSError,
+                "simulated publisher failure after destination creation",
+            ):
+                publication.publish_record_no_replace(
+                    output,
+                    self.RAW,
+                    publisher=publish_then_raise,
+                )
+
+            self.assertFalse(output.exists() or output.is_symlink())
+            self.assertEqual(list(root.glob(".FinalGO.json.*.staging")), [])
+
+    def test_staging_cleanup_failure_after_destination_creation_retracts_go_destination(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "FinalGO.json"
+            real_unlink = Path.unlink
+            failed_staging_cleanup = False
+
+            def fail_staging_unlink_once(path: Path, *args, **kwargs):
+                nonlocal failed_staging_cleanup
+                if not failed_staging_cleanup and path.name.endswith(".staging"):
+                    failed_staging_cleanup = True
+                    raise OSError("simulated staging cleanup failure after destination creation")
+                return real_unlink(path, *args, **kwargs)
+
+            with mock.patch.object(Path, "unlink", new=fail_staging_unlink_once):
+                with self.assertRaisesRegex(
+                    OSError,
+                    "simulated staging cleanup failure after destination creation",
+                ):
+                    publication.publish_record_no_replace(output, self.RAW)
+
+            self.assertTrue(failed_staging_cleanup)
+            self.assertFalse(output.exists() or output.is_symlink())
+            self.assertEqual(list(root.glob(".FinalGO.json.*.staging")), [])
+
     def test_pre_publish_failure_leaves_no_destination_or_staging(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
