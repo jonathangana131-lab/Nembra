@@ -1,0 +1,100 @@
+name: Temporary Capture V14 XXXL Physical Boundary Repair
+
+on:
+  push:
+    branches:
+      - repair/capture-v14-xxxl-physical-boundary/gpt56-go
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tmp-capture-v14-xxxl-physical-boundary-gpt56
+  cancel-in-progress: false
+
+jobs:
+  apply-repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Apply narrow Accessibility XXXL recomposition
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraApp.swift")
+          text = path.read_text()
+
+          old = '''                HStack(alignment: .top, spacing: isAccessibilityLayout ? 8 : 12) {
+                      Image(systemName: "exclamationmark.lock.fill")
+                          .font(isAccessibilityLayout ? .body.weight(.semibold) : .title3.weight(.semibold))
+                          .foregroundStyle(.orange)
+                          .accessibilityHidden(true)
+  
+                      VStack(alignment: .leading, spacing: 6) {
+          '''
+          new = '''                HStack(alignment: .top, spacing: isAccessibilityLayout ? 0 : 12) {
+                      if !isAccessibilityLayout {
+                          Image(systemName: "exclamationmark.lock.fill")
+                              .font(.title3.weight(.semibold))
+                              .foregroundStyle(.orange)
+                              .accessibilityHidden(true)
+                      }
+  
+                      VStack(alignment: .leading, spacing: 6) {
+          '''
+
+          if new in text and old not in text:
+              print("Repair already present; no source mutation needed.")
+              raise SystemExit(0)
+
+          if text.count(old) != 1:
+              raise SystemExit(f"Expected one physical-boundary source shape, found {text.count(old)}")
+
+          text = text.replace(old, new, 1)
+          start = text.index(new)
+          end_anchor = '.accessibilityIdentifier("es80.capture.physical-run-locked")'
+          end = text.index(end_anchor, start)
+          segment = text[start:end]
+          old_padding = '.padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 10 : 18))'
+          new_padding = '.padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 6 : 18))'
+          if segment.count(old_padding) != 1:
+              raise SystemExit("Expected one physical-boundary padding expression")
+          segment = segment.replace(old_padding, new_padding, 1)
+          text = text[:start] + segment + text[end:]
+          path.write_text(text)
+          PY
+
+          git diff --check
+
+          if git diff --quiet -- NembraApp/App/NembraApp.swift; then
+            echo "No source diff to commit."
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path("NembraApp/App/NembraApp.swift").read_text()
+          required = [
+              'HStack(alignment: .top, spacing: isAccessibilityLayout ? 0 : 12)',
+              'if !isAccessibilityLayout {\n                        Image(systemName: "exclamationmark.lock.fill")',
+              '.padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 6 : 18))',
+              '.accessibilityIdentifier("es80.capture.physical-run-locked")',
+          ]
+          for token in required:
+              if token not in text:
+                  raise SystemExit(f"Missing repaired source token: {token}")
+          PY
+
+          git config user.name "nembra-v14-gpt56-go"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add NembraApp/App/NembraApp.swift
+          git commit -m "[Capture V14] Recompose XXXL physical boundary"
+          git push origin HEAD:repair/capture-v14-xxxl-physical-boundary/gpt56-go
