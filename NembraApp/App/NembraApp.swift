@@ -619,7 +619,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                     }
 
                     if isAccessibilityLayout {
-                        Text("Final exact-build checks are still in progress.")
+                        Text("Final checks in progress.")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
