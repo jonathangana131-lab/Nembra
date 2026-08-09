@@ -78,10 +78,14 @@ The retained TODAY Final GO Record must identify, directly or through independen
 - procedure version `V14`;
 - baseline device: iPhone 12 / iOS 27;
 - evidence that the exact retained IPA was installed on the intended device without rebuilding/substitution;
-- evidence that the running app's build/source/build-instance/executable/raw-Info.plist tuple matches the retained accepted build evidence before any Bluetooth scan;
+- evidence that, before any Bluetooth scan, the app-visible recipe/build/source/build-instance tuple matches the retained accepted candidate and package-owned Research Field Build admission succeeds for that exact running build;
 - evidence that the package-owned Research Field Build admission is present for this exact build/recipe and ordinary builds remain NO-GO;
 - expected Capture Share artifact contract;
 - exact stop/failure conditions from the accepted V14 physical procedure.
+
+The executable SHA-256 and raw processed Info.plist SHA-256 above remain independently inspected retained-candidate evidence. The current app does not expose those digests for an operator-side comparison before scan. Package Research admission computes and checks runtime executable/raw-Info.plist identity internally before it can mint the Research authority; the external pre-scan rendezvous therefore uses only the recipe/build/source/build-instance values the current product actually exposes plus successful package Research admission.
+
+For TODAY, any older wording in `docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md` or `docs/ES80_FIELD_AUTHORIZATION_OFFLINE_SIGNING.md` that asks the operator-visible running-app rendezvous to compare executable/raw-Info.plist digests is superseded by this evidence split and the active `CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md`. Those digests still remain mandatory retained-candidate acceptance evidence; they are simply not invented as a current UI capability.
 
 The record is an acceptance/handoff artifact, not a caller-constructible capability. The app still obtains authority only through its package-owned Research Field Build admission and exact runtime provenance checks. Human-readable text cannot mint physical authority.
 
@@ -95,9 +99,9 @@ Physical Experiment One may be `GO` only when **all** of these are true at the s
 4. the Experiment One application path contains no characteristic-value writes/commands;
 5. fresh stationary + charger-disconnected preflight is mandatory and cannot be bypassed by the research authority;
 6. >=60-second same-authority passive observation, exact Horizon/seal, final Share integrity, and export/analyzer readiness remain accepted;
-7. one exact signed developer/research IPA is produced from that frozen source using the canonical producer and independently inspected for signing/provisioning/intended-device membership and exact retained bytes;
+7. one exact signed developer/research IPA is produced from that frozen source using the canonical producer and independently inspected for signing/provisioning/intended-device membership and exact retained bytes, including executable and raw processed Info.plist digests;
 8. that exact retained IPA is installed without rebuild/substitution on the intended iPhone 12 / iOS 27 device;
-9. pre-scan runtime rendezvous matches build identifier, build-instance, source SHA, executable digest, and raw Info.plist digest to the retained accepted build evidence;
+9. before scan, the app-visible recipe/build/source/build-instance tuple matches the retained accepted candidate and the package-owned Research Field Build admission succeeds for that exact running build; executable/raw-Info.plist digests remain independently inspected candidate evidence rather than operator-visible rendezvous fields;
 10. the package-owned Research Field Build authority admits exactly `ES80-FINGERPRINT-v1`, ordinary builds remain NO-GO, and explicit operator action is still required;
 11. Bluetooth/preflight/storage/foreground/stationary/charger-disconnected/recipe requirements pass;
 12. the external TODAY Final GO Record is retained for those exact subjects and accepted stop conditions.
