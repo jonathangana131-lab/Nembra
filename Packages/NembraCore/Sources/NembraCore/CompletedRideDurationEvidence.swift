@@ -3,6 +3,7 @@ import Foundation
 public enum CompletedRideDurationEvidenceError: Error, Equatable, Sendable {
     case sessionMismatch
     case continuityMismatch
+    case completedRideMismatch
     case invalidDurationEvidence
 }
 
@@ -18,14 +19,18 @@ public enum CompletedRideDurationEvidenceError: Error, Equatable, Sendable {
 /// from wall-clock timestamps. `nil` with `.unknown` is unavailable evidence,
 /// not a measured zero-duration ride.
 public struct CompletedRideDurationEvidence: Equatable, Sendable {
+    /// Exact immutable completed-ride subject that this duration was bound to.
+    /// Session UUID + continuity alone are insufficient because a conflicting
+    /// completed snapshot can reuse both while differing in dates/distance fields.
+    public let completedRideEvidence: CompletedRideEvidence
     public let sessionID: UUID
     public let rideContinuity: RideSessionContinuity
     public let observedDurationNanoseconds: UInt64?
     public let coverage: RideSessionDurationCoverage
     public let observationSegmentCount: Int
 
-    /// Binds package-produced duration evidence to a completed ride without
-    /// consulting wall-clock deltas.
+    /// Binds package-produced duration evidence to one exact completed ride without
+    /// consulting wall-clock deltas to manufacture elapsed time.
     public init(
         completedRide: CompletedRideEvidence,
         duration: RideSessionDurationEvidenceSnapshot
@@ -41,6 +46,7 @@ public struct CompletedRideDurationEvidence: Equatable, Sendable {
             observationSegmentCount: duration.observationSegmentCount
         )
 
+        self.completedRideEvidence = completedRide
         self.sessionID = completedRide.sessionID
         self.rideContinuity = completedRide.continuity
         self.observedDurationNanoseconds = duration.observedDurationNanoseconds
@@ -49,7 +55,8 @@ public struct CompletedRideDurationEvidence: Equatable, Sendable {
     }
 
     /// Verifies that this already-authoritative immutable projection still belongs
-    /// to the supplied completed ride.
+    /// to the exact supplied completed ride, not merely another record that reused
+    /// its UUID and continuity label.
     public func validate(against completedRide: CompletedRideEvidence) throws {
         guard completedRide.sessionID == sessionID else {
             throw CompletedRideDurationEvidenceError.sessionMismatch
@@ -57,19 +64,21 @@ public struct CompletedRideDurationEvidence: Equatable, Sendable {
         guard completedRide.continuity == rideContinuity else {
             throw CompletedRideDurationEvidenceError.continuityMismatch
         }
+        guard completedRide == completedRideEvidence else {
+            throw CompletedRideDurationEvidenceError.completedRideMismatch
+        }
     }
 
     /// Non-authoritative Codable representation for durable storage and offline QA.
     ///
     /// Converting accepted evidence to an archive is one-way in this contract.
-    /// There is intentionally no archive -> `CompletedRideDurationEvidence`
-    /// initializer. A future ride store must define an explicit trusted restore
-    /// authority boundary before persisted bytes can regain production evidence
-    /// status.
+    /// The archive retains the exact completed-ride subject for provenance joining,
+    /// but that does not make decoded duration bytes authoritative.
     public var persistenceArchive: CompletedRideDurationEvidenceArchive {
         CompletedRideDurationEvidenceArchive(
             validatedSessionID: sessionID,
             rideContinuity: rideContinuity,
+            completedRideEvidence: completedRideEvidence,
             observedDurationNanoseconds: observedDurationNanoseconds,
             coverage: coverage,
             observationSegmentCount: observationSegmentCount
@@ -80,12 +89,14 @@ public struct CompletedRideDurationEvidence: Equatable, Sendable {
 /// Structurally validated but **non-authoritative** persisted representation of
 /// completed ride duration fields.
 ///
-/// This type may be freely decoded from disk, fixtures, imports, or caller-authored
-/// bytes because it cannot be passed where `CompletedRideDurationEvidence` is
-/// required. Structural validity is not production evidence authority.
+/// `completedRideEvidence` is an optional provenance subject for compatibility with
+/// older/imported archives. A missing subject is still valid archival data, but it
+/// cannot be joined as an exact `RideHistoryDurationAttachment`. Presence of an exact
+/// subject likewise does not promote the duration fields to runtime authority.
 public struct CompletedRideDurationEvidenceArchive: Codable, Equatable, Sendable {
     public let sessionID: UUID
     public let rideContinuity: RideSessionContinuity
+    public let completedRideEvidence: CompletedRideEvidence?
     public let observedDurationNanoseconds: UInt64?
     public let coverage: RideSessionDurationCoverage
     public let observationSegmentCount: Int
@@ -93,6 +104,7 @@ public struct CompletedRideDurationEvidenceArchive: Codable, Equatable, Sendable
     public init(
         sessionID: UUID,
         rideContinuity: RideSessionContinuity,
+        completedRideEvidence: CompletedRideEvidence? = nil,
         observedDurationNanoseconds: UInt64?,
         coverage: RideSessionDurationCoverage,
         observationSegmentCount: Int
@@ -104,8 +116,18 @@ public struct CompletedRideDurationEvidenceArchive: Codable, Equatable, Sendable
             observationSegmentCount: observationSegmentCount
         )
 
+        if let completedRideEvidence {
+            guard completedRideEvidence.sessionID == sessionID else {
+                throw CompletedRideDurationEvidenceError.sessionMismatch
+            }
+            guard completedRideEvidence.continuity == rideContinuity else {
+                throw CompletedRideDurationEvidenceError.continuityMismatch
+            }
+        }
+
         self.sessionID = sessionID
         self.rideContinuity = rideContinuity
+        self.completedRideEvidence = completedRideEvidence
         self.observedDurationNanoseconds = observedDurationNanoseconds
         self.coverage = coverage
         self.observationSegmentCount = observationSegmentCount
@@ -114,12 +136,14 @@ public struct CompletedRideDurationEvidenceArchive: Codable, Equatable, Sendable
     fileprivate init(
         validatedSessionID sessionID: UUID,
         rideContinuity: RideSessionContinuity,
+        completedRideEvidence: CompletedRideEvidence,
         observedDurationNanoseconds: UInt64?,
         coverage: RideSessionDurationCoverage,
         observationSegmentCount: Int
     ) {
         self.sessionID = sessionID
         self.rideContinuity = rideContinuity
+        self.completedRideEvidence = completedRideEvidence
         self.observedDurationNanoseconds = observedDurationNanoseconds
         self.coverage = coverage
         self.observationSegmentCount = observationSegmentCount
@@ -128,6 +152,7 @@ public struct CompletedRideDurationEvidenceArchive: Codable, Equatable, Sendable
     private enum CodingKeys: String, CodingKey {
         case sessionID
         case rideContinuity
+        case completedRideEvidence
         case observedDurationNanoseconds
         case coverage
         case observationSegmentCount
@@ -139,6 +164,10 @@ public struct CompletedRideDurationEvidenceArchive: Codable, Equatable, Sendable
             try self.init(
                 sessionID: container.decode(UUID.self, forKey: .sessionID),
                 rideContinuity: container.decode(RideSessionContinuity.self, forKey: .rideContinuity),
+                completedRideEvidence: container.decodeIfPresent(
+                    CompletedRideEvidence.self,
+                    forKey: .completedRideEvidence
+                ),
                 observedDurationNanoseconds: container.decodeIfPresent(
                     UInt64.self,
                     forKey: .observedDurationNanoseconds
