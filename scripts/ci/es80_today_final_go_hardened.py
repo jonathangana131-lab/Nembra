@@ -3,9 +3,11 @@
 
 The existing Final GO foundation remains the closed-world validator for signed candidate,
 independent crosscheck, install/runtime rendezvous, and operator attestation. This entrypoint removes
-the two authority defects that must not remain on the executable GO path:
+the authority defects that must not remain on the executable GO path:
 - trusted Xcode acceptance comes only from the owner-commanded default-branch workflow whose Git
-  blob is pinned independently from the candidate PR head; and
+  blob is pinned independently from the candidate PR head;
+- trusted workflow Git-object lookup reuses the foundation's producer-owned, closed Git custody
+  boundary rather than caller PATH/config/replacement semantics; and
 - record publication is failure-atomic after no-replace publication.
 
 No physical result is created by this tool. A generated GO record is procedural authorization for
@@ -16,7 +18,6 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
-import subprocess
 import sys
 from typing import Any, Callable
 
@@ -43,19 +44,21 @@ FinalGoError = foundation.FinalGoError
 
 
 def _workflow_blob_sha_at_commit(tooling_repo: Path, commit: str, path: str) -> str:
+    """Resolve the workflow blob only through the foundation's closed Git authority boundary.
+
+    `foundation._git` pins `/usr/bin/git`, removes system/global config, disables replacement
+    objects, restricts PATH, and rejects symlink/non-directory repository custody. Reusing that
+    boundary prevents caller PATH, Git config, or refs/replace state from manufacturing the trusted
+    workflow blob identity.
+    """
     try:
-        completed = subprocess.run(
-            ["git", "-C", str(tooling_repo), "rev-parse", f"{commit}:{path}"],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-    except (OSError, subprocess.CalledProcessError) as error:
+        return foundation._git(tooling_repo, "rev-parse", f"{commit}:{path}").strip().lower()
+    except FinalGoError:
+        raise
+    except (OSError, RuntimeError) as error:
         raise FinalGoError(
             "trusted default-branch workflow Git blob is unavailable from tooling repository"
         ) from error
-    return completed.stdout.strip().lower()
 
 
 def build_final_go_record(
