@@ -8,6 +8,7 @@ pinned Git object bytes instead.
 """
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 from pathlib import Path
 import re
@@ -24,6 +25,11 @@ spec = importlib.util.spec_from_file_location("trusted_subject_immutable_exec", 
 trusted_subject = importlib.util.module_from_spec(spec)
 assert spec and spec.loader
 spec.loader.exec_module(trusted_subject)
+
+
+def git_blob_sha(raw: bytes) -> str:
+    header = f"blob {len(raw)}\0".encode("ascii")
+    return hashlib.sha1(header + raw).hexdigest()
 
 
 class TrustedCaptureImmutableRunnerExecutionTests(unittest.TestCase):
@@ -79,6 +85,15 @@ class TrustedCaptureImmutableRunnerExecutionTests(unittest.TestCase):
             "Verify trusted Simulator evidence-producer custody",
             trusted_subject.REQUIRED_SUCCESSFUL_STEPS,
         )
+
+    def test_final_go_workflow_pin_is_git_blob_of_checked_in_workflow_bytes(self) -> None:
+        actual = git_blob_sha(WORKFLOW.read_bytes())
+        self.assertEqual(
+            actual,
+            trusted_subject.TRUSTED_WORKFLOW_BLOB_SHA,
+            "trusted workflow bytes changed without updating Final GO's workflow authority pin",
+        )
+        self.assertEqual(actual, EXPECTED_WORKFLOW_BLOB)
 
 
 if __name__ == "__main__":
