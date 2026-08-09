@@ -75,7 +75,7 @@ Before the first scan, confirm in the accepted app:
 - the running build is the dedicated physical-iOS Release research configuration for `ES80-FINGERPRINT-v1`;
 - package-owned research admission succeeds; no UI Boolean, preference, launch argument, environment variable, remote flag, or imported JSON can mint it;
 - the exact signed IPA named in the Final GO Record is the build installed on the intended iPhone;
-- storage/export readiness is healthy;
+- no accepted app/runtime state is already known to make the normal exact-byte Share path impossible; there is no separate pre-scan filesystem/export certificate, and authoritative export readiness is earned only after seal + final Share integrity;
 - charger state is freshly declared **Disconnected**;
 - the scooter is stationary and safe to power OFF/ON for correlation;
 - one intended physical ES80 is available;
