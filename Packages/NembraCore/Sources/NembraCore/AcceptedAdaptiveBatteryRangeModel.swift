@@ -294,16 +294,20 @@ public struct AcceptedAdaptiveBatteryRangeModel: Equatable, Sendable {
     }
 #endif
 
+    /// Returns a receipt-bound live estimate without accepting caller-constructed presentation
+    /// carry-over. Until Nembra has a sealed continuity/scooter-identity-bound presentation state,
+    /// production starts from the current evidence-derived raw range on every accepted estimate.
+    /// This deliberately sacrifices smoothing rather than allowing a stale, cross-gap, or
+    /// cross-scooter `Double` to masquerade as fresh presentation under a current receipt.
     public func estimateRemainingRange(
         atAcceptedSOC soc: AcceptedBatterySOCAnchor,
         acceptedBy validator: BatteryEvidenceStreamValidator,
-        previousPresentedRemainingMeters: Double? = nil,
         policy: AdaptiveBatteryRangePolicy
     ) -> AdaptiveBatteryRangeLiveEstimate? {
         model.estimateRemainingRange(
             atAcceptedSOC: soc,
             acceptedBy: validator,
-            previousPresentedRemainingMeters: previousPresentedRemainingMeters,
+            previousPresentedRemainingMeters: nil,
             policy: policy
         )
     }
