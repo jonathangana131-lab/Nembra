@@ -125,18 +125,57 @@ def _reject_duplicate_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 def _regular(path: Path, label: str) -> bytes:
+    candidate = path.expanduser()
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise FinalGoError("descriptor-bound Final GO evidence reads require O_NOFOLLOW support")
+    flags = os.O_RDONLY | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
     try:
-        metadata = path.lstat()
+        fd = os.open(candidate, flags)
     except OSError as error:
-        raise FinalGoError(f"{label} is unavailable: {path}") from error
-    if path.is_symlink() or not stat.S_ISREG(metadata.st_mode) or metadata.st_size <= 0:
-        raise FinalGoError(f"{label} must be one non-empty regular non-symlink file: {path}")
+        raise FinalGoError(f"{label} is unavailable or not a regular non-symlink file: {candidate}") from error
     try:
-        raw = path.read_bytes()
+        before = os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode) or before.st_size <= 0:
+            raise FinalGoError(f"{label} must be one non-empty regular non-symlink file: {candidate}")
+        chunks: list[bytes] = []
+        while True:
+            chunk = os.read(fd, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        raw = b"".join(chunks)
+        after = os.fstat(fd)
     except OSError as error:
-        raise FinalGoError(f"{label} is unreadable: {path}") from error
-    if len(raw) != metadata.st_size:
-        raise FinalGoError(f"{label} byte count changed while reading")
+        raise FinalGoError(f"{label} is unreadable: {candidate}") from error
+    finally:
+        os.close(fd)
+
+    identity_before = (
+        before.st_dev,
+        before.st_ino,
+        before.st_mode,
+        before.st_size,
+        before.st_mtime_ns,
+        before.st_ctime_ns,
+    )
+    identity_after = (
+        after.st_dev,
+        after.st_ino,
+        after.st_mode,
+        after.st_size,
+        after.st_mtime_ns,
+        after.st_ctime_ns,
+    )
+    if identity_before != identity_after or len(raw) != before.st_size:
+        raise FinalGoError(f"{label} changed while reading")
+    try:
+        path_after = candidate.lstat()
+    except OSError as error:
+        raise FinalGoError(f"{label} path changed after descriptor-bound read: {candidate}") from error
+    if stat.S_ISLNK(path_after.st_mode) or (path_after.st_dev, path_after.st_ino) != (after.st_dev, after.st_ino):
+        raise FinalGoError(f"{label} path identity changed while reading: {candidate}")
     return raw
 
 
@@ -756,20 +795,13 @@ def _args(argv: list[str]) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _args(sys.argv[1:] if argv is None else argv)
-    values = vars(args).copy()
-    output = values.pop("output")
-    try:
-        record = build_final_go_record(**values)
-        raw = (json.dumps(record, indent=2, sort_keys=True) + "\n").encode()
-        record_sha = publish_record_no_replace(output, raw)
-    except (FinalGoError, FileNotFoundError, OSError) as error:
-        print(f"TODAY Final GO: NO-GO: {error}", file=sys.stderr)
-        return 2
-    print(f"TODAY Final GO record: {output.resolve(strict=True)}")
-    print(f"record_sha256={record_sha}")
-    print("PHYSICAL RESULT COLLECTED: NO")
-    return 0
+    del argv
+    print(
+        "TODAY Final GO private foundation implementation is non-authorizing; "
+        "use scripts/ci/es80_today_final_go_hardened.py",
+        file=sys.stderr,
+    )
+    return 2
 
 
 if __name__ == "__main__":
