@@ -629,6 +629,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         Text("BUILD")
                             .font(.caption2.monospaced().weight(.bold))
                             .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: true, vertical: false)
 
                         if let buildIdentityVisualLabel {
                             Text(buildIdentityVisualLabel)
