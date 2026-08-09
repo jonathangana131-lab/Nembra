@@ -185,6 +185,7 @@ jobs:
           import os
           import plistlib
           import re
+          import subprocess
           from pathlib import Path
 
           root = Path("Artifacts/Xcode27Simulator")
@@ -206,9 +207,27 @@ jobs:
           if set(record) != expected_keys or record.get("schemaVersion") != 3:
               raise SystemExit("Capture external build record is not the exact closed-world schema v3 shape")
 
-          exact_head = os.environ.get("EXPECTED_HEAD_SHA", "")
-          if re.fullmatch(r"[0-9a-f]{40}", exact_head) is None:
+          expected_head = os.environ.get("EXPECTED_HEAD_SHA", "").strip()
+          if re.fullmatch(r"[0-9a-f]{40}", expected_head) is None:
               raise SystemExit("Trusted resolver did not provide one exact lowercase 40-hex PR head SHA")
+
+          checkout_head = subprocess.check_output(
+              ["git", "rev-parse", "--verify", "HEAD^{commit}"],
+              text=True,
+          ).strip()
+
+          def verify_checkout_binding(resolver_head, observed_checkout_head):
+              if re.fullmatch(r"[0-9a-f]{40}", resolver_head) is None:
+                  raise ValueError("trusted resolver head is not canonical lowercase 40-hex")
+              if re.fullmatch(r"[0-9a-f]{40}", observed_checkout_head) is None:
+                  raise ValueError("checkout head is not canonical lowercase 40-hex")
+              if observed_checkout_head != resolver_head:
+                  raise ValueError("checkout HEAD moved after immutable resolver admission")
+
+          try:
+              verify_checkout_binding(expected_head, checkout_head)
+          except ValueError as error:
+              raise SystemExit(str(error)) from error
 
           retained_plist = plistlib.loads(info_plist.read_bytes())
           expected_recipe = "ES80-FINGERPRINT-v1"
@@ -217,12 +236,12 @@ jobs:
               r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
           )
 
-          def verify_semantic_tuple(subject, plist, expected_head):
-              expected_label = f"Capture Build V14-{expected_head[:12]}"
-              if subject.get("sourceCommitSHA") != expected_head:
-                  raise ValueError("external record sourceCommitSHA does not match trusted immutable PR head")
+          def verify_semantic_tuple(subject, plist, resolver_head):
+              expected_label = f"Capture Build V14-{resolver_head[:12]}"
+              if subject.get("sourceCommitSHA") != resolver_head:
+                  raise ValueError("external record sourceCommitSHA does not match trusted resolver head")
               if subject.get("buildIdentifier") != expected_label:
-                  raise ValueError("external record buildIdentifier does not match trusted immutable PR head")
+                  raise ValueError("external record buildIdentifier does not match trusted resolver head")
               if subject.get("experimentRecipeID") != expected_recipe:
                   raise ValueError("external record experimentRecipeID is not canonical ES80-FINGERPRINT-v1")
               if subject.get("procedureVersion") != expected_procedure:
@@ -242,7 +261,7 @@ jobs:
                       raise ValueError(f"retained Info.plist {key} does not match external record")
 
           try:
-              verify_semantic_tuple(record, retained_plist, exact_head)
+              verify_semantic_tuple(record, retained_plist, expected_head)
           except ValueError as error:
               raise SystemExit(str(error)) from error
 
@@ -250,13 +269,21 @@ jobs:
               candidate_record = record if mutated_record is None else mutated_record
               candidate_plist = retained_plist if mutated_plist is None else mutated_plist
               try:
-                  verify_semantic_tuple(candidate_record, candidate_plist, exact_head)
+                  verify_semantic_tuple(candidate_record, candidate_plist, expected_head)
               except ValueError:
                   return
               raise SystemExit(f"semantic verifier self-test accepted {label}")
 
+          moved_checkout = "0" * 40 if expected_head != "0" * 40 else "1" * 40
+          try:
+              verify_checkout_binding(expected_head, moved_checkout)
+          except ValueError:
+              pass
+          else:
+              raise SystemExit("checkout-binding self-test accepted a moved checkout-derived SHA")
+
           wrong_source = dict(record)
-          wrong_source["sourceCommitSHA"] = "0" * 40 if exact_head != "0" * 40 else "1" * 40
+          wrong_source["sourceCommitSHA"] = "0" * 40 if expected_head != "0" * 40 else "1" * 40
           wrong_source["buildIdentifier"] = f"Capture Build V14-{wrong_source['sourceCommitSHA'][:12]}"
           require_rejected("a detached source/build label", mutated_record=wrong_source)
 
