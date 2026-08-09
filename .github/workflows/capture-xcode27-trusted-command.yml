@@ -144,8 +144,47 @@ jobs:
           python3 scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
           python3 scripts/ci/es80_field_authorization_envelope.py --self-test
 
+      - name: Verify trusted Capture Simulator runner custody
+        env:
+          TRUSTED_CAPTURE_SIMULATOR_RUNNER_BLOB_SHA: 4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9
+        run: |
+          set -euo pipefail
+          candidate_runner_blob="$(
+            env -i \
+              PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+              HOME="${RUNNER_TEMP:-/tmp}" \
+              LC_ALL=C \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              /usr/bin/git rev-parse --verify HEAD:scripts/ci/xcode27_simulator_capture.sh
+          )"
+          printf 'Trusted runner blob: %s\nCandidate runner blob: %s\n' \
+            "$TRUSTED_CAPTURE_SIMULATOR_RUNNER_BLOB_SHA" "$candidate_runner_blob"
+          test "$candidate_runner_blob" = "$TRUSTED_CAPTURE_SIMULATOR_RUNNER_BLOB_SHA"
+          env -i \
+            PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+            HOME="${RUNNER_TEMP:-/tmp}" \
+            LC_ALL=C \
+            GIT_CONFIG_NOSYSTEM=1 \
+            GIT_CONFIG_GLOBAL=/dev/null \
+            GIT_NO_REPLACE_OBJECTS=1 \
+            /usr/bin/git cat-file -e "${TRUSTED_CAPTURE_SIMULATOR_RUNNER_BLOB_SHA}^{blob}"
+
       - name: Build, test, and capture Simulator states
-        run: scripts/ci/xcode27_simulator_capture.sh
+        env:
+          TRUSTED_CAPTURE_SIMULATOR_RUNNER_BLOB_SHA: 4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9
+        run: |
+          set -euo pipefail
+          env -i \
+            PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+            HOME="${RUNNER_TEMP:-/tmp}" \
+            LC_ALL=C \
+            GIT_CONFIG_NOSYSTEM=1 \
+            GIT_CONFIG_GLOBAL=/dev/null \
+            GIT_NO_REPLACE_OBJECTS=1 \
+            /usr/bin/git cat-file blob "$TRUSTED_CAPTURE_SIMULATOR_RUNNER_BLOB_SHA" \
+            | /bin/bash -s scripts/ci/xcode27_simulator_capture.sh
 
       - name: Verify retained Capture evidence against trusted resolver authority
         env:
