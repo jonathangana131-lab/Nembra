@@ -1,0 +1,100 @@
+HEAD is now at 7d7f6b61 [Capture V14] Bind downloaded trusted-Xcode evidence to one archive snapshot
+Recovered trusted signed-candidate composition onto current Final GO hardening
+test_caller_path_fake_git_cannot_supply_reviewed_tool_bytes (__main__.TrustedSignedCandidateReinspectionTests.test_caller_path_fake_git_cannot_supply_reviewed_tool_bytes) ... ok
+test_candidate_ipa_refuses_symlink_subject (__main__.TrustedSignedCandidateReinspectionTests.test_candidate_ipa_refuses_symlink_subject) ... ok
+test_descriptor_bound_runner_produces_private_fresh_candidate_layout (__main__.TrustedSignedCandidateReinspectionTests.test_descriptor_bound_runner_produces_private_fresh_candidate_layout) ... ok
+test_open_descriptor_must_still_match_reviewed_git_blob (__main__.TrustedSignedCandidateReinspectionTests.test_open_descriptor_must_still_match_reviewed_git_blob) ... ok
+test_reviewed_tool_lookup_ignores_real_git_replacement_objects (__main__.TrustedSignedCandidateReinspectionTests.test_reviewed_tool_lookup_ignores_real_git_replacement_objects) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.109s
+
+OK
+test_composition_replaces_foundation_trust_seam_and_restores_it (__main__.HardenedFinalGoCompositionTests.test_composition_replaces_foundation_trust_seam_and_restores_it) ... ok
+test_crosscheck_custody_failure_becomes_final_go_error_before_foundation (__main__.HardenedFinalGoCompositionTests.test_crosscheck_custody_failure_becomes_final_go_error_before_foundation) ... ok
+test_fresh_reinspection_failure_becomes_final_go_error_before_foundation (__main__.HardenedFinalGoCompositionTests.test_fresh_reinspection_failure_becomes_final_go_error_before_foundation) ... ok
+test_hardened_cli_requires_private_intended_device_input (__main__.HardenedFinalGoCompositionTests.test_hardened_cli_requires_private_intended_device_input) ... usage: test_es80_today_final_go_hardened.py [-h] --candidate-root
+                                            CANDIDATE_ROOT
+                                            --expected-source-sha
+                                            EXPECTED_SOURCE_SHA
+                                            --expected-pr-number
+                                            EXPECTED_PR_NUMBER
+                                            --trusted-xcode-run-id
+                                            TRUSTED_XCODE_RUN_ID
+                                            --trusted-xcode-job-id
+                                            TRUSTED_XCODE_JOB_ID
+                                            --trusted-xcode-artifact-id
+                                            TRUSTED_XCODE_ARTIFACT_ID
+                                            --trusted-xcode-artifact-archive
+                                            TRUSTED_XCODE_ARTIFACT_ARCHIVE
+                                            --independent-crosscheck-receipt
+                                            INDEPENDENT_CROSSCHECK_RECEIPT
+                                            --frozen-source-repo
+                                            FROZEN_SOURCE_REPO --tooling-repo
+                                            TOOLING_REPO
+                                            --operator-attestation
+                                            OPERATOR_ATTESTATION
+                                            --intended-device-udid-file
+                                            INTENDED_DEVICE_UDID_FILE --output
+                                            OUTPUT
+test_es80_today_final_go_hardened.py: error: the following arguments are required: --intended-device-udid-file
+ok
+test_publication_delegates_only_to_failure_atomic_primitive (__main__.HardenedFinalGoCompositionTests.test_publication_delegates_only_to_failure_atomic_primitive) ... ok
+test_rejects_crosscheck_execution_divergence_from_foundation_subject (__main__.HardenedFinalGoCompositionTests.test_rejects_crosscheck_execution_divergence_from_foundation_subject) ... ok
+test_rejects_foundation_candidate_that_diverges_from_fresh_apple_reinspection (__main__.HardenedFinalGoCompositionTests.test_rejects_foundation_candidate_that_diverges_from_fresh_apple_reinspection) ... ok
+test_rejects_subject_that_aliases_workflow_source_to_candidate_source (__main__.HardenedFinalGoCompositionTests.test_rejects_subject_that_aliases_workflow_source_to_candidate_source) ... ok
+test_trusted_subject_failure_becomes_foundation_final_go_error_and_restores_seam (__main__.HardenedFinalGoCompositionTests.test_trusted_subject_failure_becomes_foundation_final_go_error_and_restores_seam) ... ok
+test_workflow_blob_lookup_does_not_trust_caller_path_git (__main__.HardenedFinalGoCompositionTests.test_workflow_blob_lookup_does_not_trust_caller_path_git) ... ok
+test_workflow_blob_lookup_reuses_foundation_closed_git_boundary (__main__.HardenedFinalGoCompositionTests.test_workflow_blob_lookup_reuses_foundation_closed_git_boundary) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.012s
+
+OK
+test_accepts_only_when_native_signing_facts_match_retained_inspection (__main__.SignedCandidateReinspectionTests.test_accepts_only_when_native_signing_facts_match_retained_inspection) ... ok
+test_rejects_caller_supplied_signing_json_when_fresh_team_differs (__main__.SignedCandidateReinspectionTests.test_rejects_caller_supplied_signing_json_when_fresh_team_differs) ... ok
+test_rejects_retained_inspection_ipa_digest_forgery_before_apple_tools (__main__.SignedCandidateReinspectionTests.test_rejects_retained_inspection_ipa_digest_forgery_before_apple_tools) ... ok
+test_rejects_symlinked_retained_ipa (__main__.SignedCandidateReinspectionTests.test_rejects_symlinked_retained_ipa) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.009s
+
+OK
+test_extraction_consumes_authenticated_ipa_bytes_not_reopened_candidate_path (__main__.SignedCandidateReinspectionPathCustodyTests.test_extraction_consumes_authenticated_ipa_bytes_not_reopened_candidate_path) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.004s
+
+OK
+test_exact_fresh_stdout_bytes_are_accepted (__main__.CrosscheckReceiptCustodyTests.test_exact_fresh_stdout_bytes_are_accepted) ... ok
+test_git_lookup_ignores_caller_path_substitution (__main__.CrosscheckReceiptCustodyTests.test_git_lookup_ignores_caller_path_substitution) ... ok
+test_one_byte_receipt_edit_is_rejected (__main__.CrosscheckReceiptCustodyTests.test_one_byte_receipt_edit_is_rejected) ... ok
+test_pinned_commit_mismatch_fails_before_tool_execution (__main__.CrosscheckReceiptCustodyTests.test_pinned_commit_mismatch_fails_before_tool_execution) ... ok
+test_pinned_path_blob_mismatch_fails_before_tool_execution (__main__.CrosscheckReceiptCustodyTests.test_pinned_path_blob_mismatch_fails_before_tool_execution) ... ok
+test_pinned_tool_nonzero_is_rejected (__main__.CrosscheckReceiptCustodyTests.test_pinned_tool_nonzero_is_rejected) ... ok
+test_pinned_tool_runs_in_closed_environment (__main__.CrosscheckReceiptCustodyTests.test_pinned_tool_runs_in_closed_environment) ... ok
+test_symlink_receipt_is_rejected (__main__.CrosscheckReceiptCustodyTests.test_symlink_receipt_is_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.041s
+
+OK
+ASSERT private runner pin: True
+ASSERT inspector pin: True
+ASSERT fresh equality: True
+ASSERT crosscheck custody: True
+ASSERT private device file CLI: True
+ASSERT no raw device CLI: True
+CHANGED ['scripts/ci/es80_today_final_go_hardened.py', 'scripts/ci/tests/test_es80_today_final_go_hardened.py']
+EXPECTED ['.github/workflows/capture-today-signed-candidate-reinspection-qa.yml', 'scripts/ci/es80_today_final_go_hardened.py', 'scripts/ci/es80_today_trusted_signed_candidate_reinspection.py', 'scripts/ci/tests/test_es80_today_final_go_hardened.py', 'scripts/ci/tests/test_es80_today_trusted_signed_candidate_reinspection.py']
+Traceback (most recent call last):
+  File "<stdin>", line 26, in <module>
+AssertionError: (['scripts/ci/es80_today_final_go_hardened.py', 'scripts/ci/tests/test_es80_today_final_go_hardened.py'], ['.github/workflows/capture-today-signed-candidate-reinspection-qa.yml', 'scripts/ci/es80_today_final_go_hardened.py', 'scripts/ci/es80_today_trusted_signed_candidate_reinspection.py', 'scripts/ci/tests/test_es80_today_final_go_hardened.py', 'scripts/ci/tests/test_es80_today_trusted_signed_candidate_reinspection.py'])
+FINAL_STATUS=1
+ M scripts/ci/es80_today_final_go_hardened.py
+ M scripts/ci/tests/test_es80_today_final_go_hardened.py
+?? .github/workflows/capture-today-signed-candidate-reinspection-qa.yml
+?? scripts/ci/__pycache__/
+?? scripts/ci/es80_today_trusted_signed_candidate_reinspection.py
+?? scripts/ci/tests/__pycache__/
+?? scripts/ci/tests/test_es80_today_trusted_signed_candidate_reinspection.py
