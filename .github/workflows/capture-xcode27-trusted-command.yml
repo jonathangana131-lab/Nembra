@@ -164,6 +164,10 @@ jobs:
           python3 scripts/ci/es80_field_authorization_envelope.py --self-test
 
       - name: Build, test, and capture Simulator states
+        env:
+          BASH_ENV: /dev/null
+          ENV: /dev/null
+        shell: /usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp LC_ALL=C /bin/bash --noprofile --norc -eo pipefail {0}
         run: |
           set -euo pipefail
           producer_path="scripts/ci/xcode27_simulator_capture.sh"
@@ -184,9 +188,9 @@ jobs:
           )"
           test "$worktree_blob" = "$expected_blob"
 
-          # Stream the accepted Git object directly into Bash. The candidate pathname is supplied
-          # only as $0 so the frozen runner's dirname($0)/../.. ROOT calculation still resolves the
-          # exact checkout; Bash never re-opens the mutable worktree pathname as executable input.
+          # Stream the accepted Git object into a second clean interpreter. Both the Actions step
+          # shell and this authority-producing Bash cross env -i boundaries, so candidate-written
+          # GITHUB_ENV/BASH_ENV/ENV/shell-function state cannot run before the reviewed blob.
           env -i \
             PATH=/usr/bin:/bin \
             HOME=/tmp \
@@ -195,7 +199,17 @@ jobs:
             GIT_CONFIG_GLOBAL=/dev/null \
             GIT_NO_REPLACE_OBJECTS=1 \
             /usr/bin/git cat-file blob "$expected_blob" \
-            | /bin/bash -c 'source /dev/stdin' "$GITHUB_WORKSPACE/$producer_path"
+            | /usr/bin/env -i \
+                PATH=/usr/bin:/bin \
+                HOME=/tmp \
+                LC_ALL=C \
+                TMPDIR="${{ runner.temp }}" \
+                RUNNER_TEMP="${{ runner.temp }}" \
+                ARTIFACTS_DIR="${{ github.workspace }}/Artifacts/Xcode27Simulator" \
+                GITHUB_RUN_ID="${{ github.run_id }}" \
+                GITHUB_RUN_ATTEMPT="${{ github.run_attempt }}" \
+                /bin/bash --noprofile --norc -c 'source /dev/stdin' \
+                "${{ github.workspace }}/$producer_path"
 
       - name: Verify retained Capture evidence against trusted resolver authority
         env:
