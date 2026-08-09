@@ -65,10 +65,10 @@ class TrustedBuildWorktreeIndexCustodyTests(unittest.TestCase):
         self.assertIn("EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}", step)
         self.assertIn("GIT_INDEX_FILE=\"$trusted_index\"", step)
         self.assertRegex(step, r"/usr/bin/git\s+read-tree\s+\"\$EXPECTED_HEAD_SHA\"")
-        self.assertRegex(
-            step,
-            r"/usr/bin/git(?:\s+-c\s+[^\n]+)+\s+status\s+--porcelain=v1\s+--untracked-files=all",
-        )
+        self.assertIn("-c core.fsmonitor=false", step)
+        self.assertIn("-c core.ignorestat=false", step)
+        self.assertIn("-c core.filemode=true", step)
+        self.assertIn("status --porcelain=v1 --untracked-files=all", step)
         self.assertIn('test -z "$trusted_status"', step)
 
     def test_pinned_producer_inherits_only_the_fresh_index_for_git_status(self) -> None:
