@@ -366,10 +366,10 @@ if ! run_xcodebuild \
   -destination "generic/platform=iOS" \
   -archivePath "$ARCHIVE_PATH" \
   "DEVELOPMENT_TEAM=$NEMBRA_DEVELOPMENT_TEAM" \
-  "INFOPLIST_KEY_NembraCaptureBuildIdentifier=$BUILD_IDENTIFIER" \
-  "INFOPLIST_KEY_NembraCaptureBuildInstanceID=$BUILD_INSTANCE_ID" \
-  "INFOPLIST_KEY_NembraCaptureBuildCommitSHA=$SOURCE_SHA" \
-  "INFOPLIST_KEY_NembraCaptureFieldRecipe=$FIELD_RECIPE_ID" \
+  "NEMBRA_CAPTURE_BUILD_IDENTIFIER=$BUILD_IDENTIFIER" \
+  "NEMBRA_CAPTURE_BUILD_INSTANCE_ID=$BUILD_INSTANCE_ID" \
+  "NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$SOURCE_SHA" \
+  "NEMBRA_CAPTURE_FIELD_RECIPE=$FIELD_RECIPE_ID" \
   archive \
   2>&1 | tee "$LOG_DIR/xcodebuild-archive.log"
 then
