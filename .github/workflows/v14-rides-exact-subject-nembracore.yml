@@ -1,0 +1,23 @@
+name: V14 Rides Exact Subject NembraCore
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  nembracore:
+    name: Swift 6.2 NembraCore package
+    runs-on: ubuntu-latest
+    container:
+      image: swift:6.2
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v6
+      - name: Verify Swift toolchain
+        run: swift --version
+      - name: Run NembraCore tests with warnings as errors
+        run: swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors
