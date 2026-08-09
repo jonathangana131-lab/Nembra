@@ -144,13 +144,24 @@ struct ES80CaptureShellView: View {
                         simulatorQABadge(simulatorQASnapshot)
                     }
 #endif
-                    passiveSafetyPanel
-                    progressRail(status: status)
-                    primaryContent(
-                        for: currentPhase,
-                        status: status,
-                        nowUptimeNanoseconds: now
-                    )
+                    if dynamicTypeSize.isAccessibilitySize,
+                       currentPhase == .readyToSeal || currentPhase == .complete {
+                        primaryContent(
+                            for: currentPhase,
+                            status: status,
+                            nowUptimeNanoseconds: now
+                        )
+                        passiveSafetyPanel
+                        progressRail(status: status)
+                    } else {
+                        passiveSafetyPanel
+                        progressRail(status: status)
+                        primaryContent(
+                            for: currentPhase,
+                            status: status,
+                            nowUptimeNanoseconds: now
+                        )
+                    }
 
                     if let diagnosticMessage {
                         diagnosticBanner(diagnosticMessage)
@@ -307,8 +318,12 @@ struct ES80CaptureShellView: View {
         HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: 9) {
             Image(systemName: "hammer.fill")
                 .accessibilityHidden(true)
-            Text("\(snapshot.evidenceLabel) · SYNTHETIC SOFTWARE STATE")
-                .fixedSize(horizontal: false, vertical: true)
+            Text(
+                dynamicTypeSize.isAccessibilitySize
+                    ? "SIMULATOR QA · SYNTHETIC"
+                    : "\(snapshot.evidenceLabel) · SYNTHETIC SOFTWARE STATE"
+            )
+            .fixedSize(horizontal: false, vertical: true)
         }
         .font(.caption.monospaced().weight(.bold))
         .foregroundStyle(.orange)
@@ -737,6 +752,9 @@ struct ES80CaptureShellView: View {
             ) {
                 showingDetails = true
             }
+            if dynamicTypeSize.isAccessibilitySize {
+                completionDescription
+            }
 
         case let .failed(message):
             statePanel(
@@ -897,29 +915,41 @@ struct ES80CaptureShellView: View {
 
     private var completionPanel: some View {
         let analysisReady = presentationAnalysisReady
-        return VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 14) {
-                ZStack {
-                    Circle()
-                        .fill(analysisReady ? .white : .white.opacity(0.12))
-                        .frame(width: 52, height: 52)
-                    Image(systemName: analysisReady ? "checkmark" : "lock.fill")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(analysisReady ? .black : .white)
-                }
-                .accessibilityHidden(true)
-
+        return VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 8 : 16) {
+            if dynamicTypeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(analysisReady ? "CAPTURE COMPLETE" : "CAPTURE SEALED")
                         .font(.caption.monospaced().weight(.bold))
                         .foregroundStyle(.secondary)
                     Text(analysisReady ? "Ready for analysis" : "Integrity check required")
-                        .font(.title2.weight(.semibold))
+                        .font(.title3.weight(.semibold))
                         .foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-            }
+            } else {
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(analysisReady ? .white : .white.opacity(0.12))
+                            .frame(width: 52, height: 52)
+                        Image(systemName: analysisReady ? "checkmark" : "lock.fill")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(analysisReady ? .black : .white)
+                    }
+                    .accessibilityHidden(true)
 
-            completionDescription
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(analysisReady ? "CAPTURE COMPLETE" : "CAPTURE SEALED")
+                            .font(.caption.monospaced().weight(.bold))
+                            .foregroundStyle(.secondary)
+                        Text(analysisReady ? "Ready for analysis" : "Integrity check required")
+                            .font(.title2.weight(.semibold))
+                            .foregroundStyle(.white)
+                    }
+                }
+
+                completionDescription
+            }
 
             if coordinator.status.finalizationCleanup == .failed {
                 Text("The Capture is sealed, but Bluetooth cleanup did not finish. Keep this Capture and restart Nembra before starting another one.")
@@ -928,7 +958,7 @@ struct ES80CaptureShellView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(18)
+        .padding(dynamicTypeSize.isAccessibilitySize ? 14 : 18)
         .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityValue(analysisReady ? "Ready for analysis" : "Capture sealed, integrity check required")
