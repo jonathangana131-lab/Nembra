@@ -43,22 +43,31 @@ jobs:
 
           workflow = Path('.github/workflows/capture-xcode27-trusted-command.yml')
           text = workflow.read_text()
-          old = '''              GIT_CONFIG_KEY_4=core.filemode \\
-              GIT_CONFIG_VALUE_4=true \\
-              /bin/bash --noprofile --norc -p -c 'source /dev/stdin' "$GITHUB_WORKSPACE/$producer_path"
-'''
+          slash = chr(92)
+          old = "\n".join([
+              f"              GIT_CONFIG_KEY_4=core.filemode {slash}",
+              f"              GIT_CONFIG_VALUE_4=true {slash}",
+              "              /bin/bash --noprofile --norc -p -c 'source /dev/stdin' \"$GITHUB_WORKSPACE/$producer_path\"",
+              "",
+          ])
           run_id = '$' + '{{ github.run_id }}'
           run_attempt = '$' + '{{ github.run_attempt }}'
-          new = (
-              '              GIT_CONFIG_KEY_4=core.filemode \\\n'
-              '              GIT_CONFIG_VALUE_4=true \\\n'
-              f'              GITHUB_RUN_ID="{run_id}" \\\n'
-              f'              GITHUB_RUN_ATTEMPT="{run_attempt}" \\\n'
-              '              /bin/bash --noprofile --norc -p -c \'source /dev/stdin\' "$GITHUB_WORKSPACE/$producer_path"\n'
-          )
+          new = "\n".join([
+              f"              GIT_CONFIG_KEY_4=core.filemode {slash}",
+              f"              GIT_CONFIG_VALUE_4=true {slash}",
+              f"              GITHUB_RUN_ID=\"{run_id}\" {slash}",
+              f"              GITHUB_RUN_ATTEMPT=\"{run_attempt}\" {slash}",
+              "              /bin/bash --noprofile --norc -p -c 'source /dev/stdin' \"$GITHUB_WORKSPACE/$producer_path\"",
+              "",
+          ])
           if text.count(old) != 1:
               raise SystemExit(f'expected exactly one trusted producer invocation, found {text.count(old)}')
-          workflow.write_text(text.replace(old, new, 1))
+          updated = text.replace(old, new, 1)
+          if f'GITHUB_RUN_ID="{run_id}"' not in updated or f'GITHUB_RUN_ATTEMPT="{run_attempt}"' not in updated:
+              raise SystemExit('trusted GitHub context identity was not inserted')
+          if 'GITHUB_RUN_ID="$GITHUB_RUN_ID"' in updated or 'GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT"' in updated:
+              raise SystemExit('mutable inherited runner identity would reopen clean boundary')
+          workflow.write_text(updated)
 
           new_blob = subprocess.check_output(
               ['/usr/bin/git', 'hash-object', str(workflow)], text=True
@@ -92,10 +101,6 @@ jobs:
             echo "stale trusted workflow blob pin remains" >&2
             exit 1
           fi
-          grep -F 'GITHUB_RUN_ID="${{ github.run_id }}"' .github/workflows/capture-xcode27-trusted-command.yml
-          grep -F 'GITHUB_RUN_ATTEMPT="${{ github.run_attempt }}"' .github/workflows/capture-xcode27-trusted-command.yml
-          ! grep -F 'GITHUB_RUN_ID="$GITHUB_RUN_ID"' .github/workflows/capture-xcode27-trusted-command.yml
-          ! grep -F 'GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT"' .github/workflows/capture-xcode27-trusted-command.yml
 
       - name: Run focused custody regression
         shell: bash
