@@ -75,7 +75,7 @@ jobs:
           set -euo pipefail
           grep -Fq 'TRUSTED_WORKFLOW_NAME = "Capture Trusted Xcode 27 Exact-Head QA"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'TRUSTED_WORKFLOW_PATH = ".github/workflows/capture-xcode27-trusted-command.yml"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
-          grep -Fq 'TRUSTED_WORKFLOW_BLOB_SHA = "9d6a63da8cfb52894f39451f916015a26b84ffd4"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          grep -Fq 'TRUSTED_WORKFLOW_BLOB_SHA = "37244abb1dc4b1740cf24e83db7b7f9545760ac1"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_PATH = "scripts/ci/xcode27_simulator_capture.sh"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_BLOB_SHA = "4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'name: Verify trusted Simulator evidence-producer custody' .github/workflows/capture-xcode27-trusted-command.yml
@@ -83,10 +83,11 @@ jobs:
           grep -Fq 'shell: "/bin/bash --noprofile --norc -p -e -o pipefail {0}"' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq 'BASH_ENV: ""' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq 'ENV: ""' .github/workflows/capture-xcode27-trusted-command.yml
-          grep -Fq '/usr/bin/git hash-object -- "$producer_path"' .github/workflows/capture-xcode27-trusted-command.yml
+          grep -Fq '/usr/bin/git -C /tmp hash-object -- "$GITHUB_WORKSPACE/$producer_path"' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq '/usr/bin/git cat-file blob "$expected_blob"' .github/workflows/capture-xcode27-trusted-command.yml
-          grep -Fq '| /usr/bin/env -i \' .github/workflows/capture-xcode27-trusted-command.yml
-          grep -Fq "/bin/bash -c 'source /dev/stdin' \"\$GITHUB_WORKSPACE/\$producer_path\"" .github/workflows/capture-xcode27-trusted-command.yml
+          grep -Fq '/usr/bin/git -C /tmp hash-object --stdin' .github/workflows/capture-xcode27-trusted-command.yml
+          grep -Fq 'test "$materialized_blob" = "$expected_blob"' .github/workflows/capture-xcode27-trusted-command.yml
+          grep -Fq "/bin/bash --noprofile --norc -p -c 'source /dev/stdin' \"\$GITHUB_WORKSPACE/\$producer_path\"" .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq 'public Final GO foundation builder is non-authorizing' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'private foundation implementation is non-authorizing' scripts/ci/_es80_today_final_go_foundation_impl.py
           grep -Fq 'O_NOFOLLOW' scripts/ci/_es80_today_final_go_foundation_impl.py
