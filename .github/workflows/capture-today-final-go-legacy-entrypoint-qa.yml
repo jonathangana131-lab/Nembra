@@ -58,6 +58,6 @@ jobs:
         run: |
           set -euo pipefail
           grep -Fq 'legacy foundation entrypoint is non-authorizing' scripts/ci/es80_today_final_go_record.py
-          grep -Fq 'Final GO foundation is non-authorizing for direct execution or imported record construction' scripts/ci/es80_today_final_go_foundation.py
+          grep -Fq 'Final GO foundation public import is non-authorizing' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq '_es80_today_final_go_foundation_impl.py' scripts/ci/es80_today_final_go_hardened.py
           grep -Fq 'es80_today_final_go_hardened.py' scripts/ci/es80_today_final_go_record.py
