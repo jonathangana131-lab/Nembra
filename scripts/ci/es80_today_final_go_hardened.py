@@ -10,7 +10,9 @@ This entrypoint removes the authority defects that must not remain on the execut
 - trusted Xcode acceptance comes only from the owner-commanded default-branch workflow whose Git
   blob is pinned independently from the candidate PR head;
 - trusted workflow Git-object lookup reuses the foundation's producer-owned, closed Git custody
-  boundary rather than caller PATH/config/replacement semantics; and
+  boundary rather than caller PATH/config/replacement semantics;
+- the retained independent-crosscheck receipt must equal a fresh execution of the exact pinned
+  crosscheck producer Git object against the exact retained candidate; and
 - record publication is failure-atomic after no-replace publication.
 
 No physical result is created by this tool. A generated GO record is procedural authorization for
@@ -18,10 +20,15 @@ one stationary passive Experiment One only after all supplied evidence is alread
 """
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
+import stat
+import subprocess
 import sys
+import tempfile
 from typing import Any, Callable
 
 MODULE_DIR = Path(__file__).resolve().parent
@@ -47,13 +54,7 @@ FinalGoError = foundation.FinalGoError
 
 
 def _workflow_blob_sha_at_commit(tooling_repo: Path, commit: str, path: str) -> str:
-    """Resolve the workflow blob only through the foundation's closed Git authority boundary.
-
-    `foundation._git` pins `/usr/bin/git`, removes system/global config, disables replacement
-    objects, restricts PATH, and rejects symlink/non-directory repository custody. Reusing that
-    boundary prevents caller PATH, Git config, or refs/replace state from manufacturing the trusted
-    workflow blob identity.
-    """
+    """Resolve the workflow blob only through the foundation's closed Git authority boundary."""
     try:
         return foundation._git(tooling_repo, "rev-parse", f"{commit}:{path}").strip().lower()
     except FinalGoError:
@@ -62,6 +63,131 @@ def _workflow_blob_sha_at_commit(tooling_repo: Path, commit: str, path: str) -> 
         raise FinalGoError(
             "trusted default-branch workflow Git blob is unavailable from tooling repository"
         ) from error
+
+
+def _closed_git_environment() -> dict[str, str]:
+    return {
+        "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+        "HOME": "/tmp",
+        "LC_ALL": "C",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+    }
+
+
+def _pinned_crosscheck_source(tooling_repo: Path) -> bytes:
+    """Read and independently hash the exact pinned crosscheck Git object bytes."""
+    try:
+        metadata = tooling_repo.lstat()
+    except OSError as error:
+        raise FinalGoError("crosscheck tooling repository is unavailable") from error
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        raise FinalGoError("crosscheck tooling repository must be one real directory")
+
+    commit = foundation.PINNED_CROSSCHECK_COMMIT
+    path = foundation.CROSSCHECK_PATH
+    expected_blob = foundation.PINNED_CROSSCHECK_BLOB
+    actual_blob = foundation._git(tooling_repo, "rev-parse", f"{commit}:{path}").strip().lower()
+    if actual_blob != expected_blob:
+        raise FinalGoError("pinned independent crosscheck producer Git blob changed")
+
+    try:
+        completed = subprocess.run(
+            ["/usr/bin/git", "cat-file", "blob", expected_blob],
+            cwd=tooling_repo,
+            env=_closed_git_environment(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    except OSError as error:
+        raise FinalGoError("pinned independent crosscheck producer bytes are unavailable") from error
+    if completed.returncode != 0 or not completed.stdout:
+        raise FinalGoError("pinned independent crosscheck producer bytes are unavailable")
+
+    raw = completed.stdout
+    if len(expected_blob) != 40:
+        raise FinalGoError("pinned crosscheck producer must use one reviewed SHA-1 Git blob")
+    object_id = hashlib.sha1(b"blob " + str(len(raw)).encode("ascii") + b"\0" + raw).hexdigest()
+    if object_id != expected_blob:
+        raise FinalGoError("materialized crosscheck producer bytes do not match pinned Git blob")
+    return raw
+
+
+def _recompute_pinned_crosscheck_receipt(
+    *,
+    candidate_root: Path,
+    expected_source_sha: str,
+    tooling_repo: Path,
+) -> dict[str, Any]:
+    """Execute the reviewed crosscheck producer in isolation and parse its exact receipt."""
+    source = _pinned_crosscheck_source(tooling_repo)
+    with tempfile.TemporaryDirectory(prefix="nembra-final-go-crosscheck-") as temporary:
+        root = Path(temporary)
+        producer = root / "pinned-crosscheck.py"
+        producer.write_bytes(source)
+        producer.chmod(0o500)
+        environment = {
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "HOME": str(root),
+            "LC_ALL": "C",
+        }
+        try:
+            completed = subprocess.run(
+                [
+                    "/usr/bin/python3",
+                    "-I",
+                    str(producer),
+                    "--candidate-dir",
+                    str(candidate_root.expanduser().absolute()),
+                    "--expected-source-sha",
+                    expected_source_sha,
+                ],
+                cwd=root,
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+        except OSError as error:
+            raise FinalGoError("pinned independent crosscheck producer could not execute") from error
+        if completed.returncode != 0:
+            detail = completed.stderr.decode("utf-8", errors="replace").strip()
+            raise FinalGoError(
+                "pinned independent crosscheck rejected retained candidate"
+                + (f": {detail}" if detail else "")
+            )
+        receipt = foundation._json_bytes(
+            completed.stdout,
+            "fresh pinned independent crosscheck receipt",
+        )
+        if set(receipt) != foundation.CROSSCHECK_KEYS:
+            raise FinalGoError("fresh pinned independent crosscheck receipt schema drifted")
+        return receipt
+
+
+def _require_pinned_crosscheck_execution(
+    *,
+    candidate_root: Path,
+    expected_source_sha: str,
+    independent_crosscheck_receipt: Path,
+    tooling_repo: Path,
+) -> None:
+    _, supplied = foundation._json_file(
+        independent_crosscheck_receipt,
+        "independent retained-candidate cross-check receipt",
+        exact_keys=foundation.CROSSCHECK_KEYS,
+    )
+    recomputed = _recompute_pinned_crosscheck_receipt(
+        candidate_root=candidate_root,
+        expected_source_sha=expected_source_sha,
+        tooling_repo=tooling_repo,
+    )
+    if supplied != recomputed:
+        raise FinalGoError(
+            "independent crosscheck receipt was not reproduced by the exact pinned producer"
+        )
 
 
 def build_final_go_record(
@@ -80,7 +206,7 @@ def build_final_go_record(
     github_get_json: Callable[[str], tuple[bytes, dict[str, Any]]] = foundation._api_get_json,
     now_utc=None,
 ) -> dict[str, Any]:
-    """Run the foundation with its Xcode trust seam replaced by pinned default-branch authority."""
+    """Run the foundation with pinned default-branch Xcode and crosscheck producer authority."""
 
     def trusted_subject_adapter(
         *,
@@ -128,6 +254,13 @@ def build_final_go_record(
         )
     finally:
         foundation._trusted_xcode_subject = original
+
+    _require_pinned_crosscheck_execution(
+        candidate_root=candidate_root,
+        expected_source_sha=expected_source_sha,
+        independent_crosscheck_receipt=independent_crosscheck_receipt,
+        tooling_repo=tooling_repo,
+    )
 
     subject = record.get("trustedXcodeAcceptance")
     if not isinstance(subject, dict):
