@@ -366,7 +366,7 @@ struct DashboardView: View {
                                         .foregroundStyle(vehicle.state.rideMode == mode ? .white : .secondary)
                                 }
                             }
-                            .frame(width: 34, height: 34)
+                            .frame(width: 44, height: 44)
                         }
                         .buttonStyle(.glass)
                         .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending)
@@ -391,7 +391,7 @@ struct DashboardView: View {
                                 Image(systemName: isOn ? "lightbulb.fill" : "lightbulb")
                             }
                         }
-                        .frame(width: 36, height: 36)
+                        .frame(width: 44, height: 44)
                     }
                     .buttonStyle(.glass)
                     .disabled(vehicle.isVehicleCommandPending)
@@ -406,7 +406,7 @@ struct DashboardView: View {
                         showLockConfirmation = true
                     } label: {
                         Image(systemName: isLocked ? "lock.fill" : "lock.open")
-                            .frame(width: 36, height: 36)
+                            .frame(width: 44, height: 44)
                     }
                     .buttonStyle(.glass)
                     .disabled(vehicle.isVehicleCommandPending)
