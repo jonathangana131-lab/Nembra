@@ -173,6 +173,8 @@ struct NembraEnergyRailView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .title2) private var powerFontSize: CGFloat = 30
 
     let state: NembraEnergyRailVisualState
 
@@ -180,11 +182,11 @@ struct NembraEnergyRailView: View {
         ZStack(alignment: .top) {
             railLayer
                 .frame(height: 72)
-                .padding(.top, 22)
+                .padding(.top, railTopPadding)
 
             powerReadout
         }
-        .frame(maxWidth: .infinity, minHeight: 94, maxHeight: 94)
+        .frame(maxWidth: .infinity, minHeight: componentMinimumHeight)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Propulsion power")
         .accessibilityValue(accessibilityValue)
@@ -232,18 +234,18 @@ struct NembraEnergyRailView: View {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 if let watts = state.semanticWatts {
                     Text(watts, format: .number.precision(.fractionLength(0)))
-                        .font(.system(size: 30, weight: .semibold, design: .rounded))
+                        .font(.system(size: powerFontSize, weight: .semibold, design: .rounded))
                         .monospacedDigit()
                         .contentTransition(
                             reduceMotion ? .identity : .numericText(value: watts)
                         )
                 } else {
                     Text("—")
-                        .font(.system(size: 30, weight: .semibold, design: .rounded))
+                        .font(.system(size: powerFontSize, weight: .semibold, design: .rounded))
                 }
 
                 Text("W")
-                    .font(.caption.weight(.bold))
+                    .font(dynamicTypeSize.isAccessibilitySize ? .body.weight(.bold) : .caption.weight(.bold))
                     .foregroundStyle(.secondary)
             }
             .animation(
@@ -252,8 +254,8 @@ struct NembraEnergyRailView: View {
             )
 
             Text(currentnessLabel)
-                .font(.caption2.weight(.bold))
-                .tracking(1.2)
+                .font(dynamicTypeSize.isAccessibilitySize ? .caption.weight(.bold) : .caption2.weight(.bold))
+                .tracking(dynamicTypeSize.isAccessibilitySize ? 0.4 : 1.2)
                 .foregroundStyle(currentnessForeground)
         }
     }
@@ -294,11 +296,11 @@ struct NembraEnergyRailView: View {
     private var currentnessForeground: Color {
         switch state.currentness {
         case .live where state.semanticWatts != nil:
-            .primary.opacity(colorSchemeContrast == .increased ? 0.88 : 0.68)
+            Color.primary.opacity(colorSchemeContrast == .increased ? 0.88 : 0.68)
         case .retained where state.semanticWatts != nil:
-            .secondary
+            Color.primary.opacity(colorSchemeContrast == .increased ? 0.66 : 0.50)
         default:
-            .tertiary
+            Color.primary.opacity(colorSchemeContrast == .increased ? 0.50 : 0.32)
         }
     }
 
@@ -314,6 +316,14 @@ struct NembraEnergyRailView: View {
         case .unavailable:
             return "Unavailable"
         }
+    }
+
+    private var componentMinimumHeight: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 156 : 94
+    }
+
+    private var railTopPadding: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 76 : 22
     }
 
     private var baseRailOpacity: Double {
