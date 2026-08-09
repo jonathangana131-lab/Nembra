@@ -1,0 +1,37 @@
+name: Capture TODAY Final GO Signed Candidate Repair Proof
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - scripts/ci/es80_today_final_go_hardened.py
+      - scripts/ci/es80_today_signed_candidate_reinspection.py
+      - scripts/ci/tests/test_es80_today_final_go_requires_fresh_signed_candidate.py
+      - .github/workflows/capture-today-final-go-signed-candidate-repair-proof.yml
+
+permissions:
+  contents: read
+
+jobs:
+  signed-candidate-repair-proof:
+    name: Prove malformed signed candidate cannot escape as GO
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout immutable validation head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+      - name: Verify immutable validation head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+      - name: Compile repair proof
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py
+          python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_requires_fresh_signed_candidate.py
+      - name: Exercise GO bypass guard
+        run: python3 scripts/ci/tests/test_es80_today_final_go_requires_fresh_signed_candidate.py -v
