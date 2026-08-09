@@ -43,11 +43,15 @@ def _regular(path: Path, label: str) -> bytes:
 
 
 def _publish_file_no_replace(source: Path, destination: Path) -> None:
+    """Create the destination exclusively.
+
+    Staging cleanup deliberately remains with the caller. Keeping the publish primitive to one
+    destination-creating operation means any later cleanup failure is unambiguously post-publication.
+    """
     try:
         os.link(source, destination, follow_symlinks=False)
     except FileExistsError as error:
         raise FinalGoPublicationError(f"output already exists: {destination}") from error
-    source.unlink()
 
 
 def _retract_published_record(output: Path, raw: bytes) -> None:
@@ -80,6 +84,7 @@ def _quarantine_published_record(output: Path, raw: bytes) -> Path | None:
         f".{output.name}.QUARANTINED-NO-GO.{os.getpid()}.{secrets.token_hex(8)}"
     )
     _publish_file_no_replace(output, quarantine)
+    output.unlink()
     _fsync_directory(output.parent)
     if output.exists() or output.is_symlink():
         raise FinalGoPublicationError(
@@ -96,10 +101,11 @@ def publish_record_no_replace(
 ) -> str:
     """Durably publish exact bytes or fail with the GO pathname non-authoritative.
 
-    Publication is no-replace. A post-rename failure first attempts exact-byte rollback. If ordinary
-    rollback cannot be proven, the exact bytes are moved to a non-authoritative quarantine pathname
-    when possible. If neither cleanup path can be proven, the error explicitly reports AMBIGUOUS
-    NO-GO and callers must not consume the destination.
+    Publication is no-replace. Once the publisher is attempted, any destination that appears is
+    treated as potentially authoritative: exact intended bytes are retracted (or quarantined if
+    ordinary rollback cannot be proven), while changed/unknown bytes force explicit AMBIGUOUS NO-GO.
+    This closes partial-publisher failures where destination creation succeeds before the publisher
+    raises. Pre-publisher failures never touch an independently-created destination.
     """
     if not raw:
         raise FinalGoPublicationError("Final GO record bytes must not be empty")
@@ -113,7 +119,7 @@ def publish_record_no_replace(
 
     fd = -1
     staging: Path | None = None
-    published = False
+    publication_attempted = False
     try:
         fd, staging_name = tempfile.mkstemp(
             prefix=f".{output.name}.", suffix=".staging", dir=parent
@@ -140,8 +146,16 @@ def publish_record_no_replace(
                 "staged Final GO record bytes changed before publication"
             )
 
+        publication_attempted = True
         publisher(staging, output)
-        published = True
+        if _regular(output, "published Final GO record") != raw:
+            raise FinalGoPublicationError(
+                "published Final GO record bytes differ from staged authority"
+            )
+
+        # Destination existence is now established. Staging cleanup is deliberately outside the
+        # publisher so a cleanup exception cannot be misclassified as a pre-publication failure.
+        staging.unlink()
         staging = None
         _fsync_directory(parent)
         if _regular(output, "published Final GO record") != raw:
@@ -152,28 +166,41 @@ def publish_record_no_replace(
     except Exception as original_error:
         if fd >= 0:
             os.close(fd)
-        if not published and staging is not None:
-            try:
-                staging.unlink(missing_ok=True)
-            except OSError:
-                pass
-        if published:
+
+        if publication_attempted and (output.exists() or output.is_symlink()):
             try:
                 _retract_published_record(output, raw)
             except Exception as rollback_error:
                 try:
                     quarantine = _quarantine_published_record(output, raw)
                 except Exception as quarantine_error:
+                    if staging is not None:
+                        try:
+                            staging.unlink(missing_ok=True)
+                        except OSError:
+                            pass
                     raise FinalGoPublicationError(
-                        "Final GO publication failed after rename and durable rollback/quarantine "
-                        f"could not be proven. Treat {output} as AMBIGUOUS NO-GO and do not consume it. "
+                        "Final GO publication failed after destination creation and durable "
+                        f"rollback/quarantine could not be proven. Treat {output} as AMBIGUOUS "
+                        "NO-GO and do not consume it. "
                         f"rollback={rollback_error}; quarantine={quarantine_error}"
                     ) from quarantine_error
                 quarantine_note = (
                     f"; bytes quarantined at {quarantine}" if quarantine is not None else ""
                 )
+                if staging is not None:
+                    try:
+                        staging.unlink(missing_ok=True)
+                    except OSError:
+                        pass
                 raise FinalGoPublicationError(
-                    "Final GO publication failed after rename; authoritative destination was "
-                    f"removed but ordinary rollback was not proven{quarantine_note}"
+                    "Final GO publication failed after destination creation; authoritative "
+                    f"destination was removed but ordinary rollback was not proven{quarantine_note}"
                 ) from rollback_error
+
+        if staging is not None:
+            try:
+                staging.unlink(missing_ok=True)
+            except OSError:
+                pass
         raise original_error
