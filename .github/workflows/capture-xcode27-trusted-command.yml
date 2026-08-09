@@ -241,27 +241,125 @@ jobs:
           ENV: ""
         run: |
           set -euo pipefail
-          /usr/bin/env -i             PATH=/usr/bin:/bin             HOME=/tmp             LC_ALL=C             GITHUB_WORKSPACE="$GITHUB_WORKSPACE"             /usr/bin/python3 - <<'PY'
+          /usr/bin/env -i \
+            PATH=/usr/bin:/bin \
+            HOME=/tmp \
+            LC_ALL=C \
+            GITHUB_WORKSPACE="$GITHUB_WORKSPACE" \
+            /usr/bin/python3 -I - <<'PY'
           from hashlib import sha1
-          from pathlib import Path
           import os
+          import stat
 
-          root = Path(os.environ["GITHUB_WORKSPACE"])
+          workspace = os.environ["GITHUB_WORKSPACE"]
           expected = {
               "Nembra.xcodeproj/project.pbxproj": "d87024ba057add61a7d45ce8b69ac9947e6d2117",
               "Nembra.xcodeproj/xcshareddata/xcschemes/Nembra.xcscheme": "64ef64f110265194d904ea0cbf177bbf264871c9",
               "Packages/NembraCore/Package.swift": "26544e273397020fae34c7034992071a9861c131",
               "Packages/NembraBluetoothCapture/Package.swift": "3bcda7fa8a350ade75bd8b7b228c3c95ca319bda",
           }
+
+          if not hasattr(os, "O_DIRECTORY") or not hasattr(os, "O_NOFOLLOW"):
+              raise SystemExit("trusted build graph custody requires descriptor no-follow support")
+
+          directory_flags = (
+              os.O_RDONLY
+              | os.O_DIRECTORY
+              | os.O_NOFOLLOW
+              | getattr(os, "O_CLOEXEC", 0)
+          )
+          file_flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+
+          def read_regular_beneath(relative: str) -> bytes:
+              components = relative.split("/")
+              if not components or any(component in {"", ".", ".."} for component in components):
+                  raise SystemExit(f"trusted build graph subject has unsafe path: {relative}")
+
+              try:
+                  root_fd = os.open(workspace, directory_flags)
+              except OSError as error:
+                  raise SystemExit("trusted build graph workspace is not one safe directory") from error
+
+              current_fd = root_fd
+              try:
+                  for component in components[:-1]:
+                      try:
+                          next_fd = os.open(component, directory_flags, dir_fd=current_fd)
+                      except OSError as error:
+                          raise SystemExit(
+                              f"trusted build graph subject has unsafe ancestor: {relative}"
+                          ) from error
+                      if current_fd != root_fd:
+                          os.close(current_fd)
+                      current_fd = next_fd
+
+                  try:
+                      subject_fd = os.open(components[-1], file_flags, dir_fd=current_fd)
+                  except OSError as error:
+                      raise SystemExit(
+                          f"trusted build graph subject is not one no-follow file: {relative}"
+                      ) from error
+
+                  try:
+                      before = os.fstat(subject_fd)
+                      if not stat.S_ISREG(before.st_mode):
+                          raise SystemExit(
+                              f"trusted build graph subject is not one regular file: {relative}"
+                          )
+                      identity_before = (
+                          before.st_dev,
+                          before.st_ino,
+                          before.st_mode,
+                          before.st_uid,
+                          before.st_gid,
+                          before.st_size,
+                          before.st_mtime_ns,
+                          before.st_ctime_ns,
+                      )
+
+                      chunks = []
+                      while True:
+                          chunk = os.read(subject_fd, 1024 * 1024)
+                          if not chunk:
+                              break
+                          chunks.append(chunk)
+                      data = b"".join(chunks)
+
+                      after = os.fstat(subject_fd)
+                      identity_after = (
+                          after.st_dev,
+                          after.st_ino,
+                          after.st_mode,
+                          after.st_uid,
+                          after.st_gid,
+                          after.st_size,
+                          after.st_mtime_ns,
+                          after.st_ctime_ns,
+                      )
+                      if identity_before != identity_after:
+                          raise SystemExit(
+                              f"trusted build graph subject changed while reading: {relative}"
+                          )
+                      if len(data) != before.st_size:
+                          raise SystemExit(
+                              f"trusted build graph subject byte count changed: {relative}"
+                          )
+                      return data
+                  finally:
+                      os.close(subject_fd)
+              finally:
+                  if current_fd != root_fd:
+                      os.close(current_fd)
+                  os.close(root_fd)
+
           for relative, expected_blob in expected.items():
-              path = root / relative
-              if not path.is_file() or path.is_symlink():
-                  raise SystemExit(f"trusted build graph subject is not one regular file: {relative}")
-              data = path.read_bytes()
-              actual_blob = sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()
+              data = read_regular_beneath(relative)
+              actual_blob = sha1(
+                  b"blob " + str(len(data)).encode("ascii") + b"\0" + data
+              ).hexdigest()
               print(f"Trusted build graph subject: {relative}")
               print(f"Expected blob: {expected_blob}")
-              print(f"Actual raw-byte blob: {actual_blob}")
+              print(f"Actual descriptor-bound blob: {actual_blob}")
               if actual_blob != expected_blob:
                   raise SystemExit(f"trusted build graph subject changed: {relative}")
           PY
