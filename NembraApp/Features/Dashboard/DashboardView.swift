@@ -71,6 +71,17 @@ struct DashboardModePersonality: Equatable {
     }
 }
 
+/// Layout policy is presentation-only. Accessibility sizes deliberately stop using
+/// fixed side rails so large text cannot steal the central speed instrument's width.
+enum DashboardCockpitComposition: Equatable {
+    case standard
+    case accessibility
+
+    static func resolved(for dynamicTypeSize: DynamicTypeSize) -> DashboardCockpitComposition {
+        dynamicTypeSize.isAccessibilitySize ? .accessibility : .standard
+    }
+}
+
 /// The dedicated landscape riding surface.
 ///
 /// Phase 11 keeps the accepted Phase 10 speed instrumentation and makes confirmed
@@ -78,10 +89,12 @@ struct DashboardModePersonality: Equatable {
 struct DashboardView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showLockConfirmation = false
 
     var body: some View {
         let personality = DashboardModePersonality.resolved(for: vehicle.state.rideMode)
+        let composition = DashboardCockpitComposition.resolved(for: dynamicTypeSize)
 
         ZStack {
             Color.black.ignoresSafeArea()
@@ -99,18 +112,16 @@ struct DashboardView: View {
             .allowsHitTesting(false)
             .animation(modeAnimation, value: personality)
 
-            HStack(spacing: 0) {
-                statusRail
-                    .frame(width: 156)
-
-                DashboardSpeedInstrumentView(modePersonality: personality)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                contextRail(personality: personality)
-                    .frame(width: 176)
+            Group {
+                switch composition {
+                case .standard:
+                    standardCockpit(personality: personality)
+                case .accessibility:
+                    accessibilityCockpit(personality: personality)
+                }
             }
-            .safeAreaPadding(.horizontal, 20)
-            .safeAreaPadding(.vertical, 12)
+            .safeAreaPadding(.horizontal, composition == .accessibility ? 14 : 20)
+            .safeAreaPadding(.vertical, composition == .accessibility ? 8 : 12)
         }
         .foregroundStyle(.white)
         .preferredColorScheme(.dark)
@@ -134,6 +145,111 @@ struct DashboardView: View {
             Button("OK", role: .cancel) { vehicle.lastErrorMessage = nil }
         } message: {
             Text(vehicle.lastErrorMessage ?? "The scooter did not confirm the change.")
+        }
+    }
+
+    private func standardCockpit(personality: DashboardModePersonality) -> some View {
+        HStack(spacing: 0) {
+            statusRail
+                .frame(width: 156)
+
+            DashboardSpeedInstrumentView(modePersonality: personality)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            contextRail(personality: personality)
+                .frame(width: 176)
+        }
+    }
+
+    /// Accessibility sizes use a deliberate compact header + full-width hero rather
+    /// than shrinking or horizontally squeezing the accepted speed presentation.
+    /// Command visibility rules are unchanged and remain source-currentness gated.
+    private func accessibilityCockpit(personality: DashboardModePersonality) -> some View {
+        VStack(spacing: 8) {
+            HStack(alignment: .top, spacing: 14) {
+                accessibilityStatusSummary
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                modeReadout(personality: personality)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+
+            DashboardSpeedInstrumentView(modePersonality: personality)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .layoutPriority(2)
+
+            accessibilityControlStrip
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .accessibilityIdentifier("dashboard.cockpit.accessibility")
+    }
+
+    private var accessibilityStatusSummary: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text(vehicle.profile.identity.displayName)
+                    .font(.headline.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+
+                Label(connectionText, systemImage: connectionIcon)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(connectionStyle)
+                    .lineLimit(1)
+            }
+
+            HStack(spacing: 14) {
+                compactAccessibilityMetric(
+                    title: "Battery",
+                    value: batteryText,
+                    warning: isBatteryLow
+                )
+
+                compactAccessibilityMetric(
+                    title: "Trip",
+                    value: tripText
+                )
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("dashboard.accessibility-status")
+    }
+
+    private func compactAccessibilityMetric(
+        title: String,
+        value: String,
+        warning: Bool = false
+    ) -> some View {
+        HStack(spacing: 5) {
+            Text(title)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(warning ? Color.red : Color.secondary)
+            Text(value)
+                .font(.caption.weight(.semibold).monospacedDigit())
+                .foregroundStyle(warning ? Color.red : Color.white)
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityValue(value)
+    }
+
+    @ViewBuilder
+    private var accessibilityControlStrip: some View {
+        if shouldShowStoppedControls {
+            stoppedControls
+                .transition(.opacity)
+        } else if vehicle.state.connection == .connected && !hasQualifiedLiveSpeed {
+            Label("Live speed required for controls", systemImage: "speedometer")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Controls unavailable until live speed is known")
+                .accessibilityIdentifier("dashboard.controls-speed-unavailable-message")
+        } else if isVehicleMoving {
+            Text("Controls available when stopped")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .accessibilityIdentifier("dashboard.controls-moving-message")
         }
     }
 
