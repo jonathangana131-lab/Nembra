@@ -79,11 +79,13 @@ The producer itself will create another fresh detached worktree internally. The 
 
 Choose a private path outside the repository. The producer requires an absolute regular non-symlink mode-`0600` file and independently validates its contents/mode.
 
-This example reads the UDID without placing the value in the command line or echoing it back to the terminal. The file must contain the exact identifier bytes with **no trailing newline or other surrounding whitespace**, matching the frozen `a0f4…` private runner's fail-closed input contract. It also refuses a symlink private directory or any pre-existing final path **before** the secret is read or written. Bash `noclobber` is a second fail-closed guard if a target appears between the pre-check and redirection; do not change this into write-then-validate because ordinary shell redirection can follow an existing symlink before a later `test ! -L` executes.
+This example reads the UDID without placing the value in the command line or echoing it back to the terminal. The file must contain the exact identifier bytes with **no trailing newline or other surrounding whitespace**, matching the frozen `a0f4…` private runner's fail-closed input contract. Before any secret is acquired, the snippet resolves `$HOME` to its physical path so the eventual private file does not inherit a symlinked home ancestor that the accepted preflight would later reject. It also refuses a symlink private directory or any pre-existing final path. Bash `noclobber` is a second fail-closed guard if a target appears between the pre-check and redirection; do not change this into write-then-validate because ordinary shell redirection can follow an existing symlink before a later `test ! -L` executes.
 
 ```bash
 umask 077
-PRIVATE_DIR="$HOME/.nembra-private"
+HOME_PHYSICAL="$(cd -P -- "$HOME" && /bin/pwd -P)"
+test -n "$HOME_PHYSICAL" && test "${HOME_PHYSICAL#/}" != "$HOME_PHYSICAL"
+PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"
 UDID_FILE="$PRIVATE_DIR/es80-intended-device.udid"
 
 if [[ -L "$PRIVATE_DIR" ]]; then
@@ -255,6 +257,7 @@ Stop and preserve the exact blocker if any of these occurs:
 - more than one IPA is exported or the retained `NembraField.ipa` is missing;
 - the resulting evidence names a different source SHA, recipe, or build subject;
 - the candidate destination existed before production or appears partially published after a failure;
+- the private base path cannot be resolved to a physical absolute home path before secret acquisition;
 - the intended-device verification directory is a symlink, the final private path already exists, the exact-byte private write cannot be created under `noclobber`, the retained verification file is not mode-`0600` regular non-symlink input, or its path traverses a symlinked ancestor / the Nembra repository;
 - the intended-device verification value contains leading/trailing whitespace/newline;
 - the next step would require rebuilding, re-exporting, substituting another app/IPA, or using Xcode Run;
