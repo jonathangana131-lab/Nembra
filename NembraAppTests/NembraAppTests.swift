@@ -263,6 +263,49 @@ final class NembraAppTests: XCTestCase {
     }
 
     @MainActor
+    func testSimulatorQASpeedRequiresExplicitSimulatorPresentationProfile() throws {
+        let sample = try SpeedTelemetrySample(
+            source: .simulatorQA,
+            provenance: .absoluteMeasurement,
+            metersPerSecond: 5,
+            receivedAtUptimeNanoseconds: 2_200_000_000,
+            receivedAtDate: Date(timeIntervalSince1970: 0)
+        )
+        let live = SpeedEvidenceAvailability.live(sample)
+        let retained = SpeedEvidenceAvailability.retained(sample)
+
+        XCTAssertEqual(live.dashboardPresentationAvailability, .unavailable)
+        XCTAssertEqual(retained.dashboardPresentationAvailability, .unavailable)
+        XCTAssertEqual(
+            live.dashboardPresentationAvailability(allowsSimulatorQA: true),
+            .live(sample)
+        )
+        XCTAssertEqual(
+            retained.dashboardPresentationAvailability(allowsSimulatorQA: true),
+            .retained(sample)
+        )
+
+        let model = SpeedInstrumentModel()
+        model.configureInterpolationPolicy(.simulatorQA)
+        model.setSpeedEvidenceAvailability(live)
+        XCTAssertNil(model.latestAcceptedSample)
+        XCTAssertNil(model.presentationFrame(
+            for: live,
+            atUptimeNanoseconds: sample.receivedAtUptimeNanoseconds
+        ))
+
+        model.setSpeedEvidenceAvailability(live, allowsSimulatorQA: true)
+        XCTAssertEqual(model.latestAcceptedSample, sample)
+        let frame = try XCTUnwrap(model.presentationFrame(
+            for: live,
+            atUptimeNanoseconds: sample.receivedAtUptimeNanoseconds,
+            allowsSimulatorQA: true
+        ))
+        XCTAssertEqual(frame.kilometersPerHour, 18, accuracy: 0.000_1)
+        XCTAssertEqual(frame.origin, .measuredTelemetry)
+    }
+
+    @MainActor
     func testCallerConstructedEstimatedAvailabilityFailsClosedAndRetiresLiveContinuity() throws {
         let model = SpeedInstrumentModel()
         model.configureInterpolationPolicy(.simulatorQA)
@@ -484,7 +527,6 @@ final class NembraAppTests: XCTestCase {
         XCTAssertNil(model.latestMeasuredKilometersPerHour)
         XCTAssertNil(model.latestMeasurementSource)
         XCTAssertNil(model.latestMeasurementUptimeNanoseconds)
-        XCTAssertNil(model.latestAcceptedSample)
         XCTAssertFalse(model.isAnimationActive)
     }
 
@@ -509,7 +551,6 @@ final class NembraAppTests: XCTestCase {
         XCTAssertNil(model.latestMeasuredKilometersPerHour)
         XCTAssertNil(model.latestMeasurementSource)
         XCTAssertNil(model.latestMeasurementUptimeNanoseconds)
-        XCTAssertNil(model.latestAcceptedSample)
         XCTAssertFalse(model.isAnimationActive)
     }
 
