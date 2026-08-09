@@ -223,7 +223,7 @@ struct DashboardView: View {
     private var stoppedControls: some View {
         VStack(alignment: .trailing, spacing: 10) {
             if !supportedModes.isEmpty {
-                HStack(spacing: 5) {
+                HStack(spacing: 0) {
                     ForEach(supportedModes, id: \.self) { mode in
                         Button {
                             Task { await vehicle.setMode(mode) }
@@ -243,7 +243,7 @@ struct DashboardView: View {
                                         .foregroundStyle(vehicle.state.rideMode == mode ? .white : .secondary)
                                 }
                             }
-                            .frame(width: 34, height: 34)
+                            .frame(width: 44, height: 44)
                         }
                         .buttonStyle(.glass)
                         .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending)
@@ -324,7 +324,8 @@ struct DashboardView: View {
     private var errorPresented: Binding<Bool> {
         Binding(
             get: { vehicle.lastErrorMessage != nil },
-            set: { if !$0 { vehicle.lastErrorMessage = nil } }
+            set: { if !$0 { vehicle.lastErrorMessage = nil }
+            }
         )
     }
 
