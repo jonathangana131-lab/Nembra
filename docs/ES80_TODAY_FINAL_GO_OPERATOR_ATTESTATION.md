@@ -76,7 +76,7 @@ The two IPA digest fields intentionally contain the **same retained-file SHA-256
 
 ## Safe local creation
 
-Keep the attestation local/private with the rest of the TODAY Final GO evidence. Do not put the raw intended-device UDID in this JSON, GitHub, screenshots, artifact names, or public notes.
+Keep the attestation local/private with the rest of the TODAY Final GO evidence. Do not put the raw intended-device UDID in this JSON, GitHub, screenshots, artifact names, shell command arguments, or public notes.
 
 A lowercase UUID and normalized UTC timestamp can be generated without asserting any procedure outcome:
 
@@ -95,6 +95,18 @@ Write the completed JSON to one new regular non-symlink file, for example:
 ```
 
 Do not reuse a previously accepted file for a later attempt. The hardened publisher is failure-atomic and the operator attestation is attempt-specific.
+
+## Private intended-device input
+
+The hardened Final-GO executable also performs a fresh signed-candidate reinspection and therefore requires the intended-device identifier through a **private file path**:
+
+```text
+--intended-device-udid-file /private/path/intended-device-udid.txt
+```
+
+The file must contain the verification-only intended iPhone UDID and must remain local/private. Use the same private intended-device subject that was admitted for signed-field production; do not copy the raw UDID into the command line itself, the attestation JSON, GitHub, screenshots, artifact names, or public notes. The argument passes only the pathname to the private file.
+
+If the private file is missing, points at the wrong intended device, cannot satisfy the hardened reinspection contract, or would require exposing the raw UDID to continue, stop and remain NO-GO.
 
 ## Hardened Final GO invocation boundary
 
@@ -117,9 +129,10 @@ Its required evidence inputs include:
 - `--frozen-source-repo`
 - `--tooling-repo`
 - `--operator-attestation`
+- `--intended-device-udid-file`
 - `--output`
 
-Do not infer those identifiers from stale PR prose. Use the exact accepted retained evidence and live GitHub subject that passed the current pinned authority contract.
+Do not infer those identifiers from stale PR prose. Use the exact accepted retained evidence and live GitHub subject that passed the current pinned authority contract. For `--intended-device-udid-file`, pass only the path to the local private verification file; never substitute the raw identifier as an argument value.
 
 A successful hardened invocation creates a **procedural Final GO record**, not a physical result. Inspect its exact bytes and require the intended `decision = GO`, accepted source/build/install/runtime subjects, recipe `ES80-FINGERPRINT-v1`, procedure `V14`, baseline iPhone 12 / iOS 27, ordinary/general build authority `NO-GO`, expected raw Share artifact, stop conditions, and `physicalResultCollected = false`.
 
@@ -140,6 +153,7 @@ Stop and remain NO-GO if:
 - explicit operator action is not required;
 - application write/command authority exists or is uncertain;
 - the trusted Xcode run/artifact is not the exact accepted current-authority subject;
+- the private intended-device UDID file is missing, wrong, exposed, or fails fresh signed-candidate reinspection;
 - any retained/cross-check/signing/install evidence is missing or ambiguous.
 
 The correct output is the exact blocker, not a guessed affirmative field.
