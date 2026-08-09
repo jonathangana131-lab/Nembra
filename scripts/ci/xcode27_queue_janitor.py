@@ -37,6 +37,19 @@ class Decision:
     reason: str
 
 
+class GitHubHTTPError(RuntimeError):
+    """HTTP failure retaining the status code for fail-closed recovery policy."""
+
+    def __init__(self, method: str, path: str, status_code: int, body: str) -> None:
+        self.method = method
+        self.path = path
+        self.status_code = status_code
+        self.body = body
+        super().__init__(
+            f"GitHub API {method} {path} failed: HTTP {status_code}: {body}"
+        )
+
+
 def _parse_github_time(value: str) -> dt.datetime:
     parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
@@ -88,6 +101,12 @@ def classify_run(
     )
 
 
+def may_force_cancel_after(error: BaseException) -> bool:
+    """Use GitHub force-cancel only after the normal endpoint itself failed 500."""
+
+    return isinstance(error, GitHubHTTPError) and error.status_code == 500
+
+
 class GitHubAPI:
     def __init__(self, token: str, repository: str) -> None:
         if "/" not in repository:
@@ -115,9 +134,7 @@ class GitHubAPI:
                 return json.loads(body.decode("utf-8"))
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(
-                f"GitHub API {method} {path} failed: HTTP {exc.code}: {body}"
-            ) from exc
+            raise GitHubHTTPError(method, path, exc.code, body) from exc
 
     def runs_with_status(self, status: str) -> list[dict[str, Any]]:
         if status not in CANCELLABLE_STATUSES:
@@ -161,6 +178,12 @@ class GitHubAPI:
     def cancel_run(self, run_id: int) -> None:
         self.request(
             "POST", f"/repos/{self.owner}/{self.repo}/actions/runs/{run_id}/cancel"
+        )
+
+    def force_cancel_run(self, run_id: int) -> None:
+        self.request(
+            "POST",
+            f"/repos/{self.owner}/{self.repo}/actions/runs/{run_id}/force-cancel",
         )
 
 
@@ -221,6 +244,14 @@ def self_test() -> None:
     assert not classify_run(
         run(status="completed"), [], now=now, minimum_age_seconds=120
     ).cancel
+
+    assert may_force_cancel_after(
+        GitHubHTTPError("POST", "/actions/runs/1/cancel", 500, "failed")
+    )
+    assert not may_force_cancel_after(
+        GitHubHTTPError("POST", "/actions/runs/1/cancel", 409, "conflict")
+    )
+    assert not may_force_cancel_after(RuntimeError("transport failure"))
 
     print("xcode27_queue_janitor self-test: PASS")
 
@@ -315,8 +346,22 @@ def main() -> int:
         try:
             api.cancel_run(run_id)
             cancelled += 1
+            continue
         except RuntimeError as exc:
-            print(f"CANCEL_RACE run={run_id}: {exc}", file=sys.stderr)
+            if not may_force_cancel_after(exc):
+                print(f"CANCEL_RACE run={run_id}: {exc}", file=sys.stderr)
+                continue
+            print(
+                f"CANCEL_PRIMARY_FAILED run={run_id}; trying documented force-cancel: {exc}",
+                file=sys.stderr,
+            )
+
+        try:
+            api.force_cancel_run(run_id)
+            cancelled += 1
+            print(f"FORCE_CANCEL run={run_id} reason=normal cancel returned HTTP 500")
+        except RuntimeError as exc:
+            print(f"FORCE_CANCEL_RACE run={run_id}: {exc}", file=sys.stderr)
 
     if args.apply:
         print(f"cancelled={cancelled} cap={args.max_cancellations}")
