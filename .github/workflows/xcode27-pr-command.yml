@@ -12,6 +12,8 @@ permissions:
 
 env:
   ARTIFACTS_DIR: ${{ github.workspace }}/Artifacts/Xcode27Simulator
+  INFOPLIST_FILE: NembraApp/Config/NembraCaptureBuildInfo.plist
+  INFOPLIST_EXPAND_BUILD_SETTINGS: "YES"
 
 jobs:
   resolve:

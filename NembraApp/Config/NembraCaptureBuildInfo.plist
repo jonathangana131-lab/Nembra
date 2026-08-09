@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>NembraCaptureBuildIdentifier</key>
+    <string>$(INFOPLIST_KEY_NembraCaptureBuildIdentifier)</string>
+    <key>NembraCaptureBuildInstanceID</key>
+    <string>$(INFOPLIST_KEY_NembraCaptureBuildInstanceID)</string>
+    <key>NembraCaptureBuildCommitSHA</key>
+    <string>$(INFOPLIST_KEY_NembraCaptureBuildCommitSHA)</string>
+    <key>NembraCaptureFieldRecipe</key>
+    <string>$(INFOPLIST_KEY_NembraCaptureFieldRecipe)</string>
+</dict>
+</plist>

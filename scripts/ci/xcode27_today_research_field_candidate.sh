@@ -14,6 +14,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 CANONICAL_PRODUCER="$SCRIPT_DIR/xcode27_signed_field_candidate.sh"
+CAPTURE_INFO_PLIST="NembraApp/Config/NembraCaptureBuildInfo.plist"
 
 if [[ ! -x "$CANONICAL_PRODUCER" ]]; then
   echo "Canonical signed-field producer is missing or not executable: $CANONICAL_PRODUCER" >&2
@@ -24,5 +25,15 @@ fi
 # producer receives exactly the inherited project flags plus this one compile condition.
 unset SWIFT_ACTIVE_COMPILATION_CONDITIONS
 export OTHER_SWIFT_FLAGS='$(inherited) -DNEMBRA_ES80_TODAY_RESEARCH'
+
+# Xcode does not synthesize arbitrary custom Info.plist keys from caller/user-defined
+# INFOPLIST_KEY_* build settings. The canonical producer already owns the exact build identifier,
+# build-instance, source SHA, and field-recipe values as command-line build settings; route those
+# values through one tracked plist input from the detached exact-SOURCE_SHA worktree so Xcode's
+# normal plist processing expands them into the signed app before hashing/signing. A caller cannot
+# substitute another plist path through this TODAY wrapper.
+unset INFOPLIST_FILE INFOPLIST_EXPAND_BUILD_SETTINGS
+export INFOPLIST_FILE="$CAPTURE_INFO_PLIST"
+export INFOPLIST_EXPAND_BUILD_SETTINGS=YES
 
 exec "$CANONICAL_PRODUCER" "$@"
