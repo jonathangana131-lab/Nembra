@@ -202,7 +202,9 @@ struct NembraEnergyRailView: View {
                         style: StrokeStyle(lineWidth: baseRailWidth, lineCap: .round)
                     )
 
-                if let fraction = state.admittedRailFraction {
+                if let admittedFraction = state.admittedRailFraction {
+                    let fraction = CGFloat(admittedFraction)
+
                     if !reduceTransparency {
                         NembraEnergyRailArc()
                             .trim(from: 0, to: fraction)
@@ -219,8 +221,8 @@ struct NembraEnergyRailView: View {
                             style: StrokeStyle(lineWidth: activeRailWidth, lineCap: .round)
                         )
 
-                    if let marker = state.admittedPeakMarkerFraction {
-                        peakMarker(at: marker, in: proxy.size)
+                    if let admittedMarker = state.admittedPeakMarkerFraction {
+                        peakMarker(at: CGFloat(admittedMarker), in: proxy.size)
                     }
                 }
             }
@@ -261,7 +263,7 @@ struct NembraEnergyRailView: View {
     }
 
     @ViewBuilder
-    private func peakMarker(at fraction: Double, in size: CGSize) -> some View {
+    private func peakMarker(at fraction: CGFloat, in size: CGSize) -> some View {
         let point = pointOnRail(at: fraction, in: size)
 
         Capsule(style: .continuous)
@@ -271,7 +273,7 @@ struct NembraEnergyRailView: View {
             .accessibilityHidden(true)
     }
 
-    private func pointOnRail(at fraction: Double, in size: CGSize) -> CGPoint {
+    private func pointOnRail(at fraction: CGFloat, in size: CGSize) -> CGPoint {
         let t = fraction
         let inverse = 1 - t
         let baseline = size.height * 0.88
