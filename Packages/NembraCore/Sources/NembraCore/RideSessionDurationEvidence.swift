@@ -99,6 +99,37 @@ public struct RideSessionDurationEvidenceSnapshot: Equatable, Sendable {
     public let coverage: RideSessionDurationCoverage
     public let observationSegmentCount: Int
 
+#if SWIFT_PACKAGE
+    /// Package tests and package-owned producers may construct snapshots directly.
+    /// App-target code must not gain the same authority when this source is compiled
+    /// directly into Nembra's manually selected Core source set.
+    package init(
+        sessionID: UUID,
+        observedDurationNanoseconds: UInt64?,
+        coverage: RideSessionDurationCoverage,
+        observationSegmentCount: Int
+    ) {
+        self.sessionID = sessionID
+        self.observedDurationNanoseconds = observedDurationNanoseconds
+        self.coverage = coverage
+        self.observationSegmentCount = observationSegmentCount
+    }
+#else
+    /// Direct-source app builds keep snapshot minting in this file so the duration
+    /// accumulator remains the only production projection authority.
+    fileprivate init(
+        sessionID: UUID,
+        observedDurationNanoseconds: UInt64?,
+        coverage: RideSessionDurationCoverage,
+        observationSegmentCount: Int
+    ) {
+        self.sessionID = sessionID
+        self.observedDurationNanoseconds = observedDurationNanoseconds
+        self.coverage = coverage
+        self.observationSegmentCount = observationSegmentCount
+    }
+#endif
+
     public var hasUnobservedInterval: Bool {
         coverage == .partial
     }
