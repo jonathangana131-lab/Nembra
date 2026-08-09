@@ -765,12 +765,12 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         XCTAssertTrue(appSource.contains("#if DEBUG && targetEnvironment(simulator)"))
         XCTAssertTrue(appSource.contains("--es80-passive-capture-simulator-qa"))
         XCTAssertTrue(
-            appSource.contains("if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure"),
-            "The normal research route must still be downstream of the package field gate."
+            appSource.contains("ES80ExperimentOneFieldNoGoView()"),
+            "A denied or unavailable field admission must retain the dedicated physical NO-GO fallback."
         )
         XCTAssertTrue(
-            appSource.contains("PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()"),
-            "The real field route must retain its package-owned attested factory."
+            appSource.contains(".makeResearchAuthorizedES80ForCurrentApplication()"),
+            "The real field route must retain the package-owned current-application authorization factory."
         )
         XCTAssertTrue(shellSource.contains("simulatorQASnapshot"))
         XCTAssertTrue(shellSource.contains("guard status.physicalProcedurePermitted else"))
