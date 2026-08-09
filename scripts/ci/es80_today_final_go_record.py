@@ -756,20 +756,21 @@ def _args(argv: list[str]) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _args(sys.argv[1:] if argv is None else argv)
-    values = vars(args).copy()
-    output = values.pop("output")
+    """Compatibility CLI: the legacy filename can no longer exercise legacy GO authority."""
+    arguments = sys.argv[1:] if argv is None else argv
+    hardened_entrypoint = Path(__file__).resolve().with_name("es80_today_final_go_hardened.py")
     try:
-        record = build_final_go_record(**values)
-        raw = (json.dumps(record, indent=2, sort_keys=True) + "\n").encode()
-        record_sha = publish_record_no_replace(output, raw)
-    except (FinalGoError, FileNotFoundError, OSError) as error:
-        print(f"TODAY Final GO: NO-GO: {error}", file=sys.stderr)
+        completed = subprocess.run(
+            [sys.executable, str(hardened_entrypoint), *arguments],
+            check=False,
+        )
+    except OSError as error:
+        print(
+            f"TODAY Final GO: NO-GO: hardened entrypoint unavailable: {error}",
+            file=sys.stderr,
+        )
         return 2
-    print(f"TODAY Final GO record: {output.resolve(strict=True)}")
-    print(f"record_sha256={record_sha}")
-    print("PHYSICAL RESULT COLLECTED: NO")
-    return 0
+    return completed.returncode
 
 
 if __name__ == "__main__":
