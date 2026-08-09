@@ -76,7 +76,6 @@ final class VehicleStore {
     }
 
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
-    @ObservationIgnored private var speedEvidenceTask: Task<Void, Never>?
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private let shouldAutoConnectOnStart: Bool
 
@@ -109,43 +108,45 @@ final class VehicleStore {
 
     deinit {
         updatesTask?.cancel()
-        speedEvidenceTask?.cancel()
     }
 
     func start() async {
         guard !didStart else { return }
         didStart = true
 
-        updatesTask = Task { [weak self, service] in
-            let stream = await service.stateUpdates()
-            for await state in stream {
-                guard let self, !Task.isCancelled else { break }
-                self.state = state
-                if state.connection != .connected {
-                    // Connection loss can retire authority immediately on this
-                    // ordered state stream. It never promotes speed when a later
-                    // reconnect arrives; only source-owned evidence may do that.
-                    self.speedEvidenceAvailability = .unavailable
-                }
-            }
-        }
-
-        if let speedEvidenceProvider = service as? any SpeedEvidenceProvider {
-            speedEvidenceTask = Task { [weak self, speedEvidenceProvider] in
-                let stream = await speedEvidenceProvider.speedEvidenceUpdates()
-                for await availability in stream {
+        if let coherentProvider = service as? any VehicleSpeedEvidenceSnapshotProvider {
+            updatesTask = Task { [weak self, coherentProvider] in
+                let stream = await coherentProvider.vehicleSpeedEvidenceUpdates()
+                for await snapshot in stream {
                     guard let self, !Task.isCancelled else { return }
-                    self.speedEvidenceAvailability = availability
+                    // State and field currentness cross one MainActor assignment
+                    // boundary as the exact pair emitted by the source. A newer
+                    // reconnect therefore cannot combine with an older `.live`
+                    // speed value that was dequeued on another task.
+                    self.state = snapshot.state
+                    self.speedEvidenceAvailability = snapshot.speedEvidenceAvailability
                 }
 
-                // An ended acquisition stream cannot leave its last `.live`
-                // sample authorized indefinitely. Cancellation/deinit needs no
-                // state write; any real unexpected/normal end fails closed.
+                // An ended coherent acquisition stream cannot leave its last
+                // `.live` sample authorized indefinitely. Cancellation/deinit
+                // needs no state write; any real unexpected/normal end fails closed.
                 guard let self, !Task.isCancelled else { return }
                 self.speedEvidenceAvailability = .unavailable
             }
         } else {
+            // Aggregate state remains useful for presentation, but a provider
+            // without the stronger coherent state/currentness contract cannot
+            // authorize app-level live speed. This deliberately fails closed
+            // rather than reviving the old independently scheduled stream race.
             speedEvidenceAvailability = .unavailable
+            updatesTask = Task { [weak self, service] in
+                let stream = await service.stateUpdates()
+                for await state in stream {
+                    guard let self, !Task.isCancelled else { break }
+                    self.state = state
+                    self.speedEvidenceAvailability = .unavailable
+                }
+            }
         }
 
         if shouldAutoConnectOnStart {
