@@ -71,6 +71,7 @@ struct ES80CaptureShellView: View {
 
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
     @Environment(\.accessibilityDifferentiateWithoutColor) private var accessibilityDifferentiateWithoutColor
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
@@ -131,7 +132,7 @@ struct ES80CaptureShellView: View {
             let now = DispatchTime.now().uptimeNanoseconds
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: captureVerticalSpacing) {
                     hero(for: currentPhase)
 #if DEBUG && targetEnvironment(simulator)
                     if let simulatorQASnapshot {
@@ -152,10 +153,11 @@ struct ES80CaptureShellView: View {
                 }
                 .frame(maxWidth: 660)
                 .padding(.horizontal, 22)
-                .padding(.top, 18)
-                .padding(.bottom, 42)
+                .padding(.top, captureTopPadding)
+                .padding(.bottom, captureBottomPadding)
                 .frame(maxWidth: .infinity)
             }
+            .accessibilityIdentifier("es80.capture.scroll")
             .background(Color.black.ignoresSafeArea())
             .onAppear {
                 synchronizeIdleTimer(for: currentPhase)
@@ -199,6 +201,12 @@ struct ES80CaptureShellView: View {
         .sensoryFeedback(.success, trigger: successHapticTick)
         .sensoryFeedback(.warning, trigger: warningHapticTick)
     }
+
+    private var captureVerticalSpacing: CGFloat { verticalSizeClass == .compact ? 16 : 24 }
+
+    private var captureTopPadding: CGFloat { verticalSizeClass == .compact ? 10 : 18 }
+
+    private var captureBottomPadding: CGFloat { verticalSizeClass == .compact ? 20 : 42 }
 
     private func hero(for phase: Phase) -> some View {
         VStack(alignment: .leading, spacing: 18) {
