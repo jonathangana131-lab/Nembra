@@ -103,8 +103,18 @@ struct DashboardView: View {
                 statusRail
                     .frame(width: 156)
 
-                DashboardSpeedInstrumentView(modePersonality: personality)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(spacing: 0) {
+                    DashboardSpeedInstrumentView(modePersonality: personality)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    // The real Energy Rail surface is part of Cockpit now, but remains
+                    // explicitly unavailable until the package-owned propulsion session
+                    // is linked to the app and real-device evidence can authorize values.
+                    // Do not substitute VehicleState.powerWatts or any placeholder number.
+                    NembraEnergyRailView(state: .unavailable)
+                        .frame(maxWidth: .infinity)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 contextRail(personality: personality)
                     .frame(width: 176)
