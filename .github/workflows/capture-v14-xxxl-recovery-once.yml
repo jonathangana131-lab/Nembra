@@ -1,0 +1,112 @@
+name: Capture V14 Accessibility XXXL recovery
+
+on:
+  push:
+    branches:
+      - agent/capture-nogo-xxxl-viewport
+    paths:
+      - .github/workflows/capture-v14-xxxl-recovery-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact recovery branch
+        uses: actions/checkout@v5
+        with:
+          ref: agent/capture-nogo-xxxl-viewport
+          fetch-depth: 0
+
+      - name: Recompose locked Capture surface for Accessibility XXXL
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraApp.swift")
+          source = path.read_text(encoding="utf-8")
+
+          replacements = [
+              (
+                  "spacing: verticalSizeClass == .compact ? 10 : (isAccessibilityLayout ? 8 : 28)",
+                  "spacing: verticalSizeClass == .compact ? 10 : (isAccessibilityLayout ? 6 : 28)",
+              ),
+              (
+                  "spacing: verticalSizeClass == .compact ? 6 : (isAccessibilityLayout ? 4 : 14)",
+                  "spacing: verticalSizeClass == .compact ? 6 : (isAccessibilityLayout ? 2 : 14)",
+              ),
+              (
+                  "isAccessibilityLayout || verticalSizeClass == .compact ? .title2 : .largeTitle,",
+                  "isAccessibilityLayout ? .headline : (verticalSizeClass == .compact ? .title2 : .largeTitle),",
+              ),
+              (
+                  """Text(\"Final checks in progress.\")
+                            .font(.caption.weight(.semibold))""",
+                  """Text(\"Final checks in progress.\")
+                            .font(.caption2.weight(.semibold))""",
+              ),
+              (
+                  """Text(isAccessibilityLayout ? \"PHYSICAL CAPTURE · NO-GO\" : \"Not ready for scooter capture yet\")
+                            .font(.headline)""",
+                  """Text(isAccessibilityLayout ? \"PHYSICAL CAPTURE · NO-GO\" : \"Not ready for scooter capture yet\")
+                            .font(isAccessibilityLayout ? .subheadline.weight(.semibold) : .headline)""",
+              ),
+              (
+                  """Text(\"Engineering details\")
+                                    .font(.subheadline.weight(.semibold))""",
+                  """Text(\"Engineering details\")
+                                    .font(isAccessibilityLayout ? .footnote.weight(.semibold) : .subheadline.weight(.semibold))""",
+              ),
+              (
+                  """.padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 10 : 18))
+                .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(physicalLockAccessibilityLabel)
+                .accessibilityIdentifier(\"es80.capture.physical-run-locked\")""",
+                  """.padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 8 : 18))
+                .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(physicalLockAccessibilityLabel)
+                .accessibilityIdentifier(\"es80.capture.physical-run-locked\")""",
+              ),
+              (
+                  """.padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 10 : 18))
+                .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))""",
+                  """.padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 8 : 18))
+                .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))""",
+              ),
+              (
+                  ".padding(.top, verticalSizeClass == .compact ? 8 : (isAccessibilityLayout ? 8 : 18))",
+                  ".padding(.top, verticalSizeClass == .compact ? 8 : (isAccessibilityLayout ? 4 : 18))",
+              ),
+          ]
+
+          for old, new in replacements:
+              actual_count = source.count(old)
+              if actual_count != 1:
+                  raise SystemExit(
+                      f"Refusing ambiguous recovery for {old!r}: expected 1, found {actual_count}"
+                  )
+              source = source.replace(old, new, 1)
+
+          path.write_text(source, encoding="utf-8")
+          PY
+
+          git diff --check
+          git diff -- NembraApp/App/NembraApp.swift
+
+      - name: Commit recovery and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-v14-closure-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/capture-v14-xxxl-recovery-once.yml
+          git add NembraApp/App/NembraApp.swift
+          git diff --cached --check
+          git commit -m "fix(capture): recompose locked state for Accessibility XXXL"
+          git push origin HEAD:"$GITHUB_REF_NAME"
