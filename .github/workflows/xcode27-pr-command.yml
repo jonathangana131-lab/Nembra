@@ -211,12 +211,26 @@ jobs:
           if re.fullmatch(r"[0-9a-f]{40}", exact_head) is None:
               raise SystemExit("Trusted resolver did not provide one exact lowercase 40-hex PR head SHA")
 
+          def verify_checkout_matches_resolver(candidate_head):
+              if candidate_head != exact_head:
+                  raise ValueError("checkout HEAD does not match trusted exact-head resolution")
+
           current_checkout_head = subprocess.check_output(
               ["git", "rev-parse", "--verify", "HEAD^{commit}"],
               text=True,
           ).strip()
-          if current_checkout_head != exact_head:
-              raise SystemExit("Checkout HEAD changed after trusted exact-head resolution/build execution")
+          try:
+              verify_checkout_matches_resolver(current_checkout_head)
+          except ValueError as error:
+              raise SystemExit(str(error)) from error
+
+          detached_checkout_head = "0" * 40 if exact_head != "0" * 40 else "1" * 40
+          try:
+              verify_checkout_matches_resolver(detached_checkout_head)
+          except ValueError:
+              pass
+          else:
+              raise SystemExit("checkout verifier self-test accepted a resolver-detached checkout SHA")
 
           retained_plist = plistlib.loads(info_plist.read_bytes())
           expected_recipe = "ES80-FINGERPRINT-v1"
