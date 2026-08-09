@@ -207,9 +207,15 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
 
 #if SWIFT_PACKAGE
     package var snapshot: RideSessionDurationEvidenceSnapshot {
+        projectedSnapshot
+    }
 #else
     fileprivate var snapshot: RideSessionDurationEvidenceSnapshot {
+        projectedSnapshot
+    }
 #endif
+
+    private var projectedSnapshot: RideSessionDurationEvidenceSnapshot {
         let duration: UInt64? = observationSegments.isEmpty
             ? nil
             : totalObservedDurationNanoseconds
@@ -235,12 +241,20 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
     package mutating func upsert(
         _ segment: RideSessionDurationObservedSegment
     ) throws -> RideSessionDurationUpsertResult {
+        try upsertValidated(segment)
+    }
 #else
     @discardableResult
     fileprivate mutating func upsert(
         _ segment: RideSessionDurationObservedSegment
     ) throws -> RideSessionDurationUpsertResult {
+        try upsertValidated(segment)
+    }
 #endif
+
+    private mutating func upsertValidated(
+        _ segment: RideSessionDurationObservedSegment
+    ) throws -> RideSessionDurationUpsertResult {
         guard segment.sessionID == sessionID else {
             throw RideSessionDurationEvidenceError.sessionMismatch
         }
@@ -371,7 +385,7 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
         )
         do {
             for segment in decodedSegments {
-                try upsert(segment)
+                try upsertValidated(segment)
             }
             requiresFreshProcessGeneration = !decodedSegments.isEmpty
             requiresInitialRecoveryGap = decodedSegments.isEmpty
