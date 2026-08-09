@@ -1,0 +1,60 @@
+name: Capture TODAY Final GO Signed Candidate Composition QA
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - scripts/ci/es80_today_final_go_hardened.py
+      - scripts/ci/es80_today_signed_candidate_reinspection.py
+      - scripts/ci/tests/test_es80_today_signed_candidate_reinspection.py
+      - scripts/ci/tests/test_es80_today_final_go_signed_candidate_composition.py
+      - .github/workflows/capture-today-final-go-signed-candidate-composition-qa.yml
+
+permissions:
+  contents: read
+
+jobs:
+  signed-candidate-composition:
+    name: Enforce fresh signed candidate before Final GO
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout immutable PR head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Verify immutable PR head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(/usr/bin/git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD_SHA"
+
+      - name: Compile signed-candidate authority tests
+        run: |
+          python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py
+          python3 -m py_compile scripts/ci/es80_today_signed_candidate_reinspection.py
+          python3 -m py_compile scripts/ci/tests/test_es80_today_signed_candidate_reinspection.py
+          python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_signed_candidate_composition.py
+
+      - name: Preserve signed-candidate reinspection adversarial coverage
+        run: python3 scripts/ci/tests/test_es80_today_signed_candidate_reinspection.py -v
+
+      - name: Enforce reinspection in the only executable Final GO composer
+        run: python3 scripts/ci/tests/test_es80_today_final_go_signed_candidate_composition.py -v
+
+      - name: Pin composition contract
+        run: |
+          set -euo pipefail
+          grep -Fq 'es80_today_signed_candidate_reinspection.py' scripts/ci/es80_today_final_go_hardened.py
+          grep -Fq 'verify_signed_candidate_reinspection(' scripts/ci/es80_today_final_go_hardened.py
+          grep -Fq 'freshSignedArtifactReinspection' scripts/ci/es80_today_final_go_hardened.py
+          grep -Fq 'signedArtifactInspectionSHA256' scripts/ci/es80_today_final_go_hardened.py
+          grep -Fq 'NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE' scripts/ci/es80_today_final_go_hardened.py
+
+      - name: Check patch whitespace
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: /usr/bin/git diff --check "$BASE_SHA" "$HEAD_SHA"
