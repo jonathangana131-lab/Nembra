@@ -19,6 +19,7 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterable
 
 RECIPE_ID = "ES80-FINGERPRINT-v1"
 PROCEDURE_VERSION = "V14"
@@ -28,60 +29,31 @@ CROSSCHECK_AUTHORITY = "independent-retained-candidate-evidence-crosscheck-not-f
 
 SHA40_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-UUID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-)
+GIT_OID_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 TEAM_RE = re.compile(r"^[A-Z0-9]{10}$")
 CDHASH_RE = re.compile(r"^[0-9a-f]{40,64}$")
+XCODE_27_RE = re.compile(r"^Xcode 27(?:\.[0-9]+)*(?: .+)?$")
+XCODE_BUILD_RE = re.compile(r"^Build version \S+$")
 
 EXTERNAL_KEYS = {
-    "schemaVersion",
-    "buildIdentifier",
-    "buildInstanceID",
-    "sourceCommitSHA",
-    "executableSHA256",
-    "infoPlistSHA256",
-    "experimentRecipeID",
-    "procedureVersion",
+    "schemaVersion", "buildIdentifier", "buildInstanceID", "sourceCommitSHA",
+    "executableSHA256", "infoPlistSHA256", "experimentRecipeID", "procedureVersion",
 }
 FIELD_KEYS = {
-    "schemaVersion",
-    "externalBuildRecordSHA256",
-    "signedInstallableSHA256",
-    "signedInstallableKind",
-    "buildIdentifier",
-    "buildInstanceID",
-    "sourceCommitSHA",
-    "executableSHA256",
-    "infoPlistSHA256",
-    "experimentRecipeID",
-    "procedureVersion",
+    "schemaVersion", "externalBuildRecordSHA256", "signedInstallableSHA256",
+    "signedInstallableKind", "buildIdentifier", "buildInstanceID", "sourceCommitSHA",
+    "executableSHA256", "infoPlistSHA256", "experimentRecipeID", "procedureVersion",
 }
 INSPECTION_KEYS = {
-    "schemaVersion",
-    "authority",
-    "fieldBuildEvidenceRecordSHA256",
-    "externalBuildRecordSHA256",
-    "signedInstallableSHA256",
-    "signedInstallableKind",
-    "ipaByteCount",
-    "buildIdentifier",
-    "buildInstanceID",
-    "sourceCommitSHA",
-    "bundleIdentifier",
-    "platformName",
-    "supportedPlatforms",
-    "teamIdentifier",
-    "signingAuthorities",
-    "codeDirectoryHash",
-    "provisioningProfileSHA256",
-    "provisioningProfileUUID",
-    "provisioningProfileExpirationUTC",
-    "provisioningApplicationIdentifier",
-    "executableSHA256",
-    "infoPlistSHA256",
-    "experimentRecipeID",
-    "procedureVersion",
+    "schemaVersion", "authority", "fieldBuildEvidenceRecordSHA256",
+    "externalBuildRecordSHA256", "signedInstallableSHA256", "signedInstallableKind",
+    "ipaByteCount", "buildIdentifier", "buildInstanceID", "sourceCommitSHA",
+    "bundleIdentifier", "platformName", "supportedPlatforms", "teamIdentifier",
+    "signingAuthorities", "codeDirectoryHash", "provisioningProfileSHA256",
+    "provisioningProfileUUID", "provisioningProfileExpirationUTC",
+    "provisioningApplicationIdentifier", "executableSHA256", "infoPlistSHA256",
+    "experimentRecipeID", "procedureVersion",
 }
 
 
@@ -108,11 +80,22 @@ def require_regular_file(path: Path, label: str) -> None:
         raise CrosscheckError(f"{label} must be non-empty: {path}")
 
 
+def reject_duplicate_object_pairs(pairs: Iterable[tuple[str, object]]) -> dict:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise CrosscheckError(f"JSON contains duplicate object key: {key}")
+        result[key] = value
+    return result
+
+
 def load_exact_json(path: Path, *, label: str, expected_keys: set[str]) -> tuple[dict, bytes]:
     require_regular_file(path, label)
     data = path.read_bytes()
     try:
-        decoded = json.loads(data)
+        decoded = json.loads(data, object_pairs_hook=reject_duplicate_object_pairs)
+    except CrosscheckError:
+        raise
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise CrosscheckError(f"{label} is not valid UTF-8 JSON") from exc
     if not isinstance(decoded, dict):
@@ -134,6 +117,12 @@ def canonical_sha256(value: object, label: str) -> str:
     return value
 
 
+def canonical_git_oid(value: object, label: str) -> str:
+    if not isinstance(value, str) or not GIT_OID_RE.fullmatch(value):
+        raise CrosscheckError(f"{label} must be one canonical lowercase Git object ID")
+    return value
+
+
 def canonical_uuid(value: object, label: str) -> str:
     if not isinstance(value, str) or not UUID_RE.fullmatch(value):
         raise CrosscheckError(f"{label} must be one canonical lowercase UUID")
@@ -146,24 +135,32 @@ def canonical_uuid(value: object, label: str) -> str:
     return value
 
 
-def parse_environment(path: Path) -> dict[str, str]:
+def parse_environment(path: Path) -> tuple[dict[str, str], str, str]:
     require_regular_file(path, "field candidate environment")
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeDecodeError) as exc:
         raise CrosscheckError("field candidate environment is not readable UTF-8 text") from exc
+
     values: dict[str, str] = {}
+    footer: list[str] = []
     for raw_line in lines:
         if "=" not in raw_line:
-            # xcodebuild -version is intentionally appended after the key/value evidence.
+            if raw_line:
+                footer.append(raw_line)
             continue
         key, value = raw_line.split("=", 1)
         if not key:
-            continue
+            raise CrosscheckError("field candidate environment contains an empty key")
         if key in values:
             raise CrosscheckError(f"field candidate environment contains duplicate key: {key}")
         values[key] = value
-    return values
+
+    if len(footer) != 2 or not XCODE_27_RE.fullmatch(footer[0]) or not XCODE_BUILD_RE.fullmatch(footer[1]):
+        raise CrosscheckError(
+            "field candidate environment must retain exactly one Xcode 27 version/build tuple"
+        )
+    return values, footer[0], footer[1]
 
 
 def parse_expiration(value: object) -> datetime:
@@ -189,32 +186,24 @@ def candidate_paths(candidate_dir: Path) -> dict[str, Path]:
     }
 
 
-def _all_ipas(candidate_dir: Path) -> list[Path]:
+def _all_ipas_and_reject_symlinks(candidate_dir: Path) -> list[Path]:
     result: list[Path] = []
     for root, dirs, files in os.walk(candidate_dir, followlinks=False):
         root_path = Path(root)
-        for name in list(dirs):
+        for name in dirs:
             child = root_path / name
-            try:
-                if child.is_symlink():
-                    raise CrosscheckError(
-                        f"candidate contains symlink directory and is not a closed install subject: {child}"
-                    )
-            except OSError as exc:
-                raise CrosscheckError(f"candidate tree became unreadable: {child}") from exc
+            if child.is_symlink():
+                raise CrosscheckError(f"candidate contains symlink directory: {child}")
         for name in files:
             child = root_path / name
+            if child.is_symlink():
+                raise CrosscheckError(f"candidate contains symlink file: {child}")
             if name.lower().endswith(".ipa"):
                 result.append(child)
     return sorted(result)
 
 
-def crosscheck(
-    candidate_dir: Path,
-    *,
-    expected_source_sha: str,
-    now: datetime | None = None,
-) -> dict:
+def crosscheck(candidate_dir: Path, *, expected_source_sha: str, now: datetime | None = None) -> dict:
     expected_source_sha = canonical_sha40(expected_source_sha, "expected source SHA")
     try:
         root_stat = candidate_dir.lstat()
@@ -227,23 +216,16 @@ def crosscheck(
     for key in ("ipa", "environment", "export_options", "archive_log", "export_log"):
         require_regular_file(paths[key], key.replace("_", " "))
 
-    ipas = _all_ipas(candidate_dir)
-    canonical_ipa = paths["ipa"]
-    if ipas != [canonical_ipa]:
+    ipas = _all_ipas_and_reject_symlinks(candidate_dir)
+    if ipas != [paths["ipa"]]:
         raise CrosscheckError(
             "candidate must contain exactly one IPA at inspection/build-evidence/NembraField.ipa; "
             f"found {[str(path.relative_to(candidate_dir)) for path in ipas]!r}"
         )
 
-    external, external_bytes = load_exact_json(
-        paths["external"], label="external build record", expected_keys=EXTERNAL_KEYS
-    )
-    field, field_bytes = load_exact_json(
-        paths["field"], label="field-build evidence record", expected_keys=FIELD_KEYS
-    )
-    inspection, inspection_bytes = load_exact_json(
-        paths["inspection"], label="signed-field artifact inspection", expected_keys=INSPECTION_KEYS
-    )
+    external, external_bytes = load_exact_json(paths["external"], label="external build record", expected_keys=EXTERNAL_KEYS)
+    field, field_bytes = load_exact_json(paths["field"], label="field-build evidence record", expected_keys=FIELD_KEYS)
+    inspection, inspection_bytes = load_exact_json(paths["inspection"], label="signed-field artifact inspection", expected_keys=INSPECTION_KEYS)
 
     if external.get("schemaVersion") != 3:
         raise CrosscheckError("external build record schemaVersion must be 3")
@@ -268,9 +250,7 @@ def crosscheck(
     ):
         for key, expected in shared.items():
             if record.get(key) != expected:
-                raise CrosscheckError(
-                    f"{record_name} mismatch for {key}: {record.get(key)!r} != {expected!r}"
-                )
+                raise CrosscheckError(f"{record_name} mismatch for {key}: {record.get(key)!r} != {expected!r}")
 
     for record_name, record in (("field-build evidence", field), ("signing inspection", inspection)):
         if record.get("signedInstallableKind") != "ipa":
@@ -299,9 +279,7 @@ def crosscheck(
     if not isinstance(inspection.get("provisioningProfileUUID"), str) or not inspection["provisioningProfileUUID"].strip():
         raise CrosscheckError("provisioning profile UUID is missing")
     authorities = inspection.get("signingAuthorities")
-    if not isinstance(authorities, list) or not authorities or not all(
-        isinstance(item, str) and item.strip() for item in authorities
-    ):
+    if not isinstance(authorities, list) or not authorities or not all(isinstance(item, str) and item.strip() for item in authorities):
         raise CrosscheckError("signing authority chain is missing")
     cdhash = inspection.get("codeDirectoryHash")
     if not isinstance(cdhash, str) or not CDHASH_RE.fullmatch(cdhash):
@@ -330,10 +308,8 @@ def crosscheck(
         raise CrosscheckError("signing inspection is not bound to exact external-record bytes")
     if inspection.get("fieldBuildEvidenceRecordSHA256") != field_sha:
         raise CrosscheckError("signing inspection is not bound to exact field-build record bytes")
-    if field.get("signedInstallableSHA256") != ipa_sha:
-        raise CrosscheckError("retained IPA bytes do not match field-build evidence")
-    if inspection.get("signedInstallableSHA256") != ipa_sha:
-        raise CrosscheckError("retained IPA bytes do not match signing inspection")
+    if field.get("signedInstallableSHA256") != ipa_sha or inspection.get("signedInstallableSHA256") != ipa_sha:
+        raise CrosscheckError("retained IPA bytes do not match canonical field/signing evidence")
     if inspection.get("ipaByteCount") != paths["ipa"].stat().st_size:
         raise CrosscheckError("retained IPA byte count disagrees with signing inspection")
 
@@ -342,27 +318,37 @@ def crosscheck(
         if field.get(key) != external.get(key) or inspection.get(key) != external.get(key):
             raise CrosscheckError(f"evidence records disagree on exact {key}")
 
-    environment = parse_environment(paths["environment"])
+    environment, xcode_version, xcode_build = parse_environment(paths["environment"])
     required_environment = {
         "source_commit_sha": expected_source_sha,
         "build_identifier": build_identifier,
         "build_instance_id": build_instance,
         "field_launch_recipe_id": RECIPE_ID,
         "experiment_recipe_id": RECIPE_ID,
+        "export_options_file": "ExportOptions.plist",
+        "archive_log": "logs/xcodebuild-archive.log",
+        "export_log": "logs/xcodebuild-export.log",
+        "inspection_directory": "inspection",
         "procedure_version": PROCEDURE_VERSION,
         "signing_inspection_authority": INSPECTION_AUTHORITY,
         "physical_authorization": "not-granted",
-        "inspection_directory": "inspection",
-        "export_options_file": "ExportOptions.plist",
     }
     for key, expected in required_environment.items():
         if environment.get(key) != expected:
             raise CrosscheckError(
-                f"field candidate environment mismatch for {key}: "
-                f"{environment.get(key)!r} != {expected!r}"
+                f"field candidate environment mismatch for {key}: {environment.get(key)!r} != {expected!r}"
             )
     if environment.get("development_team") != team:
         raise CrosscheckError("field candidate environment TeamIdentifier disagrees with signing inspection")
+    if environment.get("allow_provisioning_updates") not in {"0", "1"}:
+        raise CrosscheckError("allow_provisioning_updates must be exactly 0 or 1")
+
+    private_runner_blob = canonical_git_oid(
+        environment.get("private_runner_source_git_blob"), "private runner source Git blob"
+    )
+    inspector_blob = canonical_git_oid(
+        environment.get("canonical_inspector_source_git_blob"), "canonical inspector source Git blob"
+    )
     export_sha = sha256_file(paths["export_options"])
     if environment.get("export_options_sha256") != export_sha:
         raise CrosscheckError("retained ExportOptions.plist digest disagrees with producer environment record")
@@ -385,6 +371,11 @@ def crosscheck(
         "infoPlistSHA256": external["infoPlistSHA256"],
         "exportOptionsSHA256": export_sha,
         "teamIdentifier": team,
+        "allowProvisioningUpdates": environment["allow_provisioning_updates"],
+        "privateRunnerSourceGitBlobClaim": private_runner_blob,
+        "canonicalInspectorSourceGitBlobClaim": inspector_blob,
+        "xcodeVersion": xcode_version,
+        "xcodeBuildVersion": xcode_build,
         "provisioningProfileSHA256": inspection["provisioningProfileSHA256"],
         "provisioningProfileUUID": inspection["provisioningProfileUUID"],
         "provisioningProfileExpirationUTC": inspection["provisioningProfileExpirationUTC"],
@@ -392,6 +383,7 @@ def crosscheck(
         "crossRecordDigestLinksVerified": True,
         "producerPhysicalAuthorizationRemainsNotGranted": True,
         "appleSigningInspectionRequired": True,
+        "toolBlobClaimsRequireRepositoryCrossCheck": True,
         "exactRetainedIPAInstallHandoffRequired": True,
         "physicalExperimentAuthorization": "not-granted",
     }
@@ -406,10 +398,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
-    receipt = crosscheck(
-        args.candidate_dir.expanduser().absolute(),
-        expected_source_sha=args.expected_source_sha,
-    )
+    receipt = crosscheck(args.candidate_dir.expanduser().absolute(), expected_source_sha=args.expected_source_sha)
     print(json.dumps(receipt, indent=2, sort_keys=True))
     return 0
 
