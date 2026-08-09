@@ -247,6 +247,17 @@ jobs:
           import os
 
           root = Path(os.environ["GITHUB_WORKSPACE"])
+          canonical_scheme = "Nembra.xcodeproj/xcshareddata/xcschemes/Nembra.xcscheme"
+          scheme_paths = {
+              path.relative_to(root).as_posix()
+              for path in root.rglob("*.xcscheme")
+          }
+          if scheme_paths != {canonical_scheme}:
+              raise SystemExit(
+                  "trusted build graph requires exactly the canonical shared Xcode scheme; found "
+                  + repr(sorted(scheme_paths))
+              )
+
           expected = {
               "Nembra.xcodeproj/project.pbxproj": "d87024ba057add61a7d45ce8b69ac9947e6d2117",
               "Nembra.xcodeproj/xcshareddata/xcschemes/Nembra.xcscheme": "64ef64f110265194d904ea0cbf177bbf264871c9",
