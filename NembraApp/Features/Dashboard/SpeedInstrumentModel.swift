@@ -35,11 +35,9 @@ final class SpeedInstrumentModel {
     @ObservationIgnored private var interpolator = SpeedDisplayInterpolator()
     @ObservationIgnored private var previousMeasurementUptimeNanoseconds: UInt64?
     @ObservationIgnored private var interpolationPolicy: SpeedInstrumentInterpolationPolicy = .disabled
-    @ObservationIgnored private var streamTask: Task<Void, Never>?
     @ObservationIgnored private var animationEndTask: Task<Void, Never>?
 
     deinit {
-        streamTask?.cancel()
         animationEndTask?.cancel()
     }
 
@@ -50,23 +48,7 @@ final class SpeedInstrumentModel {
         interpolationPolicy = policy
     }
 
-    /// Legacy/test seam for callers that already own raw-stream continuity. The
-    /// Dashboard itself intentionally consumes source-owned field availability
-    /// below so a delayed raw packet cannot recreate currentness after a gap.
-    func start(stream: AsyncStream<SpeedTelemetrySample>) {
-        guard streamTask == nil else { return }
-
-        streamTask = Task { [weak self] in
-            for await sample in stream {
-                guard !Task.isCancelled, let self else { break }
-                self.accept(sample)
-            }
-        }
-    }
-
     func stop() {
-        streamTask?.cancel()
-        streamTask = nil
         clearPresentationContinuity()
     }
 
@@ -82,8 +64,9 @@ final class SpeedInstrumentModel {
         }
     }
 
-    /// Internal so the iOS test target can prove display semantics without a
-    /// scheduler-sensitive fake stream.
+    /// Internal test seam for the interpolation primitive. Production Dashboard
+    /// code admits samples only through `setSpeedEvidenceAvailability(_:)` so
+    /// currentness remains source-owned rather than recreated from a raw stream.
     func accept(_ sample: SpeedTelemetrySample) {
         guard sample.isAuthoritativeMeasurement else { return }
 
