@@ -695,7 +695,6 @@ struct ES80CaptureShellView: View {
                     ) {}
                 }
             } else {
-#endif
                 if let finalShareTransfer {
                     ShareLink(
                         item: finalShareTransfer,
@@ -726,7 +725,37 @@ struct ES80CaptureShellView: View {
                         identifier: "es80.capture.share-unavailable"
                     ) {}
                 }
-#if DEBUG && targetEnvironment(simulator)
+            }
+#else
+            if let finalShareTransfer {
+                ShareLink(
+                    item: finalShareTransfer,
+                    preview: SharePreview(finalShareTransfer.filename)
+                ) {
+                    Label("Share Capture", systemImage: "square.and.arrow.up")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 56)
+                        .foregroundStyle(.black)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("es80.capture.share")
+            } else if coordinator.finalizedArtifact != nil {
+                primaryButton(
+                    finalShareIntegrityReport == nil ? "Verify Capture file" : "Retry Share file",
+                    systemImage: "arrow.clockwise",
+                    identifier: "es80.capture.prepare-share"
+                ) {
+                    prepareFinalShareForAnalysisAndSharing()
+                }
+            } else {
+                primaryButton(
+                    "Share unavailable",
+                    systemImage: "exclamationmark.triangle",
+                    disabled: true,
+                    identifier: "es80.capture.share-unavailable"
+                ) {}
             }
 #endif
             if let sharePreparationWarning {
@@ -872,9 +901,6 @@ struct ES80CaptureShellView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else if let report = finalShareIntegrityReport {
-#else
-            if let report = finalShareIntegrityReport {
-#endif
                 Text("The exact \(report.finalShareByteCount.formatted())-byte Capture passed every required file-integrity check and is ready to share for analysis. Nembra has not identified scooter data fields from this file yet.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -885,6 +911,19 @@ struct ES80CaptureShellView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+#else
+            if let report = finalShareIntegrityReport {
+                Text("The exact \(report.finalShareByteCount.formatted())-byte Capture passed every required file-integrity check and is ready to share for analysis. Nembra has not identified scooter data fields from this file yet.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let artifact = coordinator.finalizedArtifact {
+                Text("\(artifact.captureJSON.count.formatted()) Capture bytes are sealed. Nembra still needs to verify the final Share file before this run is ready for analysis.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+#endif
 
             if coordinator.status.finalizationCleanup == .failed {
                 Text("The Capture is sealed, but Bluetooth cleanup did not finish. Keep this Capture and restart Nembra before starting another one.")
@@ -923,7 +962,6 @@ struct ES80CaptureShellView: View {
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     } else {
-#endif
                         detailRow("Correlation", value: correlationDetailValue)
                         detailRow("Cleanup", value: finalizationCleanupDetailValue)
 
@@ -947,7 +985,30 @@ struct ES80CaptureShellView: View {
                             detailRow("Capture bytes", value: artifact.captureJSON.count.formatted())
                             detailRow("Observation windows", value: artifact.powerCycleResult.windows.count.formatted())
                         }
-#if DEBUG && targetEnvironment(simulator)
+                    }
+#else
+                    detailRow("Correlation", value: correlationDetailValue)
+                    detailRow("Cleanup", value: finalizationCleanupDetailValue)
+
+                    if let report = finalShareIntegrityReport {
+                        detailRow("Analysis readiness", value: "Ready")
+                        detailRow("Recipe", value: report.experimentRecipeID.rawValue)
+                        detailRow("Procedure", value: report.procedureVersion)
+                        detailRow("Final Share bytes", value: report.finalShareByteCount.formatted())
+                        digestDetailRow("Final Share SHA-256", value: report.finalShareSHA256)
+                        digestDetailRow("Software Export SHA-256", value: report.softwareExport.envelopeSHA256)
+                        digestDetailRow("Capture SHA-256", value: report.softwareExport.capture.sha256)
+                        detailRow("Capture session", value: report.softwareExport.capture.captureSessionID.uuidString)
+                        detailRow("Recorded events", value: report.softwareExport.capture.recordCount.formatted())
+                        detailRow("Raw value events", value: report.softwareExport.capture.rawValueRecordCount.formatted())
+                        detailRow("Build", value: report.softwareExport.buildIdentifier)
+                        detailRow("Build instance", value: report.buildInstanceID)
+                        detailRow("Source commit", value: report.softwareExport.sourceCommitSHA)
+                        digestDetailRow("Runtime executable SHA-256", value: report.softwareExport.executableSHA256)
+                    } else if let artifact = coordinator.finalizedArtifact {
+                        detailRow("Analysis readiness", value: "Not yet verified")
+                        detailRow("Capture bytes", value: artifact.captureJSON.count.formatted())
+                        detailRow("Observation windows", value: artifact.powerCycleResult.windows.count.formatted())
                     }
 #endif
 
