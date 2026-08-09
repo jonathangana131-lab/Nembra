@@ -1,0 +1,75 @@
+name: TEMP f853 Capture acceptance harness repair
+
+on:
+  push:
+    branches:
+      - automation/es80-f853-acceptance-harness-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Guard exact parent
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "f853cdf2c65e0c187a524d1af64feef9ecdb5fc7"
+      - name: Apply narrow demonstrated acceptance repairs
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          app_tests = Path('NembraAppTests/NembraAppTests.swift')
+          text = app_tests.read_text()
+          replacements = {
+              'XCTAssertTrue(shell.contains("observation timer"))':
+                  'XCTAssertTrue(shell.contains("This timer is guidance only. Nembra verifies the required observation before accepting this check."))',
+              'XCTAssertTrue(shell.contains("The package producer, not this timer"))':
+                  'XCTAssertTrue(shell.contains("finishing early cannot create a valid result"))',
+              'XCTAssertTrue(shell.contains("Unavailable; waiting for accepted Horizon authority"))':
+                  'XCTAssertTrue(shell.contains("Unavailable; waiting for the required observation period"))',
+          }
+          for old, new in replacements.items():
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one AppTests occurrence of {old!r}, got {count}')
+              text = text.replace(old, new)
+          app_tests.write_text(text)
+
+          ui_tests = Path('NembraUITests/ES80ResearchCaptureUITests.swift')
+          text = ui_tests.read_text()
+          old = 'source.contains("if let data = finalShareData")'
+          new = 'source.contains("guard let data = finalShareData")'
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'expected exactly one final-Share stale syntax assertion, got {count}')
+          text = text.replace(old, new)
+
+          # XCTest orientation changes are asynchronous. A prior landscape test left subsequent
+          # portrait/a11y cases running in an 844x390 landscape viewport in retained xcresult
+          # evidence. Match the existing RideUITests discipline: request portrait at the start of
+          # every @MainActor test unless that test already does so explicitly.
+          pattern = re.compile(r'(@MainActor\n    func test[^\n]*\{\n)(?!        XCUIDevice\.shared\.orientation = \.portrait\n)')
+          text, inserted = pattern.subn(r'\1        XCUIDevice.shared.orientation = .portrait\n', text)
+          if inserted < 4:
+              raise SystemExit(f'expected multiple portrait-isolation insertions, got {inserted}')
+          ui_tests.write_text(text)
+          print(f'portrait isolation inserted into {inserted} @MainActor tests')
+          PY
+          git diff --check
+          git diff -- NembraAppTests/NembraAppTests.swift NembraUITests/ES80ResearchCaptureUITests.swift
+      - name: Commit repaired test contracts
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add NembraAppTests/NembraAppTests.swift NembraUITests/ES80ResearchCaptureUITests.swift
+          git commit -m "test(capture): repair exact-head acceptance harness"
+          git push origin HEAD:automation/es80-f853-acceptance-harness-gpt56
