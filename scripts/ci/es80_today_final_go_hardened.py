@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """Canonical hardened entrypoint for the external V14 ES80 TODAY Final GO record.
 
-The Final GO foundation remains the closed-world validator for signed candidate, independent
-crosscheck, install/runtime rendezvous, and operator attestation. This executable loads that
-foundation directly; the historical `es80_today_final_go_record.py` compatibility module is
-non-authorizing for both direct execution and imported builder calls.
+The private Final GO implementation remains the closed-world validator for signed candidate,
+independent crosscheck, install/runtime rendezvous, and operator attestation. This executable loads
+that implementation directly; the historical `es80_today_final_go_record.py` and public
+`es80_today_final_go_foundation.py` compatibility surfaces are non-authorizing for imported builder
+calls and direct execution.
 
 This entrypoint removes the authority defects that must not remain on the executable GO path:
 - trusted Xcode acceptance comes only from the owner-commanded default-branch workflow whose Git
   blob is pinned independently from the candidate PR head;
-- trusted workflow Git-object lookup reuses the foundation's producer-owned, closed Git custody
-  boundary rather than caller PATH/config/replacement semantics; and
+- trusted workflow Git-object lookup reuses the private validator's producer-owned, closed Git
+  custody boundary rather than caller PATH/config/replacement semantics; and
 - record publication is failure-atomic after no-replace publication.
 
 No physical result is created by this tool. A generated GO record is procedural authorization for
@@ -36,7 +37,7 @@ def _load(name: str, filename: str):
     return module
 
 
-foundation = _load("nembra_final_go_foundation", "es80_today_final_go_foundation.py")
+foundation = _load("nembra_final_go_foundation_impl", "_es80_today_final_go_foundation_impl.py")
 trusted_xcode = _load(
     "nembra_trusted_capture_xcode_subject",
     "es80_today_trusted_capture_xcode_subject.py",
@@ -47,13 +48,7 @@ FinalGoError = foundation.FinalGoError
 
 
 def _workflow_blob_sha_at_commit(tooling_repo: Path, commit: str, path: str) -> str:
-    """Resolve the workflow blob only through the foundation's closed Git authority boundary.
-
-    `foundation._git` pins `/usr/bin/git`, removes system/global config, disables replacement
-    objects, restricts PATH, and rejects symlink/non-directory repository custody. Reusing that
-    boundary prevents caller PATH, Git config, or refs/replace state from manufacturing the trusted
-    workflow blob identity.
-    """
+    """Resolve the workflow blob only through the private validator's closed Git boundary."""
     try:
         return foundation._git(tooling_repo, "rev-parse", f"{commit}:{path}").strip().lower()
     except FinalGoError:
@@ -80,7 +75,7 @@ def build_final_go_record(
     github_get_json: Callable[[str], tuple[bytes, dict[str, Any]]] = foundation._api_get_json,
     now_utc=None,
 ) -> dict[str, Any]:
-    """Run the foundation with its Xcode trust seam replaced by pinned default-branch authority."""
+    """Run the private validator with its Xcode trust seam replaced by default-branch authority."""
 
     def trusted_subject_adapter(
         *,
