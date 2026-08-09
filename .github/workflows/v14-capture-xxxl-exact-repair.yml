@@ -1,0 +1,516 @@
+name: V14 Capture XXXL Exact Repair
+
+on:
+  push:
+    branches:
+      - recovery/v14-capture-xxxl-exact-019fa-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact parent and recompose Accessibility XXXL
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "019fa4b2d1446d91871b0736a543c12138a6a346"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              s = p.read_text()
+              n = s.count(old)
+              if n != 1:
+                  raise SystemExit(f"{path}: expected one anchor, got {n}: {old[:80]!r}")
+              p.write_text(s.replace(old, new, 1))
+
+          shell = "NembraApp/Features/Research/ES80CaptureShellView.swift"
+          app = "NembraApp/App/NembraApp.swift"
+
+          # Shell geometry: Accessibility gets a deliberate compact composition, never a Dynamic Type cap.
+          replace_once(shell,
+              '''                .padding(.horizontal, 22)''',
+              '''                .padding(.horizontal, captureHorizontalPadding)''')
+          replace_once(shell,
+              '''    private var captureVerticalSpacing: CGFloat {
+        if verticalSizeClass == .compact { return 16 }
+        return dynamicTypeSize.isAccessibilitySize ? 16 : 24
+    }
+
+    private var captureTopPadding: CGFloat {
+        if verticalSizeClass == .compact { return 10 }
+        return dynamicTypeSize.isAccessibilitySize ? 12 : 18
+    }
+
+    private var captureBottomPadding: CGFloat { verticalSizeClass == .compact ? 20 : 42 }''',
+              '''    private var usesAccessibilityLayout: Bool { dynamicTypeSize.isAccessibilitySize }
+
+    private var captureVerticalSpacing: CGFloat {
+        if usesAccessibilityLayout { return 10 }
+        return verticalSizeClass == .compact ? 16 : 24
+    }
+
+    private var captureHorizontalPadding: CGFloat { usesAccessibilityLayout ? 16 : 22 }
+
+    private var captureTopPadding: CGFloat {
+        if usesAccessibilityLayout { return 6 }
+        return verticalSizeClass == .compact ? 10 : 18
+    }
+
+    private var captureBottomPadding: CGFloat {
+        if usesAccessibilityLayout { return 18 }
+        return verticalSizeClass == .compact ? 20 : 42
+    }''')
+
+          # Keep synthetic software-only truth unmistakable while avoiding a multi-hundred-point badge at AX XXXL.
+          replace_once(shell,
+              '''    private func simulatorQABadge(
+        _ snapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot
+    ) -> some View {
+        HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: 9) {
+            Image(systemName: "hammer.fill")
+                .accessibilityHidden(true)
+            Text("\\(snapshot.evidenceLabel) · SYNTHETIC SOFTWARE STATE")
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.caption.monospaced().weight(.bold))
+        .foregroundStyle(.orange)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            .orange.opacity(0.10),
+            in: RoundedRectangle(
+                cornerRadius: dynamicTypeSize.isAccessibilitySize ? 14 : 999,
+                style: .continuous
+            )
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            snapshot.accessibilitySummary
+                + " No Bluetooth transport or capture evidence is created by this presentation fixture."
+        )
+        .accessibilityIdentifier("es80.capture.simulator-qa")
+    }''',
+              '''    @ViewBuilder
+    private func simulatorQABadge(
+        _ snapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot
+    ) -> some View {
+        Group {
+            if usesAccessibilityLayout {
+                Text("SIMULATOR QA · SYNTHETIC")
+                    .font(.caption2.monospaced().weight(.bold))
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(
+                        .orange.opacity(0.10),
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    )
+            } else {
+                HStack(spacing: 9) {
+                    Image(systemName: "hammer.fill")
+                        .accessibilityHidden(true)
+                    Text("\\(snapshot.evidenceLabel) · SYNTHETIC SOFTWARE STATE")
+                }
+                .font(.caption.monospaced().weight(.bold))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.orange.opacity(0.10), in: Capsule())
+            }
+        }
+        .foregroundStyle(.orange)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            snapshot.accessibilitySummary
+                + " Synthetic software state. No Bluetooth transport or capture evidence is created by this presentation fixture."
+        )
+        .accessibilityIdentifier("es80.capture.simulator-qa")
+    }''')
+
+          # Collapse explanatory card chrome at Accessibility sizes; preserve the full VoiceOver truth boundary.
+          replace_once(shell,
+              '''    private var passiveSafetyPanel: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "shield.lefthalf.filled")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.white)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text("One continuous capture")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+
+                Text("Nembra keeps signal matching and read-only capture in one continuous run. It never sends scooter commands and never chooses a signal from its name, signal strength, or service hints.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(16)
+        .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("es80.capture.single-authority")
+    }''',
+              '''    @ViewBuilder
+    private var passiveSafetyPanel: some View {
+        Group {
+            if usesAccessibilityLayout {
+                Text("Passive · read only · no scooter commands")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(10)
+            } else {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "shield.lefthalf.filled")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("One continuous capture")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+
+                        Text("Nembra keeps signal matching and read-only capture in one continuous run. It never sends scooter commands and never chooses a signal from its name, signal strength, or service hints.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(16)
+            }
+        }
+        .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("One continuous passive, read-only capture. Nembra never sends scooter commands and never chooses a signal from its name, signal strength, or service hints.")
+        .accessibilityIdentifier("es80.capture.single-authority")
+    }''')
+
+          # Preserve all six stages but remove six oversized AX text labels; semantic stage remains explicit above the rail.
+          replace_once(shell,
+              '''        let labels = ["OFF 1", "ON 1", "OFF 2", "ON 2", "READY", "SEAL"]
+
+        return VStack(alignment: .leading, spacing: 10) {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("CAPTURE PROGRESS")
+                        .font(.caption.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+                    Text(progressStage(status: status, completedWindows: completed))
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3),
+                    spacing: 12
+                ) {
+                    ForEach(0..<6, id: \.self) { index in
+                        VStack(alignment: .leading, spacing: 6) {
+                            progressSegment(
+                                index: index,
+                                completedWindows: completed,
+                                currentWindow: current,
+                                status: status
+                            )
+                            Text(labels[index])
+                                .font(.caption2.monospaced().weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            } else {''',
+              '''        return VStack(alignment: .leading, spacing: usesAccessibilityLayout ? 6 : 10) {
+            if usesAccessibilityLayout {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("CAPTURE PROGRESS")
+                        .font(.caption2.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    Text(progressStage(status: status, completedWindows: completed))
+                        .font(.caption2.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.white)
+                }
+
+                HStack(spacing: 5) {
+                    ForEach(0..<6, id: \.self) { index in
+                        progressSegment(
+                            index: index,
+                            completedWindows: completed,
+                            currentWindow: current,
+                            status: status
+                        )
+                    }
+                }
+            } else {''')
+
+          # Compact deterministic health at AX sizes without inventing a confidence score.
+          replace_once(shell,
+              '''            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    healthItem("SIGNAL", value: connection == .connected ? "MATCHED" : "WAIT")
+                    Divider().overlay(.white.opacity(0.12))
+                    healthItem("DISCOVERY", value: observationReady ? "READY" : "WAIT")
+                    Divider().overlay(.white.opacity(0.12))
+                    healthItem("SEAL", value: horizonReady ? "READY" : "HOLD")
+                }
+            } else {''',
+              '''            if usesAccessibilityLayout {
+                Text(
+                    "Signal \\(connection == .connected ? "matched" : "waiting") · "
+                        + "Discovery \\(observationReady ? "ready" : "waiting") · "
+                        + "Seal \\(horizonReady ? "ready" : "waiting")"
+                )
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
+            } else {''')
+          replace_once(shell,
+              '''        .padding(14)
+        .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .accessibilityElement(children: .combine)''',
+              '''        .padding(usesAccessibilityLayout ? 9 : 14)
+        .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .accessibilityElement(children: .ignore)''')
+
+          # Completion keeps primary state/actions above the fold at AX XXXL; full synthetic boundary remains in accessibility semantics.
+          replace_once(shell,
+              '''    private var completionPanel: some View {
+        let analysisReady = presentationAnalysisReady
+        return VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(analysisReady ? .white : .white.opacity(0.12))
+                        .frame(width: 52, height: 52)
+                    Image(systemName: analysisReady ? "checkmark" : "lock.fill")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(analysisReady ? .black : .white)
+                }
+                .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(analysisReady ? "CAPTURE COMPLETE" : "CAPTURE SEALED")
+                        .font(.caption.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+                    Text(analysisReady ? "Ready for analysis" : "Integrity check required")
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(.white)
+                }
+            }
+
+            completionDescription''',
+              '''    private var completionPanel: some View {
+        let analysisReady = presentationAnalysisReady
+        return VStack(alignment: .leading, spacing: usesAccessibilityLayout ? 8 : 16) {
+            HStack(spacing: usesAccessibilityLayout ? 0 : 14) {
+                if !usesAccessibilityLayout {
+                    ZStack {
+                        Circle()
+                            .fill(analysisReady ? .white : .white.opacity(0.12))
+                            .frame(width: 52, height: 52)
+                        Image(systemName: analysisReady ? "checkmark" : "lock.fill")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(analysisReady ? .black : .white)
+                    }
+                    .accessibilityHidden(true)
+                }
+
+                VStack(alignment: .leading, spacing: usesAccessibilityLayout ? 2 : 4) {
+                    Text(analysisReady ? "CAPTURE COMPLETE" : "CAPTURE SEALED")
+                        .font((usesAccessibilityLayout ? Font.caption2 : Font.caption).monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+                    Text(analysisReady ? "Ready for analysis" : "Integrity check required")
+                        .font(usesAccessibilityLayout ? .headline.weight(.semibold) : .title2.weight(.semibold))
+                        .foregroundStyle(.white)
+                }
+            }
+
+            completionDescription''')
+          replace_once(shell,
+              '''        .padding(18)
+        .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 20, style: .continuous))''',
+              '''        .padding(usesAccessibilityLayout ? 11 : 18)
+        .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 20, style: .continuous))''')
+          replace_once(shell,
+              '''        if simulatorQASnapshot != nil {
+            Text("Synthetic Simulator QA presentation only. No capture artifact bytes were created, and no physical, RF, protocol, telemetry, or command evidence is claimed.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)''',
+              '''        if simulatorQASnapshot != nil {
+            Text(
+                usesAccessibilityLayout
+                    ? "Synthetic Simulator QA only · no physical evidence"
+                    : "Synthetic Simulator QA presentation only. No capture artifact bytes were created, and no physical, RF, protocol, telemetry, or command evidence is claimed."
+            )
+            .font(usesAccessibilityLayout ? .caption : .subheadline)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityLabel("Synthetic Simulator QA presentation only. No capture artifact bytes were created, and no physical, RF, protocol, telemetry, or command evidence is claimed.")''')
+
+          # NO-GO: the four required viewport elements become the whole AX-first composition.
+          replace_once(app,
+              '''spacing: verticalSizeClass == .compact ? 10 : (isAccessibilityLayout ? 14 : 28)''',
+              '''spacing: verticalSizeClass == .compact ? 10 : (isAccessibilityLayout ? 8 : 28)''')
+          replace_once(app,
+              '''spacing: verticalSizeClass == .compact ? 6 : (isAccessibilityLayout ? 8 : 14)''',
+              '''spacing: verticalSizeClass == .compact ? 6 : (isAccessibilityLayout ? 4 : 14)''')
+          replace_once(app,
+              '''.tracking(1.4)
+                                .foregroundStyle(.secondary)''',
+              '''.tracking(isAccessibilityLayout ? 0.8 : 1.4)
+                                .foregroundStyle(.secondary)''')
+          replace_once(app,
+              '''isAccessibilityLayout || verticalSizeClass == .compact ? .title2 : .largeTitle,''',
+              '''isAccessibilityLayout ? .headline : (verticalSizeClass == .compact ? .title2 : .largeTitle),''')
+          replace_once(app,
+              '''                    Text(
+                        isAccessibilityLayout
+                            ? "Final exact-build checks are still in progress."
+                            : "This build is still finishing its final checks before it can collect real ES80 data."
+                    )
+                    .font(
+                        isAccessibilityLayout
+                            ? .body.weight(.medium)
+                            : (verticalSizeClass == .compact
+                                ? .subheadline.weight(.medium)
+                                : .title3.weight(.medium))
+                    )
+                    .foregroundStyle(.white)
+                    .fixedSize(horizontal: false, vertical: true)''',
+              '''                    if !isAccessibilityLayout {
+                        Text("This build is still finishing its final checks before it can collect real ES80 data.")
+                            .font(
+                                verticalSizeClass == .compact
+                                    ? .subheadline.weight(.medium)
+                                    : .title3.weight(.medium)
+                            )
+                            .foregroundStyle(.white)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }''')
+          replace_once(app,
+              '''                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "exclamationmark.lock.fill")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.orange)
+                        .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Not ready for scooter capture yet")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+
+                        Text(
+                            isAccessibilityLayout
+                                ? "Exact-build checks must pass before Bluetooth capture can begin."
+                                : "Nembra keeps every scooter action locked until the exact app build passes its required checks and is explicitly cleared for this physical procedure. When this screen unlocks, Capture will guide the OFF / ON sequence step by step."
+                        )
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 14 : 18))''',
+              '''                HStack(alignment: .top, spacing: isAccessibilityLayout ? 0 : 12) {
+                    if !isAccessibilityLayout {
+                        Image(systemName: "exclamationmark.lock.fill")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(.orange)
+                            .accessibilityHidden(true)
+                    }
+
+                    VStack(alignment: .leading, spacing: isAccessibilityLayout ? 2 : 6) {
+                        Text(isAccessibilityLayout ? "PHYSICAL CAPTURE · NO-GO" : "Not ready for scooter capture yet")
+                            .font(isAccessibilityLayout ? .caption2.monospaced().weight(.bold) : .headline)
+                            .foregroundStyle(isAccessibilityLayout ? .orange : .white)
+
+                        if !isAccessibilityLayout {
+                            Text("Nembra keeps every scooter action locked until the exact app build passes its required checks and is explicitly cleared for this physical procedure. When this screen unlocks, Capture will guide the OFF / ON sequence step by step.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                .padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 8 : 18))''')
+          replace_once(app,
+              '''                VStack(alignment: .leading, spacing: 14) {''',
+              '''                VStack(alignment: .leading, spacing: isAccessibilityLayout ? 5 : 14) {''')
+          replace_once(app,
+              '''                                Text("Engineering details")
+                                    .font(.subheadline.weight(.semibold))''',
+              '''                                Text("Engineering details")
+                                    .font(isAccessibilityLayout ? .caption.weight(.semibold) : .subheadline.weight(.semibold))''')
+          replace_once(app,
+              '''                .padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 14 : 18))
+                .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+
+                Text("No scooter action is required yet. Capture can only unlock on a Nembra build explicitly cleared for this physical procedure; changing a setting or preference cannot bypass this lock.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)''',
+              '''                .padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 7 : 18))
+                .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+
+                if !isAccessibilityLayout {
+                    Text("No scooter action is required yet. Capture can only unlock on a Nembra build explicitly cleared for this physical procedure; changing a setting or preference cannot bypass this lock.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }''')
+          replace_once(app,
+              '''            .padding(.horizontal, isAccessibilityLayout ? 18 : 22)
+            .padding(.top, verticalSizeClass == .compact ? 8 : (isAccessibilityLayout ? 12 : 18))
+            .padding(.bottom, verticalSizeClass == .compact ? 20 : (isAccessibilityLayout ? 32 : 42))''',
+              '''            .padding(.horizontal, isAccessibilityLayout ? 14 : 22)
+            .padding(.top, verticalSizeClass == .compact ? 8 : (isAccessibilityLayout ? 6 : 18))
+            .padding(.bottom, verticalSizeClass == .compact ? 20 : (isAccessibilityLayout ? 18 : 42))''')
+
+          # Fail closed if we accidentally cap type or lose critical truth/test hooks.
+          shell_text = Path(shell).read_text()
+          app_text = Path(app).read_text()
+          combined = shell_text + app_text
+          required = [
+              "SIMULATOR QA · SYNTHETIC",
+              "Synthetic Simulator QA only · no physical evidence",
+              "PASSIVE / READ ONLY",
+              "PHYSICAL CAPTURE · NO-GO",
+              'accessibilityIdentifier("es80.capture.physical-run-locked")',
+              'accessibilityIdentifier("es80.capture.engineering-details")',
+              'accessibilityIdentifier("es80.capture.complete")',
+          ]
+          missing = [x for x in required if x not in combined]
+          if missing:
+              raise SystemExit(f"missing repaired truth contract: {missing}")
+          if ".dynamicTypeSize(" in shell_text or ".dynamicTypeSize(" in app_text:
+              raise SystemExit("repair must not cap Dynamic Type")
+          PY
+
+          git diff --check
+          git diff -- NembraApp/App/NembraApp.swift NembraApp/Features/Research/ES80CaptureShellView.swift
+
+      - name: Publish product head and erase bootstrap workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/v14-capture-xxxl-exact-repair.yml
+          git config user.name "nembra-v14-closure"
+          git config user.email "nembra-v14-closure@users.noreply.github.com"
+          git add NembraApp/App/NembraApp.swift NembraApp/Features/Research/ES80CaptureShellView.swift
+          git diff --cached --check
+          git commit -m "[Capture V14] Recompose exact Accessibility XXXL product states"
+          git push origin HEAD:recovery/v14-capture-xxxl-exact-019fa-gpt56
