@@ -1,0 +1,95 @@
+name: V14 Capture janitor workflow identity repair once
+
+on:
+  push:
+    branches:
+      - 'repair/v14-capture-janitor-workflow-identity/gpt56-go'
+    paths:
+      - '.github/workflows/v14-capture-janitor-workflow-identity-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact pushed head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind stale trusted runs to exact workflow blob identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/ci/capture_trusted_queue_janitor.py')
+          text = path.read_text(encoding='utf-8')
+
+          old_doc = '''GitHub identifies an issue_comment workflow run with the default-branch SHA, not\nthe commented PR SHA. This helper therefore ignores run.head_sha as authority.\nIt accepts only the completed successful hosted resolver job's closed-form log:\n`Resolved PR #<number> exact head <40-lowercase-hex>`. Anything ambiguous is\npreserved. A run is cancellable only when current GitHub PR truth proves that\nfrozen resolver authority is no longer the open same-repo exact head.\n'''
+          new_doc = '''GitHub identifies an issue_comment workflow run with the default-branch SHA, not\nthe commented PR SHA. This helper therefore never treats run.head_sha as PR\nauthority, but it does bind that SHA to the exact trusted-workflow Git blob that\nlaunched the run. It accepts only the completed successful hosted resolver job's\nclosed-form log: `Resolved PR #<number> exact head <40-lowercase-hex>`. Anything\nambiguous is preserved. A run is cancellable only when current GitHub PR truth\nproves that frozen resolver authority is stale, or when the exact workflow blob\nthat launched the run differs from the locally checked-out trusted workflow.\n'''
+          if text.count(old_doc) != 1:
+              raise SystemExit('unexpected janitor docstring seam')
+          text = text.replace(old_doc, new_doc, 1)
+
+          old_imports = '''import argparse\nimport datetime as dt\nimport json\nimport os\nimport re\nimport sys\n'''
+          new_imports = '''import argparse\nimport datetime as dt\nimport hashlib\nimport json\nimport os\nimport re\nimport sys\n'''
+          if text.count(old_imports) != 1:
+              raise SystemExit('unexpected janitor import seam')
+          text = text.replace(old_imports, new_imports, 1)
+
+          old_constants = '''PATTERN = re.compile(rb"Resolved PR #([1-9][0-9]*) exact head ([0-9a-f]{40})(?![0-9a-f])")\nSTATUSES = ("queued", "in_progress")\n'''
+          new_constants = '''PATTERN = re.compile(rb"Resolved PR #([1-9][0-9]*) exact head ([0-9a-f]{40})(?![0-9a-f])")\nSHA40 = re.compile(r"[0-9a-f]{40}")\nSTATUSES = ("queued", "in_progress")\n'''
+          if text.count(old_constants) != 1:
+              raise SystemExit('unexpected janitor constants seam')
+          text = text.replace(old_constants, new_constants, 1)
+
+          old_after_age = '''def parse_authority(log: bytes) -> Authority | None:\n'''
+          new_after_age = '''def git_blob_sha1(data: bytes) -> str:\n    header = b"blob " + str(len(data)).encode("ascii") + b"\\0"\n    return hashlib.sha1(header + data).hexdigest()\n\n\ndef stale_workflow_reason(run_blob: str, current_blob: str) -> str | None:\n    if SHA40.fullmatch(run_blob) is None or SHA40.fullmatch(current_blob) is None:\n        return None\n    if run_blob != current_blob:\n        return "trusted Capture workflow authority is stale"\n    return None\n\n\ndef parse_authority(log: bytes) -> Authority | None:\n'''
+          if text.count(old_after_age) != 1:
+              raise SystemExit('unexpected janitor helper seam')
+          text = text.replace(old_after_age, new_after_age, 1)
+
+          old_pull = '''    def pull(self, number: int) -> dict[str, Any]:\n        value = self.json("GET", f"/repos/{self.owner}/{self.repo}/pulls/{number}")\n        if not isinstance(value, dict):\n            raise RuntimeError(f"PR #{number} returned no object")\n        return value\n\n    def cancel(self, run_id: int) -> None:\n'''
+          new_pull = '''    def pull(self, number: int) -> dict[str, Any]:\n        value = self.json("GET", f"/repos/{self.owner}/{self.repo}/pulls/{number}")\n        if not isinstance(value, dict):\n            raise RuntimeError(f"PR #{number} returned no object")\n        return value\n\n    def workflow_blob(self, ref: str) -> str:\n        if SHA40.fullmatch(ref) is None:\n            raise RuntimeError("trusted Capture run source SHA is not canonical lowercase 40-hex")\n        query = urllib.parse.urlencode({"ref": ref})\n        value = self.json(\n            "GET",\n            f"/repos/{self.owner}/{self.repo}/contents/{WORKFLOW_PATH}?{query}",\n        )\n        if not isinstance(value, dict):\n            raise RuntimeError("trusted Capture workflow source returned no object")\n        blob = value.get("sha")\n        if not isinstance(blob, str) or SHA40.fullmatch(blob) is None:\n            raise RuntimeError("trusted Capture workflow source returned no canonical blob SHA")\n        return blob\n\n    def cancel(self, run_id: int) -> None:\n'''
+          if text.count(old_pull) != 1:
+              raise SystemExit('unexpected janitor GH seam')
+          text = text.replace(old_pull, new_pull, 1)
+
+          old_test_tail = '''    closed = json.loads(json.dumps(current)); closed["state"] = "closed"\n    assert stale_reason(authority, closed, "owner/repo") == "trusted Capture PR is no longer open"\n    print("capture_trusted_queue_janitor self-test: PASS")\n'''
+          new_test_tail = '''    closed = json.loads(json.dumps(current)); closed["state"] = "closed"\n    assert stale_reason(authority, closed, "owner/repo") == "trusted Capture PR is no longer open"\n    assert git_blob_sha1(b"hello\\n") == "ce013625030ba8dba906f756967f9e9ca394464a"\n    assert stale_workflow_reason("c" * 40, "c" * 40) is None\n    assert stale_workflow_reason("c" * 40, "d" * 40) == "trusted Capture workflow authority is stale"\n    assert stale_workflow_reason("not-a-sha", "d" * 40) is None\n    print("capture_trusted_queue_janitor self-test: PASS")\n'''
+          if text.count(old_test_tail) != 1:
+              raise SystemExit('unexpected janitor self-test seam')
+          text = text.replace(old_test_tail, new_test_tail, 1)
+
+          old_init = '''    gh = GH(args.token, args.repository)\n    now = dt.datetime.now(dt.timezone.utc)\n    stale: list[tuple[int, Authority, str]] = []\n'''
+          new_init = '''    gh = GH(args.token, args.repository)\n    now = dt.datetime.now(dt.timezone.utc)\n    try:\n        current_workflow_blob = git_blob_sha1(open(WORKFLOW_PATH, "rb").read())\n    except OSError as exc:\n        raise SystemExit(f"cannot read locally checked-out trusted workflow: {exc}") from exc\n    stale: list[tuple[int, Authority, str]] = []\n'''
+          if text.count(old_init) != 1:
+              raise SystemExit('unexpected janitor main init seam')
+          text = text.replace(old_init, new_init, 1)
+
+          old_reason = '''            reason = stale_reason(authority, gh.pull(authority.pr), gh.repository)\n        except RuntimeError as exc:\n'''
+          new_reason = '''            reason = stale_reason(authority, gh.pull(authority.pr), gh.repository)\n            if reason is None:\n                run_source_sha = run.get("head_sha")\n                if not isinstance(run_source_sha, str) or SHA40.fullmatch(run_source_sha) is None:\n                    raise RuntimeError("trusted Capture run source SHA unavailable/ambiguous")\n                reason = stale_workflow_reason(\n                    gh.workflow_blob(run_source_sha),\n                    current_workflow_blob,\n                )\n        except RuntimeError as exc:\n'''
+          if text.count(old_reason) != 1:
+              raise SystemExit('unexpected janitor reason seam')
+          text = text.replace(old_reason, new_reason, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          python3 -m py_compile scripts/ci/capture_trusted_queue_janitor.py
+          python3 scripts/ci/capture_trusted_queue_janitor.py --self-test
+          git diff --check
+          git diff -- scripts/ci/capture_trusted_queue_janitor.py
+
+          rm -- .github/workflows/v14-capture-janitor-workflow-identity-once.yml
+          git config user.name 'nembra-v14-bot'
+          git config user.email 'nembra-v14-bot@users.noreply.github.com'
+          git add scripts/ci/capture_trusted_queue_janitor.py .github/workflows/v14-capture-janitor-workflow-identity-once.yml
+          git diff --cached --check
+          git commit -m 'fix(capture): cancel stale trusted workflow generations'
+          git push origin HEAD:repair/v14-capture-janitor-workflow-identity/gpt56-go
