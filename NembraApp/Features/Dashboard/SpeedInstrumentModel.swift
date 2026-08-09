@@ -69,6 +69,7 @@ final class SpeedInstrumentModel {
     private(set) var latestMeasurementSource: SpeedTelemetrySource?
     private(set) var latestMeasuredKilometersPerHour: Double?
     private(set) var latestMeasurementUptimeNanoseconds: UInt64?
+    private(set) var latestAcceptedSample: SpeedTelemetrySample?
     private(set) var isAnimationActive = false
 
     @ObservationIgnored private var interpolator = SpeedDisplayInterpolator()
@@ -128,6 +129,7 @@ final class SpeedInstrumentModel {
         latestMeasurementSource = sample.source
         latestMeasuredKilometersPerHour = sample.kilometersPerHour
         latestMeasurementUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
+        latestAcceptedSample = sample
         measurementRevision &+= 1
 
         let startsInterpolating = interpolator
@@ -200,11 +202,10 @@ final class SpeedInstrumentModel {
             )
 
         case let .live(sample):
-            let isInterpolatorTargetCurrent = latestMeasurementSource == sample.source
-                && latestMeasurementUptimeNanoseconds == sample.receivedAtUptimeNanoseconds
-                && latestMeasuredKilometersPerHour == sample.kilometersPerHour
-
-            guard isInterpolatorTargetCurrent else {
+            // Match the complete accepted display-target identity. Partial matching
+            // on source + receipt uptime + value can collide with a distinct sample
+            // whose measurement clock or accuracy differs and replay an old render.
+            guard latestAcceptedSample == sample else {
                 return acceptedSourceFallbackFrame(
                     kilometersPerHour: sample.kilometersPerHour
                 )
@@ -284,6 +285,7 @@ final class SpeedInstrumentModel {
         latestMeasurementSource = nil
         latestMeasuredKilometersPerHour = nil
         latestMeasurementUptimeNanoseconds = nil
+        latestAcceptedSample = nil
     }
 }
 
@@ -306,11 +308,12 @@ struct DashboardSpeedInstrumentView: View {
         let speedAvailability = rawSpeedAvailability.dashboardPresentationAvailability(
             allowsSimulatorQA: allowsSimulatorQA
         )
+        let hasLiveSpeedEvidence: Bool = if case .live = speedAvailability { true } else { false }
 
         TimelineView(
             .animation(
                 minimumInterval: 1.0 / 60.0,
-                paused: reduceMotion || !model.isAnimationActive
+                paused: reduceMotion || !hasLiveSpeedEvidence || !model.isAnimationActive
             )
         ) { _ in
             let frame = model.presentationFrame(
