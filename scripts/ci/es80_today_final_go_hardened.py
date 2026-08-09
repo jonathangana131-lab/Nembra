@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Canonical hardened entrypoint for the external V14 ES80 TODAY Final GO record.
 
-The Final GO foundation remains the closed-world validator for signed candidate, independent
-crosscheck, install/runtime rendezvous, and operator attestation. This executable loads that
-foundation directly; the historical `es80_today_final_go_record.py` compatibility module is
-non-authorizing for both direct execution and imported builder calls.
+The private Final GO foundation implementation remains the closed-world validator for signed
+candidate, independent crosscheck, install/runtime rendezvous, and operator attestation. This
+executable loads that implementation directly; both public compatibility/foundation modules are
+non-authorizing for direct execution and ordinary builder imports.
 
 This entrypoint removes the authority defects that must not remain on the executable GO path:
 - trusted Xcode acceptance comes only from the owner-commanded default-branch workflow whose Git
@@ -36,7 +36,10 @@ def _load(name: str, filename: str):
     return module
 
 
-foundation = _load("nembra_final_go_foundation", "es80_today_final_go_foundation.py")
+foundation = _load(
+    "nembra_final_go_foundation_impl",
+    "_es80_today_final_go_foundation_impl.py",
+)
 trusted_xcode = _load(
     "nembra_trusted_capture_xcode_subject",
     "es80_today_trusted_capture_xcode_subject.py",
@@ -80,7 +83,7 @@ def build_final_go_record(
     github_get_json: Callable[[str], tuple[bytes, dict[str, Any]]] = foundation._api_get_json,
     now_utc=None,
 ) -> dict[str, Any]:
-    """Run the foundation with its Xcode trust seam replaced by pinned default-branch authority."""
+    """Run the private foundation with Xcode trust replaced by pinned default-branch authority."""
 
     def trusted_subject_adapter(
         *,
