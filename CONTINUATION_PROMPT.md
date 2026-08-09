@@ -4,6 +4,8 @@
 
 Until the first successful stationary passive ES80 artifact is collected, read and obey `CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md` immediately after resolving live GitHub.
 
+**Also read `CAPTURE_ONE_TIME_UTILITY_CONTRACT.md`. Nembra Capture is a one-time evidence utility, not a second flagship app. Its job is to collect the real ES80 Bluetooth artifact safely, clearly, and easily, then unlock development of the main Nembra app. Keep it clean and non-debug-looking, but do not spend flagship-level visual/polish capacity on it.**
+
 **Current closure objective: get one safe, installable, READ-ONLY Research Field Build collecting real ES80 data today.** Freeze noncritical Capture scope. Do not keep moving the flagship for release-grade hostile-host hardening, optional accessibility polish, haptics, forensic filesystem edge cases, analyzer hardening, or cosmetic perfection unless a demonstrated defect can block/crash/corrupt/mis-target the normal private stationary capture path.
 
 Once an integration closer declares a TODAY freeze candidate, stop landing noncritical changes, earn one exact-head trusted Xcode 27 acceptance, produce the exact signed developer/research build, deliberately authorize only the stationary passive `ES80-FINGERPRINT-v1` procedure, record the runbook, and collect the first artifact. Release-grade external cryptographic/hostile-environment hardening can resume after the data unlock.
@@ -33,11 +35,13 @@ Start with tools, not a giant plan:
 4. inspect newest Actions/Xcode runs;
 5. identify which lanes/files are actively owned;
 6. read `CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md` while it is active;
-7. read `SWARM_COORDINATION.md`;
-8. read `PROJECT_STATE.md` and this file only after live state is known;
-9. read only the relevant durable product/protocol/design docs;
-10. choose or recover one safe non-conflicting lane;
-11. execute immediately.
+7. read `CAPTURE_ONE_TIME_UTILITY_CONTRACT.md` while Capture is still needed for the first ES80 artifact;
+8. read `ADAPTIVE_SWARM_PRIORITY.md`;
+9. read `SWARM_COORDINATION.md`;
+10. read `PROJECT_STATE.md` and this file only after live state is known;
+11. read only the relevant durable product/protocol/design docs;
+12. choose or recover one safe non-conflicting lane;
+13. execute immediately.
 
 One chat = one worker = one isolated branch/lane. Existing changing branches are presumed owned. Do not push to another worker's branch. If an old useful lane is clearly stopped, recover it on a **new** branch from its exact durable head.
 
@@ -56,7 +60,7 @@ If the best-looking lane is already owned or would collide on the same high-cont
 
 Workers have **feature gravity, not PR gravity**. If the original PR/lane finishes, blocks, becomes superseded, or is taken by another worker, refresh GitHub and keep working on another safe closure rung instead of ending the chat or polling.
 
-CI/build waiting is not a stop condition. While CI runs, do useful non-conflicting work in the same flagship rather than repeatedly polling.
+CI/build waiting is not a stop condition. While CI runs, do useful non-conflicting work in the same flagship rather than repeatedly polling. Under `ADAPTIVE_SWARM_PRIORITY.md`, a scarce pending Capture gate normally keeps only a tiny closure crew; overflow workers move into the real Nembra product lanes.
 
 A `GO` session means continuous execution: inspect → choose safe lane → implement → test/review → checkpoint → refresh → self-reassign if needed → continue. One commit, PR, test, merge, screenshot, or green run never satisfies `GO` by itself while useful work remains.
 
@@ -87,11 +91,13 @@ Do not duplicate those implementations. Reconcile through their accepted depende
 
 The target ladder is:
 
-**accepted passive capture runtime → product capture shell → immutable physical capture artifact → repeated stock-app correlation → bounded offline framing/DP candidates → repeatable physical field verification → production read-only service → battery/power integration → cockpit/range/propulsion product closure.**
+**accepted passive capture runtime → simple one-time product capture shell → immutable physical capture artifact → repeated stock-app correlation → bounded offline framing/DP candidates → repeatable physical field verification → production read-only service → battery/power integration → cockpit/range/propulsion product closure.**
 
 A framing candidate or numeric/electrical correlation is not physical ES80 field truth. No DP should become Battery, Voltage, Current, Power, Speed, Throttle, Regen, or a command until its physical source, exact stream identity, scale, signedness, units, cadence, continuity, and provenance are repeatably verified.
 
 When the capture toolchain is accepted, prefer one short, precise, safe **passive stationary physical experiment** over more speculative protocol abstraction. Preserve the raw artifact unchanged and let Nembra tooling do the offline analysis; do not make the user manually interpret hex.
+
+After the first useful artifact, stop treating Capture as a flagship product surface. Shift swarm gravity into extracting physical truth and integrating it into the main Nembra app.
 
 ## Other active dependency surfaces
 Inspect live PRs before choosing work; this snapshot is intentionally incomplete.
@@ -125,6 +131,8 @@ A commit, passing unit test, screenshot, PR, green ancestor run, or merge is not
 For package/domain-only work, use focused compile/tests and adversarial checks appropriate to risk.
 
 For app-visible work, require real iPhone 12 / iOS 27 Simulator interaction and screenshots, then critique/refine. Check Dynamic Type, VoiceOver/semantic output, Reduce Motion/Transparency/contrast as relevant. Profile when high-frequency rendering changes.
+
+For the one-time Capture utility, apply this quality bar only to what makes the actual field flow clear, safe, easy, and acceptance-capable. Do not delay the first artifact for ornamental motion, exhaustive cosmetics, or debug-only perfection.
 
 For persistence, global build wiring, security/authorization, or physical command boundaries, use stronger adversarial/error-path validation.
 
