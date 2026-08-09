@@ -122,47 +122,6 @@ jobs:
             "$producer_path" "$expected_blob" "$actual_blob"
           test "$actual_blob" = "$expected_blob"
 
-      - name: Validate project structure
-        run: |
-          plutil -lint Nembra.xcodeproj/project.pbxproj
-          scripts/validate_pbxproj_references.py
-          bash -n scripts/ci/xcode27_simulator_capture.sh
-
-      - name: Validate core package
-        working-directory: Packages/NembraCore
-        run: swift test
-
-      - name: Validate Capture package
-        working-directory: Packages/NembraBluetoothCapture
-        run: swift test
-
-      - name: Validate signed field evidence tooling
-        run: |
-          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
-          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
-          python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py
-          python3 scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
-          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
-          python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
-          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py
-          python3 scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py
-
-      - name: Validate signed field candidate producer source
-        run: |
-          bash -n scripts/ci/xcode27_signed_field_candidate.sh
-          bash -n scripts/ci/xcode27_today_research_field_candidate.sh
-          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
-          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
-          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
-          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
-
-      - name: Validate offline field authorization signer
-        run: |
-          python3 -m py_compile scripts/ci/es80_field_authorization_envelope.py
-          python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
-          python3 scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
-          python3 scripts/ci/es80_field_authorization_envelope.py --self-test
-
       - name: Build, test, and capture Simulator states
         shell: "/bin/bash --noprofile --norc -p -e -o pipefail {0}"
         env:
@@ -174,9 +133,9 @@ jobs:
           producer_path="scripts/ci/xcode27_simulator_capture.sh"
           expected_blob="4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"
 
-          # Candidate-controlled validation may mutate Git index/config/info state. Build a private
-          # resolver-bound index and bind every authority-bearing Git operation to the actual
-          # GitHub workspace instead of repository-local core.worktree/core.bare authority.
+          # Bind the authority-producing build to a private resolver-approved index and the real
+          # GitHub workspace before any repository-controlled validation can spawn a surviving
+          # process in this runner namespace.
           trusted_index="$(/usr/bin/mktemp -t nembra-capture-index)"
           /bin/rm -f -- "$trusted_index"
           trap '/bin/rm -f -- "$trusted_index"' EXIT
@@ -336,9 +295,9 @@ jobs:
           print(f"raw workspace audit accepted {checked} resolver-bound tracked blobs")
           PY
 
-          # Re-prove the mutable worktree producer file after every earlier candidate-controlled
-          # validation. This remains diagnostic defense-in-depth. Authority-producing interpreter
-          # input below is independently authenticated from the exact pinned-object bytes returned.
+          # Re-prove the mutable worktree producer immediately before authority. This remains
+          # diagnostic defense-in-depth; interpreter input below is independently authenticated
+          # from the exact pinned-object bytes returned.
           worktree_blob="$(
             /usr/bin/env -i \
               PATH=/usr/bin:/bin \
@@ -577,6 +536,49 @@ jobs:
           path: Artifacts/Xcode27Simulator
           if-no-files-found: error
           retention-days: 30
+
+      # Repository-controlled validation is deliberately non-authority work. Run it only after the
+      # exact build has been produced, retained evidence re-verified, and that artifact uploaded.
+      - name: Validate project structure
+        run: |
+          plutil -lint Nembra.xcodeproj/project.pbxproj
+          scripts/validate_pbxproj_references.py
+          bash -n scripts/ci/xcode27_simulator_capture.sh
+
+      - name: Validate core package
+        working-directory: Packages/NembraCore
+        run: swift test
+
+      - name: Validate Capture package
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test
+
+      - name: Validate signed field evidence tooling
+        run: |
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
+          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py
+          python3 scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
+          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
+          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py
+
+      - name: Validate signed field candidate producer source
+        run: |
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          bash -n scripts/ci/xcode27_today_research_field_candidate.sh
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+
+      - name: Validate offline field authorization signer
+        run: |
+          python3 -m py_compile scripts/ci/es80_field_authorization_envelope.py
+          python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          python3 scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          python3 scripts/ci/es80_field_authorization_envelope.py --self-test
 
       - name: Reject head movement before trusted acceptance completes
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
