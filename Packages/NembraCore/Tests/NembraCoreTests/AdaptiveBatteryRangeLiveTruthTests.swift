@@ -14,7 +14,8 @@ struct AdaptiveBatteryRangeLiveTruthTests {
             uptime: 1_000
         )
         var stream = AcceptedBatterySOCStream()
-        let anchor = try #require(stream.accept(observation))
+        let accepted = try stream.accept(observation)
+        let anchor = try #require(accepted)
 
         #expect(anchor.percentage == 73)
         #expect(anchor.sourceReceiptIdentity == observation.receiptIdentity)
@@ -224,7 +225,8 @@ struct AdaptiveBatteryRangeLiveTruthTests {
             uptime: 5_000
         )
         var stream = AcceptedBatterySOCStream()
-        let anchor = try #require(stream.accept(observation))
+        let accepted = try stream.accept(observation)
+        let anchor = try #require(accepted)
         let model = AdaptiveBatteryRangeModel()
         let policy = try provisionalPolicy()
         #expect(model.estimateRemainingRange(
@@ -262,7 +264,8 @@ struct AdaptiveBatteryRangeLiveTruthTests {
             uptime: 10_000
         )
         var stream = AcceptedBatterySOCStream()
-        let oldAnchor = try #require(stream.accept(oldObservation))
+        let acceptedOld = try stream.accept(oldObservation)
+        let oldAnchor = try #require(acceptedOld)
         let staleValidator = stream.validator
         var staleStream = stream
 
@@ -274,7 +277,8 @@ struct AdaptiveBatteryRangeLiveTruthTests {
             uptime: 12_000,
             continuity: .afterUnobservedInterval
         )
-        let newAnchor = try #require(stream.accept(newObservation))
+        let acceptedNew = try stream.accept(newObservation)
+        let newAnchor = try #require(acceptedNew)
 
         #expect(oldAnchor.isCurrent == false)
         #expect(oldAnchor.isCurrent(in: staleValidator) == false)
@@ -340,7 +344,8 @@ struct AdaptiveBatteryRangeLiveTruthTests {
             uptime: 20_000
         )
         var stream = AcceptedBatterySOCStream()
-        let anchor = try #require(stream.accept(firstObservation))
+        let acceptedFirst = try stream.accept(firstObservation)
+        let anchor = try #require(acceptedFirst)
         let staleValidator = stream.validator
 
         let policy = try provisionalPolicy(efficiency: 120)
