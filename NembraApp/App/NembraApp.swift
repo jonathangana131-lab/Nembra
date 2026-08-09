@@ -560,11 +560,11 @@ private struct ES80ExperimentOneFieldNoGoView: View {
         ScrollView {
             VStack(
                 alignment: .leading,
-                spacing: verticalSizeClass == .compact ? 10 : (isAccessibilityLayout ? 14 : 28)
+                spacing: verticalSizeClass == .compact ? 10 : (isAccessibilityLayout ? 10 : 28)
             ) {
                 VStack(
                     alignment: .leading,
-                    spacing: verticalSizeClass == .compact ? 6 : (isAccessibilityLayout ? 8 : 14)
+                    spacing: verticalSizeClass == .compact ? 6 : (isAccessibilityLayout ? 6 : 14)
                 ) {
                     HStack(spacing: isAccessibilityLayout ? 0 : 12) {
                         if !isAccessibilityLayout {
@@ -635,7 +635,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                     )
                     .font(
                         isAccessibilityLayout
-                            ? .body.weight(.medium)
+                            ? .footnote.weight(.semibold)
                             : (verticalSizeClass == .compact
                                 ? .subheadline.weight(.medium)
                                 : .title3.weight(.medium))
@@ -644,15 +644,17 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 }
 
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "exclamationmark.lock.fill")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(.orange)
-                        .accessibilityHidden(true)
+                HStack(alignment: .top, spacing: isAccessibilityLayout ? 0 : 12) {
+                    if !isAccessibilityLayout {
+                        Image(systemName: "exclamationmark.lock.fill")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(.orange)
+                            .accessibilityHidden(true)
+                    }
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Not ready for scooter capture yet")
-                            .font(.headline)
+                    VStack(alignment: .leading, spacing: isAccessibilityLayout ? 4 : 6) {
+                        Text(isAccessibilityLayout ? "Physical capture locked" : "Not ready for scooter capture yet")
+                            .font(isAccessibilityLayout ? .subheadline.weight(.semibold) : .headline)
                             .foregroundStyle(.white)
 
                         Text(
@@ -660,18 +662,18 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                                 ? "Exact-build checks must pass before Bluetooth capture can begin."
                                 : "Nembra keeps every scooter action locked until the exact app build passes its required checks and is explicitly cleared for this physical procedure. When this screen unlocks, Capture will guide the OFF / ON sequence step by step."
                         )
-                        .font(.subheadline)
+                        .font(isAccessibilityLayout ? .caption : .subheadline)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 14 : 18))
+                .padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 10 : 18))
                 .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(physicalLockAccessibilityLabel)
                 .accessibilityIdentifier("es80.capture.physical-run-locked")
 
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: isAccessibilityLayout ? 8 : 14) {
                     Button {
                         engineeringDetailsExpanded.toggle()
                     } label: {
@@ -787,18 +789,20 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         }
                     }
                 }
-                .padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 14 : 18))
+                .padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 10 : 18))
                 .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
-                Text("No scooter action is required yet. Capture can only unlock on a Nembra build explicitly cleared for this physical procedure; changing a setting or preference cannot bypass this lock.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if !isAccessibilityLayout {
+                    Text("No scooter action is required yet. Capture can only unlock on a Nembra build explicitly cleared for this physical procedure; changing a setting or preference cannot bypass this lock.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .frame(maxWidth: 660)
-            .padding(.horizontal, isAccessibilityLayout ? 18 : 22)
-            .padding(.top, verticalSizeClass == .compact ? 8 : (isAccessibilityLayout ? 12 : 18))
-            .padding(.bottom, verticalSizeClass == .compact ? 20 : (isAccessibilityLayout ? 32 : 42))
+            .padding(.horizontal, isAccessibilityLayout ? 16 : 22)
+            .padding(.top, verticalSizeClass == .compact ? 8 : (isAccessibilityLayout ? 8 : 18))
+            .padding(.bottom, verticalSizeClass == .compact ? 20 : (isAccessibilityLayout ? 24 : 42))
             .frame(maxWidth: .infinity)
         }
         .accessibilityIdentifier("es80.capture.field-no-go-scroll")
