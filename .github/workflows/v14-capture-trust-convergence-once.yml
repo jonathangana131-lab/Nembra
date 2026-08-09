@@ -1,0 +1,145 @@
+name: V14 Capture trust convergence once
+
+on:
+  push:
+    branches:
+      - 'recovery/v14-capture-trust-convergence-current-main/gpt56-go'
+    paths:
+      - '.github/workflows/v14-capture-trust-convergence-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  converge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact pushed head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Compose trust fixes and rotate exact workflow pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow_path = Path('.github/workflows/capture-xcode27-trusted-command.yml')
+          workflow = workflow_path.read_text(encoding='utf-8')
+
+          graph_needle = '''          root = Path(os.environ["GITHUB_WORKSPACE"])
+          expected = {
+'''
+          graph_replacement = '''          root = Path(os.environ["GITHUB_WORKSPACE"])
+          canonical_scheme = "Nembra.xcodeproj/xcshareddata/xcschemes/Nembra.xcscheme"
+          scheme_paths = {
+              path.relative_to(root).as_posix()
+              for path in root.rglob("*.xcscheme")
+          }
+          if scheme_paths != {canonical_scheme}:
+              raise SystemExit(
+                  "trusted Xcode authority requires exactly the canonical shared scheme; found: "
+                  + repr(sorted(scheme_paths))
+              )
+
+          expected = {
+'''
+          if workflow.count(graph_needle) != 1:
+              raise SystemExit('expected exactly one trusted build-graph root seam')
+          workflow = workflow.replace(graph_needle, graph_replacement, 1)
+
+          producer_needle = '''          builtin printf '%s' "$producer_bytes" |
+            /usr/bin/env -i \\
+              PATH=/usr/bin:/bin:/usr/sbin:/sbin \\
+              HOME=/tmp \\
+              LC_ALL=C \\
+              GIT_DIR="$GITHUB_WORKSPACE/.git" \\
+'''
+          dollars = '$'
+          producer_replacement = '''          builtin printf '%s' "$producer_bytes" |
+            /usr/bin/env -i \\
+              PATH=/usr/bin:/bin:/usr/sbin:/sbin \\
+              HOME=/tmp \\
+              LC_ALL=C \\
+''' + f'''              GITHUB_RUN_ID="{dollars}{{{{ github.run_id }}}}" \\
+              GITHUB_RUN_ATTEMPT="{dollars}{{{{ github.run_attempt }}}}" \\
+''' + '''              GIT_DIR="$GITHUB_WORKSPACE/.git" \\
+'''
+          if workflow.count(producer_needle) != 1:
+              raise SystemExit('expected exactly one pinned-producer closed-env execution seam')
+          workflow = workflow.replace(producer_needle, producer_replacement, 1)
+          workflow_path.write_text(workflow, encoding='utf-8')
+          PY
+
+          new_blob="$(git hash-object .github/workflows/capture-xcode27-trusted-command.yml)"
+          old_blob="524b011c6147142281c3fed62d3bb402c7f2be63"
+          export NEW_TRUSTED_WORKFLOW_BLOB="$new_blob"
+          export OLD_TRUSTED_WORKFLOW_BLOB="$old_blob"
+          printf 'Rotating trusted workflow blob %s -> %s\n' "$old_blob" "$new_blob"
+
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          old = os.environ['OLD_TRUSTED_WORKFLOW_BLOB']
+          new = os.environ['NEW_TRUSTED_WORKFLOW_BLOB']
+          pin_paths = (
+              Path('scripts/ci/es80_today_trusted_capture_xcode_subject.py'),
+              Path('.github/workflows/capture-today-final-go-qa.yml'),
+              Path('.github/workflows/capture-today-trusted-default-xcode-subject-qa.yml'),
+          )
+          for path in pin_paths:
+              text = path.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one old trusted-workflow pin, found {count}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          for path in (
+              Path('.github/workflows/capture-today-final-go-qa.yml'),
+              Path('.github/workflows/capture-today-trusted-default-xcode-subject-qa.yml'),
+          ):
+              text = path.read_text(encoding='utf-8')
+              text = text.replace(
+                  '- name: Preserve closed Bash startup custody\n',
+                  '- name: Preserve closed Bash startup custody and run provenance\n',
+                  1,
+              )
+              marker = '''          grep -Fq 'test "$materialized_blob" = "$expected_blob"' .github/workflows/capture-xcode27-trusted-command.yml
+'''
+              literal_run_id = '''          grep -Fq 'GITHUB_RUN_ID="$''{{ github.run_id }}"' .github/workflows/capture-xcode27-trusted-command.yml
+'''
+              literal_run_attempt = '''          grep -Fq 'GITHUB_RUN_ATTEMPT="$''{{ github.run_attempt }}"' .github/workflows/capture-xcode27-trusted-command.yml
+'''
+              if text.count(marker) != 1:
+                  raise SystemExit(f'{path}: expected exactly one materialized producer assertion seam')
+              text = text.replace(marker, marker + literal_run_id + literal_run_attempt, 1)
+              path.write_text(text, encoding='utf-8')
+          PY
+
+          python3 -m py_compile \
+            scripts/ci/es80_today_trusted_capture_xcode_subject.py \
+            scripts/ci/tests/test_capture_trusted_xcode_build_graph_custody.py \
+            scripts/ci/tests/test_capture_trusted_xcode_bash_environment_custody.py \
+            scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
+          python3 scripts/ci/tests/test_capture_trusted_xcode_build_graph_custody.py -v
+          python3 scripts/ci/tests/test_capture_trusted_xcode_bash_environment_custody.py -v
+          python3 scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py -v
+          grep -Fq "TRUSTED_WORKFLOW_BLOB_SHA = \"$new_blob\"" scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          git diff --check
+
+          rm -- .github/workflows/v14-capture-trust-convergence-once.yml
+          git config user.name 'nembra-v14-bot'
+          git config user.email 'nembra-v14-bot@users.noreply.github.com'
+          git add \
+            .github/workflows/capture-xcode27-trusted-command.yml \
+            .github/workflows/capture-today-final-go-qa.yml \
+            .github/workflows/capture-today-trusted-default-xcode-subject-qa.yml \
+            scripts/ci/es80_today_trusted_capture_xcode_subject.py \
+            .github/workflows/v14-capture-trust-convergence-once.yml
+          git diff --cached --check
+          git commit -m 'fix(capture): converge trusted run and scheme custody'
+          git push origin HEAD:recovery/v14-capture-trust-convergence-current-main/gpt56-go
