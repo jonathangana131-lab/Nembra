@@ -1,0 +1,75 @@
+name: Capture Final Share Retry Authority QA
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - NembraApp/Features/Research/ES80CaptureShellView.swift
+      - NembraUITests/ES80ResearchCaptureUITests.swift
+      - .github/workflows/capture-final-share-retry-authority.yml
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head-source-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Verify exact PR head
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          printf 'Expected exact PR head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual"
+          test "$actual" = "$EXPECTED_HEAD_SHA"
+
+      - name: Validate retained final Share retry authority
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          source = Path("NembraApp/Features/Research/ES80CaptureShellView.swift").read_text()
+          signature = "private func prepareFinalShareForAnalysisAndSharing()"
+          start = source.find(signature)
+          if start < 0:
+              raise SystemExit("missing prepareFinalShareForAnalysisAndSharing source")
+
+          remainder = source[start:]
+          next_member = remainder.find("\n    private ", len(signature))
+          function_source = remainder if next_member < 0 else remainder[:next_member]
+
+          retained_tuple = re.compile(
+              r"if\s+finalShareData\s*!=\s*nil\s*,\s*"
+              r"finalShareIntegrityReport\s*!=\s*nil\s*,\s*"
+              r"finalShareFilename\s*!=\s*nil\s*\{\s*"
+              r"sharePreparationWarning\s*=\s*nil\s*"
+              r"return\s*\}",
+              re.DOTALL,
+          )
+          match = retained_tuple.search(function_source)
+          if match is None:
+              raise SystemExit(
+                  "final Share retry must require retained bytes + integrity report + filename before returning"
+              )
+
+          mint_call = "coordinator.finalizedShareArtifactForCurrentApplication(setup: setup)"
+          mint_index = function_source.find(mint_call)
+          if mint_index < 0:
+              raise SystemExit("missing package-owned final Share creation call")
+          if match.start() >= mint_index:
+              raise SystemExit(
+                  "retained retry authority must short-circuit before any final Share artifact creation"
+              )
+
+          print("retained final Share retry authority source contract: PASS")
+          PY
