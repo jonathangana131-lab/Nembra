@@ -1,13 +1,24 @@
 #!/usr/bin/env python3
-"""Reject direct execution of both public/legacy Final GO Python surfaces."""
+"""Reject public/compatibility Final GO execution and imported builder authority."""
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 import subprocess
 import sys
 import unittest
 
 CI_DIR = Path(__file__).resolve().parents[1]
+
+
+def load_public_foundation():
+    path = CI_DIR / "es80_today_final_go_foundation.py"
+    spec = importlib.util.spec_from_file_location("nembra_public_final_go_foundation", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("could not load public Final GO foundation")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class FinalGoDirectExecutionDisabledTests(unittest.TestCase):
@@ -30,6 +41,14 @@ class FinalGoDirectExecutionDisabledTests(unittest.TestCase):
 
     def test_public_foundation_path_is_non_authorizing(self):
         self.assert_non_authorizing("es80_today_final_go_foundation.py")
+
+    def test_imported_public_foundation_builder_is_non_authorizing(self):
+        foundation = load_public_foundation()
+        with self.assertRaisesRegex(
+            foundation.FinalGoError,
+            "public Final GO foundation builder is non-authorizing",
+        ):
+            foundation.build_final_go_record()
 
 
 if __name__ == "__main__":
