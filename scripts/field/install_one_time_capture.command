@@ -47,23 +47,6 @@ else
 fi
 say "Found $DEVICE_NAME"
 
-# xctrace may list a newly attached phone while Xcode is still pairing/preparing it.
-# Do not start the build until xcodebuild itself can resolve the exact device destination.
-say "Waiting for Xcode to finish connecting to the iPhone"
-open -a Xcode "$ROOT/Nembra.xcodeproj" >/dev/null 2>&1 || true
-READY=0
-for _ in $(seq 1 90); do
-    if xcodebuild -project Nembra.xcodeproj -scheme Nembra -showdestinations 2>/dev/null | grep -Fq "$DEVICE_UDID"; then
-        READY=1
-        break
-    fi
-    sleep 2
-done
-if [[ "$READY" != "1" ]]; then
-    die "Xcode still cannot use the iPhone after 3 minutes. Keep the phone unlocked and connected, open Xcode > Window > Devices and Simulators, wait until the phone no longer says Connecting/Preparing, then run this same installer again."
-fi
-say "iPhone is ready for Xcode"
-
 say "Finding Apple Development signing team"
 TEAM_IDS="$(security find-identity -v -p codesigning 2>/dev/null | /usr/bin/python3 -c '
 import re,sys
@@ -96,14 +79,17 @@ BUNDLE_ID="com.jonathangana131.nembra.capturelearn"
 SOURCE_SHA="$(git rev-parse HEAD)"
 BUILD_LABEL="Guided scooter learning ${SOURCE_SHA:0:12}"
 
-say "Building guided Nembra Capture for the connected iPhone"
+say "Building guided Nembra Capture for iPhone"
+# Build for the generic iOS device target. This avoids Xcode's temporary
+# per-device destination handshake while it is still showing Connecting/Preparing.
 xcodebuild \
     -project Nembra.xcodeproj \
     -scheme Nembra \
     -configuration Debug \
-    -destination "platform=iOS,id=$DEVICE_UDID" \
+    -destination "generic/platform=iOS" \
     -derivedDataPath "$DERIVED" \
     -allowProvisioningUpdates \
+    -allowProvisioningDeviceRegistration \
     DEVELOPMENT_TEAM="$TEAM_ID" \
     CODE_SIGN_STYLE=Automatic \
     PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
@@ -114,17 +100,32 @@ xcodebuild \
 APP="$DERIVED/Build/Products/Debug-iphoneos/Nembra.app"
 [[ -d "$APP" ]] || die "Build finished but Nembra.app was not found at $APP"
 
-say "Installing on iPhone"
-xcrun devicectl device install app --device "$DEVICE_UDID" "$APP"
+say "Installing on $DEVICE_NAME"
+open -a Xcode "$ROOT/Nembra.xcodeproj" >/dev/null 2>&1 || true
+INSTALL_LOG="${TMPDIR:-/tmp}/nembra-capture-install.log"
+rm -f "$INSTALL_LOG"
+INSTALLED=0
+for ATTEMPT in $(seq 1 60); do
+    if xcrun devicectl device install app --device "$DEVICE_UDID" "$APP" >"$INSTALL_LOG" 2>&1; then
+        INSTALLED=1
+        cat "$INSTALL_LOG"
+        break
+    fi
+    if [[ "$ATTEMPT" == "1" ]]; then
+        printf '%s\n' "Xcode still appears to be preparing the iPhone. Keep it plugged in and unlocked; installation will retry automatically."
+    fi
+    sleep 3
+done
+
+if [[ "$INSTALLED" != "1" ]]; then
+    cat "$INSTALL_LOG" >&2 || true
+    die "The app built successfully, but the iPhone never became ready for installation. Keep it unlocked and connected, wait for Xcode to finish Preparing/Connecting, then run this same installer again."
+fi
 
 say "GUIDED CAPTURE INSTALLED"
 printf '%s\n' \
     "Open Nembra Capture on the iPhone." \
-    "Follow the app itself; it now guides the whole learning session." \
-    "It first compares scooter-OFF vs scooter-ON Bluetooth scans so the likely scooter is easy to find." \
-    "After connection it records GATT topology, readable values, notifications, descriptors, RSSI and optional GPS reference speed." \
-    "It guides stationary mode/light/brake tests, walking-wheel motion, an optional safely-supported unloaded-wheel test, and ride segments." \
-    "For every moving step: press Start while fully stopped, secure the phone, ride, stop completely, then press Complete." \
-    "At the end tap Finish capture & prepare JSON, then Share learning dataset back into ChatGPT." \
-    "" \
-    "The guided Capture source contains no CoreBluetooth application-characteristic writeValue(...) call."
+    "Follow the app itself; it guides the entire learning session." \
+    "Start with the scooter OFF, then follow the OFF/ON discovery flow." \
+    "For moving steps: start while stopped, secure the phone, ride, stop completely, then press Complete." \
+    "At the end tap Finish capture & prepare JSON, then Share learning dataset back into ChatGPT."
