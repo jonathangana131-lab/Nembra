@@ -165,11 +165,12 @@ public enum RideSessionDurationUpsertResult: Equatable, Sendable {
 /// interval. Both rules prevent a caller from stretching process-local monotonic truth across
 /// relaunch merely because a checkpoint happened before useful elapsed-time evidence existed.
 ///
-/// Fresh construction, mutation, and snapshot projection are package-scoped. Codable remains
-/// public as the durable import/export representation, but an external feature cannot operate a
-/// decoded/copied value as a fresh ride observer or project it into completed-duration evidence.
-/// A future app-facing creator must be owned by the ride lifecycle and keep the accumulator
-/// encapsulated so one observation authority exists per active session.
+/// Fresh construction, mutation, and snapshot projection are package-scoped in SwiftPM and
+/// file-private when this source is compiled directly into the app target. Codable remains
+/// public as the durable import/export representation, but external/neighboring app code cannot
+/// operate a decoded/copied value as a fresh ride observer or project it into completed-duration
+/// evidence. A future app-facing creator must be owned by the ride lifecycle and keep the
+/// accumulator encapsulated so one observation authority exists per active session.
 public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendable {
     public let sessionID: UUID
     public let beginsAfterUnobservedInterval: Bool
@@ -178,6 +179,7 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
     private var requiresFreshProcessGeneration: Bool
     private var requiresInitialRecoveryGap: Bool
 
+#if SWIFT_PACKAGE
     package init(
         sessionID: UUID,
         beginsAfterUnobservedInterval: Bool = false
@@ -189,8 +191,25 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
         self.requiresFreshProcessGeneration = false
         self.requiresInitialRecoveryGap = false
     }
+#else
+    fileprivate init(
+        sessionID: UUID,
+        beginsAfterUnobservedInterval: Bool = false
+    ) {
+        self.sessionID = sessionID
+        self.beginsAfterUnobservedInterval = beginsAfterUnobservedInterval
+        self.observationSegments = []
+        self.totalObservedDurationNanoseconds = 0
+        self.requiresFreshProcessGeneration = false
+        self.requiresInitialRecoveryGap = false
+    }
+#endif
 
+#if SWIFT_PACKAGE
     package var snapshot: RideSessionDurationEvidenceSnapshot {
+#else
+    fileprivate var snapshot: RideSessionDurationEvidenceSnapshot {
+#endif
         let duration: UInt64? = observationSegments.isEmpty
             ? nil
             : totalObservedDurationNanoseconds
@@ -211,10 +230,17 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
         )
     }
 
+#if SWIFT_PACKAGE
     @discardableResult
     package mutating func upsert(
         _ segment: RideSessionDurationObservedSegment
     ) throws -> RideSessionDurationUpsertResult {
+#else
+    @discardableResult
+    fileprivate mutating func upsert(
+        _ segment: RideSessionDurationObservedSegment
+    ) throws -> RideSessionDurationUpsertResult {
+#endif
         guard segment.sessionID == sessionID else {
             throw RideSessionDurationEvidenceError.sessionMismatch
         }
