@@ -102,21 +102,25 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
-    func testLandscapeDashboardRetainedTruthIsVisibleAndCapturable() {
+    func testLandscapeDashboardRetainedSpeedTruthIsVisibleAndCapturable() {
         defer { XCUIDevice.shared.orientation = .portrait }
-        let app = launch(scenario: "scooter-unavailable", orientation: .landscapeRight)
+        let app = launch(
+            scenario: "connected-stopped",
+            orientation: .landscapeRight,
+            environment: ["NEMBRA_SIMULATION_SPEED_EVIDENCE_GAP": "1"]
+        )
 
         let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
         XCTAssertTrue(
             cockpit.waitForExistence(timeout: 4),
-            "Landscape must still render the real Cockpit when the scooter is unavailable."
+            "Landscape must keep the real Cockpit visible while speed evidence is retained."
         )
 
         let speed = app.descendants(matching: .any)["dashboard.speed"]
         XCTAssertTrue(speed.waitForExistence(timeout: 2))
         XCTAssertTrue(
             (speed.value as? String ?? "").localizedCaseInsensitiveContains("last known"),
-            "A disconnected last accepted speed must remain explicitly retained, not promoted to live or erased as unavailable."
+            "A connected source gap must present the accepted speed as last-known, not live or unavailable."
         )
         XCTAssertTrue(
             app.staticTexts["LAST KNOWN"].waitForExistence(timeout: 2),
@@ -124,28 +128,55 @@ final class NembraUITests: XCTestCase {
         )
         XCTAssertFalse(app.staticTexts["READY"].exists)
         XCTAssertFalse(app.staticTexts["RIDING"].exists)
-
-        let vehicleStatus = app.descendants(matching: .any)["dashboard.vehicle-status"]
-        XCTAssertTrue(vehicleStatus.waitForExistence(timeout: 2))
         XCTAssertTrue(
-            app.staticTexts["WAITING FOR DATA"].waitForExistence(timeout: 2),
-            "The Cockpit screenshot must expose the no-current-telemetry vehicle state."
+            app.descendants(matching: .any)["dashboard.controls-speed-unavailable-message"]
+                .waitForExistence(timeout: 2),
+            "A connected speed gap must retire stopped-control authority while preserving retained presentation."
         )
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
 
-        keepScreenshot(named: "Dashboard Last Known Speed Landscape")
+        keepScreenshot(named: "Dashboard Retained Speed Landscape")
     }
 
     @MainActor
-    func testLandscapeDashboardUnavailableTruthIsVisibleAndCapturable() {
+    func testLandscapeDashboardDisconnectedCachedSpeedProjectsUnavailable() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(scenario: "scooter-unavailable", orientation: .landscapeRight)
+
+        let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
+        XCTAssertTrue(
+            cockpit.waitForExistence(timeout: 4),
+            "Landscape must still render the real Cockpit when transport is unavailable."
+        )
+
+        let speed = app.descendants(matching: .any)["dashboard.speed"]
+        XCTAssertTrue(speed.waitForExistence(timeout: 2))
+        XCTAssertTrue(
+            (speed.value as? String ?? "").localizedCaseInsensitiveContains("unavailable"),
+            "A disconnected cached speed must not bypass app projection and become retained/current speed authority."
+        )
+        XCTAssertTrue(
+            app.staticTexts["NO LIVE SPEED"].waitForExistence(timeout: 2),
+            "Disconnected transport must fail the field-specific speed projection closed."
+        )
+        XCTAssertFalse(app.staticTexts["READY"].exists)
+        XCTAssertFalse(app.staticTexts["RIDING"].exists)
+        XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
+        XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
+
+        keepScreenshot(named: "Dashboard Disconnected Cached Speed Landscape")
+    }
+
+    @MainActor
+    func testLandscapeDashboardNeverObservedSpeedIsUnavailableAndCapturable() {
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "cold-disconnected", orientation: .landscapeRight)
 
         let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
         XCTAssertTrue(
             cockpit.waitForExistence(timeout: 4),
-            "Landscape must still render the real Cockpit with no accepted speed evidence."
+            "Landscape must still render the real Cockpit before any speed evidence exists."
         )
 
         let speed = app.descendants(matching: .any)["dashboard.speed"]
@@ -156,7 +187,7 @@ final class NembraUITests: XCTestCase {
         )
         XCTAssertTrue(
             app.staticTexts["NO LIVE SPEED"].waitForExistence(timeout: 2),
-            "The Cockpit must distinguish truly unavailable speed from retained last-known evidence."
+            "The Cockpit must not manufacture a numeric speed before any accepted source evidence exists."
         )
         XCTAssertFalse(app.staticTexts["LAST KNOWN"].exists)
 
@@ -164,7 +195,7 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(vehicleStatus.waitForExistence(timeout: 2))
         XCTAssertTrue(
             app.staticTexts["WAITING FOR DATA"].waitForExistence(timeout: 2),
-            "The Cockpit screenshot must expose the no-telemetry truth state."
+            "Cold disconnected launch must expose the no-telemetry vehicle state."
         )
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
@@ -294,11 +325,15 @@ final class NembraUITests: XCTestCase {
     @MainActor
     private func launch(
         scenario: String,
-        orientation: UIDeviceOrientation
+        orientation: UIDeviceOrientation,
+        environment: [String: String] = [:]
     ) -> XCUIApplication {
         XCUIDevice.shared.orientation = orientation
         let app = XCUIApplication()
         app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = scenario
+        for (key, value) in environment {
+            app.launchEnvironment[key] = value
+        }
         app.launch()
         return app
     }
