@@ -50,11 +50,11 @@ final class AppRuntime {
         await rideStore.start()
         await vehicleStore.start()
 
-        // Explicit Simulator-only visual/runtime fixture. A connected launch owns
-        // a valid synthetic speed sample; this opt-in then opens the existing
-        // source-owned evidence-gap primitive while transport remains connected.
-        // The app must therefore project `.retained` speed specifically, without
-        // changing aggregate connection/data state or inventing a timeout.
+        // Explicit Simulator-only visual/runtime fixture. A connected-stopped
+        // launch owns a valid synthetic speed sample; this opt-in then opens the
+        // existing source-owned evidence-gap primitive while transport remains
+        // connected. The app must therefore project `.retained` speed specifically,
+        // without changing aggregate connection/data state or inventing a timeout.
         if simulatorStartsWithSpeedEvidenceGap,
            let simulatorService {
             await simulatorService.simulateSpeedEvidenceGap()
@@ -282,7 +282,7 @@ enum AppBootstrap {
 
         let simulatorAutoCompletesRide = bootstrap.scenario == .riding
             && environment[simulationAutoCompleteRideEnvironmentKey] == "1"
-        let simulatorStartsWithSpeedEvidenceGap = bootstrap.scenario != nil
+        let simulatorStartsWithSpeedEvidenceGap = bootstrap.scenario == .connectedStopped
             && environment[simulationSpeedEvidenceGapEnvironmentKey] == "1"
         let simulatorRouteRecorder: RideRouteRecorder?
         if bootstrap.scenario != nil,
