@@ -186,6 +186,7 @@ jobs:
           import plistlib
           import re
           import subprocess
+          import tempfile
           from pathlib import Path
 
           root = Path("Artifacts/Xcode27Simulator")
@@ -211,10 +212,23 @@ jobs:
           if re.fullmatch(r"[0-9a-f]{40}", expected_head) is None:
               raise SystemExit("Trusted resolver did not provide one exact lowercase 40-hex PR head SHA")
 
-          checkout_head = subprocess.check_output(
-              ["/usr/bin/git", "rev-parse", "--verify", "HEAD^{commit}"],
-              text=True,
-          ).strip()
+          clean_git_command = [
+              "/usr/bin/env",
+              "-i",
+              "PATH=/usr/bin:/bin:/usr/sbin:/sbin",
+              "GIT_CONFIG_NOSYSTEM=1",
+              "GIT_CONFIG_GLOBAL=/dev/null",
+              "GIT_NO_REPLACE_OBJECTS=1",
+              "/usr/bin/git",
+          ]
+
+          def resolve_checkout_head():
+              return subprocess.check_output(
+                  [*clean_git_command, "rev-parse", "--verify", "HEAD^{commit}"],
+                  text=True,
+              ).strip()
+
+          checkout_head = resolve_checkout_head()
 
           def verify_checkout_binding(resolver_head, observed_checkout_head):
               if re.fullmatch(r"[0-9a-f]{40}", resolver_head) is None:
@@ -228,6 +242,20 @@ jobs:
               verify_checkout_binding(expected_head, checkout_head)
           except ValueError as error:
               raise SystemExit(str(error)) from error
+
+          with tempfile.TemporaryDirectory(prefix="nembra-git-env-redteam-") as temporary_directory:
+              poisoned_git_dir = str(Path(temporary_directory) / "not-a-repository")
+              previous_git_dir = os.environ.get("GIT_DIR")
+              os.environ["GIT_DIR"] = poisoned_git_dir
+              try:
+                  isolated_checkout_head = resolve_checkout_head()
+              finally:
+                  if previous_git_dir is None:
+                      os.environ.pop("GIT_DIR", None)
+                  else:
+                      os.environ["GIT_DIR"] = previous_git_dir
+              if isolated_checkout_head != expected_head:
+                  raise SystemExit("clean Git verifier accepted caller-controlled GIT_DIR semantics")
 
           retained_plist = plistlib.loads(info_plist.read_bytes())
           expected_recipe = "ES80-FINGERPRINT-v1"
@@ -255,6 +283,7 @@ jobs:
                   "buildIdentifier": plist.get("NembraCaptureBuildIdentifier"),
                   "buildInstanceID": plist.get("NembraCaptureBuildInstanceID"),
                   "sourceCommitSHA": plist.get("NembraCaptureBuildCommitSHA"),
+                  "experimentRecipeID": plist.get("NembraCaptureFieldRecipe"),
               }
               for key, value in embedded.items():
                   if value != subject.get(key):
@@ -310,6 +339,13 @@ jobs:
               else "33333333-3333-3333-3333-333333333333"
           )
           require_rejected("detached retained Info.plist metadata", mutated_plist=wrong_plist)
+
+          wrong_plist_recipe = dict(retained_plist)
+          wrong_plist_recipe["NembraCaptureFieldRecipe"] = "ES80-FINGERPRINT-v2"
+          require_rejected(
+              "detached retained Info.plist experiment recipe",
+              mutated_plist=wrong_plist_recipe,
+          )
 
           def sha256(path: Path) -> str:
               digest = hashlib.sha256()
