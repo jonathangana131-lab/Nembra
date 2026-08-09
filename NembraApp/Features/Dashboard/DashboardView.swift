@@ -139,7 +139,7 @@ struct DashboardView: View {
 
     private var statusRail: some View {
         VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 7) {
                 Text(vehicle.profile.identity.displayName)
                     .font(.headline.weight(.semibold))
                     .lineLimit(1)
@@ -149,8 +149,10 @@ struct DashboardView: View {
                     .font(.caption.weight(.medium))
                     .foregroundStyle(connectionStyle)
                     .lineLimit(1)
+
+                dataStatusBadge
             }
-            .accessibilityElement(children: .combine)
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("dashboard.vehicle-status")
 
             Spacer(minLength: 0)
@@ -159,7 +161,8 @@ struct DashboardView: View {
                 title: "BATTERY",
                 value: batteryText,
                 symbol: batteryIcon,
-                warning: isBatteryLow,
+                warning: isBatteryLow && !isRetainedVehicleData,
+                retained: isRetainedVehicleData,
                 identifier: "dashboard.battery"
             )
 
@@ -167,8 +170,30 @@ struct DashboardView: View {
                 title: "TRIP",
                 value: tripText,
                 symbol: "point.bottomleft.forward.to.point.topright.scurvepath",
+                retained: isRetainedVehicleData,
                 identifier: "dashboard.trip"
             )
+        }
+    }
+
+    @ViewBuilder
+    private var dataStatusBadge: some View {
+        switch vehicle.state.dataAvailability {
+        case .live:
+            Label("LIVE DATA", systemImage: "wave.3.right")
+                .foregroundStyle(.green)
+                .accessibilityLabel("Vehicle data")
+                .accessibilityValue("Live")
+        case .retained:
+            Label("LAST KNOWN", systemImage: "clock.arrow.circlepath")
+                .foregroundStyle(.orange)
+                .accessibilityLabel("Vehicle data")
+                .accessibilityValue("Last known values retained from the previous connection")
+        case .unavailable:
+            Label("WAITING FOR DATA", systemImage: "ellipsis")
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Vehicle data")
+                .accessibilityValue("No confirmed scooter telemetry yet")
         }
     }
 
@@ -181,7 +206,7 @@ struct DashboardView: View {
             if shouldShowStoppedControls {
                 stoppedControls
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
-            } else if isVehicleMoving {
+            } else if vehicle.state.connection == .connected && isVehicleMoving {
                 Text("Controls available when stopped")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
@@ -204,6 +229,7 @@ struct DashboardView: View {
 
             Text(vehicle.state.rideMode?.displayName.uppercased() ?? "—")
                 .font(.title2.weight(.semibold))
+                .foregroundStyle(isRetainedVehicleData ? Color.secondary : Color.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
 
@@ -211,12 +237,19 @@ struct DashboardView: View {
                 .fill(Color.white.opacity(personality.modeMarkerOpacity))
                 .frame(width: personality.modeMarkerWidth, height: 2)
                 .accessibilityHidden(true)
+
+            if isRetainedVehicleData, vehicle.state.rideMode != nil {
+                Text("LAST KNOWN")
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.2)
+                    .foregroundStyle(.orange)
+            }
         }
         .scaleEffect(personality.modeScale, anchor: .trailing)
         .animation(modeAnimation, value: personality)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Ride mode")
-        .accessibilityValue(vehicle.state.rideMode?.displayName ?? "Unknown")
+        .accessibilityValue(modeAccessibilityValue)
         .accessibilityIdentifier("dashboard.mode")
     }
 
@@ -301,6 +334,7 @@ struct DashboardView: View {
         value: String,
         symbol: String,
         warning: Bool = false,
+        retained: Bool = false,
         identifier: String
     ) -> some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -311,13 +345,20 @@ struct DashboardView: View {
 
             Text(value)
                 .font(.title3.weight(.semibold).monospacedDigit())
-                .foregroundStyle(warning ? Color.red : Color.white)
+                .foregroundStyle(warning ? Color.red : (retained ? Color.secondary : Color.white))
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
+
+            if retained, value != "—" {
+                Text("LAST KNOWN")
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.0)
+                    .foregroundStyle(.orange)
+            }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title.capitalized)
-        .accessibilityValue(value)
+        .accessibilityValue(retained && value != "—" ? "Last known \(value)" : value)
         .accessibilityIdentifier(identifier)
     }
 
@@ -336,6 +377,10 @@ struct DashboardView: View {
         (vehicle.state.speedKilometersPerHour ?? 0) >= 0.5
     }
 
+    private var isRetainedVehicleData: Bool {
+        vehicle.state.dataAvailability == .retained
+    }
+
     private var supportedModes: [RideMode] {
         RideMode.allCases.filter(vehicle.profile.capabilities.supportedRideModes.contains)
     }
@@ -347,6 +392,11 @@ struct DashboardView: View {
         case .drive: "D"
         case .sport: "S"
         }
+    }
+
+    private var modeAccessibilityValue: String {
+        guard let mode = vehicle.state.rideMode?.displayName else { return "Unknown" }
+        return isRetainedVehicleData ? "Last known \(mode)" : mode
     }
 
     private var tripText: String {
