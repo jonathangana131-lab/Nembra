@@ -45,7 +45,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          DEVICE=$(xcrun simctl list devices available | sed -n 's/^[[:space:]]*\(iPhone[^()]*) (\([0-9A-F-]*\)) (Shutdown\|Booted).*$/\1|\2/p' | head -n 1)
+          xcrun simctl list devices available > /tmp/nembra-sim-devices.txt
+          DEVICE=$(python3 - <<'PY'
+          import re
+          from pathlib import Path
+          for line in Path('/tmp/nembra-sim-devices.txt').read_text().splitlines():
+              match = re.match(r'^\s*(iPhone[^()]*)\s+\(([0-9A-F-]+)\)\s+\((?:Shutdown|Booted)\)', line)
+              if match:
+                  print(f"{match.group(1).strip()}|{match.group(2)}")
+                  break
+          PY
+          )
           test -n "$DEVICE"
           NAME=${DEVICE%%|*}
           UDID=${DEVICE##*|}
