@@ -11,9 +11,12 @@ Bluetooth writes, scooter identity, protocol semantics, or telemetry.
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import os
 from pathlib import Path
 import re
+import stat
 from typing import Any, Callable
 import zipfile
 
@@ -86,18 +89,62 @@ def _reject_duplicate_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+def _read_regular_file_snapshot(path: Path) -> bytes:
+    """Read one non-symlink regular-file byte subject exactly once.
 
+    The returned buffer, rather than the mutable pathname, is the authority used for digest,
+    byte-count, ZIP parsing, and the returned subject. A path replacement after os.open() cannot
+    change the opened file description. Server SHA-256 then detects any in-place byte mutation.
+    """
+    flags = os.O_RDONLY
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
 
-def _single_external_record(archive_path: Path, source: str) -> dict[str, Any]:
-    _require(archive_path.is_file(), "trusted Xcode artifact archive is missing")
     try:
-        with zipfile.ZipFile(archive_path, "r") as archive:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise TrustedCaptureXcodeError(
+            "trusted Xcode artifact archive is not one readable non-symlink regular file"
+        ) from error
+
+    try:
+        before = os.fstat(descriptor)
+        _require(
+            stat.S_ISREG(before.st_mode),
+            "trusted Xcode artifact archive is not a regular file",
+        )
+
+        chunks: list[bytes] = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        raw = b"".join(chunks)
+
+        after = os.fstat(descriptor)
+        _require(
+            (before.st_dev, before.st_ino) == (after.st_dev, after.st_ino),
+            "trusted Xcode artifact archive identity changed while reading",
+        )
+        _require(
+            before.st_size == after.st_size == len(raw),
+            "trusted Xcode artifact archive size changed while reading",
+        )
+        return raw
+    except OSError as error:
+        raise TrustedCaptureXcodeError(
+            "trusted Xcode artifact archive could not be read as one stable snapshot"
+        ) from error
+    finally:
+        os.close(descriptor)
+
+
+def _single_external_record(archive_raw: bytes, source: str) -> dict[str, Any]:
+    try:
+        with zipfile.ZipFile(io.BytesIO(archive_raw), "r") as archive:
             names = [name for name in archive.namelist() if not name.endswith("/")]
             matches = [name for name in names if Path(name).name == EXTERNAL_RECORD_NAME]
             _require(
@@ -105,6 +152,8 @@ def _single_external_record(archive_path: Path, source: str) -> dict[str, Any]:
                 "trusted Xcode artifact must contain exactly one external build record",
             )
             raw = archive.read(matches[0])
+    except TrustedCaptureXcodeError:
+        raise
     except (OSError, zipfile.BadZipFile, KeyError) as error:
         raise TrustedCaptureXcodeError(
             "trusted Xcode artifact is not a readable retained ZIP"
@@ -307,7 +356,9 @@ def verify_trusted_capture_xcode_subject(
     )
     _require(artifact.get("expired") is False, "trusted Xcode artifact is expired")
 
-    archive_sha = _sha256_file(artifact_archive_path)
+    archive_raw = _read_regular_file_snapshot(artifact_archive_path)
+    archive_sha = hashlib.sha256(archive_raw).hexdigest()
+    archive_size = len(archive_raw)
     server_digest = artifact.get("digest")
     _require(
         isinstance(server_digest, str)
@@ -315,7 +366,7 @@ def verify_trusted_capture_xcode_subject(
         "trusted Xcode artifact archive digest mismatch",
     )
     _require(
-        artifact.get("size_in_bytes") == artifact_archive_path.stat().st_size,
+        artifact.get("size_in_bytes") == archive_size,
         "trusted Xcode artifact archive size mismatch",
     )
     artifact_run = artifact.get("workflow_run") or {}
@@ -329,7 +380,7 @@ def verify_trusted_capture_xcode_subject(
         "trusted Xcode artifact did not originate from the trusted workflow source",
     )
 
-    external_record = _single_external_record(artifact_archive_path, source)
+    external_record = _single_external_record(archive_raw, source)
 
     return {
         "authority": "default-branch-owner-command-v1",
@@ -349,6 +400,6 @@ def verify_trusted_capture_xcode_subject(
         "artifactID": artifact_id,
         "artifactName": expected_artifact_name,
         "artifactArchiveSHA256": archive_sha,
-        "artifactArchiveByteCount": artifact_archive_path.stat().st_size,
+        "artifactArchiveByteCount": archive_size,
         "externalBuildRecord": external_record,
     }
