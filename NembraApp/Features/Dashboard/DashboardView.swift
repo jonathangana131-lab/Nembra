@@ -181,6 +181,13 @@ struct DashboardView: View {
             if shouldShowStoppedControls {
                 stoppedControls
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
+            } else if vehicle.state.connection == .connected && !hasKnownSpeed {
+                Label("Live speed required", systemImage: "speedometer")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityLabel("Controls unavailable until live speed is known")
+                    .accessibilityIdentifier("dashboard.controls-speed-unavailable-message")
             } else if isVehicleMoving {
                 Text("Controls available when stopped")
                     .font(.caption2)
@@ -329,11 +336,29 @@ struct DashboardView: View {
     }
 
     private var shouldShowStoppedControls: Bool {
-        vehicle.state.connection == .connected && !isVehicleMoving
+        guard vehicle.state.connection == .connected,
+              let speed = knownSpeedKilometersPerHour else {
+            return false
+        }
+        return speed < 0.5
+    }
+
+    private var hasKnownSpeed: Bool {
+        knownSpeedKilometersPerHour != nil
+    }
+
+    private var knownSpeedKilometersPerHour: Double? {
+        guard let speed = vehicle.state.speedKilometersPerHour,
+              speed.isFinite,
+              speed >= 0 else {
+            return nil
+        }
+        return speed
     }
 
     private var isVehicleMoving: Bool {
-        (vehicle.state.speedKilometersPerHour ?? 0) >= 0.5
+        guard let speed = knownSpeedKilometersPerHour else { return false }
+        return speed >= 0.5
     }
 
     private var supportedModes: [RideMode] {
