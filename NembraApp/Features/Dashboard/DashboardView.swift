@@ -159,7 +159,7 @@ struct DashboardView: View {
                 batteryChargeBar
                     .frame(width: 82)
 
-                if isRetainedVehicleData, vehicle.state.batteryPercent != nil {
+                if isRetainedBatteryData, vehicle.batteryDisplayPercent != nil {
                     Text("LAST KNOWN")
                         .font(.caption2.weight(.bold))
                         .tracking(1.0)
@@ -191,7 +191,7 @@ struct DashboardView: View {
 
                 if let fill = batteryFillFraction {
                     Capsule(style: .continuous)
-                        .fill(batteryInstrumentWarning ? Color.red : Color.white.opacity(isRetainedVehicleData ? 0.42 : 0.86))
+                        .fill(batteryInstrumentWarning ? Color.red : Color.white.opacity(isRetainedBatteryData ? 0.42 : 0.86))
                         .frame(width: max(2, proxy.size.width * fill))
                 }
             }
@@ -405,6 +405,10 @@ struct DashboardView: View {
         vehicle.state.dataAvailability == .retained
     }
 
+    private var isRetainedBatteryData: Bool {
+        vehicle.batteryDataAvailability == .retained
+    }
+
     private var supportedModes: [RideMode] {
         RideMode.allCases.filter(vehicle.profile.capabilities.supportedRideModes.contains)
     }
@@ -435,7 +439,7 @@ struct DashboardView: View {
     }
 
     private var batteryText: String {
-        guard let battery = vehicle.state.batteryPercent else { return "—" }
+        guard let battery = vehicle.batteryDisplayPercent else { return "—" }
         return "\(battery)%"
     }
 
@@ -451,7 +455,7 @@ struct DashboardView: View {
     private var batteryAccessibilityValue: String {
         switch batteryReadout {
         case .charge:
-            if isRetainedVehicleData, vehicle.state.batteryPercent != nil {
+            if isRetainedBatteryData, vehicle.batteryDisplayPercent != nil {
                 return "Last known \(batteryText)"
             }
             return batteryText
@@ -462,26 +466,26 @@ struct DashboardView: View {
 
     private var batteryPrimaryColor: Color {
         if batteryInstrumentWarning { return .red }
-        if isRetainedVehicleData { return .secondary }
+        if isRetainedBatteryData { return .secondary }
         return batteryReadout == .range ? .secondary : .white
     }
 
     private var batteryInstrumentWarning: Bool {
-        batteryReadout == .charge && isBatteryLow && !isRetainedVehicleData
+        batteryReadout == .charge && isBatteryLow && !isRetainedBatteryData
     }
 
     private var batteryFillFraction: CGFloat? {
-        guard let battery = vehicle.state.batteryPercent else { return nil }
-        return CGFloat(min(max(battery, 0), 100)) / 100
+        guard let battery = vehicle.batteryDisplayPercent else { return nil }
+        return CGFloat(battery) / 100
     }
 
     private var isBatteryLow: Bool {
-        guard let battery = vehicle.state.batteryPercent else { return false }
+        guard let battery = vehicle.batteryDisplayPercent else { return false }
         return battery <= 15
     }
 
     private var batteryIcon: String {
-        guard let battery = vehicle.state.batteryPercent else { return "battery.0percent" }
+        guard let battery = vehicle.batteryDisplayPercent else { return "battery.0percent" }
         return switch battery {
         case ...15: "battery.0percent"
         case ...35: "battery.25percent"
