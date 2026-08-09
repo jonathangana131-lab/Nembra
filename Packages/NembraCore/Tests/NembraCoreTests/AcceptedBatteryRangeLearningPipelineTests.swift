@@ -162,6 +162,13 @@ struct AcceptedBatteryRangeLearningPipelineTests {
 
         #expect(throws: BatteryEvidenceStreamValidationError.staleReceiptIdentity) {
             _ = try pipeline.acceptBatteryObservation(
+                verifiedSOC(79, epoch: epoch, sequence: 2, uptime: 2_000),
+                policy: p
+            )
+        }
+
+        #expect(throws: BatteryEvidenceStreamValidationError.inconsistentReceiptMetadata) {
+            _ = try pipeline.acceptBatteryObservation(
                 verifiedSOC(
                     79,
                     epoch: epoch,
