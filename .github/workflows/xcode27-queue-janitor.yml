@@ -7,8 +7,10 @@ on:
       - ci/xcode27-queue-janitor-v14-gpt56-go
       - ci/xcode27-stale-active-janitor-v14-gpt56-go
       - ci/xcode27-janitor-five-minute-v14-gpt56-go
+      - ci/capture-trusted-stale-run-janitor-v14-gpt56-go
     paths:
       - scripts/ci/xcode27_queue_janitor.py
+      - scripts/ci/capture_trusted_xcode27_queue_janitor.py
       - .github/workflows/xcode27-queue-janitor.yml
   pull_request_target:
     types:
@@ -45,34 +47,47 @@ jobs:
         if: github.event_name != 'pull_request_target'
         uses: actions/checkout@v6
 
-      - name: Self-test fail-closed classifier
-        run: python3 scripts/ci/xcode27_queue_janitor.py --self-test
+      - name: Self-test fail-closed classifiers
+        run: |
+          python3 scripts/ci/xcode27_queue_janitor.py --self-test
+          python3 scripts/ci/capture_trusted_xcode27_queue_janitor.py --self-test
 
       - name: Audit branch candidate without mutation
         if: github.event_name != 'pull_request_target' && github.ref != 'refs/heads/main'
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: >-
-          python3 scripts/ci/xcode27_queue_janitor.py
-          --minimum-age-seconds 120
-          --max-cancellations 200
+        run: |
+          python3 scripts/ci/xcode27_queue_janitor.py \
+            --minimum-age-seconds 120 \
+            --max-cancellations 200
+          python3 scripts/ci/capture_trusted_xcode27_queue_janitor.py \
+            --minimum-age-seconds 120 \
+            --max-cancellations 50
 
       - name: Cancel proven-stale Xcode runs after same-repo PR head movement
         if: github.event_name == 'pull_request_target'
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: >-
-          python3 scripts/ci/xcode27_queue_janitor.py
-          --apply
-          --minimum-age-seconds 0
-          --max-cancellations 200
+        run: |
+          python3 scripts/ci/xcode27_queue_janitor.py \
+            --apply \
+            --minimum-age-seconds 0 \
+            --max-cancellations 200
+          python3 scripts/ci/capture_trusted_xcode27_queue_janitor.py \
+            --apply \
+            --minimum-age-seconds 0 \
+            --max-cancellations 50
 
       - name: Cancel only proven-stale queued or in-progress Xcode runs
         if: github.event_name != 'pull_request_target' && github.ref == 'refs/heads/main'
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: >-
-          python3 scripts/ci/xcode27_queue_janitor.py
-          --apply
-          --minimum-age-seconds 120
-          --max-cancellations 200
+        run: |
+          python3 scripts/ci/xcode27_queue_janitor.py \
+            --apply \
+            --minimum-age-seconds 120 \
+            --max-cancellations 200
+          python3 scripts/ci/capture_trusted_xcode27_queue_janitor.py \
+            --apply \
+            --minimum-age-seconds 120 \
+            --max-cancellations 50
