@@ -1,0 +1,39 @@
+name: TEMP Apply ES80 shell compile repair night relay
+
+on:
+  push:
+    branches:
+      - fix/es80-today-shell-conditional-compile-0519-night-relay
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/es80-today-shell-conditional-compile-0519-night-relay
+          fetch-depth: 0
+
+      - name: Apply guarded source repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/temp_apply_es80_shell_compile_repair.py
+          git diff --check
+          test -n "$(git diff -- NembraApp/Features/Research/ES80CaptureShellView.swift)"
+
+      - name: Commit clean product repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm scripts/ci/temp_apply_es80_shell_compile_repair.py
+          rm .github/workflows/temp-apply-es80-shell-compile-repair-night-relay.yml
+          git config user.name nembra-v14-night-relay
+          git config user.email nembra-v14-night-relay@users.noreply.github.com
+          git add NembraApp/Features/Research/ES80CaptureShellView.swift scripts/ci/temp_apply_es80_shell_compile_repair.py .github/workflows/temp-apply-es80-shell-compile-repair-night-relay.yml
+          git commit -m "fix(capture): make Simulator shell conditionals compile-safe"
+          git push origin HEAD:fix/es80-today-shell-conditional-compile-0519-night-relay
