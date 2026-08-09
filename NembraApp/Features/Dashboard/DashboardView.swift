@@ -521,18 +521,13 @@ struct DashboardView: View {
         )
     }
 
-    /// Current main does not yet expose source-owned speed-currentness authority to this
-    /// view. Until that seam lands, missing/malformed speed must fail closed rather than
-    /// being interpreted as stopped. This is intentionally stricter than the previous
-    /// `nil -> 0` behavior and makes no claim about physical ES80 stopped semantics.
+    /// Only source-qualified current speed may admit stopped-only controls. A cached
+    /// aggregate speed can remain useful as retained display state, but it cannot
+    /// establish that the scooter is currently stopped after a gap or reconnect.
+    /// Physical/unverified profiles therefore remain unavailable until direct ES80
+    /// evidence establishes a verified speed authority.
     private var usableStoppedControlSpeedKilometersPerHour: Double? {
-        guard vehicle.state.connection == .connected,
-              let speed = vehicle.state.speedKilometersPerHour,
-              speed.isFinite,
-              speed >= 0 else {
-            return nil
-        }
-        return speed
+        vehicle.simulatorQualifiedLiveSpeedKilometersPerHour
     }
 
     private var shouldShowStoppedControls: Bool {
