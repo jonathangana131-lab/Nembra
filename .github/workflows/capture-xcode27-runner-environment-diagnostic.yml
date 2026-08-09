@@ -1,0 +1,33 @@
+name: Capture Xcode 27 Runner Environment Diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/capture-xcode27-runner-environment-diagnostic.yml'
+
+permissions: {}
+
+jobs:
+  runner-environment:
+    name: Prove xcode-27 runner environment
+    runs-on: xcode-27
+    timeout-minutes: 5
+    steps:
+      - name: Report immutable GitHub runner environment
+        shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+        run: |
+          set -euo pipefail
+          printf 'RUNNER_ENVIRONMENT=%s\n' "$RUNNER_ENVIRONMENT"
+          case "$RUNNER_ENVIRONMENT" in
+            github-hosted)
+              printf 'GitHub-hosted runner: fresh-job VM contract applies.\n'
+              ;;
+            self-hosted)
+              printf 'Self-hosted runner: persistent-host custody blocker remains.\n' >&2
+              exit 42
+              ;;
+            *)
+              printf 'Unknown runner environment; fail closed: %s\n' "$RUNNER_ENVIRONMENT" >&2
+              exit 43
+              ;;
+          esac
