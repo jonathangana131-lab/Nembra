@@ -1,0 +1,61 @@
+name: Capture Trusted Producer Cross-Step Env Expected-Red
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - .github/workflows/capture-trusted-producer-cross-step-env-expected-red.yml
+
+permissions:
+  contents: read
+
+jobs:
+  cross-step-shell-authority:
+    name: Reject candidate-persisted Bash startup authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXPECTED_PARENT_SHA: 31b6390724b68a922544520ffd17fb76bb7f19bc
+      WORKFLOW_PATH: .github/workflows/capture-trusted-producer-cross-step-env-expected-red.yml
+    steps:
+      - name: Checkout immutable validation head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+
+      - name: Verify one workflow-only commit above trusted-producer custody head
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT_SHA"
+          changed="$(git diff --name-only "$EXPECTED_PARENT_SHA" HEAD)"
+          test "$changed" = "$WORKFLOW_PATH"
+
+      - name: Model candidate validation persisting Bash startup authority
+        run: |
+          set -euo pipefail
+          probe="$RUNNER_TEMP/nembra-candidate-bash-env.sh"
+          marker="$RUNNER_TEMP/nembra-candidate-bash-env-executed"
+          cat > "$probe" <<'SH'
+          # Harmless marker standing in for candidate code executed by a later shell startup.
+          printf 'candidate startup code executed\n' > "$RUNNER_TEMP/nembra-candidate-bash-env-executed"
+          SH
+          chmod 0600 "$probe"
+          rm -f "$marker"
+
+          # Candidate-controlled processes in real validation steps inherit GITHUB_ENV and can write
+          # future-step environment values. Persist exactly the Bash startup hook relevant to the
+          # later trusted producer `run:` step.
+          printf 'BASH_ENV=%s\n' "$probe" >> "$GITHUB_ENV"
+
+      - name: Prove later trusted producer step starts candidate code first
+        run: |
+          set -euo pipefail
+          marker="$RUNNER_TEMP/nembra-candidate-bash-env-executed"
+          if [[ -f "$marker" ]]; then
+            echo "CANDIDATE BASH_ENV EXECUTED BEFORE TRUSTED PRODUCER STEP BODY" >&2
+            echo "Streaming a pinned Git blob later in the step does not close shell startup authority inherited through GitHub's cross-step environment channel." >&2
+            exit 1
+          fi
+          echo "Expected candidate-persisted BASH_ENV did not execute; cross-step startup injection was not reproduced." >&2
+          exit 2
