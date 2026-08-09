@@ -107,6 +107,46 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testStationaryPreflightContinuePreservesSimulatorQASnapshotInCaptureShell() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=stationaryPreflight"
+        ]
+        app.launch()
+
+        let preflight = app.descendants(matching: .any)["es80.capture.stationary-preflight"]
+        XCTAssertTrue(preflight.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3),
+            "Stationary preflight must disclose that this is synthetic Simulator QA."
+        )
+
+        let disconnected = app.buttons["es80.capture.preflight.charger-disconnected"]
+        XCTAssertTrue(disconnected.waitForExistence(timeout: 2))
+        disconnected.tap()
+
+        let continueButton = app.buttons["es80.capture.preflight.continue"]
+        XCTAssertTrue(continueButton.waitForExistence(timeout: 2))
+        XCTAssertTrue(continueButton.isEnabled)
+        continueButton.tap()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5),
+            "Disconnected + Continue must enter the real Capture shell."
+        )
+        XCTAssertFalse(preflight.exists)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3),
+            "The exact synthetic QA snapshot must survive the stationary-preflight handoff."
+        )
+        XCTAssertTrue(
+            app.buttons["es80.capture.confirm-setup"].waitForExistence(timeout: 3),
+            "The retained stationaryPreflight snapshot must present the synthetic OFF 1 setup state instead of falling back to locked production presentation."
+        )
+    }
+
+    @MainActor
     func testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls() {
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "riding", orientation: .landscapeRight)
