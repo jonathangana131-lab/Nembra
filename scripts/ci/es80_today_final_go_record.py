@@ -37,7 +37,11 @@ TRUSTED_WORKFLOW_NAME = "Xcode 27 PR Exact-Head QA"
 TRUSTED_WORKFLOW_PATH = ".github/workflows/xcode27-pr-command.yml"
 TRUSTED_JOB_NAME = "Build, test, and capture exact PR head"
 TRUSTED_ARTIFACT_PREFIX = "nembra-xcode27-pr-"
-PINNED_CROSSCHECK_COMMIT = "c12c935cac5470d37e731359f9ffdb9b18d6f85d"
+PINNED_CROSSCHECK_COMMIT = "d827a296048386bda62024ea3278775d5344c47c"
+PINNED_CROSSCHECK_BLOB = "c3b2b620280484c05316fc5c2fa2ca451f1fdc83"
+RESEARCH_COMPILE_MODE = "private-today-v1"
+RESEARCH_COMPILE_AUTHORITY = "canonical-producer-explicit-mode"
+RESEARCH_COMPILE_CONDITION = "NEMBRA_ES80_TODAY_RESEARCH"
 CROSSCHECK_PATH = "scripts/ci/es80_today_independent_candidate_crosscheck.py"
 PRIVATE_RUNNER_PATH = "scripts/ci/es80_signed_field_artifact_private_runner.py"
 INSPECTOR_PATH = "scripts/ci/es80_signed_field_artifact_evidence.py"
@@ -79,16 +83,17 @@ INSPECTION_KEYS = {
 }
 CROSSCHECK_KEYS = {
     "schemaVersion", "authority", "status", "sourceCommitSHA", "buildIdentifier",
-    "buildInstanceID", "experimentRecipeID", "procedureVersion", "signedInstallableSHA256",
+    "buildInstanceID", "experimentRecipeID", "procedureVersion", "researchCompileMode",
+    "researchCompileAuthority", "researchCompileCondition", "signedInstallableSHA256",
     "signedInstallableByteCount", "externalBuildRecordSHA256", "fieldBuildEvidenceRecordSHA256",
     "signedFieldArtifactInspectionSHA256", "executableSHA256", "infoPlistSHA256",
     "exportOptionsSHA256", "teamIdentifier", "allowProvisioningUpdates",
     "privateRunnerSourceGitBlobClaim", "canonicalInspectorSourceGitBlobClaim", "xcodeVersion",
     "xcodeBuildVersion", "provisioningProfileSHA256", "provisioningProfileUUID",
     "provisioningProfileExpirationUTC", "singleRetainedIPA", "crossRecordDigestLinksVerified",
-    "producerPhysicalAuthorizationRemainsNotGranted", "appleSigningInspectionRequired",
-    "toolBlobClaimsRequireRepositoryCrossCheck", "exactRetainedIPAInstallHandoffRequired",
-    "physicalExperimentAuthorization",
+    "researchCompileTupleVerified", "producerPhysicalAuthorizationRemainsNotGranted",
+    "appleSigningInspectionRequired", "toolBlobClaimsRequireRepositoryCrossCheck",
+    "exactRetainedIPAInstallHandoffRequired", "physicalExperimentAuthorization",
 }
 ATTESTATION_KEYS = {
     "schemaVersion", "authority", "attestationID", "recordedAtUTC", "simulatorArtifactReview",
@@ -470,6 +475,9 @@ def _crosscheck_subject(
         "buildInstanceID": candidate["buildInstanceID"],
         "experimentRecipeID": RECIPE,
         "procedureVersion": PROCEDURE,
+        "researchCompileMode": RESEARCH_COMPILE_MODE,
+        "researchCompileAuthority": RESEARCH_COMPILE_AUTHORITY,
+        "researchCompileCondition": RESEARCH_COMPILE_CONDITION,
         "signedInstallableSHA256": candidate["retainedIPASHA256"],
         "signedInstallableByteCount": candidate["retainedIPAByteCount"],
         "externalBuildRecordSHA256": candidate["externalBuildRecordSHA256"],
@@ -483,6 +491,7 @@ def _crosscheck_subject(
         "provisioningProfileExpirationUTC": candidate["provisioningProfileExpirationUTC"],
         "singleRetainedIPA": True,
         "crossRecordDigestLinksVerified": True,
+        "researchCompileTupleVerified": True,
         "producerPhysicalAuthorizationRemainsNotGranted": True,
         "appleSigningInspectionRequired": True,
         "toolBlobClaimsRequireRepositoryCrossCheck": True,
@@ -512,6 +521,7 @@ def _crosscheck_subject(
         GIT_OID,
         "pinned cross-check tool Git blob",
     )
+    _eq(tool_blob, PINNED_CROSSCHECK_BLOB, "pinned cross-check tool Git blob")
     return {
         "toolCommit": PINNED_CROSSCHECK_COMMIT,
         "toolGitBlob": tool_blob,
@@ -520,6 +530,10 @@ def _crosscheck_subject(
         "status": "PASS_NOT_FINAL_GO",
         "privateRunnerSourceGitBlob": private_blob,
         "canonicalInspectorSourceGitBlob": inspector_blob,
+        "researchCompileMode": RESEARCH_COMPILE_MODE,
+        "researchCompileAuthority": RESEARCH_COMPILE_AUTHORITY,
+        "researchCompileCondition": RESEARCH_COMPILE_CONDITION,
+        "researchCompileTupleVerified": True,
         "physicalExperimentAuthorization": "not-granted",
     }
 
@@ -652,12 +666,12 @@ def _publish_file_no_replace(staging_path: Path, output_path: Path) -> None:
         rename_exclusive = libc.renamex_np
         rename_exclusive.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
         rename_exclusive.restype = ctypes.c_int
-        result = rename_exclusive(source, destination, 0x00000004)  # RENAME_EXCL
+        result = rename_exclusive(source, destination, 0x00000004)
     elif sys.platform.startswith("linux"):
         rename_exclusive = libc.renameat2
         rename_exclusive.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
         rename_exclusive.restype = ctypes.c_int
-        result = rename_exclusive(-100, source, -100, destination, 0x00000001)  # RENAME_NOREPLACE
+        result = rename_exclusive(-100, source, -100, destination, 0x00000001)
     else:
         raise FinalGoError(f"atomic no-replace Final GO publication is unsupported on {sys.platform!r}")
     if result != 0:
