@@ -53,9 +53,121 @@ jobs:
             core.setOutput('pr_number', String(pr.number))
             core.setOutput('same_repo', String(sameRepo))
 
+  prevalidate-candidate:
+    name: Prevalidate exact Capture source on isolated runner
+    needs: resolve
+    if: needs.resolve.outputs.same_repo == 'true'
+    runs-on: xcode-27
+    timeout-minutes: 30
+
+    steps:
+      - name: Reject stale or detached Capture head before prevalidation
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+        with:
+          script: |
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            })
+            const pr = response.data
+            const repository = `${context.repo.owner}/${context.repo.repo}`
+            core.info(`Trusted resolver head: ${process.env.EXPECTED_HEAD_SHA}`)
+            core.info(`Current live PR head: ${pr.head.sha}`)
+            if (pr.state !== 'open') {
+              core.setFailed('PR closed before Capture prevalidation started.')
+            }
+            if (pr.head.repo.full_name !== repository) {
+              core.setFailed('PR source repository changed before Capture prevalidation started.')
+            }
+            if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) {
+              core.setFailed('PR head moved before Capture prevalidation started; stale run is non-evidence.')
+            }
+
+      - name: Checkout immutable exact Capture head for prevalidation
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.resolve.outputs.head_sha }}
+
+      - name: Verify immutable prevalidation head
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+        run: |
+          actual_head="$(/usr/bin/git rev-parse --verify HEAD^{commit})"
+          printf 'Trusted resolver head: %s\nPrevalidation checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual_head"
+          test "$actual_head" = "$EXPECTED_HEAD_SHA"
+
+      - name: Validate project structure
+        run: |
+          plutil -lint Nembra.xcodeproj/project.pbxproj
+          scripts/validate_pbxproj_references.py
+          bash -n scripts/ci/xcode27_simulator_capture.sh
+
+      - name: Validate core package
+        working-directory: Packages/NembraCore
+        run: swift test
+
+      - name: Validate Capture package
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test
+
+      - name: Validate signed field evidence tooling
+        run: |
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
+          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py
+          python3 scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
+          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
+          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py
+
+      - name: Validate signed field candidate producer source
+        run: |
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          bash -n scripts/ci/xcode27_today_research_field_candidate.sh
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+
+      - name: Validate offline field authorization signer
+        run: |
+          python3 -m py_compile scripts/ci/es80_field_authorization_envelope.py
+          python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          python3 scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          python3 scripts/ci/es80_field_authorization_envelope.py --self-test
+
+      - name: Reject head movement after isolated prevalidation
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+        with:
+          script: |
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            })
+            const pr = response.data
+            const repository = `${context.repo.owner}/${context.repo.repo}`
+            if (pr.state !== 'open') {
+              core.setFailed('PR closed during Capture prevalidation.')
+            }
+            if (pr.head.repo.full_name !== repository) {
+              core.setFailed('PR source repository changed during Capture prevalidation.')
+            }
+            if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) {
+              core.setFailed('PR head moved during Capture prevalidation; stale run is non-evidence.')
+            }
+
   capture-simulator-qa:
     name: Build, test, and capture trusted exact Capture head
-    needs: resolve
+    needs: [resolve, prevalidate-candidate]
     if: needs.resolve.outputs.same_repo == 'true'
     concurrency:
       group: nembra-capture-xcode27-${{ needs.resolve.outputs.pr_number }}-${{ needs.resolve.outputs.head_sha }}
@@ -122,47 +234,6 @@ jobs:
             "$producer_path" "$expected_blob" "$actual_blob"
           test "$actual_blob" = "$expected_blob"
 
-      - name: Validate project structure
-        run: |
-          plutil -lint Nembra.xcodeproj/project.pbxproj
-          scripts/validate_pbxproj_references.py
-          bash -n scripts/ci/xcode27_simulator_capture.sh
-
-      - name: Validate core package
-        working-directory: Packages/NembraCore
-        run: swift test
-
-      - name: Validate Capture package
-        working-directory: Packages/NembraBluetoothCapture
-        run: swift test
-
-      - name: Validate signed field evidence tooling
-        run: |
-          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
-          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
-          python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py
-          python3 scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
-          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
-          python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
-          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py
-          python3 scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py
-
-      - name: Validate signed field candidate producer source
-        run: |
-          bash -n scripts/ci/xcode27_signed_field_candidate.sh
-          bash -n scripts/ci/xcode27_today_research_field_candidate.sh
-          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
-          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
-          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
-          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
-
-      - name: Validate offline field authorization signer
-        run: |
-          python3 -m py_compile scripts/ci/es80_field_authorization_envelope.py
-          python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
-          python3 scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
-          python3 scripts/ci/es80_field_authorization_envelope.py --self-test
-
       - name: Build, test, and capture Simulator states
         shell: "/bin/bash --noprofile --norc -p -e -o pipefail {0}"
         env:
@@ -174,9 +245,9 @@ jobs:
           producer_path="scripts/ci/xcode27_simulator_capture.sh"
           expected_blob="4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"
 
-          # Candidate-controlled validation may mutate Git index/config/info state. Build a private
-          # resolver-bound index and bind every authority-bearing Git operation to the actual
-          # GitHub workspace instead of repository-local core.worktree/core.bare authority.
+          # Candidate-controlled validation executes only in the completed predecessor job above.
+          # This authority job begins on a fresh runner process boundary, then independently binds
+          # Git to the resolver-approved workspace before any repository-controlled executable runs.
           trusted_index="$(/usr/bin/mktemp -t nembra-capture-index)"
           /bin/rm -f -- "$trusted_index"
           trap '/bin/rm -f -- "$trusted_index"' EXIT
@@ -197,9 +268,6 @@ jobs:
             GIT_CONFIG_VALUE_1=false \
             /usr/bin/git read-tree "$EXPECTED_HEAD_SHA"
 
-          # Remove every ignored or untracked candidate-created byte before authority. This closes
-          # .git/info/exclude and ordinary ignore-policy hiding without deleting tracked changes,
-          # which remain visible to the fresh-index status and raw-byte audit below.
           /usr/bin/env -i \
             PATH=/usr/bin:/bin \
             HOME=/tmp \
@@ -251,9 +319,6 @@ jobs:
           fi
           test -z "$trusted_status"
 
-          # Git status is supporting evidence only. Independently compare raw workspace bytes and
-          # executable modes to the resolver-approved tree without clean/smudge filters, ignore
-          # metadata, local core.worktree, or filesystem-monitor semantics becoming authority.
           /usr/bin/env -i \
             PATH=/usr/bin:/bin \
             HOME=/tmp \
@@ -336,9 +401,6 @@ jobs:
           print(f"raw workspace audit accepted {checked} resolver-bound tracked blobs")
           PY
 
-          # Re-prove the mutable worktree producer file after every earlier candidate-controlled
-          # validation. This remains diagnostic defense-in-depth. Authority-producing interpreter
-          # input below is independently authenticated from the exact pinned-object bytes returned.
           worktree_blob="$(
             /usr/bin/env -i \
               PATH=/usr/bin:/bin \
@@ -351,10 +413,6 @@ jobs:
           )"
           test "$worktree_blob" = "$expected_blob"
 
-          # Same-UID candidate code may replace a loose Git object beneath its expected pathname;
-          # `cat-file <expected oid>` does not independently authenticate returned bytes. Materialize
-          # once, preserve exact trailing newlines behind a sentinel, re-hash those exact bytes in a
-          # repository-independent Git context, and execute only the same authenticated byte subject.
           sentinel="__NEMBRA_TRUSTED_PRODUCER_EOF_4e9ae0cb__"
           producer_bytes="$(
             /usr/bin/env -i \
