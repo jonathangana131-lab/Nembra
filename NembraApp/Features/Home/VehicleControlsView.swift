@@ -9,6 +9,14 @@ struct VehicleControlsView: View {
         Form {
             connectionSection
 
+            if vehicle.profile.capabilities.supportsHeadlight {
+                headlightSection
+            }
+
+            if vehicle.profile.capabilities.supportsLock {
+                lockSection
+            }
+
             if !supportedModes.isEmpty {
                 modeSection
             }
@@ -67,6 +75,59 @@ struct VehicleControlsView: View {
                     }
                     .disabled(vehicle.pendingCommands.contains(.connect) || vehicle.isVehicleCommandPending)
                 }
+            }
+        }
+    }
+
+    private var headlightSection: some View {
+        Section {
+            confirmedChoiceRow(
+                title: "Off",
+                selected: vehicle.state.isHeadlightOn == false,
+                pending: vehicle.pendingCommands.contains(.headlight)
+            ) {
+                await vehicle.setHeadlight(false)
+            }
+
+            confirmedChoiceRow(
+                title: "On",
+                selected: vehicle.state.isHeadlightOn == true,
+                pending: vehicle.pendingCommands.contains(.headlight)
+            ) {
+                await vehicle.setHeadlight(true)
+            }
+        } header: {
+            Text("Headlight")
+        } footer: {
+            Text("Nembra updates the light state only after the scooter service confirms the command.")
+        }
+    }
+
+    private var lockSection: some View {
+        Section {
+            confirmedChoiceRow(
+                title: "Unlocked",
+                selected: vehicle.state.isLocked == false,
+                pending: vehicle.pendingCommands.contains(.lock)
+            ) {
+                await vehicle.setLocked(false)
+            }
+
+            confirmedChoiceRow(
+                title: "Locked",
+                selected: vehicle.state.isLocked == true,
+                pending: vehicle.pendingCommands.contains(.lock),
+                enabled: !isVehicleMoving
+            ) {
+                await vehicle.setLocked(true)
+            }
+        } header: {
+            Text("Vehicle Lock")
+        } footer: {
+            if isVehicleMoving && vehicle.state.isLocked != true {
+                Text("Stop the scooter before locking it. Unlock remains available when the scooter is connected.")
+            } else {
+                Text("Lock state changes appear only after the scooter service confirms them.")
             }
         }
     }
@@ -150,6 +211,7 @@ struct VehicleControlsView: View {
         title: String,
         selected: Bool,
         pending: Bool,
+        enabled: Bool = true,
         action: @escaping () async -> Void
     ) -> some View {
         Button {
@@ -167,7 +229,7 @@ struct VehicleControlsView: View {
                 }
             }
         }
-        .disabled(!commandsAvailable || vehicle.isVehicleCommandPending || selected)
+        .disabled(!commandsAvailable || vehicle.isVehicleCommandPending || selected || !enabled)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityValue(choiceAccessibilityValue(selected: selected, pending: pending))
     }
@@ -185,6 +247,10 @@ struct VehicleControlsView: View {
 
     private var commandsAvailable: Bool {
         vehicle.state.connection == .connected
+    }
+
+    private var isVehicleMoving: Bool {
+        (vehicle.state.speedKilometersPerHour ?? 0) >= 0.5
     }
 
     private var connectionText: String {
