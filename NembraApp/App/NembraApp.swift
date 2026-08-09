@@ -560,11 +560,11 @@ private struct ES80ExperimentOneFieldNoGoView: View {
         ScrollView {
             VStack(
                 alignment: .leading,
-                spacing: verticalSizeClass == .compact ? 10 : (isAccessibilityLayout ? 10 : 28)
+                spacing: verticalSizeClass == .compact ? 10 : (isAccessibilityLayout ? 8 : 28)
             ) {
                 VStack(
                     alignment: .leading,
-                    spacing: verticalSizeClass == .compact ? 6 : (isAccessibilityLayout ? 6 : 14)
+                    spacing: verticalSizeClass == .compact ? 6 : (isAccessibilityLayout ? 4 : 14)
                 ) {
                     HStack(spacing: isAccessibilityLayout ? 0 : 12) {
                         if !isAccessibilityLayout {
@@ -603,6 +603,13 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                                 .foregroundStyle(.white)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
+                    }
+
+                    if isAccessibilityLayout {
+                        Text("Final exact-build checks are still in progress.")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -796,7 +803,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
             .frame(maxWidth: 660)
             .padding(.horizontal, isAccessibilityLayout ? 16 : 22)
             .padding(.top, verticalSizeClass == .compact ? 8 : (isAccessibilityLayout ? 8 : 18))
-            .padding(.bottom, verticalSizeClass == .compact ? 20 : (isAccessibilityLayout ? 16 : 42))
+            .padding(.bottom, verticalSizeClass == .compact ? 20 : (isAccessibilityLayout ? 12 : 42))
             .frame(maxWidth: .infinity)
         }
         .accessibilityIdentifier("es80.capture.field-no-go-scroll")
