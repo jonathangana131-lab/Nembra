@@ -15,13 +15,23 @@ final class NembraUITests: XCTestCase {
     func testConnectedHomeControlsConfirmStateAndNavigate() {
         let app = launch(scenario: "connected-stopped", orientation: .portrait)
 
-        XCTAssertTrue(app.staticTexts["MAXSHOT V1S Pro"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Nembra Simulator"].waitForExistence(timeout: 3))
 
         let light = button(containing: "Light", in: app)
         XCTAssertTrue(light.waitForExistence(timeout: 2))
         XCTAssertTrue(light.label.contains("Off"))
         light.tap()
-        XCTAssertTrue(waitForLabelFragment("On", element: light))
+
+        // XCUIElement may retain the pre-command accessibility snapshot after
+        // SwiftUI replaces the button label. Re-query the semantic post-command
+        // state instead of weakening confirmation with a sleep or stale handle.
+        let enabledLight = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Light", "On")
+        ).firstMatch
+        XCTAssertTrue(
+            enabledLight.waitForExistence(timeout: 3),
+            "The light control must expose the simulator-confirmed On state after acknowledgement."
+        )
 
         let drive = app.buttons["home.mode.drive"]
         XCTAssertTrue(drive.exists)
@@ -215,13 +225,6 @@ final class NembraUITests: XCTestCase {
     @MainActor
     private func button(containing fragment: String, in app: XCUIApplication) -> XCUIElement {
         app.buttons.matching(NSPredicate(format: "label CONTAINS %@", fragment)).firstMatch
-    }
-
-    @MainActor
-    private func waitForLabelFragment(_ fragment: String, element: XCUIElement, timeout: TimeInterval = 3) -> Bool {
-        let predicate = NSPredicate(format: "label CONTAINS %@", fragment)
-        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
-        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
 
     @MainActor

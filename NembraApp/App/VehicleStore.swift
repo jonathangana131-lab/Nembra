@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 /// Presentation timing is injected explicitly so Simulator QA can exercise the
-/// speed animation without silently choosing a production MAXSHOT cadence.
+/// speed animation without silently choosing an unverified production hardware cadence.
 struct SpeedInstrumentInterpolationPolicy: Equatable, Sendable {
     let minimumTransitionNanoseconds: UInt64
     let maximumContinuousSampleIntervalNanoseconds: UInt64
@@ -14,7 +14,7 @@ struct SpeedInstrumentInterpolationPolicy: Equatable, Sendable {
         intervalFraction: 0
     )
 
-    /// QA-only profile. These values are not a claim about MAXSHOT hardware.
+    /// QA-only profile. These values are not a claim about any physical scooter hardware.
     static let simulatorQA = SpeedInstrumentInterpolationPolicy(
         minimumTransitionNanoseconds: 50_000_000,
         maximumContinuousSampleIntervalNanoseconds: 300_000_000,
@@ -46,6 +46,9 @@ final class VehicleStore {
     private let service: any ScooterService
 
     var state: VehicleState
+    /// Source-owned currentness for speed. Cached `VehicleState` speed never
+    /// promotes this value by itself.
+    private(set) var speedEvidenceAvailability: SpeedEvidenceAvailability = .unavailable
     var pendingCommands: Set<PendingCommand> = []
     var pendingRideMode: RideMode?
     var pendingCruiseValue: Bool?
@@ -57,7 +60,23 @@ final class VehicleStore {
         pendingCommands.contains { $0 != .connect }
     }
 
+    /// Simulator-only qualified live speed for truth-sensitive QA/control gates.
+    /// Aggregate connection can only remove authority here; it never promotes a
+    /// cached number into current speed evidence.
+    var simulatorQualifiedLiveSpeedKilometersPerHour: Double? {
+        guard state.connection == .connected,
+              profile == .simulatorQA,
+              case let .live(sample) = speedEvidenceAvailability,
+              sample.source == .simulatorQA else {
+            return nil
+        }
+        let speed = sample.kilometersPerHour
+        guard speed.isFinite, speed >= 0 else { return nil }
+        return speed
+    }
+
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
+    @ObservationIgnored private var speedEvidenceTask: Task<Void, Never>?
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private let shouldAutoConnectOnStart: Bool
 
@@ -90,6 +109,7 @@ final class VehicleStore {
 
     deinit {
         updatesTask?.cancel()
+        speedEvidenceTask?.cancel()
     }
 
     func start() async {
@@ -101,7 +121,31 @@ final class VehicleStore {
             for await state in stream {
                 guard let self, !Task.isCancelled else { break }
                 self.state = state
+                if state.connection != .connected {
+                    // Connection loss can retire authority immediately on this
+                    // ordered state stream. It never promotes speed when a later
+                    // reconnect arrives; only source-owned evidence may do that.
+                    self.speedEvidenceAvailability = .unavailable
+                }
             }
+        }
+
+        if let speedEvidenceProvider = service as? any SpeedEvidenceProvider {
+            speedEvidenceTask = Task { [weak self, speedEvidenceProvider] in
+                let stream = await speedEvidenceProvider.speedEvidenceUpdates()
+                for await availability in stream {
+                    guard let self, !Task.isCancelled else { return }
+                    self.speedEvidenceAvailability = availability
+                }
+
+                // An ended acquisition stream cannot leave its last `.live`
+                // sample authorized indefinitely. Cancellation/deinit needs no
+                // state write; any real unexpected/normal end fails closed.
+                guard let self, !Task.isCancelled else { return }
+                self.speedEvidenceAvailability = .unavailable
+            }
+        } else {
+            speedEvidenceAvailability = .unavailable
         }
 
         if shouldAutoConnectOnStart {

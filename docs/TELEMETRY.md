@@ -6,7 +6,7 @@ Updated: 2026-08-07
 
 Nembra keeps these layers separate:
 
-1. **Raw evidence** — immutable speed samples emitted by BLE, Core Location, or a bounded motion-assisted estimator.
+1. **Raw evidence** — immutable speed samples emitted by BLE, Core Location, the explicit Simulator QA source, or a bounded motion-assisted estimator.
 2. **Benchmark/quality diagnostics** — cadence, jitter, empirical resolution, delivery latency when a source timestamp exists, and rejected/out-of-order counts.
 3. **Fusion/estimation** — future logic that may choose or combine evidence for a best current estimate.
 4. **Display interpolation** — render-time animation that may visually move between trustworthy estimates at the display refresh rate.
@@ -17,7 +17,7 @@ Display interpolation must never be fed back into raw telemetry, ride evidence, 
 
 `SpeedTelemetrySample` records:
 
-- source (`scooterBluetooth`, `gps`, `motionAssist`)
+- source (`scooterBluetooth`, `gps`, `simulatorQA`, `motionAssist`)
 - provenance (`absoluteMeasurement` or `shortHorizonEstimate`)
 - SI speed in meters/second
 - monotonic receive timestamp in uptime nanoseconds
@@ -25,7 +25,7 @@ Display interpolation must never be fed back into raw telemetry, ride evidence, 
 - optional source measurement date
 - optional speed accuracy in meters/second
 
-BLE and GPS samples are required to be absolute measurements. Motion assist is structurally restricted to `shortHorizonEstimate`; it cannot claim authoritative speed.
+BLE, GPS, and Simulator QA samples are required to be absolute measurements. `simulatorQA` means a deterministic synthetic observation produced only by Nembra's Simulator service; it is not scooter-Bluetooth, GPS, or physical-hardware evidence. Motion assist is structurally restricted to `shortHorizonEstimate`; it cannot claim authoritative absolute speed.
 
 The monotonic timestamp is the source of truth for arrival ordering and interval measurements. Wall-clock time is never used to calculate packet cadence because the user/system can adjust wall time.
 
@@ -50,7 +50,7 @@ A raw sample's `receivedAtUptimeNanoseconds` means **when that packet/evidence e
 - mean/min/max delivery latency
 - delivery-latency standard deviation
 
-A collector is source-specific; trying to mix GPS into a BLE collector is rejected.
+A collector is source-specific; trying to mix GPS into a BLE collector, or Simulator QA into a BLE collector, is rejected. Simulator benchmark fixtures must therefore benchmark `.simulatorQA` directly instead of pretending their synthetic packets came from scooter Bluetooth.
 
 Out-of-order or duplicate monotonic timestamps are rejected rather than silently reordering history. Selected-source receive chronology advances for each fresh source-matching callback before representation-specific benchmark admission, so a newer callback that is later rejected cannot be erased to let an older or equal-timestamp callback masquerade as fresh. Foreign-source callbacks never advance that selected-source watermark.
 
@@ -68,20 +68,21 @@ Core Location can expose a measurement timestamp, so delivery latency can be est
 
 ## Simulation
 
-`SimulatedScooterService` conforms to the same `SpeedTelemetryProvider` contract future real BLE will use.
+`SimulatedScooterService` conforms to the same raw `SpeedTelemetryProvider` shape future real BLE can use while giving its evidence an explicitly different source identity. It also owns a source-currentness projection through `SpeedEvidenceProvider`; availability is state rather than a packet log, so the Simulator registers and replays its current availability atomically and coalesces obsolete queued availability for slow consumers.
 
 Important behavior:
 
-- subscribing does not replay cached vehicle speed as a new measurement
-- `simulateRide` emits one raw scooter-Bluetooth sample per simulated measurement step
+- subscribing to raw telemetry does not replay cached vehicle speed as a new measurement
+- `simulateRide` emits one raw `.simulatorQA` sample per simulated measurement step — never a scooter-Bluetooth sample
 - the raw sample receive timestamp comes from the process monotonic uptime clock used by the Dashboard renderer
 - supplied `elapsedSeconds` advances simulated ride distance/time evidence only; it never pretends that a packet arrived minutes later than it actually did
 - if two simulated samples occur within one clock tick, the service advances the second timestamp by the minimum amount required to preserve strict monotonic ordering
+- disconnect, reconnect-without-fresh-observation, and explicit Simulator evidence gaps can retire `.live` speed authority without manufacturing a zero-speed packet
 - numeric overflow inputs are rejected before they can poison odometer/trip state
 
 This preserves truthful raw-arrival semantics while allowing ride-distance fixtures to jump forward deterministically. A regression test checks that a simulated raw sample lands within the real process-uptime window around its emission.
 
-Simulation timing is not physical AOVOPRO ES80 timing. It exists to exercise the presentation system before physical scooter packet cadence is captured.
+Simulation timing, source identity, and currentness are not physical AOVOPRO ES80 timing or protocol evidence. They exist to exercise the presentation and truth-boundary system before physical scooter packet cadence and semantics are captured.
 
 ## Real-hardware benchmark procedure (pending hardware access)
 
@@ -103,6 +104,8 @@ For Core Motion, evaluate only bounded short-horizon assistance around authorita
 ## Dashboard decision gate
 
 No interpolation/fusion constants should be tuned to imaginary AOVOPRO ES80 packet rates. The eventual Dashboard strategy must be selected from measured hardware traces. A 60/120 Hz visual render loop may interpolate between reliable estimates, but the raw evidence cadence remains exactly what the sensors produced.
+
+Field-specific currentness is also separate from whole-vehicle connection/currentness. A connected vehicle state cannot by itself promote a retained or unavailable speed field to live. Any Dashboard wording, VoiceOver value, or stopped-only control that requires current speed must consume the field-specific live-speed authority (or an equivalent stronger source-owned projection), not merely cached `VehicleState.speedKilometersPerHour`.
 
 ## Render-only interpolation
 
@@ -131,7 +134,8 @@ Rules:
 - that timeline is paused when no interpolation window is active, avoiding a permanent whole-app/high-frequency refresh loop
 - Dashboard side rails, controls, ride logic, distance, history, and safety continue to consume confirmed/raw domain state rather than interpolated frames
 - a telemetry gap beyond the injected continuous-sample limit snaps instead of visually bridging missing evidence
-- VoiceOver announces the newest authoritative/confirmed speed, never an interpolated midpoint that no sensor measured
+- field-currentness loss must retire live/current numeric and accessibility authority even if the last raw sample remains available for intentionally labeled retained/last-known presentation
+- VoiceOver announces the newest authoritative/current speed when current; it must not promote an interpolated midpoint or retained pre-gap sample into a current measurement
 
 The Simulator and the Dashboard renderer must use the same monotonic uptime clock domain. This is required for an animation window to represent elapsed render time correctly.
 
