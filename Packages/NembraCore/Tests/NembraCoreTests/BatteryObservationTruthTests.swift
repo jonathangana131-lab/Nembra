@@ -53,6 +53,38 @@ struct BatteryObservationTruthTests {
     }
 
     @Test
+    func onlyMeasuredAuthorityCanCrossPhysicalSOCBoundary() throws {
+        let observedAt = Date(timeIntervalSince1970: 3_800)
+        let measured = try #require(
+            AuthoritativeBatteryObservation(
+                percent: 64,
+                authority: .measured,
+                observedAt: observedAt
+            )
+        )
+        let estimated = try #require(
+            AuthoritativeBatteryObservation(
+                percent: 64,
+                authority: .estimated,
+                observedAt: observedAt
+            )
+        )
+        let displayOnly = try #require(
+            AuthoritativeBatteryObservation(
+                percent: 64,
+                authority: .displayOnly,
+                observedAt: observedAt
+            )
+        )
+
+        let physical = try #require(measured.physicalMeasurement)
+        #expect(physical.percent == 64)
+        #expect(physical.observedAt == observedAt)
+        #expect(estimated.physicalMeasurement == nil)
+        #expect(displayOnly.physicalMeasurement == nil)
+    }
+
+    @Test
     func invalidPercentAndNonFiniteTimeFailClosed() {
         #expect(
             AuthoritativeBatteryObservation(

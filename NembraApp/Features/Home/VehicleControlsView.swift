@@ -141,7 +141,7 @@ struct VehicleControlsView: View {
         } header: {
             Text("Start Behavior")
         } footer: {
-            Text("Kick Start requires the scooter to be rolling before throttle engages. Zero Start allows throttle from a stop when supported and enabled by the vehicle.")
+            Text("Nembra does not assign physical behavior to these options until the active scooter profile has verified evidence. Changes appear only after the scooter service confirms them.")
         }
     }
 
