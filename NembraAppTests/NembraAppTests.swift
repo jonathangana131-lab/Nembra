@@ -373,10 +373,10 @@ extension NembraAppTests {
             "The shell must not mint a fresh run behind an already-accepted charger declaration."
         )
         XCTAssertTrue(shell.contains("ES80CaptureRefreshPolicy.statusPollInterval"))
-        XCTAssertTrue(shell.contains("observation timer"))
+        XCTAssertTrue(shell.contains("This timer is guidance only. Nembra verifies the required observation before accepting this check."))
         XCTAssertTrue(shell.contains("seconds of display guidance remaining"))
-        XCTAssertTrue(shell.contains("The package producer, not this timer"))
-        XCTAssertTrue(shell.contains("Unavailable; waiting for accepted Horizon authority"))
+        XCTAssertTrue(shell.contains("finishing early cannot create a valid result"))
+        XCTAssertTrue(shell.contains("Unavailable; waiting for the required observation period"))
 
         XCTAssertFalse(
             shell.contains("encodedFinalizedObservationHorizonJSON"),
