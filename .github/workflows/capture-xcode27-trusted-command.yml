@@ -291,3 +291,29 @@ jobs:
           path: Artifacts/Xcode27Simulator
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Reject head movement before trusted acceptance completes
+        uses: actions/github-script@v9
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+        with:
+          script: |
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            })
+            const pr = response.data
+            const repository = `${context.repo.owner}/${context.repo.repo}`
+            core.info(`Trusted resolver head: ${process.env.EXPECTED_HEAD_SHA}`)
+            core.info(`Final live PR head: ${pr.head.sha}`)
+            if (pr.state !== 'open') {
+              core.setFailed('PR closed before trusted Capture acceptance completed.')
+            }
+            if (pr.head.repo.full_name !== repository) {
+              core.setFailed('PR source repository changed before trusted Capture acceptance completed.')
+            }
+            if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) {
+              core.setFailed('PR head moved during trusted Capture acceptance; stale run is non-evidence.')
+            }
