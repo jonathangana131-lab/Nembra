@@ -1,0 +1,41 @@
+name: Capture TODAY Final GO Git Custody Expected-Red
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - scripts/ci/es80_today_final_go_hardened.py
+      - scripts/ci/es80_today_trusted_capture_xcode_subject.py
+      - scripts/ci/tests/test_es80_today_final_go_git_custody.py
+      - .github/workflows/capture-today-final-go-git-custody-qa.yml
+
+permissions:
+  contents: read
+
+jobs:
+  git-custody-regression:
+    name: Reject caller-forged Final GO Git authority
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout immutable PR head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify immutable PR head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(/usr/bin/git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD_SHA"
+
+      - name: Compile Git custody regression
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_git_custody.py
+
+      - name: Reject caller PATH from minting trusted workflow blob authority
+        run: python3 scripts/ci/tests/test_es80_today_final_go_git_custody.py -v
