@@ -166,6 +166,7 @@ struct NembraApp: App {
 /// minted a live coordinator for the exact running research build.
 @MainActor
 private struct ES80ExperimentOneStationaryPreflightView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var coordinator: PassiveBluetoothExperimentOneCoordinator
     @State private var selectedChargerState: PassiveBluetoothStationaryCaptureChargerState?
     @State private var disconnectedDeclarationAccepted = false
@@ -228,16 +229,9 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
 #endif
         } else {
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    if let simulatorQAEvidenceLabel {
-                        Text("\(simulatorQAEvidenceLabel) · SYNTHETIC SOFTWARE STATE")
-                            .font(.caption.monospaced().weight(.bold))
-                            .foregroundStyle(.orange)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(.orange.opacity(0.10), in: Capsule())
-                            .accessibilityLabel("Simulator QA. Synthetic software state. Physical scooter capture remains locked.")
-                            .accessibilityIdentifier("es80.capture.simulator-qa")
+                VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 16 : 24) {
+                    if simulatorQAEvidenceLabel != nil {
+                        simulatorQADisclosure
                     }
                     VStack(alignment: .leading, spacing: 8) {
                         Text("NEMBRA CAPTURE")
@@ -246,11 +240,15 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
                             .foregroundStyle(.secondary)
 
                         Text("Stationary preflight")
-                            .font(.system(.largeTitle, design: .rounded, weight: .semibold))
+                            .font(.system(
+                                dynamicTypeSize.isAccessibilitySize ? .title2 : .largeTitle,
+                                design: .rounded,
+                                weight: .semibold
+                            ))
                             .foregroundStyle(.white)
 
                         Text("Confirm the charger state before OFF 1 becomes available.")
-                            .font(.body)
+                            .font(dynamicTypeSize.isAccessibilitySize ? .subheadline : .body)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -299,7 +297,7 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }
-                        .padding(18)
+                        .padding(dynamicTypeSize.isAccessibilitySize ? 14 : 18)
                         .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                         .accessibilityElement(children: .combine)
                         .accessibilityIdentifier("es80.capture.preflight.charger-blocked")
@@ -335,14 +333,44 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
                 }
                 .frame(maxWidth: 660)
                 .padding(.horizontal, 22)
-                .padding(.top, 18)
-                .padding(.bottom, 42)
+                .padding(.top, dynamicTypeSize.isAccessibilitySize ? 10 : 18)
+                .padding(.bottom, dynamicTypeSize.isAccessibilitySize ? 28 : 42)
                 .frame(maxWidth: .infinity)
             }
             .background(Color.black.ignoresSafeArea())
             .navigationTitle("Nembra Capture")
             .navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier("es80.capture.stationary-preflight")
+        }
+    }
+
+    @ViewBuilder
+    private var simulatorQADisclosure: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            HStack(spacing: 8) {
+                Image(systemName: "hammer.fill")
+                    .accessibilityHidden(true)
+                Text("SIMULATOR QA")
+                Text("SYNTHETIC")
+                    .foregroundStyle(.orange.opacity(0.78))
+            }
+            .font(.caption2.monospaced().weight(.bold))
+            .foregroundStyle(.orange)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Simulator QA. Synthetic software state. Physical scooter capture remains locked.")
+            .accessibilityIdentifier("es80.capture.simulator-qa")
+        } else if let simulatorQAEvidenceLabel {
+            Text("\(simulatorQAEvidenceLabel) · SYNTHETIC SOFTWARE STATE")
+                .font(.caption.monospaced().weight(.bold))
+                .foregroundStyle(.orange)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.orange.opacity(0.10), in: Capsule())
+                .accessibilityLabel("Simulator QA. Synthetic software state. Physical scooter capture remains locked.")
+                .accessibilityIdentifier("es80.capture.simulator-qa")
         }
     }
 
@@ -529,6 +557,7 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
 
 @MainActor
 private struct ES80ExperimentOneFieldNoGoView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var engineeringDetailsExpanded = false
     @State private var runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity?
@@ -536,6 +565,10 @@ private struct ES80ExperimentOneFieldNoGoView: View {
 
     private var recipeID: String {
         PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue
+    }
+
+    private var usesAccessibilityComposition: Bool {
+        dynamicTypeSize.isAccessibilitySize
     }
 
     private var physicalLockAccessibilityLabel: String {
@@ -553,50 +586,80 @@ private struct ES80ExperimentOneFieldNoGoView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: verticalSizeClass == .compact ? 10 : 28) {
-                VStack(alignment: .leading, spacing: verticalSizeClass == .compact ? 6 : 14) {
-                    HStack(spacing: 12) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                                .fill(.white.opacity(0.08))
-                                .frame(
-                                    width: verticalSizeClass == .compact ? 44 : 52,
-                                    height: verticalSizeClass == .compact ? 44 : 52
-                                )
-
-                            Image(systemName: "lock.shield.fill")
-                                .font(.system(
-                                    size: verticalSizeClass == .compact ? 20 : 23,
-                                    weight: .semibold
-                                ))
-                                .foregroundStyle(.white)
-                        }
-                        .accessibilityHidden(true)
-
-                        VStack(alignment: .leading, spacing: 4) {
+            VStack(
+                alignment: .leading,
+                spacing: usesAccessibilityComposition
+                    ? 14
+                    : (verticalSizeClass == .compact ? 10 : 28)
+            ) {
+                VStack(
+                    alignment: .leading,
+                    spacing: usesAccessibilityComposition
+                        ? 8
+                        : (verticalSizeClass == .compact ? 6 : 14)
+                ) {
+                    if usesAccessibilityComposition {
+                        VStack(alignment: .leading, spacing: 5) {
                             Text("NEMBRA CAPTURE")
-                                .font(.caption.monospaced().weight(.bold))
-                                .tracking(1.4)
+                                .font(.caption2.monospaced().weight(.bold))
+                                .tracking(1.1)
                                 .foregroundStyle(.secondary)
 
                             Text("Capture locked")
-                                .font(.system(
-                                    verticalSizeClass == .compact ? .title2 : .largeTitle,
-                                    design: .rounded,
-                                    weight: .semibold
-                                ))
+                                .font(.system(.title2, design: .rounded, weight: .semibold))
                                 .foregroundStyle(.white)
+                                .accessibilityAddTraits(.isHeader)
+                        }
+                    } else {
+                        HStack(spacing: 12) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                                    .fill(.white.opacity(0.08))
+                                    .frame(
+                                        width: verticalSizeClass == .compact ? 44 : 52,
+                                        height: verticalSizeClass == .compact ? 44 : 52
+                                    )
+
+                                Image(systemName: "lock.shield.fill")
+                                    .font(.system(
+                                        size: verticalSizeClass == .compact ? 20 : 23,
+                                        weight: .semibold
+                                    ))
+                                    .foregroundStyle(.white)
+                            }
+                            .accessibilityHidden(true)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("NEMBRA CAPTURE")
+                                    .font(.caption.monospaced().weight(.bold))
+                                    .tracking(1.4)
+                                    .foregroundStyle(.secondary)
+
+                                Text("Capture locked")
+                                    .font(.system(
+                                        verticalSizeClass == .compact ? .title2 : .largeTitle,
+                                        design: .rounded,
+                                        weight: .semibold
+                                    ))
+                                    .foregroundStyle(.white)
+                            }
                         }
                     }
 
-                    Text("This build is still finishing its final checks before it can collect real ES80 data.")
-                        .font(
-                            verticalSizeClass == .compact
+                    Text(
+                        usesAccessibilityComposition
+                            ? "Final build checks are still in progress."
+                            : "This build is still finishing its final checks before it can collect real ES80 data."
+                    )
+                    .font(
+                        usesAccessibilityComposition
+                            ? .headline
+                            : (verticalSizeClass == .compact
                                 ? .subheadline.weight(.medium)
-                                : .title3.weight(.medium)
-                        )
-                        .foregroundStyle(.white)
-                        .fixedSize(horizontal: false, vertical: true)
+                                : .title3.weight(.medium))
+                    )
+                    .foregroundStyle(.white)
+                    .fixedSize(horizontal: false, vertical: true)
 
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text("BUILD")
@@ -624,30 +687,38 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                     .accessibilityIdentifier("es80.capture.build-identity")
                 }
 
-                HStack(alignment: .top, spacing: 12) {
+                HStack(alignment: .top, spacing: usesAccessibilityComposition ? 9 : 12) {
                     Image(systemName: "exclamationmark.lock.fill")
-                        .font(.title3.weight(.semibold))
+                        .font((usesAccessibilityComposition ? Font.subheadline : Font.title3).weight(.semibold))
                         .foregroundStyle(.orange)
                         .accessibilityHidden(true)
 
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: usesAccessibilityComposition ? 4 : 6) {
                         Text("Not ready for scooter capture yet")
                             .font(.headline)
                             .foregroundStyle(.white)
 
-                        Text("Nembra keeps every scooter action locked until the exact app build passes its required checks and is explicitly cleared for this physical procedure. When this screen unlocks, Capture will guide the OFF / ON sequence step by step.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            usesAccessibilityComposition
+                                ? "Physical capture stays locked until this exact build passes its required checks."
+                                : "Nembra keeps every scooter action locked until the exact app build passes its required checks and is explicitly cleared for this physical procedure. When this screen unlocks, Capture will guide the OFF / ON sequence step by step."
+                        )
+                        .font(usesAccessibilityComposition ? .footnote : .subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .padding(verticalSizeClass == .compact ? 12 : 18)
+                .padding(
+                    usesAccessibilityComposition
+                        ? 12
+                        : (verticalSizeClass == .compact ? 12 : 18)
+                )
                 .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(physicalLockAccessibilityLabel)
                 .accessibilityIdentifier("es80.capture.physical-run-locked")
 
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: usesAccessibilityComposition ? 8 : 14) {
                     Button {
                         engineeringDetailsExpanded.toggle()
                     } label: {
@@ -656,9 +727,11 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                                 Text("Engineering details")
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(.white)
-                                Text("Recipe, build provenance, and authorization")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
+                                if !usesAccessibilityComposition {
+                                    Text("Recipe, build provenance, and authorization")
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
 
                             Spacer(minLength: 8)
@@ -761,7 +834,11 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         }
                     }
                 }
-                .padding(verticalSizeClass == .compact ? 12 : 18)
+                .padding(
+                    usesAccessibilityComposition
+                        ? 10
+                        : (verticalSizeClass == .compact ? 12 : 18)
+                )
                 .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
                 Text("No scooter action is required yet. Capture can only unlock on a Nembra build explicitly cleared for this physical procedure; changing a setting or preference cannot bypass this lock.")
@@ -770,9 +847,19 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: 660)
-            .padding(.horizontal, 22)
-            .padding(.top, verticalSizeClass == .compact ? 8 : 18)
-            .padding(.bottom, verticalSizeClass == .compact ? 20 : 42)
+            .padding(.horizontal, usesAccessibilityComposition ? 18 : 22)
+            .padding(
+                .top,
+                usesAccessibilityComposition
+                    ? 8
+                    : (verticalSizeClass == .compact ? 8 : 18)
+            )
+            .padding(
+                .bottom,
+                usesAccessibilityComposition
+                    ? 24
+                    : (verticalSizeClass == .compact ? 20 : 42)
+            )
             .frame(maxWidth: .infinity)
         }
         .accessibilityIdentifier("es80.capture.field-no-go-scroll")
