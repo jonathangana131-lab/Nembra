@@ -1,0 +1,36 @@
+name: VALIDATION ONLY - Capture Final GO Operator Attestation Custody Red
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - scripts/ci/es80_today_final_go_foundation.py
+      - scripts/ci/tests/test_es80_today_final_go_operator_attestation_custody_red.py
+      - .github/workflows/capture-today-final-go-operator-attestation-custody-red.yml
+
+permissions:
+  contents: read
+
+jobs:
+  expected-red:
+    name: Reject caller-authored operator GO authority
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout immutable validation head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Verify immutable validation head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+
+      - name: Compile expected-red operator-attestation regression
+        run: python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_operator_attestation_custody_red.py
+
+      - name: Prove plain JSON cannot mint operator Final GO authority
+        run: python3 scripts/ci/tests/test_es80_today_final_go_operator_attestation_custody_red.py -v
