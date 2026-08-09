@@ -35,6 +35,7 @@ struct AdaptiveBatteryRangeLiveTruthTests {
         )
         var validator = BatteryEvidenceStreamValidator()
         try validator.accept(observation)
+        let policy = try provisionalPolicy()
 
         let anchor = try AcceptedBatterySOCAnchor.current(
             observation: observation,
@@ -45,7 +46,7 @@ struct AdaptiveBatteryRangeLiveTruthTests {
         #expect(AdaptiveBatteryRangeModel().estimateRemainingRange(
             atAcceptedSOC: anchor,
             acceptedBy: validator,
-            policy: provisionalPolicy()
+            policy: policy
         ) == nil)
     }
 
