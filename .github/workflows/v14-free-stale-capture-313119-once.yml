@@ -1,0 +1,55 @@
+name: V14 Free stale Capture 313119 once
+
+on:
+  push:
+    branches:
+      - ops/v14-free-stale-capture-run-31311961120/gpt56-go
+    paths:
+      - .github/workflows/v14-free-stale-capture-313119-once.yml
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  cancel-stale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      STALE_RUN_ID: '31311961120'
+      STALE_TRUST_SHA: '941fb98829457fb73fb747880e8ea32708cb4605'
+      SURVIVOR_RUN_ID: '31312433441'
+      SURVIVOR_TRUST_SHA: 'a80229e9bac1f10211195d64675a84ac4786976a'
+    steps:
+      - name: Cancel only obsolete trusted generation
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+          repo=os.environ['GITHUB_REPOSITORY']; token=os.environ['GITHUB_TOKEN']
+          stale_id=int(os.environ['STALE_RUN_ID']); survivor_id=int(os.environ['SURVIVOR_RUN_ID'])
+          stale_sha=os.environ['STALE_TRUST_SHA']; survivor_sha=os.environ['SURVIVOR_TRUST_SHA']
+          api=f'https://api.github.com/repos/{repo}/actions/runs'
+          def req(method,url):
+              r=urllib.request.Request(url,method=method,headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'nembra-v14-stale-run-closer'})
+              try:
+                  with urllib.request.urlopen(r,timeout=20) as response:
+                      raw=response.read(); return None if not raw else json.loads(raw)
+              except urllib.error.HTTPError as exc:
+                  raise SystemExit(f'{method} {url}: HTTP {exc.code}: {exc.read().decode(errors="replace")}') from exc
+          stale=req('GET',f'{api}/{stale_id}'); survivor=req('GET',f'{api}/{survivor_id}')
+          for label,run,eid,esha in [('stale',stale,stale_id,stale_sha),('survivor',survivor,survivor_id,survivor_sha)]:
+              if not isinstance(run,dict) or run.get('id')!=eid: raise SystemExit(f'{label} identity mismatch')
+              if run.get('name')!='Capture Trusted Xcode 27 Exact-Head QA': raise SystemExit(f'{label} workflow mismatch')
+              if run.get('path')!='.github/workflows/capture-xcode27-trusted-command.yml': raise SystemExit(f'{label} path mismatch')
+              if run.get('event')!='issue_comment': raise SystemExit(f'{label} event mismatch')
+              if run.get('head_sha')!=esha: raise SystemExit(f'{label} trust SHA mismatch')
+          if stale.get('status') not in {'queued','pending','in_progress'}: raise SystemExit(f'stale no longer alive: {stale.get("status")}/{stale.get("conclusion")}')
+          if survivor.get('status') not in {'queued','pending','in_progress'}: raise SystemExit(f'survivor not alive: {survivor.get("status")}/{survivor.get("conclusion")}')
+          if survivor.get('created_at','') <= stale.get('created_at',''): raise SystemExit('survivor not newer')
+          req('POST',f'{api}/{stale_id}/cancel')
+          print(f'cancel requested for {stale_id}; preserved {survivor_id}')
+          PY
