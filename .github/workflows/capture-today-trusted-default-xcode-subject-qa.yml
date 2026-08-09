@@ -10,6 +10,7 @@ on:
       - scripts/ci/tests/test_es80_today_final_go_publication.py
       - scripts/ci/es80_today_final_go_hardened.py
       - scripts/ci/tests/test_es80_today_final_go_hardened.py
+      - scripts/ci/tests/test_es80_today_final_go_git_custody.py
       - .github/workflows/capture-today-trusted-default-xcode-subject-qa.yml
 
 permissions:
@@ -35,13 +36,15 @@ jobs:
         run: |
           python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
           python3 -m py_compile scripts/ci/es80_today_final_go_publication.py scripts/ci/tests/test_es80_today_final_go_publication.py
-          python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py
+          python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_git_custody.py
       - name: Run trusted subject adversarial suite
         run: python3 scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py -v
       - name: Run failure-atomic publication adversarial suite
         run: python3 scripts/ci/tests/test_es80_today_final_go_publication.py -v
       - name: Run hardened composition suite
         run: python3 scripts/ci/tests/test_es80_today_final_go_hardened.py -v
+      - name: Run closed Git custody suite
+        run: python3 scripts/ci/tests/test_es80_today_final_go_git_custody.py -v
       - name: Pin hardened authority boundaries
         run: |
           set -euo pipefail
@@ -52,4 +55,5 @@ jobs:
           grep -Fq 'run.get("head_branch") == DEFAULT_BRANCH' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'AMBIGUOUS NO-GO' scripts/ci/es80_today_final_go_publication.py
           grep -Fq 'foundation._trusted_xcode_subject = trusted_subject_adapter' scripts/ci/es80_today_final_go_hardened.py
+          grep -Fq 'foundation._git(tooling_repo, "rev-parse"' scripts/ci/es80_today_final_go_hardened.py
           grep -Fq 'publication.publish_record_no_replace' scripts/ci/es80_today_final_go_hardened.py
