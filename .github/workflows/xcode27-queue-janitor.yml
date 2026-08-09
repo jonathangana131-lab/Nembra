@@ -8,6 +8,7 @@ on:
       - ci/xcode27-stale-active-janitor-v14-gpt56-go
       - ci/xcode27-janitor-five-minute-v14-gpt56-go
       - fix/capture-trusted-queue-janitor-v14/chatgpt56-thinking-go
+      - recovery/capture-trusted-queue-redirect-auth-v14/gpt56-thinking-go
     paths:
       - scripts/ci/xcode27_queue_janitor.py
       - .github/workflows/xcode27-queue-janitor.yml
