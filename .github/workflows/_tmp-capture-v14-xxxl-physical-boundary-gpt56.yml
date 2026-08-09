@@ -30,46 +30,73 @@ jobs:
           from pathlib import Path
 
           path = Path("NembraApp/App/NembraApp.swift")
-          text = path.read_text()
+          lines = path.read_text().splitlines(keepends=True)
+          anchor = '.accessibilityIdentifier("es80.capture.physical-run-locked")'
+          anchor_indices = [i for i, line in enumerate(lines) if anchor in line]
+          if len(anchor_indices) != 1:
+              raise SystemExit(f"Expected one physical-run boundary anchor, found {len(anchor_indices)}")
+          end = anchor_indices[0]
 
-          old = '''                HStack(alignment: .top, spacing: isAccessibilityLayout ? 8 : 12) {
-                      Image(systemName: "exclamationmark.lock.fill")
-                          .font(isAccessibilityLayout ? .body.weight(.semibold) : .title3.weight(.semibold))
-                          .foregroundStyle(.orange)
-                          .accessibilityHidden(true)
-  
-                      VStack(alignment: .leading, spacing: 6) {
-          '''
-          new = '''                HStack(alignment: .top, spacing: isAccessibilityLayout ? 0 : 12) {
-                      if !isAccessibilityLayout {
-                          Image(systemName: "exclamationmark.lock.fill")
-                              .font(.title3.weight(.semibold))
-                              .foregroundStyle(.orange)
-                              .accessibilityHidden(true)
-                      }
-  
-                      VStack(alignment: .leading, spacing: 6) {
-          '''
+          start = None
+          for i in range(end - 1, -1, -1):
+              if 'HStack(alignment: .top, spacing: isAccessibilityLayout ?' in lines[i]:
+                  start = i
+                  break
+          if start is None:
+              raise SystemExit("Could not locate physical-run boundary HStack")
 
-          if new in text and old not in text:
+          current_hstack = lines[start].strip()
+          repaired_hstack = 'HStack(alignment: .top, spacing: isAccessibilityLayout ? 0 : 12) {'
+          if current_hstack == repaired_hstack:
               print("Repair already present; no source mutation needed.")
               raise SystemExit(0)
+          expected_hstack = 'HStack(alignment: .top, spacing: isAccessibilityLayout ? 8 : 12) {'
+          if current_hstack != expected_hstack:
+              raise SystemExit(f"Unexpected physical boundary HStack: {current_hstack}")
 
-          if text.count(old) != 1:
-              raise SystemExit(f"Expected one physical-boundary source shape, found {text.count(old)}")
+          lines[start] = lines[start].replace('? 8 : 12', '? 0 : 12')
 
-          text = text.replace(old, new, 1)
-          start = text.index(new)
-          end_anchor = '.accessibilityIdentifier("es80.capture.physical-run-locked")'
-          end = text.index(end_anchor, start)
-          segment = text[start:end]
-          old_padding = '.padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 10 : 18))'
-          new_padding = '.padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 6 : 18))'
-          if segment.count(old_padding) != 1:
-              raise SystemExit("Expected one physical-boundary padding expression")
-          segment = segment.replace(old_padding, new_padding, 1)
-          text = text[:start] + segment + text[end:]
-          path.write_text(text)
+          image_index = None
+          for i in range(start + 1, end):
+              if lines[i].strip() == 'Image(systemName: "exclamationmark.lock.fill")':
+                  image_index = i
+                  break
+          if image_index is None:
+              raise SystemExit("Could not locate decorative physical-boundary lock image")
+
+          expected = [
+              'Image(systemName: "exclamationmark.lock.fill")',
+              '.font(isAccessibilityLayout ? .body.weight(.semibold) : .title3.weight(.semibold))',
+              '.foregroundStyle(.orange)',
+              '.accessibilityHidden(true)',
+          ]
+          for offset, token in enumerate(expected):
+              if lines[image_index + offset].strip() != token:
+                  raise SystemExit(f"Unexpected lock-image source at offset {offset}: {lines[image_index + offset].strip()}")
+
+          indent = lines[image_index][:len(lines[image_index]) - len(lines[image_index].lstrip())]
+          replacement = [
+              f'{indent}if !isAccessibilityLayout {{\n',
+              f'{indent}    Image(systemName: "exclamationmark.lock.fill")\n',
+              f'{indent}        .font(.title3.weight(.semibold))\n',
+              f'{indent}        .foregroundStyle(.orange)\n',
+              f'{indent}        .accessibilityHidden(true)\n',
+              f'{indent}}}\n',
+          ]
+          lines[image_index:image_index + 4] = replacement
+
+          # Re-find the anchor after inserting two lines, then tighten only this noninteractive
+          # card's Accessibility padding. Full Dynamic Type remains active.
+          anchor_indices = [i for i, line in enumerate(lines) if anchor in line]
+          end = anchor_indices[0]
+          padding_token = '.padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 10 : 18))'
+          padding_indices = [i for i in range(start, end) if lines[i].strip() == padding_token]
+          if len(padding_indices) != 1:
+              raise SystemExit(f"Expected one physical-boundary padding expression, found {len(padding_indices)}")
+          p = padding_indices[0]
+          lines[p] = lines[p].replace('isAccessibilityLayout ? 10 : 18', 'isAccessibilityLayout ? 6 : 18')
+
+          path.write_text(''.join(lines))
           PY
 
           git diff --check
@@ -79,20 +106,7 @@ jobs:
             exit 0
           fi
 
-          python3 - <<'PY'
-          from pathlib import Path
-          text = Path("NembraApp/App/NembraApp.swift").read_text()
-          required = [
-              'HStack(alignment: .top, spacing: isAccessibilityLayout ? 0 : 12)',
-              'if !isAccessibilityLayout {\n                        Image(systemName: "exclamationmark.lock.fill")',
-              '.padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 6 : 18))',
-              '.accessibilityIdentifier("es80.capture.physical-run-locked")',
-          ]
-          for token in required:
-              if token not in text:
-                  raise SystemExit(f"Missing repaired source token: {token}")
-          PY
-
+          git diff -- NembraApp/App/NembraApp.swift
           git config user.name "nembra-v14-gpt56-go"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add NembraApp/App/NembraApp.swift
