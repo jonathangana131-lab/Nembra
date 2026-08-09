@@ -59,9 +59,12 @@ class TrustedXcodeBuildGraphCustodyTests(unittest.TestCase):
         )
         self.assertIn("trusted build graph forbids source-controlled Xcode user data", step)
 
-    def test_authority_rejects_unpinned_version_specific_package_manifests(self) -> None:
+    def test_authority_rejects_unpinned_version_specific_package_manifests_case_insensitively(self) -> None:
         step = self._custody_step()
-        self.assertIn('package_root.glob("Package@swift-*.swift")', step)
+        self.assertIn('name = path.name.casefold()', step)
+        self.assertIn('name.startswith("package@swift-")', step)
+        self.assertIn('name.endswith(".swift")', step)
+        self.assertNotIn('package_root.glob("Package@swift-*.swift")', step)
         self.assertIn('"Packages/NembraCore"', step)
         self.assertIn('"Packages/NembraBluetoothCapture"', step)
         self.assertIn("trusted build graph forbids version-specific SwiftPM manifests", step)
