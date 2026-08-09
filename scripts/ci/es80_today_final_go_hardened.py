@@ -230,12 +230,14 @@ def _args(argv: list[str]) -> argparse.Namespace:
     private_parser = argparse.ArgumentParser(add_help=False)
     private_parser.add_argument(
         "--intended-device-udid-file",
-        required=True,
         type=Path,
         help=argparse.SUPPRESS,
     )
     private, remaining = private_parser.parse_known_args(argv)
+    # Let the incumbent parser handle --help before enforcing the private execution-only input.
     foundation_args = foundation._args(remaining)
+    if private.intended_device_udid_file is None:
+        private_parser.error("--intended-device-udid-file is required")
     setattr(foundation_args, "intended_device_udid_file", private.intended_device_udid_file)
     return foundation_args
 
