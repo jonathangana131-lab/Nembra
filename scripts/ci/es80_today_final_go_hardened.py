@@ -21,6 +21,15 @@ import sys
 from typing import Any, Callable
 
 MODULE_DIR = Path(__file__).resolve().parent
+TRUSTED_GIT_EXECUTABLE = "/usr/bin/git"
+TRUSTED_GIT_ENVIRONMENT = {
+    "PATH": "/usr/bin:/bin",
+    "HOME": "/tmp",
+    "LC_ALL": "C",
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_NO_REPLACE_OBJECTS": "1",
+}
 
 
 def _load(name: str, filename: str):
@@ -45,11 +54,19 @@ FinalGoError = foundation.FinalGoError
 def _workflow_blob_sha_at_commit(tooling_repo: Path, commit: str, path: str) -> str:
     try:
         completed = subprocess.run(
-            ["git", "-C", str(tooling_repo), "rev-parse", f"{commit}:{path}"],
+            [
+                TRUSTED_GIT_EXECUTABLE,
+                "-C",
+                str(tooling_repo),
+                "rev-parse",
+                "--verify",
+                f"{commit}:{path}",
+            ],
             check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            env=TRUSTED_GIT_ENVIRONMENT.copy(),
         )
     except (OSError, subprocess.CalledProcessError) as error:
         raise FinalGoError(
