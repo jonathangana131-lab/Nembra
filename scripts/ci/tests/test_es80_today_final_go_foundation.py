@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""Run the historical Final GO adversarial suite against the authority-bearing foundation module.
+"""Run the historical Final GO adversarial suite against the preserved foundation implementation.
 
-The historical `es80_today_final_go_record.py` import is intentionally non-authorizing. Rather than
-reopen that compatibility surface for tests, this harness loads the existing test module and swaps
-its module-global `final_go` reference to the real foundation before test discovery/execution.
-Class constants already captured from the compatibility export are identical foundation constants;
-all runtime builder, Git, validation, and publication calls resolve through this replacement.
+The public `es80_today_final_go_record.py` compatibility import and the public
+`es80_today_final_go_foundation.py` wrapper are intentionally non-authorizing for legacy operator
+JSON. This harness therefore points the existing historical suite at the byte-preserved internal
+foundation implementation so its closed-world candidate/Git/Xcode/publication coverage stays intact
+without reopening either public authority seam.
 """
 from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
-import sys
 import unittest
 
 TEST_DIR = Path(__file__).resolve().parent
@@ -27,15 +26,15 @@ def _load(name: str, path: Path):
     return module
 
 
-foundation = _load(
-    "nembra_today_final_go_foundation_under_test",
-    MODULE_DIR / "es80_today_final_go_foundation.py",
+foundation_impl = _load(
+    "nembra_today_final_go_foundation_impl_under_test",
+    MODULE_DIR / "_es80_today_final_go_foundation_impl.py",
 )
 legacy_suite = _load(
     "nembra_today_final_go_foundation_suite",
     TEST_DIR / "test_es80_today_final_go_record.py",
 )
-legacy_suite.final_go = foundation
+legacy_suite.final_go = foundation_impl
 
 
 def main() -> int:
