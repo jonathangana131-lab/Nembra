@@ -1,0 +1,27 @@
+name: TEMP 24e Capture build identity audit
+
+on:
+  push:
+    branches:
+      - automation/es80-24e-build-identity-audit-gpt56
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Guard exact parent and audit metadata seams
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "24e09026c1be288bf0cf46c129dd5cbbdca6a056"
+          echo '=== INFOPLIST_KEY custom build identity references ==='
+          git grep -n -E 'INFOPLIST_KEY_NembraCapture(BuildIdentifier|BuildInstanceID|BuildCommitSHA|FieldRecipe)' -- ':!*.md' || true
+          echo '=== NembraCaptureBuild identity references ==='
+          git grep -n -E 'NembraCapture(BuildIdentifier|BuildInstanceID|BuildCommitSHA|FieldRecipe)' -- ':!*.md' || true
+          echo '=== project generated plist settings ==='
+          git grep -n -E 'GENERATE_INFOPLIST_FILE|INFOPLIST_FILE' -- Nembra.xcodeproj/project.pbxproj || true
