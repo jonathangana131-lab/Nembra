@@ -853,6 +853,7 @@ struct ES80CaptureShellView: View {
         .accessibilityLabel(
             "Capture health. Signal \(connection == .connected ? "matched" : "waiting"). Discovery \(observationReady ? "ready" : "waiting"). Seal \(horizonReady ? "ready" : "waiting")."
         )
+        .accessibilityIdentifier("es80.capture.health")
     }
 
     private var completionPanel: some View {
