@@ -55,13 +55,14 @@ struct RideHistoryDurationAttachmentTests {
     }
 
     private func completedRide(
-        continuity: RideSessionContinuity = .uninterruptedProcess
+        continuity: RideSessionContinuity = .uninterruptedProcess,
+        endedAtDate: Date = Date(timeIntervalSinceReferenceDate: 1_200)
     ) throws -> CompletedRideEvidence {
         try CompletedRideEvidence(
             sessionID: sessionID,
             beganAtDate: Date(timeIntervalSinceReferenceDate: 1_000),
             confirmedAtDate: Date(timeIntervalSinceReferenceDate: 1_010),
-            endedAtDate: Date(timeIntervalSinceReferenceDate: 1_200),
+            endedAtDate: endedAtDate,
             startingOdometerKilometers: 10,
             endingOdometerKilometers: 11,
             qualityScreenedGPSDistanceMeters: 1_500,
@@ -102,10 +103,11 @@ struct RideHistoryDurationAttachmentTests {
         let attachment = try await coordinator.attachment(sessionID: sessionID)
         #expect(attachment?.historyRecord == history)
         #expect(attachment?.durationRecord.archive == evidence.persistenceArchive)
+        #expect(attachment?.durationRecord.archive.completedRideEvidence == ride)
         #expect(attachment?.durationRecord.archive.observedDurationNanoseconds == 120_000_000_000)
     }
 
-    @Test("caller-authored archive is persistable data but cannot masquerade as authoritative evidence")
+    @Test("caller-authored legacy archive stays archival data and cannot claim exact ride association")
     func importedArchiveStaysArchive() async throws {
         let ride = try completedRide()
         let history = RideHistoryRecord(evidence: ride)
@@ -121,16 +123,43 @@ struct RideHistoryDurationAttachmentTests {
         let store = DurationStore()
         _ = try await store.commit(decoded)
 
+        #expect(decoded.archive.completedRideEvidence == nil)
+        #expect(decoded.archive.observedDurationNanoseconds == 999_000_000_000)
+
         let coordinator = RideHistoryDurationCommitCoordinator(
             historyStore: HistoryStore([history]),
             durationStore: store
         )
-        let attachment = try await coordinator.attachment(sessionID: sessionID)
+        await #expect(throws: RideHistoryDurationCommitCoordinatorError.completedRideMismatch(sessionID)) {
+            _ = try await coordinator.attachment(sessionID: sessionID)
+        }
+    }
 
-        #expect(attachment?.durationRecord.archive == imported)
-        #expect(attachment?.durationRecord.archive.observedDurationNanoseconds == 999_000_000_000)
-        // There is deliberately no archive -> CompletedRideDurationEvidence API.
-        // Persisted bytes remain structurally validated history only.
+    @Test("same UUID and continuity cannot substitute a different completed ride snapshot")
+    func exactCompletedRideSubjectRequired() async throws {
+        let original = try completedRide()
+        let conflicting = try completedRide(
+            endedAtDate: Date(timeIntervalSinceReferenceDate: 1_201)
+        )
+        let evidence = try authoritativeDuration(for: original)
+
+        let commitCoordinator = RideHistoryDurationCommitCoordinator(
+            historyStore: HistoryStore([RideHistoryRecord(evidence: conflicting)]),
+            durationStore: DurationStore()
+        )
+        await #expect(throws: RideHistoryDurationCommitCoordinatorError.completedRideMismatch(sessionID)) {
+            _ = try await commitCoordinator.commit(evidence)
+        }
+
+        let store = DurationStore()
+        _ = try await store.commit(RideHistoryDurationRecord(authoritativeEvidence: evidence))
+        let attachmentCoordinator = RideHistoryDurationCommitCoordinator(
+            historyStore: HistoryStore([RideHistoryRecord(evidence: conflicting)]),
+            durationStore: store
+        )
+        await #expect(throws: RideHistoryDurationCommitCoordinatorError.completedRideMismatch(sessionID)) {
+            _ = try await attachmentCoordinator.attachment(sessionID: sessionID)
+        }
     }
 
     @Test("missing base history and orphaned archive fail closed")
