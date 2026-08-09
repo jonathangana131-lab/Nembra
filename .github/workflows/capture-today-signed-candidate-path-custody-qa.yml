@@ -1,0 +1,58 @@
+name: Capture TODAY Signed Candidate IPA Custody QA
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - scripts/ci/es80_today_signed_candidate_reinspection.py
+      - scripts/ci/tests/test_es80_today_signed_candidate_reinspection.py
+      - scripts/ci/tests/test_es80_today_signed_candidate_reinspection_path_custody.py
+      - .github/workflows/capture-today-signed-candidate-path-custody-qa.yml
+
+permissions:
+  contents: read
+
+jobs:
+  signed-ipa-custody:
+    name: Bind Apple reinspection to descriptor-admitted IPA bytes
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout immutable PR head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Verify immutable PR head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+
+      - name: Compile reinspection custody implementation and tests
+        run: |
+          python3 -m py_compile scripts/ci/es80_today_signed_candidate_reinspection.py
+          python3 -m py_compile scripts/ci/tests/test_es80_today_signed_candidate_reinspection.py
+          python3 -m py_compile scripts/ci/tests/test_es80_today_signed_candidate_reinspection_path_custody.py
+
+      - name: Preserve signed candidate reinspection semantics
+        run: python3 scripts/ci/tests/test_es80_today_signed_candidate_reinspection.py -v
+
+      - name: Reject retained IPA pathname substitution
+        run: python3 scripts/ci/tests/test_es80_today_signed_candidate_reinspection_path_custody.py -v
+
+      - name: Pin descriptor-backed Apple-tool input contract
+        run: |
+          set -euo pipefail
+          grep -Fq 'del ipa_path' scripts/ci/es80_today_signed_candidate_reinspection.py
+          grep -Fq 'os.unlink(materialized_path)' scripts/ci/es80_today_signed_candidate_reinspection.py
+          grep -Fq 'source = f"/dev/fd/{descriptor}"' scripts/ci/es80_today_signed_candidate_reinspection.py
+          grep -Fq 'pass_fds=(inherited_fd,)' scripts/ci/es80_today_signed_candidate_reinspection.py
+          ! grep -Fq '["/usr/bin/ditto", "-x", "-k", str(ipa_path)' scripts/ci/es80_today_signed_candidate_reinspection.py
+
+      - name: Check PR patch whitespace
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git diff --check "$BASE_SHA" "$HEAD_SHA"
