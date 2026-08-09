@@ -448,31 +448,49 @@ public struct AdaptiveBatteryRangeEstimate: Equatable, Codable, Sendable {
     }
 }
 
-/// A live derived range result bound to the exact accepted SoC receipt used to compute it.
+/// A live derived range result bound to the exact accepted SoC receipt and currentness owner used
+/// to compute it.
 ///
-/// The initializer is file-scoped so direct-source app code cannot attach arbitrary receipt
-/// metadata to a generic estimate. Callers receive this only from
-/// `estimateRemainingRange(atAcceptedSOC:acceptedBy:...)`, which rechecks validator currentness
-/// at calculation time. The wrapper remains non-Codable because receipt identity is process-local.
+/// The initializer is file-scoped so direct-source app code cannot attach arbitrary receipt or
+/// owner metadata to a generic estimate. Callers receive this only from
+/// `estimateRemainingRange(atAcceptedSOC:acceptedBy:...)`, which rechecks the anchor's opaque
+/// owner lease at calculation time. The wrapper remains non-Codable because receipt identity and
+/// owner currentness are process-local.
 public struct AdaptiveBatteryRangeLiveEstimate: Equatable, Sendable {
     public let estimate: AdaptiveBatteryRangeEstimate
     public let sourceReceiptIdentity: BatteryEvidenceReceiptIdentity
     public let sourceSOCUptimeNanoseconds: UInt64
+    let currentnessLease: BatteryEvidenceCurrentnessLease
 
     fileprivate init(
         estimate: AdaptiveBatteryRangeEstimate,
         sourceReceiptIdentity: BatteryEvidenceReceiptIdentity,
-        sourceSOCUptimeNanoseconds: UInt64
+        sourceSOCUptimeNanoseconds: UInt64,
+        currentnessLease: BatteryEvidenceCurrentnessLease
     ) {
         self.estimate = estimate
         self.sourceReceiptIdentity = sourceReceiptIdentity
         self.sourceSOCUptimeNanoseconds = sourceSOCUptimeNanoseconds
+        self.currentnessLease = currentnessLease
     }
 
+    /// A validator can confirm this estimate only when it belongs to the same live owner
+    /// generation that minted the source SoC anchor. Matching receipt metadata under a fresh,
+    /// unrelated owner is insufficient.
     public func isCurrent(in validator: BatteryEvidenceStreamValidator) -> Bool {
-        validator.requiresContinuityBoundary == false
-            && validator.lastAcceptedReceiptIdentity == sourceReceiptIdentity
-            && validator.lastAcceptedUptimeNanoseconds == sourceSOCUptimeNanoseconds
+        validator.recognizesCurrentnessLease(
+            currentnessLease,
+            receiptIdentity: sourceReceiptIdentity,
+            uptimeNanoseconds: sourceSOCUptimeNanoseconds
+        )
+    }
+
+    /// Owner-bound currentness without exposing a validator snapshot to presentation code.
+    public var isCurrent: Bool {
+        currentnessLease.isCurrent(
+            receiptIdentity: sourceReceiptIdentity,
+            uptimeNanoseconds: sourceSOCUptimeNanoseconds
+        )
     }
 }
 
@@ -618,8 +636,9 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
 #endif
 
     /// Production live estimation requires both a sealed accepted SoC anchor and the validator
-    /// that still considers that exact receipt current. A retained anchor cannot be recomputed
-    /// into a fresh-looking live estimate after a gap or newer battery callback.
+    /// that still owns that exact anchor lease. A retained anchor cannot be recomputed into a
+    /// fresh-looking live estimate after a gap, newer battery callback, or replay through a fresh
+    /// unrelated owner that merely sees matching receipt metadata.
     public func estimateRemainingRange(
         atAcceptedSOC soc: AcceptedBatterySOCAnchor,
         acceptedBy validator: BatteryEvidenceStreamValidator,
@@ -641,7 +660,8 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
         return AdaptiveBatteryRangeLiveEstimate(
             estimate: estimate,
             sourceReceiptIdentity: soc.sourceReceiptIdentity,
-            sourceSOCUptimeNanoseconds: soc.receivedAtUptimeNanoseconds
+            sourceSOCUptimeNanoseconds: soc.receivedAtUptimeNanoseconds,
+            currentnessLease: soc.currentnessLease
         )
     }
 
