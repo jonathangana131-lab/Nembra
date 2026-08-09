@@ -1,0 +1,37 @@
+name: Capture Final GO Signed Reinspection Composition Validation
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - scripts/ci/es80_today_final_go_hardened.py
+      - scripts/ci/es80_today_signed_candidate_reinspection.py
+      - scripts/ci/tests/test_es80_today_final_go_signed_reinspection_composition.py
+      - .github/workflows/capture-today-final-go-qa.yml
+      - .github/workflows/capture-final-go-signed-reinspection-composition-validation.yml
+
+permissions:
+  contents: read
+
+jobs:
+  signed-reinspection-composition:
+    name: Require signed IPA reinspection on canonical Final GO path
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Checkout immutable PR head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify immutable PR head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+
+      - name: Compile composition regression
+        run: python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_signed_reinspection_composition.py
+
+      - name: Require canonical signed-candidate reinspection composition
+        run: python3 scripts/ci/tests/test_es80_today_final_go_signed_reinspection_composition.py -v
