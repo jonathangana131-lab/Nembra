@@ -42,26 +42,20 @@ struct RollingSpeedValueView: View {
                let snapshot = try? numberModel.snapshot(for: value) {
                 HStack(spacing: -5) {
                     ForEach(snapshot.digits.indices, id: \.self) { index in
-                        let digit = snapshot.digits[index]
-                        Text(String(digit.digit))
-                            .opacity(digit.isVisible ? 1 : 0)
-                            .contentTransition(
-                                reduceMotion ? .identity : .numericText(value: value)
-                            )
+                        rollingDigit(
+                            snapshot.digits[index],
+                            transitionValue: value
+                        )
                     }
                 }
-                // Interpolation timing lives in SpeedInstrumentModel. This brief
-                // transition only rolls a visible integer when the rendered value
-                // crosses that integer; it is not a second speed-smoothing layer.
-                // Reduce Motion keeps the same display value but removes the roll.
-                .animation(
-                    reduceMotion ? nil : .linear(duration: 0.08),
-                    value: snapshot.scaledValue
-                )
             } else if let fallbackText = boundedFallbackText {
                 Text(fallbackText)
                     .contentTransition(
                         reduceMotion ? .identity : .numericText(value: value)
+                    )
+                    .animation(
+                        reduceMotion ? nil : .snappy(duration: 0.10),
+                        value: fallbackText
                     )
             } else {
                 Text("—")
@@ -69,5 +63,35 @@ struct RollingSpeedValueView: View {
         } else {
             Text("—")
         }
+    }
+
+    /// Each fixed digit slot owns its own brief roll so an unchanged column does
+    /// not inherit animation work just because another digit changed. The whole
+    /// render value remains the numeric-transition direction signal: on an
+    /// increasing boundary such as 19 -> 20, the ones column must roll forward
+    /// through 9 -> 0 rather than visually count down merely because its local
+    /// glyph value decreased.
+    ///
+    /// The clip keeps native numeric-transition travel inside the digit's stable
+    /// glyph bounds. These frames are display-only and never feed vehicle truth.
+    @ViewBuilder
+    private func rollingDigit(
+        _ digit: RollingDigitSnapshot,
+        transitionValue: Double
+    ) -> some View {
+        Text(String(digit.digit))
+            .opacity(digit.isVisible ? 1 : 0)
+            .contentTransition(
+                reduceMotion ? .identity : .numericText(value: transitionValue)
+            )
+            .animation(
+                reduceMotion ? nil : .snappy(duration: 0.10),
+                value: digit.digit
+            )
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: 0.08),
+                value: digit.isVisible
+            )
+            .clipped()
     }
 }
