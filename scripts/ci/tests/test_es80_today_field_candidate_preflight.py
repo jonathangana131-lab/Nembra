@@ -261,6 +261,23 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertNotIn(self.PRIVATE_UDID, json.dumps(report))
         self.assertNotIn(str(symlink_parent), json.dumps(report))
 
+    def test_production_handoff_refuses_private_path_clobber_before_secret_write(self):
+        handoff = HANDOFF_PATH.read_text(encoding="utf-8")
+        directory_guard = 'if [[ -L "$PRIVATE_DIR" ]]; then'
+        target_guard = 'if [[ -e "$UDID_FILE" || -L "$UDID_FILE" ]]; then'
+        secret_read = "IFS= read -r -s INTENDED_UDID"
+        raw_write = 'printf \'%s\' "$INTENDED_UDID" > "$UDID_FILE"'
+        guarded_write = f"( set -o noclobber; {raw_write} )"
+
+        self.assertIn(directory_guard, handoff)
+        self.assertIn(target_guard, handoff)
+        self.assertIn(guarded_write, handoff)
+        self.assertLess(handoff.index(directory_guard), handoff.index(secret_read))
+        self.assertLess(handoff.index(target_guard), handoff.index(secret_read))
+        self.assertLess(handoff.index(target_guard), handoff.index(guarded_write))
+        self.assertEqual(handoff.count(raw_write), 1)
+        self.assertNotIn('printf \'%s\\n\' "$INTENDED_UDID" > "$UDID_FILE"', handoff)
+
     def test_non_xcode_27_selection_fails_closed(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
