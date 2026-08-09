@@ -23,7 +23,10 @@ def _load(name: str, filename: str):
 
 
 trusted = _load("nembra_trusted_capture_xcode_subject", "es80_today_trusted_capture_xcode_subject.py")
-foundation = _load("nembra_final_go_foundation_compat", "es80_today_final_go_record.py")
+foundation = _load(
+    "nembra_final_go_foundation_impl_contract",
+    "_es80_today_final_go_foundation_impl.py",
+)
 
 
 class TrustedXcodeExternalRecordContractTests(unittest.TestCase):
