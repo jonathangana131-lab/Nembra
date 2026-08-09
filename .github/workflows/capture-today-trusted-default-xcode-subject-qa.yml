@@ -11,6 +11,7 @@ on:
       - scripts/ci/tests/test_es80_today_final_go_local_evidence_descriptor_custody.py
       - scripts/ci/es80_today_trusted_capture_xcode_subject.py
       - scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
+      - scripts/ci/tests/test_es80_today_trusted_xcode_download_snapshot_custody.py
       - scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py
       - scripts/ci/tests/test_capture_trusted_xcode_producer_execution_custody.py
       - scripts/ci/tests/test_capture_trusted_xcode_bash_environment_custody.py
@@ -44,7 +45,7 @@ jobs:
       - name: Compile Final GO hardening modules and tests
         run: |
           python3 -m py_compile scripts/ci/es80_today_final_go_foundation.py scripts/ci/_es80_today_final_go_foundation_impl.py scripts/ci/tests/test_es80_today_final_go_direct_execution_disabled.py scripts/ci/tests/test_es80_today_final_go_private_impl_execution_disabled.py scripts/ci/tests/test_es80_today_final_go_local_evidence_descriptor_custody.py
-          python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py scripts/ci/tests/test_capture_trusted_xcode_producer_execution_custody.py scripts/ci/tests/test_capture_trusted_xcode_bash_environment_custody.py
+          python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_xcode_download_snapshot_custody.py scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py scripts/ci/tests/test_capture_trusted_xcode_producer_execution_custody.py scripts/ci/tests/test_capture_trusted_xcode_bash_environment_custody.py
           python3 -m py_compile scripts/ci/es80_today_final_go_publication.py scripts/ci/tests/test_es80_today_final_go_publication.py
           python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_git_custody.py
       - name: Reject direct/imported public Final GO execution surfaces
@@ -55,6 +56,8 @@ jobs:
         run: python3 scripts/ci/tests/test_es80_today_final_go_local_evidence_descriptor_custody.py -v
       - name: Run trusted subject adversarial suite
         run: python3 scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py -v
+      - name: Preserve downloaded trusted-Xcode single-snapshot custody
+        run: python3 scripts/ci/tests/test_es80_today_trusted_xcode_download_snapshot_custody.py -v
       - name: Preserve retained artifact admission contract
         run: python3 scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py -v
       - name: Preserve pinned producer interpreter custody
