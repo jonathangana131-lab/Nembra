@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Canonical hardened entrypoint for the external V14 ES80 TODAY Final GO record.
 
-The existing Final GO foundation remains the closed-world validator for signed candidate,
+The private Final GO foundation remains the closed-world validator for signed candidate,
 independent crosscheck, install/runtime rendezvous, and operator attestation. This entrypoint removes
-the authority defects that must not remain on the executable GO path:
+the authority defects that must not remain on any public/legacy GO path:
 - trusted Xcode acceptance comes only from the owner-commanded default-branch workflow whose Git
   blob is pinned independently from the candidate PR head;
 - trusted workflow Git-object lookup reuses the foundation's producer-owned, closed Git custody
@@ -33,7 +33,10 @@ def _load(name: str, filename: str):
     return module
 
 
-foundation = _load("nembra_final_go_foundation", "es80_today_final_go_record.py")
+foundation = _load(
+    "nembra_final_go_foundation_impl",
+    "_es80_today_final_go_foundation_impl.py",
+)
 trusted_xcode = _load(
     "nembra_trusted_capture_xcode_subject",
     "es80_today_trusted_capture_xcode_subject.py",
