@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Run the historical Final GO adversarial suite against the private validator library.
+"""Run the historical Final GO adversarial suite against the private validator implementation.
 
-Every public/compatibility Final GO builder and retired implementation filename is intentionally
-non-authorizing. The canonical hardened composer consumes
-`_es80_today_final_go_foundation_library.py` directly, so this harness runs the closed-world
-historical validator tests against that same preserved library implementation without reopening a
-public builder or executable path.
+Every public/compatibility Final GO builder is intentionally non-authorizing. The canonical hardened
+composer consumes `_es80_today_final_go_foundation_impl.py` directly, so this harness runs the
+closed-world historical validator tests against that same private implementation without reopening
+a public builder path.
 """
 from __future__ import annotations
 
@@ -28,8 +27,8 @@ def _load(name: str, path: Path):
 
 
 foundation = _load(
-    "nembra_today_final_go_foundation_library_under_test",
-    MODULE_DIR / "_es80_today_final_go_foundation_library.py",
+    "nembra_today_final_go_foundation_impl_under_test",
+    MODULE_DIR / "_es80_today_final_go_foundation_impl.py",
 )
 legacy_suite = _load(
     "nembra_today_final_go_foundation_suite",

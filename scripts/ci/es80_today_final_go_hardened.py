@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """Canonical hardened entrypoint for the external V14 ES80 TODAY Final GO record.
 
-The closed-world Final GO validator is a private library, not a public authority API. This
-canonical executable loads `_es80_today_final_go_foundation_library.py` directly so both the public
-`es80_today_final_go_foundation.py` compatibility module and the retired `_impl.py` filename can fail
-closed for imported builders/direct execution.
+The closed-world Final GO validator is private implementation, not a public authority API. This
+canonical executable loads `_es80_today_final_go_foundation_impl.py` directly so the public
+`es80_today_final_go_foundation.py` compatibility module can fail closed for imported builders and
+direct execution.
 
 This entrypoint removes the authority defects that must not remain on the executable GO path:
 - trusted Xcode acceptance comes only from the owner-commanded default-branch workflow whose Git
   blob is pinned independently from the candidate PR head;
-- trusted workflow Git-object lookup reuses the private foundation library's producer-owned, closed
-  Git custody boundary rather than caller PATH/config/replacement semantics; and
+- trusted workflow Git-object lookup reuses the private foundation's producer-owned, closed Git
+  custody boundary rather than caller PATH/config/replacement semantics; and
 - record publication is failure-atomic after no-replace publication.
 
 No physical result is created by this tool. A generated GO record is procedural authorization for
@@ -37,8 +37,8 @@ def _load(name: str, filename: str):
 
 
 foundation = _load(
-    "nembra_final_go_foundation_library",
-    "_es80_today_final_go_foundation_library.py",
+    "nembra_final_go_foundation_impl",
+    "_es80_today_final_go_foundation_impl.py",
 )
 trusted_xcode = _load(
     "nembra_trusted_capture_xcode_subject",
