@@ -47,6 +47,9 @@ struct VehicleHeroView: View {
     private var statusLine: String {
         switch state.connection {
         case .connected:
+            guard state.dataAvailability == .live else {
+                return "Connected · waiting for data"
+            }
             if let speed = state.speedKilometersPerHour, speed > 0.5 {
                 return "Riding · \(VehicleDisplayFormatting.speed(kilometersPerHour: speed))"
             }
