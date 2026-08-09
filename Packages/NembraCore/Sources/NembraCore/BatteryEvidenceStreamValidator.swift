@@ -3,6 +3,7 @@ public enum BatteryEvidenceStreamValidationError: Error, Equatable, Sendable {
     case staleReceiptIdentity
     case acquisitionEpochChanged
     case inconsistentReceiptMetadata
+    case inconsistentReceiptSemanticValue
     case nonMonotonicUptime
     case missingContinuityBoundary
 }
@@ -50,6 +51,27 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
     /// cannot lower the floor for a later callback.
     private var seenUptimeFloorNanoseconds: UInt64?
 
+    /// Exact semantic observations accepted for the current accepted raw receipt.
+    ///
+    /// One raw callback may legitimately fan out into several semantic fields, so this is
+    /// intentionally a small field-keyed collection rather than one value. A second sibling
+    /// for an already-seen field must be byte-for-semantic identical in value, role, and
+    /// continuity. This prevents later same-receipt reprojection from substituting a new SoC
+    /// value merely because receipt/uptime metadata match.
+    private var acceptedSemanticFingerprints: [AcceptedSemanticFingerprint]
+
+    private struct AcceptedSemanticFingerprint: Equatable, Sendable {
+        let value: BatterySemanticValue
+        let role: BatteryEvidenceRole
+        let continuity: BatteryEvidenceContinuity
+
+        init(_ observation: BatteryEvidenceObservation) {
+            value = observation.value
+            role = observation.role
+            continuity = observation.continuity
+        }
+    }
+
     public init() {
         lastAcceptedReceiptIdentity = nil
         lastAcceptedUptimeNanoseconds = nil
@@ -58,6 +80,7 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
         lastSeenReceiptUptimeNanoseconds = nil
         lastSeenReceiptContinuity = nil
         seenUptimeFloorNanoseconds = nil
+        acceptedSemanticFingerprints = []
     }
 
     /// Records that battery evidence continuity is no longer known.
@@ -69,6 +92,22 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
     /// to equal or exceed the accepted baseline.
     public mutating func markUnobservedInterval() {
         requiresContinuityBoundary = true
+    }
+
+    /// Returns true only when this exact semantic observation was admitted for the validator's
+    /// current accepted raw receipt. This is deliberately stricter than asking whether another
+    /// sibling *could* be admitted for that receipt: live authority cannot be created by replaying
+    /// a new same-receipt field/value through a copied validator after the original admission.
+    func hasAcceptedCurrentObservation(_ observation: BatteryEvidenceObservation) -> Bool {
+        guard requiresContinuityBoundary == false,
+              let receiptIdentity = observation.receiptIdentity,
+              lastAcceptedReceiptIdentity == receiptIdentity,
+              lastAcceptedUptimeNanoseconds == observation.receivedAtUptimeNanoseconds else {
+            return false
+        }
+
+        let fingerprint = AcceptedSemanticFingerprint(observation)
+        return acceptedSemanticFingerprints.contains(fingerprint)
     }
 
     /// Validates process-local receipt ordering and advances accepted evidence atomically.
@@ -101,6 +140,17 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
                 guard lastAcceptedReceiptIdentity == receiptIdentity,
                       !requiresContinuityBoundary else {
                     throw BatteryEvidenceStreamValidationError.staleReceiptIdentity
+                }
+
+                let fingerprint = AcceptedSemanticFingerprint(observation)
+                if let existing = acceptedSemanticFingerprints.first(where: {
+                    $0.value.field == observation.value.field
+                }) {
+                    guard existing == fingerprint else {
+                        throw BatteryEvidenceStreamValidationError.inconsistentReceiptSemanticValue
+                    }
+                } else {
+                    acceptedSemanticFingerprints.append(fingerprint)
                 }
                 return
             }
@@ -142,5 +192,6 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
         lastAcceptedReceiptIdentity = receiptIdentity
         lastAcceptedUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
         requiresContinuityBoundary = false
+        acceptedSemanticFingerprints = [AcceptedSemanticFingerprint(observation)]
     }
 }
