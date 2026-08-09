@@ -20,6 +20,8 @@ class TodayResearchFieldCandidateWrapperTests(unittest.TestCase):
         self.assertIn('exec 6< "$TODAY_XCCONFIG"', self.source)
         self.assertIn('/bin/rm -f "$TODAY_XCCONFIG"', self.source)
         self.assertIn('/bin/rmdir "$TODAY_SETTINGS_ROOT"', self.source)
+        self.assertIn('/usr/bin/python3 -I - 6', self.source)
+        self.assertIn('os.pread(fd, len(expected) + 1, 0)', self.source)
         self.assertIn('export XCODE_XCCONFIG_FILE="/dev/fd/6"', self.source)
         self.assertIn(EXPECTED_XCCONFIG.strip(), self.source)
         self.assertNotIn("export OTHER_SWIFT_FLAGS=", self.source)
@@ -87,6 +89,55 @@ class TodayResearchFieldCandidateWrapperTests(unittest.TestCase):
                 list(root.glob("NembraES80TodayResearch.*")),
                 [],
                 "TODAY settings pathname must stay absent after producer exit",
+            )
+
+    def test_rejects_noncanonical_opened_overlay_before_producer(self):
+        with tempfile.TemporaryDirectory(prefix="nembra-today-wrapper-substitution-") as temporary:
+            root = Path(temporary)
+            wrapper = root / SCRIPT.name
+            producer = root / "xcode27_signed_field_candidate.sh"
+            producer_ran = root / "producer-ran"
+
+            source = self.source.replace(
+                EXPECTED_XCCONFIG,
+                "MALICIOUS_BUILD_SETTING = 1\n",
+                1,
+            )
+            self.assertNotEqual(source, self.source, "test must mutate the generated overlay bytes")
+            self.assertIn(EXPECTED_XCCONFIG.strip(), source, "descriptor verifier must retain canonical expected bytes")
+            wrapper.write_text(source, encoding="utf-8")
+            wrapper.chmod(0o755)
+
+            producer.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/bin/bash
+                    set -euo pipefail
+                    /usr/bin/touch {str(producer_ran)!r}
+                    exit 0
+                    """
+                ),
+                encoding="utf-8",
+            )
+            producer.chmod(0o755)
+
+            env = os.environ.copy()
+            env["RUNNER_TEMP"] = str(root)
+            completed = subprocess.run(
+                [str(wrapper)],
+                env=env,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(completed.returncode, 3, completed.stderr)
+            self.assertFalse(producer_ran.exists(), "noncanonical descriptor must fail before producer delegation")
+            self.assertIn("descriptor failed exact opened-subject verification", completed.stderr)
+            self.assertEqual(
+                list(root.glob("NembraES80TodayResearch.*")),
+                [],
+                "failed verification must not leave a mutable TODAY settings pathname",
             )
 
 
