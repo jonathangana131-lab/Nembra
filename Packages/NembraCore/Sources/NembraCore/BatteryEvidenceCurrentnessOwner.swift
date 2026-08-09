@@ -7,10 +7,19 @@ import Synchronization
 /// the real chronology owner crosses a gap, consumes a newer receipt, or accepts R2.
 ///
 /// The owner therefore carries one reference-backed generation. Copies may retain an old
-/// generation reference, but they cannot recreate it after the owner rotates. No wall-clock
-/// timeout or guessed device cadence participates in this decision.
+/// generation handle, but they cannot recreate it after the owner rotates. Leases hold only a
+/// weak handle back to this owner, so retaining an anchor/estimate cannot keep its own live
+/// authority alive after the real stream/validator lineage is destroyed.
+///
+/// No wall-clock timeout or guessed device cadence participates in this decision.
 final class BatteryEvidenceCurrentnessOwner: Sendable {
     final class Generation: Sendable {}
+
+    /// Shared identity object retained by leases without retaining the owner itself.
+    /// Weak-reference mutation is runtime-managed; callers only observe it through owner methods.
+    final class LeaseHandle: @unchecked Sendable {
+        weak var owner: BatteryEvidenceCurrentnessOwner?
+    }
 
     struct Snapshot: Sendable {
         let acceptedReceiptIdentity: BatteryEvidenceReceiptIdentity?
@@ -26,8 +35,10 @@ final class BatteryEvidenceCurrentnessOwner: Sendable {
     }
 
     private let state: Mutex<State>
+    let leaseHandle: LeaseHandle
 
     init() {
+        let handle = LeaseHandle()
         state = Mutex(
             State(
                 generation: Generation(),
@@ -36,6 +47,8 @@ final class BatteryEvidenceCurrentnessOwner: Sendable {
                 requiresContinuityBoundary: false
             )
         )
+        leaseHandle = handle
+        handle.owner = self
     }
 
     func generation() -> Generation {
@@ -100,24 +113,27 @@ final class BatteryEvidenceCurrentnessOwner: Sendable {
 }
 
 /// Opaque, non-Codable proof that an accepted anchor was minted by one live currentness owner.
-/// Construction is intentionally file/package-internal; ordinary callers cannot fabricate it
-/// from receipt metadata alone.
+///
+/// The lease strongly retains only the owner's shared identity handle plus the generation. The
+/// handle points weakly to the owner, so an orphaned retained anchor/estimate automatically becomes
+/// non-current when no stream/validator lineage still owns that authority.
 struct BatteryEvidenceCurrentnessLease: Equatable, Sendable {
-    let owner: BatteryEvidenceCurrentnessOwner
+    let ownerHandle: BatteryEvidenceCurrentnessOwner.LeaseHandle
     let generation: BatteryEvidenceCurrentnessOwner.Generation
 
     static func == (
         lhs: BatteryEvidenceCurrentnessLease,
         rhs: BatteryEvidenceCurrentnessLease
     ) -> Bool {
-        lhs.owner === rhs.owner && lhs.generation === rhs.generation
+        lhs.ownerHandle === rhs.ownerHandle && lhs.generation === rhs.generation
     }
 
     func isCurrent(
         receiptIdentity: BatteryEvidenceReceiptIdentity,
         uptimeNanoseconds: UInt64
     ) -> Bool {
-        owner.isCurrent(
+        guard let owner = ownerHandle.owner else { return false }
+        return owner.isCurrent(
             generation: generation,
             receiptIdentity: receiptIdentity,
             uptimeNanoseconds: uptimeNanoseconds
