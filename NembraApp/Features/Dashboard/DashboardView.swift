@@ -62,9 +62,9 @@ struct DashboardReadabilityProfile: Equatable {
 
 /// The dedicated landscape riding surface.
 ///
-/// The cockpit stays truth-first: unknown values remain unknown, controls only
-/// appear when capabilities and state support them, and adaptive visuals never
-/// synthesize telemetry that has not been observed from the vehicle service.
+/// The cockpit stays truth-first: unknown values remain unknown, retained values
+/// are explicitly marked as last-known, controls only appear when capabilities
+/// and state support them, and adaptive visuals never synthesize telemetry.
 struct DashboardView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -147,23 +147,55 @@ struct DashboardView: View {
                     .foregroundStyle(connectionStyle)
                     .lineLimit(1)
 
-                Text(connectionDetail)
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.white.opacity(readability.secondaryOpacity))
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+                dataStatusBadge(readability: readability)
             }
-            .accessibilityElement(children: .combine)
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("dashboard.vehicle-status")
 
             Spacer(minLength: 0)
 
-            dashboardMetric(title: "BATTERY", value: batteryText, symbol: batteryIcon, warning: isBatteryLow, identifier: "dashboard.battery", readability: readability)
+            dashboardMetric(
+                title: "BATTERY",
+                value: batteryText,
+                symbol: batteryIcon,
+                warning: isBatteryLow && !isRetainedVehicleData,
+                retained: isRetainedVehicleData,
+                identifier: "dashboard.battery",
+                readability: readability
+            )
 
-            dashboardMetric(title: "TRIP", value: tripText, symbol: "point.bottomleft.forward.to.point.topright.scurvepath", identifier: "dashboard.trip", readability: readability)
+            dashboardMetric(
+                title: "TRIP",
+                value: tripText,
+                symbol: "point.bottomleft.forward.to.point.topright.scurvepath",
+                retained: isRetainedVehicleData,
+                identifier: "dashboard.trip",
+                readability: readability
+            )
         }
         .padding(.horizontal, readability.railHorizontalPadding)
         .padding(.vertical, 14)
+    }
+
+    @ViewBuilder
+    private func dataStatusBadge(readability: DashboardReadabilityProfile) -> some View {
+        switch vehicle.state.dataAvailability {
+        case .live:
+            Label("LIVE DATA", systemImage: "wave.3.right")
+                .foregroundStyle(.green)
+                .accessibilityLabel("Vehicle data")
+                .accessibilityValue("Live")
+        case .retained:
+            Label("LAST KNOWN", systemImage: "clock.arrow.circlepath")
+                .foregroundStyle(.orange)
+                .accessibilityLabel("Vehicle data")
+                .accessibilityValue("Last known values retained from the previous connection")
+        case .unavailable:
+            Label("WAITING FOR DATA", systemImage: "ellipsis")
+                .foregroundStyle(.white.opacity(readability.secondaryOpacity))
+                .accessibilityLabel("Vehicle data")
+                .accessibilityValue("No confirmed scooter telemetry yet")
+        }
     }
 
     private func contextRail(personality: DashboardModePersonality, readability: DashboardReadabilityProfile) -> some View {
@@ -175,7 +207,7 @@ struct DashboardView: View {
             if shouldShowStoppedControls {
                 stoppedControls
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.97)))
-            } else if isVehicleMoving {
+            } else if vehicle.state.connection == .connected && isVehicleMoving {
                 Label("Controls available when stopped", systemImage: "hand.raised.fill")
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(.white.opacity(readability.secondaryOpacity))
@@ -198,6 +230,7 @@ struct DashboardView: View {
 
             Text(vehicle.state.rideMode?.displayName.uppercased() ?? "—")
                 .font(.title2.weight(.semibold))
+                .foregroundStyle(isRetainedVehicleData ? Color.secondary : Color.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
 
@@ -205,12 +238,19 @@ struct DashboardView: View {
                 .fill(Color.white.opacity(max(personality.modeMarkerOpacity, colorSchemeContrast == .increased ? 0.48 : personality.modeMarkerOpacity)))
                 .frame(width: personality.modeMarkerWidth, height: colorSchemeContrast == .increased ? 3 : 2)
                 .accessibilityHidden(true)
+
+            if isRetainedVehicleData, vehicle.state.rideMode != nil {
+                Text("LAST KNOWN")
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.2)
+                    .foregroundStyle(.orange)
+            }
         }
         .scaleEffect(personality.modeScale, anchor: .trailing)
         .animation(modeAnimation, value: personality)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Ride mode")
-        .accessibilityValue(vehicle.state.rideMode?.displayName ?? "Unknown")
+        .accessibilityValue(modeAccessibilityValue)
         .accessibilityIdentifier("dashboard.mode")
     }
 
@@ -292,6 +332,7 @@ struct DashboardView: View {
         value: String,
         symbol: String,
         warning: Bool = false,
+        retained: Bool = false,
         identifier: String,
         readability: DashboardReadabilityProfile
     ) -> some View {
@@ -303,14 +344,21 @@ struct DashboardView: View {
 
             Text(value)
                 .font(.title3.weight(.semibold).monospacedDigit())
-                .foregroundStyle(warning ? Color.red : Color.white)
+                .foregroundStyle(warning ? Color.red : (retained ? Color.secondary : Color.white))
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
                 .contentTransition(reduceMotion ? .identity : .numericText())
+
+            if retained, value != "—" {
+                Text("LAST KNOWN")
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.0)
+                    .foregroundStyle(.orange)
+            }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title.capitalized)
-        .accessibilityValue(value)
+        .accessibilityValue(retained && value != "—" ? "Last known \(value)" : value)
         .accessibilityIdentifier(identifier)
     }
 
@@ -326,6 +374,10 @@ struct DashboardView: View {
         (vehicle.state.speedKilometersPerHour ?? 0) >= 0.5
     }
 
+    private var isRetainedVehicleData: Bool {
+        vehicle.state.dataAvailability == .retained
+    }
+
     private var supportedModes: [RideMode] {
         RideMode.allCases.filter(vehicle.profile.capabilities.supportedRideModes.contains)
     }
@@ -337,6 +389,11 @@ struct DashboardView: View {
         case .drive: "D"
         case .sport: "S"
         }
+    }
+
+    private var modeAccessibilityValue: String {
+        guard let mode = vehicle.state.rideMode?.displayName else { return "Unknown" }
+        return isRetainedVehicleData ? "Last known \(mode)" : mode
     }
 
     private var tripText: String {
@@ -379,18 +436,6 @@ struct DashboardView: View {
             case .reconnecting: "Reconnecting"
             case .disconnected: "Offline"
             }
-        }
-    }
-
-    private var connectionDetail: String {
-        if vehicle.state.connectionIssue != nil {
-            return "Live vehicle values unavailable"
-        }
-        switch vehicle.state.connection {
-        case .connected: "Vehicle truth only"
-        case .connecting: "Waiting for confirmed data"
-        case .reconnecting: "Holding last confirmed UI state"
-        case .disconnected: "No live telemetry"
         }
     }
 
