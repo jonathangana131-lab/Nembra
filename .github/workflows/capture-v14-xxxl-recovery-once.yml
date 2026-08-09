@@ -62,24 +62,6 @@ jobs:
                                     .font(isAccessibilityLayout ? .footnote.weight(.semibold) : .subheadline.weight(.semibold))""",
               ),
               (
-                  """.padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 10 : 18))
-                .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(physicalLockAccessibilityLabel)
-                .accessibilityIdentifier(\"es80.capture.physical-run-locked\")""",
-                  """.padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 8 : 18))
-                .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(physicalLockAccessibilityLabel)
-                .accessibilityIdentifier(\"es80.capture.physical-run-locked\")""",
-              ),
-              (
-                  """.padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 10 : 18))
-                .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))""",
-                  """.padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 8 : 18))
-                .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))""",
-              ),
-              (
                   ".padding(.top, verticalSizeClass == .compact ? 8 : (isAccessibilityLayout ? 8 : 18))",
                   ".padding(.top, verticalSizeClass == .compact ? 8 : (isAccessibilityLayout ? 4 : 18))",
               ),
@@ -92,6 +74,31 @@ jobs:
                       f"Refusing ambiguous recovery for {old!r}: expected 1, found {actual_count}"
                   )
               source = source.replace(old, new, 1)
+
+          def replace_nearest_padding_before(marker: str, old: str, new: str) -> None:
+              global source
+              marker_pos = source.find(marker)
+              if marker_pos < 0:
+                  raise SystemExit(f"Missing recovery marker: {marker}")
+              padding_pos = source.rfind(old, 0, marker_pos)
+              if padding_pos < 0:
+                  raise SystemExit(f"Missing expected padding before marker: {marker}")
+              if source.find(old, padding_pos + len(old), marker_pos) >= 0:
+                  raise SystemExit(f"Ambiguous padding before marker: {marker}")
+              source = source[:padding_pos] + new + source[padding_pos + len(old):]
+
+          old_card_padding = ".padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 10 : 18))"
+          new_card_padding = ".padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 8 : 18))"
+          replace_nearest_padding_before(
+              '.accessibilityIdentifier("es80.capture.physical-run-locked")',
+              old_card_padding,
+              new_card_padding,
+          )
+          replace_nearest_padding_before(
+              '.background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))',
+              old_card_padding,
+              new_card_padding,
+          )
 
           path.write_text(source, encoding="utf-8")
           PY
