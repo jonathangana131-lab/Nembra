@@ -94,6 +94,20 @@ def _default_runner(
     return CommandResult(completed.returncode, completed.stdout, completed.stderr)
 
 
+def _stable_file_identity(metadata: os.stat_result) -> tuple[int, int, int, int, int, int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_uid,
+        metadata.st_gid,
+        metadata.st_nlink,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
 def _regular_nonsymlink(path: Path) -> os.stat_result | None:
     try:
         info = path.lstat()
@@ -104,37 +118,116 @@ def _regular_nonsymlink(path: Path) -> os.stat_result | None:
     return info
 
 
-def _private_udid_file_is_ready(path: Path) -> bool:
-    """Mirror the normal-path privacy/format contract enforced by frozen a0f4's private runner.
-
-    This remains only an early operator check. The frozen producer reopens and independently
-    validates the file component-by-component before signed evidence admission.
-    """
-    if not path.is_absolute():
-        return False
-    info = _regular_nonsymlink(path)
-    if info is None:
-        return False
-    if stat.S_IMODE(info.st_mode) != 0o600:
-        return False
-    if info.st_size < 1 or info.st_size > MAX_PRIVATE_IDENTIFIER_BYTES:
-        return False
-    if info.st_nlink != 1:
-        return False
-    if hasattr(os, "geteuid") and info.st_uid != os.geteuid():
-        return False
+def _repository_directory_identity(repository_root: Path) -> tuple[int, int] | None:
     try:
-        raw = path.read_bytes()
+        resolved_repository = repository_root.resolve(strict=True)
+        metadata = os.stat(resolved_repository)
+    except OSError:
+        return None
+    if not stat.S_ISDIR(metadata.st_mode):
+        return None
+    return metadata.st_dev, metadata.st_ino
+
+
+def _private_udid_file_is_ready(path: Path, repository_root: Path) -> bool:
+    """Mirror frozen a0f4's normal-path private identifier constraints.
+
+    This is still only an early operator check. The frozen producer independently reopens the
+    private input with its own descriptor-bound implementation. The preflight must nevertheless
+    avoid a false READY for path shapes that the producer deterministically rejects, including a
+    symlinked ancestor or a file that traverses the Nembra repository directory.
+    """
+    if (
+        not hasattr(os, "O_NOFOLLOW")
+        or not hasattr(os, "O_DIRECTORY")
+        or os.open not in os.supports_dir_fd
+    ):
+        return False
+    if not path.is_absolute() or path.anchor != os.sep:
+        return False
+
+    components = path.parts[1:]
+    if not components or any(component in ("", ".", "..") for component in components):
+        return False
+
+    repository_identity = _repository_directory_identity(repository_root)
+    if repository_identity is None:
+        return False
+
+    close_on_exec = os.O_CLOEXEC if hasattr(os, "O_CLOEXEC") else 0
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | close_on_exec
+    file_flags = os.O_RDONLY | os.O_NOFOLLOW | close_on_exec
+
+    try:
+        parent_descriptor = os.open(os.sep, directory_flags)
     except OSError:
         return False
-    if len(raw) != info.st_size or len(raw) > MAX_PRIVATE_IDENTIFIER_BYTES:
+
+    descriptor: int | None = None
+    try:
+        root_metadata = os.fstat(parent_descriptor)
+        if (root_metadata.st_dev, root_metadata.st_ino) == repository_identity:
+            return False
+
+        for component in components[:-1]:
+            try:
+                next_descriptor = os.open(component, directory_flags, dir_fd=parent_descriptor)
+            except OSError:
+                return False
+
+            next_metadata = os.fstat(next_descriptor)
+            if (next_metadata.st_dev, next_metadata.st_ino) == repository_identity:
+                os.close(next_descriptor)
+                return False
+            os.close(parent_descriptor)
+            parent_descriptor = next_descriptor
+
+        try:
+            descriptor = os.open(components[-1], file_flags, dir_fd=parent_descriptor)
+        except OSError:
+            return False
+    finally:
+        os.close(parent_descriptor)
+
+    if descriptor is None:
         return False
+
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            return False
+        # TODAY's operator handoff intentionally requires exact mode 0600 even though the frozen
+        # reader's lower-level privacy rule is expressed as no group/other access.
+        if stat.S_IMODE(metadata.st_mode) != 0o600:
+            return False
+        if metadata.st_size < 1 or metadata.st_size > MAX_PRIVATE_IDENTIFIER_BYTES:
+            return False
+        if metadata.st_nlink != 1:
+            return False
+        if hasattr(os, "geteuid") and metadata.st_uid != os.geteuid():
+            return False
+
+        try:
+            with os.fdopen(os.dup(descriptor), "rb") as handle:
+                raw = handle.read(MAX_PRIVATE_IDENTIFIER_BYTES + 1)
+            final_metadata = os.fstat(descriptor)
+        except OSError:
+            return False
+
+        if (
+            len(raw) != metadata.st_size
+            or len(raw) > MAX_PRIVATE_IDENTIFIER_BYTES
+            or _stable_file_identity(final_metadata) != _stable_file_identity(metadata)
+        ):
+            return False
+    finally:
+        os.close(descriptor)
+
     try:
         value = raw.decode("utf-8")
     except UnicodeDecodeError:
         return False
-    # Frozen a0f4's exact private runner rejects a trailing newline and every other leading/trailing
-    # whitespace byte. Do not normalize the value here: doing so would create a false READY state.
+    # Frozen a0f4 rejects a trailing newline and every other leading/trailing whitespace byte.
     if not value or value != value.strip():
         return False
     if any(ord(character) < 33 or ord(character) == 127 for character in value):
@@ -253,9 +346,6 @@ def evaluate_preflight(
     checks["developmentTeamFormat"] = TEAM_RE.fullmatch(inputs.development_team) is not None
     checks["allowProvisioningUpdates"] = inputs.allow_provisioning_updates in {"0", "1"}
     checks["exportOptionsPlist"] = _export_options_are_ready(inputs.export_options_plist)
-    checks["privateIntendedDeviceInput"] = _private_udid_file_is_ready(
-        inputs.intended_device_udid_file
-    )
 
     try:
         source_repo = inputs.source_repo.resolve(strict=True)
@@ -264,6 +354,11 @@ def evaluate_preflight(
         source_repo = inputs.source_repo
         repo_ready = False
     checks["sourceRepository"] = repo_ready
+    checks["privateIntendedDeviceInput"] = (
+        _private_udid_file_is_ready(inputs.intended_device_udid_file, source_repo)
+        if repo_ready
+        else False
+    )
 
     if repo_ready and checks["expectedSourceSHAFormat"]:
         checks["exactFrozenSourceHEAD"] = _git_head_matches(runner, source_repo, expected)
@@ -312,8 +407,8 @@ def evaluate_preflight(
         "developmentTeamFormat": "development-team-input-invalid",
         "allowProvisioningUpdates": "provisioning-update-mode-invalid",
         "exportOptionsPlist": "export-options-input-invalid",
-        "privateIntendedDeviceInput": "private-intended-device-input-invalid",
         "sourceRepository": "source-repository-unavailable",
+        "privateIntendedDeviceInput": "private-intended-device-input-invalid",
         "exactFrozenSourceHEAD": "source-head-does-not-match-frozen-subject",
         "cleanInvocationCheckout": "invocation-checkout-not-clean",
         "todayWrapperAtFrozenSource": "today-wrapper-not-executable-in-frozen-git-tree",
