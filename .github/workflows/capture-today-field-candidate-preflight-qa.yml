@@ -6,6 +6,7 @@ on:
     paths:
       - scripts/ci/es80_today_field_candidate_preflight.py
       - scripts/ci/tests/test_es80_today_field_candidate_preflight.py
+      - docs/ES80_TODAY_SIGNED_FIELD_CANDIDATE_PRODUCTION.md
       - .github/workflows/capture-today-field-candidate-preflight-qa.yml
 
 permissions:
@@ -39,5 +40,5 @@ jobs:
             scripts/ci/es80_today_field_candidate_preflight.py \
             scripts/ci/tests/test_es80_today_field_candidate_preflight.py
 
-      - name: Run focused preflight regressions
+      - name: Run focused preflight and handoff regressions
         run: python3 scripts/ci/tests/test_es80_today_field_candidate_preflight.py -v
