@@ -3,7 +3,7 @@ import Testing
 
 @Suite("Propulsion gauge accepted target projection")
 struct PropulsionGaugeAcceptedTargetProjectionTests {
-    private func identity(_ vehicleID: String = "es80-accepted-target") throws -> PropulsionGaugeIdentity {
+    private func makeIdentity(_ vehicleID: String = "es80-accepted-target") throws -> PropulsionGaugeIdentity {
         try PropulsionGaugeIdentity(vehicleID: vehicleID, modeKey: nil)
     }
 
@@ -38,7 +38,7 @@ struct PropulsionGaugeAcceptedTargetProjectionTests {
 
     @Test("accepted normalized target is stable while display fraction interpolates")
     func acceptedTargetDoesNotFollowDisplayClock() throws {
-        let identity = try identity()
+        let identity = try makeIdentity()
         var model = try model(identity: identity)
         let scale = try PropulsionGaugeScale.simulator(identity: identity, ceilingWatts: 1_000)
 
@@ -71,7 +71,7 @@ struct PropulsionGaugeAcceptedTargetProjectionTests {
 
     @Test("accepted target clamps as presentation geometry without clamping accepted watts")
     func acceptedTargetClampsOnlyPresentation() throws {
-        let identity = try identity()
+        let identity = try makeIdentity()
         var model = try model(identity: identity)
         let scale = try PropulsionGaugeScale.simulator(identity: identity, ceilingWatts: 1_000)
 
@@ -98,8 +98,8 @@ struct PropulsionGaugeAcceptedTargetProjectionTests {
 
     @Test("foreign presentation scale cannot create accepted target geometry")
     func foreignScaleFailsAcceptedTargetClosed() throws {
-        let identity = try identity()
-        let foreignIdentity = try identity("different-es80")
+        let identity = try makeIdentity()
+        let foreignIdentity = try makeIdentity("different-es80")
         var model = try model(identity: identity)
 
         try model.accept(simulatorSample(
@@ -127,7 +127,7 @@ struct PropulsionGaugeAcceptedTargetProjectionTests {
 
     @Test("simulator evidence cannot borrow verified-scale target authority")
     func authorityMismatchFailsAcceptedTargetClosed() throws {
-        let identity = try identity()
+        let identity = try makeIdentity()
         var model = try model(identity: identity)
 
         try model.accept(simulatorSample(
@@ -149,7 +149,7 @@ struct PropulsionGaugeAcceptedTargetProjectionTests {
 
     @Test("retained and unavailable evidence remove accepted target geometry")
     func nonLiveEvidenceHasNoAcceptedTarget() throws {
-        let identity = try identity()
+        let identity = try makeIdentity()
         var model = try model(identity: identity)
         let scale = try PropulsionGaugeScale.simulator(identity: identity, ceilingWatts: 1_000)
 
