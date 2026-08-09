@@ -132,6 +132,9 @@ public extension PropulsionGaugeDisplayModel {
         )
     }
 
+    /// Normalizes the accepted endpoint only after `frame(...)` has already admitted this same scale.
+    /// `frame.scaleOrigin` is therefore the canonical authority decision; this projection deliberately
+    /// does not duplicate the gauge model's authority table and cannot drift from future canonical policy.
     private func acceptedPropulsionFraction(
         from measurement: PropulsionGaugeCockpitMeasurement,
         scale: PropulsionGaugeScale?,
@@ -147,14 +150,6 @@ public extension PropulsionGaugeDisplayModel {
               scale.origin == admittedScaleOrigin,
               scale.ceilingWatts.isFinite,
               scale.ceilingWatts > 0 else {
-            return nil
-        }
-
-        switch (scale.origin, accepted.authority) {
-        case (.verifiedObservedEnvelope, .verifiedVehicleMeasurement),
-             (.simulator, .simulator):
-            break
-        default:
             return nil
         }
 
