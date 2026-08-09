@@ -21,7 +21,7 @@ struct SpeedInstrumentDisplayFrame: Equatable {
 
 /// Main-actor presentation state for the landscape speed instrument.
 ///
-/// Raw evidence enters only through `SpeedTelemetrySample`. High-frequency
+/// Accepted speed evidence enters through `SpeedTelemetrySample`. High-frequency
 /// render frames never flow back into `VehicleState`, ride history, distance,
 /// stats, or protocol diagnostics.
 @MainActor
@@ -29,16 +29,15 @@ struct SpeedInstrumentDisplayFrame: Equatable {
 final class SpeedInstrumentModel {
     private(set) var measurementRevision: UInt64 = 0
     private(set) var latestMeasurementSource: SpeedTelemetrySource?
+    private(set) var latestMeasuredKilometersPerHour: Double?
     private(set) var isAnimationActive = false
 
     @ObservationIgnored private var interpolator = SpeedDisplayInterpolator()
     @ObservationIgnored private var previousMeasurementUptimeNanoseconds: UInt64?
     @ObservationIgnored private var interpolationPolicy: SpeedInstrumentInterpolationPolicy = .disabled
-    @ObservationIgnored private var streamTask: Task<Void, Never>?
     @ObservationIgnored private var animationEndTask: Task<Void, Never>?
 
     deinit {
-        streamTask?.cancel()
         animationEndTask?.cancel()
     }
 
@@ -49,27 +48,25 @@ final class SpeedInstrumentModel {
         interpolationPolicy = policy
     }
 
-    func start(stream: AsyncStream<SpeedTelemetrySample>) {
-        guard streamTask == nil else { return }
+    func stop() {
+        clearPresentationContinuity()
+    }
 
-        streamTask = Task { [weak self] in
-            for await sample in stream {
-                guard !Task.isCancelled, let self else { break }
-                self.accept(sample)
-            }
+    /// Source-owned speed currentness is the Dashboard's positive presentation
+    /// authority. Retained/unavailable immediately retire interpolation. A new
+    /// live sample can reopen motion without guessing a freshness timeout.
+    func setSpeedEvidenceAvailability(_ availability: SpeedEvidenceAvailability) {
+        switch availability {
+        case .unavailable, .retained:
+            clearPresentationContinuity()
+        case let .live(sample):
+            accept(sample)
         }
     }
 
-    func stop() {
-        streamTask?.cancel()
-        streamTask = nil
-        animationEndTask?.cancel()
-        animationEndTask = nil
-        isAnimationActive = false
-    }
-
-    /// Internal so the iOS test target can prove display semantics without a
-    /// scheduler-sensitive fake stream.
+    /// Internal test seam for the interpolation primitive. Production Dashboard
+    /// code admits samples only through `setSpeedEvidenceAvailability(_:)` so
+    /// currentness remains source-owned rather than recreated from a raw stream.
     func accept(_ sample: SpeedTelemetrySample) {
         guard sample.isAuthoritativeMeasurement else { return }
 
@@ -86,6 +83,7 @@ final class SpeedInstrumentModel {
 
         previousMeasurementUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
         latestMeasurementSource = sample.source
+        latestMeasuredKilometersPerHour = sample.kilometersPerHour
         measurementRevision &+= 1
 
         let startsInterpolating = interpolator
@@ -97,9 +95,9 @@ final class SpeedInstrumentModel {
         )
     }
 
-    /// Returns a render-only frame. The fallback is the latest value already
-    /// confirmed in `VehicleState`; it is used only until fresh raw telemetry
-    /// arrives and is never converted into a telemetry sample internally.
+    /// Returns a render-only frame. The fallback is a caller-owned accepted
+    /// source value. The Dashboard supplies it from `SpeedEvidenceAvailability`,
+    /// never cached aggregate vehicle state.
     ///
     /// Reduce Motion changes presentation only: when an interpolation frame is
     /// active, the display snaps to the latest authoritative measurement that
@@ -181,13 +179,23 @@ final class SpeedInstrumentModel {
             self?.animationEndTask = nil
         }
     }
+
+    private func clearPresentationContinuity() {
+        animationEndTask?.cancel()
+        animationEndTask = nil
+        isAnimationActive = false
+        interpolator = SpeedDisplayInterpolator()
+        previousMeasurementUptimeNanoseconds = nil
+        latestMeasurementSource = nil
+        latestMeasuredKilometersPerHour = nil
+    }
 }
 
 /// A deliberately narrow high-frequency subtree for the landscape cockpit.
 ///
 /// Only this view redraws on SwiftUI's animation timeline. Vehicle controls,
 /// ride detection, persistence, distance, and safety continue to consume the
-/// confirmed/raw domain state rather than the rendered interpolation frame.
+/// accepted domain/source state rather than the rendered interpolation frame.
 @MainActor
 struct DashboardSpeedInstrumentView: View {
     @Environment(VehicleStore.self) private var vehicle
@@ -197,37 +205,39 @@ struct DashboardSpeedInstrumentView: View {
     let modePersonality: DashboardModePersonality
 
     var body: some View {
+        let speedAvailability = vehicle.speedEvidenceAvailability
+        let fallbackAcceptedKilometersPerHour = speedAvailability.lastAcceptedSample?.kilometersPerHour
+
         TimelineView(
             .animation(
                 minimumInterval: 1.0 / 60.0,
                 paused: reduceMotion || !model.isAnimationActive
             )
         ) { _ in
-            // A cached/disconnected value is retained history, not live Cockpit speed. Keep both
-            // the fallback and any already-rendered telemetry frame hidden unless the current
-            // vehicle state still carries a connected, finite, nonnegative semantic speed.
-            let liveConfirmedSpeed = currentSemanticSpeedKilometersPerHour
-            let frame = liveConfirmedSpeed.map { confirmedSpeed in
-                model.frame(
-                    atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
-                    fallbackConfirmedKilometersPerHour: confirmedSpeed,
-                    prefersReducedMotion: reduceMotion
-                )
-            } ?? nil
+            let frame = model.frame(
+                atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+                fallbackConfirmedKilometersPerHour: fallbackAcceptedKilometersPerHour,
+                prefersReducedMotion: reduceMotion
+            )
 
-            instrumentContent(frame: frame)
+            instrumentContent(frame: frame, speedAvailability: speedAvailability)
         }
         .task {
             model.configureInterpolationPolicy(vehicle.speedInstrumentInterpolationPolicy)
-            let stream = await vehicle.speedTelemetryUpdates()
-            model.start(stream: stream)
+            model.setSpeedEvidenceAvailability(vehicle.speedEvidenceAvailability)
+        }
+        .onChange(of: vehicle.speedEvidenceAvailability) { _, availability in
+            model.setSpeedEvidenceAvailability(availability)
         }
         .onDisappear {
             model.stop()
         }
     }
 
-    private func instrumentContent(frame: SpeedInstrumentDisplayFrame?) -> some View {
+    private func instrumentContent(
+        frame: SpeedInstrumentDisplayFrame?,
+        speedAvailability: SpeedEvidenceAvailability
+    ) -> some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
 
@@ -251,15 +261,18 @@ struct DashboardSpeedInstrumentView: View {
             .animation(modeAnimation, value: modePersonality.speedScale)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Speed")
-            // VoiceOver announces the newest authoritative/confirmed value,
-            // never a visual midpoint that no sensor actually measured.
-            .accessibilityValue(accessibilitySpeed(frame: frame))
+            // VoiceOver consumes the same field-specific accepted speed state,
+            // never a 60 Hz render midpoint or cached aggregate speed as fresh truth.
+            .accessibilityValue(accessibilitySpeed(speedAvailability))
             .accessibilityIdentifier("dashboard.speed")
 
             Group {
-                if let authoritativeKilometersPerHour = authoritativeSpeed(frame: frame) {
-                    Text(authoritativeKilometersPerHour >= 0.5 ? "RIDING" : "READY")
-                } else {
+                switch speedAvailability {
+                case .retained:
+                    Label("LAST KNOWN", systemImage: "clock.arrow.circlepath")
+                case let .live(sample):
+                    Text(sample.kilometersPerHour >= 0.5 ? "RIDING" : "READY")
+                case .unavailable:
                     Text("NO LIVE SPEED")
                 }
             }
@@ -274,40 +287,24 @@ struct DashboardSpeedInstrumentView: View {
     }
 
     private func displayedValue(kilometersPerHour: Double?) -> Double? {
-        guard let kilometersPerHour else { return nil }
-        let nonnegative = max(0, kilometersPerHour)
-        return VehicleDisplayFormatting.usesMetric ? nonnegative : nonnegative * 0.621_371
-    }
-
-    private func accessibilitySpeed(frame: SpeedInstrumentDisplayFrame?) -> String {
-        guard let authoritativeKilometersPerHour = authoritativeSpeed(frame: frame) else {
-            return "Unavailable"
-        }
-        return VehicleDisplayFormatting.speed(kilometersPerHour: authoritativeKilometersPerHour)
-    }
-
-    private func authoritativeSpeed(frame: SpeedInstrumentDisplayFrame?) -> Double? {
-        guard let frame else { return nil }
-        switch frame.origin {
-        case .confirmedVehicleState:
-            return frame.kilometersPerHour
-        case .measuredTelemetry, .visuallyInterpolated:
-            return frame.latestMeasuredKilometersPerHour
-        }
-    }
-
-    /// `READY` and numeric speed are live semantic statements. Missing, malformed, retained,
-    /// or disconnected state must not inherit the old `nil -> 0` presentation shortcut.
-    /// Stopped-control authority remains separately gated by source-qualified live speed.
-    private var currentSemanticSpeedKilometersPerHour: Double? {
-        guard vehicle.state.connection == .connected,
-              vehicle.state.dataAvailability == .live,
-              let speed = vehicle.state.speedKilometersPerHour,
-              speed.isFinite,
-              speed >= 0 else {
+        guard let kilometersPerHour,
+              kilometersPerHour.isFinite,
+              kilometersPerHour >= 0 else {
             return nil
         }
-        return speed
+        let normalized = kilometersPerHour == 0 ? 0 : kilometersPerHour
+        return VehicleDisplayFormatting.usesMetric ? normalized : normalized * 0.621_371
+    }
+
+    private func accessibilitySpeed(_ availability: SpeedEvidenceAvailability) -> String {
+        switch availability {
+        case .unavailable:
+            return "Unavailable"
+        case let .retained(sample):
+            return "Last known, \(VehicleDisplayFormatting.speed(kilometersPerHour: sample.kilometersPerHour))"
+        case let .live(sample):
+            return VehicleDisplayFormatting.speed(kilometersPerHour: sample.kilometersPerHour)
+        }
     }
 
     private var speedUnitText: String {
