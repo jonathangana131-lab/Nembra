@@ -58,6 +58,37 @@ final class VehicleStore {
     private(set) var retainedBatteryAuthority: BatteryObservationAuthority?
     private var lastConfirmedBatteryAuthority: BatteryObservationAuthority?
 
+    /// Battery truth is deliberately joined separately from vehicle-wide data
+    /// availability. A connected transport does not make an unclassified battery
+    /// number display-authoritative. Production keeps `batteryObservationAuthority`
+    /// nil until hardware evidence establishes what the ES80 value actually means.
+    var batteryDisplayPercent: Int? {
+        guard let percent = state.batteryPercent,
+              (0...100).contains(percent),
+              batteryDisplayAuthority != nil else {
+            return nil
+        }
+        return percent
+    }
+
+    /// Authority for the battery value currently eligible for user-facing display.
+    /// A connected value requires an explicitly configured current-session authority;
+    /// a disconnected value may carry only the authority retained with that snapshot.
+    var batteryDisplayAuthority: BatteryObservationAuthority? {
+        if state.connection == .connected {
+            return batteryObservationAuthority
+        }
+        return retainedBatteryAuthority
+    }
+
+    /// Battery-specific availability. This must be used by Battery/Range consumers
+    /// instead of `VehicleState.dataAvailability`, which intentionally describes the
+    /// aggregate vehicle state and can be live because of unrelated telemetry.
+    var batteryDataAvailability: VehicleDataAvailability {
+        guard batteryDisplayPercent != nil else { return .unavailable }
+        return state.connection == .connected ? .live : .retained
+    }
+
     var isVehicleCommandPending: Bool {
         pendingCommands.contains { $0 != .connect }
     }
