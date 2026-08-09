@@ -139,11 +139,21 @@ class SignedCandidateCompositionTests(unittest.TestCase):
 
         candidate = record["acceptedSignedFieldCandidate"]
         custody = candidate["freshSignedArtifactReinspection"]
+        self.assertEqual(
+            set(custody),
+            {
+                "executionCustody",
+                "inspectorSourceCommitSHA",
+                "privateRunnerGitBlob",
+                "canonicalInspectorGitBlob",
+            },
+        )
         self.assertEqual(custody["executionCustody"], hardened.signed_candidate_reinspection.REINSPECTION_CUSTODY)
         self.assertEqual(custody["inspectorSourceCommitSHA"], self.SOURCE)
         self.assertEqual(custody["privateRunnerGitBlob"], self.RUNNER_BLOB)
         self.assertEqual(custody["canonicalInspectorGitBlob"], self.INSPECTOR_BLOB)
-        self.assertNotIn("private-device-id", repr(record))
+        self.assertFalse(any("udid" in key.lower() for key in custody))
+        self.assertFalse(any("device" in key.lower() and "file" in key.lower() for key in custody))
 
     def test_reinspection_failure_stops_before_foundation_authority(self):
         with tempfile.TemporaryDirectory() as temporary:
