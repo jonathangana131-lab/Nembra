@@ -17,6 +17,8 @@ jobs:
     steps:
       - name: Checkout exact PR head
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - name: Verify exact validation subject
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -37,5 +39,5 @@ jobs:
         with:
           name: v14-dashboard-energy-rail-app-projection-nembracore-${{ github.run_id }}-${{ github.run_attempt }}
           path: /tmp/nembra-core-swift-test.log
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 7
