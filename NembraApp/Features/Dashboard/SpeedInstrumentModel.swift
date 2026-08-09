@@ -50,6 +50,7 @@ final class SpeedInstrumentModel {
     private(set) var latestMeasurementSource: SpeedTelemetrySource?
     private(set) var latestMeasuredKilometersPerHour: Double?
     private(set) var latestMeasurementUptimeNanoseconds: UInt64?
+    private(set) var latestAcceptedSample: SpeedTelemetrySample?
     private(set) var isAnimationActive = false
 
     @ObservationIgnored private var interpolator = SpeedDisplayInterpolator()
@@ -105,6 +106,7 @@ final class SpeedInstrumentModel {
         latestMeasurementSource = sample.source
         latestMeasuredKilometersPerHour = sample.kilometersPerHour
         latestMeasurementUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
+        latestAcceptedSample = sample
         measurementRevision &+= 1
 
         let startsInterpolating = interpolator
@@ -176,11 +178,11 @@ final class SpeedInstrumentModel {
             )
 
         case let .live(sample):
-            let isInterpolatorTargetCurrent = latestMeasurementSource == sample.source
-                && latestMeasurementUptimeNanoseconds == sample.receivedAtUptimeNanoseconds
-                && latestMeasuredKilometersPerHour == sample.kilometersPerHour
-
-            guard isInterpolatorTargetCurrent else {
+            // `SpeedTelemetrySample` already carries the complete accepted display-target
+            // identity used here: source, provenance, value, receipt clocks, optional
+            // measurement clock, and optional accuracy. Partial source+uptime+value matching
+            // can collide with a distinct accepted sample and replay an old interpolator.
+            guard latestAcceptedSample == sample else {
                 return acceptedSourceFallbackFrame(
                     kilometersPerHour: sample.kilometersPerHour
                 )
@@ -260,6 +262,7 @@ final class SpeedInstrumentModel {
         latestMeasurementSource = nil
         latestMeasuredKilometersPerHour = nil
         latestMeasurementUptimeNanoseconds = nil
+        latestAcceptedSample = nil
     }
 }
 
