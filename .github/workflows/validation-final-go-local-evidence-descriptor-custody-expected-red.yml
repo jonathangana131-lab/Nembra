@@ -1,0 +1,36 @@
+name: Capture Final GO Local Evidence Descriptor Custody Expected Red
+
+on:
+  push:
+    branches:
+      - validation/v14-final-go-local-evidence-fd-custody/gpt56-go
+  pull_request:
+    paths:
+      - scripts/ci/_es80_today_final_go_foundation_impl.py
+      - scripts/ci/tests/test_es80_today_final_go_local_evidence_descriptor_custody.py
+      - .github/workflows/validation-final-go-local-evidence-descriptor-custody-expected-red.yml
+
+permissions:
+  contents: read
+
+jobs:
+  expected-red:
+    name: Reject check-then-reopen local evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout immutable validation head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Verify immutable validation head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+
+      - name: Compile descriptor-custody regression
+        run: python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_local_evidence_descriptor_custody.py
+
+      - name: Local authority bytes must be descriptor-bound
+        run: python3 scripts/ci/tests/test_es80_today_final_go_local_evidence_descriptor_custody.py -v
