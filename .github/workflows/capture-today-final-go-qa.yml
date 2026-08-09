@@ -14,6 +14,8 @@ on:
       - scripts/ci/es80_today_trusted_capture_xcode_subject.py
       - scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
       - scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py
+      - scripts/ci/es80_today_trusted_operator_attestation_subject.py
+      - scripts/ci/tests/test_es80_today_trusted_operator_attestation_subject.py
       - scripts/ci/es80_today_final_go_publication.py
       - scripts/ci/tests/test_es80_today_final_go_publication.py
       - .github/workflows/capture-today-final-go-qa.yml
@@ -47,6 +49,7 @@ jobs:
           set -euo pipefail
           python3 -m py_compile scripts/ci/es80_today_final_go_record.py scripts/ci/es80_today_final_go_foundation.py scripts/ci/tests/test_es80_today_final_go_record.py scripts/ci/tests/test_es80_today_final_go_foundation.py
           python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py
+          python3 -m py_compile scripts/ci/es80_today_trusted_operator_attestation_subject.py scripts/ci/tests/test_es80_today_trusted_operator_attestation_subject.py
           python3 -m py_compile scripts/ci/es80_today_final_go_publication.py scripts/ci/tests/test_es80_today_final_go_publication.py
           python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_git_custody.py
 
@@ -58,6 +61,9 @@ jobs:
 
       - name: Preserve retained artifact admission contract
         run: python3 scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py -v
+
+      - name: Reject caller-authored operator observation authority
+        run: python3 scripts/ci/tests/test_es80_today_trusted_operator_attestation_subject.py -v
 
       - name: Require failure-atomic no-replace publication
         run: python3 scripts/ci/tests/test_es80_today_final_go_publication.py -v
@@ -78,7 +84,7 @@ jobs:
           grep -Fq -- '--trusted-xcode-job-id' <<<"$help"
           grep -Fq -- '--trusted-xcode-artifact-id' <<<"$help"
 
-      - name: Pin default-branch Xcode trust and Research tuple exactly
+      - name: Pin default-branch Xcode, owner-attestation trust, and Research tuple exactly
         run: |
           set -euo pipefail
           grep -Fq 'TRUSTED_WORKFLOW_NAME = "Capture Trusted Xcode 27 Exact-Head QA"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
@@ -86,6 +92,10 @@ jobs:
           grep -Fq 'TRUSTED_WORKFLOW_BLOB_SHA = "e5ef72f50bed279e98ad28b94930831b747d0c20"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'name: Capture Trusted Xcode 27 Exact-Head QA' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq 'name: Build, test, and capture trusted exact Capture head' .github/workflows/capture-xcode27-trusted-command.yml
+          grep -Fq 'AUTHORITY = "github-owner-attested-operator-observation-v1"' scripts/ci/es80_today_trusted_operator_attestation_subject.py
+          grep -Fq 'REPOSITORY_OWNER = "jonathangana131-lab"' scripts/ci/es80_today_trusted_operator_attestation_subject.py
+          grep -Fq 'OPERATOR_COMMENT_ID_ENV = "NEMBRA_FINAL_GO_OPERATOR_ATTESTATION_COMMENT_ID"' scripts/ci/es80_today_final_go_hardened.py
+          grep -Fq 'trusted_operator.verify_trusted_operator_attestation_subject' scripts/ci/es80_today_final_go_hardened.py
           grep -Fq 'PINNED_CROSSCHECK_COMMIT = "d827a296048386bda62024ea3278775d5344c47c"' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'PINNED_CROSSCHECK_BLOB = "c3b2b620280484c05316fc5c2fa2ca451f1fdc83"' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'RESEARCH_COMPILE_MODE = "private-today-v1"' scripts/ci/es80_today_final_go_foundation.py
