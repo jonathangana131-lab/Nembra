@@ -118,6 +118,10 @@ final class NembraUITests: XCTestCase {
             (speed.value as? String ?? "").localizedCaseInsensitiveContains("unavailable"),
             "Missing speed evidence must remain explicitly unavailable rather than becoming zero."
         )
+        XCTAssertTrue(
+            app.staticTexts["NO LIVE SPEED"].waitForExistence(timeout: 2),
+            "Retained or disconnected speed must not render as a live numeric Cockpit state."
+        )
 
         let vehicleStatus = app.descendants(matching: .any)["dashboard.vehicle-status"]
         XCTAssertTrue(vehicleStatus.waitForExistence(timeout: 2))
