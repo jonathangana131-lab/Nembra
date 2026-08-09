@@ -32,7 +32,7 @@ struct CompletedRideDurationPersistenceRegressionTests {
         #expect(bound.rideContinuity == .recoveredCheckpoint)
     }
 
-    @Test("negative persisted observation segment count fails closed")
+    @Test("negative persisted archive observation segment count fails closed")
     func negativeSegmentCountRejected() {
         let data = Data(
             """
@@ -47,7 +47,7 @@ struct CompletedRideDurationPersistenceRegressionTests {
         )
 
         #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(CompletedRideDurationEvidence.self, from: data)
+            try JSONDecoder().decode(CompletedRideDurationEvidenceArchive.self, from: data)
         }
     }
 }
