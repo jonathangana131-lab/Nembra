@@ -74,6 +74,9 @@ struct VehicleControlsView: View {
     private var modeSection: some View {
         Section {
             ForEach(supportedModes, id: \.self) { mode in
+                let isSelected = vehicle.state.rideMode == mode
+                let isPending = vehicle.pendingRideMode == mode
+
                 Button {
                     Task { await vehicle.setMode(mode) }
                 } label: {
@@ -81,15 +84,17 @@ struct VehicleControlsView: View {
                         Text(mode.displayName)
                             .foregroundStyle(.primary)
                         Spacer()
-                        if vehicle.pendingRideMode == mode {
+                        if isPending {
                             ProgressView().controlSize(.small)
-                        } else if vehicle.state.rideMode == mode {
+                        } else if isSelected {
                             Image(systemName: "checkmark")
                                 .fontWeight(.semibold)
                         }
                     }
                 }
                 .disabled(!commandsAvailable || vehicle.isVehicleCommandPending)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+                .accessibilityValue(choiceAccessibilityValue(selected: isSelected, pending: isPending))
             }
         } header: {
             Text("Ride Mode")
@@ -163,6 +168,15 @@ struct VehicleControlsView: View {
             }
         }
         .disabled(!commandsAvailable || vehicle.isVehicleCommandPending || selected)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityValue(choiceAccessibilityValue(selected: selected, pending: pending))
+    }
+
+    private func choiceAccessibilityValue(selected: Bool, pending: Bool) -> String {
+        if pending {
+            return "Updating"
+        }
+        return selected ? "Selected" : "Not selected"
     }
 
     private var supportedModes: [RideMode] {
