@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   converge:
+    if: ${{ !contains(github.event.head_commit.message, '[v14 convergence diagnostic]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -24,6 +25,7 @@ jobs:
 
       - name: Apply canonical authority convergence
         run: |
+          set +e
           python3 - <<'PY'
           from pathlib import Path
           path = Path('scripts/ci/_v14_apply_final_go_authority_convergence.py')
@@ -34,7 +36,25 @@ jobs:
               raise SystemExit('one-shot patcher end-marker guard drifted')
           path.write_text(text.replace(old, new, 1))
           PY
-          python3 scripts/ci/_v14_apply_final_go_authority_convergence.py
+          helper_status=$?
+          if [ "$helper_status" -eq 0 ]; then
+            python3 scripts/ci/_v14_apply_final_go_authority_convergence.py > /tmp/v14-convergence.log 2>&1
+            patch_status=$?
+          else
+            patch_status=$helper_status
+            echo "helper patch failed with status $helper_status" > /tmp/v14-convergence.log
+          fi
+          cat /tmp/v14-convergence.log
+          if [ "$patch_status" -ne 0 ]; then
+            git reset --hard HEAD
+            cp /tmp/v14-convergence.log .v14-final-go-convergence-diagnostic.txt
+            git config user.name 'nembra-v14-go-worker'
+            git config user.email 'actions@users.noreply.github.com'
+            git add .v14-final-go-convergence-diagnostic.txt
+            git commit -m '[v14 convergence diagnostic] capture deterministic patch failure'
+            git push origin HEAD:agent/v14-final-go-authority-convergence
+            exit "$patch_status"
+          fi
 
       - name: Validate canonical Final GO authority
         run: |
@@ -56,6 +76,7 @@ jobs:
           git config user.email 'actions@users.noreply.github.com'
           git add scripts/ci/es80_today_final_go_record.py scripts/ci/tests/test_es80_today_final_go_record.py .github/workflows/capture-today-final-go-qa.yml
           git rm scripts/ci/_v14_apply_final_go_authority_convergence.py .github/workflows/_v14-final-go-authority-convergence-once.yml
+          git rm -f .v14-final-go-convergence-diagnostic.txt || true
           git diff --cached --check
           git commit -m '[Capture V14] Close Final GO authority gaps'
           git push origin HEAD:agent/v14-final-go-authority-convergence
