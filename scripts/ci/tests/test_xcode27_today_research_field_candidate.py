@@ -8,7 +8,7 @@ import textwrap
 import unittest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "xcode27_today_research_field_candidate.sh"
-EXPECTED_XCCONFIG = "OTHER_SWIFT_FLAGS = $(inherited) -DNEMBRA_ES80_TODAY_RESEARCH\n"
+EXPECTED_XCCONFIG = "OTHER_SWIFT_FLAGS = $(inherited) -DNEMBRA_ES80_TODAY_RESEARCH_APP\n"
 
 
 class TodayResearchFieldCandidateWrapperTests(unittest.TestCase):
@@ -19,6 +19,7 @@ class TodayResearchFieldCandidateWrapperTests(unittest.TestCase):
         self.assertIn('unset SWIFT_ACTIVE_COMPILATION_CONDITIONS OTHER_SWIFT_FLAGS XCODE_XCCONFIG_FILE', self.source)
         self.assertIn('export XCODE_XCCONFIG_FILE="$TODAY_XCCONFIG"', self.source)
         self.assertIn(EXPECTED_XCCONFIG.strip(), self.source)
+        self.assertNotIn("-DNEMBRA_ES80_TODAY_RESEARCH\n", EXPECTED_XCCONFIG)
         self.assertNotIn("export OTHER_SWIFT_FLAGS=", self.source)
         self.assertNotIn("export SWIFT_ACTIVE_COMPILATION_CONDITIONS=", self.source)
         self.assertIn('trap cleanup EXIT', self.source)
