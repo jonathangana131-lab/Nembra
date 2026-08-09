@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import importlib.util
+import os
 from pathlib import Path
+import stat
 import tempfile
 import unittest
 from unittest import mock
@@ -109,6 +111,50 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(hardened.FinalGoError, "remain independent"):
                     hardened.build_final_go_record(**self.kwargs(root))
+
+    def test_workflow_blob_lookup_reuses_foundation_closed_git_boundary(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = Path(temporary)
+            with mock.patch.object(
+                hardened.foundation,
+                "_git",
+                return_value="e" * 40,
+            ) as git:
+                value = hardened._workflow_blob_sha_at_commit(
+                    repository,
+                    "a" * 40,
+                    hardened.trusted_xcode.TRUSTED_WORKFLOW_PATH,
+                )
+
+            self.assertEqual(value, "e" * 40)
+            git.assert_called_once_with(
+                repository,
+                "rev-parse",
+                f"{'a' * 40}:{hardened.trusted_xcode.TRUSTED_WORKFLOW_PATH}",
+            )
+
+    def test_workflow_blob_lookup_does_not_trust_caller_path_git(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            fake_git = fake_bin / "git"
+            fake_git.write_text(
+                "#!/bin/sh\n"
+                f"printf '%s\\n' '{hardened.trusted_xcode.TRUSTED_WORKFLOW_BLOB_SHA}'\n",
+                encoding="utf-8",
+            )
+            fake_git.chmod(fake_git.stat().st_mode | stat.S_IXUSR)
+            tooling_repo = root / "tooling-repo"
+            tooling_repo.mkdir()
+
+            with mock.patch.dict(os.environ, {"PATH": str(fake_bin)}, clear=False):
+                with self.assertRaises(hardened.FinalGoError):
+                    hardened._workflow_blob_sha_at_commit(
+                        tooling_repo,
+                        "c" * 40,
+                        hardened.trusted_xcode.TRUSTED_WORKFLOW_PATH,
+                    )
 
     def test_publication_delegates_only_to_failure_atomic_primitive(self):
         with tempfile.TemporaryDirectory() as temporary:
