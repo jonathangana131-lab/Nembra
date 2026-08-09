@@ -45,7 +45,24 @@ else
     DEVICE_NAME="$(printf '%s\n' "$DEVICE_ROWS" | sed -n "${PICK}p" | cut -f2-)"
     [[ -n "$DEVICE_UDID" ]] || die "Invalid device selection."
 fi
-say "Using $DEVICE_NAME"
+say "Found $DEVICE_NAME"
+
+# xctrace may list a newly attached phone while Xcode is still pairing/preparing it.
+# Do not start the build until xcodebuild itself can resolve the exact device destination.
+say "Waiting for Xcode to finish connecting to the iPhone"
+open -a Xcode "$ROOT/Nembra.xcodeproj" >/dev/null 2>&1 || true
+READY=0
+for _ in $(seq 1 90); do
+    if xcodebuild -project Nembra.xcodeproj -scheme Nembra -showdestinations 2>/dev/null | grep -Fq "$DEVICE_UDID"; then
+        READY=1
+        break
+    fi
+    sleep 2
+done
+if [[ "$READY" != "1" ]]; then
+    die "Xcode still cannot use the iPhone after 3 minutes. Keep the phone unlocked and connected, open Xcode > Window > Devices and Simulators, wait until the phone no longer says Connecting/Preparing, then run this same installer again."
+fi
+say "iPhone is ready for Xcode"
 
 say "Finding Apple Development signing team"
 TEAM_IDS="$(security find-identity -v -p codesigning 2>/dev/null | /usr/bin/python3 -c '
