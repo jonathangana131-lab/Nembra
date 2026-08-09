@@ -5,7 +5,9 @@ import sys
 from pathlib import Path
 import unittest
 
-LEGACY_ENTRYPOINT = Path(__file__).resolve().parents[1] / "es80_today_final_go_record.py"
+MODULE_DIR = Path(__file__).resolve().parents[1]
+LEGACY_ENTRYPOINT = MODULE_DIR / "es80_today_final_go_record.py"
+FOUNDATION_ENTRYPOINT = MODULE_DIR / "es80_today_final_go_foundation.py"
 
 
 def _load_legacy():
@@ -18,17 +20,28 @@ def _load_legacy():
 
 
 class LegacyFinalGoEntrypointTests(unittest.TestCase):
-    def test_direct_legacy_execution_is_fail_closed_before_argument_parsing(self):
-        completed = subprocess.run(
-            [sys.executable, str(LEGACY_ENTRYPOINT), "--help"],
+    def _run_direct(self, path: Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(path), "--help"],
             check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
+
+    def test_direct_legacy_execution_is_fail_closed_before_argument_parsing(self):
+        completed = self._run_direct(LEGACY_ENTRYPOINT)
         self.assertEqual(completed.returncode, 2)
         self.assertEqual(completed.stdout, "")
         self.assertIn("legacy foundation entrypoint is non-authorizing", completed.stderr)
+        self.assertIn("es80_today_final_go_hardened.py", completed.stderr)
+        self.assertNotIn("TODAY Final GO record:", completed.stdout + completed.stderr)
+
+    def test_direct_foundation_execution_is_fail_closed_before_argument_parsing(self):
+        completed = self._run_direct(FOUNDATION_ENTRYPOINT)
+        self.assertEqual(completed.returncode, 2)
+        self.assertEqual(completed.stdout, "")
+        self.assertIn("foundation module is library-only and non-authorizing", completed.stderr)
         self.assertIn("es80_today_final_go_hardened.py", completed.stderr)
         self.assertNotIn("TODAY Final GO record:", completed.stdout + completed.stderr)
 
