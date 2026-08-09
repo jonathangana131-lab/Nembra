@@ -282,10 +282,12 @@ jobs:
               "Packages/NembraBluetoothCapture",
           ):
               package_root = root / package_relative
-              alternate_manifests = sorted(
-                  str(path.relative_to(root))
-                  for path in package_root.glob("Package@swift-*.swift")
-              )
+              alternate_manifests = []
+              for path in package_root.iterdir():
+                  name = path.name.casefold()
+                  if name.startswith("package@swift-") and name.endswith(".swift"):
+                      alternate_manifests.append(str(path.relative_to(root)))
+              alternate_manifests.sort()
               if alternate_manifests:
                   raise SystemExit(
                       "trusted build graph forbids version-specific SwiftPM manifests: "
