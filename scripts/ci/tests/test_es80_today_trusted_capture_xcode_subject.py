@@ -35,12 +35,15 @@ class TrustedCaptureXcodeSubjectTests(unittest.TestCase):
             "experimentRecipeID": "ES80-FINGERPRINT-v1",
             "procedureVersion": "V14",
         }
+        return self.make_raw_archive(
+            root,
+            (json.dumps(record, sort_keys=True) + "\n").encode(),
+        )
+
+    def make_raw_archive(self, root: Path, raw_record: bytes) -> tuple[Path, str, int]:
         path = root / "artifact.zip"
         with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-            archive.writestr(
-                trusted_xcode.EXTERNAL_RECORD_NAME,
-                (json.dumps(record, sort_keys=True) + "\n").encode(),
-            )
+            archive.writestr(trusted_xcode.EXTERNAL_RECORD_NAME, raw_record)
         raw = path.read_bytes()
         return path, hashlib.sha256(raw).hexdigest(), len(raw)
 
@@ -200,6 +203,49 @@ class TrustedCaptureXcodeSubjectTests(unittest.TestCase):
                 if step["name"] != "Reject head movement before trusted acceptance completes"
             ]
             with self.assertRaisesRegex(trusted_xcode.TrustedCaptureXcodeError, "required step"):
+                self.verify(archive, records)
+
+    def test_rejects_weaker_external_record_shape_instead_of_dropping_foundation_contract(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            weak_record = {
+                "sourceCommitSHA": self.SOURCE,
+                "buildIdentifier": f"Capture Build V14-{self.SOURCE[:12]}",
+                "buildInstanceID": "not-a-canonical-uuid",
+            }
+            archive, archive_sha, archive_size = self.make_raw_archive(
+                root,
+                (json.dumps(weak_record, sort_keys=True) + "\n").encode(),
+            )
+            records = self.trusted_records(archive_sha, archive_size)
+            with self.assertRaisesRegex(
+                trusted_xcode.TrustedCaptureXcodeError,
+                "schema shape",
+            ):
+                self.verify(archive, records)
+
+    def test_rejects_duplicate_keys_in_retained_external_record(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            raw = (
+                "{"
+                '"schemaVersion":3,'
+                f'"buildIdentifier":"Capture Build V14-{self.SOURCE[:12]}",'
+                '"buildInstanceID":"11111111-2222-3333-4444-555555555555",'
+                f'"sourceCommitSHA":"{self.SOURCE}",'
+                f'"sourceCommitSHA":"{self.SOURCE}",'
+                f'"executableSHA256":"{"c" * 64}",'
+                f'"infoPlistSHA256":"{"d" * 64}",'
+                '"experimentRecipeID":"ES80-FINGERPRINT-v1",'
+                '"procedureVersion":"V14"'
+                "}\n"
+            ).encode()
+            archive, archive_sha, archive_size = self.make_raw_archive(root, raw)
+            records = self.trusted_records(archive_sha, archive_size)
+            with self.assertRaisesRegex(
+                trusted_xcode.TrustedCaptureXcodeError,
+                "duplicate key",
+            ):
                 self.verify(archive, records)
 
 
