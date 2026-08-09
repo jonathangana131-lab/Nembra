@@ -178,7 +178,7 @@ struct PropulsionEnergyRailSimulatorRuntimeTests {
         ))
         #expect(runtime.observe(
             connected: true,
-            watts: -.infinity,
+            watts: -Double.infinity,
             modeKey: "walk",
             receivedAtUptimeNanoseconds: 200
         ) == false)
