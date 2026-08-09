@@ -245,8 +245,8 @@ struct DashboardSpeedInstrumentView: View {
             .animation(modeAnimation, value: modePersonality.speedScale)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Speed")
-            // VoiceOver announces the newest authoritative/confirmed value,
-            // never a visual midpoint that no sensor actually measured.
+            // VoiceOver announces accepted semantic truth rather than a visual
+            // midpoint or punctuation-only placeholder.
             .accessibilityValue(accessibilitySpeed(frame: frame))
             .accessibilityIdentifier("dashboard.speed")
 
@@ -276,9 +276,29 @@ struct DashboardSpeedInstrumentView: View {
     }
 
     private func accessibilitySpeed(frame: SpeedInstrumentDisplayFrame?) -> String {
+        // Whole-vehicle unavailability is an explicit semantic stop: a stale
+        // render frame must not remain VoiceOver authority after evidence is gone.
+        if vehicle.state.dataAvailability == .unavailable {
+            return "Unavailable"
+        }
+
         let authoritativeKilometersPerHour = frame?.latestMeasuredKilometersPerHour
             ?? vehicle.state.speedKilometersPerHour
-        return VehicleDisplayFormatting.speed(kilometersPerHour: authoritativeKilometersPerHour)
+        guard let authoritativeKilometersPerHour,
+              authoritativeKilometersPerHour.isFinite,
+              authoritativeKilometersPerHour >= 0 else {
+            return "Unavailable"
+        }
+
+        let formatted = VehicleDisplayFormatting.speed(
+            kilometersPerHour: authoritativeKilometersPerHour
+        )
+        guard formatted != "—" else { return "Unavailable" }
+
+        if vehicle.state.dataAvailability == .retained {
+            return "Last known, \(formatted)"
+        }
+        return formatted
     }
 
     private var speedUnitText: String {
