@@ -164,6 +164,10 @@ jobs:
           python3 scripts/ci/es80_field_authorization_envelope.py --self-test
 
       - name: Build, test, and capture Simulator states
+        shell: "/bin/bash --noprofile --norc -p -e -o pipefail {0}"
+        env:
+          BASH_ENV: ""
+          ENV: ""
         run: |
           set -euo pipefail
           producer_path="scripts/ci/xcode27_simulator_capture.sh"
@@ -173,7 +177,7 @@ jobs:
           # This is diagnostic defense-in-depth; the authority-producing interpreter input below is
           # the immutable pinned Git object itself, not this pathname.
           worktree_blob="$(
-            env -i \
+            /usr/bin/env -i \
               PATH=/usr/bin:/bin \
               HOME=/tmp \
               LC_ALL=C \
@@ -188,7 +192,7 @@ jobs:
           # The candidate pathname is only $0 so the frozen runner's dirname($0)/../.. ROOT
           # calculation still resolves the exact checkout; neither mutable pathname bytes nor
           # inherited BASH_ENV/ENV/shell functions can execute before the pinned producer.
-          env -i \
+          /usr/bin/env -i \
             PATH=/usr/bin:/bin \
             HOME=/tmp \
             LC_ALL=C \
@@ -196,14 +200,17 @@ jobs:
             GIT_CONFIG_GLOBAL=/dev/null \
             GIT_NO_REPLACE_OBJECTS=1 \
             /usr/bin/git cat-file blob "$expected_blob" \
-            | env -i \
+            | /usr/bin/env -i \
                 PATH=/usr/bin:/bin:/usr/sbin:/sbin \
                 HOME=/tmp \
                 LC_ALL=C \
                 /bin/bash -c 'source /dev/stdin' "$GITHUB_WORKSPACE/$producer_path"
 
       - name: Verify retained Capture evidence against trusted resolver authority
+        shell: "/bin/bash --noprofile --norc -p -e -o pipefail {0}"
         env:
+          BASH_ENV: ""
+          ENV: ""
           EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
         run: |
           /usr/bin/python3 -I - <<'PY'
