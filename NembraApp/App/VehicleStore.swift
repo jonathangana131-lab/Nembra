@@ -75,6 +75,14 @@ final class VehicleStore {
         return speed
     }
 
+    /// Until a verified physical stopped-speed authority exists, a lock command
+    /// may only claim stopped-state admission in the Simulator QA profile. Cached
+    /// aggregate speed, reconnect state, or another live field cannot authorize it.
+    var canLockFromCurrentSpeedEvidence: Bool {
+        guard let speed = simulatorQualifiedLiveSpeedKilometersPerHour else { return false }
+        return speed < 0.5
+    }
+
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
     @ObservationIgnored private var speedEvidenceTask: Task<Void, Never>?
     @ObservationIgnored private var speedEvidenceConsumerAuthority = SpeedEvidenceConsumerAuthority()
@@ -197,6 +205,12 @@ final class VehicleStore {
 
     func setLocked(_ locked: Bool) async {
         guard canBeginVehicleCommand else { return }
+
+        if locked, !canLockFromCurrentSpeedEvidence {
+            lastErrorMessage = "Live stopped-speed evidence is required before Nembra can lock the scooter."
+            return
+        }
+
         await perform(.lock) { try await service.setLocked(locked) }
     }
 
