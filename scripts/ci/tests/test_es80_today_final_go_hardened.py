@@ -19,6 +19,25 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
     WORKFLOW_SOURCE = "b" * 40
     CROSSCHECK_RECEIPT_SHA = "c" * 64
 
+    def candidate_subject(self):
+        return {
+            "buildIdentifier": f"Capture Build V14-{self.SOURCE[:12]}",
+            "buildInstanceID": "12345678-1234-4abc-8def-1234567890ab",
+            "sourceCommitSHA": self.SOURCE,
+            "retainedIPASHA256": "1" * 64,
+            "retainedIPAByteCount": 1234,
+            "externalBuildRecordSHA256": "2" * 64,
+            "fieldBuildEvidenceRecordSHA256": "3" * 64,
+            "signedArtifactInspectionSHA256": "4" * 64,
+            "executableSHA256": "5" * 64,
+            "infoPlistSHA256": "6" * 64,
+            "teamIdentifier": "ABCDE12345",
+            "provisioningProfileSHA256": "7" * 64,
+            "provisioningProfileUUID": "PROFILE-UUID",
+            "provisioningProfileExpirationUTC": "2099-01-01T00:00:00Z",
+            "codeDirectoryHash": "8" * 40,
+        }
+
     def kwargs(self, root: Path):
         return {
             "candidate_root": root / "candidate",
@@ -32,6 +51,7 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             "frozen_source_repo": root / "source",
             "tooling_repo": root / "tooling",
             "operator_attestation": root / "attestation.json",
+            "intended_device_udid_file": root / "private-device-id",
             "github_get_json": lambda path: (b"{}", {}),
         }
 
@@ -58,6 +78,7 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
         return {
             "acceptedSourceCommitSHA": kwargs["expected_source_sha"],
             "trustedXcodeAcceptance": subject,
+            "acceptedSignedFieldCandidate": self.candidate_subject(),
             "independentRetainedCandidateCrosscheck": crosscheck,
         }
 
@@ -78,6 +99,10 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
                 "verify_crosscheck_receipt_custody",
                 return_value=crosscheck,
             ) as verify_crosscheck, mock.patch.object(
+                hardened,
+                "_fresh_signed_candidate_subject",
+                return_value=self.candidate_subject(),
+            ) as reinspect, mock.patch.object(
                 hardened.foundation,
                 "build_final_go_record",
                 side_effect=self.fake_foundation,
@@ -105,10 +130,73 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
                 custody_call["expected_tool_blob"],
                 hardened.foundation.PINNED_CROSSCHECK_BLOB,
             )
+            reinspect.assert_called_once()
+            self.assertEqual(
+                reinspect.call_args.kwargs["intended_device_udid_file"],
+                root / "private-device-id",
+            )
             verify.assert_called_once()
             call = verify.call_args.kwargs
             self.assertEqual(call["source_commit_sha"], self.SOURCE)
             self.assertEqual(call["expected_pr_number"], 833)
+
+    def test_rejects_foundation_candidate_that_diverges_from_fresh_apple_reinspection(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            forged = self.candidate_subject()
+            forged["teamIdentifier"] = "ZZZZZ99999"
+
+            def forged_foundation(**kwargs):
+                record = self.fake_foundation(**kwargs)
+                record["acceptedSignedFieldCandidate"] = forged
+                return record
+
+            with mock.patch.object(
+                hardened.crosscheck_custody,
+                "verify_crosscheck_receipt_custody",
+                return_value=self.crosscheck_execution(),
+            ), mock.patch.object(
+                hardened,
+                "_fresh_signed_candidate_subject",
+                return_value=self.candidate_subject(),
+            ), mock.patch.object(
+                hardened.foundation,
+                "build_final_go_record",
+                side_effect=forged_foundation,
+            ), mock.patch.object(
+                hardened.trusted_xcode,
+                "verify_trusted_capture_xcode_subject",
+                return_value=self.trusted_subject(),
+            ):
+                with self.assertRaisesRegex(
+                    hardened.FinalGoError,
+                    "diverged from fresh reviewed Apple reinspection",
+                ):
+                    hardened.build_final_go_record(**self.kwargs(root))
+
+    def test_fresh_reinspection_failure_becomes_final_go_error_before_foundation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with mock.patch.object(
+                hardened.crosscheck_custody,
+                "verify_crosscheck_receipt_custody",
+                return_value=self.crosscheck_execution(),
+            ), mock.patch.object(
+                hardened.trusted_signed_candidate,
+                "trusted_reinspection_candidate_root",
+                side_effect=hardened.trusted_signed_candidate.TrustedSignedCandidateReinspectionError(
+                    "Apple inspection rejected retained IPA"
+                ),
+            ), mock.patch.object(
+                hardened.foundation,
+                "build_final_go_record",
+            ) as foundation_builder:
+                with self.assertRaisesRegex(
+                    hardened.FinalGoError,
+                    "Apple inspection rejected retained IPA",
+                ):
+                    hardened.build_final_go_record(**self.kwargs(root))
+            foundation_builder.assert_not_called()
 
     def test_trusted_subject_failure_becomes_foundation_final_go_error_and_restores_seam(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -118,6 +206,10 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
                 hardened.crosscheck_custody,
                 "verify_crosscheck_receipt_custody",
                 return_value=self.crosscheck_execution(),
+            ), mock.patch.object(
+                hardened,
+                "_fresh_signed_candidate_subject",
+                return_value=self.candidate_subject(),
             ), mock.patch.object(
                 hardened.foundation,
                 "build_final_go_record",
@@ -141,6 +233,10 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
                 "verify_crosscheck_receipt_custody",
                 return_value=self.crosscheck_execution(),
             ), mock.patch.object(
+                hardened,
+                "_fresh_signed_candidate_subject",
+                return_value=self.candidate_subject(),
+            ), mock.patch.object(
                 hardened.foundation,
                 "build_final_go_record",
                 side_effect=self.fake_foundation,
@@ -161,6 +257,10 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
                 hardened.crosscheck_custody,
                 "verify_crosscheck_receipt_custody",
                 return_value=diverged,
+            ), mock.patch.object(
+                hardened,
+                "_fresh_signed_candidate_subject",
+                return_value=self.candidate_subject(),
             ), mock.patch.object(
                 hardened.foundation,
                 "build_final_go_record",
@@ -192,6 +292,28 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
                 with self.assertRaisesRegex(hardened.FinalGoError, "unpinned crosscheck execution"):
                     hardened.build_final_go_record(**self.kwargs(root))
             foundation_builder.assert_not_called()
+
+    def test_hardened_cli_requires_private_intended_device_input(self):
+        minimal = [
+            "--candidate-root", "/tmp/candidate",
+            "--expected-source-sha", self.SOURCE,
+            "--expected-pr-number", "833",
+            "--trusted-xcode-run-id", "1",
+            "--trusted-xcode-job-id", "2",
+            "--trusted-xcode-artifact-id", "3",
+            "--trusted-xcode-artifact-archive", "/tmp/xcode.zip",
+            "--independent-crosscheck-receipt", "/tmp/crosscheck.json",
+            "--frozen-source-repo", "/tmp/source",
+            "--tooling-repo", "/tmp/tooling",
+            "--operator-attestation", "/tmp/attestation.json",
+            "--output", "/tmp/FinalGO.json",
+        ]
+        with self.assertRaises(SystemExit):
+            hardened._args(minimal)
+        parsed = hardened._args(
+            minimal + ["--intended-device-udid-file", "/private/device-id"]
+        )
+        self.assertEqual(parsed.intended_device_udid_file, Path("/private/device-id"))
 
     def test_workflow_blob_lookup_reuses_foundation_closed_git_boundary(self):
         with tempfile.TemporaryDirectory() as temporary:
