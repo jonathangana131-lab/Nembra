@@ -35,22 +35,30 @@ struct ES80CaptureLockedSurfaceVisualAcceptanceTests {
     @Test("locked rider surface keeps exact engineering truth subordinate to the primary lock")
     func riderHierarchyRemainsHumanFirst() throws {
         let source = try Self.appSource()
-        let lockTitle = try #require(source.range(of: "Text(\"Capture locked\")"))
-        let riderMessage = try #require(
-            source.range(of: "Text(\"This build is still finishing its final checks before it can collect real ES80 data.\")")
+        let lockedSurfaceStart = try #require(
+            source.range(of: "private struct ES80ExperimentOneFieldNoGoView: View")
+        )
+        let lockedSurface = source[lockedSurfaceStart.lowerBound..<source.endIndex]
+        let lockTitle = try #require(lockedSurface.range(of: "Text(\"Capture locked\")"))
+        let accessibilityRiderMessage = try #require(
+            lockedSurface.range(of: "\"Final exact-build checks are still in progress.\"")
+        )
+        let defaultRiderMessage = try #require(
+            lockedSurface.range(of: "\"This build is still finishing its final checks before it can collect real ES80 data.\"")
         )
         let physicalBoundary = try #require(
-            source.range(of: ".accessibilityIdentifier(\"es80.capture.physical-run-locked\")")
+            lockedSurface.range(of: ".accessibilityIdentifier(\"es80.capture.physical-run-locked\")")
         )
-        let details = try #require(source.range(of: "Text(\"Engineering details\")"))
-        let rawRecipe = try #require(source.range(of: "Text(recipeID)"))
+        let details = try #require(lockedSurface.range(of: "Text(\"Engineering details\")"))
+        let rawRecipe = try #require(lockedSurface.range(of: "Text(recipeID)"))
 
-        #expect(lockTitle.lowerBound < riderMessage.lowerBound)
-        #expect(riderMessage.lowerBound < physicalBoundary.lowerBound)
+        #expect(lockTitle.lowerBound < accessibilityRiderMessage.lowerBound)
+        #expect(accessibilityRiderMessage.lowerBound < defaultRiderMessage.lowerBound)
+        #expect(defaultRiderMessage.lowerBound < physicalBoundary.lowerBound)
         #expect(physicalBoundary.lowerBound < details.lowerBound)
         #expect(details.lowerBound < rawRecipe.lowerBound)
-        #expect(source.contains("if engineeringDetailsExpanded"))
-        #expect(source.contains("Software evidence only. This does not verify a physical ES80 or unlock scooter controls."))
+        #expect(lockedSurface.contains("if engineeringDetailsExpanded"))
+        #expect(lockedSurface.contains("Software evidence only. This does not verify a physical ES80 or unlock scooter controls."))
     }
 
     @Test("Engineering Details disclosure has a full-width explicit 44-point minimum hit target")
