@@ -1,0 +1,40 @@
+name: Disposable V14 Range Bridge R2 Validation
+
+on:
+  push:
+    branches:
+      - ci/v14-range-bridge-portable-13f851-gpt56
+
+permissions:
+  contents: read
+
+jobs:
+  swift-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CANDIDATE_SHA: 13f851ce015da1d3ff156688bd3a556c829db003
+      HELPER_PATH: .github/workflows/_v14_range_bridge_portable.yml
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ci/v14-range-bridge-portable-13f851-gpt56
+          fetch-depth: 3
+
+      - name: Prove package source is exact candidate plus disposable workflow
+        run: |
+          set -euo pipefail
+          git cat-file -e "${CANDIDATE_SHA}^{commit}"
+          changed="$(git diff --name-only "$CANDIDATE_SHA" HEAD | sort)"
+          printf 'Candidate: %s\nValidation head: %s\nDelta:\n%s\n' "$CANDIDATE_SHA" "$(git rev-parse HEAD)" "$changed"
+          test "$changed" = "$HELPER_PATH"
+
+      - name: Report Swift toolchain
+        run: swift --version
+
+      - name: Test exact NembraCore package source
+        working-directory: Packages/NembraCore
+        run: |
+          set -euo pipefail
+          swift test
