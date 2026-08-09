@@ -55,19 +55,19 @@ class TrustedXcodePrevalidationProcessCustodyRedTests(unittest.TestCase):
             self.assertEqual(expected_oid, git_blob_oid(reviewed))
 
             marker = repo / ".mutation-admitted"
+            attacker_program = """
+import pathlib
+import sys
+import time
+
+marker = pathlib.Path(sys.argv[1])
+target = pathlib.Path(sys.argv[2])
+while not marker.exists():
+    time.sleep(0.005)
+target.write_bytes(b"let trustedAuthority = 999\\n")
+"""
             attacker = subprocess.Popen(
-                [
-                    "/usr/bin/python3",
-                    "-c",
-                    (
-                        "import pathlib,sys,time; "
-                        "marker=pathlib.Path(sys.argv[1]); target=pathlib.Path(sys.argv[2]); "
-                        "\nwhile not marker.exists(): time.sleep(0.005); "
-                        "target.write_bytes(b'let trustedAuthority = 999\\n')"
-                    ),
-                    str(marker),
-                    str(tracked),
-                ]
+                ["/usr/bin/python3", "-c", attacker_program, str(marker), str(tracked)]
             )
             self.addCleanup(lambda: attacker.poll() is None and attacker.kill())
 
