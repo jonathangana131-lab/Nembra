@@ -574,7 +574,8 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         bringIntoScreenshotViewport(
             readyState,
             in: app,
-            context: "Horizon-ready state in landscape"
+            context: "Horizon-ready state in landscape",
+            useDeliberateDrag: true
         )
         assertVisibleInScreenshotViewport(
             readyState,
@@ -589,7 +590,8 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         bringIntoScreenshotViewport(
             finish,
             in: app,
-            context: "Seal Capture action in landscape"
+            context: "Seal Capture action in landscape",
+            useDeliberateDrag: true
         )
         assertVisibleInScreenshotViewport(
             finish,
@@ -822,6 +824,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         in app: XCUIApplication,
         context: String,
         maxSwipes: Int = 6,
+        useDeliberateDrag: Bool = false,
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
@@ -844,10 +847,19 @@ final class ES80ResearchCaptureUITests: XCTestCase {
                frame.maxY <= windowFrame.maxY + 1 {
                 return
             }
-            let window = app.windows.firstMatch
-            let start = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.82))
-            let end = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.18))
-            start.press(forDuration: 0.05, thenDragTo: end)
+            if useDeliberateDrag {
+                let window = app.windows.firstMatch
+                let start = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.82))
+                let end = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.18))
+                start.press(forDuration: 0.05, thenDragTo: end)
+            } else {
+                let captureScroll = app.scrollViews["es80.capture.scroll"]
+                if captureScroll.exists {
+                    captureScroll.swipeUp()
+                } else {
+                    app.swipeUp()
+                }
+            }
             remaining -= 1
         }
 
@@ -1013,7 +1025,8 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         bringIntoScreenshotViewport(
             progress,
             in: app,
-            context: "Capture progress rail in landscape"
+            context: "Capture progress rail in landscape",
+            useDeliberateDrag: true
         )
         assertVisibleInScreenshotViewport(
             progress,
