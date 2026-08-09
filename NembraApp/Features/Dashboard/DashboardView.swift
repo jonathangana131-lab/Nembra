@@ -18,67 +18,34 @@ struct DashboardModePersonality: Equatable {
     static func resolved(for mode: RideMode?) -> DashboardModePersonality {
         switch mode {
         case .walk:
-            DashboardModePersonality(
-                mode: .walk,
-                ambientOpacity: 0.018,
-                speedScale: 0.96,
-                modeScale: 0.97,
-                modeMarkerWidth: 24,
-                modeMarkerOpacity: 0.22,
-                statusOpacity: 0.58
-            )
+            DashboardModePersonality(mode: .walk, ambientOpacity: 0.018, speedScale: 0.96, modeScale: 0.97, modeMarkerWidth: 24, modeMarkerOpacity: 0.22, statusOpacity: 0.58)
         case .eco:
-            DashboardModePersonality(
-                mode: .eco,
-                ambientOpacity: 0.030,
-                speedScale: 0.98,
-                modeScale: 0.99,
-                modeMarkerWidth: 30,
-                modeMarkerOpacity: 0.32,
-                statusOpacity: 0.62
-            )
+            DashboardModePersonality(mode: .eco, ambientOpacity: 0.030, speedScale: 0.98, modeScale: 0.99, modeMarkerWidth: 30, modeMarkerOpacity: 0.32, statusOpacity: 0.62)
         case .drive:
-            DashboardModePersonality(
-                mode: .drive,
-                ambientOpacity: 0.044,
-                speedScale: 1.0,
-                modeScale: 1.0,
-                modeMarkerWidth: 38,
-                modeMarkerOpacity: 0.46,
-                statusOpacity: 0.68
-            )
+            DashboardModePersonality(mode: .drive, ambientOpacity: 0.044, speedScale: 1.0, modeScale: 1.0, modeMarkerWidth: 38, modeMarkerOpacity: 0.46, statusOpacity: 0.68)
         case .sport:
-            DashboardModePersonality(
-                mode: .sport,
-                ambientOpacity: 0.062,
-                speedScale: 1.025,
-                modeScale: 1.03,
-                modeMarkerWidth: 48,
-                modeMarkerOpacity: 0.62,
-                statusOpacity: 0.74
-            )
+            DashboardModePersonality(mode: .sport, ambientOpacity: 0.062, speedScale: 1.025, modeScale: 1.03, modeMarkerWidth: 48, modeMarkerOpacity: 0.62, statusOpacity: 0.74)
         case nil:
-            DashboardModePersonality(
-                mode: nil,
-                ambientOpacity: 0.012,
-                speedScale: 1.0,
-                modeScale: 1.0,
-                modeMarkerWidth: 22,
-                modeMarkerOpacity: 0.14,
-                statusOpacity: 0.58
-            )
+            DashboardModePersonality(mode: nil, ambientOpacity: 0.012, speedScale: 1.0, modeScale: 1.0, modeMarkerWidth: 22, modeMarkerOpacity: 0.14, statusOpacity: 0.58)
         }
     }
 }
 
+private enum DashboardBatteryReadout: Equatable {
+    case charge
+    case range
+}
+
 /// The dedicated landscape riding surface.
 ///
-/// Phase 11 keeps the accepted Phase 10 speed instrumentation and makes confirmed
-/// ride mode affect cockpit visual energy without changing any vehicle truth.
+/// Battery/range intentionally has no synthetic range fallback. Until a verified
+/// ES80 battery source and learned range model exist, range presents as unavailable
+/// rather than deriving miles from advertised range or battery percentage.
 struct DashboardView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showLockConfirmation = false
+    @State private var batteryReadout: DashboardBatteryReadout = .charge
 
     var body: some View {
         let personality = DashboardModePersonality.resolved(for: vehicle.state.rideMode)
@@ -87,10 +54,7 @@ struct DashboardView: View {
             Color.black.ignoresSafeArea()
 
             RadialGradient(
-                colors: [
-                    Color.white.opacity(personality.ambientOpacity),
-                    Color.clear
-                ],
+                colors: [Color.white.opacity(personality.ambientOpacity), Color.clear],
                 center: .center,
                 startRadius: 18,
                 endRadius: 390
@@ -157,14 +121,7 @@ struct DashboardView: View {
 
             Spacer(minLength: 0)
 
-            dashboardMetric(
-                title: "BATTERY",
-                value: batteryText,
-                symbol: batteryIcon,
-                warning: isBatteryLow && !isRetainedVehicleData,
-                retained: isRetainedVehicleData,
-                identifier: "dashboard.battery"
-            )
+            batteryRangeInstrument
 
             dashboardMetric(
                 title: "TRIP",
@@ -174,6 +131,73 @@ struct DashboardView: View {
                 identifier: "dashboard.trip"
             )
         }
+    }
+
+    private var batteryRangeInstrument: some View {
+        Button {
+            batteryReadout = batteryReadout == .charge ? .range : .charge
+        } label: {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 5) {
+                    Image(systemName: batteryReadout == .charge ? batteryIcon : "location.fill")
+                    Text(batteryReadout == .charge ? "BATTERY" : "RANGE")
+                    Image(systemName: "arrow.left.arrow.right")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.tertiary)
+                }
+                .font(.caption2.weight(.bold))
+                .tracking(1.1)
+                .foregroundStyle(batteryInstrumentWarning ? Color.red : Color.secondary)
+
+                Text(batteryPrimaryText)
+                    .font(.title3.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(batteryPrimaryColor)
+                    .contentTransition(.numericText())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+
+                batteryChargeBar
+                    .frame(width: 82)
+
+                if isRetainedVehicleData, vehicle.state.batteryPercent != nil {
+                    Text("LAST KNOWN")
+                        .font(.caption2.weight(.bold))
+                        .tracking(1.0)
+                        .foregroundStyle(.orange)
+                } else if batteryReadout == .range {
+                    Text("NOT CALIBRATED")
+                        .font(.caption2.weight(.bold))
+                        .tracking(0.8)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .sensoryFeedback(.selection, trigger: batteryReadout)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(batteryReadout == .charge ? "Battery" : "Estimated range")
+        .accessibilityValue(batteryAccessibilityValue)
+        .accessibilityHint("Double tap to switch between battery charge and range. Range remains unavailable until Nembra has verified battery evidence and a learned range model.")
+        .accessibilityIdentifier("dashboard.battery-range")
+    }
+
+    private var batteryChargeBar: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule(style: .continuous)
+                    .fill(Color.white.opacity(0.10))
+
+                if let fill = batteryFillFraction {
+                    Capsule(style: .continuous)
+                        .fill(batteryInstrumentWarning ? Color.red : Color.white.opacity(isRetainedVehicleData ? 0.42 : 0.86))
+                        .frame(width: max(2, proxy.size.width * fill))
+                }
+            }
+        }
+        .frame(height: 3)
+        .accessibilityHidden(true)
     }
 
     @ViewBuilder
@@ -200,7 +224,6 @@ struct DashboardView: View {
     private func contextRail(personality: DashboardModePersonality) -> some View {
         VStack(alignment: .trailing, spacing: 14) {
             modeReadout(personality: personality)
-
             Spacer(minLength: 0)
 
             if shouldShowStoppedControls {
@@ -214,10 +237,7 @@ struct DashboardView: View {
                     .accessibilityIdentifier("dashboard.controls-moving-message")
             }
         }
-        .animation(
-            reduceMotion ? nil : .snappy(duration: 0.20),
-            value: shouldShowStoppedControls
-        )
+        .animation(reduceMotion ? nil : .snappy(duration: 0.20), value: shouldShowStoppedControls)
     }
 
     private func modeReadout(personality: DashboardModePersonality) -> some View {
@@ -268,8 +288,7 @@ struct DashboardView: View {
                                 }
 
                                 if vehicle.pendingRideMode == mode {
-                                    ProgressView()
-                                        .controlSize(.mini)
+                                    ProgressView().controlSize(.mini)
                                 } else {
                                     Text(modeAbbreviation(mode))
                                         .font(.caption.weight(vehicle.state.rideMode == mode ? .bold : .semibold))
@@ -406,6 +425,42 @@ struct DashboardView: View {
     private var batteryText: String {
         guard let battery = vehicle.state.batteryPercent else { return "—" }
         return "\(battery)%"
+    }
+
+    private var batteryPrimaryText: String {
+        switch batteryReadout {
+        case .charge:
+            batteryText
+        case .range:
+            "—"
+        }
+    }
+
+    private var batteryAccessibilityValue: String {
+        switch batteryReadout {
+        case .charge:
+            if isRetainedVehicleData, vehicle.state.batteryPercent != nil {
+                return "Last known \(batteryText)"
+            }
+            return batteryText
+        case .range:
+            return "Unavailable until a verified learned range model exists"
+        }
+    }
+
+    private var batteryPrimaryColor: Color {
+        if batteryInstrumentWarning { return .red }
+        if isRetainedVehicleData { return .secondary }
+        return batteryReadout == .range ? .secondary : .white
+    }
+
+    private var batteryInstrumentWarning: Bool {
+        batteryReadout == .charge && isBatteryLow && !isRetainedVehicleData
+    }
+
+    private var batteryFillFraction: CGFloat? {
+        guard let battery = vehicle.state.batteryPercent else { return nil }
+        return CGFloat(min(max(battery, 0), 100)) / 100
     }
 
     private var isBatteryLow: Bool {
