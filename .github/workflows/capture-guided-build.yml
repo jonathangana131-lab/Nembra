@@ -17,7 +17,7 @@ jobs:
   build:
     name: Build guided Capture app
     runs-on: xcode-27
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - name: Checkout exact branch head
         uses: actions/checkout@v4
@@ -25,8 +25,10 @@ jobs:
       - name: Show Xcode
         run: xcodebuild -version
 
-      - name: Validate plist
-        run: plutil -lint NembraApp/Info.plist
+      - name: Validate plist and installer
+        run: |
+          plutil -lint NembraApp/Info.plist
+          bash -n scripts/field/install_one_time_capture.command
 
       - name: Enforce no application characteristic writes
         shell: bash
@@ -38,28 +40,48 @@ jobs:
             exit 1
           fi
 
-      - name: Build iOS Simulator app only
+      - name: Build iOS Simulator app
         run: |
           set -o pipefail
-          rm -rf /tmp/NembraGuidedCaptureDerived
+          rm -rf /tmp/NembraGuidedCaptureSimulatorDerived
           xcodebuild \
             -project Nembra.xcodeproj \
             -scheme Nembra \
             -configuration Debug \
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath /tmp/NembraGuidedCaptureDerived \
+            -derivedDataPath /tmp/NembraGuidedCaptureSimulatorDerived \
             CODE_SIGNING_ALLOWED=NO \
-            build | tee /tmp/nembra-guided-capture-build.log
+            build | tee /tmp/nembra-guided-capture-simulator-build.log
 
-      - name: Verify product exists
+      - name: Verify Simulator product exists
         run: |
-          test -d /tmp/NembraGuidedCaptureDerived/Build/Products/Debug-iphonesimulator/Nembra.app
+          test -d /tmp/NembraGuidedCaptureSimulatorDerived/Build/Products/Debug-iphonesimulator/Nembra.app
 
-      - name: Upload build log on failure
+      - name: Build physical iPhone target unsigned
+        run: |
+          set -o pipefail
+          rm -rf /tmp/NembraGuidedCaptureDeviceDerived
+          xcodebuild \
+            -project Nembra.xcodeproj \
+            -scheme Nembra \
+            -configuration Debug \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath /tmp/NembraGuidedCaptureDeviceDerived \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tee /tmp/nembra-guided-capture-device-build.log
+
+      - name: Verify iPhone product exists
+        run: |
+          test -d /tmp/NembraGuidedCaptureDeviceDerived/Build/Products/Debug-iphoneos/Nembra.app
+
+      - name: Upload build logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: guided-capture-build-log
-          path: /tmp/nembra-guided-capture-build.log
+          name: guided-capture-build-logs
+          path: |
+            /tmp/nembra-guided-capture-simulator-build.log
+            /tmp/nembra-guided-capture-device-build.log
           if-no-files-found: ignore
