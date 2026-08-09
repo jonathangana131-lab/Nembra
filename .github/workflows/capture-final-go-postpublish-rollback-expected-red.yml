@@ -1,0 +1,81 @@
+name: Capture Final GO Post-Publish Rollback Expected-Red
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - .github/workflows/capture-final-go-postpublish-rollback-expected-red.yml
+
+permissions:
+  contents: read
+
+jobs:
+  final-go-postpublish-rollback:
+    name: Require failed Final GO publication to leave no GO pathname
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXPECTED_PARENT_SHA: b36f2ac7bca5279bc710671241eedf16b8acd091
+      WORKFLOW_PATH: .github/workflows/capture-final-go-postpublish-rollback-expected-red.yml
+    steps:
+      - name: Checkout immutable validation head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+
+      - name: Verify one workflow-only commit above repaired Final GO convergence
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT_SHA"
+          changed="$(git diff --name-only "$EXPECTED_PARENT_SHA" HEAD)"
+          test "$changed" = "$WORKFLOW_PATH"
+
+      - name: Inject parent-fsync failure after rename and require rollback
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import importlib.util
+          import os
+          from pathlib import Path
+          import tempfile
+          from unittest import mock
+
+          module_path = Path('scripts/ci/es80_today_final_go_record.py')
+          spec = importlib.util.spec_from_file_location('final_go', module_path)
+          module = importlib.util.module_from_spec(spec)
+          assert spec and spec.loader
+          spec.loader.exec_module(module)
+
+          raw = b'{"authority":"today-final-go-procedural-record-not-physical-result","decision":"GO","schemaVersion":3}\n'
+          real_fsync = os.fsync
+          calls = {'count': 0}
+
+          def fail_second_fsync(fd):
+              calls['count'] += 1
+              if calls['count'] == 2:
+                  raise OSError('injected parent-directory fsync failure after FinalGO rename')
+              return real_fsync(fd)
+
+          with tempfile.TemporaryDirectory() as temporary:
+              output = Path(temporary) / 'FinalGO.json'
+              try:
+                  with mock.patch.object(module.os, 'fsync', side_effect=fail_second_fsync):
+                      module.publish_record_no_replace(
+                          output,
+                          raw,
+                          publisher=lambda source, destination: os.rename(source, destination),
+                      )
+              except OSError:
+                  pass
+              else:
+                  raise SystemExit('expected injected post-rename failure was not observed')
+
+              if output.exists() or output.is_symlink():
+                  raise SystemExit(
+                      'FAILED TRANSACTION LEFT FinalGO.json PRESENT: durable GO authority survived post-rename failure'
+                  )
+              leftovers = list(Path(temporary).glob('.FinalGO.json.*.staging'))
+              if leftovers:
+                  raise SystemExit(f'failed transaction left staging residue: {leftovers}')
+          PY
