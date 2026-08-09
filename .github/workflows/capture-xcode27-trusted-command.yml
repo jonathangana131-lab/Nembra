@@ -234,6 +234,57 @@ jobs:
             "$producer_path" "$expected_blob" "$actual_blob"
           test "$actual_blob" = "$expected_blob"
 
+      - name: Reject host-executable candidate build hooks
+        shell: "/bin/bash --noprofile --norc -p -e -o pipefail {0}"
+        env:
+          BASH_ENV: ""
+          ENV: ""
+        run: |
+          /usr/bin/python3 -I - <<'PY'
+          import re
+          from pathlib import Path
+
+          project_path = Path("Nembra.xcodeproj/project.pbxproj")
+          project = project_path.read_text(encoding="utf-8")
+
+          forbidden_project_markers = (
+              "PBXShellScriptBuildPhase",
+              "PBXBuildRule",
+              "PBXLegacyTarget",
+              "XCRemoteSwiftPackageReference",
+              "XCLocalSwiftPackageReference",
+              "XCSwiftPackageProductDependency",
+              "baseConfigurationReference",
+          )
+          for marker in forbidden_project_markers:
+              if marker in project:
+                  raise SystemExit(f"trusted Xcode authority refuses host-executable build surface: {marker}")
+
+          tool_or_code_loading_setting = re.compile(
+              r"(?m)^\s*(?:SWIFT_EXEC|SWIFT_DRIVER_SWIFT_FRONTEND_EXEC|CC|CXX|LD|LDPLUSPLUS|"
+              r"LIBTOOL|OTHER_SWIFT_FLAGS|OTHER_CFLAGS|OTHER_CPLUSPLUSFLAGS|OTHER_LDFLAGS)"
+              r"(?:\[[^\]]+\])?\s*="
+          )
+          match = tool_or_code_loading_setting.search(project)
+          if match is not None:
+              key = match.group(0).split("=", 1)[0].strip()
+              raise SystemExit(f"trusted Xcode authority refuses custom tool/code-loading setting: {key}")
+
+          allowed_product_types = {
+              "com.apple.product-type.application",
+              "com.apple.product-type.bundle.unit-test",
+              "com.apple.product-type.bundle.ui-testing",
+          }
+          product_types = set(re.findall(r'productType = "([^"]+)";', project))
+          if product_types != allowed_product_types:
+              raise SystemExit(
+                  "trusted Xcode authority refuses unexpected native target product types: "
+                  + repr(sorted(product_types))
+              )
+
+          print("trusted Xcode build-hook fence accepted source-only app/test graph")
+          PY
+
       - name: Build, test, and capture Simulator states
         shell: "/bin/bash --noprofile --norc -p -e -o pipefail {0}"
         env:
