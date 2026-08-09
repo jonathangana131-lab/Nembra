@@ -1,0 +1,73 @@
+name: Capture Trusted Step Startup Env Expected-Red
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - .github/workflows/capture-trusted-step-startup-env-expected-red.yml
+
+permissions:
+  contents: read
+
+jobs:
+  trusted-step-startup:
+    name: Reject candidate startup before trusted step body
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXPECTED_PARENT_SHA: 5ec0b63a3aa617f7a9442ec631a569d1d0cd2ebd
+      WORKFLOW_PATH: .github/workflows/capture-trusted-step-startup-env-expected-red.yml
+    steps:
+      - name: Checkout immutable validation head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+
+      - name: Verify exact parent and current production startup shape
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT_SHA"
+          changed="$(git diff --name-only "$EXPECTED_PARENT_SHA" HEAD)"
+          test "$changed" = "$WORKFLOW_PATH"
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          source = Path('.github/workflows/capture-xcode27-trusted-command.yml').read_text()
+          match = re.search(
+              r'(?ms)^      - name: Build, test, and capture Simulator states\n(?P<body>.*?)(?=^      - name: |\Z)',
+              source,
+          )
+          if match is None:
+              raise SystemExit('trusted Simulator authority step missing')
+          body = match.group('body')
+          if re.search(r'^        shell:', body, re.MULTILINE):
+              raise SystemExit('production step now has an explicit shell boundary; validation is superseded')
+          if "| env -i \\\n                PATH=/usr/bin:/bin:/usr/sbin:/sbin" not in body:
+              raise SystemExit('expected inner Bash env-i repair is not present on parent')
+          PY
+
+      - name: Model earlier candidate code persisting BASH_ENV
+        run: |
+          set -euo pipefail
+          probe="$RUNNER_TEMP/nembra-step-startup-probe.sh"
+          marker="$RUNNER_TEMP/nembra-step-startup-marker"
+          cat > "$probe" <<'SH'
+          printf 'candidate startup code executed\n' > "$RUNNER_TEMP/nembra-step-startup-marker"
+          SH
+          chmod 0600 "$probe"
+          rm -f "$marker"
+          printf 'BASH_ENV=%s\n' "$probe" >> "$GITHUB_ENV"
+
+      - name: Prove default trusted step shell executes candidate startup first
+        run: |
+          set -euo pipefail
+          marker="$RUNNER_TEMP/nembra-step-startup-marker"
+          if [[ -f "$marker" ]]; then
+            echo "CANDIDATE BASH_ENV EXECUTED BEFORE TRUSTED STEP BODY" >&2
+            echo "The inner env -i Bash boundary is too late; GitHub already started this outer run-step shell with candidate-persisted startup authority." >&2
+            exit 1
+          fi
+          echo "Expected cross-step BASH_ENV startup injection was not reproduced." >&2
+          exit 2
