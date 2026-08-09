@@ -57,9 +57,23 @@ struct ES80CaptureFieldRuntimeRendezvousTests {
     @Test("preflight rendezvous does not mint or reread authority in the app")
     func preflightConsumesCoordinatorAuthorityOnly() throws {
         let preflight = try Self.preflightSource(Self.appSource())
+        let researchBuildConstructorPattern = #"\bResearchBuild\("#
 
         #expect(!preflight.contains("PassiveBluetoothCaptureRuntimeBuildIdentityReader"))
-        #expect(\n            !preflight.contains("PassiveBluetoothExperimentOneFieldExecutionGate.ResearchBuild(")\n        )\n        #expect(!preflight.contains("ResearchBuild(runtimeBuildIdentity:"))
+        #expect(
+            "PassiveBluetoothExperimentOneFieldExecutionGate.ResearchBuild("
+                .range(of: researchBuildConstructorPattern, options: .regularExpression) != nil
+        )
+        #expect(
+            ".goPrivateResearchBuild(build)"
+                .range(of: researchBuildConstructorPattern, options: .regularExpression) == nil
+        )
+        #expect(
+            preflight.range(
+                of: researchBuildConstructorPattern,
+                options: .regularExpression
+            ) == nil
+        )
         #expect(!preflight.contains("permitsPhysicalProcedure = true"))
         #expect(preflight.contains("hasAcceptedPreflightAuthority"))
         #expect(preflight.contains("selectedChargerState?.rawValue"))
