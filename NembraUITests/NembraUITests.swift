@@ -127,10 +127,11 @@ final class NembraUITests: XCTestCase {
 
         let vehicleStatus = app.descendants(matching: .any)["dashboard.vehicle-status"]
         XCTAssertTrue(vehicleStatus.waitForExistence(timeout: 2))
-        XCTAssertTrue(
-            app.staticTexts["WAITING FOR DATA"].waitForExistence(timeout: 2),
-            "The Cockpit screenshot must expose the no-current-telemetry vehicle state."
+        XCTAssertFalse(
+            app.staticTexts["WAITING FOR DATA"].exists,
+            "A disconnected fixture with accepted retained vehicle data must not be flattened into the no-evidence vehicle state."
         )
+        XCTAssertFalse(app.staticTexts["LIVE DATA"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
 
