@@ -1,0 +1,87 @@
+name: Disposable V14 Range Bridge Test Reason Repair
+
+on:
+  push:
+    branches:
+      - tmp/v14-range-bridge-test-reason-fix/gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXPECTED_CANDIDATE: 13f851ce015da1d3ff156688bd3a556c829db003
+      TEST_PATH: Packages/NembraCore/Tests/NembraCoreTests/AcceptedBatteryRangeLearningPipelineTests.swift
+      HELPER_PATH: .github/workflows/_v14_range_bridge_test_reason_patch.yml
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: tmp/v14-range-bridge-test-reason-fix/gpt56
+          fetch-depth: 4
+
+      - name: Patch only the demonstrated assertion reason and erase helper
+        run: |
+          set -euo pipefail
+          git cat-file -e "${EXPECTED_CANDIDATE}^{commit}"
+          before="$(git diff --name-only "$EXPECTED_CANDIDATE" HEAD | sort)"
+          test "$before" = "$HELPER_PATH"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("Packages/NembraCore/Tests/NembraCoreTests/AcceptedBatteryRangeLearningPipelineTests.swift")
+          source = path.read_text(encoding="utf-8")
+          old = '''        #expect(throws: BatteryEvidenceStreamValidationError.staleReceiptIdentity) {
+            _ = try pipeline.acceptBatteryObservation(
+                verifiedSOC(
+                    79,
+                    epoch: epoch,
+                    sequence: 2,
+                    uptime: 2_000,
+                    continuity: .afterUnobservedInterval
+                ),
+                policy: p
+            )
+        }
+'''
+          new = '''        #expect(throws: BatteryEvidenceStreamValidationError.staleReceiptIdentity) {
+            _ = try pipeline.acceptBatteryObservation(
+                verifiedSOC(79, epoch: epoch, sequence: 2, uptime: 2_000),
+                policy: p
+            )
+        }
+
+        #expect(throws: BatteryEvidenceStreamValidationError.inconsistentReceiptMetadata) {
+            _ = try pipeline.acceptBatteryObservation(
+                verifiedSOC(
+                    79,
+                    epoch: epoch,
+                    sequence: 2,
+                    uptime: 2_000,
+                    continuity: .afterUnobservedInterval
+                ),
+                policy: p
+            )
+        }
+'''
+          if source.count(old) != 1:
+              raise SystemExit("expected exactly one stale-replay assertion block")
+          path.write_text(source.replace(old, new), encoding="utf-8")
+          PY
+
+          rm "$HELPER_PATH"
+          git diff --check
+          changed="$(git diff --name-only "$EXPECTED_CANDIDATE" | sort)"
+          test "$changed" = "$TEST_PATH"
+          grep -F 'BatteryEvidenceStreamValidationError.staleReceiptIdentity' "$TEST_PATH"
+          grep -F 'BatteryEvidenceStreamValidationError.inconsistentReceiptMetadata' "$TEST_PATH"
+
+          git config user.name "nembra-range-ci"
+          git config user.email "nembra-range-ci@users.noreply.github.com"
+          git add "$TEST_PATH" "$HELPER_PATH"
+          git commit -m "[V14][range] assert exact replay and metadata-rewrite rejection"
+          git push origin HEAD:tmp/v14-range-bridge-test-reason-fix/gpt56
