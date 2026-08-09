@@ -242,6 +242,12 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
+                    if let researchBuild = researchBuildForRendezvous {
+                        fieldBuildRendezvous(researchBuild)
+                    } else if simulatorQAEvidenceLabel == nil {
+                        fieldBuildRendezvousUnavailable
+                    }
+
                     VStack(alignment: .leading, spacing: 12) {
                         Text("CHARGER STATE")
                             .font(.caption.monospaced().weight(.bold))
@@ -288,7 +294,8 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
 
                     Button {
                         guard selectedChargerState?.rawValue
-                                == PassiveBluetoothStationaryCaptureChargerState.disconnected.rawValue else {
+                                == PassiveBluetoothStationaryCaptureChargerState.disconnected.rawValue,
+                              hasAcceptedPreflightAuthority else {
                             return
                         }
                         disconnectedDeclarationAccepted = true
@@ -305,7 +312,7 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(!canContinue)
-                    .accessibilityHint("Available only after declaring that the charger is disconnected.")
+                    .accessibilityHint("Available only after declaring that the charger is disconnected and this running build has package-owned research authority.")
                     .accessibilityIdentifier("es80.capture.preflight.continue")
 
                     Text("Nembra cannot sense the charger directly. Keep it disconnected, keep Nembra open with the screen unlocked, and keep the stock scooter app closed for the whole capture.")
@@ -337,9 +344,129 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
         return freshCoordinator
     }
 
+    private var researchBuildForRendezvous: PassiveBluetoothExperimentOneFieldExecutionGate.ResearchBuild? {
+        switch coordinator.status.fieldExecutionStatus {
+        case let .goPrivateResearchBuild(build):
+            return build
+        case .noGo:
+            return nil
+        }
+    }
+
+    private var hasAcceptedPreflightAuthority: Bool {
+#if DEBUG && targetEnvironment(simulator)
+        if simulatorQASnapshot != nil {
+            return true
+        }
+#endif
+        return researchBuildForRendezvous != nil
+    }
+
     private var canContinue: Bool {
         selectedChargerState?.rawValue
             == PassiveBluetoothStationaryCaptureChargerState.disconnected.rawValue
+            && hasAcceptedPreflightAuthority
+    }
+
+    private func fieldBuildRendezvous(
+        _ build: PassiveBluetoothExperimentOneFieldExecutionGate.ResearchBuild
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "checkmark.shield.fill")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("PRIVATE RESEARCH BUILD")
+                        .font(.caption.monospaced().weight(.bold))
+                        .tracking(1.0)
+                        .foregroundStyle(.secondary)
+                    Text("Runtime provenance ready")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                    Text("Compare these running-build values with the independently inspected retained IPA before any Bluetooth scan.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Divider().overlay(.white.opacity(0.12))
+
+            provenanceRow(
+                title: "Recipe",
+                value: PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue,
+                identifier: "es80.capture.preflight.field-recipe"
+            )
+            provenanceRow(
+                title: "Build",
+                value: build.buildIdentifier,
+                identifier: "es80.capture.preflight.field-build-identifier"
+            )
+            provenanceRow(
+                title: "Source commit",
+                value: build.sourceCommitSHA,
+                identifier: "es80.capture.preflight.field-source-sha"
+            )
+            provenanceRow(
+                title: "Build instance",
+                value: build.buildInstanceID,
+                identifier: "es80.capture.preflight.field-build-instance"
+            )
+
+            Text("Package research admission is available for this exact running build. Final GO is still required before the physical ES80 procedure; this does not verify scooter identity or protocol/telemetry semantics.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(18)
+        .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .accessibilityIdentifier("es80.capture.preflight.field-rendezvous")
+    }
+
+    private var fieldBuildRendezvousUnavailable: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "exclamationmark.lock.fill")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Research build identity unavailable")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                Text("Nembra cannot prove package-owned research admission for this running build. Continue stays locked; do not begin the physical procedure.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(18)
+        .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("es80.capture.preflight.field-rendezvous-unavailable")
+    }
+
+    private func provenanceRow(
+        title: String,
+        value: String,
+        identifier: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title.uppercased())
+                .font(.caption2.monospaced().weight(.bold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption.monospaced().weight(.semibold))
+                .foregroundStyle(.white)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier(identifier)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title), \(value)")
     }
 
     private func chargerStateButton(
