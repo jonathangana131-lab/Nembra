@@ -35,6 +35,13 @@ class Authority:
     sha: str
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Expose GitHub's signed log Location instead of forwarding bearer auth."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
+        return None
+
+
 def age_seconds(run: dict[str, Any], now: dt.datetime) -> float | None:
     raw = run.get("created_at")
     if not isinstance(raw, str):
@@ -77,7 +84,7 @@ class GH:
         self.repository = repository
         self.owner, self.repo = repository.split("/", 1)
 
-    def bytes(self, method: str, path: str) -> bytes:
+    def request(self, method: str, path: str) -> bytes:
         req = urllib.request.Request(
             API + path,
             method=method,
@@ -96,8 +103,50 @@ class GH:
             raise RuntimeError(f"{method} {path}: HTTP {exc.code}: {body}") from exc
 
     def json(self, method: str, path: str) -> Any:
-        body = self.bytes(method, path)
+        body = self.request(method, path)
         return None if not body else json.loads(body.decode("utf-8"))
+
+    def job_log(self, job_id: int) -> bytes:
+        path = f"/repos/{self.owner}/{self.repo}/actions/jobs/{job_id}/logs"
+        req = urllib.request.Request(
+            API + path,
+            method="GET",
+            headers={
+                "Authorization": f"Bearer {self.token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "nembra-capture-trusted-queue-janitor",
+            },
+        )
+        opener = urllib.request.build_opener(NoRedirect)
+        try:
+            with opener.open(req, timeout=30) as response:
+                return response.read()
+        except urllib.error.HTTPError as exc:
+            if exc.code not in {301, 302, 303, 307, 308}:
+                body = exc.read().decode("utf-8", errors="replace")
+                raise RuntimeError(f"GET {path}: HTTP {exc.code}: {body}") from exc
+            location = exc.headers.get("Location")
+            if not location:
+                raise RuntimeError(f"GET {path}: redirect missing Location") from exc
+            parsed = urllib.parse.urlparse(location)
+            if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
+                raise RuntimeError(f"GET {path}: unsafe log redirect") from exc
+            # The signed Location is the authority for this second request. Do not
+            # forward the GitHub bearer credential across hosts.
+            signed_req = urllib.request.Request(
+                location,
+                method="GET",
+                headers={"User-Agent": "nembra-capture-trusted-queue-janitor"},
+            )
+            try:
+                with urllib.request.urlopen(signed_req, timeout=30) as response:
+                    return response.read()
+            except urllib.error.HTTPError as signed_exc:
+                body = signed_exc.read().decode("utf-8", errors="replace")
+                raise RuntimeError(
+                    f"GET signed job log: HTTP {signed_exc.code}: {body}"
+                ) from signed_exc
 
     def runs(self) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = []
@@ -126,8 +175,7 @@ class GH:
         ]
         if len(jobs) != 1:
             return None
-        log = self.bytes("GET", f"/repos/{self.owner}/{self.repo}/actions/jobs/{int(jobs[0]['id'])}/logs")
-        return parse_authority(log)
+        return parse_authority(self.job_log(int(jobs[0]["id"])))
 
     def pull(self, number: int) -> dict[str, Any]:
         value = self.json("GET", f"/repos/{self.owner}/{self.repo}/pulls/{number}")
