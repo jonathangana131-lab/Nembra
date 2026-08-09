@@ -77,6 +77,7 @@ final class VehicleStore {
 
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
     @ObservationIgnored private var speedEvidenceTask: Task<Void, Never>?
+    @ObservationIgnored private var speedEvidenceRefreshGeneration: UInt64 = 0
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private let shouldAutoConnectOnStart: Bool
 
@@ -116,33 +117,54 @@ final class VehicleStore {
         guard !didStart else { return }
         didStart = true
 
-        updatesTask = Task { [weak self, service] in
+        let speedEvidenceProvider = service as? any SpeedEvidenceProvider
+
+        updatesTask = Task { [weak self, service, speedEvidenceProvider] in
             let stream = await service.stateUpdates()
             for await state in stream {
                 guard let self, !Task.isCancelled else { break }
+                let previousConnection = self.state.connection
                 self.state = state
-                if state.connection != .connected {
-                    // Connection loss can retire authority immediately on this
-                    // ordered state stream. It never promotes speed when a later
-                    // reconnect arrives; only source-owned evidence may do that.
-                    self.speedEvidenceAvailability = .unavailable
+
+                guard let speedEvidenceProvider else {
+                    if state.connection != .connected {
+                        self.invalidateSpeedEvidenceAuthority()
+                    }
+                    continue
+                }
+
+                // A transport transition immediately revokes any previously
+                // projected speed authority. Revalidation below samples current
+                // service state first and current source-owned speed state second,
+                // so a newer reconnect cannot combine with an older dequeued
+                // `.live` availability from the previous connection.
+                if state.connection != previousConnection {
+                    self.invalidateSpeedEvidenceAuthority()
+                    await self.refreshSpeedEvidenceAuthority(using: speedEvidenceProvider)
+                } else if state.connection != .connected {
+                    self.invalidateSpeedEvidenceAuthority()
                 }
             }
         }
 
-        if let speedEvidenceProvider = service as? any SpeedEvidenceProvider {
+        if let speedEvidenceProvider {
             speedEvidenceTask = Task { [weak self, speedEvidenceProvider] in
                 let stream = await speedEvidenceProvider.speedEvidenceUpdates()
-                for await availability in stream {
+                for await _ in stream {
                     guard let self, !Task.isCancelled else { return }
-                    self.speedEvidenceAvailability = availability
+
+                    // The dequeued value is only a trigger. It may already be
+                    // obsolete by the time this task runs, so current app authority
+                    // is rebuilt from source-owned snapshots rather than copied
+                    // directly from that event.
+                    await self.refreshSpeedEvidenceAuthority(using: speedEvidenceProvider)
                 }
 
                 // An ended acquisition stream cannot leave its last `.live`
                 // sample authorized indefinitely. Cancellation/deinit needs no
                 // state write; any real unexpected/normal end fails closed.
                 guard let self, !Task.isCancelled else { return }
-                self.speedEvidenceAvailability = .unavailable
+                self.invalidateSpeedEvidenceAuthority()
             }
         } else {
             speedEvidenceAvailability = .unavailable
@@ -210,6 +232,43 @@ final class VehicleStore {
 
     private var canBeginVehicleCommand: Bool {
         !pendingCommands.contains(.connect) && !isVehicleCommandPending
+    }
+
+    /// Retires current speed authority and invalidates every in-flight refresh.
+    /// Generation invalidation prevents an older suspended snapshot read from
+    /// overwriting a newer connection/evidence decision when it resumes.
+    private func invalidateSpeedEvidenceAuthority() {
+        speedEvidenceRefreshGeneration &+= 1
+        speedEvidenceAvailability = .unavailable
+    }
+
+    /// Rebuilds the app projection from current source-owned state instead of
+    /// trusting whichever availability event happened to wake the consumer.
+    ///
+    /// Service connection is sampled before field availability. If source state
+    /// advances between those two awaits, the second sample can only be equally
+    /// new or newer for the trusted provider; that ordering fails closed rather
+    /// than pairing a newer reconnect with an older `.live` speed value.
+    private func refreshSpeedEvidenceAuthority(
+        using speedEvidenceProvider: any SpeedEvidenceProvider
+    ) async {
+        speedEvidenceRefreshGeneration &+= 1
+        let refreshGeneration = speedEvidenceRefreshGeneration
+        speedEvidenceAvailability = .unavailable
+
+        let connection = await service.snapshot().connection
+        let currentAvailability = await speedEvidenceProvider.speedEvidenceSnapshot()
+
+        guard !Task.isCancelled,
+              refreshGeneration == speedEvidenceRefreshGeneration else {
+            return
+        }
+        guard connection == .connected else {
+            speedEvidenceAvailability = .unavailable
+            return
+        }
+
+        speedEvidenceAvailability = currentAvailability
     }
 
     private func perform(_ command: PendingCommand, operation: () async throws -> Void) async {
