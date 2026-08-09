@@ -856,7 +856,12 @@ final class ES80ResearchCaptureUITests: XCTestCase {
                frame.maxY <= windowFrame.maxY + 1 {
                 return
             }
-            app.swipeUp()
+            let captureScroll = app.scrollViews["es80.capture.scroll"]
+            if captureScroll.exists {
+                captureScroll.swipeUp()
+            } else {
+                app.swipeUp()
+            }
             remaining -= 1
         }
 
