@@ -164,7 +164,38 @@ jobs:
           python3 scripts/ci/es80_field_authorization_envelope.py --self-test
 
       - name: Build, test, and capture Simulator states
-        run: scripts/ci/xcode27_simulator_capture.sh
+        run: |
+          set -euo pipefail
+          producer_path="scripts/ci/xcode27_simulator_capture.sh"
+          expected_blob="4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"
+
+          # Re-prove the mutable worktree file after every earlier candidate-controlled validation.
+          # This is diagnostic defense-in-depth; the authority-producing interpreter input below is
+          # the immutable pinned Git object itself, not this pathname.
+          worktree_blob="$(
+            env -i \
+              PATH=/usr/bin:/bin \
+              HOME=/tmp \
+              LC_ALL=C \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              /usr/bin/git hash-object -- "$producer_path"
+          )"
+          test "$worktree_blob" = "$expected_blob"
+
+          # Stream the accepted Git object directly into Bash. The candidate pathname is supplied
+          # only as $0 so the frozen runner's dirname($0)/../.. ROOT calculation still resolves the
+          # exact checkout; Bash never re-opens the mutable worktree pathname as executable input.
+          env -i \
+            PATH=/usr/bin:/bin \
+            HOME=/tmp \
+            LC_ALL=C \
+            GIT_CONFIG_NOSYSTEM=1 \
+            GIT_CONFIG_GLOBAL=/dev/null \
+            GIT_NO_REPLACE_OBJECTS=1 \
+            /usr/bin/git cat-file blob "$expected_blob" \
+            | /bin/bash -c 'source /dev/stdin' "$GITHUB_WORKSPACE/$producer_path"
 
       - name: Verify retained Capture evidence against trusted resolver authority
         env:
