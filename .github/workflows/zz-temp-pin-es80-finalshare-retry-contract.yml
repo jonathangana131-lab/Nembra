@@ -1,0 +1,47 @@
+name: TEMP Pin ES80 final Share retry contract
+
+on:
+  push:
+    branches:
+      - fix/es80-today-stale-source-contracts-f853-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact recovery branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/es80-today-stale-source-contracts-f853-gpt56
+          fetch-depth: 0
+
+      - name: Align only the demonstrated retained Share source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/temp_pin_es80_finalshare_retry_contract.py
+          git diff --check
+          test -n "$(git diff -- NembraUITests/ES80ResearchCaptureUITests.swift)"
+          git diff --exit-code -- NembraApp NembraAppTests Packages/NembraBluetoothCapture || {
+            echo 'ERROR: product/package/other test authority paths changed unexpectedly' >&2
+            exit 1
+          }
+          grep -F 'if finalShareData != nil,' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'finalShareIntegrityReport != nil,' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'finalShareFilename != nil {' NembraApp/Features/Research/ES80CaptureShellView.swift
+
+      - name: Commit contract repair and self-clean applicator
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm scripts/ci/temp_pin_es80_finalshare_retry_contract.py
+          rm .github/workflows/zz-temp-pin-es80-finalshare-retry-contract.yml
+          git config user.name nembra-v14-capture-contract
+          git config user.email nembra-v14-capture-contract@users.noreply.github.com
+          git add NembraUITests/ES80ResearchCaptureUITests.swift scripts/ci/temp_pin_es80_finalshare_retry_contract.py .github/workflows/zz-temp-pin-es80-finalshare-retry-contract.yml
+          git commit -m "test(capture): pin retained Share retry authority"
+          git push origin HEAD:fix/es80-today-stale-source-contracts-f853-gpt56
