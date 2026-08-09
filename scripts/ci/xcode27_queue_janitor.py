@@ -2,11 +2,14 @@
 """Fail-closed cleanup for stale Xcode 27 PR QA runs.
 
 The xcode-27 runner is scarce. This helper only cancels a queued or in-progress
-xcode27-pr-command run when GitHub's current open-PR state proves that the
-run's exact branch/SHA is no longer the exact head of any open PR.
+xcode27-pr-command *pull_request* run when GitHub's current open-PR state proves
+that the run's exact branch/SHA is no longer the exact head of any open PR.
 
-Current exact open PR heads are always preserved. Ambiguous API/state failures
-fail closed and preserve the run.
+`issue_comment` workflow runs are intentionally preserved. GitHub binds that
+event's workflow ref/SHA to the default branch rather than the commented PR,
+so workflow-run head_branch/head_sha cannot safely identify the requested PR
+head. Current exact open PR heads, unsupported events, and ambiguous API/state
+failures are always preserved.
 """
 
 from __future__ import annotations
@@ -24,7 +27,7 @@ from typing import Any, Iterable
 
 API_ROOT = "https://api.github.com"
 WORKFLOW = "xcode27-pr-command.yml"
-ALLOWED_EVENTS = {"pull_request", "issue_comment"}
+ALLOWED_EVENTS = {"pull_request"}
 CANCELLABLE_STATUSES = {"queued", "in_progress"}
 
 
@@ -200,6 +203,15 @@ def self_test() -> None:
         now=now,
         minimum_age_seconds=120,
     ).cancel
+    # issue_comment run metadata is default-branch identity, not PR-head identity.
+    # Preserve even if it otherwise looks stale; a future janitor can resolve the
+    # commented PR from stronger evidence instead of guessing from run metadata.
+    assert not classify_run(
+        run(event="issue_comment", head_branch="main", head_sha="default-sha"),
+        [],
+        now=now,
+        minimum_age_seconds=120,
+    ).cancel
     assert not classify_run(
         run(event="workflow_dispatch"), [], now=now, minimum_age_seconds=120
     ).cancel
@@ -218,7 +230,7 @@ def main() -> int:
     parser.add_argument(
         "--apply",
         action="store_true",
-        help="cancel proven-stale queued/in-progress runs",
+        help="cancel proven-stale queued/in-progress pull_request runs",
     )
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY"))
@@ -311,7 +323,7 @@ def main() -> int:
     else:
         print(
             "dry-run only; pass --apply to cancel proven-stale "
-            "queued/in-progress runs"
+            "queued/in-progress pull_request runs"
         )
     return 0
 
