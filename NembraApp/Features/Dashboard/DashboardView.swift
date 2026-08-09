@@ -324,8 +324,7 @@ struct DashboardView: View {
     private var errorPresented: Binding<Bool> {
         Binding(
             get: { vehicle.lastErrorMessage != nil },
-            set: { if !$0 { vehicle.lastErrorMessage = nil }
-            }
+            set: { if !$0 { vehicle.lastErrorMessage = nil } }
         )
     }
 
