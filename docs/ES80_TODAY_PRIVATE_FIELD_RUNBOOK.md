@@ -41,7 +41,7 @@ Do not fill values from memory, PR prose, signer stdout alone, stale artifacts, 
 - Accepted external build record SHA-256: **NOT YET AUTHORIZED**
 - Accepted field-build evidence record SHA-256: **NOT YET AUTHORIZED**
 - Signing / intended-device inspection: **NOT YET AUTHORIZED**
-- Independent cross-check tool commit: **699a1616b6ebd6e3443ca8fdd75daea9bbe6063a / REQUIRED**
+- Independent cross-check tool commit: **c12c935cac5470d37e731359f9ffdb9b18d6f85d / REQUIRED**
 - Independent retained-candidate cross-check receipt SHA-256: **NOT YET AUTHORIZED**
 - Independent cross-check authority/status: **PASS_NOT_FINAL_GO / NOT YET CHECKED**
 - Producer / canonical-inspector Git-blob claim reconciliation: **NO / NOT YET AUTHORIZED**
