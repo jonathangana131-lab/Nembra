@@ -33,7 +33,7 @@ def _load(name: str, filename: str):
     return module
 
 
-foundation = _load("nembra_final_go_foundation", "es80_today_final_go_record.py")
+foundation = _load("nembra_final_go_foundation", "es80_today_final_go_foundation.py")
 trusted_xcode = _load(
     "nembra_trusted_capture_xcode_subject",
     "es80_today_trusted_capture_xcode_subject.py",
