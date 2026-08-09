@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """Canonical hardened entrypoint for the external V14 ES80 TODAY Final GO record.
 
-The Final GO foundation remains the closed-world validator for signed candidate, independent
-crosscheck, install/runtime rendezvous, and operator attestation. This executable loads that
-foundation directly; the historical `es80_today_final_go_record.py` compatibility module is
+The Final GO foundation remains the closed-world validator for signed candidate, independently
+executed crosscheck, install/runtime rendezvous, and operator attestation. This executable loads
+that foundation directly; the historical `es80_today_final_go_record.py` compatibility module is
 non-authorizing for both direct execution and imported builder calls.
 
-This entrypoint removes the authority defects that must not remain on the executable GO path:
+This entrypoint preserves the remaining executable-only hardening:
 - trusted Xcode acceptance comes only from the owner-commanded default-branch workflow whose Git
   blob is pinned independently from the candidate PR head;
 - trusted workflow Git-object lookup reuses the foundation's producer-owned, closed Git custody
   boundary rather than caller PATH/config/replacement semantics; and
 - record publication is failure-atomic after no-replace publication.
+
+Independent crosscheck producer custody is enforced inside the authority-bearing foundation itself,
+so imported foundation composition cannot bypass it.
 
 No physical result is created by this tool. A generated GO record is procedural authorization for
 one stationary passive Experiment One only after all supplied evidence is already legitimate.
@@ -41,19 +44,17 @@ trusted_xcode = _load(
     "nembra_trusted_capture_xcode_subject",
     "es80_today_trusted_capture_xcode_subject.py",
 )
+trusted_crosscheck = _load(
+    "nembra_trusted_crosscheck_subject",
+    "es80_today_trusted_crosscheck_subject.py",
+)
 publication = _load("nembra_final_go_publication", "es80_today_final_go_publication.py")
 
 FinalGoError = foundation.FinalGoError
 
 
 def _workflow_blob_sha_at_commit(tooling_repo: Path, commit: str, path: str) -> str:
-    """Resolve the workflow blob only through the foundation's closed Git authority boundary.
-
-    `foundation._git` pins `/usr/bin/git`, removes system/global config, disables replacement
-    objects, restricts PATH, and rejects symlink/non-directory repository custody. Reusing that
-    boundary prevents caller PATH, Git config, or refs/replace state from manufacturing the trusted
-    workflow blob identity.
-    """
+    """Resolve the workflow blob only through the foundation's closed Git authority boundary."""
     try:
         return foundation._git(tooling_repo, "rev-parse", f"{commit}:{path}").strip().lower()
     except FinalGoError:
@@ -80,7 +81,7 @@ def build_final_go_record(
     github_get_json: Callable[[str], tuple[bytes, dict[str, Any]]] = foundation._api_get_json,
     now_utc=None,
 ) -> dict[str, Any]:
-    """Run the foundation with its Xcode trust seam replaced by pinned default-branch authority."""
+    """Run the authority-bearing foundation with default-branch Xcode trust injected."""
 
     def trusted_subject_adapter(
         *,
@@ -108,7 +109,7 @@ def build_final_go_record(
         except trusted_xcode.TrustedCaptureXcodeError as error:
             raise FinalGoError(str(error)) from error
 
-    original = foundation._trusted_xcode_subject
+    original_trusted_xcode = foundation._trusted_xcode_subject
     foundation._trusted_xcode_subject = trusted_subject_adapter
     try:
         record = foundation.build_final_go_record(
@@ -127,7 +128,7 @@ def build_final_go_record(
             now_utc=now_utc,
         )
     finally:
-        foundation._trusted_xcode_subject = original
+        foundation._trusted_xcode_subject = original_trusted_xcode
 
     subject = record.get("trustedXcodeAcceptance")
     if not isinstance(subject, dict):
@@ -138,6 +139,19 @@ def build_final_go_record(
         raise FinalGoError("hardened Xcode subject candidate source diverged from accepted source")
     if subject.get("workflowSourceCommitSHA") == subject.get("candidateSourceCommitSHA"):
         raise FinalGoError("trusted workflow source must remain independent from candidate source")
+
+    crosscheck_subject = record.get("independentRetainedCandidateCrosscheck")
+    if not isinstance(crosscheck_subject, dict):
+        raise FinalGoError("hardened Final GO record lacks independent crosscheck subject")
+    execution = crosscheck_subject.get("trustedProducerExecution")
+    if not isinstance(execution, dict) or execution.get("authority") != trusted_crosscheck.TRUSTED_EXECUTION_AUTHORITY:
+        raise FinalGoError("hardened Final GO record lacks trusted pinned crosscheck execution authority")
+    if execution.get("candidateSourceCommitSHA") != record.get("acceptedSourceCommitSHA"):
+        raise FinalGoError("trusted crosscheck execution source diverged from accepted source")
+    if execution.get("producerStatus") != "PASS_NOT_FINAL_GO":
+        raise FinalGoError("trusted crosscheck execution did not retain PASS_NOT_FINAL_GO boundary")
+    if execution.get("physicalExperimentAuthorization") != "not-granted":
+        raise FinalGoError("trusted crosscheck execution widened physical authorization")
     return record
 
 
