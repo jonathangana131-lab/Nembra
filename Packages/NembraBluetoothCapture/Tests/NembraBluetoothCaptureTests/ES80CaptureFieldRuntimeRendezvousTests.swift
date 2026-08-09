@@ -38,7 +38,9 @@ struct ES80CaptureFieldRuntimeRendezvousTests {
     func authorizedPreflightShowsExactResearchTuple() throws {
         let preflight = try Self.preflightSource(Self.appSource())
 
-        #expect(preflight.contains("coordinator.status.fieldExecutionStatus"))
+        #expect(preflight.contains("coordinator.status"))
+        #expect(preflight.contains("guard status.physicalProcedurePermitted else"))
+        #expect(preflight.contains("status.fieldExecutionStatus"))
         #expect(preflight.contains("case let .goPrivateResearchBuild(build)"))
         #expect(preflight.contains("PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue"))
         #expect(preflight.contains("build.buildIdentifier"))
