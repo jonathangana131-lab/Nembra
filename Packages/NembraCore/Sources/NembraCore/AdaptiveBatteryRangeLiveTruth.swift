@@ -27,7 +27,7 @@ public struct AcceptedBatterySOCAnchor: Equatable, Sendable {
     public let continuity: BatteryEvidenceContinuity
     public let continuitySegmentStartReceiptIdentity: BatteryEvidenceReceiptIdentity?
 
-    private init(
+    fileprivate init(
         percentage: Double,
         sourceReceiptIdentity: BatteryEvidenceReceiptIdentity,
         receivedAtUptimeNanoseconds: UInt64,
