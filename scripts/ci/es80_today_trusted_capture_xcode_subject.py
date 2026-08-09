@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Verify the default-branch trusted Capture Xcode authority subject.
 
-This module deliberately separates two authorities that GitHub represents with different SHAs:
-- the default-branch workflow source that is allowed to schedule the self-hosted Mac job; and
-- the exact Capture PR head whose retained evidence the trusted workflow validates.
+This module deliberately separates three authorities that GitHub/Git represent independently:
+- the default-branch workflow source that is allowed to schedule the self-hosted Mac job;
+- the exact Capture PR head whose retained evidence the trusted workflow validates; and
+- the reviewed Simulator evidence-producer Git blob that the candidate checkout executes.
 
 It creates software acceptance evidence only. It does not authorize physical Experiment One,
 Bluetooth writes, scooter identity, protocol semantics, or telemetry.
@@ -23,6 +24,8 @@ DEFAULT_BRANCH = "main"
 TRUSTED_WORKFLOW_NAME = "Capture Trusted Xcode 27 Exact-Head QA"
 TRUSTED_WORKFLOW_PATH = ".github/workflows/capture-xcode27-trusted-command.yml"
 TRUSTED_WORKFLOW_BLOB_SHA = "e5ef72f50bed279e98ad28b94930831b747d0c20"
+TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_PATH = "scripts/ci/xcode27_simulator_capture.sh"
+TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_BLOB_SHA = "4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"
 TRUSTED_JOB_NAME = "Build, test, and capture trusted exact Capture head"
 TRUSTED_ARTIFACT_PREFIX = "nembra-capture-xcode27-"
 EXTERNAL_RECORD_NAME = "NembraCaptureExternalBuildRecord.json"
@@ -175,9 +178,11 @@ def verify_trusted_capture_xcode_subject(
 ) -> dict[str, Any]:
     """Return one closed trusted-Xcode subject or fail closed.
 
-    `workflow_blob_sha_at_commit` must read Git object identity from a repository checkout that can
-    resolve the workflow run's default-branch commit. The pinned blob makes workflow implementation
-    part of the authority subject rather than trusting candidate-controlled names/step labels.
+    `workflow_blob_sha_at_commit` must read Git object identity from a trusted tooling repository that
+    can resolve both the workflow run's default-branch commit and the exact candidate source commit.
+    Final-GO pins the workflow implementation and the authority-bearing Simulator evidence producer
+    independently; a candidate may supply app source, but it may not silently replace the accepted
+    Xcode build/test/capture harness while retaining trusted workflow names and artifact shape.
     """
 
     source = _normalized_sha(source_commit_sha, "candidate source commit SHA")
@@ -245,6 +250,19 @@ def verify_trusted_capture_xcode_subject(
     _require(
         workflow_blob == TRUSTED_WORKFLOW_BLOB_SHA,
         "trusted Xcode workflow implementation blob is not pinned authority",
+    )
+
+    producer_blob = workflow_blob_sha_at_commit(
+        source,
+        TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_PATH,
+    ).lower()
+    _require(
+        _HEX40.fullmatch(producer_blob) is not None,
+        "invalid trusted Simulator evidence-producer Git blob SHA",
+    )
+    _require(
+        producer_blob == TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_BLOB_SHA,
+        "trusted Simulator evidence-producer Git blob is not pinned authority",
     )
 
     run_attempt = _positive_int(run.get("run_attempt"), "trusted Xcode run attempt")
@@ -323,6 +341,8 @@ def verify_trusted_capture_xcode_subject(
         "workflowPath": TRUSTED_WORKFLOW_PATH,
         "workflowSourceCommitSHA": workflow_source,
         "workflowBlobSHA": workflow_blob,
+        "simulatorEvidenceProducerPath": TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_PATH,
+        "simulatorEvidenceProducerGitBlobSHA": producer_blob,
         "runID": run_id,
         "runNumber": run_number,
         "runAttempt": run_attempt,
