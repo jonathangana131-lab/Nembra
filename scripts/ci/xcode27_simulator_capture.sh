@@ -106,6 +106,11 @@ echo "simulator_udid=$UDID" >> "$ARTIFACTS_DIR/environment.txt"
 xcrun simctl boot "$UDID"
 xcrun simctl bootstatus "$UDID" -b
 
+# The representative Capture UI evidence test intentionally relaunches six synthetic states and
+# retains multiple screenshots. Keep XCTest timeouts enabled and bounded, but do not let the old
+# two-minute ceiling kill a test that is still making valid progress through the required matrix.
+XCTEST_EXECUTION_ALLOWANCE_SECONDS=300
+
 set +e
 set -o pipefail
 xcodebuild \
@@ -116,8 +121,8 @@ xcodebuild \
   -derivedDataPath "$DERIVED_DATA" \
   -resultBundlePath "$RESULT_BUNDLE" \
   -test-timeouts-enabled YES \
-  -default-test-execution-time-allowance 120 \
-  -maximum-test-execution-time-allowance 120 \
+  -default-test-execution-time-allowance "$XCTEST_EXECUTION_ALLOWANCE_SECONDS" \
+  -maximum-test-execution-time-allowance "$XCTEST_EXECUTION_ALLOWANCE_SECONDS" \
   -collect-test-diagnostics never \
   CODE_SIGNING_ALLOWED=NO \
   "NEMBRA_CAPTURE_BUILD_IDENTIFIER=$CAPTURE_BUILD_IDENTIFIER" \
