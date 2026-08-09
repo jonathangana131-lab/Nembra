@@ -1,0 +1,35 @@
+name: Capture Trusted Xcode Dependency Custody Expected Red
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - .github/workflows/capture-xcode27-trusted-command.yml
+      - scripts/ci/tests/test_capture_trusted_xcode_dependency_custody.py
+      - .github/workflows/capture-trusted-xcode-dependency-custody-red.yml
+
+permissions:
+  contents: read
+
+jobs:
+  expected-red:
+    name: Reproduce candidate-owned trusted runner authority
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout immutable validation head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+      - name: Verify immutable validation head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD_SHA"
+      - name: Compile dependency-custody regression
+        run: python3 -m py_compile scripts/ci/tests/test_capture_trusted_xcode_dependency_custody.py
+      - name: Require independent custody of trusted Simulator runner
+        run: python3 scripts/ci/tests/test_capture_trusted_xcode_dependency_custody.py -v
