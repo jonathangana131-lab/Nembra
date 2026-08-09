@@ -41,6 +41,25 @@ jobs:
           class ContractViolation(Exception):
               pass
 
+          signature = "\n    private func prepareFinalShareForAnalysisAndSharing() {"
+          next_member = "\n    private func restartExperiment() {"
+          unsupported_extended_string = re.compile(r'#+"')
+
+          def unique_offset(source: str, needle: str, label: str) -> int:
+              matches = [match.start() for match in re.finditer(re.escape(needle), source)]
+              if len(matches) != 1:
+                  raise ContractViolation(
+                      f"expected exactly one raw {label} boundary; found {len(matches)}"
+                  )
+              return matches[0]
+
+          def authority_source(source: str) -> str:
+              start = unique_offset(source, signature, "final Share function")
+              end = unique_offset(source, next_member, "restartExperiment function")
+              if end <= start:
+                  raise ContractViolation("restartExperiment must follow final Share authority")
+              return source[start:end]
+
           def mask_noncode(text: str) -> str:
               """Preserve offsets while hiding braces inside ordinary Swift comments/strings."""
               chars = list(text)
@@ -156,6 +175,20 @@ jobs:
               return depths
 
           def validate(function_source: str) -> tuple[int, int]:
+              # This authority checker intentionally supports only the ordinary Swift string forms
+              # its small structural masker understands. Hash-delimited strings can legally contain
+              # unescaped quote delimiters and would make a partial lexer unsafe. Multiline strings
+              # can likewise contain escaped delimiter-shaped bytes. Neither form is needed by this
+              # small production function, so fail closed instead of pretending to parse full Swift.
+              if '"""' in function_source:
+                  raise ContractViolation(
+                      "final Share retry authority must not contain multiline Swift string delimiters"
+                  )
+              if unsupported_extended_string.search(function_source):
+                  raise ContractViolation(
+                      "final Share retry authority must not contain hash-delimited Swift string syntax"
+                  )
+
               opening_brace = mask_noncode(function_source).find("{")
               if opening_brace < 0:
                   raise ContractViolation("missing function body")
@@ -198,16 +231,8 @@ jobs:
               return match.start(), match.end()
 
           source = Path("NembraApp/Features/Research/ES80CaptureShellView.swift").read_text()
-          signature = "private func prepareFinalShareForAnalysisAndSharing()"
-          start = source.find(signature)
-          if start < 0:
-              raise SystemExit("missing prepareFinalShareForAnalysisAndSharing source")
-
-          remainder = source[start:]
-          next_member = remainder.find("\n    private ", len(signature))
-          function_source = remainder if next_member < 0 else remainder[:next_member]
-
           try:
+              function_source = authority_source(source)
               branch_start, branch_end = validate(function_source)
           except ContractViolation as error:
               raise SystemExit(str(error)) from error
@@ -242,6 +267,40 @@ jobs:
               pass
           else:
               raise SystemExit("checker self-test accepted a closure-nested retained retry branch")
+
+          # Swift hash-delimited multiline strings may legally contain bare triple-quote sequences.
+          # The historical masker would exit the string on the first such sequence, treat the fake
+          # branch below as code at depth 1, then re-enter on the second sequence and finish balanced
+          # at the real hash-delimited closer. Remove the real branch so this fixture proves that only
+          # string content cannot satisfy retry authority.
+          without_real_branch = function_source[:branch_start] + function_source[branch_end:]
+          insert_at = without_real_branch.find("\n", without_real_branch.find("{")) + 1
+          raw_multiline_bypass = (
+              without_real_branch[:insert_at]
+              + '        let retainedRetryRawProbe = #"""\n'
+              + 'first legal bare quotes inside raw content: """\n'
+              + "        if finalShareData != nil,\n"
+              + "           finalShareIntegrityReport != nil,\n"
+              + "           finalShareFilename != nil {\n"
+              + "            sharePreparationWarning = nil\n"
+              + "            return\n"
+              + "        }\n"
+              + 'second legal bare quotes inside raw content: """\n'
+              + '        """#\n'
+              + "        _ = retainedRetryRawProbe\n"
+              + without_real_branch[insert_at:]
+          )
+          try:
+              validate(raw_multiline_bypass)
+          except ContractViolation as error:
+              if "multiline Swift string delimiters" not in str(error):
+                  raise SystemExit(
+                      "raw multiline self-test failed for an unrelated reason instead of the lexical fail-closed guard"
+                  ) from error
+          else:
+              raise SystemExit(
+                  "checker self-test accepted retained retry authority supplied only by raw multiline string content"
+              )
 
           print("retained final Share retry control-flow source contract: PASS")
           PY
