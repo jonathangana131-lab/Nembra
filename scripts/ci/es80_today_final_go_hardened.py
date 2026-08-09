@@ -12,7 +12,10 @@ This entrypoint removes the authority defects that must not remain on the execut
 - trusted workflow Git-object lookup reuses the private foundation's producer-owned, closed Git
   custody boundary rather than caller PATH/config/replacement semantics;
 - the independent retained-candidate receipt must be exact fresh stdout from the pinned crosscheck
-  Git object rather than caller-authored JSON that merely names that object; and
+  Git object rather than caller-authored JSON that merely names that object;
+- signed-field facts are re-derived both by the modern descriptor-bound native IPA inspector and by
+  the exact reviewed accepted-source private runner + canonical inspector with private intended-device
+  membership input, and both fresh subjects must agree with the foundation candidate; and
 - record publication is failure-atomic after no-replace publication.
 
 No physical result is created by this tool. A generated GO record is procedural authorization for
@@ -20,6 +23,8 @@ one stationary passive Experiment One only after all supplied evidence is alread
 """
 from __future__ import annotations
 
+import argparse
+from datetime import datetime, timezone
 import importlib.util
 import json
 from pathlib import Path
@@ -46,6 +51,14 @@ trusted_xcode = _load(
     "nembra_trusted_capture_xcode_subject",
     "es80_today_trusted_capture_xcode_subject.py",
 )
+native_signed_candidate = _load(
+    "nembra_signed_candidate_native_reinspection",
+    "es80_today_signed_candidate_reinspection.py",
+)
+trusted_signed_candidate = _load(
+    "nembra_trusted_signed_candidate_reinspection",
+    "es80_today_trusted_signed_candidate_reinspection.py",
+)
 publication = _load("nembra_final_go_publication", "es80_today_final_go_publication.py")
 crosscheck_custody = _load(
     "nembra_final_go_crosscheck_receipt_custody",
@@ -67,6 +80,57 @@ def _workflow_blob_sha_at_commit(tooling_repo: Path, commit: str, path: str) -> 
         ) from error
 
 
+def _fresh_signed_candidate_subject(
+    *,
+    candidate_root: Path,
+    expected_source_sha: str,
+    frozen_source_repo: Path,
+    intended_device_udid_file: Path,
+    now_utc: datetime,
+) -> dict[str, Any]:
+    """Cross-bind native snapshot truth with accepted-source device-membership reinspection."""
+    try:
+        native = native_signed_candidate.verify_signed_candidate_reinspection(
+            candidate_root=candidate_root,
+        )
+    except native_signed_candidate.SignedCandidateReinspectionError as error:
+        raise FinalGoError(str(error)) from error
+
+    try:
+        with trusted_signed_candidate.trusted_reinspection_candidate_root(
+            candidate_root=candidate_root,
+            expected_source_sha=expected_source_sha,
+            frozen_source_repo=frozen_source_repo,
+            intended_device_udid_file=intended_device_udid_file,
+        ) as fresh_candidate_root:
+            subject, _ = foundation._candidate_subject(
+                fresh_candidate_root,
+                expected_source_sha,
+                now_utc,
+            )
+    except trusted_signed_candidate.TrustedSignedCandidateReinspectionError as error:
+        raise FinalGoError(str(error)) from error
+
+    overlap = {
+        "retainedIPASHA256": native.get("signedInstallableSHA256"),
+        "retainedIPAByteCount": native.get("ipaByteCount"),
+        "signedArtifactInspectionSHA256": native.get("inspectionRecordSHA256"),
+        "executableSHA256": native.get("executableSHA256"),
+        "infoPlistSHA256": native.get("infoPlistSHA256"),
+        "teamIdentifier": native.get("teamIdentifier"),
+        "provisioningProfileSHA256": native.get("provisioningProfileSHA256"),
+        "provisioningProfileUUID": native.get("provisioningProfileUUID"),
+        "provisioningProfileExpirationUTC": native.get("provisioningProfileExpirationUTC"),
+        "codeDirectoryHash": native.get("codeDirectoryHash"),
+    }
+    for key, value in overlap.items():
+        if subject.get(key) != value:
+            raise FinalGoError(
+                f"native signed-IPA reinspection diverged from accepted-source device reinspection: {key}"
+            )
+    return subject
+
+
 def build_final_go_record(
     *,
     candidate_root: Path,
@@ -80,10 +144,20 @@ def build_final_go_record(
     frozen_source_repo: Path,
     tooling_repo: Path,
     operator_attestation: Path,
+    intended_device_udid_file: Path,
     github_get_json: Callable[[str], tuple[bytes, dict[str, Any]]] = foundation._api_get_json,
     now_utc=None,
 ) -> dict[str, Any]:
-    """Run the private foundation only after fresh pinned-crosscheck and Xcode authority."""
+    """Run the private foundation only after fresh crosscheck, signed-IPA, and Xcode authority."""
+    now = (now_utc or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    fresh_candidate = _fresh_signed_candidate_subject(
+        candidate_root=candidate_root,
+        expected_source_sha=expected_source_sha,
+        frozen_source_repo=frozen_source_repo,
+        intended_device_udid_file=intended_device_udid_file,
+        now_utc=now,
+    )
+
     try:
         crosscheck_execution = crosscheck_custody.verify_crosscheck_receipt_custody(
             candidate_root=candidate_root,
@@ -139,7 +213,7 @@ def build_final_go_record(
             tooling_repo=tooling_repo,
             operator_attestation=operator_attestation,
             github_get_json=github_get_json,
-            now_utc=now_utc,
+            now_utc=now,
         )
     finally:
         foundation._trusted_xcode_subject = original
@@ -153,6 +227,14 @@ def build_final_go_record(
         raise FinalGoError("hardened Xcode subject candidate source diverged from accepted source")
     if subject.get("workflowSourceCommitSHA") == subject.get("candidateSourceCommitSHA"):
         raise FinalGoError("trusted workflow source must remain independent from candidate source")
+
+    accepted_candidate = record.get("acceptedSignedFieldCandidate")
+    if not isinstance(accepted_candidate, dict):
+        raise FinalGoError("hardened Final GO record lacks accepted signed-field candidate")
+    if accepted_candidate != fresh_candidate:
+        raise FinalGoError(
+            "Final GO signed-field candidate diverged from fresh native + intended-device reinspection"
+        )
 
     crosscheck = record.get("independentRetainedCandidateCrosscheck")
     if not isinstance(crosscheck, dict):
@@ -171,8 +253,31 @@ def publish_record_no_replace(output_path: Path, raw: bytes) -> str:
         raise FinalGoError(str(error)) from error
 
 
+def _args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--candidate-root", required=True, type=Path)
+    parser.add_argument("--expected-source-sha", required=True)
+    parser.add_argument("--expected-pr-number", required=True, type=int)
+    parser.add_argument("--trusted-xcode-run-id", required=True, type=int)
+    parser.add_argument("--trusted-xcode-job-id", required=True, type=int)
+    parser.add_argument("--trusted-xcode-artifact-id", required=True, type=int)
+    parser.add_argument("--trusted-xcode-artifact-archive", required=True, type=Path)
+    parser.add_argument("--independent-crosscheck-receipt", required=True, type=Path)
+    parser.add_argument("--frozen-source-repo", required=True, type=Path)
+    parser.add_argument("--tooling-repo", required=True, type=Path)
+    parser.add_argument("--operator-attestation", required=True, type=Path)
+    parser.add_argument(
+        "--intended-device-udid-file",
+        required=True,
+        type=Path,
+        help="external private mode-0600 file used only for provisioning membership reinspection",
+    )
+    parser.add_argument("--output", required=True, type=Path)
+    return parser.parse_args(argv)
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = foundation._args(sys.argv[1:] if argv is None else argv)
+    args = _args(sys.argv[1:] if argv is None else argv)
     values = vars(args).copy()
     output = values.pop("output")
     try:
