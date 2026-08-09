@@ -73,13 +73,13 @@ else
 fi
 [[ "$TEAM_ID" =~ ^[A-Z0-9]{10}$ ]] || die "Could not determine a valid 10-character Team ID."
 
-DERIVED="${TMPDIR:-/tmp}/NembraOneTimeCaptureDerived"
+DERIVED="${TMPDIR:-/tmp}/NembraGuidedCaptureDerived"
 rm -rf "$DERIVED"
-BUNDLE_ID="com.jonathangana131.nembra.captureonce"
+BUNDLE_ID="com.jonathangana131.nembra.capturelearn"
 SOURCE_SHA="$(git rev-parse HEAD)"
-BUILD_LABEL="One-time BLE dump ${SOURCE_SHA:0:12}"
+BUILD_LABEL="Guided scooter learning ${SOURCE_SHA:0:12}"
 
-say "Building the one-time Capture app for the connected iPhone"
+say "Building guided Nembra Capture for the connected iPhone"
 xcodebuild \
     -project Nembra.xcodeproj \
     -scheme Nembra \
@@ -100,13 +100,14 @@ APP="$DERIVED/Build/Products/Debug-iphoneos/Nembra.app"
 say "Installing on iPhone"
 xcrun devicectl device install app --device "$DEVICE_UDID" "$APP"
 
-say "DONE"
+say "GUIDED CAPTURE INSTALLED"
 printf '%s\n' \
-    "The one-time Nembra Capture app is installed." \
-    "Open Nembra on the iPhone." \
-    "Keep the scooter stationary and charger disconnected." \
-    "Start Scan -> power ES80 on -> tap the device that appears -> Connect & dump everything." \
-    "Leave it connected about 60-90 seconds, then tap Stop & Prepare JSON -> Share Bluetooth JSON." \
-    "Send that JSON back into ChatGPT." \
+    "Open Nembra Capture on the iPhone." \
+    "Follow the app itself; it now guides the whole learning session." \
+    "It first compares scooter-OFF vs scooter-ON Bluetooth scans so the likely scooter is easy to find." \
+    "After connection it records GATT topology, readable values, notifications, descriptors, RSSI and optional GPS reference speed." \
+    "It guides stationary mode/light/brake tests, walking-wheel motion, an optional safely-supported unloaded-wheel test, and ride segments." \
+    "For every moving step: press Start while fully stopped, secure the phone, ride, stop completely, then press Complete." \
+    "At the end tap Finish capture & prepare JSON, then Share learning dataset back into ChatGPT." \
     "" \
-    "This utility never calls CoreBluetooth writeValue(_:for:type:) for an application characteristic."
+    "The guided Capture source contains no CoreBluetooth application-characteristic writeValue(...) call."
