@@ -87,14 +87,18 @@ jobs:
           except ContractViolation as error:
               raise SystemExit(str(error)) from error
 
+          closing_brace = source.rfind("\n    }", start, end)
+          if closing_brace < 0:
+              raise SystemExit("could not locate final Share function closing brace for checker self-test")
+
           # Self-red-team the exact demonstrated false-green class. Swift 6.2 accepts #/\}/#
           # without the bare-slash-regex feature flag. The older brace matcher can treat the regex
           # payload `}` as the function close and then miss a real #if later in the function.
           regex_only = (
-              source[:end]
+              source[:closing_brace]
               + "\n        let lexicalBraceProbe = #/\\}/#\n"
               + "        _ = lexicalBraceProbe\n"
-              + source[end:]
+              + source[closing_brace:]
           )
           try:
               validate_source(regex_only)
@@ -106,14 +110,14 @@ jobs:
               )
 
           regex_bypass = (
-              source[:end]
+              source[:closing_brace]
               + "\n        let lexicalBraceProbe = #/\\}/#\n"
               + "        _ = lexicalBraceProbe\n"
               + "#if NEVER_ENABLED_IN_RELEASE\n"
               + "        let hiddenConditionalProbe = true\n"
               + "        _ = hiddenConditionalProbe\n"
               + "#endif\n"
-              + source[end:]
+              + source[closing_brace:]
           )
           try:
               validate_source(regex_bypass)
