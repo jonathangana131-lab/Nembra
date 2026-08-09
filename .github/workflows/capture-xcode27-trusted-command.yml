@@ -174,9 +174,9 @@ jobs:
           producer_path="scripts/ci/xcode27_simulator_capture.sh"
           expected_blob="4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"
 
-          # Candidate-controlled validation may mutate .git/index. Populate a new private index
-          # directly from the resolver-approved commit so assume-unchanged and skip-worktree bits
-          # from the candidate index cannot hide tracked worktree divergence from the frozen runner.
+          # Candidate-controlled validation may mutate repository-local Git metadata and the index.
+          # Bind every authority-producing Git command back to the real GitHub workspace and a new
+          # private index populated only from the resolver-approved commit.
           trusted_index="$(/usr/bin/mktemp -t nembra-capture-index)"
           /bin/rm -f -- "$trusted_index"
           trap '/bin/rm -f -- "$trusted_index"' EXIT
@@ -187,8 +187,46 @@ jobs:
             GIT_CONFIG_NOSYSTEM=1 \
             GIT_CONFIG_GLOBAL=/dev/null \
             GIT_NO_REPLACE_OBJECTS=1 \
+            GIT_DIR="$GITHUB_WORKSPACE/.git" \
+            GIT_WORK_TREE="$GITHUB_WORKSPACE" \
             GIT_INDEX_FILE="$trusted_index" \
+            GIT_CONFIG_COUNT=5 \
+            GIT_CONFIG_KEY_0=core.fsmonitor \
+            GIT_CONFIG_VALUE_0=false \
+            GIT_CONFIG_KEY_1=core.ignorestat \
+            GIT_CONFIG_VALUE_1=false \
+            GIT_CONFIG_KEY_2=core.filemode \
+            GIT_CONFIG_VALUE_2=true \
+            GIT_CONFIG_KEY_3=core.worktree \
+            GIT_CONFIG_VALUE_3="$GITHUB_WORKSPACE" \
+            GIT_CONFIG_KEY_4=core.bare \
+            GIT_CONFIG_VALUE_4=false \
             /usr/bin/git read-tree "$EXPECTED_HEAD_SHA"
+
+          # Remove every ignored or untracked workspace byte using the trusted index. -x ensures
+          # repository-local .git/info/exclude cannot hide candidate-controlled source from cleanup.
+          /usr/bin/env -i \
+            PATH=/usr/bin:/bin \
+            HOME=/tmp \
+            LC_ALL=C \
+            GIT_CONFIG_NOSYSTEM=1 \
+            GIT_CONFIG_GLOBAL=/dev/null \
+            GIT_NO_REPLACE_OBJECTS=1 \
+            GIT_DIR="$GITHUB_WORKSPACE/.git" \
+            GIT_WORK_TREE="$GITHUB_WORKSPACE" \
+            GIT_INDEX_FILE="$trusted_index" \
+            GIT_CONFIG_COUNT=5 \
+            GIT_CONFIG_KEY_0=core.fsmonitor \
+            GIT_CONFIG_VALUE_0=false \
+            GIT_CONFIG_KEY_1=core.ignorestat \
+            GIT_CONFIG_VALUE_1=false \
+            GIT_CONFIG_KEY_2=core.filemode \
+            GIT_CONFIG_VALUE_2=true \
+            GIT_CONFIG_KEY_3=core.worktree \
+            GIT_CONFIG_VALUE_3="$GITHUB_WORKSPACE" \
+            GIT_CONFIG_KEY_4=core.bare \
+            GIT_CONFIG_VALUE_4=false \
+            /usr/bin/git clean -ffdx
 
           trusted_status="$(
             /usr/bin/env -i \
@@ -198,18 +236,91 @@ jobs:
               GIT_CONFIG_NOSYSTEM=1 \
               GIT_CONFIG_GLOBAL=/dev/null \
               GIT_NO_REPLACE_OBJECTS=1 \
+              GIT_DIR="$GITHUB_WORKSPACE/.git" \
+              GIT_WORK_TREE="$GITHUB_WORKSPACE" \
               GIT_INDEX_FILE="$trusted_index" \
-              /usr/bin/git \
-                -c core.fsmonitor=false \
-                -c core.ignorestat=false \
-                -c core.filemode=true \
-                status --porcelain=v1 --untracked-files=all
+              GIT_CONFIG_COUNT=5 \
+              GIT_CONFIG_KEY_0=core.fsmonitor \
+              GIT_CONFIG_VALUE_0=false \
+              GIT_CONFIG_KEY_1=core.ignorestat \
+              GIT_CONFIG_VALUE_1=false \
+              GIT_CONFIG_KEY_2=core.filemode \
+              GIT_CONFIG_VALUE_2=true \
+              GIT_CONFIG_KEY_3=core.worktree \
+              GIT_CONFIG_VALUE_3="$GITHUB_WORKSPACE" \
+              GIT_CONFIG_KEY_4=core.bare \
+              GIT_CONFIG_VALUE_4=false \
+              /usr/bin/git status --porcelain=v1 --untracked-files=all
           )"
           if [[ -n "$trusted_status" ]]; then
             printf 'Trusted resolver-bound worktree is not clean:\n%s\n' "$trusted_status" >&2
             exit 1
           fi
           test -z "$trusted_status"
+
+          # Git status is useful but not sufficient authority: independently hash every tracked raw
+          # workspace blob against the resolver-approved Git tree without attributes or filters.
+          /usr/bin/python3 -I - <<'PY'
+          import hashlib
+          import os
+          import stat
+          import subprocess
+          from pathlib import Path
+
+          root = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
+          expected_head = os.environ["EXPECTED_HEAD_SHA"]
+          git_env = {
+              "PATH": "/usr/bin:/bin",
+              "HOME": "/tmp",
+              "LC_ALL": "C",
+              "GIT_CONFIG_NOSYSTEM": "1",
+              "GIT_CONFIG_GLOBAL": "/dev/null",
+              "GIT_NO_REPLACE_OBJECTS": "1",
+              "GIT_DIR": str(root / ".git"),
+              "GIT_WORK_TREE": str(root),
+              "GIT_CONFIG_COUNT": "5",
+              "GIT_CONFIG_KEY_0": "core.fsmonitor",
+              "GIT_CONFIG_VALUE_0": "false",
+              "GIT_CONFIG_KEY_1": "core.ignorestat",
+              "GIT_CONFIG_VALUE_1": "false",
+              "GIT_CONFIG_KEY_2": "core.filemode",
+              "GIT_CONFIG_VALUE_2": "true",
+              "GIT_CONFIG_KEY_3": "core.worktree",
+              "GIT_CONFIG_VALUE_3": str(root),
+              "GIT_CONFIG_KEY_4": "core.bare",
+              "GIT_CONFIG_VALUE_4": "false",
+          }
+          tree = subprocess.check_output(
+              ["/usr/bin/git", "ls-tree", "-r", "-z", expected_head],
+              env=git_env,
+          )
+          checked = 0
+          for record in tree.split(b"\0"):
+              if not record:
+                  continue
+              header, raw_path = record.split(b"\t", 1)
+              mode, object_type, expected_object = header.decode("ascii").split(" ", 2)
+              if object_type != "blob":
+                  raise SystemExit(f"raw workspace verifier refuses non-blob tracked entry: {raw_path!r}")
+              relative = os.fsdecode(raw_path)
+              candidate = root / relative
+              metadata = os.lstat(candidate)
+              if stat.S_ISLNK(metadata.st_mode):
+                  data = os.fsencode(os.readlink(candidate))
+              elif stat.S_ISREG(metadata.st_mode):
+                  data = candidate.read_bytes()
+              else:
+                  raise SystemExit(f"raw workspace tracked path is not a regular file or symlink: {relative}")
+              digest = hashlib.sha1(
+                  b"blob " + str(len(data)).encode("ascii") + b"\0" + data
+              ).hexdigest()
+              if digest != expected_object:
+                  raise SystemExit(f"raw workspace bytes diverge from resolver tree: {relative}")
+              checked += 1
+          if checked == 0:
+              raise SystemExit("raw workspace verifier inspected no tracked blobs")
+          print(f"Raw workspace custody verified for {checked} tracked blobs")
+          PY
 
           # Re-prove the mutable worktree producer file after every earlier candidate-controlled
           # validation. This is diagnostic defense-in-depth; authority-producing interpreter input
@@ -222,6 +333,8 @@ jobs:
               GIT_CONFIG_NOSYSTEM=1 \
               GIT_CONFIG_GLOBAL=/dev/null \
               GIT_NO_REPLACE_OBJECTS=1 \
+              GIT_DIR="$GITHUB_WORKSPACE/.git" \
+              GIT_WORK_TREE="$GITHUB_WORKSPACE" \
               /usr/bin/git hash-object -- "$producer_path"
           )"
           test "$worktree_blob" = "$expected_blob"
@@ -229,7 +342,7 @@ jobs:
           # Stream the accepted Git object directly into a separately sanitized Bash interpreter.
           # The candidate pathname is only $0 so the frozen runner's dirname($0)/../.. ROOT
           # calculation still resolves the exact checkout. Give its Git status the fresh trusted
-          # index too, so candidate index flags cannot become source-clean authority.
+          # index and explicit workspace binding so local core.worktree/core.bare cannot redirect it.
           /usr/bin/env -i \
             PATH=/usr/bin:/bin \
             HOME=/tmp \
@@ -237,6 +350,13 @@ jobs:
             GIT_CONFIG_NOSYSTEM=1 \
             GIT_CONFIG_GLOBAL=/dev/null \
             GIT_NO_REPLACE_OBJECTS=1 \
+            GIT_DIR="$GITHUB_WORKSPACE/.git" \
+            GIT_WORK_TREE="$GITHUB_WORKSPACE" \
+            GIT_CONFIG_COUNT=2 \
+            GIT_CONFIG_KEY_0=core.worktree \
+            GIT_CONFIG_VALUE_0="$GITHUB_WORKSPACE" \
+            GIT_CONFIG_KEY_1=core.bare \
+            GIT_CONFIG_VALUE_1=false \
             /usr/bin/git cat-file blob "$expected_blob" \
             | /usr/bin/env -i \
                 PATH=/usr/bin:/bin:/usr/sbin:/sbin \
@@ -245,14 +365,20 @@ jobs:
                 GIT_CONFIG_NOSYSTEM=1 \
                 GIT_CONFIG_GLOBAL=/dev/null \
                 GIT_NO_REPLACE_OBJECTS=1 \
+                GIT_DIR="$GITHUB_WORKSPACE/.git" \
+                GIT_WORK_TREE="$GITHUB_WORKSPACE" \
                 GIT_INDEX_FILE="$trusted_index" \
-                GIT_CONFIG_COUNT=3 \
+                GIT_CONFIG_COUNT=5 \
                 GIT_CONFIG_KEY_0=core.fsmonitor \
                 GIT_CONFIG_VALUE_0=false \
                 GIT_CONFIG_KEY_1=core.ignorestat \
                 GIT_CONFIG_VALUE_1=false \
                 GIT_CONFIG_KEY_2=core.filemode \
                 GIT_CONFIG_VALUE_2=true \
+                GIT_CONFIG_KEY_3=core.worktree \
+                GIT_CONFIG_VALUE_3="$GITHUB_WORKSPACE" \
+                GIT_CONFIG_KEY_4=core.bare \
+                GIT_CONFIG_VALUE_4=false \
                 /bin/bash -c 'source /dev/stdin' "$GITHUB_WORKSPACE/$producer_path"
 
       - name: Verify retained Capture evidence against trusted resolver authority
