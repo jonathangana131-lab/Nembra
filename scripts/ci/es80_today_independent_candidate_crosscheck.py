@@ -148,14 +148,21 @@ def canonical_uuid(value: object, label: str) -> str:
 
 def parse_environment(path: Path) -> dict[str, str]:
     require_regular_file(path, "field candidate environment")
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise CrosscheckError("field candidate environment is not readable UTF-8 text") from exc
     values: dict[str, str] = {}
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
+    for raw_line in lines:
         if "=" not in raw_line:
             # xcodebuild -version is intentionally appended after the key/value evidence.
             continue
         key, value = raw_line.split("=", 1)
-        if key and key not in values:
-            values[key] = value
+        if not key:
+            continue
+        if key in values:
+            raise CrosscheckError(f"field candidate environment contains duplicate key: {key}")
+        values[key] = value
     return values
 
 
