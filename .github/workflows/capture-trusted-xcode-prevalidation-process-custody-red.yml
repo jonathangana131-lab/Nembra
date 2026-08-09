@@ -1,0 +1,32 @@
+name: Capture Trusted Xcode Prevalidation Process Custody RED
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/capture-xcode27-trusted-command.yml'
+      - '.github/workflows/capture-trusted-xcode-prevalidation-process-custody-red.yml'
+      - 'scripts/ci/tests/test_capture_trusted_xcode_prevalidation_process_custody_red.py'
+
+permissions:
+  contents: read
+
+jobs:
+  prevalidation-process-custody-red:
+    name: Prove prevalidation process isolation requirement
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Verify exact PR head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          actual_head="$(git rev-parse --verify HEAD^{commit})"
+          printf 'Expected PR head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual_head"
+          test "$actual_head" = "$EXPECTED_HEAD_SHA"
+
+      - name: Run expected-red process-custody witness
+        run: |
+          python3 -m py_compile scripts/ci/tests/test_capture_trusted_xcode_prevalidation_process_custody_red.py
+          python3 scripts/ci/tests/test_capture_trusted_xcode_prevalidation_process_custody_red.py
