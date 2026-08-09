@@ -6,11 +6,13 @@ crosscheck, install/runtime rendezvous, and operator attestation. This executabl
 foundation directly; the historical `es80_today_final_go_record.py` compatibility module is
 non-authorizing for both direct execution and imported builder calls.
 
-This entrypoint removes the authority defects that must not remain on the executable GO path:
+This entrypoint removes authority defects that must not remain on the executable GO path:
 - trusted Xcode acceptance comes only from the owner-commanded default-branch workflow whose Git
   blob is pinned independently from the candidate PR head;
 - trusted workflow Git-object lookup reuses the foundation's producer-owned, closed Git custody
-  boundary rather than caller PATH/config/replacement semantics; and
+  boundary rather than caller PATH/config/replacement semantics;
+- the independent retained-candidate crosscheck is re-executed from its exact pinned Git object and
+  the supplied handoff receipt must be byte-identical to that trusted execution output; and
 - record publication is failure-atomic after no-replace publication.
 
 No physical result is created by this tool. A generated GO record is procedural authorization for
@@ -40,6 +42,10 @@ foundation = _load("nembra_final_go_foundation", "es80_today_final_go_foundation
 trusted_xcode = _load(
     "nembra_trusted_capture_xcode_subject",
     "es80_today_trusted_capture_xcode_subject.py",
+)
+trusted_crosscheck = _load(
+    "nembra_trusted_crosscheck_subject",
+    "es80_today_trusted_crosscheck_subject.py",
 )
 publication = _load("nembra_final_go_publication", "es80_today_final_go_publication.py")
 
@@ -80,7 +86,7 @@ def build_final_go_record(
     github_get_json: Callable[[str], tuple[bytes, dict[str, Any]]] = foundation._api_get_json,
     now_utc=None,
 ) -> dict[str, Any]:
-    """Run the foundation with its Xcode trust seam replaced by pinned default-branch authority."""
+    """Run foundation validation with trusted Xcode and crosscheck execution adapters installed."""
 
     def trusted_subject_adapter(
         *,
@@ -108,8 +114,49 @@ def build_final_go_record(
         except trusted_xcode.TrustedCaptureXcodeError as error:
             raise FinalGoError(str(error)) from error
 
-    original = foundation._trusted_xcode_subject
+    original_crosscheck_subject = foundation._crosscheck_subject
+
+    def trusted_crosscheck_adapter(
+        path: Path,
+        candidate: dict[str, Any],
+        adapter_frozen_source_repo: Path,
+        adapter_tooling_repo: Path,
+    ) -> dict[str, Any]:
+        if path != independent_crosscheck_receipt:
+            raise FinalGoError("foundation crosscheck path diverged from hardened handoff receipt")
+        if adapter_frozen_source_repo != frozen_source_repo:
+            raise FinalGoError("foundation frozen-source repository diverged from hardened crosscheck subject")
+        if adapter_tooling_repo != tooling_repo:
+            raise FinalGoError("foundation tooling repository diverged from hardened crosscheck subject")
+        if candidate.get("sourceCommitSHA") != expected_source_sha:
+            raise FinalGoError("foundation candidate source diverged before trusted crosscheck execution")
+        try:
+            execution = trusted_crosscheck.verify_trusted_crosscheck_receipt(
+                candidate_root=candidate_root,
+                expected_source_sha=expected_source_sha,
+                supplied_receipt_path=independent_crosscheck_receipt,
+                tooling_repo=tooling_repo,
+            )
+        except trusted_crosscheck.TrustedCrosscheckError as error:
+            raise FinalGoError(str(error)) from error
+
+        # Preserve every accepted semantic/repository check from the closed-world foundation. The
+        # new producer-execution subject augments those checks rather than replacing them.
+        subject = dict(
+            original_crosscheck_subject(
+                path,
+                candidate,
+                adapter_frozen_source_repo,
+                adapter_tooling_repo,
+            )
+        )
+        subject["trustedProducerExecution"] = execution
+        return subject
+
+    original_trusted_xcode = foundation._trusted_xcode_subject
+    original_crosscheck = foundation._crosscheck_subject
     foundation._trusted_xcode_subject = trusted_subject_adapter
+    foundation._crosscheck_subject = trusted_crosscheck_adapter
     try:
         record = foundation.build_final_go_record(
             candidate_root=candidate_root,
@@ -127,7 +174,8 @@ def build_final_go_record(
             now_utc=now_utc,
         )
     finally:
-        foundation._trusted_xcode_subject = original
+        foundation._trusted_xcode_subject = original_trusted_xcode
+        foundation._crosscheck_subject = original_crosscheck
 
     subject = record.get("trustedXcodeAcceptance")
     if not isinstance(subject, dict):
@@ -138,6 +186,19 @@ def build_final_go_record(
         raise FinalGoError("hardened Xcode subject candidate source diverged from accepted source")
     if subject.get("workflowSourceCommitSHA") == subject.get("candidateSourceCommitSHA"):
         raise FinalGoError("trusted workflow source must remain independent from candidate source")
+
+    crosscheck_subject = record.get("independentRetainedCandidateCrosscheck")
+    if not isinstance(crosscheck_subject, dict):
+        raise FinalGoError("hardened Final GO record lacks independent crosscheck subject")
+    execution = crosscheck_subject.get("trustedProducerExecution")
+    if not isinstance(execution, dict) or execution.get("authority") != trusted_crosscheck.TRUSTED_EXECUTION_AUTHORITY:
+        raise FinalGoError("hardened Final GO record lacks trusted pinned crosscheck execution authority")
+    if execution.get("candidateSourceCommitSHA") != record.get("acceptedSourceCommitSHA"):
+        raise FinalGoError("trusted crosscheck execution source diverged from accepted source")
+    if execution.get("producerStatus") != "PASS_NOT_FINAL_GO":
+        raise FinalGoError("trusted crosscheck execution did not retain PASS_NOT_FINAL_GO boundary")
+    if execution.get("physicalExperimentAuthorization") != "not-granted":
+        raise FinalGoError("trusted crosscheck execution widened physical authorization")
     return record
 
 
