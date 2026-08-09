@@ -18,12 +18,12 @@ Before this document may flip to `GO`, all of the following must be true for one
 2. Retained primary-path Simulator artifacts/screenshots from that exact run are inspected for TODAY blockers: unusable Capture flow, missing/incorrect Share, unsafe operator flow, build/provenance failure, or another defect that makes the first artifact unsafe or unusable.
 3. The TODAY-only `scripts/ci/xcode27_today_research_field_candidate.sh` wrapper compiles the dedicated `NEMBRA_ES80_TODAY_RESEARCH` capability and delegates signing, exact-source, intended-device, recipe, hashing, and retained-evidence production to the canonical `scripts/ci/xcode27_signed_field_candidate.sh` producer. Invoking the ordinary producer directly is intentionally NO-GO because it must not compile research admission.
 4. The canonical signed-field inspector independently verifies the retained IPA's code signing, provisioning/team/application identity, intended-device authorization, `NembraCaptureFieldRecipe=ES80-FINGERPRINT-v1`, exact build/source tuple, executable SHA-256, raw Info.plist SHA-256, and exact IPA SHA-256.
-5. Before installation, the published candidate passes the pinned external retained-candidate cross-check in `docs/ES80_TODAY_EXACT_RETAINED_IPA_INSTALL.md`; its receipt remains outside the candidate, reports `PASS_NOT_FINAL_GO` / `physicalExperimentAuthorization=not-granted`, and its private-runner/canonical-inspector Git-blob claims reconcile against the exact frozen Capture source repository. The exact retained signed IPA is then installed on the intended iPhone 12 / iOS 27 without rebuild/re-export/substitution, SHA-256 checked before and after installation, and the Home-Screen-launched app's source/build/build-instance/recipe rendezvous exactly matches the retained evidence.
+5. Before installation, the published candidate passes the pinned external retained-candidate cross-check in `docs/ES80_TODAY_EXACT_RETAINED_IPA_INSTALL.md`; its receipt remains outside the candidate, reports `PASS_NOT_FINAL_GO` / `physicalExperimentAuthorization=not-granted`, verifies the exact Research Field Build tuple `private-today-v1 / canonical-producer-explicit-mode / NEMBRA_ES80_TODAY_RESEARCH`, and its private-runner/canonical-inspector Git-blob claims reconcile against the exact frozen Capture source repository. The exact retained signed IPA is then installed on the intended iPhone 12 / iOS 27 without rebuild/re-export/substitution, SHA-256 checked before and after installation, and the Home-Screen-launched app's source/build/build-instance/recipe rendezvous exactly matches the retained evidence.
 6. The package-owned TODAY research admission is available only in the dedicated physical-iOS Release Research Field Build, remains recipe-bound to `ES80-FINGERPRINT-v1`, and ordinary/Debug/Simulator/general builds remain NO-GO.
 7. The live Capture path still requires explicit operator action; authorization does not auto-start capture.
 8. Stationary + charger-disconnected setup remains mechanically required by the accepted preflight/setup contract.
 9. No application Bluetooth characteristic-value write/command path is introduced or enabled.
-10. The Final GO Record below is filled from independently checked retained evidence and names the exact frozen source SHA, exact IPA SHA-256, exact build identity, pinned external cross-check tool/receipt, recipe, procedure, intended baseline, exact retained-IPA installation evidence, expected output, and stop conditions.
+10. The Final GO Record below is filled from independently checked retained evidence and names the exact frozen source SHA, exact IPA SHA-256, exact build identity, pinned external cross-check tool/receipt, exact Research Field Build compile tuple, recipe, procedure, intended baseline, exact retained-IPA installation evidence, expected output, and stop conditions.
 
 Until every item above is closed, this document stays **NO-GO**.
 
@@ -41,9 +41,14 @@ Do not fill values from memory, PR prose, signer stdout alone, stale artifacts, 
 - Accepted external build record SHA-256: **NOT YET AUTHORIZED**
 - Accepted field-build evidence record SHA-256: **NOT YET AUTHORIZED**
 - Signing / intended-device inspection: **NOT YET AUTHORIZED**
-- Independent cross-check tool commit: **c12c935cac5470d37e731359f9ffdb9b18d6f85d / REQUIRED**
+- Independent cross-check tool commit: **d827a296048386bda62024ea3278775d5344c47c / REQUIRED**
+- Independent cross-check accepted QA run: **31294291838 / SUCCESS**
 - Independent retained-candidate cross-check receipt SHA-256: **NOT YET AUTHORIZED**
 - Independent cross-check authority/status: **PASS_NOT_FINAL_GO / NOT YET CHECKED**
+- Research compile mode: **private-today-v1 / NOT YET CHECKED**
+- Research compile authority: **canonical-producer-explicit-mode / NOT YET CHECKED**
+- Research compile condition: **NEMBRA_ES80_TODAY_RESEARCH / NOT YET CHECKED**
+- Research compile tuple verified: **NO / NOT YET AUTHORIZED**
 - Producer / canonical-inspector Git-blob claim reconciliation: **NO / NOT YET AUTHORIZED**
 - Exact retained-IPA install handoff procedure: **REQUIRED / NOT YET COMPLETED**
 - Pre-install retained IPA SHA-256 match: **NO / NOT YET AUTHORIZED**
@@ -85,7 +90,7 @@ Before the first scan, confirm in the accepted app:
 - exact runtime build identity is available and matches the accepted Research Field Build tuple;
 - the running build is the dedicated physical-iOS Release research configuration for `ES80-FINGERPRINT-v1`;
 - package-owned research admission succeeds; no UI Boolean, preference, launch argument, environment variable, remote flag, or imported JSON can mint it;
-- `docs/ES80_TODAY_EXACT_RETAINED_IPA_INSTALL.md` was completed for this exact candidate, including the pinned external `PASS_NOT_FINAL_GO` receipt and frozen-source Git-blob reconciliation, matching pre-install and post-install retained IPA SHA-256 values, plus the exact Home-Screen runtime source/build/build-instance/recipe rendezvous;
+- `docs/ES80_TODAY_EXACT_RETAINED_IPA_INSTALL.md` was completed for this exact candidate, including the pinned external `PASS_NOT_FINAL_GO` receipt, verified exact Research Field Build compile tuple, and frozen-source Git-blob reconciliation, matching pre-install and post-install retained IPA SHA-256 values, plus the exact Home-Screen runtime source/build/build-instance/recipe rendezvous;
 - the exact signed IPA named in the Final GO Record is the build installed on the intended iPhone;
 - no accepted app/runtime state is already known to make the normal exact-byte Share path impossible; there is no separate pre-scan filesystem/export certificate, and authoritative export readiness is earned only after seal + final Share integrity;
 - charger state is freshly declared **Disconnected**;
@@ -179,7 +184,7 @@ Abort the current attempt and preserve only legitimate incomplete evidence if an
 - Horizon, queue commit, immutable freeze, final integrity, or Share readiness fails;
 - runtime build identity no longer matches the accepted Research Field Build;
 - package research admission is unavailable or wrong-recipe;
-- the external retained-candidate receipt is missing, altered, not `PASS_NOT_FINAL_GO`, claims physical authorization, or its producer/inspector blob claims do not reconcile against the exact frozen source;
+- the external retained-candidate receipt is missing, altered, not `PASS_NOT_FINAL_GO`, claims physical authorization, does not verify `private-today-v1 / canonical-producer-explicit-mode / NEMBRA_ES80_TODAY_RESEARCH`, or its producer/inspector blob claims do not reconcile against the exact frozen source;
 - the exact retained-IPA installation handoff was not completed, or either retained IPA digest check / runtime rendezvous does not match the Final GO Record;
 - installed build cannot be tied to the exact retained IPA digest named in the Final GO Record;
 - the procedure would require an unknown characteristic write/command.
@@ -194,4 +199,4 @@ After the first accepted raw ES80 artifact is preserved, return immediately to t
 
 **NO-GO / DO NOT RUN.**
 
-The next legal transition is not a physical experiment. It is terminal exact-head Apple acceptance of the frozen Capture candidate, followed by production + canonical signing/intended-device inspection + the pinned external retained-candidate `PASS_NOT_FINAL_GO` cross-check + exact retained-IPA installation/rendezvous under `docs/ES80_TODAY_EXACT_RETAINED_IPA_INSTALL.md`, then completion of every Final GO Record field above.
+The next legal transition is not a physical experiment. It is terminal exact-head Apple acceptance of the frozen Capture candidate, followed by production + canonical signing/intended-device inspection + the pinned external retained-candidate `PASS_NOT_FINAL_GO` cross-check (including exact Research Field Build compile-tuple verification) + exact retained-IPA installation/rendezvous under `docs/ES80_TODAY_EXACT_RETAINED_IPA_INSTALL.md`, then completion of every Final GO Record field above.
