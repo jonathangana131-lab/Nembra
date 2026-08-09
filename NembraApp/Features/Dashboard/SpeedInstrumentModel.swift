@@ -203,11 +203,17 @@ struct DashboardSpeedInstrumentView: View {
                 paused: reduceMotion || !model.isAnimationActive
             )
         ) { _ in
-            let frame = model.frame(
-                atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
-                fallbackConfirmedKilometersPerHour: vehicle.state.speedKilometersPerHour,
-                prefersReducedMotion: reduceMotion
-            )
+            // A cached/disconnected value is retained history, not live Cockpit speed. Keep both
+            // the fallback and any already-rendered telemetry frame hidden unless the current
+            // vehicle state still carries a connected, finite, nonnegative semantic speed.
+            let liveConfirmedSpeed = currentSemanticSpeedKilometersPerHour
+            let frame = liveConfirmedSpeed.map { confirmedSpeed in
+                model.frame(
+                    atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+                    fallbackConfirmedKilometersPerHour: confirmedSpeed,
+                    prefersReducedMotion: reduceMotion
+                )
+            } ?? nil
 
             instrumentContent(frame: frame)
         }
@@ -251,10 +257,8 @@ struct DashboardSpeedInstrumentView: View {
             .accessibilityIdentifier("dashboard.speed")
 
             Group {
-                if vehicle.state.dataAvailability == .retained {
-                    Label("LAST KNOWN", systemImage: "clock.arrow.circlepath")
-                } else if let semanticSpeed = currentSemanticSpeedKilometersPerHour {
-                    Text(semanticSpeed >= 0.5 ? "RIDING" : "READY")
+                if let authoritativeKilometersPerHour = authoritativeSpeed(frame: frame) {
+                    Text(authoritativeKilometersPerHour >= 0.5 ? "RIDING" : "READY")
                 } else {
                     Text("NO LIVE SPEED")
                 }
@@ -276,21 +280,28 @@ struct DashboardSpeedInstrumentView: View {
     }
 
     private func accessibilitySpeed(frame: SpeedInstrumentDisplayFrame?) -> String {
-        let authoritativeKilometersPerHour = frame?.latestMeasuredKilometersPerHour
-            ?? vehicle.state.speedKilometersPerHour
-        guard let authoritativeKilometersPerHour,
-              authoritativeKilometersPerHour.isFinite,
-              authoritativeKilometersPerHour >= 0 else {
+        guard let authoritativeKilometersPerHour = authoritativeSpeed(frame: frame) else {
             return "Unavailable"
         }
         return VehicleDisplayFormatting.speed(kilometersPerHour: authoritativeKilometersPerHour)
     }
 
-    /// `READY` is a semantic statement, so missing or malformed speed must never
-    /// inherit the old `nil -> 0` presentation shortcut. This remains display-only;
-    /// stopped-control authority is separately gated by source-qualified live speed.
+    private func authoritativeSpeed(frame: SpeedInstrumentDisplayFrame?) -> Double? {
+        guard let frame else { return nil }
+        switch frame.origin {
+        case .confirmedVehicleState:
+            return frame.kilometersPerHour
+        case .measuredTelemetry, .visuallyInterpolated:
+            return frame.latestMeasuredKilometersPerHour
+        }
+    }
+
+    /// `READY` and numeric speed are live semantic statements. Missing, malformed, retained,
+    /// or disconnected state must not inherit the old `nil -> 0` presentation shortcut.
+    /// Stopped-control authority remains separately gated by source-qualified live speed.
     private var currentSemanticSpeedKilometersPerHour: Double? {
         guard vehicle.state.connection == .connected,
+              vehicle.state.dataAvailability == .live,
               let speed = vehicle.state.speedKilometersPerHour,
               speed.isFinite,
               speed >= 0 else {
