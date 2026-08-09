@@ -15,9 +15,9 @@ public enum AdaptiveBatteryRangeLiveTruthError: Error, Equatable, Sendable {
 ///
 /// Live currentness is deliberately stronger than receipt metadata. Every anchor carries an
 /// opaque process-local lease. Anchors minted by `AcceptedBatterySOCStream` receive its revocable
-/// owner lease. One-off projections from a standalone chronology validator receive a detached
-/// lease that can never be live; they remain useful for offline/negative span validation without
-/// becoming presentation authority.
+/// owner lease. Package-only one-off projections from a standalone chronology validator receive a
+/// detached lease that can never be live; they exist only for adversarial/offline span validation
+/// and are not an external product authority surface.
 ///
 /// Copying an owner-bound validator at R1 therefore cannot preserve R1 authority after the real
 /// owner crosses a gap, consumes a newer receipt, or accepts R2.
@@ -52,21 +52,45 @@ public struct AcceptedBatterySOCAnchor: Equatable, Sendable {
         self.currentnessLease = currentnessLease
     }
 
+#if SWIFT_PACKAGE
+    /// Package-only projection used by focused authority/negative tests and trusted package
+    /// composition. External clients must obtain live anchors from `AcceptedBatterySOCStream`.
+    package static func current(
+        observation: BatteryEvidenceObservation,
+        acceptedBy validator: BatteryEvidenceStreamValidator
+    ) throws -> Self {
+        try projectOneOff(
+            observation: observation,
+            acceptedBy: validator
+        )
+    }
+#else
+    /// When these package sources are compiled directly into the app, sibling app code cannot use
+    /// the one-off projection as an alternate authority path. Live anchors come from the stream.
+    fileprivate static func current(
+        observation: BatteryEvidenceObservation,
+        acceptedBy validator: BatteryEvidenceStreamValidator
+    ) throws -> Self {
+        try projectOneOff(
+            observation: observation,
+            acceptedBy: validator
+        )
+    }
+#endif
+
     /// Projects a verified vehicle SoC observation whose immutable receipt metadata matches the
-    /// supplied validator.
+    /// supplied validator. The public product path does not expose this helper.
     ///
     /// If that validator is bound to `AcceptedBatterySOCStream`, the result receives its live
     /// owner lease. A standalone chronology validator deliberately yields a detached lease: the
-    /// resulting one-off anchor can be inspected and used to prove that unsegmented evidence is
-    /// rejected for learning, but `isCurrent` is false and live range estimation fails closed.
+    /// resulting one-off anchor can be inspected inside the package to prove that unsegmented
+    /// evidence is rejected for learning, but `isCurrent` is false and live range estimation
+    /// fails closed.
     ///
-    /// A copy of an owner-bound validator still re-admits the supplied observation before minting
-    /// the anchor. That proves immutable continuity metadata matches the accepted receipt, while
-    /// the shared owner lease proves the receipt is still live in the real chronology.
-    ///
-    /// This one-off projection intentionally has no continuity-segment identity. Learning anchors
-    /// must be minted by `AcceptedBatterySOCStream`, which observes every accepted boundary.
-    public static func current(
+    /// A copy of an owner-bound validator re-admits the supplied observation before minting the
+    /// anchor. That proves immutable continuity metadata matches the accepted receipt, while the
+    /// shared owner lease proves the receipt is still live in the real chronology.
+    private static func projectOneOff(
         observation: BatteryEvidenceObservation,
         acceptedBy validator: BatteryEvidenceStreamValidator
     ) throws -> Self {
@@ -99,7 +123,7 @@ public struct AcceptedBatterySOCAnchor: Equatable, Sendable {
             currentnessLease = ownerLease
         } else {
             // A standalone chronology validator cannot become live authority merely because its
-            // local value-state says R1 was accepted. Give the one-off projection a detached,
+            // local value-state says R1 was accepted. Give the package-only projection a detached,
             // unpublished lease so every live-currentness check fails closed.
             let detachedOwner = BatteryEvidenceCurrentnessOwner()
             currentnessLease = BatteryEvidenceCurrentnessLease(
@@ -119,8 +143,8 @@ public struct AcceptedBatterySOCAnchor: Equatable, Sendable {
     }
 
     /// True only while this anchor's opaque owner lease and exact receipt remain current.
-    /// The validator argument is now a lineage check, not by-value authority: a stale copied
-    /// validator cannot revive the lease because every owner-bound copy observes revocation.
+    /// The validator argument is a lineage check, not by-value authority: a stale copied validator
+    /// cannot revive the lease because every owner-bound copy observes revocation.
     public func isCurrent(in validator: BatteryEvidenceStreamValidator) -> Bool {
         validator.recognizesCurrentnessLease(
             currentnessLease,
