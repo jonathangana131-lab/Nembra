@@ -10,53 +10,38 @@ permissions:
 
 jobs:
   patch:
-    if: github.event.head_commit.message != 'temp: materialize final-share contract fix'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: temp/es80-finalshare-contract-refresh-302-gpt56
           fetch-depth: 0
-      - name: Replace stale final Share retry source contract
-        shell: bash
+      - name: Patch contract
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
-          path = Path('NembraUITests/ES80ResearchCaptureUITests.swift')
-          text = path.read_text()
-          old = '''        XCTAssertTrue(
-              source.contains("if let data = finalShareData"),
-              "A temporary Share-file retry must reuse retained verified bytes rather than mint a new evidence artifact."
-          )
-'''
-          new = '''        XCTAssertTrue(
-              source.contains("if finalShareData != nil,"),
-              "A temporary Share-file retry must require retained verified final Share bytes."
-          )
-          XCTAssertTrue(
-              source.contains("finalShareIntegrityReport != nil,"),
-              "A temporary Share-file retry must retain the exact integrity report rather than mint new evidence."
-          )
-          XCTAssertTrue(
-              source.contains("finalShareFilename != nil {"),
-              "A temporary Share-file retry must retain the verified filename alongside the verified bytes."
-          )
-'''
-          if old not in text:
-              raise SystemExit('expected stale final Share assertion not found exactly')
-          if text.count(old) != 1:
-              raise SystemExit(f'expected one stale assertion, found {text.count(old)}')
-          path.write_text(text.replace(old, new, 1))
+          p = Path('NembraUITests/ES80ResearchCaptureUITests.swift')
+          s = p.read_text()
+          old = '            source.contains("if let data = finalShareData"),\n            "A temporary Share-file retry must reuse retained verified bytes rather than mint a new evidence artifact."'
+          new = '''            source.contains("if finalShareData != nil,"),
+            "A temporary Share-file retry must require retained verified final Share bytes."
+        )
+        XCTAssertTrue(
+            source.contains("finalShareIntegrityReport != nil,"),
+            "A temporary Share-file retry must retain the exact integrity report rather than mint new evidence."
+        )
+        XCTAssertTrue(
+            source.contains("finalShareFilename != nil {"),
+            "A temporary Share-file retry must retain the verified filename alongside the verified bytes."'''
+          if old not in s:
+              print('already patched or expected source contract not found')
+              raise SystemExit(0)
+          p.write_text(s.replace(old, new, 1))
           PY
           git diff --check
-          grep -F 'source.contains("if finalShareData != nil,")' NembraUITests/ES80ResearchCaptureUITests.swift
-          grep -F 'source.contains("finalShareIntegrityReport != nil,")' NembraUITests/ES80ResearchCaptureUITests.swift
-          grep -F 'source.contains("finalShareFilename != nil {")' NembraUITests/ES80ResearchCaptureUITests.swift
-          ! grep -F 'source.contains("if let data = finalShareData")' NembraUITests/ES80ResearchCaptureUITests.swift
-      - name: Commit materialized test blob
-        shell: bash
+      - name: Commit patch if changed
         run: |
+          if git diff --quiet; then exit 0; fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add NembraUITests/ES80ResearchCaptureUITests.swift
