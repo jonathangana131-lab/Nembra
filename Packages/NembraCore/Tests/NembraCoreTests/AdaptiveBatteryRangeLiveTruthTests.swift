@@ -24,7 +24,7 @@ struct AdaptiveBatteryRangeLiveTruthTests {
         #expect(anchor.isCurrent(in: stream.validator))
     }
 
-    @Test("standalone chronology validator cannot mint live currentness authority")
+    @Test("standalone chronology validator yields only a detached non-current projection")
     func standaloneValidatorCannotMintCurrentAnchor() throws {
         let epoch = UUID(uuidString: "11111111-1111-1111-1111-111111111112")!
         let observation = try verifiedSOC(
@@ -36,12 +36,17 @@ struct AdaptiveBatteryRangeLiveTruthTests {
         var validator = BatteryEvidenceStreamValidator()
         try validator.accept(observation)
 
-        #expect(throws: AdaptiveBatteryRangeLiveTruthError.currentnessOwnerRequired) {
-            _ = try AcceptedBatterySOCAnchor.current(
-                observation: observation,
-                acceptedBy: validator
-            )
-        }
+        let anchor = try AcceptedBatterySOCAnchor.current(
+            observation: observation,
+            acceptedBy: validator
+        )
+        #expect(anchor.isCurrent == false)
+        #expect(anchor.isCurrent(in: validator) == false)
+        #expect(AdaptiveBatteryRangeModel().estimateRemainingRange(
+            atAcceptedSOC: anchor,
+            acceptedBy: validator,
+            policy: provisionalPolicy()
+        ) == nil)
     }
 
     @Test("current projection rejects same receipt with forged continuous metadata")
