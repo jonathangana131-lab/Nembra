@@ -1,0 +1,152 @@
+name: Temporary Capture V14 Red-Team Build Graph Hardening
+
+on:
+  push:
+    branches:
+      - staging/v14-capture-buildgraph-redteam/gpt56-go
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact staging head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Generate hardened exact blobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from __future__ import annotations
+          import base64
+          import json
+          import os
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+
+          workflow_path = Path('.github/workflows/capture-xcode27-trusted-command.yml')
+          workflow = workflow_path.read_text()
+          marker = '          for relative, expected_blob in expected.items():\n'
+          if workflow.count(marker) != 1:
+              raise SystemExit(f'expected one build-graph hash loop, found {workflow.count(marker)}')
+          if 'trusted build graph forbids source-controlled Xcode user data' not in workflow:
+              guard = '''          project_root = root / "Nembra.xcodeproj"
+          source_controlled_user_data = sorted(
+              str(path.relative_to(root))
+              for path in project_root.rglob("*")
+              if path.name.casefold() == "xcuserdata"
+          )
+          if source_controlled_user_data:
+              raise SystemExit(
+                  "trusted build graph forbids source-controlled Xcode user data: "
+                  + ", ".join(source_controlled_user_data)
+              )
+          nembra_schemes = sorted(
+              str(path.relative_to(root))
+              for path in project_root.rglob("*")
+              if path.is_file() and path.name.casefold() == "nembra.xcscheme"
+          )
+          expected_nembra_schemes = ["Nembra.xcodeproj/xcshareddata/xcschemes/Nembra.xcscheme"]
+          if nembra_schemes != expected_nembra_schemes:
+              raise SystemExit(
+                  "trusted build graph requires exactly the reviewed shared Nembra scheme: "
+                  + repr(nembra_schemes)
+              )
+          '''
+              workflow = workflow.replace(marker, guard + marker, 1)
+              workflow_path.write_text(workflow)
+
+          test_path = Path('scripts/ci/tests/test_capture_trusted_xcode_build_graph_custody.py')
+          test = test_path.read_text()
+          test_marker = '    def test_candidate_prevalidation_does_not_share_authority_runner(self) -> None:\n'
+          if test.count(test_marker) != 1:
+              raise SystemExit('expected one prevalidation test marker')
+          if 'test_authority_rejects_user_scheme_shadowing' not in test:
+              method = '''    def test_authority_rejects_user_scheme_shadowing(self) -> None:
+        authority = self.workflow.index("  capture-simulator-qa:\\n")
+        authority_block = self.workflow[authority:]
+        custody = authority_block.index("- name: Verify trusted build graph custody")
+        build = authority_block.index("- name: Build, test, and capture Simulator states")
+        between = authority_block[custody:build]
+        user_guard = between.index('path.name.casefold() == "xcuserdata"')
+        scheme_guard = between.index('path.name.casefold() == "nembra.xcscheme"')
+        hash_loop = between.index("for relative, expected_blob in expected.items():")
+        self.assertLess(user_guard, hash_loop)
+        self.assertLess(scheme_guard, hash_loop)
+        self.assertIn(
+            'expected_nembra_schemes = ["Nembra.xcodeproj/xcshareddata/xcschemes/Nembra.xcscheme"]',
+            between,
+        )
+        self.assertIn("trusted build graph forbids source-controlled Xcode user data", between)
+
+'''
+              test = test.replace(test_marker, method + test_marker, 1)
+              test_path.write_text(test)
+
+          import subprocess
+          new_workflow_blob = subprocess.check_output(
+              ['git', 'hash-object', str(workflow_path)], text=True
+          ).strip()
+          old_workflow_blob = '524b011c6147142281c3fed62d3bb402c7f2be63'
+          print(f'REDTEAM_TRUSTED_WORKFLOW_BLOB {new_workflow_blob}')
+
+          pin_paths = [
+              Path('.github/workflows/capture-today-final-go-qa.yml'),
+              Path('.github/workflows/capture-today-trusted-default-xcode-subject-qa.yml'),
+              Path('scripts/ci/es80_today_trusted_capture_xcode_subject.py'),
+          ]
+          for path in pin_paths:
+              text = path.read_text()
+              count = text.count(old_workflow_blob)
+              if count != 1:
+                  raise SystemExit(f'expected one old trusted workflow pin in {path}, found {count}')
+              path.write_text(text.replace(old_workflow_blob, new_workflow_blob, 1))
+
+          subprocess.run(
+              ['python3', 'scripts/ci/tests/test_capture_trusted_xcode_build_graph_custody.py', '-v'],
+              check=True,
+          )
+          subprocess.run(
+              ['python3', 'scripts/ci/tests/test_capture_trusted_xcode_prevalidation_process_custody.py', '-v'],
+              check=True,
+          )
+          subprocess.run(
+              ['python3', 'scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py', '-v'],
+              check=True,
+          )
+
+          paths = [
+              '.github/workflows/capture-xcode27-trusted-command.yml',
+              '.github/workflows/capture-today-final-go-qa.yml',
+              '.github/workflows/capture-today-trusted-default-xcode-subject-qa.yml',
+              'scripts/ci/es80_today_trusted_capture_xcode_subject.py',
+              'scripts/ci/tests/test_capture_trusted_xcode_build_graph_custody.py',
+          ]
+          endpoint = f'https://api.github.com/repos/{os.environ["REPOSITORY"]}/git/blobs'
+          for relative in paths:
+              data = Path(relative).read_bytes()
+              body = json.dumps({
+                  'content': base64.b64encode(data).decode('ascii'),
+                  'encoding': 'base64',
+              }).encode()
+              request = Request(
+                  endpoint,
+                  data=body,
+                  method='POST',
+                  headers={
+                      'Authorization': f'Bearer {os.environ["GH_TOKEN"]}',
+                      'Accept': 'application/vnd.github+json',
+                      'X-GitHub-Api-Version': '2022-11-28',
+                      'Content-Type': 'application/json',
+                  },
+              )
+              with urlopen(request, timeout=30) as response:
+                  payload = json.load(response)
+              print(f'REDTEAM_BUILD_GRAPH_BLOB {relative} {payload["sha"]}')
+          PY
