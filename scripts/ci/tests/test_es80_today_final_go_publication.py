@@ -84,6 +84,54 @@ class FinalGoPublicationTests(unittest.TestCase):
             self.assertFalse(output.exists() or output.is_symlink())
             self.assertEqual(list(root.glob(".FinalGO.json.*.staging")), [])
 
+    def test_source_unlink_failure_after_link_is_treated_as_published_and_retracted(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "FinalGO.json"
+            real_unlink = Path.unlink
+            failed = False
+
+            def fail_first_staging_unlink(path: Path, *args, **kwargs):
+                nonlocal failed
+                if not failed and path.name.endswith(".staging"):
+                    failed = True
+                    raise OSError("simulated staging unlink failure after destination link")
+                return real_unlink(path, *args, **kwargs)
+
+            with mock.patch.object(publication.Path, "unlink", new=fail_first_staging_unlink):
+                with self.assertRaisesRegex(
+                    OSError,
+                    "simulated staging unlink failure after destination link",
+                ):
+                    publication.publish_record_no_replace(output, self.RAW)
+
+            self.assertTrue(failed)
+            self.assertFalse(output.exists() or output.is_symlink())
+            self.assertEqual(list(root.glob(".FinalGO.json.*.staging")), [])
+
+    def test_publisher_that_links_then_raises_is_recovered_by_staged_inode_identity(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "FinalGO.json"
+
+            def link_unlink_then_raise(staging: Path, destination: Path):
+                publication.os.link(staging, destination, follow_symlinks=False)
+                staging.unlink()
+                raise OSError("simulated publisher failure after destination creation")
+
+            with self.assertRaisesRegex(
+                OSError,
+                "simulated publisher failure after destination creation",
+            ):
+                publication.publish_record_no_replace(
+                    output,
+                    self.RAW,
+                    publisher=link_unlink_then_raise,
+                )
+
+            self.assertFalse(output.exists() or output.is_symlink())
+            self.assertEqual(list(root.glob(".FinalGO.json.*.staging")), [])
+
     def test_existing_destination_is_never_replaced(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
