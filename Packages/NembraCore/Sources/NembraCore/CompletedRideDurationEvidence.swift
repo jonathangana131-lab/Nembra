@@ -4,6 +4,7 @@ public enum CompletedRideDurationEvidenceError: Error, Equatable, Sendable {
     case sessionMismatch
     case continuityMismatch
     case invalidDurationEvidence
+    case untrustedImportedEvidence
 }
 
 /// Durable elapsed-time evidence bound to one immutable completed ride.
@@ -18,12 +19,30 @@ public enum CompletedRideDurationEvidenceError: Error, Equatable, Sendable {
 /// interval is explicitly unknown; that missing time must not be reconstructed
 /// from wall-clock timestamps. `nil` with `.unknown` is unavailable evidence,
 /// not a measured zero-duration ride.
+///
+/// Codable is a storage/wire representation only. Decoding generic bytes can
+/// reconstruct structurally valid fields, but it deliberately does not restore
+/// production authority. A trusted NembraCore storage adapter must rebind decoded
+/// fields to the exact immutable completed ride before the evidence may re-enter
+/// History/Statistics as observed duration truth.
 public struct CompletedRideDurationEvidence: Codable, Equatable, Sendable {
+    private enum Authority: Equatable, Sendable {
+        case trusted
+        case importedUntrusted
+    }
+
     public let sessionID: UUID
     public let rideContinuity: RideSessionContinuity
     public let observedDurationNanoseconds: UInt64?
     public let coverage: RideSessionDurationCoverage
     public let observationSegmentCount: Int
+    private let authority: Authority
+
+    /// True only for lifecycle-bound evidence or evidence explicitly rebound by a
+    /// trusted NembraCore storage boundary. Generic Codable import is always false.
+    public var isTrustedForProduction: Bool {
+        authority == .trusted
+    }
 
     /// Binds duration evidence to a completed ride without consulting wall-clock
     /// deltas. The completed ride's continuity is retained as a cross-check at
@@ -41,13 +60,49 @@ public struct CompletedRideDurationEvidence: Codable, Equatable, Sendable {
             rideContinuity: completedRide.continuity,
             observedDurationNanoseconds: duration.observedDurationNanoseconds,
             coverage: duration.coverage,
-            observationSegmentCount: duration.observationSegmentCount
+            observationSegmentCount: duration.observationSegmentCount,
+            authority: .trusted
         )
     }
 
-    /// Verifies that this immutable duration projection still belongs to the
-    /// supplied completed-ride evidence before a caller joins the two records.
+    /// Verifies that this immutable duration projection is trusted for production
+    /// use and still belongs to the supplied completed-ride evidence.
+    ///
+    /// Generic decoded/imported evidence fails here even when its visible fields
+    /// match a real ride. This prevents persisted or caller-authored JSON from
+    /// becoming fresh observed-duration authority merely by matching UUID and
+    /// continuity metadata.
     public func validate(against completedRide: CompletedRideEvidence) throws {
+        guard isTrustedForProduction else {
+            throw CompletedRideDurationEvidenceError.untrustedImportedEvidence
+        }
+        try validateIdentity(against: completedRide)
+    }
+
+#if SWIFT_PACKAGE
+    /// Re-establishes production authority only at a trusted package storage
+    /// boundary after rebinding imported fields to the exact immutable ride.
+    ///
+    /// External package clients cannot call this. Generic Codable remains useful
+    /// for durable storage and offline inspection without becoming an authority
+    /// minting surface.
+    package static func trustedRestored(
+        _ imported: CompletedRideDurationEvidence,
+        matching completedRide: CompletedRideEvidence
+    ) throws -> CompletedRideDurationEvidence {
+        try imported.validateIdentity(against: completedRide)
+        return try CompletedRideDurationEvidence(
+            sessionID: imported.sessionID,
+            rideContinuity: imported.rideContinuity,
+            observedDurationNanoseconds: imported.observedDurationNanoseconds,
+            coverage: imported.coverage,
+            observationSegmentCount: imported.observationSegmentCount,
+            authority: .trusted
+        )
+    }
+#endif
+
+    private func validateIdentity(against completedRide: CompletedRideEvidence) throws {
         guard completedRide.sessionID == sessionID else {
             throw CompletedRideDurationEvidenceError.sessionMismatch
         }
@@ -61,7 +116,8 @@ public struct CompletedRideDurationEvidence: Codable, Equatable, Sendable {
         rideContinuity: RideSessionContinuity,
         observedDurationNanoseconds: UInt64?,
         coverage: RideSessionDurationCoverage,
-        observationSegmentCount: Int
+        observationSegmentCount: Int,
+        authority: Authority
     ) throws {
         guard observationSegmentCount >= 0 else {
             throw CompletedRideDurationEvidenceError.invalidDurationEvidence
@@ -84,7 +140,7 @@ public struct CompletedRideDurationEvidence: Codable, Equatable, Sendable {
             // exactly one contiguous observation segment exists. Every segment
             // after sequence zero must explicitly follow an unobserved interval,
             // which makes coverage partial. Reject impossible durable states at
-            // this binding/decoding boundary instead of letting forged history
+            // this binding/decoding boundary instead of letting malformed history
             // claim complete process-local elapsed-time coverage.
             if coverage == .complete,
                observationSegmentCount != 1 {
@@ -106,6 +162,7 @@ public struct CompletedRideDurationEvidence: Codable, Equatable, Sendable {
         self.observedDurationNanoseconds = observedDurationNanoseconds
         self.coverage = coverage
         self.observationSegmentCount = observationSegmentCount
+        self.authority = authority
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -133,7 +190,8 @@ public struct CompletedRideDurationEvidence: Codable, Equatable, Sendable {
                 observationSegmentCount: container.decode(
                     Int.self,
                     forKey: .observationSegmentCount
-                )
+                ),
+                authority: .importedUntrusted
             )
         } catch let error as CompletedRideDurationEvidenceError {
             throw DecodingError.dataCorrupted(
