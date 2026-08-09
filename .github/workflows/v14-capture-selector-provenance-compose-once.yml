@@ -19,17 +19,26 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-      - name: Compose and validate trust bytes
+      - name: Compose trust bytes
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/ci/v14_capture_selector_provenance_compose_once.py
-          python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_capture_trusted_xcode_build_graph_custody.py scripts/ci/tests/test_capture_trusted_xcode_bash_environment_custody.py
-          python3 scripts/ci/tests/test_capture_trusted_xcode_build_graph_custody.py -v
-          python3 scripts/ci/tests/test_capture_trusted_xcode_bash_environment_custody.py -v
-          python3 scripts/ci/tests/test_capture_trusted_xcode_prevalidation_process_custody.py -v
-          python3 scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py -v
-          git diff --check
+          python3 -m py_compile scripts/ci/v14_capture_selector_provenance_compose_once.py || { echo '::error title=Composer syntax::composer script does not compile'; exit 1; }
+          python3 scripts/ci/v14_capture_selector_provenance_compose_once.py || { echo '::error title=Composer seam::composer failed before focused validation'; exit 1; }
+      - name: Validate composed custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_capture_trusted_xcode_build_graph_custody.py scripts/ci/tests/test_capture_trusted_xcode_bash_environment_custody.py || { echo '::error title=Compiled custody::composed Python source does not compile'; exit 1; }
+          python3 scripts/ci/tests/test_capture_trusted_xcode_build_graph_custody.py -v || { echo '::error title=Build graph regression::selector custody regression failed'; exit 1; }
+          python3 scripts/ci/tests/test_capture_trusted_xcode_bash_environment_custody.py -v || { echo '::error title=Bash provenance regression::run provenance regression failed'; exit 1; }
+          python3 scripts/ci/tests/test_capture_trusted_xcode_prevalidation_process_custody.py -v || { echo '::error title=Prevalidation regression::process custody regression failed'; exit 1; }
+          python3 scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py -v || { echo '::error title=Trusted subject regression::trusted subject regression failed'; exit 1; }
+          git diff --check || { echo '::error title=Diff check::composed diff has whitespace errors'; exit 1; }
+      - name: Publish composed checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
           rm -- .github/workflows/v14-capture-selector-provenance-compose-once.yml scripts/ci/v14_capture_selector_provenance_compose_once.py
           git config user.name nembra-v14-bot
           git config user.email nembra-v14-bot@users.noreply.github.com
