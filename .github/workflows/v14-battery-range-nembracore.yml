@@ -7,6 +7,7 @@ on:
 permissions:
   contents: read
 
+# Validation-only mirror. Keep this PR draft so the repository-wide Xcode workflow skips it.
 jobs:
   nembracore:
     name: Swift 6.2 NembraCore package
