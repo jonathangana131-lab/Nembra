@@ -11,6 +11,8 @@ Nembra's package verifier can now cryptographically bind a software field author
 
 `scripts/ci/es80_field_authorization_envelope.py` creates that envelope on an offline/release-authority machine without placing the private key in the repository or app.
 
+The tracked V14 runbook is pre-build procedure source. It is never edited after a signed field artifact exists merely to insert that artifact's SHA/digests: such an edit would change the source SHA embedded in the already-produced artifact. Exact post-build physical authorization is instead retained externally under `docs/ES80_FINAL_GO_AUTHORITY.md`.
+
 ## Critical trust boundary
 
 The authorization private key is external authority material.
@@ -141,7 +143,15 @@ The signer reports `authorityPublicKeyX963Base64` and `authorityPublicKeyX963SHA
 PassiveBluetoothCaptureFieldAuthorizationTrustAnchor.publicKeyX963Representation
 ```
 
-Do **not** auto-edit or auto-pin the key from this script. The production trust root is deliberately `nil` today. Pinning the reviewed public key must be a separate exact-source decision on the final field lineage after key custody is established.
+Do **not** auto-edit or auto-pin the key from this script. The production trust root is deliberately `nil` today. Pinning the reviewed public key must be a separate exact-source decision on the final field lineage after key custody is established and **before** the final exact source SHA is accepted for field production.
+
+Because the public trust root is source code, changing it after the IPA is produced would create a different source SHA and cannot authorize the already-produced artifact. The key-custody -> public-key review/pin -> exact-head acceptance ordering is therefore mandatory.
+
+## Final GO authority remains external
+
+The signed authorization envelope is one cryptographic input to the package-owned field gate; it is not the human/release decision record by itself. After the exact signed IPA is independently inspected, installed without substitution, and runtime rendezvous is proven, retain an **external Final GO Record** for the exact accepted subjects as defined in `docs/ES80_FINAL_GO_AUTHORITY.md`.
+
+That external record must bind the accepted source/build/build-instance, retained IPA digest, exact envelope/payload/build/evidence digests, reviewed authority-public-key digest, V14 procedure, `ES80-FINGERPRINT-v1`, intended-device install evidence, runtime tuple, expected Capture Share artifact, and stop/failure conditions. It does not edit the tracked runbook after build production and cannot replace package verification.
 
 ## Development self-test
 
@@ -157,14 +167,14 @@ The trusted exact-head Xcode 27 workflow compiles the custody regression source 
 
 Even if an independently held candidate key produces a signature that verifies, physical Experiment One remains blocked until all applicable V14 gates are deliberately closed, including:
 
-1. the final composed Capture SHA has terminal exact-head app/package/UI acceptance;
+1. the final composed Capture SHA contains the reviewed production public trust root and has terminal exact-head app/package/UI acceptance;
 2. the exact real signed/installable iPhone IPA is retained and independently accepted;
 3. signing/provisioning evidence proves the intended field install conditions without leaking the device UDID;
-4. the authority keypair is independently controlled and its reviewed public key is pinned in package source;
+4. the authority keypair is independently controlled and its reviewed public key is pinned in package source **before** the exact accepted build is produced;
 5. the signed envelope refers to those exact accepted evidence bytes;
-6. the installed running app matches the accepted executable + raw Info.plist identity;
+6. the installed running app matches the accepted build/source/build-instance/executable/raw-Info.plist identity;
 7. the package field execution gate deliberately consumes non-forgeable verified authorization rather than caller/UI state;
-8. the definitive runbook records GO for that exact accepted build and procedure.
+8. an external Final GO Record retains `GO` for that exact accepted build, envelope/subjects, V14 procedure, intended-device install/runtime rendezvous, and stop conditions without mutating the repository source it authorizes.
 
 Until then:
 
