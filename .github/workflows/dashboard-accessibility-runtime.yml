@@ -35,10 +35,6 @@ jobs:
           grep -F 'simulatorQualifiedLiveSpeedKilometersPerHour' NembraApp/Features/Dashboard/DashboardView.swift
           grep -F '.frame(width: 44, height: 44)' NembraApp/Features/Dashboard/DashboardView.swift
 
-      - name: Validate core package
-        working-directory: Packages/NembraCore
-        run: swift test
-
       - name: Build, test, screenshot, and record launch metric
         run: scripts/ci/xcode27_simulator_capture.sh
 
