@@ -180,11 +180,15 @@ enum AppBootstrap {
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> AppRuntime {
         let bootstrap = makeVehicleBootstrap(arguments: arguments, environment: environment)
+        let retainedBatteryStorage: (any RetainedBatterySnapshotStorage)? = bootstrap.scenario == nil
+            ? UserDefaultsRetainedBatterySnapshotStorage()
+            : nil
         let vehicleStore = VehicleStore(
             service: bootstrap.service,
             initialState: bootstrap.initialState,
             shouldAutoConnectOnStart: bootstrap.shouldAutoConnectOnStart,
-            speedInstrumentInterpolationPolicy: bootstrap.speedInterpolationPolicy
+            speedInstrumentInterpolationPolicy: bootstrap.speedInterpolationPolicy,
+            retainedBatteryStorage: retainedBatteryStorage
         )
 
         let persistenceScope: RidePersistenceScope

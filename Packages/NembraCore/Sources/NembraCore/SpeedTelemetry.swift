@@ -6,6 +6,9 @@ public enum SpeedTelemetrySource: String, Codable, Sendable {
     case scooterBluetooth
     /// `CLLocation.speed` or equivalent Core Location speed evidence.
     case gps
+    /// A deterministic synthetic absolute observation produced only by Nembra's
+    /// Simulator QA service. This is never physical scooter or GPS evidence.
+    case simulatorQA
     /// A bounded short-horizon estimate informed by device motion.
     /// This is never an authoritative absolute speed measurement.
     case motionAssist
@@ -26,8 +29,9 @@ public enum SpeedTelemetryValidationError: Error, Equatable, Sendable {
 }
 
 /// Any subsystem that can emit raw speed evidence conforms to this contract.
-/// The scooter BLE service, Core Location adapter, and bounded motion-assist
-/// estimator can therefore be benchmarked with the same diagnostics pipeline.
+/// The scooter BLE service, Core Location adapter, Simulator QA source, and
+/// bounded motion-assist estimator can therefore be benchmarked with the same
+/// diagnostics pipeline without conflating their evidence origins.
 public protocol SpeedTelemetryProvider: Sendable {
     func speedTelemetryUpdates() async -> AsyncStream<SpeedTelemetrySample>
 }
@@ -82,7 +86,7 @@ public struct SpeedTelemetrySample: Equatable, Codable, Sendable {
             }
         }
         switch source {
-        case .scooterBluetooth, .gps:
+        case .scooterBluetooth, .gps, .simulatorQA:
             guard provenance == .absoluteMeasurement else {
                 throw SpeedTelemetryValidationError.invalidProvenanceForSource
             }

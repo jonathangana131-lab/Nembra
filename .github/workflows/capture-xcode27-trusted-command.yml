@@ -1,0 +1,738 @@
+name: Capture Trusted Xcode 27 Exact-Head QA
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  ARTIFACTS_DIR: ${{ github.workspace }}/Artifacts/Xcode27Simulator
+
+jobs:
+  resolve:
+    name: Resolve trusted Capture PR head
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.comment.body == '/capture-xcode27' &&
+      github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    outputs:
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+      pr_number: ${{ steps.pr.outputs.pr_number }}
+      same_repo: ${{ steps.pr.outputs.same_repo }}
+
+    steps:
+      - name: Resolve immutable live PR head
+        id: pr
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            })
+            const pr = response.data
+            const repository = `${context.repo.owner}/${context.repo.repo}`
+            const sameRepo = pr.head.repo.full_name === repository
+
+            core.info(`Resolved PR #${pr.number} exact head ${pr.head.sha}`)
+            core.info(`PR state: ${pr.state}; same repository: ${sameRepo}`)
+
+            if (pr.state !== 'open') {
+              core.setFailed('Capture exact-head admission requires an open pull request.')
+            }
+            if (!sameRepo) {
+              core.setFailed('Capture exact-head admission refuses fork-controlled source.')
+            }
+
+            core.setOutput('head_sha', pr.head.sha)
+            core.setOutput('pr_number', String(pr.number))
+            core.setOutput('same_repo', String(sameRepo))
+
+  prevalidate-candidate:
+    name: Prevalidate exact Capture source on isolated runner
+    needs: resolve
+    if: needs.resolve.outputs.same_repo == 'true'
+    runs-on: xcode-27
+    timeout-minutes: 30
+
+    steps:
+      - name: Reject stale or detached Capture head before prevalidation
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+        with:
+          script: |
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            })
+            const pr = response.data
+            const repository = `${context.repo.owner}/${context.repo.repo}`
+            core.info(`Trusted resolver head: ${process.env.EXPECTED_HEAD_SHA}`)
+            core.info(`Current live PR head: ${pr.head.sha}`)
+            if (pr.state !== 'open') {
+              core.setFailed('PR closed before Capture prevalidation started.')
+            }
+            if (pr.head.repo.full_name !== repository) {
+              core.setFailed('PR source repository changed before Capture prevalidation started.')
+            }
+            if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) {
+              core.setFailed('PR head moved before Capture prevalidation started; stale run is non-evidence.')
+            }
+
+      - name: Checkout immutable exact Capture head for prevalidation
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.resolve.outputs.head_sha }}
+
+      - name: Verify immutable prevalidation head
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+        run: |
+          actual_head="$(/usr/bin/git rev-parse --verify HEAD^{commit})"
+          printf 'Trusted resolver head: %s\nPrevalidation checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual_head"
+          test "$actual_head" = "$EXPECTED_HEAD_SHA"
+
+      - name: Validate project structure
+        run: |
+          plutil -lint Nembra.xcodeproj/project.pbxproj
+          scripts/validate_pbxproj_references.py
+          bash -n scripts/ci/xcode27_simulator_capture.sh
+
+      - name: Validate core package
+        working-directory: Packages/NembraCore
+        run: swift test
+
+      - name: Validate Capture package
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test
+
+      - name: Validate signed field evidence tooling
+        run: |
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
+          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py
+          python3 scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
+          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
+          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py
+
+      - name: Validate signed field candidate producer source
+        run: |
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          bash -n scripts/ci/xcode27_today_research_field_candidate.sh
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+
+      - name: Validate offline field authorization signer
+        run: |
+          python3 -m py_compile scripts/ci/es80_field_authorization_envelope.py
+          python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          python3 scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          python3 scripts/ci/es80_field_authorization_envelope.py --self-test
+
+      - name: Reject head movement after isolated prevalidation
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+        with:
+          script: |
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            })
+            const pr = response.data
+            const repository = `${context.repo.owner}/${context.repo.repo}`
+            if (pr.state !== 'open') {
+              core.setFailed('PR closed during Capture prevalidation.')
+            }
+            if (pr.head.repo.full_name !== repository) {
+              core.setFailed('PR source repository changed during Capture prevalidation.')
+            }
+            if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) {
+              core.setFailed('PR head moved during Capture prevalidation; stale run is non-evidence.')
+            }
+
+  capture-simulator-qa:
+    name: Build, test, and capture trusted exact Capture head
+    needs: [resolve, prevalidate-candidate]
+    if: needs.resolve.outputs.same_repo == 'true'
+    concurrency:
+      group: nembra-capture-xcode27-${{ needs.resolve.outputs.pr_number }}-${{ needs.resolve.outputs.head_sha }}
+      cancel-in-progress: false
+    runs-on: xcode-27
+    timeout-minutes: 30
+
+    steps:
+      - name: Reject stale or detached Capture head before scarce Mac work
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+        with:
+          script: |
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            })
+            const pr = response.data
+            const repository = `${context.repo.owner}/${context.repo.repo}`
+            core.info(`Trusted resolver head: ${process.env.EXPECTED_HEAD_SHA}`)
+            core.info(`Current live PR head: ${pr.head.sha}`)
+            if (pr.state !== 'open') {
+              core.setFailed('PR closed before Capture Mac acceptance started.')
+            }
+            if (pr.head.repo.full_name !== repository) {
+              core.setFailed('PR source repository changed before Capture Mac acceptance started.')
+            }
+            if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) {
+              core.setFailed('PR head moved before Capture Mac acceptance started; stale run is non-evidence.')
+            }
+
+      - name: Checkout immutable trusted Capture head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.resolve.outputs.head_sha }}
+
+      - name: Verify immutable trusted Capture head
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+        run: |
+          actual_head="$(/usr/bin/git rev-parse --verify HEAD^{commit})"
+          printf 'Trusted resolver head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual_head"
+          test "$actual_head" = "$EXPECTED_HEAD_SHA"
+
+      - name: Verify trusted Simulator evidence-producer custody
+        run: |
+          set -euo pipefail
+          producer_path="scripts/ci/xcode27_simulator_capture.sh"
+          expected_blob="4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"
+          actual_blob="$(
+            env -i \
+              PATH=/usr/bin:/bin \
+              HOME=/tmp \
+              LC_ALL=C \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              /usr/bin/git rev-parse --verify "HEAD:${producer_path}"
+          )"
+          printf 'Trusted Simulator producer: %s\nExpected blob: %s\nActual blob: %s\n' \
+            "$producer_path" "$expected_blob" "$actual_blob"
+          test "$actual_blob" = "$expected_blob"
+
+      - name: Verify trusted build graph custody
+        shell: "/bin/bash --noprofile --norc -p -e -o pipefail {0}"
+        env:
+          BASH_ENV: ""
+          ENV: ""
+        run: |
+          set -euo pipefail
+          /usr/bin/env -i             PATH=/usr/bin:/bin             HOME=/tmp             LC_ALL=C             GITHUB_WORKSPACE="$GITHUB_WORKSPACE"             /usr/bin/python3 - <<'PY'
+          from hashlib import sha1
+          from pathlib import Path
+          import os
+
+          root = Path(os.environ["GITHUB_WORKSPACE"])
+          expected = {
+              "Nembra.xcodeproj/project.pbxproj": "d87024ba057add61a7d45ce8b69ac9947e6d2117",
+              "Nembra.xcodeproj/xcshareddata/xcschemes/Nembra.xcscheme": "64ef64f110265194d904ea0cbf177bbf264871c9",
+              "Packages/NembraCore/Package.swift": "26544e273397020fae34c7034992071a9861c131",
+              "Packages/NembraBluetoothCapture/Package.swift": "3bcda7fa8a350ade75bd8b7b228c3c95ca319bda",
+          }
+          project_root = root / "Nembra.xcodeproj"
+          source_controlled_user_data = sorted(
+              str(path.relative_to(root))
+              for path in project_root.rglob("*")
+              if path.name.casefold() == "xcuserdata"
+          )
+          if source_controlled_user_data:
+              raise SystemExit(
+                  "trusted build graph forbids source-controlled Xcode user data: "
+                  + ", ".join(source_controlled_user_data)
+              )
+
+          nembra_schemes = sorted(
+              str(path.relative_to(root))
+              for path in project_root.rglob("*")
+              if path.is_file() and path.name.casefold() == "nembra.xcscheme"
+          )
+          expected_nembra_schemes = ["Nembra.xcodeproj/xcshareddata/xcschemes/Nembra.xcscheme"]
+          if nembra_schemes != expected_nembra_schemes:
+              raise SystemExit(
+                  "trusted build graph requires exactly the reviewed shared Nembra scheme: "
+                  + repr(nembra_schemes)
+              )
+
+          for package_relative in (
+              "Packages/NembraCore",
+              "Packages/NembraBluetoothCapture",
+          ):
+              package_root = root / package_relative
+              alternate_manifests = []
+              for path in package_root.iterdir():
+                  name = path.name.casefold()
+                  if name.startswith("package@swift-") and name.endswith(".swift"):
+                      alternate_manifests.append(str(path.relative_to(root)))
+              alternate_manifests.sort()
+              if alternate_manifests:
+                  raise SystemExit(
+                      "trusted build graph forbids version-specific SwiftPM manifests: "
+                      + ", ".join(alternate_manifests)
+                  )
+
+          for relative, expected_blob in expected.items():
+              path = root / relative
+              if not path.is_file() or path.is_symlink():
+                  raise SystemExit(f"trusted build graph subject is not one regular file: {relative}")
+              data = path.read_bytes()
+              actual_blob = sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()
+              print(f"Trusted build graph subject: {relative}")
+              print(f"Expected blob: {expected_blob}")
+              print(f"Actual raw-byte blob: {actual_blob}")
+              if actual_blob != expected_blob:
+                  raise SystemExit(f"trusted build graph subject changed: {relative}")
+          PY
+
+      - name: Build, test, and capture Simulator states
+        shell: "/bin/bash --noprofile --norc -p -e -o pipefail {0}"
+        env:
+          BASH_ENV: ""
+          ENV: ""
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          producer_path="scripts/ci/xcode27_simulator_capture.sh"
+          expected_blob="4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"
+
+          # Candidate-controlled validation executes only in the completed predecessor job above.
+          # This authority job begins on a fresh runner process boundary, then independently binds
+          # Git to the resolver-approved workspace before any repository-controlled executable runs.
+          trusted_index="$(/usr/bin/mktemp -t nembra-capture-index)"
+          /bin/rm -f -- "$trusted_index"
+          trap '/bin/rm -f -- "$trusted_index"' EXIT
+          /usr/bin/env -i \
+            PATH=/usr/bin:/bin \
+            HOME=/tmp \
+            LC_ALL=C \
+            GIT_DIR="$GITHUB_WORKSPACE/.git" \
+            GIT_WORK_TREE="$GITHUB_WORKSPACE" \
+            GIT_CONFIG_NOSYSTEM=1 \
+            GIT_CONFIG_GLOBAL=/dev/null \
+            GIT_NO_REPLACE_OBJECTS=1 \
+            GIT_INDEX_FILE="$trusted_index" \
+            GIT_CONFIG_COUNT=2 \
+            GIT_CONFIG_KEY_0=core.worktree \
+            GIT_CONFIG_VALUE_0="$GITHUB_WORKSPACE" \
+            GIT_CONFIG_KEY_1=core.bare \
+            GIT_CONFIG_VALUE_1=false \
+            /usr/bin/git read-tree "$EXPECTED_HEAD_SHA"
+
+          /usr/bin/env -i \
+            PATH=/usr/bin:/bin \
+            HOME=/tmp \
+            LC_ALL=C \
+            GIT_DIR="$GITHUB_WORKSPACE/.git" \
+            GIT_WORK_TREE="$GITHUB_WORKSPACE" \
+            GIT_CONFIG_NOSYSTEM=1 \
+            GIT_CONFIG_GLOBAL=/dev/null \
+            GIT_NO_REPLACE_OBJECTS=1 \
+            GIT_INDEX_FILE="$trusted_index" \
+            GIT_CONFIG_COUNT=2 \
+            GIT_CONFIG_KEY_0=core.worktree \
+            GIT_CONFIG_VALUE_0="$GITHUB_WORKSPACE" \
+            GIT_CONFIG_KEY_1=core.bare \
+            GIT_CONFIG_VALUE_1=false \
+            /usr/bin/git clean -ffdx
+
+          trusted_status="$(
+            /usr/bin/env -i \
+              PATH=/usr/bin:/bin \
+              HOME=/tmp \
+              LC_ALL=C \
+              GIT_DIR="$GITHUB_WORKSPACE/.git" \
+              GIT_WORK_TREE="$GITHUB_WORKSPACE" \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              GIT_INDEX_FILE="$trusted_index" \
+              GIT_CONFIG_COUNT=5 \
+              GIT_CONFIG_KEY_0=core.worktree \
+              GIT_CONFIG_VALUE_0="$GITHUB_WORKSPACE" \
+              GIT_CONFIG_KEY_1=core.bare \
+              GIT_CONFIG_VALUE_1=false \
+              GIT_CONFIG_KEY_2=core.fsmonitor \
+              GIT_CONFIG_VALUE_2=false \
+              GIT_CONFIG_KEY_3=core.ignorestat \
+              GIT_CONFIG_VALUE_3=false \
+              GIT_CONFIG_KEY_4=core.filemode \
+              GIT_CONFIG_VALUE_4=true \
+              /usr/bin/git \
+                -c core.fsmonitor=false \
+                -c core.ignorestat=false \
+                -c core.filemode=true \
+                status --porcelain=v1 --untracked-files=all
+          )"
+          if [[ -n "$trusted_status" ]]; then
+            printf 'Trusted resolver-bound worktree is not clean:\n%s\n' "$trusted_status" >&2
+            exit 1
+          fi
+          test -z "$trusted_status"
+
+          /usr/bin/env -i \
+            PATH=/usr/bin:/bin \
+            HOME=/tmp \
+            LC_ALL=C \
+            EXPECTED_HEAD_SHA="$EXPECTED_HEAD_SHA" \
+            GIT_DIR="$GITHUB_WORKSPACE/.git" \
+            GIT_WORK_TREE="$GITHUB_WORKSPACE" \
+            GIT_CONFIG_NOSYSTEM=1 \
+            GIT_CONFIG_GLOBAL=/dev/null \
+            GIT_NO_REPLACE_OBJECTS=1 \
+            /usr/bin/python3 -I - <<'PY'
+          import hashlib
+          import os
+          import stat
+          import subprocess
+
+          expected_head = os.environ["EXPECTED_HEAD_SHA"]
+          workspace = os.environ["GIT_WORK_TREE"]
+          git_env = {
+              "PATH": "/usr/bin:/bin",
+              "HOME": "/tmp",
+              "LC_ALL": "C",
+              "GIT_DIR": os.environ["GIT_DIR"],
+              "GIT_WORK_TREE": workspace,
+              "GIT_CONFIG_NOSYSTEM": "1",
+              "GIT_CONFIG_GLOBAL": "/dev/null",
+              "GIT_NO_REPLACE_OBJECTS": "1",
+              "GIT_CONFIG_COUNT": "2",
+              "GIT_CONFIG_KEY_0": "core.worktree",
+              "GIT_CONFIG_VALUE_0": workspace,
+              "GIT_CONFIG_KEY_1": "core.bare",
+              "GIT_CONFIG_VALUE_1": "false",
+          }
+          tree = subprocess.check_output(
+              ["/usr/bin/git", "ls-tree", "-r", "-z", expected_head],
+              cwd=workspace,
+              env=git_env,
+          )
+          workspace_bytes = os.fsencode(workspace)
+          checked = 0
+
+          for record in tree.split(b"\0"):
+              if not record:
+                  continue
+              metadata, relative_path = record.split(b"\t", 1)
+              mode, object_type, expected_oid = metadata.split(b" ", 2)
+              if object_type != b"blob" or mode not in {b"100644", b"100755", b"120000"}:
+                  raise SystemExit(
+                      "raw workspace audit refuses unsupported tracked object "
+                      + repr((mode, object_type, relative_path))
+                  )
+
+              absolute_path = os.path.join(workspace_bytes, relative_path)
+              metadata_now = os.lstat(absolute_path)
+              if mode == b"120000":
+                  if not stat.S_ISLNK(metadata_now.st_mode):
+                      raise SystemExit("raw workspace audit expected symlink: " + os.fsdecode(relative_path))
+                  payload = os.readlink(absolute_path)
+                  if isinstance(payload, str):
+                      payload = os.fsencode(payload)
+              else:
+                  if not stat.S_ISREG(metadata_now.st_mode):
+                      raise SystemExit("raw workspace audit expected regular file: " + os.fsdecode(relative_path))
+                  expected_executable = mode == b"100755"
+                  actual_executable = bool(metadata_now.st_mode & 0o111)
+                  if actual_executable != expected_executable:
+                      raise SystemExit("raw workspace executable mode mismatch: " + os.fsdecode(relative_path))
+                  with open(absolute_path, "rb") as handle:
+                      payload = handle.read()
+
+              actual_oid = hashlib.sha1(
+                  b"blob " + str(len(payload)).encode("ascii") + b"\0" + payload
+              ).hexdigest().encode("ascii")
+              if actual_oid != expected_oid:
+                  raise SystemExit("raw workspace blob mismatch: " + os.fsdecode(relative_path))
+              checked += 1
+
+          if checked == 0:
+              raise SystemExit("raw workspace audit found no tracked blobs")
+          print(f"raw workspace audit accepted {checked} resolver-bound tracked blobs")
+          PY
+
+          worktree_blob="$(
+            /usr/bin/env -i \
+              PATH=/usr/bin:/bin \
+              HOME=/tmp \
+              LC_ALL=C \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              /usr/bin/git -C /tmp hash-object -- "$GITHUB_WORKSPACE/$producer_path"
+          )"
+          test "$worktree_blob" = "$expected_blob"
+
+          sentinel="__NEMBRA_TRUSTED_PRODUCER_EOF_4e9ae0cb__"
+          producer_bytes="$(
+            /usr/bin/env -i \
+              PATH=/usr/bin:/bin \
+              HOME=/tmp \
+              LC_ALL=C \
+              GIT_DIR="$GITHUB_WORKSPACE/.git" \
+              GIT_WORK_TREE="$GITHUB_WORKSPACE" \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              GIT_CONFIG_COUNT=2 \
+              GIT_CONFIG_KEY_0=core.worktree \
+              GIT_CONFIG_VALUE_0="$GITHUB_WORKSPACE" \
+              GIT_CONFIG_KEY_1=core.bare \
+              GIT_CONFIG_VALUE_1=false \
+              /usr/bin/git cat-file blob "$expected_blob" &&
+            builtin printf '%s' "$sentinel"
+          )"
+          case "$producer_bytes" in
+            *"$sentinel") producer_bytes="${producer_bytes%"$sentinel"}" ;;
+            *) builtin printf 'Trusted producer sentinel missing after Git-object materialization.\n' >&2; exit 2 ;;
+          esac
+
+          materialized_blob="$(
+            builtin printf '%s' "$producer_bytes" |
+              /usr/bin/env -i \
+                PATH=/usr/bin:/bin \
+                HOME=/tmp \
+                LC_ALL=C \
+                GIT_CONFIG_NOSYSTEM=1 \
+                GIT_CONFIG_GLOBAL=/dev/null \
+                GIT_NO_REPLACE_OBJECTS=1 \
+                /usr/bin/git -C /tmp hash-object --stdin
+          )"
+          builtin printf 'Trusted Simulator execution blob: %s\n' "$materialized_blob"
+          test "$materialized_blob" = "$expected_blob"
+
+          builtin printf '%s' "$producer_bytes" |
+            /usr/bin/env -i \
+              PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+              HOME=/tmp \
+              LC_ALL=C \
+              GITHUB_RUN_ID="${{ github.run_id }}" \
+              GITHUB_RUN_ATTEMPT="${{ github.run_attempt }}" \
+              GIT_DIR="$GITHUB_WORKSPACE/.git" \
+              GIT_WORK_TREE="$GITHUB_WORKSPACE" \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              GIT_INDEX_FILE="$trusted_index" \
+              GIT_CONFIG_COUNT=5 \
+              GIT_CONFIG_KEY_0=core.worktree \
+              GIT_CONFIG_VALUE_0="$GITHUB_WORKSPACE" \
+              GIT_CONFIG_KEY_1=core.bare \
+              GIT_CONFIG_VALUE_1=false \
+              GIT_CONFIG_KEY_2=core.fsmonitor \
+              GIT_CONFIG_VALUE_2=false \
+              GIT_CONFIG_KEY_3=core.ignorestat \
+              GIT_CONFIG_VALUE_3=false \
+              GIT_CONFIG_KEY_4=core.filemode \
+              GIT_CONFIG_VALUE_4=true \
+              /bin/bash --noprofile --norc -p -c 'source /dev/stdin' "$GITHUB_WORKSPACE/$producer_path"
+
+      - name: Verify retained Capture evidence against trusted resolver authority
+        shell: "/bin/bash --noprofile --norc -p -e -o pipefail {0}"
+        env:
+          BASH_ENV: ""
+          ENV: ""
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+        run: |
+          /usr/bin/python3 -I - <<'PY'
+          import hashlib
+          import json
+          import os
+          import plistlib
+          import re
+          import subprocess
+          from pathlib import Path
+
+          root = Path("Artifacts/Xcode27Simulator")
+          record_path = root / "NembraCaptureExternalBuildRecord.json"
+          executable = root / "build-evidence" / "Nembra"
+          info_plist = root / "build-evidence" / "Info.plist"
+
+          expected_head = os.environ.get("EXPECTED_HEAD_SHA", "").strip()
+          if re.fullmatch(r"[0-9a-f]{40}", expected_head) is None:
+              raise SystemExit("Trusted resolver did not supply one canonical lowercase 40-hex SHA")
+
+          git_environment = {
+              "PATH": "/usr/bin:/bin",
+              "HOME": "/tmp",
+              "LC_ALL": "C",
+              "GIT_CONFIG_NOSYSTEM": "1",
+              "GIT_CONFIG_GLOBAL": "/dev/null",
+              "GIT_NO_REPLACE_OBJECTS": "1",
+          }
+          actual_head = subprocess.check_output(
+              ["/usr/bin/git", "rev-parse", "--verify", "HEAD^{commit}"],
+              text=True,
+              cwd=Path.cwd(),
+              env=git_environment,
+          ).strip()
+          if actual_head != expected_head:
+              raise SystemExit("Checkout HEAD changed after trusted resolution/build; refusing retained evidence")
+
+          record = json.loads(record_path.read_text(encoding="utf-8"))
+          expected_keys = {
+              "schemaVersion",
+              "buildIdentifier",
+              "buildInstanceID",
+              "sourceCommitSHA",
+              "executableSHA256",
+              "infoPlistSHA256",
+              "experimentRecipeID",
+              "procedureVersion",
+          }
+          if set(record) != expected_keys or record.get("schemaVersion") != 3:
+              raise SystemExit("Capture external build record is not the exact closed-world schema v3 shape")
+
+          retained_plist = plistlib.loads(info_plist.read_bytes())
+          expected_recipe = "ES80-FINGERPRINT-v1"
+          expected_procedure = "V14"
+          build_instance_pattern = re.compile(
+              r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+          )
+
+          def verify_semantic_tuple(subject, plist, authority_head):
+              expected_label = f"Capture Build V14-{authority_head[:12]}"
+              if subject.get("sourceCommitSHA") != authority_head:
+                  raise ValueError("external record sourceCommitSHA does not match trusted resolver SHA")
+              if subject.get("buildIdentifier") != expected_label:
+                  raise ValueError("external record buildIdentifier does not match trusted resolver SHA")
+              if subject.get("experimentRecipeID") != expected_recipe:
+                  raise ValueError("external record experimentRecipeID is not canonical ES80-FINGERPRINT-v1")
+              if subject.get("procedureVersion") != expected_procedure:
+                  raise ValueError("external record procedureVersion is not canonical V14")
+
+              build_instance = subject.get("buildInstanceID")
+              if not isinstance(build_instance, str) or build_instance_pattern.fullmatch(build_instance) is None:
+                  raise ValueError("external record buildInstanceID is not one canonical lowercase UUID")
+
+              embedded = {
+                  "buildIdentifier": plist.get("NembraCaptureBuildIdentifier"),
+                  "buildInstanceID": plist.get("NembraCaptureBuildInstanceID"),
+                  "sourceCommitSHA": plist.get("NembraCaptureBuildCommitSHA"),
+                  "experimentRecipeID": plist.get("NembraCaptureFieldRecipe"),
+              }
+              for key, value in embedded.items():
+                  if value != subject.get(key):
+                      raise ValueError(f"retained Info.plist {key} does not match external record")
+
+          try:
+              verify_semantic_tuple(record, retained_plist, expected_head)
+          except ValueError as error:
+              raise SystemExit(str(error)) from error
+
+          def require_rejected(label, mutated_record=None, mutated_plist=None, authority_head=None):
+              candidate_record = record if mutated_record is None else mutated_record
+              candidate_plist = retained_plist if mutated_plist is None else mutated_plist
+              candidate_head = expected_head if authority_head is None else authority_head
+              try:
+                  verify_semantic_tuple(candidate_record, candidate_plist, candidate_head)
+              except ValueError:
+                  return
+              raise SystemExit(f"semantic verifier self-test accepted {label}")
+
+          wrong_source = dict(record)
+          wrong_source["sourceCommitSHA"] = "0" * 40 if expected_head != "0" * 40 else "1" * 40
+          wrong_source["buildIdentifier"] = f"Capture Build V14-{wrong_source['sourceCommitSHA'][:12]}"
+          require_rejected("a detached source/build label", mutated_record=wrong_source)
+
+          wrong_instance = dict(record)
+          wrong_instance["buildInstanceID"] = (
+              "00000000-0000-0000-0000-000000000000"
+              if record["buildInstanceID"] != "00000000-0000-0000-0000-000000000000"
+              else "11111111-1111-1111-1111-111111111111"
+          )
+          require_rejected("a detached build-instance ID", mutated_record=wrong_instance)
+
+          wrong_recipe = dict(record)
+          wrong_recipe["experimentRecipeID"] = "ES80-FINGERPRINT-v2"
+          require_rejected("a detached experiment recipe", mutated_record=wrong_recipe)
+
+          wrong_procedure = dict(record)
+          wrong_procedure["procedureVersion"] = "V15"
+          require_rejected("a detached procedure version", mutated_record=wrong_procedure)
+
+          wrong_plist = dict(retained_plist)
+          wrong_plist["NembraCaptureBuildInstanceID"] = (
+              "22222222-2222-2222-2222-222222222222"
+              if record["buildInstanceID"] != "22222222-2222-2222-2222-222222222222"
+              else "33333333-3333-3333-3333-333333333333"
+          )
+          require_rejected("detached retained Info.plist metadata", mutated_plist=wrong_plist)
+
+          wrong_recipe_plist = dict(retained_plist)
+          wrong_recipe_plist["NembraCaptureFieldRecipe"] = "ES80-FINGERPRINT-v2"
+          require_rejected("detached retained Info.plist recipe", mutated_plist=wrong_recipe_plist)
+
+          alternate_authority = "0" * 40 if expected_head != "0" * 40 else "1" * 40
+          require_rejected("a PR-controlled post-build HEAD authority", authority_head=alternate_authority)
+
+          def sha256(path: Path) -> str:
+              digest = hashlib.sha256()
+              with path.open("rb") as handle:
+                  for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          if sha256(executable) != record["executableSHA256"]:
+              raise SystemExit("Retained Capture executable no longer matches the exact-head external record")
+          if sha256(info_plist) != record["infoPlistSHA256"]:
+              raise SystemExit("Retained Capture Info.plist no longer matches the exact-head external record")
+          PY
+
+      - name: Upload trusted Capture Simulator screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: nembra-capture-xcode27-${{ needs.resolve.outputs.pr_number }}-${{ github.run_number }}-${{ github.run_attempt }}
+          path: Artifacts/Xcode27Simulator
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Reject head movement before trusted acceptance completes
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+        with:
+          script: |
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            })
+            const pr = response.data
+            const repository = `${context.repo.owner}/${context.repo.repo}`
+            core.info(`Trusted resolver head: ${process.env.EXPECTED_HEAD_SHA}`)
+            core.info(`Final live PR head: ${pr.head.sha}`)
+            if (pr.state !== 'open') {
+              core.setFailed('PR closed before trusted Capture acceptance completed.')
+            }
+            if (pr.head.repo.full_name !== repository) {
+              core.setFailed('PR source repository changed before trusted Capture acceptance completed.')
+            }
+            if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) {
+              core.setFailed('PR head moved during trusted Capture acceptance; stale run is non-evidence.')
+            }

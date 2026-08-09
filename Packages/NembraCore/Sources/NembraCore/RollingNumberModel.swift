@@ -181,23 +181,25 @@ public struct RollingNumberModel: Sendable {
         }
 
         let scaledValue = UInt64(scaledDouble)
-        var working = scaledValue
-        var reversedDigits: [Int] = []
-        reversedDigits.reserveCapacity(layout.totalDigitSlots)
-        for _ in 0..<layout.totalDigitSlots {
-            reversedDigits.append(Int(working % 10))
-            working /= 10
-        }
-        let rawDigits = reversedDigits.reversed()
-
         let integerValue = scaledValue / scale
         let visibleIntegerCount = max(1, Self.decimalDigitCount(integerValue))
         let firstVisibleIntegerIndex = layout.integerDigits - visibleIntegerCount
 
-        let snapshots = rawDigits.enumerated().map { index, digit in
+        // Build the fixed-slot snapshot directly. The prior implementation first
+        // accumulated reversed raw digits and then mapped them into a second
+        // snapshot array. This keeps the 60 Hz presentation path to one bounded
+        // digit buffer without changing quantization, visibility, or telemetry truth.
+        var snapshots = Array(
+            repeating: RollingDigitSnapshot(digit: 0, isVisible: false),
+            count: layout.totalDigitSlots
+        )
+        var working = scaledValue
+        for index in stride(from: layout.totalDigitSlots - 1, through: 0, by: -1) {
+            let digit = Int(working % 10)
+            working /= 10
             let isInteger = index < layout.integerDigits
             let visible = isInteger ? index >= firstVisibleIntegerIndex : true
-            return RollingDigitSnapshot(digit: digit, isVisible: visible)
+            snapshots[index] = RollingDigitSnapshot(digit: digit, isVisible: visible)
         }
 
         return RollingNumberSnapshot(

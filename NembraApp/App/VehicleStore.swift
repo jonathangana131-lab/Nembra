@@ -44,20 +44,85 @@ final class VehicleStore {
     let profile: VehicleProfile
     let speedInstrumentInterpolationPolicy: SpeedInstrumentInterpolationPolicy
     private let service: any ScooterService
+    private let retainedBatteryStorage: (any RetainedBatterySnapshotStorage)?
+    private let batteryObservationAuthority: BatteryObservationAuthority?
 
     var state: VehicleState
+    /// Source-owned currentness for speed. Cached `VehicleState` speed never
+    /// promotes this value by itself.
+    private(set) var speedEvidenceAvailability: SpeedEvidenceAvailability = .unavailable
     var pendingCommands: Set<PendingCommand> = []
     var pendingRideMode: RideMode?
     var pendingCruiseValue: Bool?
     var pendingStartMode: StartMode?
     var pendingSpeedLimit: (slot: SpeedLimitSlot, kilometersPerHour: Int)?
     var lastErrorMessage: String?
+    private(set) var retainedBatteryObservedAt: Date?
+    private(set) var retainedBatteryAuthority: BatteryObservationAuthority?
+    private var lastConfirmedBatteryAuthority: BatteryObservationAuthority?
+
+    /// Battery truth is deliberately joined separately from vehicle-wide data
+    /// availability. A connected transport does not make an unclassified battery
+    /// number display-authoritative. Production keeps `batteryObservationAuthority`
+    /// nil until hardware evidence establishes what the ES80 value actually means.
+    var batteryDisplayPercent: Int? {
+        guard let percent = state.batteryPercent,
+              (0...100).contains(percent),
+              batteryDisplayAuthority != nil else {
+            return nil
+        }
+        return percent
+    }
+
+    /// Authority for the battery value currently eligible for user-facing display.
+    /// A connected value requires an explicitly configured current-session authority;
+    /// a disconnected value may carry only the authority retained with that snapshot.
+    var batteryDisplayAuthority: BatteryObservationAuthority? {
+        if state.connection == .connected {
+            return batteryObservationAuthority
+        }
+        return retainedBatteryAuthority
+    }
+
+    /// Battery-specific availability. This must be used by Battery/Range consumers
+    /// instead of `VehicleState.dataAvailability`, which intentionally describes the
+    /// aggregate vehicle state and can be live because of unrelated telemetry.
+    var batteryDataAvailability: VehicleDataAvailability {
+        guard batteryDisplayPercent != nil else { return .unavailable }
+        return state.connection == .connected ? .live : .retained
+    }
+
+    /// Simulator-only qualified live speed for truth-sensitive presentation and
+    /// stopped-control admission. Aggregate connection can only remove authority;
+    /// it never promotes a cached speed number into current evidence.
+    var simulatorQualifiedLiveSpeedKilometersPerHour: Double? {
+        guard state.connection == .connected,
+              profile == .simulatorQA,
+              case let .live(sample) = speedEvidenceAvailability,
+              sample.source == .simulatorQA,
+              sample.provenance == .absoluteMeasurement else {
+            return nil
+        }
+        let speed = sample.kilometersPerHour
+        guard speed.isFinite, speed >= 0 else { return nil }
+        return speed
+    }
+
+    /// Current software authority for a stopped-only lock request. Physical and
+    /// otherwise-unverified profiles intentionally remain unavailable until a
+    /// verified source policy exists; the real ES80 capture must establish that.
+    var canLockFromCurrentSpeedEvidence: Bool {
+        guard let speed = simulatorQualifiedLiveSpeedKilometersPerHour else { return false }
+        return speed < 0.5
+    }
 
     var isVehicleCommandPending: Bool {
         pendingCommands.contains { $0 != .connect }
     }
 
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
+    @ObservationIgnored private var speedEvidenceTask: Task<Void, Never>?
+    @ObservationIgnored private var speedEvidenceConsumerAuthority = SpeedEvidenceConsumerAuthority()
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private let shouldAutoConnectOnStart: Bool
 
@@ -65,13 +130,18 @@ final class VehicleStore {
         service: any ScooterService,
         initialState: VehicleState? = nil,
         shouldAutoConnectOnStart: Bool = true,
-        speedInstrumentInterpolationPolicy: SpeedInstrumentInterpolationPolicy = .disabled
+        speedInstrumentInterpolationPolicy: SpeedInstrumentInterpolationPolicy = .disabled,
+        retainedBatteryStorage: (any RetainedBatterySnapshotStorage)? = nil,
+        batteryObservationAuthority: BatteryObservationAuthority? = nil
     ) {
         self.service = service
         self.profile = service.profile
         self.shouldAutoConnectOnStart = shouldAutoConnectOnStart
         self.speedInstrumentInterpolationPolicy = speedInstrumentInterpolationPolicy
-        self.state = initialState ?? VehicleState(
+        self.retainedBatteryStorage = retainedBatteryStorage
+        self.batteryObservationAuthority = batteryObservationAuthority
+
+        var resolvedState = initialState ?? VehicleState(
             connection: .disconnected,
             batteryPercent: nil,
             speedKilometersPerHour: nil,
@@ -86,22 +156,89 @@ final class VehicleStore {
             powerWatts: nil,
             currentAmps: nil
         )
+
+        // The shared vehicle state is itself a product boundary. Do not let an
+        // unclassified transport integer enter it and rely on every downstream
+        // screen to remember a separate battery gate. A connected initial value
+        // crosses only when its authority is explicit.
+        if resolvedState.connection == .connected,
+           let percent = resolvedState.batteryPercent,
+           AuthoritativeBatteryObservation(
+               percent: percent,
+               authority: batteryObservationAuthority,
+               observedAt: resolvedState.lastUpdated
+           ) == nil {
+            resolvedState.batteryPercent = nil
+        }
+
+        if resolvedState.connection != .connected,
+           resolvedState.batteryPercent == nil,
+           let snapshot = try? retainedBatteryStorage?.load() {
+            resolvedState.batteryPercent = snapshot.percent
+            resolvedState.lastUpdated = snapshot.observedAt
+            retainedBatteryObservedAt = snapshot.observedAt
+            retainedBatteryAuthority = snapshot.authority
+            lastConfirmedBatteryAuthority = snapshot.authority
+        }
+
+        self.state = resolvedState
     }
 
     deinit {
         updatesTask?.cancel()
+        speedEvidenceTask?.cancel()
     }
 
     func start() async {
         guard !didStart else { return }
         didStart = true
 
-        updatesTask = Task { [weak self, service] in
+        let speedEvidenceProvider = service as? any SpeedEvidenceProvider
+
+        updatesTask = Task { [weak self, service, speedEvidenceProvider] in
             let stream = await service.stateUpdates()
-            for await state in stream {
+            for await incomingState in stream {
                 guard let self, !Task.isCancelled else { break }
-                self.state = state
+                let previousConnection = self.state.connection
+                self.apply(incomingState)
+
+                guard let speedEvidenceProvider else {
+                    if incomingState.connection != .connected {
+                        self.invalidateSpeedEvidenceAuthority()
+                    }
+                    continue
+                }
+
+                // Transport transitions revoke projected field authority first.
+                // Revalidation samples current service state and then the current
+                // source-owned speed snapshot; connection alone never revives a
+                // cached pre-gap speed.
+                if incomingState.connection != previousConnection {
+                    self.invalidateSpeedEvidenceAuthority()
+                    await self.refreshSpeedEvidenceAuthority(using: speedEvidenceProvider)
+                } else if incomingState.connection != .connected {
+                    self.invalidateSpeedEvidenceAuthority()
+                }
             }
+        }
+
+        if let speedEvidenceProvider {
+            speedEvidenceTask = Task { [weak self, speedEvidenceProvider] in
+                let stream = await speedEvidenceProvider.speedEvidenceUpdates()
+                for await _ in stream {
+                    guard let self, !Task.isCancelled else { return }
+
+                    // Stream values are wake-up triggers only. They may already be
+                    // obsolete when this task resumes, so current app authority is
+                    // rebuilt from the provider's current source-owned snapshot.
+                    await self.refreshSpeedEvidenceAuthority(using: speedEvidenceProvider)
+                }
+
+                guard let self, !Task.isCancelled else { return }
+                self.invalidateSpeedEvidenceAuthority()
+            }
+        } else {
+            speedEvidenceAvailability = .unavailable
         }
 
         if shouldAutoConnectOnStart {
@@ -131,6 +268,10 @@ final class VehicleStore {
 
     func setLocked(_ locked: Bool) async {
         guard canBeginVehicleCommand else { return }
+        if locked && !canLockFromCurrentSpeedEvidence {
+            lastErrorMessage = "Live stopped-speed evidence is required before locking."
+            return
+        }
         await perform(.lock) { try await service.setLocked(locked) }
     }
 
@@ -166,6 +307,84 @@ final class VehicleStore {
 
     private var canBeginVehicleCommand: Bool {
         !pendingCommands.contains(.connect) && !isVehicleCommandPending
+    }
+
+    private func apply(_ incomingState: VehicleState) {
+        var nextState = incomingState
+
+        if incomingState.connection == .connected,
+           let batteryPercent = incomingState.batteryPercent {
+            retainedBatteryObservedAt = nil
+            retainedBatteryAuthority = nil
+
+            if let observation = AuthoritativeBatteryObservation(
+                percent: batteryPercent,
+                authority: batteryObservationAuthority,
+                observedAt: incomingState.lastUpdated
+            ) {
+                lastConfirmedBatteryAuthority = observation.authority
+                if let snapshot = observation.retained() {
+                    do {
+                        try retainedBatteryStorage?.save(snapshot)
+                    } catch {
+                        // Persistence must never turn confirmed live telemetry into an error state.
+                        // The current session remains authoritative even if local continuity storage fails.
+                    }
+                }
+            } else {
+                // An unclassified or invalid transport value does not enter shared product state.
+                // This prevents Home, Dashboard, Vehicle, Rides, or any future consumer from
+                // accidentally treating a raw integer as Battery truth before hardware evidence
+                // establishes its meaning.
+                nextState.batteryPercent = nil
+                lastConfirmedBatteryAuthority = nil
+            }
+        } else if incomingState.connection != .connected,
+                  let previousPercent = state.batteryPercent {
+            if incomingState.batteryPercent == nil {
+                nextState.batteryPercent = previousPercent
+            }
+
+            // Disconnect/reconnect lifecycle events are not battery measurements. Preserve the
+            // observation timestamp and authority only when the stale value is the same confirmed
+            // value we already held; a different incoming value cannot borrow prior provenance.
+            if nextState.batteryPercent == previousPercent,
+               let authority = lastConfirmedBatteryAuthority {
+                nextState.lastUpdated = state.lastUpdated
+                retainedBatteryObservedAt = retainedBatteryObservedAt ?? state.lastUpdated
+                retainedBatteryAuthority = authority
+            }
+        }
+
+        state = nextState
+    }
+
+    /// Retires current speed authority and invalidates every in-flight refresh.
+    private func invalidateSpeedEvidenceAuthority() {
+        speedEvidenceConsumerAuthority.invalidate()
+        speedEvidenceAvailability = speedEvidenceConsumerAuthority.availability
+    }
+
+    /// Rebuilds the app projection from current source-owned state instead of
+    /// trusting whichever availability event happened to wake the consumer.
+    private func refreshSpeedEvidenceAuthority(
+        using speedEvidenceProvider: any SpeedEvidenceProvider
+    ) async {
+        let refreshToken = speedEvidenceConsumerAuthority.beginRefresh()
+        speedEvidenceAvailability = speedEvidenceConsumerAuthority.availability
+
+        let connection = await service.snapshot().connection
+        let currentAvailability = await speedEvidenceProvider.speedEvidenceSnapshot()
+
+        guard !Task.isCancelled else { return }
+        guard speedEvidenceConsumerAuthority.commit(
+            currentAvailability,
+            connectionIsConnected: connection == .connected,
+            for: refreshToken
+        ) else {
+            return
+        }
+        speedEvidenceAvailability = speedEvidenceConsumerAuthority.availability
     }
 
     private func perform(_ command: PendingCommand, operation: () async throws -> Void) async {

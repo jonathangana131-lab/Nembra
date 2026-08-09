@@ -277,11 +277,14 @@ struct HomeView: View {
 
             HStack(spacing: 4) {
                 ForEach(supportedModes, id: \.self) { mode in
+                    let isSelected = vehicle.state.rideMode == mode
+                    let isPending = vehicle.pendingRideMode == mode
+
                     Button {
                         Task { await vehicle.setMode(mode) }
                     } label: {
                         ZStack {
-                            if vehicle.state.rideMode == mode {
+                            if isSelected {
                                 RoundedRectangle(cornerRadius: 13, style: .continuous)
                                     .fill(Color(uiColor: .systemBackground))
                                     .shadow(color: .black.opacity(0.05), radius: 3, y: 1)
@@ -289,22 +292,24 @@ struct HomeView: View {
 
                             HStack(spacing: 5) {
                                 Text(mode.displayName)
-                                    .font(.subheadline.weight(vehicle.state.rideMode == mode ? .semibold : .medium))
+                                    .font(.subheadline.weight(isSelected ? .semibold : .medium))
 
-                                if vehicle.pendingRideMode == mode {
+                                if isPending {
                                     ProgressView()
                                         .controlSize(.mini)
                                 }
                             }
-                            .foregroundStyle(vehicle.state.rideMode == mode ? .primary : .secondary)
+                            .foregroundStyle(isSelected ? .primary : .secondary)
                         }
                         .frame(maxWidth: .infinity)
                         .frame(height: 42)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending)
+                    .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending || isSelected)
                     .accessibilityLabel(mode.displayName)
+                    .accessibilityValue(modeChoiceAccessibilityValue(selected: isSelected, pending: isPending))
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
                     .accessibilityIdentifier("home.mode.\(mode.displayName.lowercased())")
                 }
             }
@@ -560,6 +565,13 @@ struct HomeView: View {
 
     private var supportedModes: [RideMode] {
         RideMode.allCases.filter(vehicle.profile.capabilities.supportedRideModes.contains)
+    }
+
+    private func modeChoiceAccessibilityValue(selected: Bool, pending: Bool) -> String {
+        if pending {
+            return "Updating"
+        }
+        return selected ? "Selected" : "Not selected"
     }
 
     private var hasRetainedSummaryData: Bool {
