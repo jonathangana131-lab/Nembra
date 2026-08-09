@@ -38,4 +38,30 @@ public struct AuthoritativeBatteryObservation: Equatable, Sendable {
             retainedAt: retainedAt
         )
     }
+
+    /// Narrows an already-authoritative battery observation to evidence that may be
+    /// treated as a validated physical/vehicle measurement by downstream physical
+    /// calculations. Estimated and display-only values deliberately fail closed.
+    ///
+    /// This does not assign ES80 semantics. It only preserves the authority boundary
+    /// established upstream once real hardware evidence exists.
+    public var physicalMeasurement: PhysicalBatterySOCObservation? {
+        PhysicalBatterySOCObservation(self)
+    }
+}
+
+/// Battery state that has crossed the stricter physical-measurement boundary.
+///
+/// Range learning, energy modeling, or any other physical calculation can accept this
+/// type when it specifically requires measured SoC, preventing estimated/display-only
+/// percentages from being silently reused as physical evidence.
+public struct PhysicalBatterySOCObservation: Equatable, Sendable {
+    public let percent: Int
+    public let observedAt: Date
+
+    public init?(_ observation: AuthoritativeBatteryObservation) {
+        guard observation.authority == .measured else { return nil }
+        self.percent = observation.percent
+        self.observedAt = observation.observedAt
+    }
 }
