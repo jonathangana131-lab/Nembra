@@ -18,77 +18,75 @@ struct DashboardModePersonality: Equatable {
     static func resolved(for mode: RideMode?) -> DashboardModePersonality {
         switch mode {
         case .walk:
-            DashboardModePersonality(
-                mode: .walk,
-                ambientOpacity: 0.018,
-                speedScale: 0.96,
-                modeScale: 0.97,
-                modeMarkerWidth: 24,
-                modeMarkerOpacity: 0.22,
-                statusOpacity: 0.58
-            )
+            DashboardModePersonality(mode: .walk, ambientOpacity: 0.018, speedScale: 0.96, modeScale: 0.97, modeMarkerWidth: 24, modeMarkerOpacity: 0.22, statusOpacity: 0.58)
         case .eco:
-            DashboardModePersonality(
-                mode: .eco,
-                ambientOpacity: 0.030,
-                speedScale: 0.98,
-                modeScale: 0.99,
-                modeMarkerWidth: 30,
-                modeMarkerOpacity: 0.32,
-                statusOpacity: 0.62
-            )
+            DashboardModePersonality(mode: .eco, ambientOpacity: 0.030, speedScale: 0.98, modeScale: 0.99, modeMarkerWidth: 30, modeMarkerOpacity: 0.32, statusOpacity: 0.62)
         case .drive:
-            DashboardModePersonality(
-                mode: .drive,
-                ambientOpacity: 0.044,
-                speedScale: 1.0,
-                modeScale: 1.0,
-                modeMarkerWidth: 38,
-                modeMarkerOpacity: 0.46,
-                statusOpacity: 0.68
-            )
+            DashboardModePersonality(mode: .drive, ambientOpacity: 0.044, speedScale: 1.0, modeScale: 1.0, modeMarkerWidth: 38, modeMarkerOpacity: 0.46, statusOpacity: 0.68)
         case .sport:
-            DashboardModePersonality(
-                mode: .sport,
-                ambientOpacity: 0.062,
-                speedScale: 1.025,
-                modeScale: 1.03,
-                modeMarkerWidth: 48,
-                modeMarkerOpacity: 0.62,
-                statusOpacity: 0.74
-            )
+            DashboardModePersonality(mode: .sport, ambientOpacity: 0.062, speedScale: 1.025, modeScale: 1.03, modeMarkerWidth: 48, modeMarkerOpacity: 0.62, statusOpacity: 0.74)
         case nil:
-            DashboardModePersonality(
-                mode: nil,
-                ambientOpacity: 0.012,
-                speedScale: 1.0,
-                modeScale: 1.0,
-                modeMarkerWidth: 22,
-                modeMarkerOpacity: 0.14,
-                statusOpacity: 0.58
-            )
+            DashboardModePersonality(mode: nil, ambientOpacity: 0.012, speedScale: 1.0, modeScale: 1.0, modeMarkerWidth: 22, modeMarkerOpacity: 0.14, statusOpacity: 0.58)
         }
+    }
+}
+
+/// Presentation-only readability adaptation for the cockpit.
+///
+/// This responds to system accessibility/readability preferences only. It does
+/// not infer sunlight, ambient lux, rider state, or any scooter telemetry.
+struct DashboardReadabilityProfile: Equatable {
+    let railFillOpacity: Double
+    let railStrokeOpacity: Double
+    let secondaryOpacity: Double
+    let ambientMultiplier: Double
+    let railHorizontalPadding: CGFloat
+
+    static func resolved(
+        contrast: ColorSchemeContrast,
+        reduceTransparency: Bool,
+        dynamicTypeSize: DynamicTypeSize
+    ) -> DashboardReadabilityProfile {
+        let highContrast = contrast == .increased
+        let largeType = dynamicTypeSize.isAccessibilitySize
+
+        return DashboardReadabilityProfile(
+            railFillOpacity: reduceTransparency ? 0.92 : (highContrast ? 0.34 : 0.18),
+            railStrokeOpacity: highContrast ? 0.42 : 0.16,
+            secondaryOpacity: highContrast ? 0.88 : 0.70,
+            ambientMultiplier: highContrast || reduceTransparency ? 0.55 : 1.0,
+            railHorizontalPadding: largeType ? 10 : 14
+        )
     }
 }
 
 /// The dedicated landscape riding surface.
 ///
-/// Phase 11 keeps the accepted Phase 10 speed instrumentation and makes confirmed
-/// ride mode affect cockpit visual energy without changing any vehicle truth.
+/// The cockpit stays truth-first: unknown values remain unknown, controls only
+/// appear when capabilities and state support them, and adaptive visuals never
+/// synthesize telemetry that has not been observed from the vehicle service.
 struct DashboardView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showLockConfirmation = false
 
     var body: some View {
         let personality = DashboardModePersonality.resolved(for: vehicle.state.rideMode)
+        let readability = DashboardReadabilityProfile.resolved(
+            contrast: colorSchemeContrast,
+            reduceTransparency: reduceTransparency,
+            dynamicTypeSize: dynamicTypeSize
+        )
 
         ZStack {
             Color.black.ignoresSafeArea()
 
             RadialGradient(
                 colors: [
-                    Color.white.opacity(personality.ambientOpacity),
+                    Color.white.opacity(personality.ambientOpacity * readability.ambientMultiplier),
                     Color.clear
                 ],
                 center: .center,
@@ -99,18 +97,20 @@ struct DashboardView: View {
             .allowsHitTesting(false)
             .animation(modeAnimation, value: personality)
 
-            HStack(spacing: 0) {
-                statusRail
-                    .frame(width: 156)
+            HStack(spacing: 14) {
+                statusRail(readability: readability)
+                    .frame(width: dynamicTypeSize.isAccessibilitySize ? 178 : 164)
+                    .dashboardRailSurface(readability)
 
                 DashboardSpeedInstrumentView(modePersonality: personality)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                contextRail(personality: personality)
-                    .frame(width: 176)
+                contextRail(personality: personality, readability: readability)
+                    .frame(width: dynamicTypeSize.isAccessibilitySize ? 194 : 180)
+                    .dashboardRailSurface(readability)
             }
-            .safeAreaPadding(.horizontal, 20)
-            .safeAreaPadding(.vertical, 12)
+            .safeAreaPadding(.horizontal, 18)
+            .safeAreaPadding(.vertical, 10)
         }
         .foregroundStyle(.white)
         .preferredColorScheme(.dark)
@@ -121,10 +121,7 @@ struct DashboardView: View {
             isPresented: $showLockConfirmation,
             titleVisibility: .visible
         ) {
-            Button(
-                vehicle.state.isLocked == true ? "Unlock" : "Lock",
-                role: vehicle.state.isLocked == true ? nil : .destructive
-            ) {
+            Button(vehicle.state.isLocked == true ? "Unlock" : "Lock", role: vehicle.state.isLocked == true ? nil : .destructive) {
                 Task { await vehicle.setLocked(!(vehicle.state.isLocked ?? false)) }
             }
         } message: {
@@ -137,70 +134,67 @@ struct DashboardView: View {
         }
     }
 
-    private var statusRail: some View {
+    private func statusRail(readability: DashboardReadabilityProfile) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 7) {
                 Text(vehicle.profile.identity.displayName)
                     .font(.headline.weight(.semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
 
                 Label(connectionText, systemImage: connectionIcon)
-                    .font(.caption.weight(.medium))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(connectionStyle)
                     .lineLimit(1)
+
+                Text(connectionDetail)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.white.opacity(readability.secondaryOpacity))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("dashboard.vehicle-status")
 
             Spacer(minLength: 0)
 
-            dashboardMetric(
-                title: "BATTERY",
-                value: batteryText,
-                symbol: batteryIcon,
-                warning: isBatteryLow,
-                identifier: "dashboard.battery"
-            )
+            dashboardMetric(title: "BATTERY", value: batteryText, symbol: batteryIcon, warning: isBatteryLow, identifier: "dashboard.battery", readability: readability)
 
-            dashboardMetric(
-                title: "TRIP",
-                value: tripText,
-                symbol: "point.bottomleft.forward.to.point.topright.scurvepath",
-                identifier: "dashboard.trip"
-            )
+            dashboardMetric(title: "TRIP", value: tripText, symbol: "point.bottomleft.forward.to.point.topright.scurvepath", identifier: "dashboard.trip", readability: readability)
         }
+        .padding(.horizontal, readability.railHorizontalPadding)
+        .padding(.vertical, 14)
     }
 
-    private func contextRail(personality: DashboardModePersonality) -> some View {
+    private func contextRail(personality: DashboardModePersonality, readability: DashboardReadabilityProfile) -> some View {
         VStack(alignment: .trailing, spacing: 14) {
-            modeReadout(personality: personality)
+            modeReadout(personality: personality, readability: readability)
 
             Spacer(minLength: 0)
 
             if shouldShowStoppedControls {
                 stoppedControls
-                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.97)))
             } else if isVehicleMoving {
-                Text("Controls available when stopped")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                Label("Controls available when stopped", systemImage: "hand.raised.fill")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.white.opacity(readability.secondaryOpacity))
                     .multilineTextAlignment(.trailing)
+                    .labelStyle(.titleAndIcon)
                     .accessibilityIdentifier("dashboard.controls-moving-message")
             }
         }
-        .animation(
-            reduceMotion ? nil : .snappy(duration: 0.20),
-            value: shouldShowStoppedControls
-        )
+        .padding(.horizontal, readability.railHorizontalPadding)
+        .padding(.vertical, 14)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.20), value: shouldShowStoppedControls)
     }
 
-    private func modeReadout(personality: DashboardModePersonality) -> some View {
-        VStack(alignment: .trailing, spacing: 5) {
+    private func modeReadout(personality: DashboardModePersonality, readability: DashboardReadabilityProfile) -> some View {
+        VStack(alignment: .trailing, spacing: 6) {
             Text("MODE")
                 .font(.caption2.weight(.bold))
                 .tracking(1.6)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.white.opacity(readability.secondaryOpacity))
 
             Text(vehicle.state.rideMode?.displayName.uppercased() ?? "—")
                 .font(.title2.weight(.semibold))
@@ -208,8 +202,8 @@ struct DashboardView: View {
                 .minimumScaleFactor(0.8)
 
             Capsule(style: .continuous)
-                .fill(Color.white.opacity(personality.modeMarkerOpacity))
-                .frame(width: personality.modeMarkerWidth, height: 2)
+                .fill(Color.white.opacity(max(personality.modeMarkerOpacity, colorSchemeContrast == .increased ? 0.48 : personality.modeMarkerOpacity)))
+                .frame(width: personality.modeMarkerWidth, height: colorSchemeContrast == .increased ? 3 : 2)
                 .accessibilityHidden(true)
         }
         .scaleEffect(personality.modeScale, anchor: .trailing)
@@ -231,19 +225,18 @@ struct DashboardView: View {
                             ZStack {
                                 if vehicle.state.rideMode == mode {
                                     RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                        .fill(.white.opacity(0.12))
+                                        .fill(.white.opacity(colorSchemeContrast == .increased ? 0.22 : 0.12))
                                 }
 
                                 if vehicle.pendingRideMode == mode {
-                                    ProgressView()
-                                        .controlSize(.mini)
+                                    ProgressView().controlSize(.mini)
                                 } else {
                                     Text(modeAbbreviation(mode))
                                         .font(.caption.weight(vehicle.state.rideMode == mode ? .bold : .semibold))
                                         .foregroundStyle(vehicle.state.rideMode == mode ? .white : .secondary)
                                 }
                             }
-                            .frame(width: 34, height: 34)
+                            .frame(width: 36, height: 36)
                         }
                         .buttonStyle(.glass)
                         .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending)
@@ -256,8 +249,7 @@ struct DashboardView: View {
             }
 
             HStack(spacing: 7) {
-                if vehicle.profile.capabilities.supportsHeadlight,
-                   let isOn = vehicle.state.isHeadlightOn {
+                if vehicle.profile.capabilities.supportsHeadlight, let isOn = vehicle.state.isHeadlightOn {
                     Button {
                         Task { await vehicle.setHeadlight(!isOn) }
                     } label: {
@@ -268,7 +260,7 @@ struct DashboardView: View {
                                 Image(systemName: isOn ? "lightbulb.fill" : "lightbulb")
                             }
                         }
-                        .frame(width: 36, height: 36)
+                        .frame(width: 38, height: 38)
                     }
                     .buttonStyle(.glass)
                     .disabled(vehicle.isVehicleCommandPending)
@@ -277,13 +269,12 @@ struct DashboardView: View {
                     .accessibilityIdentifier("dashboard.control.light")
                 }
 
-                if vehicle.profile.capabilities.supportsLock,
-                   let isLocked = vehicle.state.isLocked {
+                if vehicle.profile.capabilities.supportsLock, let isLocked = vehicle.state.isLocked {
                     Button {
                         showLockConfirmation = true
                     } label: {
                         Image(systemName: isLocked ? "lock.fill" : "lock.open")
-                            .frame(width: 36, height: 36)
+                            .frame(width: 38, height: 38)
                     }
                     .buttonStyle(.glass)
                     .disabled(vehicle.isVehicleCommandPending)
@@ -301,19 +292,21 @@ struct DashboardView: View {
         value: String,
         symbol: String,
         warning: Bool = false,
-        identifier: String
+        identifier: String,
+        readability: DashboardReadabilityProfile
     ) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Label(title, systemImage: symbol)
                 .font(.caption2.weight(.bold))
                 .tracking(1.2)
-                .foregroundStyle(warning ? Color.red : Color.secondary)
+                .foregroundStyle(warning ? Color.red : Color.white.opacity(readability.secondaryOpacity))
 
             Text(value)
                 .font(.title3.weight(.semibold).monospacedDigit())
                 .foregroundStyle(warning ? Color.red : Color.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
+                .contentTransition(reduceMotion ? .identity : .numericText())
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title.capitalized)
@@ -322,10 +315,7 @@ struct DashboardView: View {
     }
 
     private var errorPresented: Binding<Bool> {
-        Binding(
-            get: { vehicle.lastErrorMessage != nil },
-            set: { if !$0 { vehicle.lastErrorMessage = nil } }
-        )
+        Binding(get: { vehicle.lastErrorMessage != nil }, set: { if !$0 { vehicle.lastErrorMessage = nil } })
     }
 
     private var shouldShowStoppedControls: Bool {
@@ -392,6 +382,18 @@ struct DashboardView: View {
         }
     }
 
+    private var connectionDetail: String {
+        if vehicle.state.connectionIssue != nil {
+            return "Live vehicle values unavailable"
+        }
+        switch vehicle.state.connection {
+        case .connected: "Vehicle truth only"
+        case .connecting: "Waiting for confirmed data"
+        case .reconnecting: "Holding last confirmed UI state"
+        case .disconnected: "No live telemetry"
+        }
+    }
+
     private var connectionIcon: String {
         switch vehicle.state.connection {
         case .connected: "checkmark.circle.fill"
@@ -410,5 +412,21 @@ struct DashboardView: View {
 
     private var modeAnimation: Animation? {
         reduceMotion ? nil : .snappy(duration: 0.26)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func dashboardRailSurface(_ profile: DashboardReadabilityProfile) -> some View {
+        background {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Color.white.opacity(profile.railFillOpacity))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .strokeBorder(Color.white.opacity(profile.railStrokeOpacity), lineWidth: 1)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
     }
 }
