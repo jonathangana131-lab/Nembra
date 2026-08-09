@@ -799,8 +799,16 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "Horizon seal alone must not render Ready for analysis."
         )
         XCTAssertTrue(
-            source.contains("if let data = finalShareData"),
-            "A temporary Share-file retry must reuse retained verified bytes rather than mint a new evidence artifact."
+            source.contains("if finalShareData != nil,"),
+            "A temporary Share-file retry must require retained verified final Share bytes."
+        )
+        XCTAssertTrue(
+            source.contains("finalShareIntegrityReport != nil,"),
+            "A temporary Share-file retry must retain the exact integrity report rather than mint new evidence."
+        )
+        XCTAssertTrue(
+            source.contains("finalShareFilename != nil {"),
+            "A temporary Share-file retry must retain the verified filename alongside the verified bytes."
         )
         XCTAssertTrue(
             source.contains("finalShareIntegrityReport = report"),
