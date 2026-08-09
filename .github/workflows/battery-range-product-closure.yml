@@ -1,0 +1,55 @@
+name: Battery Range Product Closure
+
+on:
+  push:
+    branches:
+      - product/battery-range-surface-current-main-20260809
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: battery-range-product-closure-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ARTIFACTS_DIR: ${{ github.workspace }}/Artifacts/BatteryRangeClosure
+
+jobs:
+  app-visual-closure:
+    name: Build app, run UI, capture Battery Range
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact head
+        uses: actions/checkout@v6
+
+      - name: Validate app project
+        run: |
+          plutil -lint Nembra.xcodeproj/project.pbxproj
+          scripts/validate_pbxproj_references.py
+          bash -n scripts/ci/xcode27_simulator_capture.sh
+
+      - name: Build, test, and capture real Simulator surfaces
+        run: scripts/ci/xcode27_simulator_capture.sh
+
+      - name: Verify Battery Range screenshot attachment was produced
+        if: success()
+        run: |
+          set -euo pipefail
+          find "$ARTIFACTS_DIR/test-attachments" -type f -maxdepth 2 -print | tee /tmp/battery-range-attachments.txt
+          test -s /tmp/battery-range-attachments.txt
+          grep -qi 'Battery.Range.Truth.First.Portrait\|Battery Range Truth First Portrait' /tmp/battery-range-attachments.txt || {
+            echo 'Battery/Range screenshot attachment not found.' >&2
+            exit 1
+          }
+
+      - name: Upload Battery Range screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: battery-range-closure-${{ github.run_number }}-${{ github.run_attempt }}
+          path: Artifacts/BatteryRangeClosure
+          if-no-files-found: warn
+          retention-days: 30
