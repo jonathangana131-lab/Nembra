@@ -1,0 +1,161 @@
+name: Capture V14 scheme exclusivity one-shot repair
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-scheme-exclusivity-current-main/gpt56-go
+    paths:
+      - .github/workflows/v14-capture-scheme-exclusivity-fix-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact recovery branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: repair/v14-capture-scheme-exclusivity-current-main/gpt56-go
+          fetch-depth: 0
+
+      - name: Close alternate Xcode scheme authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/capture-xcode27-trusted-command.yml')
+          text = workflow.read_text(encoding='utf-8')
+          old = '''          root = Path(os.environ["GITHUB_WORKSPACE"])
+          expected = {
+'''
+          new = '''          root = Path(os.environ["GITHUB_WORKSPACE"])
+          canonical_scheme = "Nembra.xcodeproj/xcshareddata/xcschemes/Nembra.xcscheme"
+          scheme_paths = {
+              path.relative_to(root).as_posix()
+              for path in root.rglob("*.xcscheme")
+          }
+          if scheme_paths != {canonical_scheme}:
+              raise SystemExit(
+                  "trusted build graph requires exactly the canonical shared scheme; "
+                  f"observed={sorted(scheme_paths)}"
+              )
+
+          expected = {
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f'refusing ambiguous workflow patch: expected one anchor, found {text.count(old)}')
+          workflow.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          test_path = Path('scripts/ci/tests/test_capture_trusted_xcode_build_graph_custody.py')
+          test = test_path.read_text(encoding='utf-8')
+          old_constants = '''    "Packages/NembraBluetoothCapture/Package.swift": "3bcda7fa8a350ade75bd8b7b228c3c95ca319bda",
+}
+
+
+class TrustedXcodeBuildGraphCustodyTests(unittest.TestCase):
+'''
+          new_constants = '''    "Packages/NembraBluetoothCapture/Package.swift": "3bcda7fa8a350ade75bd8b7b228c3c95ca319bda",
+}
+CANONICAL_SCHEME = "Nembra.xcodeproj/xcshareddata/xcschemes/Nembra.xcscheme"
+
+
+class TrustedXcodeBuildGraphCustodyTests(unittest.TestCase):
+'''
+          if test.count(old_constants) != 1:
+              raise SystemExit('refusing ambiguous test constant patch')
+          test = test.replace(old_constants, new_constants, 1)
+
+          old_method = '''    def test_authority_verifies_build_graph_immediately_before_candidate_build(self) -> None:
+        authority = self.workflow.index("  capture-simulator-qa:\\n")
+        authority_block = self.workflow[authority:]
+        custody = authority_block.index("- name: Verify trusted build graph custody")
+        build = authority_block.index("- name: Build, test, and capture Simulator states")
+        self.assertLess(custody, build)
+        between = authority_block[custody:build]
+        self.assertIn("/usr/bin/python3 - <<'PY'", between)
+        self.assertIn('sha1(b"blob "', between)
+        self.assertIn("path.is_symlink()", between)
+'''
+          new_method = '''    def _custody_block(self) -> str:
+        authority = self.workflow.index("  capture-simulator-qa:\\n")
+        authority_block = self.workflow[authority:]
+        custody = authority_block.index("- name: Verify trusted build graph custody")
+        build = authority_block.index("- name: Build, test, and capture Simulator states")
+        self.assertLess(custody, build)
+        return authority_block[custody:build]
+
+    def test_authority_verifies_build_graph_immediately_before_candidate_build(self) -> None:
+        between = self._custody_block()
+        self.assertIn("/usr/bin/python3 - <<'PY'", between)
+        self.assertIn('sha1(b"blob "', between)
+        self.assertIn("path.is_symlink()", between)
+'''
+          if test.count(old_method) != 1:
+              raise SystemExit('refusing ambiguous test method patch')
+          test = test.replace(old_method, new_method, 1)
+
+          anchor = '''    def test_candidate_prevalidation_does_not_share_authority_runner(self) -> None:
+'''
+          new_test = '''    def test_candidate_cannot_add_alternate_xcode_scheme_selection_surface(self) -> None:
+        """Authority must expose exactly the reviewed shared scheme before xcodebuild."""
+        between = self._custody_block()
+        self.assertIn(f'canonical_scheme = "{CANONICAL_SCHEME}"', between)
+        self.assertIn('root.rglob("*.xcscheme")', between)
+        self.assertIn("scheme_paths", between)
+        self.assertIn("canonical_scheme", between)
+        self.assertRegex(
+            between,
+            r"if\\s+scheme_paths\\s*!=\\s*\\{canonical_scheme\\}\\s*:",
+            "trusted build-graph custody must reject every extra candidate .xcscheme path",
+        )
+
+'''
+          if test.count(anchor) != 1:
+              raise SystemExit('refusing ambiguous test insertion')
+          test_path.write_text(test.replace(anchor, new_test + anchor, 1), encoding='utf-8')
+          PY
+
+          new_blob="$(git hash-object .github/workflows/capture-xcode27-trusted-command.yml)"
+          python3 - "$new_blob" <<'PY'
+          from pathlib import Path
+          import sys
+
+          new_blob = sys.argv[1]
+          old_blob = '524b011c6147142281c3fed62d3bb402c7f2be63'
+          paths = [
+              Path('scripts/ci/es80_today_trusted_capture_xcode_subject.py'),
+              Path('.github/workflows/capture-today-final-go-qa.yml'),
+              Path('.github/workflows/capture-today-trusted-default-xcode-subject-qa.yml'),
+          ]
+          for path in paths:
+              text = path.read_text(encoding='utf-8')
+              count = text.count(old_blob)
+              if count < 1:
+                  raise SystemExit(f'{path}: missing old trusted workflow pin')
+              path.write_text(text.replace(old_blob, new_blob), encoding='utf-8')
+          print(f'rotated trusted workflow blob to {new_blob}')
+          PY
+
+          python3 scripts/ci/tests/test_capture_trusted_xcode_build_graph_custody.py -v
+          python3 scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py -v
+          git diff --check
+
+      - name: Commit repaired trust subject and remove bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-v14-closure-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/v14-capture-scheme-exclusivity-fix-once.yml
+          git add .github/workflows/capture-xcode27-trusted-command.yml \
+                  .github/workflows/capture-today-final-go-qa.yml \
+                  .github/workflows/capture-today-trusted-default-xcode-subject-qa.yml \
+                  scripts/ci/es80_today_trusted_capture_xcode_subject.py \
+                  scripts/ci/tests/test_capture_trusted_xcode_build_graph_custody.py
+          git diff --cached --check
+          git commit -m "fix(capture): require exclusive trusted Xcode scheme"
+          git push origin HEAD:repair/v14-capture-scheme-exclusivity-current-main/gpt56-go
