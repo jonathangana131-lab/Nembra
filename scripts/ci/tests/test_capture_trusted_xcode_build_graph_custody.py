@@ -41,6 +41,31 @@ class TrustedXcodeBuildGraphCustodyTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertIn(f'"{path}": "{blob}"', self.workflow)
 
+    def _custody_step(self) -> str:
+        authority = self.workflow.index("  capture-simulator-qa:\n")
+        authority_block = self.workflow[authority:]
+        custody = authority_block.index("- name: Verify trusted build graph custody")
+        build = authority_block.index("- name: Build, test, and capture Simulator states")
+        self.assertLess(custody, build)
+        return authority_block[custody:build]
+
+    def test_authority_rejects_unpinned_user_scheme_selectors(self) -> None:
+        step = self._custody_step()
+        self.assertIn('path.name.casefold() == "xcuserdata"', step)
+        self.assertIn('path.name.casefold() == "nembra.xcscheme"', step)
+        self.assertIn(
+            'expected_nembra_schemes = ["Nembra.xcodeproj/xcshareddata/xcschemes/Nembra.xcscheme"]',
+            step,
+        )
+        self.assertIn("trusted build graph forbids source-controlled Xcode user data", step)
+
+    def test_authority_rejects_unpinned_version_specific_package_manifests(self) -> None:
+        step = self._custody_step()
+        self.assertIn('package_root.glob("Package@swift-*.swift")', step)
+        self.assertIn('"Packages/NembraCore"', step)
+        self.assertIn('"Packages/NembraBluetoothCapture"', step)
+        self.assertIn("trusted build graph forbids version-specific SwiftPM manifests", step)
+
     def test_candidate_prevalidation_does_not_share_authority_runner(self) -> None:
         prevalidation = self.workflow.index("  prevalidate-candidate:\n")
         authority = self.workflow.index("  capture-simulator-qa:\n")
