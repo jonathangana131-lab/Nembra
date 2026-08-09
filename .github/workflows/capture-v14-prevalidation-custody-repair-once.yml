@@ -1,0 +1,113 @@
+name: Capture V14 trusted prevalidation custody repair once
+
+on:
+  push:
+    branches:
+      - repair/v14-trusted-xcode-prevalidation-custody/gpt56-go
+    paths:
+      - .github/workflows/capture-v14-prevalidation-custody-repair-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v14-trusted-xcode-prevalidation-custody/gpt56-go
+          fetch-depth: 0
+
+      - name: Move candidate prevalidation behind retained authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import subprocess
+
+          workflow = Path('.github/workflows/capture-xcode27-trusted-command.yml')
+          text = workflow.read_text(encoding='utf-8')
+          step_names = (
+              'Validate project structure',
+              'Validate core package',
+              'Validate Capture package',
+              'Validate signed field evidence tooling',
+              'Validate signed field candidate producer source',
+              'Validate offline field authorization signer',
+          )
+
+          blocks = []
+          for name in step_names:
+              pattern = re.compile(
+                  rf'(?ms)^      - name: {re.escape(name)}\n.*?(?=^      - name: |\Z)'
+              )
+              matches = list(pattern.finditer(text))
+              if len(matches) != 1:
+                  raise SystemExit(f'expected exactly one {name!r} step, found {len(matches)}')
+              block = matches[0].group(0).rstrip('\n')
+              blocks.append(block)
+              text = text[:matches[0].start()] + text[matches[0].end():]
+
+          insertion_marker = '      - name: Reject head movement before trusted acceptance completes\n'
+          if text.count(insertion_marker) != 1:
+              raise SystemExit('trusted final-head marker is not unique')
+          insertion = '\n\n'.join(blocks) + '\n\n'
+          text = text.replace(insertion_marker, insertion + insertion_marker, 1)
+
+          authority = text.index('      - name: Build, test, and capture Simulator states\n')
+          retained = text.index('      - name: Verify retained Capture evidence against trusted resolver authority\n')
+          upload = text.index('      - name: Upload trusted Capture Simulator screenshots and logs\n')
+          final_head = text.index(insertion_marker)
+          if not (authority < retained < upload < final_head):
+              raise SystemExit('trusted authority/retention/upload ordering is not preserved')
+          for name in step_names:
+              candidate = text.index(f'      - name: {name}\n')
+              if not (upload < candidate < final_head):
+                  raise SystemExit(f'{name} is not isolated behind retained/uploaded authority')
+
+          workflow.write_text(text, encoding='utf-8')
+
+          new_blob = subprocess.check_output(
+              ['/usr/bin/git', 'hash-object', str(workflow)], text=True
+          ).strip()
+          old_blob = '37244abb1dc4b1740cf24e83db7b7f9545760ac1'
+          if not re.fullmatch(r'[0-9a-f]{40}', new_blob) or new_blob == old_blob:
+              raise SystemExit('trusted workflow blob did not change canonically')
+
+          pin_paths = (
+              Path('scripts/ci/es80_today_trusted_capture_xcode_subject.py'),
+              Path('.github/workflows/capture-today-final-go-qa.yml'),
+              Path('.github/workflows/capture-today-trusted-default-xcode-subject-qa.yml'),
+          )
+          replacements = 0
+          for path in pin_paths:
+              payload = path.read_text(encoding='utf-8')
+              count = payload.count(old_blob)
+              if count < 1:
+                  raise SystemExit(f'{path} does not contain the currently trusted workflow blob')
+              payload = payload.replace(old_blob, new_blob)
+              path.write_text(payload, encoding='utf-8')
+              replacements += count
+
+          if replacements < 3:
+              raise SystemExit('expected all trusted workflow pin consumers to move')
+          print(f'repaired trusted workflow blob: {new_blob}')
+          print(f'updated pin references: {replacements}')
+          PY
+
+          rm .github/workflows/capture-v14-prevalidation-custody-repair-once.yml
+
+          git config user.name 'nembra-v14-go-worker'
+          git config user.email 'nembra-v14-go-worker@users.noreply.github.com'
+          git add .github/workflows/capture-xcode27-trusted-command.yml \
+                  scripts/ci/es80_today_trusted_capture_xcode_subject.py \
+                  .github/workflows/capture-today-final-go-qa.yml \
+                  .github/workflows/capture-today-trusted-default-xcode-subject-qa.yml \
+                  .github/workflows/capture-v14-prevalidation-custody-repair-once.yml
+          git diff --cached --check
+          git commit -m 'fix(capture): isolate trusted authority from prevalidation'
+          git push origin HEAD:repair/v14-trusted-xcode-prevalidation-custody/gpt56-go
