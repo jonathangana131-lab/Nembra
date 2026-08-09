@@ -7,6 +7,7 @@ on:
       - ci/xcode27-queue-janitor-v14-gpt56-go
       - ci/xcode27-stale-active-janitor-v14-gpt56-go
       - ci/xcode27-janitor-five-minute-v14-gpt56-go
+      - ci/capture-trusted-run-queue-identity/gpt56-go
     paths:
       - scripts/ci/xcode27_queue_janitor.py
       - .github/workflows/xcode27-queue-janitor.yml
