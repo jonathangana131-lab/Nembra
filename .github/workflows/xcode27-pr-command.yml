@@ -90,13 +90,35 @@ jobs:
     name: Build, test, and capture exact PR head
     needs: resolve
     if: needs.resolve.outputs.same_repo == 'true'
+    # Parallel GO workers can legitimately request the same exact head. Queue those duplicates
+    # behind the first attempt instead of cancelling the scarce Mac job before it executes.
+    # A later product SHA gets a distinct group and the live-head check below fails stale work fast.
     concurrency:
-      group: nembra-xcode27-pr-command-${{ needs.resolve.outputs.pr_number }}
-      cancel-in-progress: true
+      group: nembra-xcode27-pr-command-${{ needs.resolve.outputs.pr_number }}-${{ needs.resolve.outputs.head_sha }}
+      cancel-in-progress: false
     runs-on: xcode-27
     timeout-minutes: 30
 
     steps:
+      - name: Reject stale PR head before scarce Mac work
+        uses: actions/github-script@v9
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+        with:
+          script: |
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            })
+            const currentHead = response.data.head.sha
+            core.info(`Expected exact PR head: ${process.env.EXPECTED_HEAD_SHA}`)
+            core.info(`Current live PR head: ${currentHead}`)
+            if (currentHead !== process.env.EXPECTED_HEAD_SHA) {
+              core.setFailed('PR head moved before the Mac acceptance job started; this run is stale non-evidence.')
+            }
+
       - name: Checkout immutable PR head
         uses: actions/checkout@v6
         with:
