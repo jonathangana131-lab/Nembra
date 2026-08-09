@@ -59,6 +59,7 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
     def test_composition_replaces_foundation_trust_seam_and_restores_it(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
+            kwargs = self.kwargs(root)
             original = hardened.foundation._trusted_xcode_subject
             with mock.patch.object(
                 hardened.foundation,
@@ -68,8 +69,11 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
                 hardened.trusted_xcode,
                 "verify_trusted_capture_xcode_subject",
                 return_value=self.trusted_subject(),
-            ) as verify:
-                record = hardened.build_final_go_record(**self.kwargs(root))
+            ) as verify, mock.patch.object(
+                hardened,
+                "_require_pinned_crosscheck_execution",
+            ) as crosscheck:
+                record = hardened.build_final_go_record(**kwargs)
 
             self.assertIs(hardened.foundation._trusted_xcode_subject, original)
             self.assertEqual(record["trustedXcodeAcceptance"], self.trusted_subject())
@@ -77,6 +81,12 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             call = verify.call_args.kwargs
             self.assertEqual(call["source_commit_sha"], self.SOURCE)
             self.assertEqual(call["expected_pr_number"], 833)
+            crosscheck.assert_called_once_with(
+                candidate_root=kwargs["candidate_root"],
+                expected_source_sha=self.SOURCE,
+                independent_crosscheck_receipt=kwargs["independent_crosscheck_receipt"],
+                tooling_repo=kwargs["tooling_repo"],
+            )
 
     def test_trusted_subject_failure_becomes_foundation_final_go_error_and_restores_seam(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -108,6 +118,9 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
                 hardened.trusted_xcode,
                 "verify_trusted_capture_xcode_subject",
                 return_value=aliased,
+            ), mock.patch.object(
+                hardened,
+                "_require_pinned_crosscheck_execution",
             ):
                 with self.assertRaisesRegex(hardened.FinalGoError, "remain independent"):
                     hardened.build_final_go_record(**self.kwargs(root))

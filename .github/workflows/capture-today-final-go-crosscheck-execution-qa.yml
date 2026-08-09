@@ -1,0 +1,38 @@
+name: Capture TODAY Final GO Crosscheck Execution QA
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - scripts/ci/es80_today_final_go_hardened.py
+      - scripts/ci/es80_today_final_go_foundation.py
+      - scripts/ci/_es80_today_final_go_foundation_impl.py
+      - scripts/ci/tests/test_es80_today_final_go_crosscheck_execution_custody.py
+      - .github/workflows/capture-today-final-go-crosscheck-execution-qa.yml
+
+permissions:
+  contents: read
+
+jobs:
+  crosscheck-execution-custody:
+    name: Bind Final GO crosscheck receipt to pinned producer execution
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout immutable repair head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+      - name: Verify immutable repair head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(/usr/bin/git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD_SHA"
+      - name: Compile hardened Final GO and custody regression
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py
+          python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_crosscheck_execution_custody.py
+      - name: Verify pinned crosscheck execution custody
+        run: python3 scripts/ci/tests/test_es80_today_final_go_crosscheck_execution_custody.py -v
