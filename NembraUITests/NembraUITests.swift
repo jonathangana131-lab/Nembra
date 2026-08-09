@@ -64,6 +64,35 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testBatteryRangeSurfacePreservesUnavailableRangeTruthAndCapturesScreenshot() {
+        let app = launch(scenario: "connected-stopped", orientation: .portrait)
+
+        XCTAssertTrue(app.staticTexts["Nembra Simulator"].waitForExistence(timeout: 3))
+        let controls = app.buttons["Vehicle controls"]
+        XCTAssertTrue(controls.waitForExistence(timeout: 2))
+        controls.tap()
+        XCTAssertTrue(app.navigationBars["Vehicle Controls"].waitForExistence(timeout: 2))
+
+        let batteryRangeLink = app.descendants(matching: .any)["vehicle-controls.battery-range"]
+        XCTAssertTrue(batteryRangeLink.waitForExistence(timeout: 2))
+        batteryRangeLink.tap()
+
+        XCTAssertTrue(app.navigationBars["Battery & Range"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.descendants(matching: .any)["battery-range.surface"].waitForExistence(timeout: 2))
+
+        let battery = app.descendants(matching: .any)["battery-range.battery"]
+        XCTAssertTrue(battery.waitForExistence(timeout: 2))
+        XCTAssertFalse((battery.value as? String ?? "").isEmpty)
+
+        let range = app.descendants(matching: .any)["battery-range.range"]
+        XCTAssertTrue(range.waitForExistence(timeout: 2))
+        XCTAssertEqual(range.value as? String, "Unavailable, not calibrated")
+        XCTAssertTrue(app.descendants(matching: .any)["battery-range.evidence"].exists)
+
+        keepScreenshot(named: "Battery Range Truth First Portrait")
+    }
+
+    @MainActor
     func testUnavailableScooterCanRecoverWithoutInventingLiveState() {
         let app = launch(scenario: "scooter-unavailable", orientation: .portrait)
 
