@@ -1,0 +1,117 @@
+name: Capture V14 trusted prevalidation custody one-shot repair
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-trusted-prevalidation-process-custody/gpt56-go
+    paths:
+      - .github/workflows/capture-v14-prevalidation-custody-repair-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact repair branch
+        uses: actions/checkout@v5
+        with:
+          ref: repair/v14-capture-trusted-prevalidation-process-custody/gpt56-go
+          fetch-depth: 0
+
+      - name: Move repository-controlled validation behind sealed authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/capture-xcode27-trusted-command.yml')
+          source = path.read_text(encoding='utf-8')
+
+          first_validation = '      - name: Validate project structure\n'
+          build_marker = '      - name: Build, test, and capture Simulator states\n'
+          validation_names = [
+              '      - name: Validate project structure\n',
+              '      - name: Validate core package\n',
+              '      - name: Validate Capture package\n',
+              '      - name: Validate signed field evidence tooling\n',
+              '      - name: Validate signed field candidate producer source\n',
+              '      - name: Validate offline field authorization signer\n',
+          ]
+
+          for marker in validation_names + [build_marker]:
+              if source.count(marker) != 1:
+                  raise SystemExit(f'Refusing ambiguous workflow transform for {marker!r}: found {source.count(marker)}')
+
+          start = source.index(first_validation)
+          build = source.index(build_marker)
+          if start >= build:
+              raise SystemExit('Repository-controlled validation is not before trusted build as expected')
+
+          validation_block = source[start:build]
+          for marker in validation_names:
+              if marker not in validation_block:
+                  raise SystemExit(f'Validation block missing {marker!r}')
+
+          source = source[:start] + source[build:]
+
+          old_comment = '''          # Candidate-controlled validation may mutate Git index/config/info state. Build a private
+          # resolver-bound index and bind every authority-bearing Git operation to the actual
+          # GitHub workspace instead of repository-local core.worktree/core.bare authority.
+'''
+          new_comment = '''          # Establish a resolver-bound private index before any repository-controlled validation
+          # can execute in this runner namespace, and bind every authority-bearing Git operation
+          # to the actual GitHub workspace instead of repository-local core.worktree/core.bare authority.
+'''
+          if source.count(old_comment) != 1:
+              raise SystemExit('Expected private-index authority comment exactly once')
+          source = source.replace(old_comment, new_comment, 1)
+
+          old_comment = '''          # Re-prove the mutable worktree producer file after every earlier candidate-controlled
+          # validation. This remains diagnostic defense-in-depth. Authority-producing interpreter
+          # input below is independently authenticated from the exact pinned-object bytes returned.
+'''
+          new_comment = '''          # Re-prove the mutable worktree producer immediately before authority. No repository-
+          # controlled validation has executed in this runner namespace yet. Interpreter input
+          # below is independently authenticated from the exact pinned-object bytes returned.
+'''
+          if source.count(old_comment) != 1:
+              raise SystemExit('Expected producer re-proof comment exactly once')
+          source = source.replace(old_comment, new_comment, 1)
+
+          # The trusted workflow's final live-head check is intentionally the last authority step.
+          # Append repository-controlled validation after that sealed build/evidence/upload boundary:
+          # a survivor spawned here can no longer change the already-uploaded authority subject.
+          source = source.rstrip() + '\n\n' + validation_block.rstrip() + '\n'
+
+          build = source.index(build_marker)
+          for marker in validation_names:
+              if source.index(marker) <= build:
+                  raise SystemExit(f'{marker.strip()} still executes before trusted authority build')
+          upload_marker = '      - name: Upload trusted Capture Simulator screenshots and logs\n'
+          final_head_marker = '      - name: Reject head movement before trusted acceptance completes\n'
+          for marker in (upload_marker, final_head_marker):
+              if source.count(marker) != 1:
+                  raise SystemExit(f'Expected authority step exactly once: {marker!r}')
+              if source.index(marker) >= source.index(first_validation):
+                  raise SystemExit(f'Authority step moved behind repository-controlled validation: {marker!r}')
+
+          path.write_text(source, encoding='utf-8')
+          PY
+
+          git diff --check
+          git diff -- .github/workflows/capture-xcode27-trusted-command.yml
+
+      - name: Commit repaired trusted workflow and remove one-shot scaffold
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-v14-closure-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/capture-v14-prevalidation-custody-repair-once.yml
+          git add .github/workflows/capture-xcode27-trusted-command.yml
+          git diff --cached --check
+          git commit -m "fix(capture): seal trusted build before candidate validation"
+          git push origin HEAD:"$GITHUB_REF_NAME"
