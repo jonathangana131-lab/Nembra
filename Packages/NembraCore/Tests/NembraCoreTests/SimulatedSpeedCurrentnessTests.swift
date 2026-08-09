@@ -89,6 +89,52 @@ struct SimulatedSpeedCurrentnessTests {
         #expect((await service.snapshot()).isLocked == true)
     }
 
+    @Test("ordinary connect keeps cached speed retained until explicit source observation")
+    func ordinaryConnectDoesNotRelabelCachedSpeed() async throws {
+        var initial = SimulatedScooterService.state(for: .connectedStopped)
+        initial.isLocked = false
+        let service = SimulatedScooterService(
+            initialState: initial,
+            commandLatencyNanoseconds: 0
+        )
+        let stream = await service.speedEvidenceUpdates()
+        var iterator = stream.makeAsyncIterator()
+
+        guard case .live = try #require(await iterator.next()) else {
+            Issue.record("Expected initial live Simulator fixture evidence")
+            return
+        }
+
+        await service.disconnect()
+        guard case .retained = try #require(await iterator.next()) else {
+            Issue.record("Disconnect must demote speed evidence")
+            return
+        }
+
+        await service.connect()
+        guard case let .retained(sample) = try #require(await iterator.next()) else {
+            Issue.record("Transport reconnect must not relabel cached speed as fresh")
+            return
+        }
+        #expect(sample.source == .simulatorQA)
+        #expect(sample.kilometersPerHour == 0)
+        #expect((await service.snapshot()).connection == .connected)
+
+        await #expect(throws: ScooterCommandError.commandRejected) {
+            try await service.setLocked(true)
+        }
+        #expect((await service.snapshot()).isLocked == false)
+
+        await service.simulateRide(speedKilometersPerHour: 0, elapsedSeconds: 0)
+        guard case .live = try #require(await iterator.next()) else {
+            Issue.record("Only a fresh source-side observation may restore live speed")
+            return
+        }
+
+        try await service.setLocked(true)
+        #expect((await service.snapshot()).isLocked == true)
+    }
+
     @Test("explicit evidence gap retires stopped authority until next sample")
     func explicitGapFailsClosed() async throws {
         var initial = SimulatedScooterService.state(for: .connectedStopped)
