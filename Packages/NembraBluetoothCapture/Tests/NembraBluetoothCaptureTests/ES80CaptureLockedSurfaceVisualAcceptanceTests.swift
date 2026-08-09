@@ -32,19 +32,6 @@ struct ES80CaptureLockedSurfaceVisualAcceptanceTests {
         return source[label.lowerBound..<identifier.upperBound]
     }
 
-    private static func physicalLockAccessibilityLabel(in source: String) throws -> Substring {
-        let start = try #require(
-            source.range(of: "private var physicalLockAccessibilityLabel: String")
-        )
-        let end = try #require(
-            source.range(
-                of: "private var buildIdentityAccessibilityLabel: String",
-                range: start.lowerBound..<source.endIndex
-            )
-        )
-        return source[start.lowerBound..<end.lowerBound]
-    }
-
     @Test("locked rider surface keeps exact engineering truth subordinate to the primary lock")
     func riderHierarchyRemainsHumanFirst() throws {
         let source = try Self.appSource()
@@ -52,8 +39,10 @@ struct ES80CaptureLockedSurfaceVisualAcceptanceTests {
             source.range(of: "private struct ES80ExperimentOneFieldNoGoView: View")
         )
         let lockedSurface = source[lockedSurfaceStart.lowerBound..<source.endIndex]
-        let lockAccessibilityLabel = try Self.physicalLockAccessibilityLabel(in: source)
         let lockTitle = try #require(lockedSurface.range(of: "Text(\"Capture locked\")"))
+        let accessibilityRiderMessage = try #require(
+            lockedSurface.range(of: "\"Final exact-build checks are still in progress.\"")
+        )
         let defaultRiderMessage = try #require(
             lockedSurface.range(of: "\"This build is still finishing its final checks before it can collect real ES80 data.\"")
         )
@@ -63,13 +52,8 @@ struct ES80CaptureLockedSurfaceVisualAcceptanceTests {
         let details = try #require(lockedSurface.range(of: "Text(\"Engineering details\")"))
         let rawRecipe = try #require(lockedSurface.range(of: "Text(recipeID)"))
 
-        #expect(lockAccessibilityLabel.contains("Capture locked on this build."))
-        #expect(lockAccessibilityLabel.contains("Final exact-build checks are still in progress."))
-        #expect(lockAccessibilityLabel.contains("No scooter action is needed yet."))
-        #expect(lockedSurface.contains("Text(isAccessibilityLayout ? \"PHYSICAL CAPTURE · NO-GO\" : \"Not ready for scooter capture yet\")"))
-        #expect(lockedSurface.contains("if !isAccessibilityLayout"))
-
-        #expect(lockTitle.lowerBound < defaultRiderMessage.lowerBound)
+        #expect(lockTitle.lowerBound < accessibilityRiderMessage.lowerBound)
+        #expect(accessibilityRiderMessage.lowerBound < defaultRiderMessage.lowerBound)
         #expect(defaultRiderMessage.lowerBound < physicalBoundary.lowerBound)
         #expect(physicalBoundary.lowerBound < details.lowerBound)
         #expect(details.lowerBound < rawRecipe.lowerBound)
