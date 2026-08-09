@@ -1,0 +1,131 @@
+name: V14 Trusted Runner Metadata Repair Transport
+
+on:
+  push:
+    branches:
+      - repair/v14-trusted-runner-metadata-main-827-gpt56-thinking
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      EXPECTED_MAIN: 82717deec49b3d38a26834e6f7f2b2074d465e93
+      OLD_WORKFLOW_BLOB: 855d11ae2e4491eef692bce33504002155f4c1ee
+      TRANSPORT_PATH: .github/workflows/v14-trusted-runner-metadata-repair-transport.yml
+    steps:
+      - name: Checkout exact repair lineage
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Prove current-main ancestry and isolated pre-repair scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$EXPECTED_MAIN" HEAD
+          changed="$(git diff --name-only "$EXPECTED_MAIN"..HEAD | sort)"
+          expected="$(printf '%s\n%s\n' "$TRANSPORT_PATH" 'scripts/ci/tests/test_capture_trusted_xcode_runner_metadata_contract.py' | sort)"
+          printf 'Pre-repair files:\n%s\n' "$changed"
+          test "$changed" = "$expected"
+
+      - name: Bind trusted GitHub run provenance inside clean producer environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          workflow = Path('.github/workflows/capture-xcode27-trusted-command.yml')
+          text = workflow.read_text()
+          old = '''              GIT_CONFIG_KEY_4=core.filemode \\
+              GIT_CONFIG_VALUE_4=true \\
+              /bin/bash --noprofile --norc -p -c 'source /dev/stdin' "$GITHUB_WORKSPACE/$producer_path"
+'''
+          run_id = '$' + '{{ github.run_id }}'
+          run_attempt = '$' + '{{ github.run_attempt }}'
+          new = (
+              '              GIT_CONFIG_KEY_4=core.filemode \\\n'
+              '              GIT_CONFIG_VALUE_4=true \\\n'
+              f'              GITHUB_RUN_ID="{run_id}" \\\n'
+              f'              GITHUB_RUN_ATTEMPT="{run_attempt}" \\\n'
+              '              /bin/bash --noprofile --norc -p -c \'source /dev/stdin\' "$GITHUB_WORKSPACE/$producer_path"\n'
+          )
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one trusted producer invocation, found {text.count(old)}')
+          workflow.write_text(text.replace(old, new, 1))
+
+          new_blob = subprocess.check_output(
+              ['/usr/bin/git', 'hash-object', str(workflow)], text=True
+          ).strip()
+          if len(new_blob) != 40:
+              raise SystemExit('failed to derive canonical workflow blob')
+          print(f'New trusted workflow blob: {new_blob}')
+
+          old_blob = '855d11ae2e4491eef692bce33504002155f4c1ee'
+          subject = Path('scripts/ci/es80_today_trusted_capture_xcode_subject.py')
+          subject_text = subject.read_text()
+          needle = f'TRUSTED_WORKFLOW_BLOB_SHA = "{old_blob}"'
+          if subject_text.count(needle) != 1:
+              raise SystemExit('trusted subject workflow pin was not exact current-main value')
+          subject.write_text(subject_text.replace(needle, f'TRUSTED_WORKFLOW_BLOB_SHA = "{new_blob}"', 1))
+
+          for path_string in (
+              '.github/workflows/capture-today-final-go-qa.yml',
+              '.github/workflows/capture-today-trusted-default-xcode-subject-qa.yml',
+          ):
+              path = Path(path_string)
+              body = path.read_text()
+              count = body.count(old_blob)
+              if count < 1:
+                  raise SystemExit(f'{path} did not contain current trusted workflow pin')
+              path.write_text(body.replace(old_blob, new_blob))
+          PY
+
+          git diff --check
+          if git grep -n "$OLD_WORKFLOW_BLOB" -- .github scripts/ci; then
+            echo "stale trusted workflow blob pin remains" >&2
+            exit 1
+          fi
+          grep -F 'GITHUB_RUN_ID="${{ github.run_id }}"' .github/workflows/capture-xcode27-trusted-command.yml
+          grep -F 'GITHUB_RUN_ATTEMPT="${{ github.run_attempt }}"' .github/workflows/capture-xcode27-trusted-command.yml
+          ! grep -F 'GITHUB_RUN_ID="$GITHUB_RUN_ID"' .github/workflows/capture-xcode27-trusted-command.yml
+          ! grep -F 'GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT"' .github/workflows/capture-xcode27-trusted-command.yml
+
+      - name: Run focused custody regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_capture_trusted_xcode_runner_metadata_contract.py
+          python3 -m py_compile \
+            scripts/ci/es80_today_trusted_capture_xcode_subject.py \
+            scripts/ci/tests/test_capture_trusted_xcode_runner_metadata_contract.py
+
+      - name: Commit clean repair tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm "$TRANSPORT_PATH"
+          git config user.name "Nembra V14 Closure Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add \
+            .github/workflows/capture-xcode27-trusted-command.yml \
+            .github/workflows/capture-today-final-go-qa.yml \
+            .github/workflows/capture-today-trusted-default-xcode-subject-qa.yml \
+            scripts/ci/es80_today_trusted_capture_xcode_subject.py \
+            scripts/ci/tests/test_capture_trusted_xcode_runner_metadata_contract.py
+          git commit -m "fix(capture): preserve trusted runner provenance"
+          git merge-base --is-ancestor "$EXPECTED_MAIN" HEAD
+          test -z "$(git diff --name-only "$EXPECTED_MAIN"..HEAD | grep -E '^(NembraApp/|Packages/)' || true)"
+          git diff --check "$EXPECTED_MAIN"..HEAD
+
+      - name: Push verified repair descendant
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push origin HEAD:refs/heads/repair/v14-trusted-runner-metadata-main-827-gpt56-thinking
