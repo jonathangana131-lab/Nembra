@@ -50,14 +50,19 @@ jobs:
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-'''
+          '''
           new = '''                    if isAccessibilityLayout {
                         Text("Final checks in progress.")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-'''
+          '''
+
+          # The YAML-safe closing indentation above is part of the Python string. Normalize only
+          # that final indentation so the exact Swift block remains the sole admissible subject.
+          old = old.removesuffix("          ")
+          new = new.removesuffix("          ")
 
           if old not in source:
               if new in source:
