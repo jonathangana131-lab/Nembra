@@ -1,0 +1,34 @@
+name: Capture TODAY Final GO Hardened GitHub API Custody Validation
+
+on:
+  pull_request:
+    paths:
+      - "scripts/ci/es80_today_final_go_hardened.py"
+      - "scripts/ci/es80_today_trusted_capture_xcode_subject.py"
+      - "scripts/ci/tests/test_es80_today_final_go_hardened_github_api_custody.py"
+      - ".github/workflows/capture-today-final-go-hardened-github-api-custody-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  expected-red-github-authority-custody:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Checkout validation head
+        uses: actions/checkout@v6
+
+      - name: Verify exact validation head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          git diff --check
+
+      - name: Require hardened public builder to own live GitHub authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_today_final_go_hardened_github_api_custody.py
