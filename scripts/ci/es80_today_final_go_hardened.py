@@ -10,7 +10,9 @@ This entrypoint removes the authority defects that must not remain on the execut
 - trusted Xcode acceptance comes only from the owner-commanded default-branch workflow whose Git
   blob is pinned independently from the candidate PR head;
 - trusted workflow Git-object lookup reuses the private foundation's producer-owned, closed Git
-  custody boundary rather than caller PATH/config/replacement semantics; and
+  custody boundary rather than caller PATH/config/replacement semantics;
+- the independent retained-candidate receipt must be exact fresh stdout from the pinned crosscheck
+  Git object rather than caller-authored JSON that merely names that object; and
 - record publication is failure-atomic after no-replace publication.
 
 No physical result is created by this tool. A generated GO record is procedural authorization for
@@ -45,6 +47,10 @@ trusted_xcode = _load(
     "es80_today_trusted_capture_xcode_subject.py",
 )
 publication = _load("nembra_final_go_publication", "es80_today_final_go_publication.py")
+crosscheck_custody = _load(
+    "nembra_final_go_crosscheck_receipt_custody",
+    "es80_today_crosscheck_receipt_custody.py",
+)
 
 FinalGoError = foundation.FinalGoError
 
@@ -77,7 +83,19 @@ def build_final_go_record(
     github_get_json: Callable[[str], tuple[bytes, dict[str, Any]]] = foundation._api_get_json,
     now_utc=None,
 ) -> dict[str, Any]:
-    """Run the private foundation with Xcode trust replaced by pinned default-branch authority."""
+    """Run the private foundation only after fresh pinned-crosscheck and default-branch Xcode authority."""
+    try:
+        crosscheck_execution = crosscheck_custody.verify_crosscheck_receipt_custody(
+            candidate_root=candidate_root,
+            expected_source_sha=expected_source_sha,
+            receipt_path=independent_crosscheck_receipt,
+            tooling_repo=tooling_repo,
+            expected_tool_commit=foundation.PINNED_CROSSCHECK_COMMIT,
+            expected_tool_path=foundation.CROSSCHECK_PATH,
+            expected_tool_blob=foundation.PINNED_CROSSCHECK_BLOB,
+        )
+    except crosscheck_custody.CrosscheckReceiptCustodyError as error:
+        raise FinalGoError(str(error)) from error
 
     def trusted_subject_adapter(
         *,
@@ -135,6 +153,14 @@ def build_final_go_record(
         raise FinalGoError("hardened Xcode subject candidate source diverged from accepted source")
     if subject.get("workflowSourceCommitSHA") == subject.get("candidateSourceCommitSHA"):
         raise FinalGoError("trusted workflow source must remain independent from candidate source")
+
+    crosscheck = record.get("independentRetainedCandidateCrosscheck")
+    if not isinstance(crosscheck, dict):
+        raise FinalGoError("hardened Final GO record lacks independent crosscheck subject")
+    for key in ("receiptSHA256", "toolCommit", "toolGitBlob"):
+        if crosscheck.get(key) != crosscheck_execution.get(key):
+            raise FinalGoError(f"fresh pinned crosscheck execution diverged from foundation subject: {key}")
+    crosscheck["executionCustody"] = crosscheck_execution["executionCustody"]
     return record
 
 
