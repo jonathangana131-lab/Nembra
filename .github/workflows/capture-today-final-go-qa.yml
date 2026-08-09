@@ -7,6 +7,9 @@ on:
       - scripts/ci/es80_today_final_go_record.py
       - scripts/ci/es80_today_final_go_foundation.py
       - scripts/ci/_es80_today_final_go_foundation_impl.py
+      - scripts/ci/es80_today_private_field_rendezvous.py
+      - scripts/ci/tests/test_es80_today_private_field_rendezvous.py
+      - scripts/ci/tests/test_es80_today_final_go_operator_attestation_authority.py
       - scripts/ci/tests/test_es80_today_final_go_record.py
       - scripts/ci/tests/test_es80_today_final_go_foundation.py
       - scripts/ci/tests/test_es80_today_final_go_direct_execution_disabled.py
@@ -45,10 +48,11 @@ jobs:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
 
-      - name: Compile Final GO foundation, hardening, and adversarial tests
+      - name: Compile Final GO foundation, private rendezvous, hardening, and adversarial tests
         run: |
           set -euo pipefail
           python3 -m py_compile scripts/ci/es80_today_final_go_record.py scripts/ci/es80_today_final_go_foundation.py scripts/ci/_es80_today_final_go_foundation_impl.py scripts/ci/tests/test_es80_today_final_go_record.py scripts/ci/tests/test_es80_today_final_go_foundation.py scripts/ci/tests/test_es80_today_final_go_direct_execution_disabled.py
+          python3 -m py_compile scripts/ci/es80_today_private_field_rendezvous.py scripts/ci/tests/test_es80_today_private_field_rendezvous.py scripts/ci/tests/test_es80_today_final_go_operator_attestation_authority.py
           python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py
           python3 -m py_compile scripts/ci/es80_today_final_go_publication.py scripts/ci/tests/test_es80_today_final_go_publication.py
           python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_git_custody.py
@@ -58,6 +62,12 @@ jobs:
 
       - name: Reject direct public Final GO execution surfaces
         run: python3 scripts/ci/tests/test_es80_today_final_go_direct_execution_disabled.py -v
+
+      - name: Reject caller-authored operator authority
+        run: python3 scripts/ci/tests/test_es80_today_final_go_operator_attestation_authority.py -v
+
+      - name: Validate private live field rendezvous boundary
+        run: python3 scripts/ci/tests/test_es80_today_private_field_rendezvous.py -v
 
       - name: Reject candidate-controlled trusted-Xcode authority
         run: python3 scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py -v
@@ -74,17 +84,18 @@ jobs:
       - name: Reject caller-forged Git authority
         run: python3 scripts/ci/tests/test_es80_today_final_go_git_custody.py -v
 
-      - name: Reject naked Boolean Final GO CLI authority
+      - name: Reject naked Boolean or test-only private Final GO CLI authority
         run: |
           set -euo pipefail
           help="$(python3 scripts/ci/es80_today_final_go_hardened.py --help)"
-          ! grep -Eq -- '--(terminal-software-acceptance|installed-without-rebuild|retained-app-evidence-inspected|intended-device-membership-accepted|no-application-write-authority|research-admission-live|canonical-coordinator-permitted|preflight-healthy|charger-disconnected|stationary)' <<<"$help"
+          ! grep -Eq -- '--(terminal-software-acceptance|installed-without-rebuild|retained-app-evidence-inspected|intended-device-membership-accepted|no-application-write-authority|research-admission-live|canonical-coordinator-permitted|preflight-healthy|charger-disconnected|stationary|private-rendezvous-state-dir)' <<<"$help"
           grep -Fq -- '--operator-attestation' <<<"$help"
+          grep -Fq -- '--intended-device-udid-file' <<<"$help"
           grep -Fq -- '--trusted-xcode-run-id' <<<"$help"
           grep -Fq -- '--trusted-xcode-job-id' <<<"$help"
           grep -Fq -- '--trusted-xcode-artifact-id' <<<"$help"
 
-      - name: Pin default-branch Xcode trust and Research tuple exactly
+      - name: Pin default-branch Xcode, private rendezvous, and Research boundaries
         run: |
           set -euo pipefail
           grep -Fq 'TRUSTED_WORKFLOW_NAME = "Capture Trusted Xcode 27 Exact-Head QA"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
@@ -101,6 +112,9 @@ jobs:
           grep -Fq 'RESEARCH_COMPILE_MODE = "private-today-v1"' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'RESEARCH_COMPILE_AUTHORITY = "canonical-producer-explicit-mode"' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'RESEARCH_COMPILE_CONDITION = "NEMBRA_ES80_TODAY_RESEARCH"' scripts/ci/es80_today_final_go_foundation.py
-          grep -Fq 'foundation = _load("nembra_final_go_foundation", "es80_today_final_go_foundation.py")' scripts/ci/es80_today_final_go_hardened.py
+          grep -Fq 'caller-authored operator attestation is non-authorizing' scripts/ci/es80_today_final_go_foundation.py
+          grep -Fq 'AUTHORITY = "private-live-field-rendezvous-v1"' scripts/ci/es80_today_private_field_rendezvous.py
+          grep -Fq 'rawIntendedDeviceIdentifierPublished": False' scripts/ci/es80_today_private_field_rendezvous.py
+          grep -Fq 'foundation._operator_attestation = trusted_operator_adapter' scripts/ci/es80_today_final_go_hardened.py
           grep -Fq 'foundation._git(tooling_repo, "rev-parse"' scripts/ci/es80_today_final_go_hardened.py
           grep -Fq 'publication.publish_record_no_replace' scripts/ci/es80_today_final_go_hardened.py
