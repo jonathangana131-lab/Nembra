@@ -126,7 +126,8 @@ struct ES80CaptureDynamicTypeSourceAcceptanceTests {
 
         #expect(block.contains("--es80-capture-qa-scenario=observationHorizonReady"))
         #expect(block.contains("-UIPreferredContentSizeCategoryName"))
-        #expect(block.contains("UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"))
+        #expect(block.contains("UICTContentSizeCategoryAccessibilityXXXL"))
+        #expect(!block.contains("UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"))
         #expect(block.contains("es80.capture-shell"))
         #expect(block.contains("es80.capture.simulator-qa"))
         #expect(block.contains("es80.capture.experiment-progress"))
@@ -142,7 +143,8 @@ struct ES80CaptureDynamicTypeSourceAcceptanceTests {
     func existingAccessibilityXXXLProductEvidenceRemains() throws {
         let source = try Self.researchUITestSource()
 
-        #expect(source.contains("UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"))
+        #expect(source.contains("UICTContentSizeCategoryAccessibilityXXXL"))
+        #expect(!source.contains("UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"))
         #expect(source.contains("Rider NO-GO — Accessibility XXXL"))
         #expect(source.contains("Capture Complete — Accessibility XXXL"))
         #expect(
