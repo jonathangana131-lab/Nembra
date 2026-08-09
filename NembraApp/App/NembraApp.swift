@@ -530,6 +530,7 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
 @MainActor
 private struct ES80ExperimentOneFieldNoGoView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var engineeringDetailsExpanded = false
     @State private var runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity?
     @State private var runtimeBuildIdentityCheckFinished = false
@@ -553,8 +554,18 @@ private struct ES80ExperimentOneFieldNoGoView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: verticalSizeClass == .compact ? 10 : 28) {
-                VStack(alignment: .leading, spacing: verticalSizeClass == .compact ? 6 : 14) {
+            VStack(
+                alignment: .leading,
+                spacing: verticalSizeClass == .compact
+                    ? 10
+                    : (dynamicTypeSize.isAccessibilitySize ? 14 : 28)
+            ) {
+                VStack(
+                    alignment: .leading,
+                    spacing: verticalSizeClass == .compact
+                        ? 6
+                        : (dynamicTypeSize.isAccessibilitySize ? 8 : 14)
+                ) {
                     HStack(spacing: 12) {
                         ZStack {
                             RoundedRectangle(cornerRadius: 15, style: .continuous)
@@ -641,7 +652,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .padding(verticalSizeClass == .compact ? 12 : 18)
+                .padding(verticalSizeClass == .compact ? 12 : (dynamicTypeSize.isAccessibilitySize ? 12 : 18))
                 .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(physicalLockAccessibilityLabel)
@@ -761,7 +772,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         }
                     }
                 }
-                .padding(verticalSizeClass == .compact ? 12 : 18)
+                .padding(verticalSizeClass == .compact ? 12 : (dynamicTypeSize.isAccessibilitySize ? 12 : 18))
                 .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
                 Text("No scooter action is required yet. Capture can only unlock on a Nembra build explicitly cleared for this physical procedure; changing a setting or preference cannot bypass this lock.")
@@ -769,9 +780,13 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            // Accessibility XXXL uses the same semantic hierarchy but bounds visual glyph growth so
+            // the lock, exact build identity, physical boundary, and Engineering Details disclosure
+            // remain reviewable together on the iPhone 12 viewport instead of becoming clipped text.
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
             .frame(maxWidth: 660)
             .padding(.horizontal, 22)
-            .padding(.top, verticalSizeClass == .compact ? 8 : 18)
+            .padding(.top, verticalSizeClass == .compact ? 8 : (dynamicTypeSize.isAccessibilitySize ? 10 : 18))
             .padding(.bottom, verticalSizeClass == .compact ? 20 : 42)
             .frame(maxWidth: .infinity)
         }
