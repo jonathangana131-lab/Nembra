@@ -157,7 +157,11 @@ struct PassiveBluetoothExperimentOnePrivateResearchAdmissionTests {
                 "OTHER_SWIFT_FLAGS = $(inherited) -DNEMBRA_ES80_TODAY_RESEARCH"
             )
         )
-        #expect(source.contains("export XCODE_XCCONFIG_FILE=\"$TODAY_XCCONFIG\""))
+        #expect(source.contains("exec 6< \"$TODAY_XCCONFIG\""))
+        #expect(source.contains("/bin/rm -f \"$TODAY_XCCONFIG\""))
+        #expect(source.contains("/bin/rmdir \"$TODAY_SETTINGS_ROOT\""))
+        #expect(source.contains("export XCODE_XCCONFIG_FILE=\"/dev/fd/6\""))
+        #expect(!source.contains("export XCODE_XCCONFIG_FILE=\"$TODAY_XCCONFIG\""))
         #expect(!source.contains("export OTHER_SWIFT_FLAGS="))
         #expect(!source.contains("export SWIFT_ACTIVE_COMPILATION_CONDITIONS="))
         #expect(source.contains("trap cleanup EXIT"))
