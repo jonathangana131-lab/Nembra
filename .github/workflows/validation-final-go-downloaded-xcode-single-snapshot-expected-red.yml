@@ -1,0 +1,40 @@
+name: Capture Final GO Downloaded Xcode Snapshot Expected Red
+
+on:
+  push:
+    branches:
+      - validation/v14-final-go-downloaded-xcode-artifact-single-snapshot/gpt56-go
+  pull_request:
+    paths:
+      - scripts/ci/es80_today_trusted_capture_xcode_subject.py
+      - scripts/ci/tests/test_es80_today_trusted_xcode_download_snapshot_custody.py
+      - .github/workflows/validation-final-go-downloaded-xcode-single-snapshot-expected-red.yml
+
+permissions:
+  contents: read
+
+jobs:
+  expected-red:
+    name: Reject mixed downloaded Xcode archive subjects
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout immutable validation head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify immutable validation head and parent
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          git merge-base --is-ancestor 5ec0b63a3aa617f7a9442ec631a569d1d0cd2ebd HEAD
+
+      - name: Compile downloaded-artifact snapshot regression
+        run: python3 -m py_compile scripts/ci/tests/test_es80_today_trusted_xcode_download_snapshot_custody.py
+
+      - name: Server digest and embedded record must share one archive snapshot
+        run: python3 scripts/ci/tests/test_es80_today_trusted_xcode_download_snapshot_custody.py -v
