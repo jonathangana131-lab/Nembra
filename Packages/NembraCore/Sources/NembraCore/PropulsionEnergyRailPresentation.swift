@@ -11,9 +11,10 @@ public enum PropulsionEnergyRailCurrentness: Equatable, Sendable {
 
 /// Truth-preserving presentation contract for the Nembra Energy Rail.
 ///
-/// `acceptedWatts` comes only from the canonical accepted cockpit measurement. `railFraction` and
-/// `acceptedPeakMarkerFraction` are display-only geometry and must never be persisted or promoted to
-/// telemetry, protocol evidence, historical peaks, range learning, or physical claims.
+/// `acceptedWatts` comes only from the canonical accepted cockpit measurement. `railFraction`,
+/// `acceptedTargetRailFraction`, and `acceptedPeakMarkerFraction` are display-only geometry and must
+/// never be persisted or promoted to telemetry, protocol evidence, historical peaks, range learning,
+/// or physical claims.
 ///
 /// The type deliberately carries no regen/direction/rated-maximum semantics. Those meanings require
 /// separate accepted physical authority and must not be inferred from a moving rail or a signed value.
@@ -22,14 +23,18 @@ public struct PropulsionEnergyRailPresentation: Equatable, Sendable {
     public let currentness: PropulsionEnergyRailCurrentness
     public let acceptedWatts: Double?
 
-    /// Display-only normalized propulsion geometry in `0...1`.
+    /// Display-only interpolated normalized propulsion geometry in `0...1`.
     public let railFraction: Double?
+    /// Display-only normalized target derived from the exact accepted measurement and compatible scale.
+    /// Unlike `railFraction`, it is stable across display-clock interpolation so Reduce Motion can snap
+    /// directly to accepted-target presentation without converting moving geometry back into watts.
+    public let acceptedTargetRailFraction: Double?
     /// Display-only marker derived from an accepted peak inside the canonical hold window.
     public let acceptedPeakMarkerFraction: Double?
     /// Provenance of the compatible presentation scale used to normalize the rail.
     public let scaleOrigin: PropulsionGaugeScaleOrigin?
 
-    /// True only when the source is a fresh accepted measurement and normalized rail geometry exists.
+    /// True only when the source is a fresh accepted measurement and interpolated rail geometry exists.
     /// A SwiftUI consumer may use this to drive localized display-clock motion; it is never evidence.
     public let allowsLiveMotion: Bool
 
@@ -38,6 +43,7 @@ public struct PropulsionEnergyRailPresentation: Equatable, Sendable {
         currentness: PropulsionEnergyRailCurrentness,
         acceptedWatts: Double?,
         railFraction: Double?,
+        acceptedTargetRailFraction: Double?,
         acceptedPeakMarkerFraction: Double?,
         scaleOrigin: PropulsionGaugeScaleOrigin?,
         allowsLiveMotion: Bool
@@ -46,6 +52,7 @@ public struct PropulsionEnergyRailPresentation: Equatable, Sendable {
         self.currentness = currentness
         self.acceptedWatts = acceptedWatts
         self.railFraction = railFraction
+        self.acceptedTargetRailFraction = acceptedTargetRailFraction
         self.acceptedPeakMarkerFraction = acceptedPeakMarkerFraction
         self.scaleOrigin = scaleOrigin
         self.allowsLiveMotion = allowsLiveMotion
@@ -57,7 +64,9 @@ public extension PropulsionGaugeCockpitSnapshot {
     ///
     /// Numeric truth and render geometry remain deliberately independent: a live accepted watt value may
     /// remain present even when no compatible scale exists, while retained/unavailable states always stop
-    /// live rail motion and remove normalized geometry.
+    /// live rail motion and remove normalized geometry. The accepted-target fraction is presentation-only
+    /// and exists specifically so non-spatial/Reduce Motion rendering does not need to freeze an interpolated
+    /// frame or reconstruct numeric truth from the rail.
     var energyRailPresentation: PropulsionEnergyRailPresentation {
         switch measurement {
         case let .live(accepted):
@@ -66,16 +75,20 @@ public extension PropulsionGaugeCockpitSnapshot {
             }
 
             let railFraction = validEnergyRailFraction(visualPropulsionFraction)
+            let acceptedTargetRailFraction = validEnergyRailFraction(acceptedTargetPropulsionFraction)
             let peakMarker = railFraction == nil
                 ? nil
                 : validEnergyRailFraction(recentAcceptedPeakMarkerFraction)
-            let admittedScaleOrigin = railFraction == nil ? nil : scaleOrigin
+            let admittedScaleOrigin = railFraction == nil && acceptedTargetRailFraction == nil
+                ? nil
+                : scaleOrigin
 
             return PropulsionEnergyRailPresentation(
                 identity: identity,
                 currentness: .live,
                 acceptedWatts: accepted.watts,
                 railFraction: railFraction,
+                acceptedTargetRailFraction: acceptedTargetRailFraction,
                 acceptedPeakMarkerFraction: peakMarker,
                 scaleOrigin: admittedScaleOrigin,
                 allowsLiveMotion: railFraction != nil
@@ -91,6 +104,7 @@ public extension PropulsionGaugeCockpitSnapshot {
                 currentness: .retained,
                 acceptedWatts: accepted.watts,
                 railFraction: nil,
+                acceptedTargetRailFraction: nil,
                 acceptedPeakMarkerFraction: nil,
                 scaleOrigin: nil,
                 allowsLiveMotion: false
@@ -107,6 +121,7 @@ public extension PropulsionGaugeCockpitSnapshot {
             currentness: .unavailable,
             acceptedWatts: nil,
             railFraction: nil,
+            acceptedTargetRailFraction: nil,
             acceptedPeakMarkerFraction: nil,
             scaleOrigin: nil,
             allowsLiveMotion: false
