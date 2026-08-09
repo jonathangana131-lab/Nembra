@@ -230,13 +230,14 @@ private struct NembraRollingPowerValueView: View {
                             reduceMotion ? .identity : .numericText(value: value)
                         )
                         .animation(
-                            reduceMotion ? nil : .linear(duration: 0.08),
+                            reduceMotion ? nil : .snappy(duration: 0.10),
                             value: digit.digit
                         )
                         .animation(
-                            reduceMotion ? nil : .linear(duration: 0.08),
+                            reduceMotion ? nil : .easeOut(duration: 0.08),
                             value: digit.isVisible
                         )
+                        .clipped()
                 }
             }
         } else if let fallbackText {
@@ -245,6 +246,10 @@ private struct NembraRollingPowerValueView: View {
                 .monospacedDigit()
                 .contentTransition(
                     reduceMotion ? .identity : .numericText(value: value)
+                )
+                .animation(
+                    reduceMotion ? nil : .snappy(duration: 0.10),
+                    value: fallbackText
                 )
         } else {
             Text("—")
