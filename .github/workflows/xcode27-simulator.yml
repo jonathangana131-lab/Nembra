@@ -6,6 +6,11 @@ on:
     branches:
       - main
       - 'feature/**'
+    paths-ignore:
+      - '**/*.md'
+      - 'scripts/ci/xcode27_queue_janitor.py'
+      - 'scripts/ci/capture_trusted_queue_janitor.py'
+      - '.github/workflows/xcode27-queue-janitor.yml'
 
 permissions:
   contents: read
