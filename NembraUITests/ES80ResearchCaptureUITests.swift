@@ -873,7 +873,8 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
         var remaining = maxSwipes
         while remaining > 0 {
-            let windowFrame = app.windows.firstMatch.frame
+            let window = app.windows.firstMatch
+            let windowFrame = window.frame
             let frame = element.frame
             if frame.width > 0,
                frame.height > 0,
@@ -883,19 +884,21 @@ final class ES80ResearchCaptureUITests: XCTestCase {
                frame.maxY <= windowFrame.maxY + 1 {
                 return
             }
-            if useDeliberateDrag {
-                let window = app.windows.firstMatch
-                let start = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.82))
-                let end = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.18))
-                start.press(forDuration: 0.05, thenDragTo: end)
-            } else {
-                let captureScroll = app.scrollViews["es80.capture.scroll"]
-                if captureScroll.exists {
-                    captureScroll.swipeUp()
-                } else {
-                    app.swipeUp()
-                }
-            }
+
+            let targetIsBelowViewport = frame.maxY > windowFrame.maxY + 1
+            let targetIsAboveViewport = frame.minY < windowFrame.minY - 1
+            guard targetIsBelowViewport || targetIsAboveViewport else { break }
+
+            // Use a bounded directional drag instead of a full-page one-way swipe.
+            // Accessibility XXXL can make a single element hundreds of points tall;
+            // if a drag overshoots, the next iteration reverses direction rather than
+            // driving the target farther away from the screenshot viewport.
+            let travel: CGFloat = useDeliberateDrag ? 0.34 : 0.26
+            let startY: CGFloat = targetIsBelowViewport ? 0.72 : 0.28
+            let endY = targetIsBelowViewport ? startY - travel : startY + travel
+            let start = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: startY))
+            let end = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: endY))
+            start.press(forDuration: 0.05, thenDragTo: end)
             remaining -= 1
         }
 
