@@ -103,6 +103,25 @@ jobs:
           printf 'Trusted resolver head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual_head"
           test "$actual_head" = "$EXPECTED_HEAD_SHA"
 
+      - name: Verify trusted Simulator evidence-producer custody
+        run: |
+          set -euo pipefail
+          producer_path="scripts/ci/xcode27_simulator_capture.sh"
+          expected_blob="4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"
+          actual_blob="$(
+            env -i \
+              PATH=/usr/bin:/bin \
+              HOME=/tmp \
+              LC_ALL=C \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              /usr/bin/git rev-parse --verify "HEAD:${producer_path}"
+          )"
+          printf 'Trusted Simulator producer: %s\nExpected blob: %s\nActual blob: %s\n' \
+            "$producer_path" "$expected_blob" "$actual_blob"
+          test "$actual_blob" = "$expected_blob"
+
       - name: Validate project structure
         run: |
           plutil -lint Nembra.xcodeproj/project.pbxproj
