@@ -1,16 +1,18 @@
 # AOVOPRO ES80 Passive Physical Capture Runbook — V14
 
-Status: **NO-GO — PHYSICAL EXPERIMENT ONE MUST NOT RUN FROM THE CURRENT SOFTWARE LINEAGE.**
+Status: **PROCEDURE SOURCE — THIS TRACKED DOCUMENT DOES NOT BY ITSELF AUTHORIZE PHYSICAL EXPERIMENT ONE.**
 
 Primary physical target: the current/newer Tuya-generation AOVOPRO ES80.
 
-This document is the physical-procedure gate for Nembra Capture under the V14 product contract. It supersedes older V11-era timing/authorization wording in this file. Supporting passive research primitives may already exist, but package code, Simulator evidence, a passing child PR, or a visually complete research shell does not authorize a physical experiment.
+This document is the immutable physical-procedure source for Nembra Capture under the V14 product contract. It supersedes older V11-era timing/authorization wording in this file. Supporting passive research primitives may already exist, but package code, Simulator evidence, a passing child PR, a visually complete research shell, or this tracked runbook alone does not authorize a physical experiment.
 
-Only the **final composed exact build** may change this status from `NO-GO` to `GO` after every required software, app-visible, runtime, integrity, signed-device build-authority, and safety gate below is satisfied.
+The source commit containing this procedure must be frozen **before** the final signed Research Field Build is produced. Because Nembra build provenance binds exact `SOURCE_SHA`, physical `GO` must be issued later as an **external retained Final GO Record** over the exact accepted signed authorization envelope and its exact accepted evidence subjects. Do not require a post-build tracked edit to this runbook: that would change `SOURCE_SHA` and make the already-signed artifact ancestor evidence.
+
+At this source checkpoint, physical Experiment One remains **NO-GO** until every required software, app-visible, runtime, integrity, signed-device build-authority, package-verification, and safety gate below is closed and the external Final GO Record records decision `GO` for the exact installed build.
 
 ## Current NO-GO blockers
 
-The current passive-foundation recovery does not by itself close the full V14 Capture vertical. Before this runbook can become `GO`, the final composed product must have all of the following accepted on one exact head:
+The current passive-foundation recovery does not by itself close the full V14 Capture vertical. Before an external Final GO Record may legitimately record `GO`, the final composed product and retained field-authority evidence must have all of the following accepted:
 
 - passive CoreBluetooth capture foundation and continuity-safe offline analysis;
 - deterministic OFF1 -> ON1 -> OFF2 -> ON2 target correlation;
@@ -24,11 +26,12 @@ The current passive-foundation recovery does not by itself close the full V14 Ca
 - exact build/procedure/recipe provenance embedded in the exported artifact;
 - final exact-head Xcode 27 / iPhone 12 / iOS 27 acceptance for the composed app;
 - required visual, accessibility, performance, and recovery-state review for the app-visible Capture surface;
+- a reviewed production P-256 public trust root pinned in the exact accepted source before the signed field build is produced, with the corresponding private key controlled only by the external release authority;
 - a final **signed physical-device/installable artifact** produced from that exact accepted composition, with the exact bytes/identity needed for independent acceptance retained rather than substituting Simulator build evidence;
 - independent external acceptance/attestation of that exact signed-device field artifact, correlated to its exact build-instance/build tuple and retained artifact evidence without treating arbitrary parsed JSON, a caller-supplied digest, a skipped/queued workflow, or the artifact's own self-description as authority;
 - an exact externally signed schema-v2 field-authorization envelope accepted as immutable bytes, with independently recomputed `envelopeSHA256`, `authorizationPayloadSHA256`, `externalBuildRecordSHA256`, and `fieldBuildEvidenceRecordSHA256`, plus the reviewed authority `authorityPublicKeyX963SHA256`; the package-pinned trust anchor on the final build must be that exact reviewed public key;
 - a deliberate package-owned `PassiveBluetoothExperimentOneFieldExecutionGate` GO state that is mechanically tied to the independently accepted exact field-build authority and cannot be unlocked by a UI Boolean, launch argument, local preference, or caller-constructible token;
-- an explicit final runbook edit that names the accepted exact build/commit, signed-device/installable artifact authority, exact field-authorization envelope/trust-root bundle, procedure version, expected capture artifact, stop conditions, and package field-GO state and changes this status to `GO`.
+- an **external, post-build Final GO Record** retained outside the repository source tree that records decision `GO` and binds the exact accepted source/build/installable artifact, exact authorization-envelope/evidence digests, reviewed trust-root digest, procedure version, recipe, expected capture artifact, stop conditions, intended-device install evidence, and pre-scan runtime rendezvous. That record must not mutate the source commit it authorizes.
 
 Until those conditions are closed, all procedures below are **supporting experiment recipes only**. They describe the intended safe physical sequence but are not authorization to perform them.
 
@@ -52,30 +55,38 @@ Until those conditions are closed, all procedures below are **supporting experim
 16. Never treat a parsed external build record, digest equality, artifact self-report, or unsigned/unaccepted device build as field authorization. Build rendezvous and independent acceptance are separate authority layers.
 17. Never treat “signature valid” or a signer-generated summary alone as the final field handoff. Final GO must bind the exact retained authorization-envelope bytes and the exact reviewed package trust root by independently recomputed digests, and those identities must agree with the exact subjects accepted for the signed device build.
 
-## Final GO record — intentionally blank while NO-GO
+## Final GO Record — external post-build authority
 
-When the software is actually ready, replace this section in the same acceptance change that flips the status above to `GO`.
+There is deliberately **no build-specific GO record embedded in this tracked runbook**. The exact build, IPA, evidence, authorization envelope, and runtime rendezvous do not exist yet when this source commit is frozen. Editing this file after those subjects exist would change the source SHA and invalidate the exact-source relationship the field artifact is meant to prove.
 
-- Accepted exact build/commit: **NOT YET AUTHORIZED**
-- Accepted signed-device/installable artifact identity/digest: **NOT YET AUTHORIZED**
-- Independent field-build acceptance / attestation subject: **NOT YET AUTHORIZED**
-- Accepted field-authorization envelope SHA-256 (`envelopeSHA256`): **NOT YET AUTHORIZED**
-- Accepted authorization payload SHA-256 (`authorizationPayloadSHA256`): **NOT YET AUTHORIZED**
-- Accepted external build record SHA-256 (`externalBuildRecordSHA256`): **NOT YET AUTHORIZED**
-- Accepted field-build evidence record SHA-256 (`fieldBuildEvidenceRecordSHA256`): **NOT YET AUTHORIZED**
-- Accepted authority public-key X9.63 SHA-256 (`authorityPublicKeyX963SHA256`): **NOT YET AUTHORIZED**
-- Package field-execution gate state: **NO-GO / NOT YET AUTHORIZED**
-- Procedure version: **V14 / NOT YET AUTHORIZED**
-- Baseline device: iPhone 12 / iOS 27
-- Experiment recipe: **ES80-FINGERPRINT-v1 candidate; final recipe authority not yet issued**
-- Expected artifact: **NOT YET AUTHORIZED**
-- Physical result collected: **NO**
+After the exact retained signed IPA and its canonical evidence are independently accepted, the external release authority may issue the signed schema-v2 authorization envelope. Only after the intended-device install and pre-scan runtime rendezvous are also accepted may the field handoff retain an external Final GO Record for those exact immutable subjects.
 
-The five authorization-bundle digests above are identities for exact retained bytes, not values to trust merely because the signer printed them. Final acceptance must independently recompute them and confirm that the authority public-key digest matches the exact X9.63 key pinned in `PassiveBluetoothCaptureFieldAuthorizationTrustAnchor` on the accepted final build.
+That external Final GO Record must identify, directly or by independently recomputed exact bound digests:
 
-No ancestor SHA, package-only green, child PR, Simulator run, self-carried build metadata, arbitrary external JSON, signer stdout by itself, or stale acceptance may be filled into this section as the final physical build authority.
+- decision: `GO`;
+- accepted exact source commit SHA;
+- accepted build identifier and build-instance ID;
+- accepted signed-device/installable IPA SHA-256;
+- independent field-build acceptance / attestation subject;
+- accepted field-authorization envelope SHA-256 (`envelopeSHA256`);
+- accepted authorization payload SHA-256 (`authorizationPayloadSHA256`);
+- accepted external build record SHA-256 (`externalBuildRecordSHA256`);
+- accepted field-build evidence record SHA-256 (`fieldBuildEvidenceRecordSHA256`);
+- accepted authority public-key X9.63 SHA-256 (`authorityPublicKeyX963SHA256`);
+- package field-execution gate state for the exact installed build;
+- procedure version `V14`;
+- baseline device: iPhone 12 / iOS 27;
+- experiment recipe `ES80-FINGERPRINT-v1`;
+- expected Capture Share artifact contract;
+- exact stop/failure conditions from this accepted procedure;
+- evidence that the exact retained IPA was installed on the intended device without rebuilding/substitution;
+- evidence that the running app's build/source/build-instance/executable/raw-Info.plist tuple matches the accepted external build record before any Bluetooth scan.
 
-## Intended preflight once GO is authorized
+The authorization-bundle digests are identities for exact retained bytes, not values to trust merely because the signer printed them. Final acceptance must independently recompute them and confirm that the authority public-key digest matches the exact X9.63 key pinned in `PassiveBluetoothCaptureFieldAuthorizationTrustAnchor` on the accepted final build.
+
+No ancestor SHA, package-only green, child PR, Simulator run, self-carried build metadata, arbitrary external JSON, signer stdout by itself, stale acceptance, or mutable human checklist may become final physical build authority. `docs/ES80_FINAL_GO_AUTHORITY.md` defines the non-self-referential authority phases; this runbook remains the procedure source those external accepted subjects bind through the exact source commit.
+
+## Intended preflight once external GO is authorized
 
 Before the first scan, the accepted app must mechanically verify or clearly block on:
 
@@ -84,8 +95,8 @@ Before the first scan, the accepted app must mechanically verify or clearly bloc
 - exact runtime build identity and capture schema compatibility;
 - package-owned physical field-execution authority is `GO` for the exact accepted field build and recipe, rather than merely a launch-mode/UI request;
 - the independently accepted signed-device/installable build authority matches the exact runtime/build-instance rendezvous required by the final accepted contract;
-- the field-authorization envelope being consumed is the exact accepted envelope bound by the final GO record, and its signed subject digests resolve to the exact accepted external-build and field-evidence bytes;
-- the package-owned P-256 trust anchor compiled into the accepted build is the exact reviewed public key whose X9.63 SHA-256 is recorded in the final GO record;
+- the field-authorization envelope being consumed is the exact accepted envelope bound by the external Final GO Record, and its signed subject digests resolve to the exact accepted external-build and field-evidence bytes;
+- the package-owned P-256 trust anchor compiled into the accepted build is the exact reviewed public key whose X9.63 SHA-256 is recorded in the external Final GO Record;
 - storage/export readiness;
 - the exact versioned experiment recipe;
 - an explicit fresh-run operator declaration that charger state is **Disconnected** for `ES80-FINGERPRINT-v1`; this is declared setup provenance, not a measured or sensed charger state, and `Connected` or undeclared state blocks `READY`;
@@ -98,7 +109,7 @@ The primary UI should show `READY` only when those requirements are satisfied. O
 
 ## Experiment One — target correlation and passive fingerprint
 
-This is the smallest useful first physical experiment after the final runbook status becomes `GO`.
+This is the smallest useful first physical experiment after the external Final GO decision is `GO` and the package-owned field gate accepts the exact installed build.
 
 ### A. Correlate the physical target
 
@@ -256,8 +267,8 @@ Stop the experiment and preserve only legitimate evidence if any required condit
 - Horizon/queue commit/immutable freeze cannot complete exactly;
 - artifact integrity or export readiness fails;
 - runtime build identity no longer matches the package-owned accepted field-build authority;
-- the field-authorization envelope bytes, signed subject bytes, or authorization payload do not match the exact digests recorded in the final GO record;
-- the package trust anchor on the running accepted build does not match the final GO record's accepted authority public-key X9.63 SHA-256;
+- the field-authorization envelope bytes, signed subject bytes, or authorization payload do not match the exact digests recorded in the external Final GO Record;
+- the package trust anchor on the running accepted build does not match the external Final GO Record's accepted authority public-key X9.63 SHA-256;
 - the operator-declared charger setup is no longer true; stop the current experiment, keep or return the charger to **Disconnected**, and restart with a fresh declaration rather than continuing the same evidence life;
 - the physical setup becomes unsafe or would require touching the phone while moving.
 
@@ -265,4 +276,4 @@ Do not improvise around a failed gate in the field. The correct result is an inc
 
 ## Current physical conclusion
 
-**NO-GO.** The passive foundation is valuable software evidence, but it is not the final independently accepted signed-device/app-visible Capture instrument and it cannot authorize physical Experiment One. The first physical session should occur only after this same runbook is deliberately flipped to `GO` with one exact accepted final signed-device build, matching package field-GO authority, exact authorization-envelope/trust-root identities, and procedure.
+At this source checkpoint: **NO-GO.** This tracked runbook is intentionally immutable procedure source, not the post-build authorization record. The first physical session may occur only after the exact trust-root-bearing source has terminal acceptance, the exact retained signed-device artifact is independently accepted and installed without substitution, the exact runtime tuple rendezvous succeeds, the external schema-v2 authorization envelope is accepted by the package verifier, all safety/preflight gates pass, and an external Final GO Record retains decision `GO` for those exact immutable subjects. No post-build edit to this tracked file is required or permitted to create that authority.
