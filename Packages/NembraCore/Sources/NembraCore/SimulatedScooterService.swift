@@ -22,7 +22,7 @@ public enum ScooterSimulationScenario: String, CaseIterable, Sendable {
     }
 }
 
-public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
+public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider, VehicleSpeedEvidenceSnapshotProvider {
     public nonisolated let profile: VehicleProfile
 
     /// Synthetic QA values that exercise all three limiter slots without
@@ -190,6 +190,7 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
     private var continuations: [UUID: AsyncStream<VehicleState>.Continuation] = [:]
     private var speedTelemetryContinuations: [UUID: AsyncStream<SpeedTelemetrySample>.Continuation] = [:]
     private var speedEvidenceContinuations: [UUID: AsyncStream<SpeedEvidenceAvailability>.Continuation] = [:]
+    private var vehicleSpeedEvidenceContinuations: [UUID: AsyncStream<VehicleSpeedEvidenceSnapshot>.Continuation] = [:]
     private var speedEvidenceTruth: SpeedEvidenceLiveTruth
 
     /// Tracks the last raw packet-arrival timestamp only to guarantee strict
@@ -341,6 +342,25 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
         }
     }
 
+    /// Coherent aggregate-state + speed-currentness projection used by the app
+    /// when live speed authority matters. Both values are captured in this actor
+    /// turn and cross one ordered newest-only stream, so a newer reconnect state
+    /// cannot race ahead of an older independently delivered `.live` sample.
+    public func vehicleSpeedEvidenceUpdates() -> AsyncStream<VehicleSpeedEvidenceSnapshot> {
+        let id = UUID()
+        let current = VehicleSpeedEvidenceSnapshot(
+            state: state,
+            speedEvidenceAvailability: speedEvidenceTruth.availability
+        )
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            vehicleSpeedEvidenceContinuations[id] = continuation
+            continuation.yield(current)
+            continuation.onTermination = { [weak self] _ in
+                Task { await self?.removeVehicleSpeedEvidenceContinuation(id) }
+            }
+        }
+    }
+
     public func snapshot() -> VehicleState { state }
 
     public func connect() async {
@@ -368,9 +388,11 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
         state.connection = .connected
         hydrateMissingVehicleDataAfterSuccessfulConnection()
         beginSpeedEvidenceForConnectedGeneration(attemptGeneration)
-        if let speed = state.speedKilometersPerHour {
-            recordSyntheticSpeedObservation(speed, publishRawTelemetry: true)
-        }
+        // Connection success is transport/lifecycle evidence, not a new speed
+        // measurement. Never relabel cached `VehicleState` speed as fresh here.
+        // A connected Simulator fixture may start live at construction; after a
+        // real gap/reconnect only an explicit source event such as `simulateRide`
+        // may restore `.live` speed currentness.
         state.lastUpdated = .now
         publish()
     }
@@ -645,6 +667,7 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
         for continuation in continuations.values {
             continuation.yield(state)
         }
+        publishVehicleSpeedEvidenceSnapshot()
     }
 
     private func publishSpeedTelemetry(_ sample: SpeedTelemetrySample) {
@@ -658,6 +681,17 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
         for continuation in speedEvidenceContinuations.values {
             continuation.yield(availability)
         }
+        publishVehicleSpeedEvidenceSnapshot()
+    }
+
+    private func publishVehicleSpeedEvidenceSnapshot() {
+        let snapshot = VehicleSpeedEvidenceSnapshot(
+            state: state,
+            speedEvidenceAvailability: speedEvidenceTruth.availability
+        )
+        for continuation in vehicleSpeedEvidenceContinuations.values {
+            continuation.yield(snapshot)
+        }
     }
 
     private func removeContinuation(_ id: UUID) {
@@ -670,5 +704,9 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
 
     private func removeSpeedEvidenceContinuation(_ id: UUID) {
         speedEvidenceContinuations[id] = nil
+    }
+
+    private func removeVehicleSpeedEvidenceContinuation(_ id: UUID) {
+        vehicleSpeedEvidenceContinuations[id] = nil
     }
 }
