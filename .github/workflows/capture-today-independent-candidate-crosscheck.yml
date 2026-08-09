@@ -1,0 +1,30 @@
+name: Capture TODAY Independent Candidate Crosscheck QA
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/ci/es80_today_independent_candidate_crosscheck.py'
+      - 'scripts/ci/tests/test_es80_today_independent_candidate_crosscheck.py'
+      - '.github/workflows/capture-today-independent-candidate-crosscheck.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/ci/es80_today_independent_candidate_crosscheck.py'
+      - 'scripts/ci/tests/test_es80_today_independent_candidate_crosscheck.py'
+      - '.github/workflows/capture-today-independent-candidate-crosscheck.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  crosscheck-tests:
+    name: Run retained-candidate crosscheck adversarial tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout immutable event source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Run portable crosscheck tests
+        run: python3 scripts/ci/tests/test_es80_today_independent_candidate_crosscheck.py -v
