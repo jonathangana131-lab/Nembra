@@ -312,7 +312,7 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(!canContinue)
-                    .accessibilityHint("Available only after declaring that the charger is disconnected and this running build has package-owned research authority.")
+                    .accessibilityHint(preflightContinueAccessibilityHint)
                     .accessibilityIdentifier("es80.capture.preflight.continue")
 
                     Text("Nembra cannot sense the charger directly. Keep it disconnected, keep Nembra open with the screen unlocked, and keep the stock scooter app closed for the whole capture.")
@@ -366,6 +366,13 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
         selectedChargerState?.rawValue
             == PassiveBluetoothStationaryCaptureChargerState.disconnected.rawValue
             && hasAcceptedPreflightAuthority
+    }
+
+    private var preflightContinueAccessibilityHint: String {
+        if simulatorQAEvidenceLabel != nil {
+            return "Simulator QA only. Select Charger Disconnected to continue through synthetic software setup. This does not authorize physical scooter capture."
+        }
+        return "Available only after declaring that the charger is disconnected and this running build has package-owned research authority."
     }
 
     private func fieldBuildRendezvous(
