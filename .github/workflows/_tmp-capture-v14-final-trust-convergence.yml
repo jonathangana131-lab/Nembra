@@ -22,4 +22,5 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
+          sed -i 's/"\.github", "scripts\/ci"/".github\/workflows", "scripts\/ci"/' .github/_tmp_final_trust_gen.py
           python3 .github/_tmp_final_trust_gen.py
