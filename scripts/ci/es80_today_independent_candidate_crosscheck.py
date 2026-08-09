@@ -26,6 +26,9 @@ PROCEDURE_VERSION = "V14"
 BUNDLE_ID = "com.jonathangana131.nembra"
 INSPECTION_AUTHORITY = "signed-field-artifact-inspection-not-field-authorization"
 CROSSCHECK_AUTHORITY = "independent-retained-candidate-evidence-crosscheck-not-final-go"
+RESEARCH_COMPILE_MODE = "private-today-v1"
+RESEARCH_COMPILE_AUTHORITY = "canonical-producer-explicit-mode"
+RESEARCH_COMPILE_CONDITION = "NEMBRA_ES80_TODAY_RESEARCH"
 
 SHA40_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -325,6 +328,9 @@ def crosscheck(candidate_dir: Path, *, expected_source_sha: str, now: datetime |
         "build_instance_id": build_instance,
         "field_launch_recipe_id": RECIPE_ID,
         "experiment_recipe_id": RECIPE_ID,
+        "research_compile_mode": RESEARCH_COMPILE_MODE,
+        "research_compile_authority": RESEARCH_COMPILE_AUTHORITY,
+        "research_compile_condition": RESEARCH_COMPILE_CONDITION,
         "export_options_file": "ExportOptions.plist",
         "archive_log": "logs/xcodebuild-archive.log",
         "export_log": "logs/xcodebuild-export.log",
@@ -373,6 +379,9 @@ def crosscheck(candidate_dir: Path, *, expected_source_sha: str, now: datetime |
         "buildInstanceID": build_instance,
         "experimentRecipeID": RECIPE_ID,
         "procedureVersion": PROCEDURE_VERSION,
+        "researchCompileMode": RESEARCH_COMPILE_MODE,
+        "researchCompileAuthority": RESEARCH_COMPILE_AUTHORITY,
+        "researchCompileCondition": RESEARCH_COMPILE_CONDITION,
         "signedInstallableSHA256": ipa_sha,
         "signedInstallableByteCount": paths["ipa"].stat().st_size,
         "externalBuildRecordSHA256": external_sha,
@@ -392,6 +401,7 @@ def crosscheck(candidate_dir: Path, *, expected_source_sha: str, now: datetime |
         "provisioningProfileExpirationUTC": inspection["provisioningProfileExpirationUTC"],
         "singleRetainedIPA": True,
         "crossRecordDigestLinksVerified": True,
+        "researchCompileTupleVerified": True,
         "producerPhysicalAuthorizationRemainsNotGranted": True,
         "appleSigningInspectionRequired": True,
         "toolBlobClaimsRequireRepositoryCrossCheck": True,
