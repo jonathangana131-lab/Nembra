@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import NembraCore
 
+// Swift 6.2 portability: evaluate mutating authority commits before passing results to #expect.
 @Suite("Speed evidence provider replay")
 struct SpeedEvidenceProviderReplayTests {
     @Test("slow subscriber receives newest retained state instead of obsolete live backlog")
