@@ -1,4 +1,5 @@
 import SwiftUI
+import struct NembraCore.PropulsionEnergyRailAppProjection
 
 enum NembraMetrics {
     static let compact: CGFloat = 8
@@ -131,9 +132,8 @@ struct NembraEnergyRailVisualState: Equatable {
         allowsLiveMotion: false
     )
 
-    /// Intentionally sealed until the canonical Energy Rail package projection is
-    /// compiled into the app target. Future wiring should add the canonical adapter
-    /// in an extension of this type rather than exposing a general raw constructor.
+    /// Raw visual construction remains file-private. Numeric/live state may only be
+    /// reached through the canonical package projection adapter below.
     private init(
         currentness: NembraEnergyRailVisualCurrentness,
         acceptedWatts: Double?,
@@ -150,6 +150,54 @@ struct NembraEnergyRailVisualState: Equatable {
         self.acceptedTargetFraction = acceptedTargetFraction
         self.peakMarkerFraction = peakMarkerFraction
         self.allowsLiveMotion = allowsLiveMotion
+    }
+
+    /// The sole numeric bridge from package-owned propulsion authority into SwiftUI.
+    /// `PropulsionEnergyRailAppProjection` itself cannot be caller-constructed outside
+    /// NembraCore, so app code cannot use this initializer to manufacture accepted watts.
+    init(projection: PropulsionEnergyRailAppProjection) {
+        switch projection.currentness {
+        case .live:
+            guard let acceptedWatts = projection.acceptedWatts,
+                  acceptedWatts.isFinite,
+                  acceptedWatts >= 0 else {
+                self = .unavailable
+                return
+            }
+
+            self.init(
+                currentness: .live,
+                acceptedWatts: acceptedWatts == 0 ? 0 : acceptedWatts,
+                displayWatts: projection.displayWatts,
+                railFraction: projection.railFraction,
+                acceptedTargetFraction: projection.acceptedTargetFraction,
+                peakMarkerFraction: projection.acceptedPeakMarkerFraction,
+                allowsLiveMotion: projection.allowsLiveMotion
+            )
+
+        case .retained:
+            guard let acceptedWatts = projection.acceptedWatts,
+                  acceptedWatts.isFinite,
+                  acceptedWatts >= 0 else {
+                self = .unavailable
+                return
+            }
+
+            // Retained truth is semantic only. Even if a future package regression
+            // accidentally carries display geometry, the app boundary strips it.
+            self.init(
+                currentness: .retained,
+                acceptedWatts: acceptedWatts == 0 ? 0 : acceptedWatts,
+                displayWatts: acceptedWatts == 0 ? 0 : acceptedWatts,
+                railFraction: nil,
+                acceptedTargetFraction: nil,
+                peakMarkerFraction: nil,
+                allowsLiveMotion: false
+            )
+
+        case .unavailable:
+            self = .unavailable
+        }
     }
 
     var semanticWatts: Double? {
