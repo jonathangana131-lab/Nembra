@@ -1,0 +1,54 @@
+name: Capture V14 AX build-row root-cause one-shot
+
+on:
+  push:
+    branches:
+      - fix/capture-v14-ax-build-row-root-cause
+    paths:
+      - .github/workflows/capture-v14-ax-build-row-root-cause-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact repair branch
+        uses: actions/checkout@v5
+        with:
+          ref: fix/capture-v14-ax-build-row-root-cause
+          fetch-depth: 0
+
+      - name: Remove build-value layout priority at Accessibility sizes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraApp.swift")
+          source = path.read_text(encoding="utf-8")
+          old = """                                .minimumScaleFactor(isAccessibilityLayout ? 0.85 : 0.75)
+                                .layoutPriority(1)"""
+          new = """                                .minimumScaleFactor(isAccessibilityLayout ? 0.85 : 0.75)"""
+          count = source.count(old)
+          if count != 1:
+              raise SystemExit(f"Refusing ambiguous AX build-row repair: expected 1 anchor, found {count}")
+          path.write_text(source.replace(old, new, 1), encoding="utf-8")
+          PY
+
+          git diff --check
+          git diff -- NembraApp/App/NembraApp.swift
+
+      - name: Commit root-cause repair and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-v14-closure-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/capture-v14-ax-build-row-root-cause-once.yml
+          git add NembraApp/App/NembraApp.swift
+          git diff --cached --check
+          git commit -m "fix(capture): stop AX build label inflating row"
+          git push origin HEAD:"$GITHUB_REF_NAME"
