@@ -390,10 +390,6 @@ private struct NembraNavigationView: View {
     }
 
     private func openDirections(to item: MKMapItem) {
-        item.openInMaps(
-            launchOptions: [
-                MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving
-            ]
-        )
+        item.openInMaps()
     }
 }
