@@ -574,7 +574,8 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         bringIntoScreenshotViewport(
             readyState,
             in: app,
-            context: "Horizon-ready state in landscape"
+            context: "Horizon-ready state in landscape",
+            useDeliberateDrag: true
         )
         assertVisibleInScreenshotViewport(
             readyState,
@@ -589,7 +590,8 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         bringIntoScreenshotViewport(
             finish,
             in: app,
-            context: "Seal Capture action in landscape"
+            context: "Seal Capture action in landscape",
+            useDeliberateDrag: true
         )
         assertVisibleInScreenshotViewport(
             finish,
@@ -604,53 +606,64 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
     @MainActor
     func testV14SimulatorQACapturesRepresentativeInProgressAndRecoveryStates() {
-        XCUIDevice.shared.orientation = .portrait
-        struct ScenarioExpectation {
-            let scenario: String
-            let requiredText: String
-            let requiredIdentifier: String?
-            let screenshotName: String
-        }
-
-        let scenarios = [
-            ScenarioExpectation(
+        captureRepresentativeSimulatorQAStates([
+            RepresentativeScenarioExpectation(
                 scenario: "secondPoweredOff",
                 requiredText: "Scooter OFF",
                 requiredIdentifier: "es80.capture.begin-window",
                 screenshotName: "Nembra Capture V14 — SIMULATOR QA — OFF 2 Ready"
             ),
-            ScenarioExpectation(
+            RepresentativeScenarioExpectation(
                 scenario: "secondPoweredOn",
                 requiredText: "One signal matched twice",
                 requiredIdentifier: "es80.capture.confirm-correlated-target",
                 screenshotName: "Nembra Capture V14 — SIMULATOR QA — Scooter Signal Found"
             ),
-            ScenarioExpectation(
+            RepresentativeScenarioExpectation(
                 scenario: "passiveDiscovery",
                 requiredText: "Opening the matched signal",
                 requiredIdentifier: nil,
                 screenshotName: "Nembra Capture V14 — SIMULATOR QA — Passive Connection"
-            ),
-            ScenarioExpectation(
+            )
+        ])
+    }
+
+    @MainActor
+    func testV14SimulatorQACapturesRepresentativeSealingAndInterruptionStates() {
+        captureRepresentativeSimulatorQAStates([
+            RepresentativeScenarioExpectation(
                 scenario: "captureInProgress",
                 requiredText: "OBSERVATION READY",
                 requiredIdentifier: "es80.capture.finish",
                 screenshotName: "Nembra Capture V14 — SIMULATOR QA — Observation In Progress"
             ),
-            ScenarioExpectation(
+            RepresentativeScenarioExpectation(
                 scenario: "horizonSealed",
                 requiredText: "Securing capture",
                 requiredIdentifier: nil,
                 screenshotName: "Nembra Capture V14 — SIMULATOR QA — Sealing"
             ),
-            ScenarioExpectation(
+            RepresentativeScenarioExpectation(
                 scenario: "foregroundInterrupted",
                 requiredText: "Capture stopped safely",
                 requiredIdentifier: "es80.capture.restart-experiment",
                 screenshotName: "Nembra Capture V14 — SIMULATOR QA — Foreground Interrupted"
             )
-        ]
+        ])
+    }
 
+    private struct RepresentativeScenarioExpectation {
+        let scenario: String
+        let requiredText: String
+        let requiredIdentifier: String?
+        let screenshotName: String
+    }
+
+    @MainActor
+    private func captureRepresentativeSimulatorQAStates(
+        _ scenarios: [RepresentativeScenarioExpectation]
+    ) {
+        XCUIDevice.shared.orientation = .portrait
         for expectation in scenarios {
             let app = XCUIApplication()
             app.launchArguments = [
@@ -822,6 +835,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         in app: XCUIApplication,
         context: String,
         maxSwipes: Int = 6,
+        useDeliberateDrag: Bool = false,
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
@@ -844,10 +858,19 @@ final class ES80ResearchCaptureUITests: XCTestCase {
                frame.maxY <= windowFrame.maxY + 1 {
                 return
             }
-            let window = app.windows.firstMatch
-            let start = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.82))
-            let end = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.18))
-            start.press(forDuration: 0.05, thenDragTo: end)
+            if useDeliberateDrag {
+                let window = app.windows.firstMatch
+                let start = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.82))
+                let end = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.18))
+                start.press(forDuration: 0.05, thenDragTo: end)
+            } else {
+                let captureScroll = app.scrollViews["es80.capture.scroll"]
+                if captureScroll.exists {
+                    captureScroll.swipeUp()
+                } else {
+                    app.swipeUp()
+                }
+            }
             remaining -= 1
         }
 
@@ -1013,7 +1036,8 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         bringIntoScreenshotViewport(
             progress,
             in: app,
-            context: "Capture progress rail in landscape"
+            context: "Capture progress rail in landscape",
+            useDeliberateDrag: true
         )
         assertVisibleInScreenshotViewport(
             progress,
