@@ -873,7 +873,8 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
         var remaining = maxSwipes
         while remaining > 0 {
-            let windowFrame = app.windows.firstMatch.frame
+            let window = app.windows.firstMatch
+            let windowFrame = window.frame
             let frame = element.frame
             if frame.width > 0,
                frame.height > 0,
@@ -883,15 +884,27 @@ final class ES80ResearchCaptureUITests: XCTestCase {
                frame.maxY <= windowFrame.maxY + 1 {
                 return
             }
+
+            let targetIsAboveViewport = frame.minY < windowFrame.minY - 1
+            let targetIsBelowViewport = frame.maxY > windowFrame.maxY + 1
+            guard targetIsAboveViewport || targetIsBelowViewport else { break }
+
             if useDeliberateDrag {
-                let window = app.windows.firstMatch
-                let start = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.82))
-                let end = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.18))
+                let startY = targetIsAboveViewport ? 0.18 : 0.82
+                let endY = targetIsAboveViewport ? 0.82 : 0.18
+                let start = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: startY))
+                let end = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: endY))
                 start.press(forDuration: 0.05, thenDragTo: end)
             } else {
                 let captureScroll = app.scrollViews["es80.capture.scroll"]
                 if captureScroll.exists {
-                    captureScroll.swipeUp()
+                    if targetIsAboveViewport {
+                        captureScroll.swipeDown()
+                    } else {
+                        captureScroll.swipeUp()
+                    }
+                } else if targetIsAboveViewport {
+                    app.swipeDown()
                 } else {
                     app.swipeUp()
                 }
