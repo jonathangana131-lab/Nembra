@@ -255,6 +255,7 @@ jobs:
                   "buildIdentifier": plist.get("NembraCaptureBuildIdentifier"),
                   "buildInstanceID": plist.get("NembraCaptureBuildInstanceID"),
                   "sourceCommitSHA": plist.get("NembraCaptureBuildCommitSHA"),
+                  "experimentRecipeID": plist.get("NembraCaptureFieldRecipe"),
               }
               for key, value in embedded.items():
                   if value != subject.get(key):
@@ -310,6 +311,10 @@ jobs:
               else "33333333-3333-3333-3333-333333333333"
           )
           require_rejected("detached retained Info.plist metadata", mutated_plist=wrong_plist)
+
+          wrong_plist_recipe = dict(retained_plist)
+          wrong_plist_recipe["NembraCaptureFieldRecipe"] = "ES80-FINGERPRINT-v2"
+          require_rejected("detached retained Info.plist recipe", mutated_plist=wrong_plist_recipe)
 
           def sha256(path: Path) -> str:
               digest = hashlib.sha256()
