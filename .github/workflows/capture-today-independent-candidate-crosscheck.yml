@@ -16,6 +16,9 @@ on:
 permissions:
   contents: read
 
+env:
+  EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
 jobs:
   crosscheck-tests:
     name: Run retained-candidate crosscheck adversarial tests
@@ -23,8 +26,19 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - name: Checkout immutable event source
+      - name: Checkout immutable event head
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ env.EXPECTED_HEAD_SHA }}
+          persist-credentials: false
+
+      - name: Verify immutable event head
+        run: |
+          actual_head="$(/usr/bin/git rev-parse HEAD)"
+          test "$actual_head" = "$EXPECTED_HEAD_SHA" || {
+            echo "Expected $EXPECTED_HEAD_SHA but checked out $actual_head" >&2
+            exit 1
+          }
 
       - name: Run portable crosscheck tests
         run: python3 scripts/ci/tests/test_es80_today_independent_candidate_crosscheck.py -v
