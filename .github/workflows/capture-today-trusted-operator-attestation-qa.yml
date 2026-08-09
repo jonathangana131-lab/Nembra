@@ -1,0 +1,59 @@
+name: Capture TODAY Trusted Operator Attestation QA
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - scripts/ci/es80_today_trusted_operator_attestation_subject.py
+      - scripts/ci/tests/test_es80_today_trusted_operator_attestation_subject.py
+      - scripts/ci/es80_today_final_go_hardened.py
+      - scripts/ci/tests/test_es80_today_final_go_hardened.py
+      - .github/workflows/capture-today-trusted-operator-attestation-qa.yml
+
+permissions:
+  contents: read
+
+jobs:
+  trusted-operator-attestation:
+    name: Reject caller-mintable operator Final GO authority
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: nembra-capture-trusted-operator-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout immutable PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify immutable PR head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+
+      - name: Compile trusted operator and hardened composition tests
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/es80_today_trusted_operator_attestation_subject.py
+          python3 -m py_compile scripts/ci/tests/test_es80_today_trusted_operator_attestation_subject.py
+          python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py
+          python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_hardened.py
+
+      - name: Reject caller-authored operator observation authority
+        run: python3 scripts/ci/tests/test_es80_today_trusted_operator_attestation_subject.py -v
+
+      - name: Verify hardened operator authority composition
+        run: python3 scripts/ci/tests/test_es80_today_final_go_hardened.py -v
+
+      - name: Pin operator custody truth boundary exactly
+        run: |
+          set -euo pipefail
+          grep -Fq 'AUTHORITY = "github-owner-attested-operator-observation-v1"' scripts/ci/es80_today_trusted_operator_attestation_subject.py
+          grep -Fq 'CLASSIFICATION = "owner-authenticated-human-observation-not-machine-or-physical-telemetry"' scripts/ci/es80_today_trusted_operator_attestation_subject.py
+          grep -Fq 'OPERATOR_COMMENT_ID_ENV = "NEMBRA_FINAL_GO_OPERATOR_ATTESTATION_COMMENT_ID"' scripts/ci/es80_today_final_go_hardened.py
+          grep -Fq 'trusted_operator.verify_trusted_operator_attestation_subject' scripts/ci/es80_today_final_go_hardened.py
+          grep -Fq 'foundation._operator_attestation = trusted_operator_adapter' scripts/ci/es80_today_final_go_hardened.py
+          grep -Fq 'foundation._operator_attestation = original_operator' scripts/ci/es80_today_final_go_hardened.py
