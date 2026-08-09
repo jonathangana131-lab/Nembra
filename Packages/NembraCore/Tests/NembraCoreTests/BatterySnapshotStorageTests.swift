@@ -27,6 +27,42 @@ struct BatterySnapshotStorageTests {
         #expect(loaded?.retainedAt == retainedAt)
     }
 
+    @Test("in-memory storage rejects replay and chronology rollback like production")
+    func inMemoryStorageMatchesProductionChronology() throws {
+        let observedAt = Date(timeIntervalSince1970: 1_700_000_050)
+        let first = try #require(
+            RetainedBatterySnapshot(
+                percent: 64,
+                authority: .measured,
+                observedAt: observedAt,
+                retainedAt: observedAt
+            )
+        )
+        let replayedSameEvidence = try #require(
+            RetainedBatterySnapshot(
+                percent: 64,
+                authority: .measured,
+                observedAt: observedAt.addingTimeInterval(120),
+                retainedAt: observedAt.addingTimeInterval(121)
+            )
+        )
+        let delayedOlderDifferentEvidence = try #require(
+            RetainedBatterySnapshot(
+                percent: 70,
+                authority: .estimated,
+                observedAt: observedAt.addingTimeInterval(-30),
+                retainedAt: observedAt.addingTimeInterval(-20)
+            )
+        )
+        let storage = InMemoryRetainedBatterySnapshotStorage()
+
+        try storage.save(first)
+        try storage.save(replayedSameEvidence)
+        try storage.save(delayedOlderDifferentEvidence)
+
+        #expect(try storage.load() == first)
+    }
+
     @Test("clear removes retained evidence")
     func clearRemovesSnapshot() throws {
         let now = Date(timeIntervalSince1970: 1_700_000_100)
