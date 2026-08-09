@@ -73,6 +73,30 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testLandscapeDashboardUnknownTelemetryStaysUnavailable() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(scenario: "unsupported-configuration", orientation: .landscapeRight)
+
+        let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
+        XCTAssertTrue(cockpit.waitForExistence(timeout: 4))
+        XCTAssertTrue(app.staticTexts["WAITING FOR DATA"].waitForExistence(timeout: 2))
+
+        let speed = app.descendants(matching: .any)["dashboard.speed"]
+        XCTAssertTrue(speed.waitForExistence(timeout: 2))
+        XCTAssertEqual(speed.value as? String, "—")
+
+        let battery = app.descendants(matching: .any)["dashboard.battery-range"]
+        XCTAssertTrue(battery.waitForExistence(timeout: 2))
+        XCTAssertEqual(battery.value as? String, "—")
+
+        let mode = app.descendants(matching: .any)["dashboard.mode"]
+        XCTAssertTrue(mode.waitForExistence(timeout: 2))
+        XCTAssertEqual(mode.value as? String, "Unknown")
+
+        keepScreenshot(named: "Dashboard Unknown Telemetry Landscape")
+    }
+
+    @MainActor
     func testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls() {
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "riding", orientation: .landscapeRight)
