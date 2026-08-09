@@ -332,3 +332,22 @@ jobs:
           path: Artifacts/Xcode27Simulator
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Reject head movement before acceptance completion
+        uses: actions/github-script@v9
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+        with:
+          script: |
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            })
+            const currentHead = response.data.head.sha
+            core.info(`Expected exact PR head at acceptance completion: ${process.env.EXPECTED_HEAD_SHA}`)
+            core.info(`Current live PR head at acceptance completion: ${currentHead}`)
+            if (currentHead !== process.env.EXPECTED_HEAD_SHA) {
+              core.setFailed('PR head moved during the Mac acceptance job; this run is stale non-evidence.')
+            }
