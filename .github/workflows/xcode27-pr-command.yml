@@ -176,10 +176,13 @@ jobs:
         run: scripts/ci/xcode27_simulator_capture.sh
 
       - name: Verify retained Capture build evidence
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
         run: |
           python3 - <<'PY'
           import hashlib
           import json
+          import os
           import plistlib
           import re
           import subprocess
@@ -204,15 +207,18 @@ jobs:
           if set(record) != expected_keys or record.get("schemaVersion") != 3:
               raise SystemExit("Capture external build record is not the exact closed-world schema v3 shape")
 
-          exact_head = subprocess.check_output(
+          expected_head = os.environ.get("EXPECTED_HEAD_SHA", "")
+          if re.fullmatch(r"[0-9a-f]{40}", expected_head) is None:
+              raise SystemExit("Trusted resolver did not provide one exact lowercase 40-hex PR head SHA")
+
+          actual_head = subprocess.check_output(
               ["git", "rev-parse", "--verify", "HEAD^{commit}"],
               text=True,
           ).strip()
-          if re.fullmatch(r"[0-9a-f]{40}", exact_head) is None:
-              raise SystemExit("Could not derive one exact lowercase 40-hex checkout SHA")
+          if actual_head != expected_head:
+              raise SystemExit("Checkout Git HEAD changed after immutable-head verification; retained evidence is non-authoritative")
 
           retained_plist = plistlib.loads(info_plist.read_bytes())
-          expected_build_identifier = f"Capture Build V14-{exact_head[:12]}"
           expected_recipe = "ES80-FINGERPRINT-v1"
           expected_procedure = "V14"
           build_instance_pattern = re.compile(
@@ -222,9 +228,9 @@ jobs:
           def verify_semantic_tuple(subject, plist, expected_head):
               expected_label = f"Capture Build V14-{expected_head[:12]}"
               if subject.get("sourceCommitSHA") != expected_head:
-                  raise ValueError("external record sourceCommitSHA does not match immutable checkout HEAD")
+                  raise ValueError("external record sourceCommitSHA does not match trusted resolver PR head")
               if subject.get("buildIdentifier") != expected_label:
-                  raise ValueError("external record buildIdentifier does not match immutable checkout HEAD")
+                  raise ValueError("external record buildIdentifier does not match trusted resolver PR head")
               if subject.get("experimentRecipeID") != expected_recipe:
                   raise ValueError("external record experimentRecipeID is not canonical ES80-FINGERPRINT-v1")
               if subject.get("procedureVersion") != expected_procedure:
@@ -244,7 +250,7 @@ jobs:
                       raise ValueError(f"retained Info.plist {key} does not match external record")
 
           try:
-              verify_semantic_tuple(record, retained_plist, exact_head)
+              verify_semantic_tuple(record, retained_plist, expected_head)
           except ValueError as error:
               raise SystemExit(str(error)) from error
 
@@ -252,13 +258,13 @@ jobs:
               candidate_record = record if mutated_record is None else mutated_record
               candidate_plist = retained_plist if mutated_plist is None else mutated_plist
               try:
-                  verify_semantic_tuple(candidate_record, candidate_plist, exact_head)
+                  verify_semantic_tuple(candidate_record, candidate_plist, expected_head)
               except ValueError:
                   return
               raise SystemExit(f"semantic verifier self-test accepted {label}")
 
           wrong_source = dict(record)
-          wrong_source["sourceCommitSHA"] = "0" * 40 if exact_head != "0" * 40 else "1" * 40
+          wrong_source["sourceCommitSHA"] = "0" * 40 if expected_head != "0" * 40 else "1" * 40
           wrong_source["buildIdentifier"] = f"Capture Build V14-{wrong_source['sourceCommitSHA'][:12]}"
           require_rejected("a detached source/build label", mutated_record=wrong_source)
 
