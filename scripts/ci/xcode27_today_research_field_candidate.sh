@@ -99,11 +99,12 @@ if [[ ! -f "$ARCHIVE_LOG" || -L "$ARCHIVE_LOG" ]]; then
   exit 8
 fi
 
-# Mechanical compile proof: require one emitted Swift compiler/driver command for the exact package
-# module that contains researchAdmissionForCurrentApplication(), with the dedicated TODAY condition
-# on that same command. This proves more than shell-environment injection without trying to infer
-# physical authorization from metadata or from an unrelated target.
-if ! "$PYTHON3" -I - "$ARCHIVE_LOG" <<'PY'
+# Mechanical compile proof: require one emitted Swift compiler/driver command whose own module name
+# is exactly NembraBluetoothCapture and whose same command carries the dedicated TODAY condition.
+# Merely mentioning NembraBluetoothCapture as an import/search path is not target identity and must
+# never satisfy this proof.
+if ! ARCHIVE_LOG_SHA256="$("$PYTHON3" -I - "$ARCHIVE_LOG" <<'PY'
+import hashlib
 import re
 import sys
 from pathlib import Path
@@ -116,9 +117,12 @@ text = raw.decode("utf-8", errors="replace")
 condition = "NEMBRA_ES80_TODAY_RESEARCH"
 module = "NembraBluetoothCapture"
 
-# Xcode/Swift toolchain spellings vary between swiftc and SwiftDriver diagnostics. Bind the module
-# and condition within one physical log line so an unrelated target carrying the flag cannot satisfy
-# the proof. Accept both '-D NAME' and '-DNAME' renderings.
+# Bind both facts to one emitted Swift command: the compiler is compiling this exact module, and
+# that exact invocation carries the research condition. Support the canonical spaced module-name
+# form plus an equals spelling defensively; accept both '-D NAME' and '-DNAME'.
+module_pattern = re.compile(
+    r"(?:^|\s)-module-name(?:\s+|=)" + re.escape(module) + r"(?:\s|$)"
+)
 condition_pattern = re.compile(r"(?:^|\s)-D\s*" + re.escape(condition) + r"(?:\s|$)")
 matched = False
 for line in text.splitlines():
@@ -126,7 +130,7 @@ for line in text.splitlines():
         continue
     if "swift" not in line.lower():
         continue
-    if condition_pattern.search(line):
+    if module_pattern.search(line) and condition_pattern.search(line):
         matched = True
         break
 
@@ -134,10 +138,15 @@ if not matched:
     raise SystemExit(
         "retained archive log does not prove NembraBluetoothCapture compiled with " + condition
     )
+print(hashlib.sha256(raw).hexdigest())
 PY
-then
+)"; then
   echo "Signed TODAY archive did not prove the dedicated NembraBluetoothCapture compile capability." >&2
   echo "Candidate remains NO-GO and the quarantined bytes will be removed." >&2
+  exit 9
+fi
+if [[ ! "$ARCHIVE_LOG_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "TODAY compile-capability proof did not yield one canonical archive-log SHA-256." >&2
   exit 9
 fi
 
@@ -145,8 +154,10 @@ PROOF_FILE="$QUARANTINED_CANDIDATE/today-research-compile-capability.txt"
 {
   echo "today_research_compile_capability=verified"
   echo "package_target=NembraBluetoothCapture"
+  echo "compiler_module_name=NembraBluetoothCapture"
   echo "compile_condition=NEMBRA_ES80_TODAY_RESEARCH"
   echo "proof_source=logs/xcodebuild-archive.log"
+  echo "proof_source_sha256=$ARCHIVE_LOG_SHA256"
   echo "authority=compile-capability-evidence-not-physical-authorization"
 } > "$PROOF_FILE"
 chmod 0400 "$PROOF_FILE"
