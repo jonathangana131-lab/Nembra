@@ -1,0 +1,35 @@
+name: Capture Trusted Xcode Self-Hosted Process Custody RED
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/capture-xcode27-trusted-command.yml'
+      - '.github/workflows/capture-trusted-xcode-self-hosted-process-custody-red.yml'
+      - 'docs/CI_EXACT_HEAD_SCHEDULER.md'
+      - 'scripts/ci/tests/test_capture_trusted_xcode_self_hosted_process_custody_red.py'
+
+permissions:
+  contents: read
+
+jobs:
+  self-hosted-process-custody-red:
+    name: Expose persistent-runner cross-job process custody gap
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify exact PR head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          actual_head="$(git rev-parse --verify HEAD^{commit})"
+          printf 'Expected PR head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual_head"
+          test "$actual_head" = "$EXPECTED_HEAD_SHA"
+
+      - name: Run expected-red persistent-runner custody contract
+        run: |
+          python3 -m py_compile scripts/ci/tests/test_capture_trusted_xcode_self_hosted_process_custody_red.py
+          python3 scripts/ci/tests/test_capture_trusted_xcode_self_hosted_process_custody_red.py -v
