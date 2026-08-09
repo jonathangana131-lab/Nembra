@@ -40,11 +40,14 @@ struct ES80CaptureLockedSurfaceVisualAcceptanceTests {
         )
         let lockedSurface = source[lockedSurfaceStart.lowerBound..<source.endIndex]
         let lockTitle = try #require(lockedSurface.range(of: "Text(\"Capture locked\")"))
-        let accessibilityRiderMessage = try #require(
-            lockedSurface.range(of: "\"Final exact-build checks are still in progress.\"")
-        )
         let defaultRiderMessage = try #require(
             lockedSurface.range(of: "\"This build is still finishing its final checks before it can collect real ES80 data.\"")
+        )
+        let accessibilityBoundary = try #require(
+            lockedSurface.range(of: "Text(\"PHYSICAL CAPTURE · NO-GO\")")
+        )
+        let accessibilityBoundaryMessage = try #require(
+            lockedSurface.range(of: "\"Exact-build checks must pass before Bluetooth capture can begin.\"")
         )
         let physicalBoundary = try #require(
             lockedSurface.range(of: ".accessibilityIdentifier(\"es80.capture.physical-run-locked\")")
@@ -52,9 +55,12 @@ struct ES80CaptureLockedSurfaceVisualAcceptanceTests {
         let details = try #require(lockedSurface.range(of: "Text(\"Engineering details\")"))
         let rawRecipe = try #require(lockedSurface.range(of: "Text(recipeID)"))
 
-        #expect(lockTitle.lowerBound < accessibilityRiderMessage.lowerBound)
-        #expect(accessibilityRiderMessage.lowerBound < defaultRiderMessage.lowerBound)
-        #expect(defaultRiderMessage.lowerBound < physicalBoundary.lowerBound)
+        #expect(lockedSurface.contains("if !isAccessibilityLayout"))
+        #expect(lockedSurface.contains("if isAccessibilityLayout"))
+        #expect(lockTitle.lowerBound < defaultRiderMessage.lowerBound)
+        #expect(defaultRiderMessage.lowerBound < accessibilityBoundary.lowerBound)
+        #expect(accessibilityBoundary.lowerBound < accessibilityBoundaryMessage.lowerBound)
+        #expect(accessibilityBoundaryMessage.lowerBound < physicalBoundary.lowerBound)
         #expect(physicalBoundary.lowerBound < details.lowerBound)
         #expect(details.lowerBound < rawRecipe.lowerBound)
         #expect(lockedSurface.contains("if engineeringDetailsExpanded"))
