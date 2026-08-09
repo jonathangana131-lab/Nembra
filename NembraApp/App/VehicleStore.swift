@@ -56,6 +56,7 @@ final class VehicleStore {
     var lastErrorMessage: String?
     private(set) var retainedBatteryObservedAt: Date?
     private(set) var retainedBatteryAuthority: BatteryObservationAuthority?
+    private var lastConfirmedBatteryAuthority: BatteryObservationAuthority?
 
     var isVehicleCommandPending: Bool {
         pendingCommands.contains { $0 != .connect }
@@ -103,6 +104,7 @@ final class VehicleStore {
             resolvedState.lastUpdated = snapshot.observedAt
             retainedBatteryObservedAt = snapshot.observedAt
             retainedBatteryAuthority = snapshot.authority
+            lastConfirmedBatteryAuthority = snapshot.authority
         }
 
         self.state = resolvedState
@@ -196,25 +198,40 @@ final class VehicleStore {
             retainedBatteryObservedAt = nil
             retainedBatteryAuthority = nil
 
-            if let authority = batteryObservationAuthority,
-               let snapshot = RetainedBatterySnapshot(
-                   percent: batteryPercent,
-                   authority: authority,
-                   observedAt: incomingState.lastUpdated
-               ) {
-                do {
-                    try retainedBatteryStorage?.save(snapshot)
-                } catch {
-                    // Persistence must never turn confirmed live telemetry into an error state.
-                    // The current session remains authoritative even if local continuity storage fails.
+            if let authority = batteryObservationAuthority {
+                lastConfirmedBatteryAuthority = authority
+                if let snapshot = RetainedBatterySnapshot(
+                    percent: batteryPercent,
+                    authority: authority,
+                    observedAt: incomingState.lastUpdated
+                ) {
+                    do {
+                        try retainedBatteryStorage?.save(snapshot)
+                    } catch {
+                        // Persistence must never turn confirmed live telemetry into an error state.
+                        // The current session remains authoritative even if local continuity storage fails.
+                    }
                 }
+            } else {
+                // A new live value with no configured authority must not inherit the provenance
+                // of an older retained observation merely because the numeric percent matches.
+                lastConfirmedBatteryAuthority = nil
             }
         } else if incomingState.connection != .connected,
-                  incomingState.batteryPercent == nil,
-                  let retainedPercent = state.batteryPercent {
-            nextState.batteryPercent = retainedPercent
-            nextState.lastUpdated = state.lastUpdated
-            retainedBatteryObservedAt = retainedBatteryObservedAt ?? state.lastUpdated
+                  let previousPercent = state.batteryPercent {
+            if incomingState.batteryPercent == nil {
+                nextState.batteryPercent = previousPercent
+            }
+
+            // Disconnect/reconnect lifecycle events are not battery measurements. Preserve the
+            // observation timestamp and authority only when the stale value is the same confirmed
+            // value we already held; a different incoming value cannot borrow prior provenance.
+            if nextState.batteryPercent == previousPercent,
+               let authority = lastConfirmedBatteryAuthority {
+                nextState.lastUpdated = state.lastUpdated
+                retainedBatteryObservedAt = retainedBatteryObservedAt ?? state.lastUpdated
+                retainedBatteryAuthority = authority
+            }
         }
 
         state = nextState
