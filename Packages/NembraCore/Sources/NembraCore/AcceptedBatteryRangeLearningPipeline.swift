@@ -31,6 +31,13 @@ public struct AcceptedBatteryRangePipelineResult: Equatable, Sendable {
 /// battery stream consumes a callback and later range-window assembly cannot use
 /// it, the accepted/seen battery chronology is intentionally not rolled back. A
 /// downstream failure must never reopen an older receipt for acceptance.
+///
+/// Currentness authority intentionally stays inside this owner. A copyable
+/// `BatteryEvidenceStreamValidator` snapshot is not exported: an old snapshot can
+/// remain internally consistent with R1 after the real owner has crossed a gap or
+/// accepted R2, so exposing it would let retained R1 be replayed as current.
+/// Downstream live presentation must wait for a non-replayable owner-bound
+/// projection rather than caching validator values.
 public struct AcceptedBatteryRangeLearningPipeline: Sendable {
     private var socStream: AcceptedBatterySOCStream
     private var windowState: AcceptedBatteryRangeWindowState
@@ -38,12 +45,6 @@ public struct AcceptedBatteryRangeLearningPipeline: Sendable {
     public init() {
         socStream = AcceptedBatterySOCStream()
         windowState = AcceptedBatteryRangeWindowState()
-    }
-
-    /// Current validator snapshot for receipt-bound live-range presentation.
-    /// The snapshot does not let callers mint verified observations or anchors.
-    public var batteryEvidenceValidator: BatteryEvidenceStreamValidator {
-        socStream.validator
     }
 
     /// A higher layer has proof that battery observation continuity was lost.
