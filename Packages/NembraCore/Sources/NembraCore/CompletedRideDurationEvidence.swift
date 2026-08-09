@@ -4,7 +4,6 @@ public enum CompletedRideDurationEvidenceError: Error, Equatable, Sendable {
     case sessionMismatch
     case continuityMismatch
     case invalidDurationEvidence
-    case untrustedImportedEvidence
 }
 
 /// Durable elapsed-time evidence bound to one immutable completed ride.
@@ -74,7 +73,7 @@ public struct CompletedRideDurationEvidence: Codable, Equatable, Sendable {
     /// continuity metadata.
     public func validate(against completedRide: CompletedRideEvidence) throws {
         guard isTrustedForProduction else {
-            throw CompletedRideDurationEvidenceError.untrustedImportedEvidence
+            throw CompletedRideDurationEvidenceError.invalidDurationEvidence
         }
         try validateIdentity(against: completedRide)
     }
