@@ -1,0 +1,49 @@
+name: Temporary Capture current-parent BUILD key repair
+
+on:
+  push:
+    branches:
+      - repair/capture-v14-ax-xxxl-build-key-current/gpt56-go
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact repair branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Apply root-cause AX BUILD key repair and remove one-shot
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("NembraApp/App/NembraApp.swift")
+          source = path.read_text(encoding="utf-8")
+          old = '''                        Text("BUILD")
+                            .font(.caption2.monospaced().weight(.bold))
+                            .foregroundStyle(.secondary)
+          '''
+          new = '''                        Text("BUILD")
+                            .font(.caption2.monospaced().weight(.bold))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: true, vertical: false)
+          '''
+          old = old.removesuffix("          ")
+          new = new.removesuffix("          ")
+          if source.count(old) != 1:
+              raise SystemExit(f"expected exactly one BUILD block, found {source.count(old)}")
+          if 'Text("Final checks in progress.")' not in source:
+              raise SystemExit("current-parent short AX status copy missing; refusing stale patch")
+          source = source.replace(old, new, 1)
+          path.write_text(source, encoding="utf-8")
+          PY
+          rm -f .github/workflows/z-temp-capture-build-key-current.yml
+          git config user.name "nembra-capture-recovery"
+          git config user.email "nembra-capture-recovery@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(capture): keep AX build key horizontal"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
