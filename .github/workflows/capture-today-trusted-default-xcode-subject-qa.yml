@@ -92,8 +92,8 @@ jobs:
           grep -Fq '/usr/bin/git cat-file blob "$expected_blob"' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq '/usr/bin/git -C /tmp hash-object --stdin' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq 'test "$materialized_blob" = "$expected_blob"' .github/workflows/capture-xcode27-trusted-command.yml
-          grep -Fq 'GITHUB_RUN_ID="${{ github.run_id }}"' .github/workflows/capture-xcode27-trusted-command.yml
-          grep -Fq 'GITHUB_RUN_ATTEMPT="${{ github.run_attempt }}"' .github/workflows/capture-xcode27-trusted-command.yml
+          grep -Fq 'GITHUB_RUN_ID="$''{{ github.run_id }}"' .github/workflows/capture-xcode27-trusted-command.yml
+          grep -Fq 'GITHUB_RUN_ATTEMPT="$''{{ github.run_attempt }}"' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq "/bin/bash --noprofile --norc -p -c 'source /dev/stdin' \"\$GITHUB_WORKSPACE/\$producer_path\"" .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq 'public Final GO foundation builder is non-authorizing' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'private foundation implementation is non-authorizing' scripts/ci/_es80_today_final_go_foundation_impl.py
