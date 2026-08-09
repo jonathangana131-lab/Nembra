@@ -38,45 +38,207 @@ jobs:
           from pathlib import Path
           import re
 
-          source = Path("NembraApp/Features/Research/ES80CaptureShellView.swift").read_text()
+          class ContractViolation(Exception):
+              pass
+
           signature = "private func prepareFinalShareForAnalysisAndSharing()"
-          start = source.find(signature)
-          if start < 0:
-              raise SystemExit("missing prepareFinalShareForAnalysisAndSharing source")
-
-          remainder = source[start:]
-          next_member = remainder.find("\n    private ", len(signature))
-          function_source = remainder if next_member < 0 else remainder[:next_member]
-
-          # This authority-critical function must stay independent of Swift conditional compilation.
-          # Failing closed on any directive in the isolated function avoids having to guess which
-          # compile-time branch ships in the signed field build.
-          directive = re.compile(
-              r"(?m)^[ \t]*#[ \t]*(?:if|elseif|else|endif)\b"
-          )
-
-          if directive.search(function_source):
-              raise SystemExit(
-                  "final Share retry authority must not depend on Swift conditional compilation"
-              )
-
           retained_anchor = "if finalShareData != nil,"
-          retained_index = function_source.find(retained_anchor)
-          if retained_index < 0:
-              raise SystemExit("missing retained final Share retry branch")
+          directive = re.compile(r"(?m)^[ \t]*#[ \t]*(if|elseif|else|endif)\b")
 
-          # Self-red-team the exact false-green reported in review: an otherwise direct retained
-          # branch hidden behind an inactive #if must be rejected even though brace depth is unchanged.
-          conditionally_excluded = (
-              function_source[:retained_index]
+          def mask_noncode(text):
+              """Preserve offsets/newlines while hiding Swift comments and string literals."""
+              chars = list(text)
+              masked = list(text)
+              i = 0
+              state = "code"
+              block_depth = 0
+              while i < len(chars):
+                  if state == "code":
+                      if text.startswith("//", i):
+                          masked[i] = masked[i + 1] = " "
+                          i += 2
+                          state = "line-comment"
+                          continue
+                      if text.startswith("/*", i):
+                          masked[i] = masked[i + 1] = " "
+                          i += 2
+                          state = "block-comment"
+                          block_depth = 1
+                          continue
+                      if text.startswith('"""', i):
+                          masked[i:i + 3] = "   "
+                          i += 3
+                          state = "multiline-string"
+                          continue
+                      if chars[i] == '"':
+                          masked[i] = " "
+                          i += 1
+                          state = "string"
+                          continue
+                      i += 1
+                      continue
+
+                  if state == "line-comment":
+                      if chars[i] == "\n":
+                          state = "code"
+                      else:
+                          masked[i] = " "
+                      i += 1
+                      continue
+
+                  if state == "block-comment":
+                      if text.startswith("/*", i):
+                          masked[i] = masked[i + 1] = " "
+                          block_depth += 1
+                          i += 2
+                          continue
+                      if text.startswith("*/", i):
+                          masked[i] = masked[i + 1] = " "
+                          block_depth -= 1
+                          i += 2
+                          if block_depth == 0:
+                              state = "code"
+                          continue
+                      if chars[i] != "\n":
+                          masked[i] = " "
+                      i += 1
+                      continue
+
+                  if state == "string":
+                      if chars[i] == "\\" and i + 1 < len(chars):
+                          masked[i] = masked[i + 1] = " "
+                          i += 2
+                          continue
+                      if chars[i] == '"':
+                          masked[i] = " "
+                          state = "code"
+                      elif chars[i] != "\n":
+                          masked[i] = " "
+                      i += 1
+                      continue
+
+                  if state == "multiline-string":
+                      if text.startswith('"""', i):
+                          masked[i:i + 3] = "   "
+                          i += 3
+                          state = "code"
+                          continue
+                      if chars[i] != "\n":
+                          masked[i] = " "
+                      i += 1
+                      continue
+
+              if state in {"block-comment", "string", "multiline-string"}:
+                  raise ContractViolation("unterminated Swift lexical state: " + state)
+              return "".join(masked)
+
+          def function_bounds(masked):
+              starts = [match.start() for match in re.finditer(re.escape(signature), masked)]
+              if len(starts) != 1:
+                  raise ContractViolation(
+                      "expected exactly one prepareFinalShareForAnalysisAndSharing declaration"
+                  )
+              start = starts[0]
+              opening = masked.find("{", start + len(signature))
+              if opening < 0:
+                  raise ContractViolation("missing final Share function body")
+
+              depth = 0
+              end = None
+              for index in range(opening, len(masked)):
+                  character = masked[index]
+                  if character == "{":
+                      depth += 1
+                  elif character == "}":
+                      depth -= 1
+                      if depth < 0:
+                          raise ContractViolation("unbalanced final Share function braces")
+                      if depth == 0:
+                          end = index + 1
+                          break
+              if end is None:
+                  raise ContractViolation("unterminated final Share function body")
+              return start, end
+
+          def validate_source(source):
+              masked = mask_noncode(source)
+              start, end = function_bounds(masked)
+
+              # Swift conditional-compilation directives do not introduce braces. Scan the complete
+              # lexical prefix so a #if that begins before the function cannot hide the whole
+              # authority-critical declaration from a function-local checker.
+              conditional_depth = 0
+              for match in directive.finditer(masked):
+                  if match.start() >= start:
+                      break
+                  kind = match.group(1)
+                  if kind == "if":
+                      conditional_depth += 1
+                  elif kind == "endif":
+                      conditional_depth -= 1
+                      if conditional_depth < 0:
+                          raise ContractViolation("unbalanced Swift conditional compilation before final Share function")
+                  elif conditional_depth <= 0:
+                      raise ContractViolation("orphan Swift conditional branch before final Share function")
+
+              if conditional_depth != 0:
+                  raise ContractViolation(
+                      "final Share authority function must not be enclosed by Swift conditional compilation"
+                  )
+
+              # Once the declaration starts outside conditional compilation, reject every directive
+              # through its exact brace-matched body end. This covers internal #if branches without
+              # relying on a guessed next-member delimiter.
+              if directive.search(masked, start, end):
+                  raise ContractViolation(
+                      "final Share authority function must not contain Swift conditional compilation"
+                  )
+
+              function_source = source[start:end]
+              retained_index = function_source.find(retained_anchor)
+              if retained_index < 0:
+                  raise ContractViolation("missing retained final Share retry branch")
+
+              return start, end, retained_index
+
+          source = Path("NembraApp/Features/Research/ES80CaptureShellView.swift").read_text()
+          try:
+              start, end, retained_index = validate_source(source)
+          except ContractViolation as error:
+              raise SystemExit(str(error)) from error
+
+          # Self-red-team 1: the reported inner-scope bypass must fail.
+          internal_index = start + retained_index
+          internally_excluded = (
+              source[:internal_index]
               + "#if NEVER_ENABLED_IN_RELEASE\n"
-              + function_source[retained_index:]
+              + source[internal_index:end]
               + "\n#endif\n"
+              + source[end:]
           )
-          if directive.search(conditionally_excluded) is None:
-              raise SystemExit(
-                  "checker self-test failed to detect a conditionally excluded retained retry branch"
-              )
+          try:
+              validate_source(internally_excluded)
+          except ContractViolation:
+              pass
+          else:
+              raise SystemExit("checker self-test accepted an internally conditional retry branch")
+
+          # Self-red-team 2: a directive beginning before the declaration and ending after its
+          # closing brace must also fail. The previous checker started at the signature and could
+          # miss this enclosing condition entirely.
+          externally_excluded = (
+              source[:start]
+              + "#if NEVER_ENABLED_IN_RELEASE\n"
+              + source[start:end]
+              + "\n#endif\n"
+              + source[end:]
+          )
+          try:
+              validate_source(externally_excluded)
+          except ContractViolation:
+              pass
+          else:
+              raise SystemExit("checker self-test accepted a conditionally excluded final Share function")
 
           print("final Share conditional-compilation authority source contract: PASS")
           PY
