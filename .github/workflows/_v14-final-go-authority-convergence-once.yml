@@ -1,0 +1,61 @@
+name: V14 Final GO Authority Convergence One Shot
+
+on:
+  push:
+    branches:
+      - agent/v14-final-go-authority-convergence
+
+permissions:
+  contents: write
+
+jobs:
+  converge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact repair branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Require exact intended main ancestor
+        run: git merge-base --is-ancestor 467fb5a62e432a50c3a83552099cefd44726c787 HEAD
+
+      - name: Apply canonical authority convergence
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/ci/_v14_apply_final_go_authority_convergence.py')
+          text = path.read_text()
+          old = '''    end = text.find(end_marker, start)\n    if end < 0:\n        raise SystemExit(f"{label}: missing end marker")\n'''
+          new = '''    end = len(text) if end_marker == "\\0" else text.find(end_marker, start)\n    if end < 0:\n        raise SystemExit(f"{label}: missing end marker")\n'''
+          if text.count(old) != 1:
+              raise SystemExit('one-shot patcher end-marker guard drifted')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          python3 scripts/ci/_v14_apply_final_go_authority_convergence.py
+
+      - name: Validate canonical Final GO authority
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/es80_today_final_go_record.py
+          python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_record.py
+          python3 scripts/ci/tests/test_es80_today_final_go_record.py -v
+          help="$(python3 scripts/ci/es80_today_final_go_record.py --help)"
+          grep -Fq -- '--operator-attestation' <<<"$help"
+          grep -Fq 'TRUSTED_WORKFLOW_BLOB_SHA = "e5ef72f50bed279e98ad28b94930831b747d0c20"' scripts/ci/es80_today_final_go_record.py
+          grep -Fq 'default-branch-owner-command-v1' scripts/ci/es80_today_final_go_record.py
+          grep -Fq 'AMBIGUOUS NO-GO' scripts/ci/es80_today_final_go_record.py
+          git diff --check
+
+      - name: Commit only canonical convergence
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-v14-go-worker'
+          git config user.email 'actions@users.noreply.github.com'
+          git add scripts/ci/es80_today_final_go_record.py scripts/ci/tests/test_es80_today_final_go_record.py .github/workflows/capture-today-final-go-qa.yml
+          git rm scripts/ci/_v14_apply_final_go_authority_convergence.py .github/workflows/_v14-final-go-authority-convergence-once.yml
+          git diff --cached --check
+          git commit -m '[Capture V14] Close Final GO authority gaps'
+          git push origin HEAD:agent/v14-final-go-authority-convergence
