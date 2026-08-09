@@ -133,9 +133,14 @@ struct ES80CaptureShellView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: captureVerticalSpacing) {
+#if DEBUG && targetEnvironment(simulator)
+                    if dynamicTypeSize.isAccessibilitySize, let simulatorQASnapshot {
+                        simulatorQABadge(simulatorQASnapshot)
+                    }
+#endif
                     hero(for: currentPhase)
 #if DEBUG && targetEnvironment(simulator)
-                    if let simulatorQASnapshot {
+                    if !dynamicTypeSize.isAccessibilitySize, let simulatorQASnapshot {
                         simulatorQABadge(simulatorQASnapshot)
                     }
 #endif
@@ -202,44 +207,68 @@ struct ES80CaptureShellView: View {
         .sensoryFeedback(.warning, trigger: warningHapticTick)
     }
 
-    private var captureVerticalSpacing: CGFloat { verticalSizeClass == .compact ? 16 : 24 }
+    private var captureVerticalSpacing: CGFloat {
+        if dynamicTypeSize.isAccessibilitySize { return 12 }
+        return verticalSizeClass == .compact ? 16 : 24
+    }
 
-    private var captureTopPadding: CGFloat { verticalSizeClass == .compact ? 10 : 18 }
+    private var captureTopPadding: CGFloat {
+        if dynamicTypeSize.isAccessibilitySize { return 8 }
+        return verticalSizeClass == .compact ? 10 : 18
+    }
 
-    private var captureBottomPadding: CGFloat { verticalSizeClass == .compact ? 20 : 42 }
+    private var captureBottomPadding: CGFloat {
+        if dynamicTypeSize.isAccessibilitySize { return 24 }
+        return verticalSizeClass == .compact ? 20 : 42
+    }
 
     private func hero(for phase: Phase) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .center, spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 15, style: .continuous)
-                        .fill(.white.opacity(0.08))
-                        .frame(width: 52, height: 52)
-
-                    Image(systemName: "wave.3.right.circle.fill")
-                        .font(.system(size: 25, weight: .semibold))
-                        .foregroundStyle(.white)
-                }
-                .accessibilityHidden(true)
-
+        VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 10 : 18) {
+            if dynamicTypeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("NEMBRA CAPTURE")
-                        .font(.caption.monospaced().weight(.bold))
-                        .tracking(1.4)
+                        .font(.caption2.monospaced().weight(.bold))
+                        .tracking(1.0)
                         .foregroundStyle(.secondary)
 
                     Text(heroTitle(for: phase))
-                        .font(.system(.largeTitle, design: .rounded, weight: .semibold))
+                        .font(.system(.title2, design: .rounded, weight: .semibold))
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityAddTraits(.isHeader)
                 }
+            } else {
+                HStack(alignment: .center, spacing: 14) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 15, style: .continuous)
+                            .fill(.white.opacity(0.08))
+                            .frame(width: 52, height: 52)
 
-                Spacer(minLength: 0)
+                        Image(systemName: "wave.3.right.circle.fill")
+                            .font(.system(size: 25, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+                    .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("NEMBRA CAPTURE")
+                            .font(.caption.monospaced().weight(.bold))
+                            .tracking(1.4)
+                            .foregroundStyle(.secondary)
+
+                        Text(heroTitle(for: phase))
+                            .font(.system(.largeTitle, design: .rounded, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.isHeader)
+                    }
+
+                    Spacer(minLength: 0)
+                }
             }
 
             if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         Image(systemName: statusSymbol(for: phase))
                             .font(.caption.weight(.bold))
@@ -281,16 +310,30 @@ struct ES80CaptureShellView: View {
     private func simulatorQABadge(
         _ snapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot
     ) -> some View {
-        HStack(spacing: 9) {
-            Image(systemName: "hammer.fill")
-                .accessibilityHidden(true)
-            Text("\(snapshot.evidenceLabel) · SYNTHETIC SOFTWARE STATE")
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("SIMULATOR / QA")
+                    Text("SYNTHETIC SOFTWARE STATE")
+                }
+                .font(.caption2.monospaced().weight(.bold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            } else {
+                HStack(spacing: 9) {
+                    Image(systemName: "hammer.fill")
+                        .accessibilityHidden(true)
+                    Text("\(snapshot.evidenceLabel) · SYNTHETIC SOFTWARE STATE")
+                }
+                .font(.caption.monospaced().weight(.bold))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.orange.opacity(0.10), in: Capsule())
+            }
         }
-        .font(.caption.monospaced().weight(.bold))
         .foregroundStyle(.orange)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.orange.opacity(0.10), in: Capsule())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             snapshot.accessibilitySummary
@@ -301,26 +344,44 @@ struct ES80CaptureShellView: View {
 #endif
 
     private var passiveSafetyPanel: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "shield.lefthalf.filled")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.white)
-                .accessibilityHidden(true)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Read-only capture")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                    Text("No scooter commands. Signal matching and capture stay passive.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            } else {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "shield.lefthalf.filled")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text("One continuous capture")
-                    .font(.headline)
-                    .foregroundStyle(.white)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("One continuous capture")
+                            .font(.headline)
+                            .foregroundStyle(.white)
 
-                Text("Nembra keeps signal matching and read-only capture in one continuous run. It never sends scooter commands and never chooses a signal from its name, signal strength, or service hints.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                        Text("Nembra keeps signal matching and read-only capture in one continuous run. It never sends scooter commands and never chooses a signal from its name, signal strength, or service hints.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(16)
+                .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             }
         }
-        .padding(16)
-        .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("One continuous read-only capture. Nembra never sends scooter commands and never chooses a signal from its name, signal strength, or service hints.")
         .accessibilityIdentifier("es80.capture.single-authority")
     }
 
