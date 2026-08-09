@@ -47,7 +47,7 @@ jobs:
         run: python3 scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py -v
       - name: Preserve pinned producer interpreter custody
         run: python3 scripts/ci/tests/test_capture_trusted_xcode_producer_execution_custody.py -v
-      - name: Preserve closed Bash startup custody
+      - name: Preserve closed Bash startup custody and run provenance
         run: python3 scripts/ci/tests/test_capture_trusted_xcode_bash_environment_custody.py -v
       - name: Run failure-atomic publication adversarial suite
         run: python3 scripts/ci/tests/test_es80_today_final_go_publication.py -v
@@ -60,7 +60,7 @@ jobs:
           set -euo pipefail
           grep -Fq 'TRUSTED_WORKFLOW_NAME = "Capture Trusted Xcode 27 Exact-Head QA"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'TRUSTED_WORKFLOW_PATH = ".github/workflows/capture-xcode27-trusted-command.yml"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
-          grep -Fq 'TRUSTED_WORKFLOW_BLOB_SHA = "3ce9fdc674e1c0b11c6cedb5fe058bece8053de5"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          grep -Fq 'TRUSTED_WORKFLOW_BLOB_SHA = "0b27e08e505ceff8b8da0d3961dc0df03e61cdab"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_PATH = "scripts/ci/xcode27_simulator_capture.sh"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_BLOB_SHA = "4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'name: Verify trusted Simulator evidence-producer custody' .github/workflows/capture-xcode27-trusted-command.yml
@@ -71,6 +71,8 @@ jobs:
           grep -Fq '/usr/bin/git hash-object -- "$producer_path"' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq '/usr/bin/git cat-file blob "$expected_blob"' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq '| /usr/bin/env -i \' .github/workflows/capture-xcode27-trusted-command.yml
+          grep -Fq 'GITHUB_RUN_ID="${{ github.run_id }}"' .github/workflows/capture-xcode27-trusted-command.yml
+          grep -Fq 'GITHUB_RUN_ATTEMPT="${{ github.run_attempt }}"' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq "/bin/bash -c 'source /dev/stdin' \"\$GITHUB_WORKSPACE/\$producer_path\"" .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq 'run.get("event") == "issue_comment"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'run.get("head_branch") == DEFAULT_BRANCH' scripts/ci/es80_today_trusted_capture_xcode_subject.py
