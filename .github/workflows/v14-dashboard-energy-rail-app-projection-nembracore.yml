@@ -23,7 +23,7 @@ jobs:
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          actual_head="$(git rev-parse --verify HEAD^{commit})"
+          actual_head="$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse --verify HEAD^{commit})"
           printf 'Expected PR head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual_head"
           test "$actual_head" = "$EXPECTED_HEAD_SHA"
       - name: Verify Swift toolchain
