@@ -569,15 +569,23 @@ private struct ES80ExperimentOneFieldNoGoView: View {
         dynamicTypeSize.isAccessibilitySize
     }
 
+    private var usesTightAccessibilityViewport: Bool {
+        dynamicTypeSize == .accessibility5 && verticalSizeClass != .compact
+    }
+
     var body: some View {
         ScrollView {
             VStack(
                 alignment: .leading,
-                spacing: verticalSizeClass == .compact ? 10 : (isAccessibilityLayout ? 8 : 28)
+                spacing: verticalSizeClass == .compact
+                    ? 10
+                    : (usesTightAccessibilityViewport ? 4 : (isAccessibilityLayout ? 8 : 28))
             ) {
                 VStack(
                     alignment: .leading,
-                    spacing: verticalSizeClass == .compact ? 6 : (isAccessibilityLayout ? 4 : 14)
+                    spacing: verticalSizeClass == .compact
+                        ? 6
+                        : (usesTightAccessibilityViewport ? 2 : (isAccessibilityLayout ? 4 : 14))
                 ) {
                     HStack(spacing: isAccessibilityLayout ? 0 : 12) {
                         if !isAccessibilityLayout {
@@ -686,7 +694,11 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         }
                     }
                 }
-                .padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 10 : 18))
+                .padding(
+                    verticalSizeClass == .compact
+                        ? 12
+                        : (usesTightAccessibilityViewport ? 6 : (isAccessibilityLayout ? 10 : 18))
+                )
                 .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(physicalLockAccessibilityLabel)
@@ -808,7 +820,11 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         }
                     }
                 }
-                .padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 10 : 18))
+                .padding(
+                    verticalSizeClass == .compact
+                        ? 12
+                        : (usesTightAccessibilityViewport ? 6 : (isAccessibilityLayout ? 10 : 18))
+                )
                 .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
                 if !isAccessibilityLayout {
@@ -820,8 +836,18 @@ private struct ES80ExperimentOneFieldNoGoView: View {
             }
             .frame(maxWidth: 660)
             .padding(.horizontal, isAccessibilityLayout ? 16 : 22)
-            .padding(.top, verticalSizeClass == .compact ? 8 : (isAccessibilityLayout ? 8 : 18))
-            .padding(.bottom, verticalSizeClass == .compact ? 20 : (isAccessibilityLayout ? 12 : 42))
+            .padding(
+                .top,
+                verticalSizeClass == .compact
+                    ? 8
+                    : (usesTightAccessibilityViewport ? 4 : (isAccessibilityLayout ? 8 : 18))
+            )
+            .padding(
+                .bottom,
+                verticalSizeClass == .compact
+                    ? 20
+                    : (usesTightAccessibilityViewport ? 8 : (isAccessibilityLayout ? 12 : 42))
+            )
             .frame(maxWidth: .infinity)
         }
         .accessibilityIdentifier("es80.capture.field-no-go-scroll")
