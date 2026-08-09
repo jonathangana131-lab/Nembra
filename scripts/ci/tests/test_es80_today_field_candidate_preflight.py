@@ -10,6 +10,8 @@ import tempfile
 import unittest
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "es80_today_field_candidate_preflight.py"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+PRODUCTION_HANDOFF = REPOSITORY_ROOT / "docs" / "ES80_TODAY_SIGNED_FIELD_CANDIDATE_PRODUCTION.md"
 spec = importlib.util.spec_from_file_location("field_candidate_preflight", MODULE_PATH)
 preflight = importlib.util.module_from_spec(spec)
 assert spec and spec.loader
@@ -203,6 +205,20 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertFalse(report["checks"]["privateIntendedDeviceInput"])
         self.assertIn("private-intended-device-input-invalid", report["problems"])
         self.assertNotIn(self.PRIVATE_UDID, json.dumps(report))
+
+    def test_production_handoff_refuses_private_path_clobber_before_secret_write(self):
+        content = PRODUCTION_HANDOFF.read_text(encoding="utf-8")
+        directory_guard = 'if [[ -L "$PRIVATE_DIR" ]]; then'
+        target_guard = 'if [[ -e "$UDID_FILE" || -L "$UDID_FILE" ]]; then'
+        write = '( set -o noclobber; printf \'%s\' "$INTENDED_UDID" > "$UDID_FILE" )'
+
+        self.assertIn(directory_guard, content)
+        self.assertIn(target_guard, content)
+        self.assertIn(write, content)
+        self.assertLess(content.index(directory_guard), content.index("IFS= read -r -s INTENDED_UDID"))
+        self.assertLess(content.index(target_guard), content.index("IFS= read -r -s INTENDED_UDID"))
+        self.assertLess(content.index(target_guard), content.index(write))
+        self.assertNotIn('printf \'%s\\n\' "$INTENDED_UDID" > "$UDID_FILE"', content)
 
     def test_non_xcode_27_selection_fails_closed(self):
         with tempfile.TemporaryDirectory() as temporary:
