@@ -1,23 +1,21 @@
 #!/usr/bin/env python3
 """Canonical hardened entrypoint for the external V14 ES80 TODAY Final GO record.
 
-The Final GO foundation remains the closed-world validator for signed candidate, independent
-crosscheck, install/runtime rendezvous, and operator attestation. This executable loads that
-foundation directly; the historical `es80_today_final_go_record.py` compatibility module is
-non-authorizing for both direct execution and imported builder calls.
+This composer is the only executable Final GO authority path. It composes four independent
+boundaries before an external procedural GO record can exist:
+- owner-commanded default-branch exact-head Xcode acceptance;
+- the preserved closed-world signed-candidate/crosscheck foundation;
+- a live private field rendezvous that binds human observations to the exact retained IPA,
+  provisioning membership, connected intended iPhone, and installed Nembra bundle; and
+- failure-atomic, no-replace record publication.
 
-This entrypoint removes the authority defects that must not remain on the executable GO path:
-- trusted Xcode acceptance comes only from the owner-commanded default-branch workflow whose Git
-  blob is pinned independently from the candidate PR head;
-- trusted workflow Git-object lookup reuses the foundation's producer-owned, closed Git custody
-  boundary rather than caller PATH/config/replacement semantics; and
-- record publication is failure-atomic after no-replace publication.
-
-No physical result is created by this tool. A generated GO record is procedural authorization for
-one stationary passive Experiment One only after all supplied evidence is already legitimate.
+The private intended-device identifier remains local and is never placed in the public Final GO
+record. Charger/stationary/READY observations remain explicitly human-observed procedure state, not
+machine telemetry. No physical ES80 result is created by this tool.
 """
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
 from pathlib import Path
@@ -41,19 +39,17 @@ trusted_xcode = _load(
     "nembra_trusted_capture_xcode_subject",
     "es80_today_trusted_capture_xcode_subject.py",
 )
+private_rendezvous = _load(
+    "nembra_today_private_field_rendezvous",
+    "es80_today_private_field_rendezvous.py",
+)
 publication = _load("nembra_final_go_publication", "es80_today_final_go_publication.py")
 
 FinalGoError = foundation.FinalGoError
 
 
 def _workflow_blob_sha_at_commit(tooling_repo: Path, commit: str, path: str) -> str:
-    """Resolve the workflow blob only through the foundation's closed Git authority boundary.
-
-    `foundation._git` pins `/usr/bin/git`, removes system/global config, disables replacement
-    objects, restricts PATH, and rejects symlink/non-directory repository custody. Reusing that
-    boundary prevents caller PATH, Git config, or refs/replace state from manufacturing the trusted
-    workflow blob identity.
-    """
+    """Resolve the workflow blob only through the foundation's closed Git authority boundary."""
     try:
         return foundation._git(tooling_repo, "rev-parse", f"{commit}:{path}").strip().lower()
     except FinalGoError:
@@ -77,10 +73,18 @@ def build_final_go_record(
     frozen_source_repo: Path,
     tooling_repo: Path,
     operator_attestation: Path,
+    intended_device_udid_file: Path,
     github_get_json: Callable[[str], tuple[bytes, dict[str, Any]]] = foundation._api_get_json,
     now_utc=None,
+    private_rendezvous_state_dir: Path | None = None,
+    profile_probe: Callable[..., dict[str, Any]] | None = None,
+    device_probe: Callable[[str], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Run the foundation with its Xcode trust seam replaced by pinned default-branch authority."""
+    """Compose trusted Xcode + live private field authority around the preserved foundation.
+
+    `private_rendezvous_state_dir`, `profile_probe`, and `device_probe` are dependency-injection
+    seams for adversarial tests only. The production CLI exposes none of them.
+    """
 
     def trusted_subject_adapter(
         *,
@@ -108,8 +112,33 @@ def build_final_go_record(
         except trusted_xcode.TrustedCaptureXcodeError as error:
             raise FinalGoError(str(error)) from error
 
-    original = foundation._trusted_xcode_subject
+    def trusted_operator_adapter(
+        path: Path,
+        candidate: dict[str, Any],
+        now,
+    ) -> dict[str, Any]:
+        arguments: dict[str, Any] = {
+            "candidate_root": candidate_root,
+            "candidate": candidate,
+            "operator_attestation": path,
+            "intended_device_udid_file": intended_device_udid_file,
+            "operator_validator": foundation.validate_operator_observation,
+            "now_utc": now,
+            "state_dir": private_rendezvous_state_dir,
+        }
+        if profile_probe is not None:
+            arguments["profile_probe"] = profile_probe
+        if device_probe is not None:
+            arguments["device_probe"] = device_probe
+        try:
+            return private_rendezvous.verify_private_field_rendezvous(**arguments)
+        except private_rendezvous.PrivateFieldRendezvousError as error:
+            raise FinalGoError(str(error)) from error
+
+    original_xcode = foundation._trusted_xcode_subject
+    original_operator = foundation._operator_attestation
     foundation._trusted_xcode_subject = trusted_subject_adapter
+    foundation._operator_attestation = trusted_operator_adapter
     try:
         record = foundation.build_final_go_record(
             candidate_root=candidate_root,
@@ -127,7 +156,8 @@ def build_final_go_record(
             now_utc=now_utc,
         )
     finally:
-        foundation._trusted_xcode_subject = original
+        foundation._trusted_xcode_subject = original_xcode
+        foundation._operator_attestation = original_operator
 
     subject = record.get("trustedXcodeAcceptance")
     if not isinstance(subject, dict):
@@ -138,6 +168,28 @@ def build_final_go_record(
         raise FinalGoError("hardened Xcode subject candidate source diverged from accepted source")
     if subject.get("workflowSourceCommitSHA") == subject.get("candidateSourceCommitSHA"):
         raise FinalGoError("trusted workflow source must remain independent from candidate source")
+
+    field = record.get("exactRetainedIPAInstallAndRuntimeAttestation")
+    if not isinstance(field, dict):
+        raise FinalGoError("hardened Final GO record lacks private field rendezvous subject")
+    required_field = {
+        "authority": private_rendezvous.AUTHORITY,
+        "intendedDeviceMembershipVerified": True,
+        "connectedDeviceProbeVerified": True,
+        "installedBundleIdentifier": foundation.BUNDLE_ID,
+        "oneTimeObservationConsumption": "CONSUMED",
+        "rawIntendedDeviceIdentifierPublished": False,
+        "physicalResultCollected": False,
+    }
+    for key, expected in required_field.items():
+        if field.get(key) != expected:
+            raise FinalGoError(f"private field rendezvous {key} mismatch")
+    if field.get("preflightHealth") != "READY":
+        raise FinalGoError("private field rendezvous preflight is not READY")
+    if field.get("chargerState") != "DISCONNECTED":
+        raise FinalGoError("private field rendezvous charger is not disconnected")
+    if field.get("motionState") != "STATIONARY":
+        raise FinalGoError("private field rendezvous setup is not stationary")
     return record
 
 
@@ -148,15 +200,43 @@ def publish_record_no_replace(output_path: Path, raw: bytes) -> str:
         raise FinalGoError(str(error)) from error
 
 
+def _args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--candidate-root", required=True, type=Path)
+    parser.add_argument("--expected-source-sha", required=True)
+    parser.add_argument("--expected-pr-number", required=True, type=int)
+    parser.add_argument("--trusted-xcode-run-id", required=True, type=int)
+    parser.add_argument("--trusted-xcode-job-id", required=True, type=int)
+    parser.add_argument("--trusted-xcode-artifact-id", required=True, type=int)
+    parser.add_argument("--trusted-xcode-artifact-archive", required=True, type=Path)
+    parser.add_argument("--independent-crosscheck-receipt", required=True, type=Path)
+    parser.add_argument("--frozen-source-repo", required=True, type=Path)
+    parser.add_argument("--tooling-repo", required=True, type=Path)
+    parser.add_argument("--operator-attestation", required=True, type=Path)
+    parser.add_argument(
+        "--intended-device-udid-file",
+        required=True,
+        type=Path,
+        help="private mode-0600 file containing the intended field-device identifier",
+    )
+    parser.add_argument("--output", required=True, type=Path)
+    return parser.parse_args(argv)
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = foundation._args(sys.argv[1:] if argv is None else argv)
+    args = _args(sys.argv[1:] if argv is None else argv)
     values = vars(args).copy()
     output = values.pop("output")
     try:
         record = build_final_go_record(**values)
         raw = (json.dumps(record, indent=2, sort_keys=True) + "\n").encode()
         record_sha = publish_record_no_replace(output, raw)
-    except (FinalGoError, FileNotFoundError, OSError) as error:
+    except (
+        FinalGoError,
+        private_rendezvous.PrivateFieldRendezvousError,
+        FileNotFoundError,
+        OSError,
+    ) as error:
         print(f"TODAY Final GO: NO-GO: {error}", file=sys.stderr)
         return 2
     print(f"TODAY Final GO record: {output.resolve(strict=True)}")
