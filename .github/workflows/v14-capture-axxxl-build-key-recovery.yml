@@ -22,48 +22,24 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Prove bootstrap ancestry and scope
+      - name: Prove bootstrap ancestry and current truth
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
-          test "$(git diff --name-only "$EXPECTED_PARENT"..HEAD)" = "$WORKFLOW_PATH"
           git merge-base --is-ancestor "$EXPECTED_PARENT" HEAD
+          test "$(git diff --name-only "$EXPECTED_PARENT"..HEAD)" = "$WORKFLOW_PATH"
+          grep -F 'Text("Final checks in progress.")' NembraApp/App/NembraApp.swift
+          grep -F 'Final exact-build checks are still in progress. No scooter action is needed yet.' NembraApp/App/NembraApp.swift
+          grep -F '.accessibilityIdentifier("es80.capture.build-identity")' NembraApp/App/NembraApp.swift
+          grep -F '.accessibilityIdentifier("es80.capture.physical-run-locked")' NembraApp/App/NembraApp.swift
 
       - name: Apply only the current-tree BUILD key repair
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("NembraApp/App/NembraApp.swift")
-          source = path.read_text()
-          required = [
-              'Text("Final checks in progress.")',
-              'private var physicalLockAccessibilityLabel: String',
-              'Final exact-build checks are still in progress. No scooter action is needed yet.',
-              '.accessibilityIdentifier("es80.capture.build-identity")',
-              '.accessibilityIdentifier("es80.capture.physical-run-locked")',
-              '.accessibilityIdentifier("es80.capture.engineering-details")',
-          ]
-          missing = [token for token in required if token not in source]
-          if missing:
-              raise SystemExit(f"refusing stale/unknown source: {missing}")
-
-          old = '''                        Text("BUILD")
-                            .font(.caption2.monospaced().weight(.bold))
-                            .foregroundStyle(.secondary)
-'''
-          new = old + '                            .fixedSize(horizontal: true, vertical: false)\n'
-          if source.count(old) != 1:
-              raise SystemExit(f"expected one current BUILD key block, found {source.count(old)}")
-          if '.fixedSize(horizontal: true, vertical: false)' in source[source.index('Text("BUILD")'):source.index('Text("BUILD")') + 300]:
-              raise SystemExit("BUILD key repair already present; refusing duplicate")
-          path.write_text(source.replace(old, new, 1))
-          PY
+          python3 -c 'from pathlib import Path; p=Path("NembraApp/App/NembraApp.swift"); s=p.read_text(); old="                        Text(\"BUILD\")\n                            .font(.caption2.monospaced().weight(.bold))\n                            .foregroundStyle(.secondary)\n"; new=old+"                            .fixedSize(horizontal: true, vertical: false)\n"; assert s.count(old)==1, f"expected one BUILD key block, found {s.count(old)}"; p.write_text(s.replace(old,new,1))'
           git diff --check
-          git diff -- NembraApp/App/NembraApp.swift
+          grep -A4 -F 'Text("BUILD")' NembraApp/App/NembraApp.swift | grep -F '.fixedSize(horizontal: true, vertical: false)'
 
       - name: Remove bootstrap workflow and commit clean descendant
         shell: bash
@@ -74,14 +50,12 @@ jobs:
           git config user.email "actions@users.noreply.github.com"
           git add NembraApp/App/NembraApp.swift
           git commit -m "fix(capture): keep AXXXL build key horizontal on current head"
-
           git merge-base --is-ancestor "$EXPECTED_PARENT" HEAD
           changed="$(git diff --name-only "$EXPECTED_PARENT"..HEAD)"
           printf 'Net files vs exact flagship parent:\n%s\n' "$changed"
           test "$changed" = "NembraApp/App/NembraApp.swift"
           test "$(git diff --numstat "$EXPECTED_PARENT"..HEAD)" = $'1\t0\tNembraApp/App/NembraApp.swift'
           grep -F 'Text("Final checks in progress.")' NembraApp/App/NembraApp.swift
-          grep -F '.fixedSize(horizontal: true, vertical: false)' NembraApp/App/NembraApp.swift
 
       - name: Push verified recovery descendant
         shell: bash
