@@ -184,6 +184,18 @@ class CandidateCrosscheckTests(unittest.TestCase):
             with self.assertRaisesRegex(MODULE.CrosscheckError, "physical_authorization"):
                 MODULE.crosscheck(candidate, expected_source_sha=self.SOURCE)
 
+    def test_duplicate_environment_authority_key_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = self.make_candidate(Path(temporary))
+            environment = candidate / "field-candidate-environment.txt"
+            environment.write_text(
+                environment.read_text(encoding="utf-8")
+                + "physical_authorization=granted\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(MODULE.CrosscheckError, "duplicate key"):
+                MODULE.crosscheck(candidate, expected_source_sha=self.SOURCE)
+
 
 if __name__ == "__main__":
     unittest.main()
