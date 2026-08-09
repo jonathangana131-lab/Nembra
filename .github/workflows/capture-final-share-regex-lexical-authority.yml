@@ -31,7 +31,7 @@ jobs:
           printf 'Expected exact PR head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual"
           test "$actual" = "$EXPECTED_HEAD_SHA"
 
-      - name: Reject regex-literal brace ambiguity in final Share authority
+      - name: Reject regex-literal and boundary ambiguity in final Share authority
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -41,26 +41,17 @@ jobs:
           class ContractViolation(Exception):
               pass
 
-          signature = "private func prepareFinalShareForAnalysisAndSharing()"
-          next_member = "\n    private func restartExperiment()"
+          signature = "\n    private func prepareFinalShareForAnalysisAndSharing() {"
+          next_member = "\n    private func restartExperiment() {"
+          retained_anchor = "if finalShareData != nil,"
 
-          def authority_source(source: str) -> tuple[int, int, str]:
-              starts = [
-                  match.start()
-                  for match in re.finditer(re.escape(signature), source)
-              ]
-              if len(starts) != 1:
+          def unique_offset(source: str, needle: str, label: str) -> int:
+              matches = [match.start() for match in re.finditer(re.escape(needle), source)]
+              if len(matches) != 1:
                   raise ContractViolation(
-                      "expected exactly one prepareFinalShareForAnalysisAndSharing declaration"
+                      f"expected exactly one raw {label} boundary; found {len(matches)}"
                   )
-
-              start = starts[0]
-              end = source.find(next_member, start + len(signature))
-              if end < 0:
-                  raise ContractViolation(
-                      "missing stable restartExperiment boundary after final Share authority"
-                  )
-              return start, end, source[start:end]
+              return matches[0]
 
           def mask_comments_and_strings(text: str) -> str:
               """Preserve offsets/newlines while hiding Swift comments and string literals."""
@@ -149,6 +140,16 @@ jobs:
                   raise ContractViolation("unterminated Swift lexical state: " + state)
               return "".join(masked)
 
+          def authority_source(source: str) -> tuple[int, int, str]:
+              # Both declaration anchors are deliberately raw-unique. A comment/string/regex that
+              # tries to spoof either boundary therefore creates a second occurrence and fails closed
+              # before it can truncate the authority region inspected below.
+              start = unique_offset(source, signature, "final Share function")
+              end = unique_offset(source, next_member, "restartExperiment function")
+              if end <= start:
+                  raise ContractViolation("restartExperiment must follow final Share authority")
+              return start, end, source[start:end]
+
           def validate_source(source: str) -> tuple[int, int]:
               start, end, function_source = authority_source(source)
 
@@ -164,6 +165,8 @@ jobs:
                   raise ContractViolation(
                       "final Share authority must not contain code slash tokens while regex literals can confuse brace matching"
                   )
+              if retained_anchor not in function_source:
+                  raise ContractViolation("missing retained final Share retry branch")
               return start, end
 
           source = Path(
@@ -193,43 +196,25 @@ jobs:
                   "checker self-test rejected slash bytes confined to strings/comments"
               ) from error
 
-          # Extended regex literals are valid Swift syntax and were the first reproduced bypass.
-          extended_regex_only = (
-              source[:closing_brace]
-              + "\n        let lexicalBraceProbe = #/\\}/#\n"
-              + "        _ = lexicalBraceProbe\n"
-              + source[closing_brace:]
-          )
-          try:
-              validate_source(extended_regex_only)
-          except ContractViolation:
-              pass
-          else:
-              raise SystemExit(
-                  "checker self-test accepted a Swift extended regex literal in final Share authority"
-              )
-
-          # Xcode/Swift 6 also accepts bare /.../ regex literals. Their payload braces create the
-          # same false-green class and therefore need their own executable source-contract probe.
-          bare_regex_only = (
-              source[:closing_brace]
-              + "\n        let lexicalBareBraceProbe = /\\}/\n"
-              + "        _ = lexicalBareBraceProbe\n"
-              + source[closing_brace:]
-          )
-          try:
-              validate_source(bare_regex_only)
-          except ContractViolation:
-              pass
-          else:
-              raise SystemExit(
-                  "checker self-test accepted a Swift bare regex literal in final Share authority"
-              )
-
           for label, literal in (
               ("extended", "#/\\}/#"),
               ("bare", "/\\}/"),
           ):
+              regex_only = (
+                  source[:closing_brace]
+                  + f"\n        let lexicalBraceProbe = {literal}\n"
+                  + "        _ = lexicalBraceProbe\n"
+                  + source[closing_brace:]
+              )
+              try:
+                  validate_source(regex_only)
+              except ContractViolation:
+                  pass
+              else:
+                  raise SystemExit(
+                      f"checker self-test accepted a Swift {label} regex literal in final Share authority"
+                  )
+
               regex_bypass = (
                   source[:closing_brace]
                   + f"\n        let lexicalBraceProbe = {literal}\n"
@@ -249,5 +234,30 @@ jobs:
                       f"checker self-test accepted a conditional branch hidden after a {label} regex-literal brace"
                   )
 
-          print("final Share regex lexical authority source contract: PASS")
+          # Red-team the boundary that the previous guard trusted as raw first-match text. A fake
+          # restartExperiment declaration line inside a block comment must not truncate inspection
+          # before a later bare-regex brace and conditional branch.
+          boundary_spoof = (
+              source[:closing_brace]
+              + "\n        /*\n"
+              + "    private func restartExperiment() {\n"
+              + "        */\n"
+              + "        let lexicalBoundaryProbe = /\\}/\n"
+              + "        _ = lexicalBoundaryProbe\n"
+              + "#if NEVER_ENABLED_IN_RELEASE\n"
+              + "        let hiddenBoundaryConditionalProbe = true\n"
+              + "        _ = hiddenBoundaryConditionalProbe\n"
+              + "#endif\n"
+              + source[closing_brace:]
+          )
+          try:
+              validate_source(boundary_spoof)
+          except ContractViolation:
+              pass
+          else:
+              raise SystemExit(
+                  "checker self-test accepted a spoofed restartExperiment boundary before a bare-regex conditional bypass"
+              )
+
+          print("final Share regex lexical/boundary authority source contract: PASS")
           PY
