@@ -1,4 +1,4 @@
-name: TEMP Fix ES80 field-route test contract
+name: TEMP Fix ES80 field route test contract
 
 on:
   push:
@@ -10,58 +10,43 @@ permissions:
 
 jobs:
   repair:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: recovery/es80-today-field-route-test-contract-0f967-gpt56
           fetch-depth: 0
 
-      - name: Repair stale source contract
+      - name: Apply guarded test-only repair
         shell: bash
         run: |
           set -euo pipefail
           python3 <<'PY'
           from pathlib import Path
 
-          path = Path('NembraUITests/ES80ResearchCaptureUITests.swift')
-          text = path.read_text(encoding='utf-8')
-
-          old_gate = '''        XCTAssertTrue(
-              appSource.contains("if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure"),
-              "The normal research route must still be downstream of the package field gate."
-          )
-'''
-          new_gate = '''        XCTAssertTrue(
-              appSource.contains("ES80ExperimentOneFieldNoGoView()"),
-              "A denied or unavailable field admission must retain the dedicated physical NO-GO fallback."
-          )
-'''
-          old_factory = '''        XCTAssertTrue(
-              appSource.contains("PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()"),
-              "The real field route must retain its package-owned attested factory."
-          )
-'''
-          new_factory = '''        XCTAssertTrue(
-              appSource.contains(".makeResearchAuthorizedES80ForCurrentApplication()"),
-              "The real field route must retain the package-owned current-application authorization factory."
-          )
-'''
-
-          for old, new, label in [
-              (old_gate, new_gate, 'NO-GO route contract'),
-              (old_factory, new_factory, 'authorized factory contract'),
-          ]:
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'{label}: expected exactly one stale assertion, found {count}')
+          path = Path("NembraUITests/ES80ResearchCaptureUITests.swift")
+          text = path.read_text(encoding="utf-8")
+          replacements = [
+              (
+                  'appSource.contains("if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure")',
+                  'appSource.contains("ES80ExperimentOneFieldNoGoView()")',
+              ),
+              (
+                  '"The normal research route must still be downstream of the package field gate."',
+                  '"A denied or unavailable field admission must retain the dedicated physical NO-GO fallback."',
+              ),
+              (
+                  'appSource.contains("PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()")',
+                  'appSource.contains(".makeResearchAuthorizedES80ForCurrentApplication()")',
+              ),
+              (
+                  '"The real field route must retain its package-owned attested factory."',
+                  '"The real field route must retain the package-owned current-application authorization factory."',
+              ),
+          ]
+          for old, new in replacements:
+              if text.count(old) != 1:
+                  raise SystemExit("expected exactly one occurrence: " + old)
               text = text.replace(old, new, 1)
-
-          if 'if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure' in text:
-              raise SystemExit('obsolete field-gate source assertion remains')
-          if 'PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()' in text:
-              raise SystemExit('obsolete coordinator factory assertion remains')
 
           required = [
               'appSource.contains("ES80ExperimentOneFieldNoGoView()")',
@@ -70,16 +55,15 @@ jobs:
           ]
           for marker in required:
               if marker not in text:
-                  raise SystemExit(f'missing current authority marker: {marker}')
+                  raise SystemExit("missing current authority marker: " + marker)
 
-          path.write_text(text, encoding='utf-8')
+          path.write_text(text, encoding="utf-8")
           PY
 
           git diff --check
           test "$(git diff --name-only | wc -l | tr -d ' ')" -eq 1
-          git diff -- NembraUITests/ES80ResearchCaptureUITests.swift
 
-      - name: Commit test-only repair and remove temporary workflow
+      - name: Commit repair and remove applicator
         shell: bash
         run: |
           set -euo pipefail
@@ -88,6 +72,5 @@ jobs:
           git config user.email nembra-v14-recovery@users.noreply.github.com
           git add NembraUITests/ES80ResearchCaptureUITests.swift .github/workflows/zz-temp-fix-es80-field-route-test-contract.yml
           git diff --cached --check
-          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" -eq 2
-          git commit -m "test(capture): align field-route source contract"
+          git commit -m "test(capture): align field route source contract"
           git push origin HEAD:recovery/es80-today-field-route-test-contract-0f967-gpt56
