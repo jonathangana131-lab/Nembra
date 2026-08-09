@@ -326,8 +326,8 @@ struct AdaptiveBatteryRangeLiveTruthTests {
 
         #expect(first.isCurrent == false)
         #expect(first.isCurrent(in: staleValidator) == false)
-        #expect(stream.validator.lastAcceptedReceiptIdentity == nil)
-        #expect(staleValidator.lastAcceptedReceiptIdentity == nil)
+        #expect(stream.validator.lastAcceptedReceiptIdentity == first.sourceReceiptIdentity)
+        #expect(staleValidator.lastAcceptedReceiptIdentity == first.sourceReceiptIdentity)
     }
 
     @Test("live derived range carries source receipt and cannot be refreshed from superseded SoC")
