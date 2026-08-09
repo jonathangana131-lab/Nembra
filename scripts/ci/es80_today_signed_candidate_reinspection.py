@@ -172,6 +172,27 @@ def _run_tool(arguments: list[str]) -> subprocess.CompletedProcess[bytes]:
         ) from error
 
 
+def _run_tool_with_fd(
+    arguments: list[str],
+    inherited_fd: int,
+) -> subprocess.CompletedProcess[bytes]:
+    """Run one Apple tool while inheriting only the admitted anonymous IPA descriptor."""
+    try:
+        return subprocess.run(
+            arguments,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=_closed_env(),
+            check=False,
+            timeout=60,
+            pass_fds=(inherited_fd,),
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise SignedCandidateReinspectionError(
+            f"Apple signing reinspection tool failed to execute: {arguments[0]}"
+        ) from error
+
+
 def _require_tool_success(
     runner: Callable[[list[str]], subprocess.CompletedProcess[bytes]],
     arguments: list[str],
@@ -191,9 +212,8 @@ def _validate_ipa_members(raw: bytes) -> str:
             pass
     except Exception:
         # The dummy branch only keeps static analyzers from treating ZipFile as path-only; the
-        # actual archive is opened below from a seekable temporary file by `_extract_ipa`.
+        # actual archive is opened below from admitted bytes before `_extract_ipa` materializes it.
         pass
-    # Cheap preflight for the caller-provided bytes before Apple `ditto` touches them.
     try:
         import io
         archive = zipfile.ZipFile(io.BytesIO(raw), "r")
@@ -220,18 +240,91 @@ def _validate_ipa_members(raw: bytes) -> str:
         return next(iter(roots))
 
 
+def _write_all(descriptor: int, raw: bytes) -> None:
+    offset = 0
+    while offset < len(raw):
+        written = os.write(descriptor, raw[offset : offset + 1024 * 1024])
+        if written <= 0:
+            raise SignedCandidateReinspectionError("private admitted IPA materialization stalled")
+        offset += written
+
+
+def _read_descriptor_exact(descriptor: int, expected_count: int) -> bytes:
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    chunks: list[bytes] = []
+    remaining = expected_count
+    while remaining:
+        chunk = os.read(descriptor, min(1024 * 1024, remaining))
+        if not chunk:
+            raise SignedCandidateReinspectionError("private admitted IPA materialization truncated")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    if os.read(descriptor, 1):
+        raise SignedCandidateReinspectionError("private admitted IPA materialization grew unexpectedly")
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    return b"".join(chunks)
+
+
 def _extract_ipa(
     ipa_path: Path,
     ipa_raw: bytes,
     destination: Path,
     runner: Callable[[list[str]], subprocess.CompletedProcess[bytes]],
 ) -> Path:
+    """Extract only the descriptor-admitted IPA bytes; never reopen the retained candidate path."""
+    del ipa_path  # The caller-owned pathname is intentionally non-authoritative after `_read_regular`.
     app_name = _validate_ipa_members(ipa_raw)
-    _require_tool_success(
-        runner,
-        ["/usr/bin/ditto", "-x", "-k", str(ipa_path), str(destination)],
-        "retained IPA extraction",
-    )
+
+    try:
+        descriptor, materialized_path = tempfile.mkstemp(
+            prefix=".nembra-admitted-signed-field-",
+            suffix=".ipa",
+            dir=destination,
+        )
+    except OSError as error:
+        raise SignedCandidateReinspectionError("could not create private admitted IPA materialization") from error
+
+    try:
+        # Remove the materialization's pathname before any authority-producing tool can run. The
+        # descriptor remains the only reference and is inherited explicitly by the production
+        # `ditto` child, so a same-UID process cannot swap a later pathname to different bytes.
+        try:
+            os.unlink(materialized_path)
+        except OSError as error:
+            raise SignedCandidateReinspectionError("could not unlink private admitted IPA materialization") from error
+
+        metadata = os.fstat(descriptor)
+        _require(stat.S_ISREG(metadata.st_mode), "private admitted IPA materialization is not regular")
+        try:
+            os.fchmod(descriptor, 0o400)
+        except OSError as error:
+            raise SignedCandidateReinspectionError("could not lock private admitted IPA permissions") from error
+
+        # fchmod to read-only would prevent writing through this descriptor on some platforms, so
+        # temporarily restore owner write while materializing, then return to read-only before use.
+        os.fchmod(descriptor, 0o600)
+        _write_all(descriptor, ipa_raw)
+        os.fsync(descriptor)
+        os.fchmod(descriptor, 0o400)
+        accepted = _read_descriptor_exact(descriptor, len(ipa_raw))
+        _require(accepted == ipa_raw, "private admitted IPA materialization bytes diverged")
+        _require(_sha256(accepted) == _sha256(ipa_raw), "private admitted IPA materialization digest diverged")
+
+        source = f"/dev/fd/{descriptor}"
+        arguments = ["/usr/bin/ditto", "-x", "-k", source, str(destination)]
+        if runner is _run_tool:
+            result = _run_tool_with_fd(arguments, descriptor)
+        else:
+            # Injected tests execute in this process and can read `/dev/fd/N` directly while the
+            # descriptor remains open. Production never uses an injected runner.
+            result = runner(arguments)
+        if result.returncode != 0:
+            detail = result.stderr.decode("utf-8", errors="replace").strip()
+            suffix = f": {detail[:512]}" if detail else ""
+            raise SignedCandidateReinspectionError(f"retained IPA extraction failed{suffix}")
+    finally:
+        os.close(descriptor)
+
     app = destination / "Payload" / app_name
     try:
         metadata = app.lstat()
