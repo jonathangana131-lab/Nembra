@@ -21,7 +21,7 @@ struct SpeedInstrumentDisplayFrame: Equatable {
 
 /// Main-actor presentation state for the landscape speed instrument.
 ///
-/// Raw evidence enters only through `SpeedTelemetrySample`. High-frequency
+/// Accepted speed evidence enters through `SpeedTelemetrySample`. High-frequency
 /// render frames never flow back into `VehicleState`, ride history, distance,
 /// stats, or protocol diagnostics.
 @MainActor
@@ -52,6 +52,10 @@ final class SpeedInstrumentModel {
         interpolationPolicy = policy
     }
 
+    /// Narrow test/legacy seam for a caller that already owns raw-stream
+    /// continuity. The Dashboard itself intentionally does not subscribe here:
+    /// its positive authority is the source-qualified `SpeedEvidenceAvailability`
+    /// stream exposed by `VehicleStore`.
     func start(stream: AsyncStream<SpeedTelemetrySample>) {
         guard streamTask == nil else { return }
 
@@ -66,14 +70,14 @@ final class SpeedInstrumentModel {
     func stop() {
         streamTask?.cancel()
         streamTask = nil
-        // Leaving the surface ends this model's raw observation continuity.
+        // Leaving the surface ends this model's presentation continuity.
         // Source-owned availability may still retain the latest accepted value,
         // but no old raw/interpolated anchor is allowed to survive view teardown.
         clearRawPresentationContinuity()
     }
 
-    /// Opens or closes raw-speed presentation continuity for the currently
-    /// confirmed vehicle connection.
+    /// Opens or closes speed presentation continuity for the currently confirmed
+    /// vehicle connection.
     ///
     /// Connection loss is an immediate fail-closed boundary. Reconnection alone
     /// intentionally does not restore `permitsLiveConfirmedFallback`; the
@@ -90,15 +94,16 @@ final class SpeedInstrumentModel {
     }
 
     /// Consumes source-owned field currentness without inventing a cadence or
-    /// timeout. `.retained` and `.unavailable` immediately retire raw/interpolated
+    /// timeout. `.retained` and `.unavailable` immediately retire interpolated
     /// presentation even when aggregate transport remains connected. `.live`
-    /// reopens raw presentation only because the provider supplies the exact
-    /// accepted absolute sample that established current field continuity.
+    /// reopens presentation only because the provider supplies the exact accepted
+    /// absolute sample that established current field continuity.
     ///
-    /// The live sample is accepted here as well as on the non-replaying raw
-    /// telemetry stream so actor/task ordering cannot create a false blank. A
-    /// duplicate raw delivery carries the same monotonic receipt and is rejected
-    /// by the interpolator as stale rather than advancing evidence twice.
+    /// The Dashboard drives this method from the provider's newest-current-state
+    /// availability stream instead of a second non-tokenized raw stream. This
+    /// prevents a delayed pre-gap raw packet from racing the currentness demotion,
+    /// and it intentionally allows slow consumers to skip obsolete intermediate
+    /// display targets and retarget to the newest accepted sample.
     func setSpeedEvidenceAvailability(_ availability: SpeedEvidenceAvailability) {
         switch availability {
         case .unavailable, .retained:
@@ -145,7 +150,7 @@ final class SpeedInstrumentModel {
     }
 
     /// Returns a render-only frame. The fallback is a caller-owned accepted
-    /// source value; the Dashboard now supplies it from `SpeedEvidenceAvailability`
+    /// source value; the Dashboard supplies it from `SpeedEvidenceAvailability`
     /// rather than treating cached `VehicleState.speed` as field-current authority.
     /// It is never converted into a telemetry sample internally.
     ///
@@ -311,11 +316,10 @@ struct DashboardSpeedInstrumentView: View {
         .padding(.horizontal, 8)
         .task {
             model.configureInterpolationPolicy(vehicle.speedInstrumentInterpolationPolicy)
-            // Initialize from source-owned field currentness before subscribing so
-            // raw task ordering cannot make a cached value look current.
+            // Initialize from source-owned field currentness. Positive speed
+            // presentation authority is intentionally not sourced from the
+            // separate raw stream because that stream carries no continuity token.
             model.setSpeedEvidenceAvailability(vehicle.speedEvidenceAvailability)
-            let stream = await vehicle.speedTelemetryUpdates()
-            model.start(stream: stream)
         }
         .onChange(of: vehicle.speedEvidenceAvailability, initial: true) { _, availability in
             model.setSpeedEvidenceAvailability(availability)
