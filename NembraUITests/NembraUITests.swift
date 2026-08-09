@@ -102,6 +102,38 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testLandscapeDashboardUnavailableTruthIsVisibleAndCapturable() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(scenario: "scooter-unavailable", orientation: .landscapeRight)
+
+        let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
+        XCTAssertTrue(
+            cockpit.waitForExistence(timeout: 4),
+            "Landscape must still render the real Cockpit when scooter telemetry is unavailable."
+        )
+
+        let speed = app.descendants(matching: .any)["dashboard.speed"]
+        XCTAssertTrue(speed.waitForExistence(timeout: 2))
+        XCTAssertTrue(
+            (speed.value as? String ?? "").localizedCaseInsensitiveContains("unavailable"),
+            "Missing speed evidence must remain explicitly unavailable rather than becoming zero."
+        )
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["dashboard.vehicle-status"].waitForExistence(timeout: 2),
+            "The vehicle status instrument must remain present when telemetry is unavailable."
+        )
+        XCTAssertTrue(
+            app.staticTexts["WAITING FOR DATA"].waitForExistence(timeout: 2),
+            "The Cockpit screenshot must expose the no-telemetry truth state."
+        )
+        XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
+        XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
+
+        keepScreenshot(named: "Dashboard Waiting For Data Landscape")
+    }
+
+    @MainActor
     func testLandscapeDashboardStoppedControlsConfirmEveryModePersonality() {
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "connected-stopped", orientation: .landscapeRight)
@@ -157,6 +189,24 @@ final class NembraUITests: XCTestCase {
             in: app,
             confirmedMode: confirmedMode
         )
+    }
+
+    @MainActor
+    func testLandscapeDashboardLaunchPerformance() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        XCUIDevice.shared.orientation = .landscapeRight
+
+        measure(metrics: [XCTApplicationLaunchMetric(waitUntilResponsive: true)]) {
+            let app = XCUIApplication()
+            app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = "connected-stopped"
+            app.launch()
+
+            XCTAssertTrue(
+                app.descendants(matching: .any)["dashboard.cockpit"].waitForExistence(timeout: 4),
+                "Launch measurement is valid only when the real landscape Cockpit becomes responsive."
+            )
+            app.terminate()
+        }
     }
 
     @MainActor
