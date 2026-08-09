@@ -79,26 +79,39 @@ The producer itself will create another fresh detached worktree internally. The 
 
 Choose a private path outside the repository. The producer requires an absolute regular non-symlink mode-`0600` file and independently validates its contents/mode.
 
-This example reads the UDID without placing the value in the command line or echoing it back to the terminal. The file must contain the exact identifier bytes with **no trailing newline or other surrounding whitespace**, matching the frozen `a0f4…` private runner's fail-closed input contract:
+This example reads the UDID without placing the value in the command line or echoing it back to the terminal. The file must contain the exact identifier bytes with **no trailing newline or other surrounding whitespace**, matching the frozen `a0f4…` private runner's fail-closed input contract. It also refuses a symlink private directory or any pre-existing final path **before** the secret is read or written. Bash `noclobber` supplies a second fail-closed guard against a target appearing between the pre-check and redirection; do not turn this into write-then-validate because shell redirection can follow a symlink before a later `test ! -L` runs.
 
 ```bash
 umask 077
-UDID_FILE="$HOME/.nembra-private/es80-intended-device.udid"
-/bin/mkdir -p "$(/usr/bin/dirname "$UDID_FILE")"
-/bin/chmod 700 "$(/usr/bin/dirname "$UDID_FILE")"
+PRIVATE_DIR="$HOME/.nembra-private"
+UDID_FILE="$PRIVATE_DIR/es80-intended-device.udid"
+
+if [[ -L "$PRIVATE_DIR" ]]; then
+  printf 'Refusing symlink private directory. Choose a real private directory.\n' >&2
+  exit 1
+fi
+/bin/mkdir -p "$PRIVATE_DIR"
+test -d "$PRIVATE_DIR" && test ! -L "$PRIVATE_DIR"
+/bin/chmod 700 "$PRIVATE_DIR"
+
+if [[ -e "$UDID_FILE" || -L "$UDID_FILE" ]]; then
+  printf 'Refusing existing intended-device input path. Choose a fresh private path.\n' >&2
+  exit 1
+fi
 
 printf 'Intended iPhone UDID: ' >&2
 IFS= read -r -s INTENDED_UDID
 printf '\n' >&2
-printf '%s' "$INTENDED_UDID" > "$UDID_FILE"
+( set -o noclobber; printf '%s' "$INTENDED_UDID" > "$UDID_FILE" )
 unset INTENDED_UDID
 /bin/chmod 600 "$UDID_FILE"
 
+test -s "$UDID_FILE"
 test -f "$UDID_FILE" && test ! -L "$UDID_FILE"
 test "$(/usr/bin/stat -f '%Lp' "$UDID_FILE")" = '600'
 ```
 
-Keep this file private. Do not commit it and do not copy it into the retained candidate directory.
+Keep this file private. Do not commit it and do not copy it into the retained candidate directory. If the chosen path already exists, preserve it and choose a fresh path rather than overwriting or following it.
 
 ## 3. Set the signing inputs without changing the source subject
 
@@ -242,7 +255,9 @@ Stop and preserve the exact blocker if any of these occurs:
 - more than one IPA is exported or the retained `NembraField.ipa` is missing;
 - the resulting evidence names a different source SHA, recipe, or build subject;
 - the candidate destination existed before production or appears partially published after a failure;
-- the intended-device verification file is not private mode `0600` regular non-symlink input or its path traverses a symlinked ancestor / the Nembra repository;
+- the intended-device verification directory is a symlink, the final private path already exists, the private write cannot be created with noclobber, or the retained verification file is not mode `0600` regular non-symlink input;
+- the intended-device verification value contains leading/trailing whitespace/newline;
+- the intended-device verification file path traverses a symlinked ancestor / the Nembra repository;
 - the next step would require rebuilding, re-exporting, substituting another app/IPA, or using Xcode Run;
 - anyone proposes Bluetooth scanning before the hardened Final GO record exists.
 
