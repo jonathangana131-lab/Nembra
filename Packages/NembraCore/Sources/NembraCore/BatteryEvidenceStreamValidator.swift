@@ -31,10 +31,11 @@ public enum BatteryEvidenceStreamValidationError: Error, Equatable, Sendable {
 /// requires a strictly newer receipt to carry the first post-gap boundary.
 ///
 /// `BatteryEvidenceStreamValidator` deliberately remains a value type for deterministic
-/// chronology testing. Live-currentness authority is different: validators owned by
-/// `AcceptedBatterySOCStream` share one revocable reference-backed generation. Copying such a
-/// validator copies only a handle to that generation; it cannot snapshot R1 currentness and
-/// replay it after the owner crosses a gap or newer receipt.
+/// chronology testing. Accepted/seen chronology stays value data. Live-currentness authority is
+/// different: validators owned by `AcceptedBatterySOCStream` share one revocable reference-backed
+/// generation. Copying such a validator cannot snapshot R1 currentness and replay it after the
+/// owner crosses a gap or newer receipt, even though the copy still truthfully reports its local
+/// last accepted chronology for diagnostics.
 public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
     private var acceptedReceiptIdentity: BatteryEvidenceReceiptIdentity?
     private var acceptedUptimeNanoseconds: UInt64?
@@ -63,22 +64,19 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
     private var currentnessOwner: BatteryEvidenceCurrentnessOwner?
     private var currentnessGeneration: BatteryEvidenceCurrentnessOwner.Generation?
 
-    /// For a standalone chronology validator this preserves the historical value semantics.
-    /// For an owner-bound validator, currentness-facing getters read through the shared owner so
-    /// an old copied validator cannot keep exposing a superseded accepted receipt as live.
+    /// Accepted chronology remains the local value-state even if a later observed callback revokes
+    /// live currentness. Do not infer currentness from these diagnostics; owner-bound anchors and
+    /// live estimates use opaque leases instead.
     public var lastAcceptedReceiptIdentity: BatteryEvidenceReceiptIdentity? {
-        guard currentnessOwner != nil else { return acceptedReceiptIdentity }
-        return currentnessSnapshot?.acceptedReceiptIdentity
+        acceptedReceiptIdentity
     }
 
     public var lastAcceptedUptimeNanoseconds: UInt64? {
-        guard currentnessOwner != nil else { return acceptedUptimeNanoseconds }
-        return currentnessSnapshot?.acceptedUptimeNanoseconds
+        acceptedUptimeNanoseconds
     }
 
     public var requiresContinuityBoundary: Bool {
-        guard currentnessOwner != nil else { return continuityBoundaryRequired }
-        return currentnessSnapshot?.requiresContinuityBoundary ?? true
+        continuityBoundaryRequired
     }
 
     public init() {
@@ -262,12 +260,6 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
             && lhs.lastSeenReceiptUptimeNanoseconds == rhs.lastSeenReceiptUptimeNanoseconds
             && lhs.lastSeenReceiptContinuity == rhs.lastSeenReceiptContinuity
             && lhs.seenUptimeFloorNanoseconds == rhs.seenUptimeFloorNanoseconds
-    }
-
-    private var currentnessSnapshot: BatteryEvidenceCurrentnessOwner.Snapshot? {
-        guard let currentnessOwner,
-              let currentnessGeneration else { return nil }
-        return currentnessOwner.snapshotIfOwned(by: currentnessGeneration)
     }
 
     private func requireCurrentnessOwnershipIfBound() throws {
