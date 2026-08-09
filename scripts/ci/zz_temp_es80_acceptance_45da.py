@@ -52,8 +52,13 @@ n = one(n,
     '        ScrollView {\n            VStack(alignment: .leading, spacing: 28) {\n                VStack(alignment: .leading, spacing: 14) {\n',
     '        ScrollView {\n            VStack(alignment: .leading, spacing: verticalSizeClass == .compact ? 16 : 28) {\n                VStack(alignment: .leading, spacing: verticalSizeClass == .compact ? 9 : 14) {\n',
     'NO-GO compact rhythm')
+old_padding = '                .padding(18)\n'
+new_padding = '                .padding(verticalSizeClass == .compact ? 12 : 18)\n'
 for label in ('physical lock card', 'engineering details card'):
-    n = one(n, '                .padding(18)\n', '                .padding(verticalSizeClass == .compact ? 12 : 18)\n', label)
+    at = n.find(old_padding)
+    if at < 0:
+        raise SystemExit(f'{label}: padding match missing')
+    n = n[:at] + new_padding + n[at + len(old_padding):]
 n = one(n,
     '            .frame(maxWidth: 660)\n            .padding(.horizontal, 22)\n            .padding(.top, 18)\n            .padding(.bottom, 42)\n            .frame(maxWidth: .infinity)\n        }\n        .background(Color.black.ignoresSafeArea())\n',
     '            .frame(maxWidth: 660)\n            .padding(.horizontal, 22)\n            .padding(.top, verticalSizeClass == .compact ? 8 : 18)\n            .padding(.bottom, verticalSizeClass == .compact ? 20 : 42)\n            .frame(maxWidth: .infinity)\n        }\n        .accessibilityIdentifier("es80.capture.field-no-go-scroll")\n        .background(Color.black.ignoresSafeArea())\n',
