@@ -296,7 +296,11 @@ final class NembraAppTests: XCTestCase {
 
         // This proves the result did not depend on `.onChange` cleanup running first.
         XCTAssertTrue(model.isAnimationActive)
-        XCTAssertEqual(model.latestMeasuredKilometersPerHour, 20, accuracy: 0.000_1)
+        XCTAssertEqual(
+            try XCTUnwrap(model.latestMeasuredKilometersPerHour),
+            20,
+            accuracy: 0.000_1
+        )
     }
 
     @MainActor
@@ -320,7 +324,11 @@ final class NembraAppTests: XCTestCase {
 
         // The old live interpolator still exists here; the synchronous gate ignored it.
         XCTAssertTrue(model.isAnimationActive)
-        XCTAssertEqual(model.latestMeasuredKilometersPerHour, 20, accuracy: 0.000_1)
+        XCTAssertEqual(
+            try XCTUnwrap(model.latestMeasuredKilometersPerHour),
+            20,
+            accuracy: 0.000_1
+        )
     }
 
     @MainActor
@@ -344,8 +352,15 @@ final class NembraAppTests: XCTestCase {
         XCTAssertNil(current.latestMeasuredKilometersPerHour)
 
         // The local display model still targets receipt two; visual truth already moved to receipt three.
-        XCTAssertEqual(model.latestMeasurementUptimeNanoseconds, second.receivedAtUptimeNanoseconds)
-        XCTAssertEqual(model.latestMeasuredKilometersPerHour, 20, accuracy: 0.000_1)
+        XCTAssertEqual(
+            try XCTUnwrap(model.latestMeasurementUptimeNanoseconds),
+            second.receivedAtUptimeNanoseconds
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(model.latestMeasuredKilometersPerHour),
+            20,
+            accuracy: 0.000_1
+        )
     }
 
     @MainActor
