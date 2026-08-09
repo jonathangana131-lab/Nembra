@@ -108,9 +108,10 @@ struct NembraApp: App {
     }
 
     /// Routes the exact field-build recipe marker into Capture even in a Release archive.
-    /// Explicit synthetic QA routing wins only in a Debug iOS Simulator build so the provenance-
-    /// bound field recipe cannot steal the retained Simulator visual matrix. Release/physical
-    /// builds compile this override out and continue to route the canonical recipe to field Capture.
+    /// Explicit synthetic Capture QA and ordinary app Simulator scenarios win only in a Debug
+    /// iOS Simulator build so the provenance-bound field recipe cannot steal either retained QA
+    /// surface. Release/physical builds compile these overrides out and continue to route the
+    /// canonical recipe to field Capture.
     static func resolveLaunchMode(
         arguments: [String] = ProcessInfo.processInfo.arguments,
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -125,6 +126,9 @@ struct NembraApp: App {
                 .flatMap(PassiveBluetoothExperimentOneSimulatorQAFixture.Scenario.init(rawValue:))
                 ?? .stationaryPreflight
             return .es80PassiveCaptureSimulatorQA(scenario.rawValue)
+        }
+        if AppBootstrap.simulationScenario(arguments: arguments, environment: environment) != nil {
+            return .standard
         }
 #endif
         if let fieldRecipe = infoDictionary[captureFieldRecipeInfoPlistKey] as? String,
