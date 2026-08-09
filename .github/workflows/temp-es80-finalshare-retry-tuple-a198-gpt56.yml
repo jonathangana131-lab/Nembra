@@ -1,0 +1,94 @@
+name: TEMP ES80 Final Share Retry Tuple a198 GPT56
+
+on:
+  push:
+    branches:
+      - recovery/es80-finalshare-retry-tuple-a198-gpt56-clean
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact applicator head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Pin actual retained Share retry tuple
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          test_path = Path("NembraUITests/ES80ResearchCaptureUITests.swift")
+          shell_path = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")
+          text = test_path.read_text(encoding="utf-8")
+          shell = shell_path.read_text(encoding="utf-8")
+
+          old = '''        XCTAssertTrue(
+              source.contains("guard let data = finalShareData"),
+              "A temporary Share-file retry must reuse retained verified bytes rather than mint a new evidence artifact."
+          )'''.replace("              ", "            ")
+          new = '''        XCTAssertTrue(
+              source.contains("if finalShareData != nil,"),
+              "A temporary Share-file retry must require retained verified final Share bytes."
+          )
+          XCTAssertTrue(
+              source.contains("finalShareIntegrityReport != nil,"),
+              "A temporary Share-file retry must retain the exact integrity report rather than mint new evidence."
+          )
+          XCTAssertTrue(
+              source.contains("finalShareFilename != nil {"),
+              "A temporary Share-file retry must retain the verified filename alongside the verified bytes."
+          )'''.replace("              ", "            ")
+
+          if text.count(old) != 1:
+              raise SystemExit(f"expected exactly one stale retained-Share assertion block, found {text.count(old)}")
+
+          retry_guard = '''if finalShareData != nil,
+             finalShareIntegrityReport != nil,
+             finalShareFilename != nil {'''
+          if retry_guard not in shell:
+              raise SystemExit("reviewed retained-Share retry tuple is missing from production shell")
+
+          required = (
+              'coordinator.finalizedShareArtifactForCurrentApplication(setup: setup)',
+              'PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)',
+              'finalShareIntegrityReport = report',
+          )
+          for marker in required:
+              if marker not in shell:
+                  raise SystemExit(f"reviewed final Share authority marker missing: {marker}")
+
+          portrait_resets_before = text.count('XCUIDevice.shared.orientation = .portrait')
+          if portrait_resets_before < 10:
+              raise SystemExit(f"expected current portrait-reset custody, found only {portrait_resets_before} resets")
+
+          updated = text.replace(old, new)
+          if updated.count('XCUIDevice.shared.orientation = .portrait') != portrait_resets_before:
+              raise SystemExit("portrait-reset visual custody changed unexpectedly")
+          test_path.write_text(updated, encoding="utf-8")
+          PY
+
+          rm .github/workflows/temp-es80-finalshare-retry-tuple-a198-gpt56.yml
+          git diff --check
+          test "$(git diff --name-only | sort)" = $'.github/workflows/temp-es80-finalshare-retry-tuple-a198-gpt56.yml\nNembraUITests/ES80ResearchCaptureUITests.swift'
+          read additions deletions path < <(git diff --numstat -- NembraUITests/ES80ResearchCaptureUITests.swift)
+          test "$additions" = "10"
+          test "$deletions" = "2"
+          test "$path" = "NembraUITests/ES80ResearchCaptureUITests.swift"
+
+      - name: Commit clean validation-only repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-go-applicator"
+          git config user.email "nembra-go-applicator@users.noreply.github.com"
+          git add NembraUITests/ES80ResearchCaptureUITests.swift .github/workflows/temp-es80-finalshare-retry-tuple-a198-gpt56.yml
+          git commit -m "test(capture): pin retained Share retry tuple"
+          git push origin HEAD:"$GITHUB_REF_NAME"
