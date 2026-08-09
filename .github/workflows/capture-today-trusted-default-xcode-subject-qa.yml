@@ -63,7 +63,7 @@ jobs:
         run: python3 scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py -v
       - name: Preserve pinned producer interpreter custody
         run: python3 scripts/ci/tests/test_capture_trusted_xcode_producer_execution_custody.py -v
-      - name: Preserve closed Bash startup custody
+      - name: Preserve closed Bash startup custody and run provenance
         run: python3 scripts/ci/tests/test_capture_trusted_xcode_bash_environment_custody.py -v
       - name: Preserve isolated prevalidation process custody
         run: python3 scripts/ci/tests/test_capture_trusted_xcode_prevalidation_process_custody.py -v
@@ -78,7 +78,7 @@ jobs:
           set -euo pipefail
           grep -Fq 'TRUSTED_WORKFLOW_NAME = "Capture Trusted Xcode 27 Exact-Head QA"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'TRUSTED_WORKFLOW_PATH = ".github/workflows/capture-xcode27-trusted-command.yml"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
-          grep -Fq 'TRUSTED_WORKFLOW_BLOB_SHA = "524b011c6147142281c3fed62d3bb402c7f2be63"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          grep -Fq 'TRUSTED_WORKFLOW_BLOB_SHA = "fd9859c8dc64ccb6257062e50b37c0f49997ad78"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_PATH = "scripts/ci/xcode27_simulator_capture.sh"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_BLOB_SHA = "4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'prevalidate-candidate:' .github/workflows/capture-xcode27-trusted-command.yml
@@ -92,6 +92,8 @@ jobs:
           grep -Fq '/usr/bin/git cat-file blob "$expected_blob"' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq '/usr/bin/git -C /tmp hash-object --stdin' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq 'test "$materialized_blob" = "$expected_blob"' .github/workflows/capture-xcode27-trusted-command.yml
+          grep -Fq 'GITHUB_RUN_ID="$''{{ github.run_id }}"' .github/workflows/capture-xcode27-trusted-command.yml
+          grep -Fq 'GITHUB_RUN_ATTEMPT="$''{{ github.run_attempt }}"' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq "/bin/bash --noprofile --norc -p -c 'source /dev/stdin' \"\$GITHUB_WORKSPACE/\$producer_path\"" .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq 'public Final GO foundation builder is non-authorizing' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'private foundation implementation is non-authorizing' scripts/ci/_es80_today_final_go_foundation_impl.py
