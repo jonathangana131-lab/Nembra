@@ -253,8 +253,8 @@ struct DashboardSpeedInstrumentView: View {
             Group {
                 if vehicle.state.dataAvailability == .retained {
                     Label("LAST KNOWN", systemImage: "clock.arrow.circlepath")
-                } else if vehicle.state.connection == .connected {
-                    Text(isVehicleMoving ? "RIDING" : "READY")
+                } else if let semanticSpeed = currentSemanticSpeedKilometersPerHour {
+                    Text(semanticSpeed >= 0.5 ? "RIDING" : "READY")
                 } else {
                     Text("NO LIVE SPEED")
                 }
@@ -278,18 +278,29 @@ struct DashboardSpeedInstrumentView: View {
     private func accessibilitySpeed(frame: SpeedInstrumentDisplayFrame?) -> String {
         let authoritativeKilometersPerHour = frame?.latestMeasuredKilometersPerHour
             ?? vehicle.state.speedKilometersPerHour
-        guard authoritativeKilometersPerHour != nil else {
+        guard let authoritativeKilometersPerHour,
+              authoritativeKilometersPerHour.isFinite,
+              authoritativeKilometersPerHour >= 0 else {
             return "Unavailable"
         }
         return VehicleDisplayFormatting.speed(kilometersPerHour: authoritativeKilometersPerHour)
     }
 
-    private var speedUnitText: String {
-        VehicleDisplayFormatting.usesMetric ? "KM/H" : "MPH"
+    /// `READY` is a semantic statement, so missing or malformed speed must never
+    /// inherit the old `nil -> 0` presentation shortcut. This remains display-only;
+    /// stopped-control authority is separately gated by source-qualified live speed.
+    private var currentSemanticSpeedKilometersPerHour: Double? {
+        guard vehicle.state.connection == .connected,
+              let speed = vehicle.state.speedKilometersPerHour,
+              speed.isFinite,
+              speed >= 0 else {
+            return nil
+        }
+        return speed
     }
 
-    private var isVehicleMoving: Bool {
-        (vehicle.state.speedKilometersPerHour ?? 0) >= 0.5
+    private var speedUnitText: String {
+        VehicleDisplayFormatting.usesMetric ? "KM/H" : "MPH"
     }
 
     private var modeAnimation: Animation? {
