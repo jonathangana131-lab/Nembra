@@ -6,6 +6,7 @@ on:
     paths:
       - scripts/ci/es80_today_trusted_capture_xcode_subject.py
       - scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
+      - scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py
       - scripts/ci/es80_today_final_go_publication.py
       - scripts/ci/tests/test_es80_today_final_go_publication.py
       - scripts/ci/es80_today_final_go_hardened.py
@@ -34,11 +35,13 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
       - name: Compile Final GO hardening modules and tests
         run: |
-          python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
+          python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py
           python3 -m py_compile scripts/ci/es80_today_final_go_publication.py scripts/ci/tests/test_es80_today_final_go_publication.py
           python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_git_custody.py
       - name: Run trusted subject adversarial suite
         run: python3 scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py -v
+      - name: Preserve retained artifact admission contract
+        run: python3 scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py -v
       - name: Run failure-atomic publication adversarial suite
         run: python3 scripts/ci/tests/test_es80_today_final_go_publication.py -v
       - name: Run hardened composition suite
