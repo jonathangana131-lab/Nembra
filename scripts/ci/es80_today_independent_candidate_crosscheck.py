@@ -333,6 +333,17 @@ def crosscheck(candidate_dir: Path, *, expected_source_sha: str, now: datetime |
         "signing_inspection_authority": INSPECTION_AUTHORITY,
         "physical_authorization": "not-granted",
     }
+    expected_environment_keys = set(required_environment) | {
+        "development_team",
+        "allow_provisioning_updates",
+        "export_options_sha256",
+        "private_runner_source_git_blob",
+        "canonical_inspector_source_git_blob",
+    }
+    if set(environment) != expected_environment_keys:
+        raise CrosscheckError(
+            f"field candidate environment schema shape drifted: {sorted(environment)!r}"
+        )
     for key, expected in required_environment.items():
         if environment.get(key) != expected:
             raise CrosscheckError(
