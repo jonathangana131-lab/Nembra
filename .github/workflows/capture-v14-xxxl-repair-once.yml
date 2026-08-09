@@ -34,58 +34,64 @@ jobs:
               (
                   "spacing: verticalSizeClass == .compact ? 10 : (isAccessibilityLayout ? 8 : 28)",
                   "spacing: verticalSizeClass == .compact ? 10 : (isAccessibilityLayout ? 6 : 28)",
-                  1,
               ),
               (
                   "spacing: verticalSizeClass == .compact ? 6 : (isAccessibilityLayout ? 4 : 14)",
                   "spacing: verticalSizeClass == .compact ? 6 : (isAccessibilityLayout ? 2 : 14)",
-                  1,
               ),
               (
                   "isAccessibilityLayout || verticalSizeClass == .compact ? .title2 : .largeTitle,",
                   "isAccessibilityLayout ? .headline : (verticalSizeClass == .compact ? .title2 : .largeTitle),",
-                  1,
               ),
               (
                   """Text(\"Final exact-build checks are still in progress.\")
                             .font(.caption.weight(.semibold))""",
                   """Text(\"Final checks in progress.\")
                             .font(.caption2.weight(.semibold))""",
-                  1,
               ),
               (
                   """Text(isAccessibilityLayout ? \"PHYSICAL CAPTURE · NO-GO\" : \"Not ready for scooter capture yet\")
                             .font(.headline)""",
                   """Text(isAccessibilityLayout ? \"PHYSICAL CAPTURE · NO-GO\" : \"Not ready for scooter capture yet\")
                             .font(isAccessibilityLayout ? .subheadline.weight(.semibold) : .headline)""",
-                  1,
               ),
               (
                   """Text(\"Engineering details\")
                                     .font(.subheadline.weight(.semibold))""",
                   """Text(\"Engineering details\")
                                     .font(isAccessibilityLayout ? .footnote.weight(.semibold) : .subheadline.weight(.semibold))""",
-                  1,
               ),
               (
-                  ".padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 10 : 18))",
-                  ".padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 8 : 18))",
-                  2,
+                  """.padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 10 : 18))
+                .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(physicalLockAccessibilityLabel)
+                .accessibilityIdentifier(\"es80.capture.physical-run-locked\")""",
+                  """.padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 8 : 18))
+                .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(physicalLockAccessibilityLabel)
+                .accessibilityIdentifier(\"es80.capture.physical-run-locked\")""",
+              ),
+              (
+                  """.padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 10 : 18))
+                .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))""",
+                  """.padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 8 : 18))
+                .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))""",
               ),
               (
                   ".padding(.top, verticalSizeClass == .compact ? 8 : (isAccessibilityLayout ? 8 : 18))",
                   ".padding(.top, verticalSizeClass == .compact ? 8 : (isAccessibilityLayout ? 4 : 18))",
-                  1,
               ),
           ]
 
-          for old, new, expected_count in replacements:
+          for old, new in replacements:
               actual_count = source.count(old)
-              if actual_count != expected_count:
+              if actual_count != 1:
                   raise SystemExit(
-                      f"Refusing ambiguous repair for {old!r}: expected {expected_count}, found {actual_count}"
+                      f"Refusing ambiguous repair for {old!r}: expected 1, found {actual_count}"
                   )
-              source = source.replace(old, new)
+              source = source.replace(old, new, 1)
 
           path.write_text(source, encoding="utf-8")
           PY
