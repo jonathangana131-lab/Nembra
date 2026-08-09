@@ -171,8 +171,15 @@ final class VehicleStore {
             resolvedState.batteryPercent = nil
         }
 
+        // A disconnected initial state is lifecycle/cache state, not a new battery
+        // observation. Never admit an arbitrary disconnected transport integer. The
+        // only disconnected battery value that may enter shared state is a validated
+        // retained snapshot loaded through the persistence boundary below.
+        if resolvedState.connection != .connected {
+            resolvedState.batteryPercent = nil
+        }
+
         if resolvedState.connection != .connected,
-           resolvedState.batteryPercent == nil,
            let snapshot = try? retainedBatteryStorage?.load() {
             resolvedState.batteryPercent = snapshot.percent
             resolvedState.lastUpdated = snapshot.observedAt
@@ -339,20 +346,20 @@ final class VehicleStore {
                 nextState.batteryPercent = nil
                 lastConfirmedBatteryAuthority = nil
             }
-        } else if incomingState.connection != .connected,
-                  let previousPercent = state.batteryPercent {
-            if incomingState.batteryPercent == nil {
-                nextState.batteryPercent = previousPercent
-            }
-
-            // Disconnect/reconnect lifecycle events are not battery measurements. Preserve the
-            // observation timestamp and authority only when the stale value is the same confirmed
-            // value we already held; a different incoming value cannot borrow prior provenance.
-            if nextState.batteryPercent == previousPercent,
+        } else if incomingState.connection != .connected {
+            // A disconnect/reconnect lifecycle update is not a battery observation. Its payload
+            // cannot replace the last confirmed value or create a new one. Preserve the prior
+            // confirmed value and its original chronology when one exists; otherwise fail closed.
+            if let previousPercent = state.batteryPercent,
                let authority = lastConfirmedBatteryAuthority {
+                nextState.batteryPercent = previousPercent
                 nextState.lastUpdated = state.lastUpdated
                 retainedBatteryObservedAt = retainedBatteryObservedAt ?? state.lastUpdated
                 retainedBatteryAuthority = authority
+            } else {
+                nextState.batteryPercent = nil
+                retainedBatteryObservedAt = nil
+                retainedBatteryAuthority = nil
             }
         }
 
