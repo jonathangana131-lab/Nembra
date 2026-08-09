@@ -1,0 +1,126 @@
+name: V14 Capture XXXL Repair Recovery
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-xxxl-viewport/gpt56-go
+
+permissions:
+  contents: write
+
+jobs:
+  apply-exact-current-repair:
+    name: Apply exact-current Capture XXXL repair
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact repair carrier
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 3
+
+      - name: Verify exact lineage and apply reviewed product-only repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "e605c5e6c2008c582e370c137661394c43ce875a"
+          test "$(git rev-parse HEAD^^)" = "019fa4b2d1446d91871b0736a543c12138a6a346"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              source = file.read_text()
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one repair anchor, found {count}")
+              file.write_text(source.replace(old, new, 1))
+
+          shell = "NembraApp/Features/Research/ES80CaptureShellView.swift"
+          app = "NembraApp/App/NembraApp.swift"
+
+          replace_once(
+              shell,
+              '            Text("\\(snapshot.evidenceLabel) · SYNTHETIC SOFTWARE STATE")\n                .fixedSize(horizontal: false, vertical: true)',
+              '            Text(\n                dynamicTypeSize.isAccessibilitySize\n                    ? "SIMULATOR QA · SYNTHETIC"\n                    : "\\(snapshot.evidenceLabel) · SYNTHETIC SOFTWARE STATE"\n            )\n            .fixedSize(horizontal: false, vertical: true)'
+          )
+          replace_once(
+              shell,
+              '    private var completionPanel: some View {\n        let analysisReady = presentationAnalysisReady\n        return VStack(alignment: .leading, spacing: 16) {',
+              '    private var completionPanel: some View {\n        let analysisReady = presentationAnalysisReady\n        return VStack(\n            alignment: .leading,\n            spacing: dynamicTypeSize.isAccessibilitySize ? 10 : 16\n        ) {'
+          )
+          replace_once(
+              shell,
+              '            ZStack {\n                Circle()\n                    .fill(analysisReady ? .white : .white.opacity(0.12))\n                    .frame(width: 52, height: 52)\n                Image(systemName: analysisReady ? "checkmark" : "lock.fill")\n                    .font(.system(size: 20, weight: .bold))\n                    .foregroundStyle(analysisReady ? .black : .white)\n            }\n            .accessibilityHidden(true)\n\n            VStack(alignment: .leading, spacing: 4) {',
+              '            if !dynamicTypeSize.isAccessibilitySize {\n                ZStack {\n                    Circle()\n                        .fill(analysisReady ? .white : .white.opacity(0.12))\n                        .frame(width: 52, height: 52)\n                    Image(systemName: analysisReady ? "checkmark" : "lock.fill")\n                        .font(.system(size: 20, weight: .bold))\n                        .foregroundStyle(analysisReady ? .black : .white)\n                }\n                .accessibilityHidden(true)\n            }\n\n            VStack(alignment: .leading, spacing: 4) {'
+          )
+          replace_once(
+              shell,
+              '        if simulatorQASnapshot != nil {\n            Text("Synthetic Simulator QA presentation only. No capture artifact bytes were created, and no physical, RF, protocol, telemetry, or command evidence is claimed.")\n                .font(.subheadline)\n                .foregroundStyle(.secondary)\n                .fixedSize(horizontal: false, vertical: true)',
+              '        if simulatorQASnapshot != nil {\n            Text(\n                dynamicTypeSize.isAccessibilitySize\n                    ? "Synthetic Simulator QA only. No physical evidence."\n                    : "Synthetic Simulator QA presentation only. No capture artifact bytes were created, and no physical, RF, protocol, telemetry, or command evidence is claimed."\n            )\n            .font(.subheadline)\n            .foregroundStyle(.secondary)\n            .fixedSize(horizontal: false, vertical: true)\n            .accessibilityLabel(\n                "Synthetic Simulator QA presentation only. No capture artifact bytes were created, and no physical, RF, protocol, telemetry, or command evidence is claimed."\n            )'
+          )
+
+          replace_once(
+              app,
+              '                    Text(\n                        isAccessibilityLayout\n                            ? "Final exact-build checks are still in progress."\n                            : "This build is still finishing its final checks before it can collect real ES80 data."\n                    )\n                    .font(\n                        isAccessibilityLayout\n                            ? .body.weight(.medium)\n                            : (verticalSizeClass == .compact\n                                ? .subheadline.weight(.medium)\n                                : .title3.weight(.medium))\n                    )\n                    .foregroundStyle(.white)\n                    .fixedSize(horizontal: false, vertical: true)',
+              '                    if !isAccessibilityLayout {\n                        Text("This build is still finishing its final checks before it can collect real ES80 data.")\n                            .font(\n                                verticalSizeClass == .compact\n                                    ? .subheadline.weight(.medium)\n                                    : .title3.weight(.medium)\n                            )\n                            .foregroundStyle(.white)\n                            .fixedSize(horizontal: false, vertical: true)\n                    }'
+          )
+          replace_once(
+              app,
+              '                HStack(alignment: .top, spacing: 12) {\n                    Image(systemName: "exclamationmark.lock.fill")\n                        .font(.title3.weight(.semibold))\n                        .foregroundStyle(.orange)\n                        .accessibilityHidden(true)\n\n                    VStack(alignment: .leading, spacing: 6) {\n                        Text("Not ready for scooter capture yet")\n                            .font(.headline)\n                            .foregroundStyle(.white)\n\n                        Text(\n                            isAccessibilityLayout\n                                ? "Exact-build checks must pass before Bluetooth capture can begin."\n                                : "Nembra keeps every scooter action locked until the exact app build passes its required checks and is explicitly cleared for this physical procedure. When this screen unlocks, Capture will guide the OFF / ON sequence step by step."\n                        )\n                        .font(.subheadline)\n                        .foregroundStyle(.secondary)\n                        .fixedSize(horizontal: false, vertical: true)\n                    }\n                }\n                .padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 14 : 18))\n                .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))\n                .accessibilityElement(children: .ignore)\n                .accessibilityLabel(physicalLockAccessibilityLabel)\n                .accessibilityIdentifier("es80.capture.physical-run-locked")',
+              '                HStack(alignment: .top, spacing: isAccessibilityLayout ? 0 : 12) {\n                    if !isAccessibilityLayout {\n                        Image(systemName: "exclamationmark.lock.fill")\n                            .font(.title3.weight(.semibold))\n                            .foregroundStyle(.orange)\n                            .accessibilityHidden(true)\n                    }\n\n                    VStack(alignment: .leading, spacing: isAccessibilityLayout ? 3 : 6) {\n                        Text(isAccessibilityLayout ? "Physical capture NO-GO" : "Not ready for scooter capture yet")\n                            .font(isAccessibilityLayout ? .subheadline.weight(.semibold) : .headline)\n                            .foregroundStyle(.white)\n\n                        Text(\n                            isAccessibilityLayout\n                                ? "Exact-build clearance is still required."\n                                : "Nembra keeps every scooter action locked until the exact app build passes its required checks and is explicitly cleared for this physical procedure. When this screen unlocks, Capture will guide the OFF / ON sequence step by step."\n                        )\n                        .font(isAccessibilityLayout ? .footnote : .subheadline)\n                        .foregroundStyle(.secondary)\n                        .fixedSize(horizontal: false, vertical: true)\n                    }\n                }\n                .padding(verticalSizeClass == .compact ? 12 : (isAccessibilityLayout ? 10 : 18))\n                .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))\n                .accessibilityElement(children: .ignore)\n                .accessibilityLabel(physicalLockAccessibilityLabel)\n                .accessibilityIdentifier("es80.capture.physical-run-locked")'
+          )
+          replace_once(
+              app,
+              'spacing: verticalSizeClass == .compact ? 10 : (isAccessibilityLayout ? 14 : 28)',
+              'spacing: verticalSizeClass == .compact ? 10 : (isAccessibilityLayout ? 10 : 28)'
+          )
+          replace_once(
+              app,
+              'spacing: verticalSizeClass == .compact ? 6 : (isAccessibilityLayout ? 8 : 14)',
+              'spacing: verticalSizeClass == .compact ? 6 : (isAccessibilityLayout ? 6 : 14)'
+          )
+          replace_once(
+              app,
+              '.padding(.horizontal, isAccessibilityLayout ? 18 : 22)',
+              '.padding(.horizontal, isAccessibilityLayout ? 16 : 22)'
+          )
+          replace_once(
+              app,
+              '.padding(.top, verticalSizeClass == .compact ? 8 : (isAccessibilityLayout ? 12 : 18))',
+              '.padding(.top, verticalSizeClass == .compact ? 8 : (isAccessibilityLayout ? 8 : 18))'
+          )
+
+          shell_text = Path(shell).read_text()
+          app_text = Path(app).read_text()
+          combined = shell_text + app_text
+          for token in [
+              "SIMULATOR QA · SYNTHETIC",
+              "Synthetic Simulator QA only. No physical evidence.",
+              "Physical capture NO-GO",
+              "Exact-build clearance is still required.",
+              'accessibilityIdentifier("es80.capture.physical-run-locked")',
+              'accessibilityIdentifier("es80.capture.engineering-details")',
+          ]:
+              if token not in combined:
+                  raise SystemExit(f"missing repaired contract: {token}")
+          if ".dynamicTypeSize(" in shell_text or ".dynamicTypeSize(" in app_text:
+              raise SystemExit("repair must not cap Dynamic Type")
+          PY
+
+          git diff --check
+          git diff -- NembraApp/Features/Research/ES80CaptureShellView.swift NembraApp/App/NembraApp.swift
+
+      - name: Publish repaired product head and remove helpers
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/v14-capture-xxxl-repair-selfapply.yml
+          git rm .github/workflows/v14-capture-xxxl-repair-recovery.yml
+          git config user.name "nembra-v14-closure"
+          git config user.email "nembra-v14-closure@users.noreply.github.com"
+          git add NembraApp/Features/Research/ES80CaptureShellView.swift NembraApp/App/NembraApp.swift
+          git diff --cached --check
+          git commit -m "[Capture V14] Recompose Accessibility XXXL viewport"
+          git push origin HEAD:repair/v14-capture-xxxl-viewport/gpt56-go
