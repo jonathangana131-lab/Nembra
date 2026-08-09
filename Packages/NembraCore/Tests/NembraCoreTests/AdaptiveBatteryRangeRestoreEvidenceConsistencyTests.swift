@@ -32,14 +32,27 @@ struct AdaptiveBatteryRangeRestoreEvidenceConsistencyTests {
         startPercentage: Double,
         endPercentage: Double,
         startUptime: UInt64,
-        endUptime: UInt64
+        endUptime: UInt64,
+        distanceMeters: Double = 1_000
     ) throws -> BatteryRangeLearningWindow {
         try BatteryRangeLearningWindow(
-            distanceMeters: 1_000,
+            distanceMeters: distanceMeters,
             distanceCoverage: .complete,
             transportGapOccurred: false,
             startSOC: reading(startPercentage, uptime: startUptime),
             endSOC: reading(endPercentage, uptime: endUptime)
+        )
+    }
+
+    private func singleWindowModelJSON() throws -> [String: Any] {
+        var model = AdaptiveBatteryRangeModel()
+        let result = model.ingest(
+            try window(startPercentage: 100, endPercentage: 90, startUptime: 1, endUptime: 2),
+            policy: try policy()
+        )
+        #expect(result.disposition == .accepted)
+        return try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(model)) as? [String: Any]
         )
     }
 
@@ -63,6 +76,43 @@ struct AdaptiveBatteryRangeRestoreEvidenceConsistencyTests {
 
         let data = try JSONEncoder().encode(model)
         let decoded = try JSONDecoder().decode(AdaptiveBatteryRangeModel.self, from: data)
+        #expect(decoded == model)
+    }
+
+    @Test("restore rejects historical consumption impossible for accepted window count")
+    func historicalConsumptionCannotExceedHundredPerWindow() throws {
+        var object = try singleWindowModelJSON()
+        object["historicalConsumedPercentagePoints"] = 101.0
+        let data = try JSONSerialization.data(withJSONObject: object)
+
+        #expect(throws: DecodingError.self) {
+            _ = try JSONDecoder().decode(AdaptiveBatteryRangeModel.self, from: data)
+        }
+    }
+
+    @Test("live-produced one-window 100-point upper bound round-trips")
+    func oneWindowHundredPointUpperBoundIsValid() throws {
+        var model = AdaptiveBatteryRangeModel()
+        let result = model.ingest(
+            try window(
+                startPercentage: 100,
+                endPercentage: 0,
+                startUptime: 1,
+                endUptime: 2,
+                distanceMeters: 1_000
+            ),
+            policy: try policy()
+        )
+
+        #expect(result.disposition == .accepted)
+        #expect(model.historicalConsumedPercentagePoints == 100)
+        #expect(model.acceptedWindowCount == 1)
+        #expect(model.recentSamples.first?.consumedPercentagePoints == 100)
+
+        let decoded = try JSONDecoder().decode(
+            AdaptiveBatteryRangeModel.self,
+            from: JSONEncoder().encode(model)
+        )
         #expect(decoded == model)
     }
 }
