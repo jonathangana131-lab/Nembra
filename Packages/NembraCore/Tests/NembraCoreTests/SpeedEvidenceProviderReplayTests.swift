@@ -26,4 +26,61 @@ struct SpeedEvidenceProviderReplayTests {
         #expect(sample.source == .simulatorQA)
         #expect(sample.kilometersPerHour == 0)
     }
+
+    @Test("snapshot revalidates current provider state instead of caller's old dequeued live value")
+    func snapshotRevalidatesCurrentProviderState() async throws {
+        let service = SimulatedScooterService(
+            initialState: SimulatedScooterService.state(for: .connectedStopped),
+            commandLatencyNanoseconds: 0
+        )
+        let stream = await service.speedEvidenceUpdates()
+        var iterator = stream.makeAsyncIterator()
+
+        let previouslyDequeued = try #require(await iterator.next())
+        guard case .live = previouslyDequeued else {
+            Issue.record("Expected the initial Simulator state to begin with live speed evidence")
+            return
+        }
+
+        // The consumer intentionally keeps the old `.live` event in hand while
+        // source continuity advances. App authority must be rebuildable from the
+        // provider's current state rather than trusting that old local value.
+        await service.simulateConnectionDrop()
+        await service.simulateReconnected()
+
+        let current = await service.speedEvidenceSnapshot()
+        guard case let .retained(sample) = current else {
+            Issue.record("Expected current snapshot to remain retained until a fresh post-reconnect observation")
+            return
+        }
+        #expect(sample.source == .simulatorQA)
+        #expect(sample.kilometersPerHour == 0)
+    }
+
+    @Test("fresh post-reconnect observation is required before snapshot becomes live again")
+    func snapshotRequiresFreshObservationAfterReconnect() async throws {
+        let service = SimulatedScooterService(
+            initialState: SimulatedScooterService.state(for: .connectedStopped),
+            commandLatencyNanoseconds: 0
+        )
+
+        await service.simulateConnectionDrop()
+        await service.simulateReconnected()
+
+        let retained = await service.speedEvidenceSnapshot()
+        guard case .retained = retained else {
+            Issue.record("Reconnect without a new speed observation must not restore live authority")
+            return
+        }
+
+        await service.simulateRide(speedKilometersPerHour: 0, elapsedSeconds: 0)
+
+        let live = await service.speedEvidenceSnapshot()
+        guard case let .live(sample) = live else {
+            Issue.record("Expected a fresh source-attributed post-reconnect observation to restore live authority")
+            return
+        }
+        #expect(sample.source == .simulatorQA)
+        #expect(sample.kilometersPerHour == 0)
+    }
 }
