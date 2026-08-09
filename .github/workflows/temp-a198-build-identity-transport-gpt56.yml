@@ -1,0 +1,195 @@
+name: TEMP a198 Capture build identity transport repair
+
+on:
+  push:
+    branches:
+      - automation/es80-a198-build-identity-transport-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Guard exact parent
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "a198660c85252b209a881d750d557956fcd24738"
+      - name: Apply exact build-identity transport repair
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          plist = Path('NembraApp/Info.plist')
+          if plist.exists():
+              raise SystemExit('NembraApp/Info.plist unexpectedly already exists')
+          plist.write_text('''<?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>NembraCaptureBuildIdentifier</key>
+              <string>$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)</string>
+              <key>NembraCaptureBuildInstanceID</key>
+              <string>$(NEMBRA_CAPTURE_BUILD_INSTANCE_ID)</string>
+              <key>NembraCaptureBuildCommitSHA</key>
+              <string>$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)</string>
+              <key>NembraCaptureFieldRecipe</key>
+              <string>$(NEMBRA_CAPTURE_FIELD_RECIPE)</string>
+          </dict>
+          </plist>
+          '''.replace('          ', ''))
+
+          project = Path('Nembra.xcodeproj/project.pbxproj')
+          text = project.read_text()
+          old = 'GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = Nembra;'
+          new = 'GENERATE_INFOPLIST_FILE = YES; INFOPLIST_FILE = NembraApp/Info.plist; INFOPLIST_KEY_CFBundleDisplayName = Nembra;'
+          count = text.count(old)
+          if count != 2:
+              raise SystemExit(f'expected exactly two app generated-plist settings, got {count}')
+          project.write_text(text.replace(old, new))
+
+          simulator = Path('scripts/ci/xcode27_simulator_capture.sh')
+          text = simulator.read_text()
+          pairs = {
+              '"INFOPLIST_KEY_NembraCaptureBuildIdentifier=$CAPTURE_BUILD_IDENTIFIER"':
+                  '"NEMBRA_CAPTURE_BUILD_IDENTIFIER=$CAPTURE_BUILD_IDENTIFIER"',
+              '"INFOPLIST_KEY_NembraCaptureBuildInstanceID=$CAPTURE_BUILD_INSTANCE_ID"':
+                  '"NEMBRA_CAPTURE_BUILD_INSTANCE_ID=$CAPTURE_BUILD_INSTANCE_ID"',
+              '"INFOPLIST_KEY_NembraCaptureBuildCommitSHA=$CAPTURE_BUILD_COMMIT_SHA"':
+                  '"NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$CAPTURE_BUILD_COMMIT_SHA"',
+          }
+          for old, new in pairs.items():
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one Simulator build-setting transport {old!r}, got {count}')
+              text = text.replace(old, new)
+          simulator.write_text(text)
+
+          producer = Path('scripts/ci/xcode27_signed_field_candidate.sh')
+          text = producer.read_text()
+          pairs = {
+              '"INFOPLIST_KEY_NembraCaptureBuildIdentifier=$BUILD_IDENTIFIER"':
+                  '"NEMBRA_CAPTURE_BUILD_IDENTIFIER=$BUILD_IDENTIFIER"',
+              '"INFOPLIST_KEY_NembraCaptureBuildInstanceID=$BUILD_INSTANCE_ID"':
+                  '"NEMBRA_CAPTURE_BUILD_INSTANCE_ID=$BUILD_INSTANCE_ID"',
+              '"INFOPLIST_KEY_NembraCaptureBuildCommitSHA=$SOURCE_SHA"':
+                  '"NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$SOURCE_SHA"',
+              '"INFOPLIST_KEY_NembraCaptureFieldRecipe=$FIELD_RECIPE_ID"':
+                  '"NEMBRA_CAPTURE_FIELD_RECIPE=$FIELD_RECIPE_ID"',
+          }
+          for old, new in pairs.items():
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one signed-field build-setting transport {old!r}, got {count}')
+              text = text.replace(old, new)
+          producer.write_text(text)
+
+          producer_test = Path('scripts/ci/tests/test_xcode27_signed_field_candidate_source.py')
+          text = producer_test.read_text()
+          pairs = {
+              "self.assertIn('INFOPLIST_KEY_NembraCaptureBuildIdentifier', self.source)":
+                  "self.assertIn('NEMBRA_CAPTURE_BUILD_IDENTIFIER=$BUILD_IDENTIFIER', self.source)",
+              "self.assertIn('INFOPLIST_KEY_NembraCaptureBuildInstanceID', self.source)":
+                  "self.assertIn('NEMBRA_CAPTURE_BUILD_INSTANCE_ID=$BUILD_INSTANCE_ID', self.source)",
+              "self.assertIn('INFOPLIST_KEY_NembraCaptureBuildCommitSHA', self.source)":
+                  "self.assertIn('NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$SOURCE_SHA', self.source)",
+              "self.assertIn('INFOPLIST_KEY_NembraCaptureFieldRecipe=$FIELD_RECIPE_ID', self.source)":
+                  "self.assertIn('NEMBRA_CAPTURE_FIELD_RECIPE=$FIELD_RECIPE_ID', self.source)",
+          }
+          for old, new in pairs.items():
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one signed-field source assertion {old!r}, got {count}')
+              text = text.replace(old, new)
+          marker = "        self.assertIn('raw_info_plist', self.source)\n"
+          if text.count(marker) != 1:
+              raise SystemExit('could not find signed-field source assertion insertion point')
+          text = text.replace(
+              marker,
+              "        self.assertNotIn('INFOPLIST_KEY_NembraCaptureBuild', self.source)\n"
+              "        self.assertNotIn('INFOPLIST_KEY_NembraCaptureFieldRecipe', self.source)\n"
+              + marker,
+          )
+          producer_test.write_text(text)
+
+          transport_test = Path('scripts/ci/tests/test_capture_build_identity_plist_transport.py')
+          transport_test.write_text('''#!/usr/bin/env python3
+          from pathlib import Path
+          import plistlib
+          import unittest
+
+          ROOT = Path(__file__).resolve().parents[2]
+          APP_PLIST = ROOT / "NembraApp" / "Info.plist"
+          PROJECT = ROOT / "Nembra.xcodeproj" / "project.pbxproj"
+          SIMULATOR = ROOT / "scripts" / "ci" / "xcode27_simulator_capture.sh"
+          PRODUCER = ROOT / "scripts" / "ci" / "xcode27_signed_field_candidate.sh"
+
+
+          class CaptureBuildIdentityPlistTransportTests(unittest.TestCase):
+              def test_source_plist_owns_exact_custom_identity_keys(self):
+                  with APP_PLIST.open("rb") as handle:
+                      info = plistlib.load(handle)
+                  self.assertEqual(
+                      info,
+                      {
+                          "NembraCaptureBuildIdentifier": "$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)",
+                          "NembraCaptureBuildInstanceID": "$(NEMBRA_CAPTURE_BUILD_INSTANCE_ID)",
+                          "NembraCaptureBuildCommitSHA": "$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)",
+                          "NembraCaptureFieldRecipe": "$(NEMBRA_CAPTURE_FIELD_RECIPE)",
+                      },
+                  )
+
+              def test_app_debug_and_release_merge_the_source_plist(self):
+                  source = PROJECT.read_text()
+                  self.assertEqual(source.count("INFOPLIST_FILE = NembraApp/Info.plist;"), 2)
+                  self.assertEqual(source.count("GENERATE_INFOPLIST_FILE = YES;"), 6)
+
+              def test_simulator_passes_explicit_build_variables_not_custom_infoplist_keys(self):
+                  source = SIMULATOR.read_text()
+                  self.assertIn('"NEMBRA_CAPTURE_BUILD_IDENTIFIER=$CAPTURE_BUILD_IDENTIFIER"', source)
+                  self.assertIn('"NEMBRA_CAPTURE_BUILD_INSTANCE_ID=$CAPTURE_BUILD_INSTANCE_ID"', source)
+                  self.assertIn('"NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$CAPTURE_BUILD_COMMIT_SHA"', source)
+                  self.assertNotIn("INFOPLIST_KEY_NembraCaptureBuild", source)
+                  self.assertIn("Print :NembraCaptureBuildIdentifier", source)
+                  self.assertIn("Print :NembraCaptureBuildInstanceID", source)
+                  self.assertIn("Print :NembraCaptureBuildCommitSHA", source)
+
+              def test_signed_field_producer_passes_all_four_build_variables_and_keeps_raw_plist_checks(self):
+                  source = PRODUCER.read_text()
+                  self.assertIn('"NEMBRA_CAPTURE_BUILD_IDENTIFIER=$BUILD_IDENTIFIER"', source)
+                  self.assertIn('"NEMBRA_CAPTURE_BUILD_INSTANCE_ID=$BUILD_INSTANCE_ID"', source)
+                  self.assertIn('"NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$SOURCE_SHA"', source)
+                  self.assertIn('"NEMBRA_CAPTURE_FIELD_RECIPE=$FIELD_RECIPE_ID"', source)
+                  self.assertNotIn("INFOPLIST_KEY_NembraCaptureBuild", source)
+                  self.assertNotIn("INFOPLIST_KEY_NembraCaptureFieldRecipe", source)
+                  self.assertIn('info.get("NembraCaptureFieldRecipe") != field_recipe', source)
+                  self.assertIn("raw_info_plist", source)
+
+
+          if __name__ == "__main__":
+              unittest.main()
+          '''.replace('          ', ''))
+          PY
+          python3 -m plistlib NembraApp/Info.plist >/dev/null 2>&1 || python3 - <<'PY'
+          import plistlib
+          with open('NembraApp/Info.plist', 'rb') as f:
+              plistlib.load(f)
+          PY
+          python3 scripts/ci/tests/test_capture_build_identity_plist_transport.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          git grep -n 'INFOPLIST_KEY_NembraCaptureBuild' -- ':!*.md' && exit 1 || true
+          git diff --check
+          git diff -- NembraApp/Info.plist Nembra.xcodeproj/project.pbxproj scripts/ci/xcode27_simulator_capture.sh scripts/ci/xcode27_signed_field_candidate.sh scripts/ci/tests/test_xcode27_signed_field_candidate_source.py scripts/ci/tests/test_capture_build_identity_plist_transport.py
+      - name: Commit repair
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add NembraApp/Info.plist Nembra.xcodeproj/project.pbxproj scripts/ci/xcode27_simulator_capture.sh scripts/ci/xcode27_signed_field_candidate.sh scripts/ci/tests/test_xcode27_signed_field_candidate_source.py scripts/ci/tests/test_capture_build_identity_plist_transport.py
+          git commit -m "fix(capture): embed exact runtime build identity via source plist"
+          git push origin HEAD:automation/es80-a198-build-identity-transport-gpt56
