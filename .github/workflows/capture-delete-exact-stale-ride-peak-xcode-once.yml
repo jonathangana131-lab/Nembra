@@ -1,0 +1,108 @@
+name: Capture Delete Exact Stale Ride-Peak Xcode Run Once
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - .github/workflows/capture-delete-exact-stale-ride-peak-xcode-once.yml
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: write
+
+jobs:
+  delete-exact-stale-run:
+    name: Delete only exact merged ride-peak stale Xcode run
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_API: https://api.github.com
+      REPOSITORY: jonathangana131-lab/Nembra
+      STALE_PR: "198"
+      STALE_RUN: "31164679035"
+      STALE_SHA: 3bf0e6c647a8424412181dc1cde95be3aeac42e3
+      STALE_BRANCH: parallel/ride-bound-peak-speed/chat-t6v9m
+      STALE_WORKFLOW: Xcode 27 PR Exact-Head QA
+      STALE_WORKFLOW_PATH: .github/workflows/xcode27-pr-command.yml
+      FLAGSHIP_RUN: "31294595269"
+      FLAGSHIP_SHA: f4cd76e301334ce96824d0b150ef03d2d2cb606b
+    steps:
+      - name: Delete exact stale merged claimant only
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth=(-H "Authorization: Bearer $GITHUB_TOKEN" -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28')
+
+          run_json="$(curl --fail-with-body --silent --show-error --location "${auth[@]}" "$GH_API/repos/$REPOSITORY/actions/runs/$STALE_RUN")"
+          pr_json="$(curl --fail-with-body --silent --show-error --location "${auth[@]}" "$GH_API/repos/$REPOSITORY/pulls/$STALE_PR")"
+          flagship_json="$(curl --fail-with-body --silent --show-error --location "${auth[@]}" "$GH_API/repos/$REPOSITORY/actions/runs/$FLAGSHIP_RUN")"
+
+          python3 - "$run_json" "$pr_json" "$flagship_json" <<'PY'
+          import json, sys
+          run = json.loads(sys.argv[1])
+          pr = json.loads(sys.argv[2])
+          flagship = json.loads(sys.argv[3])
+
+          expected = {
+              "id": 31164679035,
+              "name": "Xcode 27 PR Exact-Head QA",
+              "path": ".github/workflows/xcode27-pr-command.yml",
+              "event": "pull_request",
+              "head_branch": "parallel/ride-bound-peak-speed/chat-t6v9m",
+              "head_sha": "3bf0e6c647a8424412181dc1cde95be3aeac42e3",
+          }
+          for key, value in expected.items():
+              if run.get(key) != value:
+                  raise SystemExit(f"refusing deletion: stale run {key} mismatch {run.get(key)!r} != {value!r}")
+
+          if run.get("status") == "completed":
+              print(f"stale run already terminal; no deletion needed: conclusion={run.get('conclusion')}")
+              raise SystemExit(90)
+          if run.get("status") not in {"queued", "in_progress"}:
+              raise SystemExit(f"refusing deletion: unexpected stale status {run.get('status')!r}")
+
+          if pr.get("number") != 198 or pr.get("state") != "closed" or not pr.get("merged_at"):
+              raise SystemExit("refusing deletion: PR #198 is not durably closed+merged")
+          if (pr.get("head") or {}).get("sha") != expected["head_sha"]:
+              raise SystemExit("refusing deletion: merged PR head does not bind stale run SHA")
+          if (pr.get("head") or {}).get("ref") != expected["head_branch"]:
+              raise SystemExit("refusing deletion: merged PR branch does not bind stale run branch")
+
+          if flagship.get("id") != 31294595269:
+              raise SystemExit("refusing deletion: flagship run identity drifted")
+          if flagship.get("head_sha") != "f4cd76e301334ce96824d0b150ef03d2d2cb606b":
+              raise SystemExit("refusing deletion: flagship source drifted")
+          if flagship.get("status") not in {"queued", "in_progress"}:
+              raise SystemExit(
+                  f"refusing deletion: flagship no longer waits for xcode-27 ({flagship.get('status')!r}); refresh manually"
+              )
+
+          print(
+              "authorized exact stale run deletion: "
+              f"stale={run['id']} status={run['status']} merged_pr={pr['number']} "
+              f"flagship={flagship['id']} flagship_status={flagship['status']}"
+          )
+          PY
+          guard_status="$?"
+          if [[ "$guard_status" == "90" ]]; then
+            exit 0
+          fi
+
+          code="$(curl --silent --show-error --output /tmp/delete-body --write-out '%{http_code}' --location --request DELETE "${auth[@]}" "$GH_API/repos/$REPOSITORY/actions/runs/$STALE_RUN")"
+          if [[ "$code" != "204" ]]; then
+            cat /tmp/delete-body >&2 || true
+            echo "exact stale run deletion failed with HTTP $code" >&2
+            exit 1
+          fi
+          echo "Exact stale workflow run $STALE_RUN deleted."
+
+          # Deletion authority is not success until GitHub stops returning the stale run.
+          verify_code="$(curl --silent --show-error --output /tmp/verify-body --write-out '%{http_code}' --location "${auth[@]}" "$GH_API/repos/$REPOSITORY/actions/runs/$STALE_RUN")"
+          if [[ "$verify_code" != "404" ]]; then
+            cat /tmp/verify-body >&2 || true
+            echo "stale run still retrievable after delete: HTTP $verify_code" >&2
+            exit 1
+          fi
+          echo "Verified exact stale run is no longer retrievable."
