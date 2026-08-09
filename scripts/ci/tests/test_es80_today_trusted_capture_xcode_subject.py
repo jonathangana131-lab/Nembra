@@ -2,9 +2,11 @@
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "es80_today_trusted_capture_xcode_subject.py"
@@ -24,11 +26,17 @@ class TrustedCaptureXcodeSubjectTests(unittest.TestCase):
     RUN_NUMBER = 44
     RUN_ATTEMPT = 1
 
-    def make_archive(self, root: Path, *, source: str | None = None) -> tuple[Path, str, int]:
+    def make_archive(
+        self,
+        root: Path,
+        *,
+        source: str | None = None,
+        build_instance: str = "11111111-2222-3333-4444-555555555555",
+    ) -> tuple[Path, str, int]:
         record = {
             "schemaVersion": 3,
             "buildIdentifier": "Capture Build V14-" + self.SOURCE[:12],
-            "buildInstanceID": "11111111-2222-3333-4444-555555555555",
+            "buildInstanceID": build_instance,
             "sourceCommitSHA": source or self.SOURCE,
             "executableSHA256": "c" * 64,
             "infoPlistSHA256": "d" * 64,
@@ -46,6 +54,27 @@ class TrustedCaptureXcodeSubjectTests(unittest.TestCase):
             archive.writestr(trusted_xcode.EXTERNAL_RECORD_NAME, raw_record)
         raw = path.read_bytes()
         return path, hashlib.sha256(raw).hexdigest(), len(raw)
+
+    def make_stored_archive(self, path: Path, build_instance: str) -> bytes:
+        record = {
+            "schemaVersion": 3,
+            "buildIdentifier": "Capture Build V14-" + self.SOURCE[:12],
+            "buildInstanceID": build_instance,
+            "sourceCommitSHA": self.SOURCE,
+            "executableSHA256": "c" * 64,
+            "infoPlistSHA256": "d" * 64,
+            "experimentRecipeID": "ES80-FINGERPRINT-v1",
+            "procedureVersion": "V14",
+        }
+        raw_record = (
+            json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n"
+        ).encode()
+        with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_STORED) as archive:
+            info = zipfile.ZipInfo(trusted_xcode.EXTERNAL_RECORD_NAME)
+            info.date_time = (2026, 8, 8, 12, 0, 0)
+            info.compress_type = zipfile.ZIP_STORED
+            archive.writestr(info, raw_record)
+        return path.read_bytes()
 
     def trusted_records(self, archive_sha: str, archive_size: int) -> dict[str, dict]:
         pr = {
@@ -281,6 +310,57 @@ class TrustedCaptureXcodeSubjectTests(unittest.TestCase):
                 "duplicate key",
             ):
                 self.verify(archive, records)
+
+    def test_rejects_symlink_downloaded_archive(self):
+        if not hasattr(os, "O_NOFOLLOW"):
+            self.skipTest("platform does not expose O_NOFOLLOW")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            archive, archive_sha, archive_size = self.make_archive(root)
+            link = root / "artifact-link.zip"
+            link.symlink_to(archive.name)
+            records = self.trusted_records(archive_sha, archive_size)
+            with self.assertRaisesRegex(
+                trusted_xcode.TrustedCaptureXcodeError,
+                "non-symlink regular file",
+            ):
+                self.verify(link, records)
+
+    def test_server_digest_and_embedded_record_share_one_downloaded_archive_snapshot(self):
+        instance_a = "11111111-2222-3333-4444-555555555555"
+        instance_b = "66666666-7777-8888-9999-aaaaaaaaaaaa"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            archive = root / "downloaded.zip"
+            replacement = root / "replacement.zip"
+            raw_a = self.make_stored_archive(archive, instance_a)
+            raw_b = self.make_stored_archive(replacement, instance_b)
+            self.assertEqual(len(raw_a), len(raw_b), "fixture must preserve server byte count")
+            self.assertNotEqual(raw_a, raw_b, "fixture archives must be byte-distinct")
+            records = self.trusted_records(hashlib.sha256(raw_a).hexdigest(), len(raw_a))
+
+            original_snapshot = trusted_xcode._read_regular_file_snapshot
+            swapped = False
+
+            def snapshot_then_swap(path: Path) -> bytes:
+                nonlocal swapped
+                raw = original_snapshot(path)
+                os.replace(replacement, archive)
+                swapped = True
+                return raw
+
+            with mock.patch.object(
+                trusted_xcode,
+                "_read_regular_file_snapshot",
+                side_effect=snapshot_then_swap,
+            ):
+                subject = self.verify(archive, records)
+
+            self.assertTrue(swapped, "red-team archive swap did not execute")
+            self.assertEqual(subject["artifactArchiveSHA256"], hashlib.sha256(raw_a).hexdigest())
+            self.assertEqual(subject["artifactArchiveByteCount"], len(raw_a))
+            self.assertEqual(subject["externalBuildRecord"]["buildInstanceID"], instance_a)
+            self.assertNotEqual(subject["externalBuildRecord"]["buildInstanceID"], instance_b)
 
 
 if __name__ == "__main__":
