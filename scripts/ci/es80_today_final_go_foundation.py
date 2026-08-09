@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""Non-authorizing compatibility surface for V14 TODAY Final GO foundation helpers.
+"""Non-authorizing compatibility surface for V14 TODAY Final GO constants and errors.
 
-The closed-world validator implementation lives in `_es80_today_final_go_foundation_impl.py` and is
-consumed directly only by the canonical hardened composer plus adversarial test harnesses. This
-public compatibility filename deliberately cannot mint a Final GO record either by direct execution
-or by importing `build_final_go_record(...)`.
+The authority-bearing closed-world validator lives in `_es80_today_final_go_foundation_impl.py` and
+is consumed directly only by the canonical hardened composer plus adversarial test harnesses. This
+public compatibility filename deliberately cannot mint or publish a Final GO record.
 
-Helper constants/parsers remain re-exported temporarily so existing source-shape QA and closed-world
-test fixtures can converge without reopening a second production authority path. The loaded private
-implementation module itself is deliberately not retained as a public-module capability.
+Only immutable/data-like compatibility names plus `FinalGoError` are copied from the private module.
+No private implementation function object or loaded module object is retained here, so callers
+cannot recover the private builder through this public namespace's delegated callable globals.
 """
 from __future__ import annotations
 
@@ -25,16 +24,15 @@ _impl = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_impl)
 
 for _name in dir(_impl):
-    if not _name.startswith("__"):
+    if _name == "FinalGoError" or _name.isupper():
         globals()[_name] = getattr(_impl, _name)
 
-# Preserve the non-authorizing publication helper without retaining a module object through which
-# callers could recover the private authority-bearing builder.
-_publish_impl = _impl.publish_record_no_replace
 del _impl
+del _spec
+del _name
+del _IMPL_PATH
 
-# Keep these exact source pins visible to canonical source-shape QA while the private implementation
-# remains the tested closed-world parser/validator.
+# Keep these exact source pins visible to canonical source-shape QA.
 PINNED_CROSSCHECK_COMMIT = "d827a296048386bda62024ea3278775d5344c47c"
 PINNED_CROSSCHECK_BLOB = "c3b2b620280484c05316fc5c2fa2ca451f1fdc83"
 RESEARCH_COMPILE_MODE = "private-today-v1"
@@ -42,17 +40,23 @@ RESEARCH_COMPILE_AUTHORITY = "canonical-producer-explicit-mode"
 RESEARCH_COMPILE_CONDITION = "NEMBRA_ES80_TODAY_RESEARCH"
 
 
-def build_final_go_record(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    """Fail closed: imported callers must use the canonical hardened composer instead."""
-    del args, kwargs
+def _non_authorizing_error(surface: str) -> None:
     raise FinalGoError(
-        "public Final GO foundation builder is non-authorizing; use es80_today_final_go_hardened.py"
+        f"public Final GO foundation {surface} is non-authorizing; "
+        "use es80_today_final_go_hardened.py"
     )
 
 
+def build_final_go_record(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    """Fail closed: imported callers must use the canonical hardened composer instead."""
+    del args, kwargs
+    _non_authorizing_error("builder")
+
+
 def publish_record_no_replace(*args: Any, **kwargs: Any) -> str:
-    """Retain publication helper compatibility without granting record-construction authority."""
-    return _publish_impl(*args, **kwargs)
+    """Fail closed: publication authority also belongs only to the hardened composer."""
+    del args, kwargs
+    _non_authorizing_error("publisher")
 
 
 def main(argv: list[str] | None = None) -> int:
