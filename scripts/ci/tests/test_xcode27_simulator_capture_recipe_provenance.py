@@ -57,9 +57,9 @@ class SimulatorCaptureRecipeProvenanceTests(unittest.TestCase):
         self.assertLess(self.app_source.index(qa_return), self.app_source.index(field_recipe_guard))
 
     def test_standard_debug_simulator_request_precedes_embedded_field_recipe(self):
-        scenario_guard = (
-            "if AppBootstrap.simulationScenario(arguments: arguments, environment: environment) != nil {"
-        )
+        resolution_switch = "switch ScooterSimulationConfiguration.resolve("
+        selected_or_invalid = "case .selected, .invalid:"
+        disabled_case = "case .disabled:"
         field_recipe_guard = (
             "if let fieldRecipe = infoDictionary[captureFieldRecipeInfoPlistKey] as? String,"
         )
@@ -68,12 +68,16 @@ class SimulatorCaptureRecipeProvenanceTests(unittest.TestCase):
             'SIMCTL_CHILD_NEMBRA_SIMULATION_SCENARIO="$state"',
             self.capture_source,
         )
-        self.assertIn(scenario_guard, self.app_source)
-        scenario_guard_index = self.app_source.index(scenario_guard)
-        standard_return_index = self.app_source.index("return .standard", scenario_guard_index)
+        switch_index = self.app_source.index(resolution_switch)
+        selected_or_invalid_index = self.app_source.index(selected_or_invalid, switch_index)
+        standard_return_index = self.app_source.index("return .standard", selected_or_invalid_index)
+        disabled_index = self.app_source.index(disabled_case, standard_return_index)
         field_recipe_guard_index = self.app_source.index(field_recipe_guard)
-        self.assertLess(scenario_guard_index, field_recipe_guard_index)
-        self.assertLess(standard_return_index, field_recipe_guard_index)
+
+        self.assertLess(switch_index, selected_or_invalid_index)
+        self.assertLess(selected_or_invalid_index, standard_return_index)
+        self.assertLess(standard_return_index, disabled_index)
+        self.assertLess(disabled_index, field_recipe_guard_index)
 
     def test_invalid_explicit_simulator_request_cannot_fall_through_to_field_capture(self):
         resolution_switch = "switch ScooterSimulationConfiguration.resolve("
@@ -81,12 +85,6 @@ class SimulatorCaptureRecipeProvenanceTests(unittest.TestCase):
         invalid_case = "case .invalid:"
         simulator_guard = "#if DEBUG && targetEnvironment(simulator)"
         invalid_simulator_fallback = "return .unsupportedConfiguration"
-        field_recipe_guard = (
-            "if let fieldRecipe = infoDictionary[captureFieldRecipeInfoPlistKey] as? String,"
-        )
-        scenario_guard = (
-            "if AppBootstrap.simulationScenario(arguments: arguments, environment: environment) != nil {"
-        )
 
         switch_index = self.bootstrap_source.index(resolution_switch)
         disabled_index = self.bootstrap_source.index(disabled_case, switch_index)
@@ -108,10 +106,20 @@ class SimulatorCaptureRecipeProvenanceTests(unittest.TestCase):
         self.assertLess(else_index, physical_nil_index)
         self.assertLess(physical_nil_index, endif_index)
 
-        scenario_guard_index = self.app_source.index(scenario_guard)
-        standard_return_index = self.app_source.index("return .standard", scenario_guard_index)
+        # The launch-mode router independently keeps an explicit invalid request on the
+        # standard-app branch before the embedded field recipe can be evaluated. The
+        # bootstrap fallback above then makes that standard branch visibly unsupported.
+        selected_or_invalid = "case .selected, .invalid:"
+        field_recipe_guard = (
+            "if let fieldRecipe = infoDictionary[captureFieldRecipeInfoPlistKey] as? String,"
+        )
+        app_switch_index = self.app_source.index(resolution_switch)
+        app_invalid_index = self.app_source.index(selected_or_invalid, app_switch_index)
+        standard_return_index = self.app_source.index("return .standard", app_invalid_index)
         field_recipe_index = self.app_source.index(field_recipe_guard)
-        self.assertLess(scenario_guard_index, standard_return_index)
+
+        self.assertLess(app_switch_index, app_invalid_index)
+        self.assertLess(app_invalid_index, standard_return_index)
         self.assertLess(standard_return_index, field_recipe_index)
 
     def test_external_record_uses_the_same_recipe_authority(self):
