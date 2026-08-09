@@ -6,11 +6,15 @@ import importlib.util
 import json
 from pathlib import Path
 import plistlib
+import re
+import subprocess
 import sys
 import tempfile
 import unittest
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "es80_today_field_candidate_preflight.py"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+HANDOFF_PATH = REPOSITORY_ROOT / "docs" / "ES80_TODAY_SIGNED_FIELD_CANDIDATE_PRODUCTION.md"
 spec = importlib.util.spec_from_file_location("field_candidate_preflight", MODULE_PATH)
 preflight = importlib.util.module_from_spec(spec)
 assert spec and spec.loader
@@ -287,6 +291,33 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertFalse(report["checks"]["selectedXcode27"])
         self.assertFalse(any(call[0][0] == "/usr/bin/xcodebuild" for call in runner.calls))
         self.assertEqual(report["physicalExperimentAuthorization"], "not-granted")
+
+    def test_signed_field_handoff_pins_accepted_preflight_and_non_authorization(self):
+        handoff = HANDOFF_PATH.read_text(encoding="utf-8")
+        self.assertIn("9b5bde849e6b8f6b76e2a15abb52d643e3616a7a", handoff)
+        self.assertIn("fcc2243c005c5f6df2d2f5bd8b8c948e785f07d8", handoff)
+        self.assertIn("scripts/ci/es80_today_field_candidate_preflight.py", handoff)
+        self.assertIn("READY_TO_INVOKE_SIGNED_FIELD_PRODUCER", handoff)
+        self.assertIn("operator-pre-signing-readiness-not-field-authorization", handoff)
+        self.assertIn('report["physicalExperimentAuthorization"] == "not-granted"', handoff)
+        self.assertIn("a0f4a33451f61411d6e0541f2e70edea5438342d", handoff)
+        self.assertIn("stop before invoking the signed-field producer", handoff)
+
+    def test_signed_field_handoff_bash_blocks_are_syntactically_valid(self):
+        handoff = HANDOFF_PATH.read_text(encoding="utf-8")
+        blocks = re.findall(r"```bash\n(.*?)```", handoff, flags=re.DOTALL)
+        self.assertGreaterEqual(len(blocks), 5)
+        for index, block in enumerate(blocks):
+            with self.subTest(block=index):
+                completed = subprocess.run(
+                    ("/bin/bash", "-n"),
+                    input=block,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
 
 
 if __name__ == "__main__":
