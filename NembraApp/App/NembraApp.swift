@@ -625,10 +625,12 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("BUILD")
-                            .font(.caption2.monospaced().weight(.bold))
-                            .foregroundStyle(.secondary)
+                    HStack(alignment: .firstTextBaseline, spacing: isAccessibilityLayout ? 0 : 8) {
+                        if !isAccessibilityLayout {
+                            Text("BUILD")
+                                .font(.caption2.monospaced().weight(.bold))
+                                .foregroundStyle(.secondary)
+                        }
 
                         if let buildIdentityVisualLabel {
                             Text(buildIdentityVisualLabel)
