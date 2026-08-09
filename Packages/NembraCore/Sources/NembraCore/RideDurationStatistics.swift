@@ -47,7 +47,7 @@ public struct RideDurationStatisticsRide: Equatable, Sendable {
                 throw RideDurationStatisticsError.sessionMismatch
             case .continuityMismatch:
                 throw RideDurationStatisticsError.continuityMismatch
-            case .invalidDurationEvidence:
+            case .invalidDurationEvidence, .untrustedImportedEvidence:
                 throw RideDurationStatisticsError.invalidRide
             }
         }
