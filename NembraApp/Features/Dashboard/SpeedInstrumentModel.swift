@@ -192,6 +192,7 @@ final class SpeedInstrumentModel {
 struct DashboardSpeedInstrumentView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @State private var model = SpeedInstrumentModel()
 
     let modePersonality: DashboardModePersonality
@@ -236,7 +237,7 @@ struct DashboardSpeedInstrumentView: View {
 
                 Text(speedUnitText)
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(speedUnitColor)
                     .padding(.bottom, 18)
                     .accessibilityHidden(true)
             }
@@ -248,6 +249,8 @@ struct DashboardSpeedInstrumentView: View {
             // VoiceOver announces the newest authoritative/confirmed value,
             // never a visual midpoint that no sensor actually measured.
             .accessibilityValue(accessibilitySpeed(frame: frame))
+            .accessibilityHint(speedAccessibilityHint)
+            .accessibilityAddTraits(.updatesFrequently)
             .accessibilityIdentifier("dashboard.speed")
 
             Group {
@@ -261,8 +264,9 @@ struct DashboardSpeedInstrumentView: View {
             }
             .font(.caption2.weight(.bold))
             .tracking(2.2)
-            .foregroundStyle(Color.white.opacity(modePersonality.statusOpacity))
-            .animation(modeAnimation, value: modePersonality.statusOpacity)
+            .foregroundStyle(Color.white.opacity(statusOpacity))
+            .animation(modeAnimation, value: statusOpacity)
+            .accessibilityHidden(true)
 
             Spacer(minLength: 0)
         }
@@ -281,8 +285,28 @@ struct DashboardSpeedInstrumentView: View {
         return VehicleDisplayFormatting.speed(kilometersPerHour: authoritativeKilometersPerHour)
     }
 
+    private var speedAccessibilityHint: String {
+        switch vehicle.state.dataAvailability {
+        case .live:
+            return "Live scooter speed."
+        case .retained:
+            return "Last confirmed speed from the previous live connection."
+        case .unavailable:
+            return "No confirmed scooter speed is available yet."
+        }
+    }
+
     private var speedUnitText: String {
         VehicleDisplayFormatting.usesMetric ? "KM/H" : "MPH"
+    }
+
+    private var speedUnitColor: Color {
+        Color.white.opacity(colorSchemeContrast == .increased ? 0.94 : 0.74)
+    }
+
+    private var statusOpacity: Double {
+        let readabilityFloor = colorSchemeContrast == .increased ? 0.94 : 0.72
+        return max(modePersonality.statusOpacity, readabilityFloor)
     }
 
     private var isVehicleMoving: Bool {
