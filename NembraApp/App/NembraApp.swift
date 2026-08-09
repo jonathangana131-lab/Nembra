@@ -108,17 +108,14 @@ struct NembraApp: App {
     }
 
     /// Routes the exact field-build recipe marker into Capture even in a Release archive.
-    /// The package field gate independently re-verifies the same marker together with exact running
-    /// build identity before any live CoreBluetooth coordinator can be created.
+    /// Explicit synthetic QA routing wins only in a Debug iOS Simulator build so the provenance-
+    /// bound field recipe cannot steal the retained Simulator visual matrix. Release/physical
+    /// builds compile this override out and continue to route the canonical recipe to field Capture.
     static func resolveLaunchMode(
         arguments: [String] = ProcessInfo.processInfo.arguments,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         infoDictionary: [String: Any] = Bundle.main.infoDictionary ?? [:]
     ) -> LaunchMode {
-        if let fieldRecipe = infoDictionary[captureFieldRecipeInfoPlistKey] as? String,
-           fieldRecipe == PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue {
-            return .es80PassiveCapture
-        }
 #if DEBUG && targetEnvironment(simulator)
         if arguments.contains("--es80-passive-capture-simulator-qa") {
             let prefix = "--es80-capture-qa-scenario="
@@ -130,6 +127,10 @@ struct NembraApp: App {
             return .es80PassiveCaptureSimulatorQA(scenario.rawValue)
         }
 #endif
+        if let fieldRecipe = infoDictionary[captureFieldRecipeInfoPlistKey] as? String,
+           fieldRecipe == PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue {
+            return .es80PassiveCapture
+        }
 #if DEBUG
         if arguments.contains("--es80-passive-capture")
             || environment["NEMBRA_ES80_PASSIVE_CAPTURE"] == "1" {
