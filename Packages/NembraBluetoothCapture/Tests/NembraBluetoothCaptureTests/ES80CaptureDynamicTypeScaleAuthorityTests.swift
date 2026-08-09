@@ -28,7 +28,7 @@ struct ES80CaptureDynamicTypeScaleAuthorityTests {
     }
 
     private static func hasLocalDynamicTypeScaleOverride(_ source: some StringProtocol) -> Bool {
-        let compact = source.filter { !$0.isWhitespace }
+        let compact = String(String(source).filter { !$0.isWhitespace })
         return compact.contains(".dynamicTypeSize(")
             || compact.contains(".environment(\\.dynamicTypeSize")
     }
