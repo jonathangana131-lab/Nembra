@@ -12,7 +12,9 @@ This entrypoint removes the authority defects that must not remain on the execut
 - trusted workflow Git-object lookup reuses the private foundation's producer-owned, closed Git
   custody boundary rather than caller PATH/config/replacement semantics;
 - the independent retained-candidate receipt must be exact fresh stdout from the pinned crosscheck
-  Git object rather than caller-authored JSON that merely names that object; and
+  Git object rather than caller-authored JSON that merely names that object;
+- the exact retained signed IPA must survive fresh native Apple signing/provisioning reinspection,
+  and every promoted signing/installable fact is cross-bound to the foundation candidate; and
 - record publication is failure-atomic after no-replace publication.
 
 No physical result is created by this tool. A generated GO record is procedural authorization for
@@ -51,6 +53,10 @@ crosscheck_custody = _load(
     "nembra_final_go_crosscheck_receipt_custody",
     "es80_today_crosscheck_receipt_custody.py",
 )
+signed_candidate_reinspection = _load(
+    "nembra_today_signed_candidate_reinspection",
+    "es80_today_signed_candidate_reinspection.py",
+)
 
 FinalGoError = foundation.FinalGoError
 
@@ -65,6 +71,52 @@ def _workflow_blob_sha_at_commit(tooling_repo: Path, commit: str, path: str) -> 
         raise FinalGoError(
             "trusted default-branch workflow Git blob is unavailable from tooling repository"
         ) from error
+
+
+def _require_fresh_signed_candidate_match(
+    candidate: dict[str, Any],
+    fresh: dict[str, Any],
+) -> None:
+    """Cross-bind independently recomputed IPA facts to every foundation fact they authorize."""
+    if fresh.get("authority") != signed_candidate_reinspection.REINSPECTION_AUTHORITY:
+        raise FinalGoError("fresh signed-candidate reinspection lacks independent native authority")
+
+    expected = {
+        "inspectionRecordSHA256": candidate.get("signedArtifactInspectionSHA256"),
+        "signedInstallableSHA256": candidate.get("retainedIPASHA256"),
+        "ipaByteCount": candidate.get("retainedIPAByteCount"),
+        "executableSHA256": candidate.get("executableSHA256"),
+        "infoPlistSHA256": candidate.get("infoPlistSHA256"),
+        "teamIdentifier": candidate.get("teamIdentifier"),
+        "provisioningProfileSHA256": candidate.get("provisioningProfileSHA256"),
+        "provisioningProfileUUID": candidate.get("provisioningProfileUUID"),
+        "provisioningProfileExpirationUTC": candidate.get("provisioningProfileExpirationUTC"),
+        "codeDirectoryHash": candidate.get("codeDirectoryHash"),
+    }
+    for key, value in expected.items():
+        if fresh.get(key) != value:
+            raise FinalGoError(
+                f"fresh signed-candidate reinspection diverged from foundation subject: {key}"
+            )
+
+    if fresh.get("bundleIdentifier") != foundation.BUNDLE_ID:
+        raise FinalGoError("fresh signed-candidate bundle identifier is not canonical Nembra")
+    if fresh.get("platformName") != "iphoneos":
+        raise FinalGoError("fresh signed-candidate platform is not physical iPhoneOS")
+    supported = fresh.get("supportedPlatforms")
+    if not isinstance(supported, list) or "iPhoneOS" not in supported or any(
+        isinstance(item, str) and "simulator" in item.casefold() for item in supported
+    ):
+        raise FinalGoError("fresh signed-candidate reinspection does not describe a physical iPhone installable")
+    if fresh.get("provisioningApplicationIdentifier") != (
+        f"{candidate.get('teamIdentifier')}.{foundation.BUNDLE_ID}"
+    ):
+        raise FinalGoError("fresh signed-candidate provisioning application identifier diverged")
+    authorities = fresh.get("signingAuthorities")
+    if not isinstance(authorities, list) or not authorities or not all(
+        isinstance(item, str) and item.strip() for item in authorities
+    ):
+        raise FinalGoError("fresh signed-candidate reinspection lacks signing authority evidence")
 
 
 def build_final_go_record(
@@ -123,7 +175,23 @@ def build_final_go_record(
         except trusted_xcode.TrustedCaptureXcodeError as error:
             raise FinalGoError(str(error)) from error
 
-    original = foundation._trusted_xcode_subject
+    fresh_reinspection: dict[str, Any] | None = None
+    original_candidate_subject = foundation._candidate_subject
+
+    def signed_candidate_adapter(candidate_path: Path, source: str, now_utc):
+        nonlocal fresh_reinspection
+        candidate, raw = original_candidate_subject(candidate_path, source, now_utc)
+        try:
+            fresh_reinspection = signed_candidate_reinspection.verify_signed_candidate_reinspection(
+                candidate_root=candidate_path,
+            )
+        except signed_candidate_reinspection.SignedCandidateReinspectionError as error:
+            raise FinalGoError(str(error)) from error
+        _require_fresh_signed_candidate_match(candidate, fresh_reinspection)
+        return candidate, raw
+
+    original_trusted_subject = foundation._trusted_xcode_subject
+    foundation._candidate_subject = signed_candidate_adapter
     foundation._trusted_xcode_subject = trusted_subject_adapter
     try:
         record = foundation.build_final_go_record(
@@ -142,7 +210,8 @@ def build_final_go_record(
             now_utc=now_utc,
         )
     finally:
-        foundation._trusted_xcode_subject = original
+        foundation._candidate_subject = original_candidate_subject
+        foundation._trusted_xcode_subject = original_trusted_subject
 
     subject = record.get("trustedXcodeAcceptance")
     if not isinstance(subject, dict):
@@ -161,6 +230,15 @@ def build_final_go_record(
         if crosscheck.get(key) != crosscheck_execution.get(key):
             raise FinalGoError(f"fresh pinned crosscheck execution diverged from foundation subject: {key}")
     crosscheck["executionCustody"] = crosscheck_execution["executionCustody"]
+
+    # The real foundation must have traversed the authenticated candidate seam exactly as part of
+    # this GO composition. Do not allow a future refactor to silently bypass native IPA truth.
+    if fresh_reinspection is None:
+        raise FinalGoError("hardened Final GO did not consume fresh signed-candidate reinspection")
+    candidate = record.get("acceptedSignedFieldCandidate")
+    if not isinstance(candidate, dict):
+        raise FinalGoError("hardened Final GO record lacks accepted signed field candidate subject")
+    _require_fresh_signed_candidate_match(candidate, fresh_reinspection)
     return record
 
 
