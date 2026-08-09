@@ -6,12 +6,14 @@ on:
     paths:
       - scripts/ci/xcode27_signed_field_candidate.sh
       - scripts/ci/xcode27_today_research_field_candidate.sh
+      - scripts/ci/es80_today_final_go_record.py
       - scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
       - scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
       - scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
       - scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py
       - scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py
       - scripts/ci/tests/test_xcode27_today_research_field_candidate.py
+      - scripts/ci/tests/test_es80_today_final_go_record.py
       - .github/workflows/capture-producer-custody-source.yml
 
 permissions:
@@ -37,6 +39,9 @@ jobs:
         run: |
           bash -n scripts/ci/xcode27_signed_field_candidate.sh
           bash -n scripts/ci/xcode27_today_research_field_candidate.sh
+          python3 -m py_compile scripts/ci/es80_today_final_go_record.py
+          python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_record.py
+          python3 scripts/ci/tests/test_es80_today_final_go_record.py
           python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
           python3 scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
           python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py
