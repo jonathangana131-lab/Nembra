@@ -10,6 +10,10 @@ on:
     paths:
       - scripts/ci/xcode27_queue_janitor.py
       - .github/workflows/xcode27-queue-janitor.yml
+  pull_request_target:
+    types:
+      - closed
+      - synchronize
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
@@ -25,16 +29,27 @@ concurrency:
 
 jobs:
   cleanup:
+    if: >-
+      github.event_name != 'pull_request_target' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout trusted default branch after PR-head movement
+        if: github.event_name == 'pull_request_target'
+        uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Checkout event revision
+        if: github.event_name != 'pull_request_target'
+        uses: actions/checkout@v6
 
       - name: Self-test fail-closed classifier
         run: python3 scripts/ci/xcode27_queue_janitor.py --self-test
 
       - name: Audit branch candidate without mutation
-        if: github.ref != 'refs/heads/main'
+        if: github.event_name != 'pull_request_target' && github.ref != 'refs/heads/main'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: >-
@@ -42,8 +57,18 @@ jobs:
           --minimum-age-seconds 120
           --max-cancellations 200
 
+      - name: Cancel proven-stale Xcode runs after same-repo PR head movement
+        if: github.event_name == 'pull_request_target'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python3 scripts/ci/xcode27_queue_janitor.py
+          --apply
+          --minimum-age-seconds 0
+          --max-cancellations 200
+
       - name: Cancel only proven-stale queued or in-progress Xcode runs
-        if: github.ref == 'refs/heads/main'
+        if: github.event_name != 'pull_request_target' && github.ref == 'refs/heads/main'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: >-
