@@ -12,6 +12,7 @@ on:
       - scripts/ci/tests/test_es80_today_final_go_git_custody.py
       - scripts/ci/es80_today_trusted_capture_xcode_subject.py
       - scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
+      - scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py
       - scripts/ci/es80_today_final_go_publication.py
       - scripts/ci/tests/test_es80_today_final_go_publication.py
       - .github/workflows/capture-today-final-go-qa.yml
@@ -44,7 +45,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile scripts/ci/es80_today_final_go_record.py scripts/ci/es80_today_final_go_foundation.py scripts/ci/tests/test_es80_today_final_go_record.py
-          python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
+          python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py
           python3 -m py_compile scripts/ci/es80_today_final_go_publication.py scripts/ci/tests/test_es80_today_final_go_publication.py
           python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_git_custody.py
 
@@ -53,6 +54,9 @@ jobs:
 
       - name: Reject candidate-controlled trusted-Xcode authority
         run: python3 scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py -v
+
+      - name: Preserve retained artifact admission contract
+        run: python3 scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py -v
 
       - name: Require failure-atomic no-replace publication
         run: python3 scripts/ci/tests/test_es80_today_final_go_publication.py -v
