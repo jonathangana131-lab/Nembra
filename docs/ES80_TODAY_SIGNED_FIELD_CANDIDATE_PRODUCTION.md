@@ -68,7 +68,7 @@ The producer itself will create another fresh detached worktree internally. The 
 
 Choose a private path outside the repository. The producer requires an absolute regular non-symlink mode-`0600` file and independently validates its contents/mode.
 
-This example reads the UDID without placing the value in the command line or echoing it back to the terminal:
+This example reads the UDID without placing the value in the command line or echoing it back to the terminal. The file must contain the exact identifier bytes with **no trailing newline or other surrounding whitespace**, matching the frozen `a0f4…` private runner's fail-closed input contract:
 
 ```bash
 umask 077
@@ -79,7 +79,7 @@ UDID_FILE="$HOME/.nembra-private/es80-intended-device.udid"
 printf 'Intended iPhone UDID: ' >&2
 IFS= read -r -s INTENDED_UDID
 printf '\n' >&2
-printf '%s\n' "$INTENDED_UDID" > "$UDID_FILE"
+printf '%s' "$INTENDED_UDID" > "$UDID_FILE"
 unset INTENDED_UDID
 /bin/chmod 600 "$UDID_FILE"
 
