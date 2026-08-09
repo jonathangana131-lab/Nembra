@@ -11,6 +11,7 @@ the exact run/job/artifact subject but does not pretend to query or re-authorize
 from __future__ import annotations
 
 import argparse
+import io
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -18,6 +19,7 @@ from pathlib import Path
 import re
 import sys
 from typing import Any
+import zipfile
 
 RECIPE = "ES80-FINGERPRINT-v1"
 PROCEDURE = "V14"
@@ -33,6 +35,26 @@ HEX40 = re.compile(r"^[0-9a-f]{40}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 TEAM = re.compile(r"^[A-Z0-9]{10}$")
+CDHASH = re.compile(r"^[0-9a-f]{40,64}$")
+EXTERNAL_KEYS = frozenset({
+    "schemaVersion", "buildIdentifier", "buildInstanceID", "sourceCommitSHA",
+    "executableSHA256", "infoPlistSHA256", "experimentRecipeID", "procedureVersion",
+})
+FIELD_KEYS = frozenset({
+    "schemaVersion", "externalBuildRecordSHA256", "signedInstallableSHA256",
+    "signedInstallableKind", "buildIdentifier", "buildInstanceID", "sourceCommitSHA",
+    "executableSHA256", "infoPlistSHA256", "experimentRecipeID", "procedureVersion",
+})
+INSPECTION_KEYS = frozenset({
+    "schemaVersion", "authority", "fieldBuildEvidenceRecordSHA256",
+    "externalBuildRecordSHA256", "signedInstallableSHA256", "signedInstallableKind",
+    "ipaByteCount", "buildIdentifier", "buildInstanceID", "sourceCommitSHA",
+    "bundleIdentifier", "platformName", "supportedPlatforms", "teamIdentifier",
+    "signingAuthorities", "codeDirectoryHash", "provisioningProfileSHA256",
+    "provisioningProfileUUID", "provisioningProfileExpirationUTC",
+    "provisioningApplicationIdentifier", "executableSHA256", "infoPlistSHA256",
+    "experimentRecipeID", "procedureVersion",
+})
 
 
 class FinalGoError(RuntimeError):
@@ -49,15 +71,36 @@ def _regular(path: Path, label: str) -> bytes:
     return path.read_bytes()
 
 
-def _json(path: Path, label: str) -> tuple[bytes, dict[str, Any]]:
-    raw = _regular(path, label)
+def _decode_json(raw: bytes, label: str) -> dict[str, Any]:
+    def reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        value: dict[str, Any] = {}
+        for key, item in pairs:
+            if key in value:
+                raise FinalGoError(f"{label} contains duplicate JSON key: {key}")
+            value[key] = item
+        return value
+
     try:
-        value = json.loads(raw)
+        value = json.loads(raw, object_pairs_hook=reject_duplicates)
+    except FinalGoError:
+        raise
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise FinalGoError(f"{label} is not valid UTF-8 JSON") from error
     if not isinstance(value, dict):
         raise FinalGoError(f"{label} root must be an object")
-    return raw, value
+    return value
+
+
+def _json(path: Path, label: str) -> tuple[bytes, dict[str, Any]]:
+    raw = _regular(path, label)
+    return raw, _decode_json(raw, label)
+
+
+def _require_keys(record: dict[str, Any], expected: frozenset[str], label: str) -> None:
+    if set(record) != expected:
+        missing = sorted(expected - set(record))
+        extra = sorted(set(record) - expected)
+        raise FinalGoError(f"{label} is not the exact closed-world schema; missing={missing}, extra={extra}")
 
 
 def _eq(actual: Any, expected: Any, label: str) -> None:
@@ -75,6 +118,46 @@ def _positive_int(value: Any, label: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         raise FinalGoError(f"{label} must be one positive integer")
     return value
+
+
+def _inspect_xcode_artifact(path: Path, expected_source_sha: str) -> tuple[str, str]:
+    raw = _regular(path, "trusted Xcode retained artifact")
+    artifact_sha = _sha(raw)
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw), "r") as archive:
+            candidates = [
+                info for info in archive.infolist()
+                if not info.is_dir()
+                and info.filename.rsplit("/", 1)[-1] == EXTERNAL_RECORD_NAME
+            ]
+            if len(candidates) != 1:
+                raise FinalGoError(
+                    "trusted Xcode retained artifact must contain exactly one Capture external build record"
+                )
+            info = candidates[0]
+            if info.file_size <= 0 or info.file_size > 1024 * 1024:
+                raise FinalGoError("trusted Xcode external build record has invalid byte count")
+            record_raw = archive.read(info)
+    except (zipfile.BadZipFile, OSError, RuntimeError) as error:
+        if isinstance(error, FinalGoError):
+            raise
+        raise FinalGoError("trusted Xcode retained artifact is not one readable ZIP") from error
+
+    record = _decode_json(record_raw, "trusted Xcode external build record")
+    _require_keys(record, EXTERNAL_KEYS, "trusted Xcode external build record")
+    _eq(record.get("schemaVersion"), 3, "trusted Xcode external schema version")
+    _eq(record.get("sourceCommitSHA"), expected_source_sha, "trusted Xcode accepted source SHA")
+    _eq(
+        record.get("buildIdentifier"),
+        f"Capture Build V14-{expected_source_sha[:12]}",
+        "trusted Xcode build identifier",
+    )
+    _eq(record.get("experimentRecipeID"), RECIPE, "trusted Xcode recipe")
+    _eq(record.get("procedureVersion"), PROCEDURE, "trusted Xcode procedure")
+    _shape(record.get("buildInstanceID"), UUID, "trusted Xcode build-instance ID")
+    _shape(record.get("executableSHA256"), HEX64, "trusted Xcode executable SHA-256")
+    _shape(record.get("infoPlistSHA256"), HEX64, "trusted Xcode Info.plist SHA-256")
+    return artifact_sha, _sha(record_raw)
 
 
 def build_final_go_record(
@@ -108,7 +191,10 @@ def build_final_go_record(
     source = _shape(expected_source_sha, HEX40, "expected source SHA")
     xcode_run_id = _positive_int(trusted_xcode_run_id, "trusted Xcode run ID")
     xcode_job_id = _positive_int(trusted_xcode_job_id, "trusted Xcode job ID")
-    xcode_artifact_sha = _sha(_regular(trusted_xcode_artifact, "trusted Xcode retained artifact"))
+    xcode_artifact_sha, xcode_build_record_sha = _inspect_xcode_artifact(
+        trusted_xcode_artifact,
+        source,
+    )
     pre_install_ipa = _shape(pre_install_ipa_sha256, HEX64, "pre-install IPA SHA-256")
     post_install_ipa = _shape(post_install_ipa_sha256, HEX64, "post-install IPA SHA-256")
     _eq(installation_route, INSTALL_ROUTE, "retained-IPA installation route")
@@ -120,8 +206,13 @@ def build_final_go_record(
     external_raw, external = _json(root / EXTERNAL_RECORD_NAME, "external build record")
     field_raw, field = _json(root / FIELD_RECORD_NAME, "field-build evidence record")
     inspection_raw, inspection = _json(root / INSPECTION_NAME, "signed artifact inspection")
-    ipa_sha = _sha(_regular(root / IPA_RELATIVE_PATH, "retained IPA"))
+    ipa_raw = _regular(root / IPA_RELATIVE_PATH, "retained IPA")
+    ipa_sha = _sha(ipa_raw)
     external_sha, field_sha, inspection_sha = _sha(external_raw), _sha(field_raw), _sha(inspection_raw)
+
+    _require_keys(external, EXTERNAL_KEYS, "external build record")
+    _require_keys(field, FIELD_KEYS, "field-build evidence record")
+    _require_keys(inspection, INSPECTION_KEYS, "signed artifact inspection")
 
     for record, version, label in (
         (external, 3, "external"),
@@ -172,6 +263,8 @@ def build_final_go_record(
     )
     _eq(inspection.get("bundleIdentifier"), BUNDLE_ID, "inspection bundle identifier")
     _eq(inspection.get("platformName"), "iphoneos", "inspection platform")
+    _eq(inspection.get("ipaByteCount"), len(ipa_raw), "inspection IPA byte count")
+    _shape(inspection.get("codeDirectoryHash"), CDHASH, "inspection code-directory hash")
     platforms = inspection.get("supportedPlatforms")
     if not isinstance(platforms, list) or "iPhoneOS" not in platforms:
         raise FinalGoError("signed inspection does not describe an iPhoneOS installable")
@@ -200,7 +293,11 @@ def build_final_go_record(
     if expiration_utc <= now_utc:
         raise FinalGoError("provisioning profile expired before Final GO")
     authorities = inspection.get("signingAuthorities")
-    if not isinstance(authorities, list) or not authorities:
+    if (
+        not isinstance(authorities, list)
+        or not authorities
+        or not all(isinstance(authority, str) and authority.strip() for authority in authorities)
+    ):
         raise FinalGoError("signed inspection lacks signing authority evidence")
 
     for actual, expected, label in (
@@ -242,6 +339,7 @@ def build_final_go_record(
             "runID": xcode_run_id,
             "jobID": xcode_job_id,
             "retainedArtifactSHA256": xcode_artifact_sha,
+            "retainedExternalBuildRecordSHA256": xcode_build_record_sha,
             "acceptedSourceCommitSHA": source,
             "classification": "externally-inspected-terminal-software-acceptance-subject",
         },
