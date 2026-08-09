@@ -234,6 +234,38 @@ jobs:
             "$producer_path" "$expected_blob" "$actual_blob"
           test "$actual_blob" = "$expected_blob"
 
+      - name: Verify trusted build graph custody
+        shell: "/bin/bash --noprofile --norc -p -e -o pipefail {0}"
+        env:
+          BASH_ENV: ""
+          ENV: ""
+        run: |
+          set -euo pipefail
+          /usr/bin/env -i             PATH=/usr/bin:/bin             HOME=/tmp             LC_ALL=C             GITHUB_WORKSPACE="$GITHUB_WORKSPACE"             /usr/bin/python3 - <<'PY'
+          from hashlib import sha1
+          from pathlib import Path
+          import os
+
+          root = Path(os.environ["GITHUB_WORKSPACE"])
+          expected = {
+              "Nembra.xcodeproj/project.pbxproj": "d87024ba057add61a7d45ce8b69ac9947e6d2117",
+              "Nembra.xcodeproj/xcshareddata/xcschemes/Nembra.xcscheme": "64ef64f110265194d904ea0cbf177bbf264871c9",
+              "Packages/NembraCore/Package.swift": "26544e273397020fae34c7034992071a9861c131",
+              "Packages/NembraBluetoothCapture/Package.swift": "3bcda7fa8a350ade75bd8b7b228c3c95ca319bda",
+          }
+          for relative, expected_blob in expected.items():
+              path = root / relative
+              if not path.is_file() or path.is_symlink():
+                  raise SystemExit(f"trusted build graph subject is not one regular file: {relative}")
+              data = path.read_bytes()
+              actual_blob = sha1(b"blob " + str(len(data)).encode("ascii") + b"\0" + data).hexdigest()
+              print(f"Trusted build graph subject: {relative}")
+              print(f"Expected blob: {expected_blob}")
+              print(f"Actual raw-byte blob: {actual_blob}")
+              if actual_blob != expected_blob:
+                  raise SystemExit(f"trusted build graph subject changed: {relative}")
+          PY
+
       - name: Build, test, and capture Simulator states
         shell: "/bin/bash --noprofile --norc -p -e -o pipefail {0}"
         env:
