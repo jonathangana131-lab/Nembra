@@ -37,6 +37,19 @@ class Decision:
     reason: str
 
 
+class GitHubAPIError(RuntimeError):
+    """GitHub HTTP failure with a machine-readable status for narrow recovery."""
+
+    def __init__(self, method: str, path: str, status_code: int, body: str) -> None:
+        self.method = method
+        self.path = path
+        self.status_code = status_code
+        self.body = body
+        super().__init__(
+            f"GitHub API {method} {path} failed: HTTP {status_code}: {body}"
+        )
+
+
 def _parse_github_time(value: str) -> dt.datetime:
     parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
@@ -115,9 +128,7 @@ class GitHubAPI:
                 return json.loads(body.decode("utf-8"))
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(
-                f"GitHub API {method} {path} failed: HTTP {exc.code}: {body}"
-            ) from exc
+            raise GitHubAPIError(method, path, exc.code, body) from exc
 
     def runs_with_status(self, status: str) -> list[dict[str, Any]]:
         if status not in CANCELLABLE_STATUSES:
@@ -158,10 +169,24 @@ class GitHubAPI:
         )
         return list(payload or [])
 
-    def cancel_run(self, run_id: int) -> None:
-        self.request(
-            "POST", f"/repos/{self.owner}/{self.repo}/actions/runs/{run_id}/cancel"
+    def cancel_run(self, run_id: int) -> bool:
+        """Cancel a proven-stale run; force only after ordinary cancel returns 500."""
+
+        ordinary_path = (
+            f"/repos/{self.owner}/{self.repo}/actions/runs/{run_id}/cancel"
         )
+        try:
+            self.request("POST", ordinary_path)
+            return False
+        except GitHubAPIError as exc:
+            if exc.status_code != 500:
+                raise
+
+        force_path = (
+            f"/repos/{self.owner}/{self.repo}/actions/runs/{run_id}/force-cancel"
+        )
+        self.request("POST", force_path)
+        return True
 
 
 def self_test() -> None:
@@ -221,6 +246,56 @@ def self_test() -> None:
     assert not classify_run(
         run(status="completed"), [], now=now, minimum_age_seconds=120
     ).cancel
+
+    class FakeGitHubAPI(GitHubAPI):
+        def __init__(self, outcomes: list[Any]) -> None:
+            self.owner = "owner"
+            self.repo = "repo"
+            self.outcomes = list(outcomes)
+            self.calls: list[tuple[str, str]] = []
+
+        def request(self, method: str, path: str) -> Any:
+            self.calls.append((method, path))
+            outcome = self.outcomes.pop(0)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+
+    ordinary = FakeGitHubAPI([None])
+    assert ordinary.cancel_run(7) is False
+    assert ordinary.calls == [
+        ("POST", "/repos/owner/repo/actions/runs/7/cancel"),
+    ]
+
+    failed_cancel = GitHubAPIError(
+        "POST",
+        "/repos/owner/repo/actions/runs/8/cancel",
+        500,
+        '{"message":"Failed to cancel workflow run"}',
+    )
+    fallback = FakeGitHubAPI([failed_cancel, None])
+    assert fallback.cancel_run(8) is True
+    assert fallback.calls == [
+        ("POST", "/repos/owner/repo/actions/runs/8/cancel"),
+        ("POST", "/repos/owner/repo/actions/runs/8/force-cancel"),
+    ]
+
+    forbidden = GitHubAPIError(
+        "POST",
+        "/repos/owner/repo/actions/runs/9/cancel",
+        403,
+        '{"message":"Forbidden"}',
+    )
+    denied = FakeGitHubAPI([forbidden])
+    try:
+        denied.cancel_run(9)
+    except GitHubAPIError as exc:
+        assert exc.status_code == 403
+    else:
+        raise AssertionError("non-500 ordinary cancel failure must fail closed")
+    assert denied.calls == [
+        ("POST", "/repos/owner/repo/actions/runs/9/cancel"),
+    ]
 
     print("xcode27_queue_janitor self-test: PASS")
 
@@ -313,8 +388,12 @@ def main() -> int:
         if not args.apply:
             continue
         try:
-            api.cancel_run(run_id)
+            forced = api.cancel_run(run_id)
             cancelled += 1
+            if forced:
+                print(
+                    f"FORCE_CANCEL run={run_id}: ordinary cancel returned HTTP 500"
+                )
         except RuntimeError as exc:
             print(f"CANCEL_RACE run={run_id}: {exc}", file=sys.stderr)
 
