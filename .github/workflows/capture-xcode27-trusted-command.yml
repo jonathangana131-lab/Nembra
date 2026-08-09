@@ -190,8 +190,8 @@ jobs:
 
           # Stream the accepted Git object directly into a separately sanitized Bash interpreter.
           # The candidate pathname is only $0 so the frozen runner's dirname($0)/../.. ROOT
-          # calculation still resolves the exact checkout; neither mutable pathname bytes nor
-          # inherited BASH_ENV/ENV/shell functions can execute before the pinned producer.
+          # calculation still resolves the exact checkout. Reintroduce only the trusted GitHub
+          # run identity that the frozen producer retains as provenance; do not inherit caller state.
           /usr/bin/env -i \
             PATH=/usr/bin:/bin \
             HOME=/tmp \
@@ -204,6 +204,8 @@ jobs:
                 PATH=/usr/bin:/bin:/usr/sbin:/sbin \
                 HOME=/tmp \
                 LC_ALL=C \
+                GITHUB_RUN_ID="${{ github.run_id }}" \
+                GITHUB_RUN_ATTEMPT="${{ github.run_attempt }}" \
                 /bin/bash -c 'source /dev/stdin' "$GITHUB_WORKSPACE/$producer_path"
 
       - name: Verify retained Capture evidence against trusted resolver authority
