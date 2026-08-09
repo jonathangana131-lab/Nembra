@@ -1,0 +1,76 @@
+name: Capture Final GO Tooling Git Trust Expected-Red
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - .github/workflows/capture-final-go-tooling-git-trust-expected-red.yml
+
+permissions:
+  contents: read
+
+jobs:
+  tooling-git-trust:
+    name: Reject caller PATH as workflow-blob authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXPECTED_PARENT_SHA: 5277d42776253531d05e569ce2d01c0178cac411
+      WORKFLOW_PATH: .github/workflows/capture-final-go-tooling-git-trust-expected-red.yml
+    steps:
+      - name: Checkout immutable validation head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+
+      - name: Verify one workflow-only commit above hardened Final GO head
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT_SHA"
+          changed="$(git diff --name-only "$EXPECTED_PARENT_SHA" HEAD)"
+          test "$changed" = "$WORKFLOW_PATH"
+
+      - name: Inject caller-controlled git executable and require rejection
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import importlib.util
+          import os
+          from pathlib import Path
+          import tempfile
+          from unittest import mock
+
+          module_path = Path('scripts/ci/es80_today_final_go_hardened.py')
+          spec = importlib.util.spec_from_file_location('hardened', module_path)
+          hardened = importlib.util.module_from_spec(spec)
+          assert spec and spec.loader
+          spec.loader.exec_module(hardened)
+
+          pinned = hardened.trusted_xcode.TRUSTED_WORKFLOW_BLOB_SHA
+          with tempfile.TemporaryDirectory() as temporary:
+              root = Path(temporary)
+              fake_bin = root / 'bin'
+              fake_bin.mkdir()
+              fake_git = fake_bin / 'git'
+              fake_git.write_text(f'#!/bin/sh\nprintf "%s\\n" "{pinned}"\n')
+              fake_git.chmod(0o755)
+
+              hostile_path = f"{fake_bin}:{os.environ.get('PATH', '')}"
+              with mock.patch.dict(os.environ, {'PATH': hostile_path}):
+                  try:
+                      resolved = hardened._workflow_blob_sha_at_commit(
+                          root / 'not-a-git-repository',
+                          '0' * 40,
+                          hardened.trusted_xcode.TRUSTED_WORKFLOW_PATH,
+                      )
+                  except hardened.FinalGoError:
+                      pass
+                  else:
+                      if resolved == pinned:
+                          raise SystemExit(
+                              'CALLER PATH FORGED TRUSTED WORKFLOW BLOB: hardened Final GO executed '
+                              'an untrusted git binary and accepted its pinned-looking output'
+                          )
+                      raise SystemExit(f'unexpected untrusted git result: {resolved!r}')
+          PY
