@@ -12,20 +12,22 @@ enum NembraMetrics {
 
 struct NembraGlassButtonStyle: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.accessibilityShowBorders) private var showBorders
     @Environment(\.isEnabled) private var isEnabled
 
     /// Normal Liquid Glass already adapts to Increased Contrast at the material layer.
-    /// Nembra adds a strong explicit boundary only when Show Borders asks custom
-    /// controls to expose their edges, or when Reduce Transparency replaces glass
-    /// with our opaque fallback and therefore removes that native glass adaptation.
+    /// Nembra adds a strong explicit boundary when accessibility asks controls to be
+    /// distinguishable without color or to expose their edges, or when Reduce
+    /// Transparency replaces glass with our opaque fallback and therefore removes
+    /// that native glass adaptation.
     private var strongExplicitBoundaryRequested: Bool {
-        showBorders || (reduceTransparency && colorSchemeContrast == .increased)
+        showBorders || differentiateWithoutColor || (reduceTransparency && colorSchemeContrast == .increased)
     }
 
     private var shouldShowExplicitBoundary: Bool {
-        reduceTransparency || showBorders
+        reduceTransparency || showBorders || differentiateWithoutColor
     }
 
     private var boundaryOpacity: Double {
@@ -88,4 +90,241 @@ struct NembraGlassButtonStyle: ViewModifier {
 
 extension View {
     func nembraGlassControl() -> some View { modifier(NembraGlassButtonStyle()) }
+}
+
+/// Visual currentness only. The eventual Dashboard adapter must derive this from
+/// `PropulsionEnergyRailPresentation`; this enum does not grant telemetry authority.
+enum NembraEnergyRailVisualCurrentness: Equatable {
+    case live
+    case retained
+    case unavailable
+}
+
+/// App-side visual input for the signature propulsion instrument.
+///
+/// `acceptedWatts` is the semantic number shown to the user. `railFraction` and
+/// `peakMarkerFraction` are display-only geometry and must never be converted back
+/// into watts, persisted, or promoted into ride/protocol evidence. The view also
+/// refuses rail motion unless currentness is live and the caller explicitly admits it.
+struct NembraEnergyRailVisualState: Equatable {
+    let currentness: NembraEnergyRailVisualCurrentness
+    let acceptedWatts: Double?
+    let railFraction: Double?
+    let peakMarkerFraction: Double?
+    let allowsLiveMotion: Bool
+
+    var semanticWatts: Double? {
+        guard currentness != .unavailable,
+              let acceptedWatts,
+              acceptedWatts.isFinite,
+              acceptedWatts >= 0 else {
+            return nil
+        }
+        return acceptedWatts == 0 ? 0 : acceptedWatts
+    }
+
+    var admittedRailFraction: Double? {
+        guard currentness == .live,
+              semanticWatts != nil,
+              allowsLiveMotion,
+              let railFraction,
+              railFraction.isFinite,
+              railFraction >= 0,
+              railFraction <= 1 else {
+            return nil
+        }
+        return railFraction
+    }
+
+    var admittedPeakMarkerFraction: Double? {
+        guard admittedRailFraction != nil,
+              let peakMarkerFraction,
+              peakMarkerFraction.isFinite,
+              peakMarkerFraction >= 0,
+              peakMarkerFraction <= 1 else {
+            return nil
+        }
+        return peakMarkerFraction
+    }
+}
+
+/// Shallow off-screen-wheel/horizon geometry used by the Energy Rail.
+/// The rail is intentionally not a circular gauge and carries no regen direction.
+private struct NembraEnergyRailArc: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let baseline = rect.height * 0.88
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY + baseline))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: rect.minY + baseline),
+            control: CGPoint(x: rect.midX, y: rect.minY + rect.height * 0.16)
+        )
+        return path
+    }
+}
+
+/// Localized SwiftUI renderer for the Nembra Energy Rail.
+///
+/// The caller owns the display clock. This view does not add a second smoothing
+/// algorithm to `railFraction`; every render frame is drawn immediately so a newer
+/// accepted target can retarget the canonical gauge model without queued stale motion.
+/// Only the semantic accepted watt number receives a brief numeric transition.
+struct NembraEnergyRailView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
+    let state: NembraEnergyRailVisualState
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            railLayer
+                .frame(height: 72)
+                .padding(.top, 22)
+
+            powerReadout
+        }
+        .frame(maxWidth: .infinity, minHeight: 94, maxHeight: 94)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Propulsion power")
+        .accessibilityValue(accessibilityValue)
+        .accessibilityIdentifier("dashboard.energy-rail")
+    }
+
+    private var railLayer: some View {
+        GeometryReader { proxy in
+            ZStack {
+                NembraEnergyRailArc()
+                    .stroke(
+                        Color.primary.opacity(baseRailOpacity),
+                        style: StrokeStyle(lineWidth: baseRailWidth, lineCap: .round)
+                    )
+
+                if let fraction = state.admittedRailFraction {
+                    if !reduceTransparency {
+                        NembraEnergyRailArc()
+                            .trim(from: 0, to: fraction)
+                            .stroke(
+                                Color.primary.opacity(0.24),
+                                style: StrokeStyle(lineWidth: 10, lineCap: .round)
+                            )
+                    }
+
+                    NembraEnergyRailArc()
+                        .trim(from: 0, to: fraction)
+                        .stroke(
+                            Color.primary,
+                            style: StrokeStyle(lineWidth: activeRailWidth, lineCap: .round)
+                        )
+
+                    if let marker = state.admittedPeakMarkerFraction {
+                        peakMarker(at: marker, in: proxy.size)
+                    }
+                }
+            }
+        }
+        .accessibilityHidden(true)
+        .allowsHitTesting(false)
+    }
+
+    private var powerReadout: some View {
+        VStack(spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                if let watts = state.semanticWatts {
+                    Text(watts, format: .number.precision(.fractionLength(0)))
+                        .font(.system(size: 30, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .contentTransition(
+                            reduceMotion ? .identity : .numericText(value: watts)
+                        )
+                } else {
+                    Text("—")
+                        .font(.system(size: 30, weight: .semibold, design: .rounded))
+                }
+
+                Text("W")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
+            .animation(
+                reduceMotion ? nil : .snappy(duration: 0.18),
+                value: state.semanticWatts
+            )
+
+            Text(currentnessLabel)
+                .font(.caption2.weight(.bold))
+                .tracking(1.2)
+                .foregroundStyle(currentnessForeground)
+        }
+    }
+
+    @ViewBuilder
+    private func peakMarker(at fraction: Double, in size: CGSize) -> some View {
+        let point = pointOnRail(at: fraction, in: size)
+
+        Capsule(style: .continuous)
+            .fill(Color.primary)
+            .frame(width: 2, height: colorSchemeContrast == .increased ? 13 : 10)
+            .position(point)
+            .accessibilityHidden(true)
+    }
+
+    private func pointOnRail(at fraction: Double, in size: CGSize) -> CGPoint {
+        let t = fraction
+        let inverse = 1 - t
+        let baseline = size.height * 0.88
+        let controlY = size.height * 0.16
+        let y = inverse * inverse * baseline
+            + 2 * inverse * t * controlY
+            + t * t * baseline
+        return CGPoint(x: size.width * t, y: y)
+    }
+
+    private var currentnessLabel: String {
+        switch state.currentness {
+        case .live:
+            state.semanticWatts == nil ? "POWER UNAVAILABLE" : "LIVE POWER"
+        case .retained:
+            state.semanticWatts == nil ? "POWER UNAVAILABLE" : "LAST KNOWN POWER"
+        case .unavailable:
+            "POWER UNAVAILABLE"
+        }
+    }
+
+    private var currentnessForeground: Color {
+        switch state.currentness {
+        case .live where state.semanticWatts != nil:
+            .primary.opacity(colorSchemeContrast == .increased ? 0.88 : 0.68)
+        case .retained where state.semanticWatts != nil:
+            .secondary
+        default:
+            .tertiary
+        }
+    }
+
+    private var accessibilityValue: String {
+        guard let watts = state.semanticWatts else { return "Unavailable" }
+        let formatted = watts.formatted(.number.precision(.fractionLength(0)))
+
+        switch state.currentness {
+        case .live:
+            return "\(formatted) watts"
+        case .retained:
+            return "\(formatted) watts, last known"
+        case .unavailable:
+            return "Unavailable"
+        }
+    }
+
+    private var baseRailOpacity: Double {
+        colorSchemeContrast == .increased ? 0.28 : 0.14
+    }
+
+    private var baseRailWidth: CGFloat {
+        colorSchemeContrast == .increased ? 3.5 : 2.5
+    }
+
+    private var activeRailWidth: CGFloat {
+        colorSchemeContrast == .increased ? 7 : 5.5
+    }
 }
