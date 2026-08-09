@@ -7,7 +7,8 @@ public compatibility filename deliberately cannot mint a Final GO record either 
 or by importing `build_final_go_record(...)`.
 
 Helper constants/parsers remain re-exported temporarily so existing source-shape QA and closed-world
-test fixtures can converge without reopening a second production authority path.
+test fixtures can converge without reopening a second production authority path. The loaded private
+implementation module itself is deliberately not retained as a public-module capability.
 """
 from __future__ import annotations
 
@@ -27,6 +28,11 @@ for _name in dir(_impl):
     if not _name.startswith("__"):
         globals()[_name] = getattr(_impl, _name)
 
+# Preserve the non-authorizing publication helper without retaining a module object through which
+# callers could recover the private authority-bearing builder.
+_publish_impl = _impl.publish_record_no_replace
+del _impl
+
 # Keep these exact source pins visible to canonical source-shape QA while the private implementation
 # remains the tested closed-world parser/validator.
 PINNED_CROSSCHECK_COMMIT = "d827a296048386bda62024ea3278775d5344c47c"
@@ -39,14 +45,14 @@ RESEARCH_COMPILE_CONDITION = "NEMBRA_ES80_TODAY_RESEARCH"
 def build_final_go_record(*args: Any, **kwargs: Any) -> dict[str, Any]:
     """Fail closed: imported callers must use the canonical hardened composer instead."""
     del args, kwargs
-    raise _impl.FinalGoError(
+    raise FinalGoError(
         "public Final GO foundation builder is non-authorizing; use es80_today_final_go_hardened.py"
     )
 
 
 def publish_record_no_replace(*args: Any, **kwargs: Any) -> str:
     """Retain publication helper compatibility without granting record-construction authority."""
-    return _impl.publish_record_no_replace(*args, **kwargs)
+    return _publish_impl(*args, **kwargs)
 
 
 def main(argv: list[str] | None = None) -> int:
