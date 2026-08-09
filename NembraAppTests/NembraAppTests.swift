@@ -106,6 +106,25 @@ final class NembraAppTests: XCTestCase {
     }
 
     @MainActor
+    func testSpeedEvidenceGapKeyAloneCannotEnterSimulation() async {
+        let environment = [AppBootstrap.simulationSpeedEvidenceGapEnvironmentKey: "1"]
+        XCTAssertNil(AppBootstrap.simulationScenario(arguments: ["Nembra"], environment: environment))
+
+        let store = AppBootstrap.makeVehicleStore(
+            arguments: ["Nembra"],
+            environment: environment
+        )
+        await store.start()
+
+        XCTAssertEqual(store.state.connection, .disconnected)
+        XCTAssertEqual(store.state.connectionIssue, .unsupportedConfiguration)
+        XCTAssertNil(store.state.speedKilometersPerHour)
+        XCTAssertNil(store.state.batteryPercent)
+        XCTAssertEqual(store.speedInstrumentInterpolationPolicy, .disabled)
+        XCTAssertNotEqual(store.profile, .simulatorQA)
+    }
+
+    @MainActor
     func testExplicitSimulationInjectsQAInterpolationPolicy() {
         let store = AppBootstrap.makeVehicleStore(
             arguments: ["Nembra"],
@@ -287,8 +306,23 @@ final class NembraAppTests: XCTestCase {
 
         let model = SpeedInstrumentModel()
         model.configureInterpolationPolicy(.simulatorQA)
+
+        let first = try speedSample(kilometersPerHour: 10, uptimeNanoseconds: 1_000_000_000)
+        let second = try speedSample(kilometersPerHour: 20, uptimeNanoseconds: 1_200_000_000)
+        model.setSpeedEvidenceAvailability(.live(first))
+        model.setSpeedEvidenceAvailability(.live(second))
+        XCTAssertTrue(model.isAnimationActive)
+        XCTAssertEqual(model.latestAcceptedSample, second)
+
+        // Synthetic Simulator evidence is caller-constructible. Under a normal
+        // profile it must fail closed and retire all previously live render
+        // continuity rather than leaving an old authoritative target moving.
         model.setSpeedEvidenceAvailability(live)
+        XCTAssertFalse(model.isAnimationActive)
         XCTAssertNil(model.latestAcceptedSample)
+        XCTAssertNil(model.latestMeasuredKilometersPerHour)
+        XCTAssertNil(model.latestMeasurementSource)
+        XCTAssertNil(model.latestMeasurementUptimeNanoseconds)
         XCTAssertNil(model.presentationFrame(
             for: live,
             atUptimeNanoseconds: sample.receivedAtUptimeNanoseconds
@@ -343,6 +377,7 @@ final class NembraAppTests: XCTestCase {
         XCTAssertTrue(model.isAnimationActive)
         model.setSpeedEvidenceAvailability(forgedLive)
         XCTAssertFalse(model.isAnimationActive)
+        XCTAssertNil(model.latestAcceptedSample)
         XCTAssertNil(model.latestMeasuredKilometersPerHour)
         XCTAssertNil(model.latestMeasurementSource)
         XCTAssertNil(model.latestMeasurementUptimeNanoseconds)
@@ -524,6 +559,7 @@ final class NembraAppTests: XCTestCase {
             for: .unavailable,
             atUptimeNanoseconds: 1_290_000_000
         ))
+        XCTAssertNil(model.latestAcceptedSample)
         XCTAssertNil(model.latestMeasuredKilometersPerHour)
         XCTAssertNil(model.latestMeasurementSource)
         XCTAssertNil(model.latestMeasurementUptimeNanoseconds)
@@ -548,6 +584,7 @@ final class NembraAppTests: XCTestCase {
         XCTAssertEqual(retained.kilometersPerHour, 20, accuracy: 0.000_1)
         XCTAssertEqual(retained.origin, .acceptedSourceFallback)
         XCTAssertNil(retained.latestMeasuredKilometersPerHour)
+        XCTAssertNil(model.latestAcceptedSample)
         XCTAssertNil(model.latestMeasuredKilometersPerHour)
         XCTAssertNil(model.latestMeasurementSource)
         XCTAssertNil(model.latestMeasurementUptimeNanoseconds)
