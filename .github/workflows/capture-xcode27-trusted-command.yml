@@ -218,6 +218,7 @@ jobs:
                   "buildIdentifier": plist.get("NembraCaptureBuildIdentifier"),
                   "buildInstanceID": plist.get("NembraCaptureBuildInstanceID"),
                   "sourceCommitSHA": plist.get("NembraCaptureBuildCommitSHA"),
+                  "experimentRecipeID": plist.get("NembraCaptureFieldRecipe"),
               }
               for key, value in embedded.items():
                   if value != subject.get(key):
@@ -267,6 +268,10 @@ jobs:
           )
           require_rejected("detached retained Info.plist metadata", mutated_plist=wrong_plist)
 
+          wrong_plist_recipe = dict(retained_plist)
+          wrong_plist_recipe["NembraCaptureFieldRecipe"] = "ES80-FINGERPRINT-v2"
+          require_rejected("detached retained Info.plist recipe", mutated_plist=wrong_plist_recipe)
+
           alternate_authority = "0" * 40 if expected_head != "0" * 40 else "1" * 40
           require_rejected("a PR-controlled post-build HEAD authority", authority_head=alternate_authority)
 
@@ -282,6 +287,32 @@ jobs:
           if sha256(info_plist) != record["infoPlistSHA256"]:
               raise SystemExit("Retained Capture Info.plist no longer matches the exact-head external record")
           PY
+
+      - name: Confirm target PR is still the resolver-bound head after retained evidence
+        uses: actions/github-script@v9
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+        with:
+          script: |
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            })
+            const pr = response.data
+            const repository = `${context.repo.owner}/${context.repo.repo}`
+            core.info(`Resolver-bound accepted head: ${process.env.EXPECTED_HEAD_SHA}`)
+            core.info(`Final live PR head: ${pr.head.sha}`)
+            if (pr.state !== 'open') {
+              core.setFailed('PR closed while Capture acceptance was running; retained run is non-evidence.')
+            }
+            if (pr.head.repo.full_name !== repository) {
+              core.setFailed('PR source repository changed while Capture acceptance was running; retained run is non-evidence.')
+            }
+            if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) {
+              core.setFailed('PR head moved while Capture acceptance was running; retained run is ancestor-only non-evidence.')
+            }
 
       - name: Upload trusted Capture Simulator screenshots and logs
         if: always()
