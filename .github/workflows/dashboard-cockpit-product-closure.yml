@@ -1,0 +1,114 @@
+name: Dashboard Cockpit Product Closure
+
+on:
+  push:
+    branches:
+      - agent/v14-dashboard-currentness-current-main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dashboard-cockpit-product-closure-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cockpit:
+    name: Real app cockpit screenshots and timing
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact product head
+        uses: actions/checkout@v4
+
+      - name: Confirm product branch and untouched disposable Capture branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "agent/v14-dashboard-currentness-current-main"
+          echo "Product head: $(git rev-parse HEAD)"
+          git diff --quiet HEAD^ -- NembraApp/Features/Research || {
+            echo "ERROR: Dashboard product closure must not edit disposable Capture/Research source."
+            exit 1
+          }
+
+      - name: Show Xcode and available simulators
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcrun simctl list devices available
+
+      - name: Select iPhone Simulator
+        id: sim
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEVICE=$(xcrun simctl list devices available | sed -n 's/^[[:space:]]*\(iPhone[^()]*) (\([0-9A-F-]*\)) (Shutdown\|Booted).*$/\1|\2/p' | head -n 1)
+          test -n "$DEVICE"
+          NAME=${DEVICE%%|*}
+          UDID=${DEVICE##*|}
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          echo "Using $NAME ($UDID)"
+
+      - name: Run real Dashboard/Cockpit UI acceptance
+        shell: bash
+        env:
+          SIM_UDID: ${{ steps.sim.outputs.udid }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/NembraDashboardDerived /tmp/NembraDashboard.xcresult
+          start=$(python3 - <<'PY'
+          import time
+          print(time.monotonic())
+          PY
+          )
+          set -o pipefail
+          xcodebuild \
+            -project Nembra.xcodeproj \
+            -scheme Nembra \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=${SIM_UDID}" \
+            -derivedDataPath /tmp/NembraDashboardDerived \
+            -resultBundlePath /tmp/NembraDashboard.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls \
+            -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardStoppedControlsConfirmEveryModePersonality \
+            test | tee /tmp/nembra-dashboard-xcodebuild.log
+          end=$(python3 - <<'PY'
+          import time
+          print(time.monotonic())
+          PY
+          )
+          python3 - <<PY | tee /tmp/nembra-dashboard-timing.txt
+          start=float("$start")
+          end=float("$end")
+          print(f"dashboard_ui_acceptance_seconds={end-start:.3f}")
+          PY
+
+      - name: Verify real cockpit screenshot attachments exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun xcresulttool get test-results attachments \
+            --path /tmp/NembraDashboard.xcresult \
+            --output-path /tmp/NembraDashboardAttachments
+          find /tmp/NembraDashboardAttachments -type f -print | tee /tmp/nembra-dashboard-attachments.txt
+          count=$(find /tmp/NembraDashboardAttachments -type f \( -name '*.png' -o -name '*.heic' -o -name '*.jpg' \) | wc -l | tr -d ' ')
+          echo "screenshot_count=$count" | tee -a /tmp/nembra-dashboard-timing.txt
+          test "$count" -ge 5
+
+      - name: Upload Dashboard product evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-cockpit-product-evidence
+          path: |
+            /tmp/NembraDashboard.xcresult
+            /tmp/NembraDashboardAttachments
+            /tmp/nembra-dashboard-xcodebuild.log
+            /tmp/nembra-dashboard-timing.txt
+            /tmp/nembra-dashboard-attachments.txt
+          if-no-files-found: ignore
