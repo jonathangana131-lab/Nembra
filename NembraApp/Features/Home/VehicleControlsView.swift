@@ -13,6 +13,10 @@ struct VehicleControlsView: View {
                 modeSection
             }
 
+            if vehicle.profile.capabilities.supportsLock {
+                lockSection
+            }
+
             if vehicle.profile.capabilities.supportsCruise {
                 cruiseSection
             }
@@ -98,6 +102,32 @@ struct VehicleControlsView: View {
         }
     }
 
+    private var lockSection: some View {
+        Section {
+            LabeledContent("State", value: lockStateText)
+
+            Button {
+                guard let locked = vehicle.state.isLocked else { return }
+                Task { await vehicle.setLocked(!locked) }
+            } label: {
+                HStack {
+                    Label(lockActionTitle, systemImage: vehicle.state.isLocked == true ? "lock.open" : "lock")
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    if vehicle.pendingCommands.contains(.lock) {
+                        ProgressView().controlSize(.small)
+                    }
+                }
+            }
+            .disabled(!canChangeLockState || vehicle.isVehicleCommandPending)
+            .accessibilityHint(lockAccessibilityHint)
+        } header: {
+            Text("Lock")
+        } footer: {
+            Text(lockFooterText)
+        }
+    }
+
     private var cruiseSection: some View {
         Section {
             confirmedChoiceRow(
@@ -171,6 +201,46 @@ struct VehicleControlsView: View {
 
     private var commandsAvailable: Bool {
         vehicle.state.connection == .connected
+    }
+
+    private var canChangeLockState: Bool {
+        guard commandsAvailable, vehicle.state.isLocked != nil else { return false }
+        if vehicle.state.isLocked == true { return true }
+        return vehicle.canLockFromCurrentSpeedEvidence
+    }
+
+    private var lockStateText: String {
+        guard let locked = vehicle.state.isLocked else { return "Unavailable" }
+        return locked ? "Locked" : "Unlocked"
+    }
+
+    private var lockActionTitle: String {
+        vehicle.state.isLocked == true ? "Unlock Scooter" : "Lock Scooter"
+    }
+
+    private var lockFooterText: String {
+        guard commandsAvailable else {
+            return "Lock controls remain unavailable until the scooter connection is confirmed."
+        }
+        guard let locked = vehicle.state.isLocked else {
+            return "Lock state is unavailable from the current vehicle evidence."
+        }
+        if locked {
+            return "Unlocking does not require Nembra to claim that the scooter is stopped."
+        }
+        if vehicle.canLockFromCurrentSpeedEvidence {
+            return "Current stopped-speed evidence is available. Nembra will change lock state only after the scooter confirms the command."
+        }
+        return "Live stopped-speed evidence is required before Nembra can lock the scooter."
+    }
+
+    private var lockAccessibilityHint: String {
+        guard vehicle.state.isLocked != true else {
+            return "Unlocks the scooter after the vehicle confirms the command."
+        }
+        return vehicle.canLockFromCurrentSpeedEvidence
+            ? "Locks the scooter after current stopped-speed evidence and command confirmation."
+            : "Unavailable until current stopped-speed evidence is available."
     }
 
     private var connectionText: String {
