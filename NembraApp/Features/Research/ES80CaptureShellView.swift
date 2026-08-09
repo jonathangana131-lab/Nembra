@@ -133,9 +133,14 @@ struct ES80CaptureShellView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: captureVerticalSpacing) {
+#if DEBUG && targetEnvironment(simulator)
+                    if dynamicTypeSize.isAccessibilitySize, let simulatorQASnapshot {
+                        simulatorQABadge(simulatorQASnapshot)
+                    }
+#endif
                     hero(for: currentPhase)
 #if DEBUG && targetEnvironment(simulator)
-                    if let simulatorQASnapshot {
+                    if !dynamicTypeSize.isAccessibilitySize, let simulatorQASnapshot {
                         simulatorQABadge(simulatorQASnapshot)
                     }
 #endif
@@ -151,11 +156,6 @@ struct ES80CaptureShellView: View {
                         diagnosticBanner(diagnosticMessage)
                     }
                 }
-                // Keep the real Accessibility-size recomposition selected above, but bound visual
-                // glyph growth inside the Capture content subtree. At Accessibility XXXL the
-                // iPhone 12 must still expose the synthetic-truth badge, progress/health surfaces,
-                // and required actions as reviewable controls instead of one clipped text column.
-                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 .frame(maxWidth: 660)
                 .padding(.horizontal, 22)
                 .padding(.top, captureTopPadding)
@@ -207,61 +207,79 @@ struct ES80CaptureShellView: View {
         .sensoryFeedback(.warning, trigger: warningHapticTick)
     }
 
-    private var captureVerticalSpacing: CGFloat { verticalSizeClass == .compact ? 16 : 24 }
+    private var captureVerticalSpacing: CGFloat {
+        if verticalSizeClass == .compact { return 16 }
+        return dynamicTypeSize.isAccessibilitySize ? 16 : 24
+    }
 
-    private var captureTopPadding: CGFloat { verticalSizeClass == .compact ? 10 : 18 }
+    private var captureTopPadding: CGFloat {
+        if verticalSizeClass == .compact { return 10 }
+        return dynamicTypeSize.isAccessibilitySize ? 12 : 18
+    }
 
     private var captureBottomPadding: CGFloat { verticalSizeClass == .compact ? 20 : 42 }
 
+    @ViewBuilder
     private func hero(for phase: Phase) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .center, spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 15, style: .continuous)
-                        .fill(.white.opacity(0.08))
-                        .frame(width: 52, height: 52)
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("NEMBRA CAPTURE")
+                    .font(.caption.monospaced().weight(.bold))
+                    .tracking(1.4)
+                    .foregroundStyle(.secondary)
 
-                    Image(systemName: "wave.3.right.circle.fill")
-                        .font(.system(size: 25, weight: .semibold))
-                        .foregroundStyle(.white)
-                }
-                .accessibilityHidden(true)
+                Text(heroTitle(for: phase))
+                    .font(.system(.title2, design: .rounded, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("NEMBRA CAPTURE")
-                        .font(.caption.monospaced().weight(.bold))
-                        .tracking(1.4)
-                        .foregroundStyle(.secondary)
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Image(systemName: statusSymbol(for: phase))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(statusColor(for: phase))
+                        .accessibilityHidden(true)
 
-                    Text(heroTitle(for: phase))
-                        .font(.system(.largeTitle, design: .rounded, weight: .semibold))
+                    Text(statusTitle(for: phase))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityAddTraits(.isHeader)
                 }
 
-                Spacer(minLength: 0)
+                Text("PASSIVE / READ ONLY")
+                    .font(.caption2.monospaced().weight(.bold))
+                    .foregroundStyle(.secondary)
             }
+        } else {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .center, spacing: 14) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 15, style: .continuous)
+                            .fill(.white.opacity(0.08))
+                            .frame(width: 52, height: 52)
 
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Image(systemName: statusSymbol(for: phase))
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(statusColor(for: phase))
-                            .accessibilityHidden(true)
+                        Image(systemName: "wave.3.right.circle.fill")
+                            .font(.system(size: 25, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+                    .accessibilityHidden(true)
 
-                        Text(statusTitle(for: phase))
-                            .font(.subheadline.weight(.semibold))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("NEMBRA CAPTURE")
+                            .font(.caption.monospaced().weight(.bold))
+                            .tracking(1.4)
+                            .foregroundStyle(.secondary)
+
+                        Text(heroTitle(for: phase))
+                            .font(.system(.largeTitle, design: .rounded, weight: .semibold))
                             .foregroundStyle(.white)
                             .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.isHeader)
                     }
 
-                    Text("PASSIVE / READ ONLY")
-                        .font(.caption2.monospaced().weight(.bold))
-                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
                 }
-            } else {
+
                 HStack(spacing: 10) {
                     Image(systemName: statusSymbol(for: phase))
                         .font(.caption.weight(.bold))
@@ -286,16 +304,24 @@ struct ES80CaptureShellView: View {
     private func simulatorQABadge(
         _ snapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot
     ) -> some View {
-        HStack(spacing: 9) {
+        HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: 9) {
             Image(systemName: "hammer.fill")
                 .accessibilityHidden(true)
             Text("\(snapshot.evidenceLabel) · SYNTHETIC SOFTWARE STATE")
+                .fixedSize(horizontal: false, vertical: true)
         }
         .font(.caption.monospaced().weight(.bold))
         .foregroundStyle(.orange)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(.orange.opacity(0.10), in: Capsule())
+        .background(
+            .orange.opacity(0.10),
+            in: RoundedRectangle(
+                cornerRadius: dynamicTypeSize.isAccessibilitySize ? 14 : 999,
+                style: .continuous
+            )
+        )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             snapshot.accessibilitySummary
