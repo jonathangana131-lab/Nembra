@@ -345,7 +345,10 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
     }
 
     private var researchBuildForRendezvous: PassiveBluetoothExperimentOneFieldExecutionGate.ResearchBuild? {
-        switch coordinator.status.fieldExecutionStatus {
+        let status = coordinator.status
+        guard status.physicalProcedurePermitted else { return nil }
+
+        switch status.fieldExecutionStatus {
         case let .goPrivateResearchBuild(build):
             return build
         case .noGo:
