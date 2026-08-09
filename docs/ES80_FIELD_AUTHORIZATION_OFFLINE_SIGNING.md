@@ -143,6 +143,16 @@ PassiveBluetoothCaptureFieldAuthorizationTrustAnchor.publicKeyX963Representation
 
 Do **not** auto-edit or auto-pin the key from this script. The production trust root is deliberately `nil` today. Pinning the reviewed public key must be a separate exact-source decision on the final field lineage after key custody is established.
 
+## Final GO is external and non-self-referential
+
+The tracked V14 procedure source and trust-root-bearing app source must be frozen **before** the exact signed Research Field Build is produced. Nembra provenance binds exact `SOURCE_SHA`, so a post-build edit to a tracked runbook cannot be the authority that accepts that same build: the edit would create a new source SHA and make the signed artifact ancestor evidence.
+
+After the exact signed IPA and canonical evidence are independently accepted, the external authority may issue the schema-v2 authorization envelope over the exact retained evidence subjects. After the exact retained IPA is installed without substitution and the running app's build/source/build-instance/executable/raw-Info.plist tuple rendezvous succeeds before any Bluetooth scan, the field handoff may retain an **external Final GO Record** outside the repository source tree.
+
+That Final GO Record is an acceptance record for the exact envelope and exact accepted subjects. It must identify decision `GO`, exact source/build/build-instance, retained IPA digest, external-build/evidence/payload/envelope digests, reviewed authority public-key digest, procedure `V14`, recipe `ES80-FINGERPRINT-v1`, intended-device install evidence, pre-scan runtime rendezvous, expected Share artifact contract, and accepted stop/failure conditions. It is descriptive unless independently bound to the exact accepted cryptographic subjects; it cannot replace package verification or mint authority from caller-supplied text.
+
+`docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md` is immutable procedure source for this authority chain. Do not require a post-build tracked edit that “flips” that file to GO. `docs/ES80_FINAL_GO_AUTHORITY.md` documents the complete non-self-referential phase ordering.
+
 ## Development self-test
 
 ```sh
@@ -157,14 +167,14 @@ The trusted exact-head Xcode 27 workflow compiles the custody regression source 
 
 Even if an independently held candidate key produces a signature that verifies, physical Experiment One remains blocked until all applicable V14 gates are deliberately closed, including:
 
-1. the final composed Capture SHA has terminal exact-head app/package/UI acceptance;
+1. the final composed Capture SHA contains the reviewed production public trust root and has terminal exact-head app/package/UI acceptance;
 2. the exact real signed/installable iPhone IPA is retained and independently accepted;
 3. signing/provisioning evidence proves the intended field install conditions without leaking the device UDID;
 4. the authority keypair is independently controlled and its reviewed public key is pinned in package source;
 5. the signed envelope refers to those exact accepted evidence bytes;
-6. the installed running app matches the accepted executable + raw Info.plist identity;
+6. the exact retained IPA is installed without rebuilding/substitution and the installed running app matches the accepted executable + raw Info.plist identity before any Bluetooth scan;
 7. the package field execution gate deliberately consumes non-forgeable verified authorization rather than caller/UI state;
-8. the definitive runbook records GO for that exact accepted build and procedure.
+8. an external Final GO Record retained outside the repository source tree records decision `GO` for the exact accepted source/build/installable artifact, authorization envelope and evidence subjects, reviewed trust root, procedure `V14`, recipe `ES80-FINGERPRINT-v1`, intended-device install evidence, runtime rendezvous, expected artifact, and stop conditions. No post-build tracked runbook edit is required or permitted to create that authority.
 
 Until then:
 
