@@ -2,16 +2,19 @@
 """Fail-closed cleanup for stale trusted Capture issue-comment Mac runs.
 
 GitHub identifies an issue_comment workflow run with the default-branch SHA, not
-the commented PR SHA. This helper therefore ignores run.head_sha as authority.
-It accepts only the completed successful hosted resolver job's closed-form log:
-`Resolved PR #<number> exact head <40-lowercase-hex>`. Anything ambiguous is
-preserved. A run is cancellable only when current GitHub PR truth proves that
-frozen resolver authority is no longer the open same-repo exact head.
+the commented PR SHA. This helper therefore never treats run.head_sha as PR
+authority, but it does bind that SHA to the exact trusted-workflow Git blob that
+launched the run. It accepts only the completed successful hosted resolver job's
+closed-form log: `Resolved PR #<number> exact head <40-lowercase-hex>`. Anything
+ambiguous is preserved. A run is cancellable only when current GitHub PR truth
+proves that frozen resolver authority is stale, or when the exact workflow blob
+that launched the run differs from the locally checked-out trusted workflow.
 """
 from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -27,6 +30,7 @@ WORKFLOW = "capture-xcode27-trusted-command.yml"
 WORKFLOW_PATH = f".github/workflows/{WORKFLOW}"
 RESOLVER_JOB = "Resolve trusted Capture PR head"
 PATTERN = re.compile(rb"Resolved PR #([1-9][0-9]*) exact head ([0-9a-f]{40})(?![0-9a-f])")
+SHA40 = re.compile(r"[0-9a-f]{40}")
 STATUSES = ("queued", "in_progress")
 
 @dataclass(frozen=True)
@@ -53,6 +57,19 @@ def age_seconds(run: dict[str, Any], now: dt.datetime) -> float | None:
     if created.tzinfo is None:
         created = created.replace(tzinfo=dt.timezone.utc)
     return (now - created.astimezone(dt.timezone.utc)).total_seconds()
+
+
+def git_blob_sha1(data: bytes) -> str:
+    header = b"blob " + str(len(data)).encode("ascii") + b"\0"
+    return hashlib.sha1(header + data).hexdigest()
+
+
+def stale_workflow_reason(run_blob: str, current_blob: str) -> str | None:
+    if SHA40.fullmatch(run_blob) is None or SHA40.fullmatch(current_blob) is None:
+        return None
+    if run_blob != current_blob:
+        return "trusted Capture workflow authority is stale"
+    return None
 
 
 def parse_authority(log: bytes) -> Authority | None:
@@ -181,6 +198,21 @@ class GH:
             raise RuntimeError(f"PR #{number} returned no object")
         return value
 
+    def workflow_blob(self, ref: str) -> str:
+        if SHA40.fullmatch(ref) is None:
+            raise RuntimeError("trusted Capture run source SHA is not canonical lowercase 40-hex")
+        query = urllib.parse.urlencode({"ref": ref})
+        value = self.json(
+            "GET",
+            f"/repos/{self.owner}/{self.repo}/contents/{WORKFLOW_PATH}?{query}",
+        )
+        if not isinstance(value, dict):
+            raise RuntimeError("trusted Capture workflow source returned no object")
+        blob = value.get("sha")
+        if not isinstance(blob, str) or SHA40.fullmatch(blob) is None:
+            raise RuntimeError("trusted Capture workflow source returned no canonical blob SHA")
+        return blob
+
     def cancel(self, run_id: int) -> None:
         self.json("POST", f"/repos/{self.owner}/{self.repo}/actions/runs/{run_id}/cancel")
 
@@ -198,6 +230,10 @@ def self_test() -> None:
     assert stale_reason(authority, moved, "owner/repo") == "trusted Capture resolver SHA is stale"
     closed = json.loads(json.dumps(current)); closed["state"] = "closed"
     assert stale_reason(authority, closed, "owner/repo") == "trusted Capture PR is no longer open"
+    assert git_blob_sha1(b"hello\n") == "ce013625030ba8dba906f756967f9e9ca394464a"
+    assert stale_workflow_reason("c" * 40, "c" * 40) is None
+    assert stale_workflow_reason("c" * 40, "d" * 40) == "trusted Capture workflow authority is stale"
+    assert stale_workflow_reason("not-a-sha", "d" * 40) is None
     print("capture_trusted_queue_janitor self-test: PASS")
 
 
@@ -221,6 +257,10 @@ def main() -> int:
 
     gh = GH(args.token, args.repository)
     now = dt.datetime.now(dt.timezone.utc)
+    try:
+        current_workflow_blob = git_blob_sha1(open(WORKFLOW_PATH, "rb").read())
+    except OSError as exc:
+        raise SystemExit(f"cannot read locally checked-out trusted workflow: {exc}") from exc
     stale: list[tuple[int, Authority, str]] = []
     preserved = 0
     for run in gh.runs():
@@ -241,6 +281,14 @@ def main() -> int:
                 preserved += 1
                 continue
             reason = stale_reason(authority, gh.pull(authority.pr), gh.repository)
+            if reason is None:
+                run_source_sha = run.get("head_sha")
+                if not isinstance(run_source_sha, str) or SHA40.fullmatch(run_source_sha) is None:
+                    raise RuntimeError("trusted Capture run source SHA unavailable/ambiguous")
+                reason = stale_workflow_reason(
+                    gh.workflow_blob(run_source_sha),
+                    current_workflow_blob,
+                )
         except RuntimeError as exc:
             print(f"PRESERVE run={run_id}: evidence lookup failed: {exc}")
             preserved += 1
