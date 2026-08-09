@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   cockpit-qa:
-    name: Build, launch, screenshot, and truth-check Cockpit
+    name: Build, test, screenshot, and truth-check Cockpit
     runs-on: xcode-27
     timeout-minutes: 30
     steps:
@@ -30,12 +30,14 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git branch --show-current)" = "product/dashboard-cockpit-closure"
+          plutil -lint Nembra.xcodeproj/project.pbxproj
           grep -q 'WAITING FOR DATA' NembraApp/Features/Dashboard/DashboardView.swift
           grep -q 'LAST KNOWN' NembraApp/Features/Dashboard/DashboardView.swift
           grep -q 'No confirmed scooter speed is available yet' NembraApp/Features/Dashboard/SpeedInstrumentModel.swift
           grep -q 'colorSchemeContrast' NembraApp/Features/Dashboard/SpeedInstrumentModel.swift
           grep -q 'accessibilityReduceMotion' NembraApp/Features/Dashboard/SpeedInstrumentModel.swift
           grep -q 'accessibilityAddTraits(.updatesFrequently)' NembraApp/Features/Dashboard/SpeedInstrumentModel.swift
+          grep -q 'testLandscapeDashboardUnknownTelemetryStaysUnavailable' NembraUITests/NembraUITests.swift
           if grep -En 'speedKilometersPerHour[[:space:]]*\?\?[[:space:]]*[1-9]|batteryPercent[[:space:]]*\?\?[[:space:]]*[1-9]' NembraApp/Features/Dashboard/*.swift; then
             echo 'ERROR: Dashboard must not substitute invented non-zero telemetry.'
             exit 1
@@ -45,7 +47,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf /tmp/NembraDashboardDerived
+          rm -rf /tmp/NembraDashboardDerived /tmp/NembraDashboardResult.xcresult /tmp/nembra-dashboard-artifacts
+          mkdir -p /tmp/nembra-dashboard-artifacts/attachments /tmp/nembra-dashboard-artifacts/screenshots
           START=$(python3 - <<'PY'
           import time
           print(time.time())
@@ -66,58 +69,95 @@ jobs:
           print(time.time())
           PY
           )
-          python3 - "$START" "$END" <<'PY' > /tmp/dashboard-build-timing.txt
+          python3 - "$START" "$END" <<'PY' > /tmp/nembra-dashboard-artifacts/dashboard-build-timing.txt
           import sys
           print(f"build_seconds={float(sys.argv[2]) - float(sys.argv[1]):.3f}")
           PY
 
-      - name: Verify app product
+      - name: Create clean iOS 27 simulator
         shell: bash
         run: |
           set -euo pipefail
-          APP=$(find /tmp/NembraDashboardDerived/Build/Products/Debug-iphonesimulator -maxdepth 1 -name '*.app' -type d | head -1)
-          test -n "$APP"
-          echo "APP_PATH=$APP" >> "$GITHUB_ENV"
-          BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")
-          test -n "$BUNDLE_ID"
-          echo "BUNDLE_ID=$BUNDLE_ID" >> "$GITHUB_ENV"
-
-      - name: Boot iPhone simulator
-        shell: bash
-        run: |
-          set -euo pipefail
-          UDID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; xs=[x for arr in d.values() for x in arr if "iPhone" in x.get("name","") and x.get("isAvailable",False)]; print(xs[-1]["udid"] if xs else "")')
-          test -n "$UDID"
+          RUNTIME_ID=$(xcrun simctl list runtimes -j | python3 -c '
+          import json,sys
+          items=json.load(sys.stdin)["runtimes"]
+          choices=[x for x in items if x.get("isAvailable", True) and str(x.get("identifier", "")).startswith("com.apple.CoreSimulator.SimRuntime.iOS-27")]
+          choices.sort(key=lambda x: tuple(int(p) for p in str(x.get("version","0")).split(".") if p.isdigit()), reverse=True)
+          print(choices[0]["identifier"] if choices else "")')
+          test -n "$RUNTIME_ID"
+          DEVICE_TYPE=$(xcrun simctl list devicetypes -j | python3 -c '
+          import json,sys
+          items=json.load(sys.stdin)["devicetypes"]
+          preferred=["iPhone 12", "iPhone 17", "iPhone 17 Pro", "iPhone 16"]
+          for name in preferred:
+              match=next((x for x in items if x.get("name")==name), None)
+              if match:
+                  print(match["identifier"]); raise SystemExit(0)
+          raise SystemExit(1)')
+          UDID=$(xcrun simctl create "Nembra Dashboard Closure ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" "$DEVICE_TYPE" "$RUNTIME_ID")
           echo "SIM_UDID=$UDID" >> "$GITHUB_ENV"
-          xcrun simctl boot "$UDID" || true
+          xcrun simctl boot "$UDID"
           xcrun simctl bootstatus "$UDID" -b
-          xcrun simctl install "$UDID" "$APP_PATH"
 
-      - name: Launch and capture Dashboard Cockpit
+      - name: Run truthful landscape Cockpit UI test
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/nembra-dashboard-screenshots
           START=$(python3 - <<'PY'
           import time
           print(time.time())
           PY
           )
-          xcrun simctl launch --terminate-running-process "$SIM_UDID" "$BUNDLE_ID"
+          set -o pipefail
+          xcodebuild \
+            -project Nembra.xcodeproj \
+            -scheme Nembra \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=$SIM_UDID" \
+            -derivedDataPath /tmp/NembraDashboardDerived \
+            -resultBundlePath /tmp/NembraDashboardResult.xcresult \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 120 \
+            -maximum-test-execution-time-allowance 120 \
+            -collect-test-diagnostics never \
+            -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardUnknownTelemetryStaysUnavailable \
+            CODE_SIGNING_ALLOWED=NO \
+            test | tee /tmp/nembra-dashboard-uitest.log
           END=$(python3 - <<'PY'
           import time
           print(time.time())
           PY
           )
-          python3 - "$START" "$END" <<'PY' > /tmp/dashboard-launch-timing.txt
+          python3 - "$START" "$END" <<'PY' > /tmp/nembra-dashboard-artifacts/dashboard-ui-test-timing.txt
           import sys
-          print(f"simctl_launch_seconds={float(sys.argv[2]) - float(sys.argv[1]):.3f}")
+          print(f"ui_test_seconds={float(sys.argv[2]) - float(sys.argv[1]):.3f}")
           PY
-          sleep 3
-          xcrun simctl io "$SIM_UDID" orientation landscapeLeft || xcrun simctl io "$SIM_UDID" orientation landscape || true
-          sleep 2
-          xcrun simctl io "$SIM_UDID" screenshot /tmp/nembra-dashboard-screenshots/dashboard-cockpit-landscape.png
-          test -s /tmp/nembra-dashboard-screenshots/dashboard-cockpit-landscape.png
+
+      - name: Export and verify real landscape screenshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun xcresulttool export attachments \
+            --path /tmp/NembraDashboardResult.xcresult \
+            --output-path /tmp/nembra-dashboard-artifacts/attachments \
+            > /tmp/nembra-dashboard-artifacts/xcresult-attachments.log 2>&1
+
+          FOUND=0
+          while IFS= read -r file; do
+            WIDTH=$(sips -g pixelWidth "$file" 2>/dev/null | awk '/pixelWidth/ {print $2}' || true)
+            HEIGHT=$(sips -g pixelHeight "$file" 2>/dev/null | awk '/pixelHeight/ {print $2}' || true)
+            if [[ "$WIDTH" =~ ^[0-9]+$ && "$HEIGHT" =~ ^[0-9]+$ && "$WIDTH" -gt "$HEIGHT" ]]; then
+              FOUND=$((FOUND + 1))
+              cp "$file" "/tmp/nembra-dashboard-artifacts/screenshots/dashboard-unknown-telemetry-landscape-${FOUND}.png"
+            fi
+          done < <(find /tmp/nembra-dashboard-artifacts/attachments -type f -print)
+
+          if [[ "$FOUND" -lt 1 ]]; then
+            echo 'ERROR: no landscape Dashboard screenshot was exported from the UI test.'
+            find /tmp/nembra-dashboard-artifacts/attachments -type f -print || true
+            exit 1
+          fi
+          echo "landscape_screenshot_count=$FOUND" > /tmp/nembra-dashboard-artifacts/dashboard-screenshot-validation.txt
 
       - name: Record closure summary
         shell: bash
@@ -125,28 +165,37 @@ jobs:
           set -euo pipefail
           {
             echo "head_sha=$(git rev-parse HEAD)"
-            cat /tmp/dashboard-build-timing.txt
-            cat /tmp/dashboard-launch-timing.txt
-            echo "telemetry_truth=unknown remains unavailable; retained remains explicitly labeled"
+            cat /tmp/nembra-dashboard-artifacts/dashboard-build-timing.txt
+            cat /tmp/nembra-dashboard-artifacts/dashboard-ui-test-timing.txt
+            cat /tmp/nembra-dashboard-artifacts/dashboard-screenshot-validation.txt
+            echo "telemetry_truth=unknown speed/battery/mode asserted unavailable in landscape UI test"
             echo "cockpit_accessibility=reduce-motion + increased-contrast + truthful frequently-updating speed semantics"
-            echo "screenshot=dashboard cockpit landscape"
-          } | tee /tmp/dashboard-closure-summary.txt
+            echo "screenshot_source=XCUIScreen attachment from actual landscape Dashboard UI test"
+          } | tee /tmp/nembra-dashboard-artifacts/dashboard-closure-summary.txt
 
-      - name: Upload screenshot and timings
+      - name: Upload verified Cockpit screenshot and timings
         uses: actions/upload-artifact@v4
         with:
           name: nembra-dashboard-cockpit-${{ github.sha }}
-          path: |
-            /tmp/nembra-dashboard-screenshots/*.png
-            /tmp/dashboard-closure-summary.txt
-            /tmp/dashboard-build-timing.txt
-            /tmp/dashboard-launch-timing.txt
+          path: /tmp/nembra-dashboard-artifacts
           if-no-files-found: error
 
-      - name: Upload build log on failure
+      - name: Cleanup simulator
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${SIM_UDID:-}" ]]; then
+            xcrun simctl shutdown "$SIM_UDID" >/dev/null 2>&1 || true
+            xcrun simctl delete "$SIM_UDID" >/dev/null 2>&1 || true
+          fi
+
+      - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: nembra-dashboard-build-log-${{ github.sha }}
-          path: /tmp/nembra-dashboard-build.log
+          name: nembra-dashboard-failure-${{ github.sha }}
+          path: |
+            /tmp/nembra-dashboard-build.log
+            /tmp/nembra-dashboard-uitest.log
+            /tmp/NembraDashboardResult.xcresult
           if-no-files-found: ignore
