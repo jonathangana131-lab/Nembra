@@ -24,7 +24,8 @@ struct BatteryRangeCurrentnessOwnerReplayTests {
         let model = AdaptiveBatteryRangeModel()
 
         var originalStream = AcceptedBatterySOCStream()
-        let originalAnchor = try #require(originalStream.accept(originalObservation))
+        let acceptedOriginalAnchor = try originalStream.accept(originalObservation)
+        let originalAnchor = try #require(acceptedOriginalAnchor)
         let originalEstimate = try #require(model.estimateRemainingRange(
             atAcceptedSOC: originalAnchor,
             acceptedBy: originalStream.validator,
@@ -35,7 +36,8 @@ struct BatteryRangeCurrentnessOwnerReplayTests {
         #expect(originalEstimate.isCurrent)
 
         originalStream.markUnobservedInterval()
-        _ = try #require(originalStream.accept(replacementObservation))
+        let acceptedReplacementAnchor = try originalStream.accept(replacementObservation)
+        _ = try #require(acceptedReplacementAnchor)
 
         #expect(originalAnchor.isCurrent == false)
         #expect(originalEstimate.isCurrent == false)
@@ -44,7 +46,8 @@ struct BatteryRangeCurrentnessOwnerReplayTests {
         // offline/testing purposes. Matching receipt+uptime under that unrelated owner must not
         // revive the old anchor or estimate that belonged to the superseded original owner.
         var replayStream = AcceptedBatterySOCStream()
-        let replayAnchor = try #require(replayStream.accept(originalObservation))
+        let acceptedReplayAnchor = try replayStream.accept(originalObservation)
+        let replayAnchor = try #require(acceptedReplayAnchor)
 
         #expect(replayAnchor.isCurrent)
         #expect(replayAnchor.sourceReceiptIdentity == originalAnchor.sourceReceiptIdentity)
