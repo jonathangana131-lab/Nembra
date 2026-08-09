@@ -71,6 +71,31 @@ struct DashboardModePersonality: Equatable {
     }
 }
 
+/// Truth-qualified availability for Dashboard controls that are only appropriate
+/// once Nembra has actual speed evidence for the connected vehicle session.
+///
+/// A missing, non-finite, or negative speed is unknown — never an implicit zero.
+/// The UI therefore waits for live speed instead of manufacturing stopped authority.
+enum DashboardStoppedControlPresentation: Equatable {
+    case controls
+    case moving
+    case awaitingLiveSpeed
+    case hidden
+
+    static func resolved(
+        connection: VehicleConnectionState,
+        speedKilometersPerHour: Double?
+    ) -> DashboardStoppedControlPresentation {
+        guard connection == .connected else { return .hidden }
+        guard let speedKilometersPerHour,
+              speedKilometersPerHour.isFinite,
+              speedKilometersPerHour >= 0 else {
+            return .awaitingLiveSpeed
+        }
+        return speedKilometersPerHour < 0.5 ? .controls : .moving
+    }
+}
+
 /// The dedicated landscape riding surface.
 ///
 /// Phase 11 keeps the accepted Phase 10 speed instrumentation and makes confirmed
@@ -203,20 +228,31 @@ struct DashboardView: View {
 
             Spacer(minLength: 0)
 
-            if shouldShowStoppedControls {
+            switch stoppedControlPresentation {
+            case .controls:
                 stoppedControls
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
-            } else if vehicle.state.connection == .connected && isVehicleMoving {
+            case .moving:
                 Text("Controls available when stopped")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.trailing)
                     .accessibilityIdentifier("dashboard.controls-moving-message")
+            case .awaitingLiveSpeed:
+                Label("Waiting for live speed", systemImage: "waveform.slash")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityLabel("Vehicle controls unavailable")
+                    .accessibilityValue("Waiting for confirmed live speed")
+                    .accessibilityIdentifier("dashboard.controls-awaiting-speed")
+            case .hidden:
+                EmptyView()
             }
         }
         .animation(
             reduceMotion ? nil : .snappy(duration: 0.20),
-            value: shouldShowStoppedControls
+            value: stoppedControlPresentation
         )
     }
 
@@ -369,12 +405,11 @@ struct DashboardView: View {
         )
     }
 
-    private var shouldShowStoppedControls: Bool {
-        vehicle.state.connection == .connected && !isVehicleMoving
-    }
-
-    private var isVehicleMoving: Bool {
-        (vehicle.state.speedKilometersPerHour ?? 0) >= 0.5
+    private var stoppedControlPresentation: DashboardStoppedControlPresentation {
+        DashboardStoppedControlPresentation.resolved(
+            connection: vehicle.state.connection,
+            speedKilometersPerHour: vehicle.state.speedKilometersPerHour
+        )
     }
 
     private var isRetainedVehicleData: Bool {
