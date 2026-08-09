@@ -9,6 +9,7 @@ final class AppRuntime {
 
     private let simulatorService: SimulatedScooterService?
     private let simulationScenario: ScooterSimulationScenario?
+    private let simulatorStartsWithSpeedEvidenceGap: Bool
     private let simulatorAutoCompletesRide: Bool
     private let simulatorRouteRecorder: RideRouteRecorder?
     private var didStart = false
@@ -21,6 +22,7 @@ final class AppRuntime {
         rideRouteStore: RideRoutePresentationStore,
         simulatorService: SimulatedScooterService?,
         simulationScenario: ScooterSimulationScenario?,
+        simulatorStartsWithSpeedEvidenceGap: Bool,
         simulatorAutoCompletesRide: Bool,
         simulatorRouteRecorder: RideRouteRecorder?
     ) {
@@ -30,6 +32,7 @@ final class AppRuntime {
         self.rideRouteStore = rideRouteStore
         self.simulatorService = simulatorService
         self.simulationScenario = simulationScenario
+        self.simulatorStartsWithSpeedEvidenceGap = simulatorStartsWithSpeedEvidenceGap
         self.simulatorAutoCompletesRide = simulatorAutoCompletesRide
         self.simulatorRouteRecorder = simulatorRouteRecorder
     }
@@ -46,6 +49,15 @@ final class AppRuntime {
         // launch cannot race past the automatic ride application layer.
         await rideStore.start()
         await vehicleStore.start()
+
+        // Explicit Simulator-only launch hook for runtime QA of retained speed.
+        // The service remains connected; only source speed continuity is broken,
+        // so VehicleStore must present the last accepted speed as retained while
+        // refusing stopped-only controls that require current speed authority.
+        if simulatorStartsWithSpeedEvidenceGap,
+           let simulatorService {
+            await simulatorService.simulateSpeedEvidenceGap()
+        }
 
         guard simulationScenario == .riding,
               let simulatorService else { return }
@@ -150,6 +162,7 @@ final class AppRuntime {
 enum AppBootstrap {
     static let simulationStorageNamespaceEnvironmentKey = "NEMBRA_SIMULATION_STORAGE_NAMESPACE"
     static let simulationAutoCompleteRideEnvironmentKey = "NEMBRA_SIMULATION_AUTOCOMPLETE_RIDE"
+    static let simulationSpeedEvidenceGapEnvironmentKey = "NEMBRA_SIMULATION_SPEED_EVIDENCE_GAP"
 
     private struct VehicleBootstrap {
         let service: any ScooterService
@@ -266,6 +279,8 @@ enum AppBootstrap {
             )
         }
 
+        let simulatorStartsWithSpeedEvidenceGap = bootstrap.scenario != nil
+            && environment[simulationSpeedEvidenceGapEnvironmentKey] == "1"
         let simulatorAutoCompletesRide = bootstrap.scenario == .riding
             && environment[simulationAutoCompleteRideEnvironmentKey] == "1"
         let simulatorRouteRecorder: RideRouteRecorder?
@@ -286,6 +301,7 @@ enum AppBootstrap {
             rideRouteStore: rideRouteStore,
             simulatorService: bootstrap.simulatorService,
             simulationScenario: bootstrap.scenario,
+            simulatorStartsWithSpeedEvidenceGap: simulatorStartsWithSpeedEvidenceGap,
             simulatorAutoCompletesRide: simulatorAutoCompletesRide,
             simulatorRouteRecorder: simulatorRouteRecorder
         )
