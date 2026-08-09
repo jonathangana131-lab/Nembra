@@ -36,9 +36,23 @@ struct PassiveBluetoothExperimentOnePrivateResearchAdmissionTests {
         #expect(!PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure)
     }
 
-    @Test("ordinary package build does not compile the TODAY live research capability")
-    func ordinaryBuildRemainsCompileTimeNoGo() {
-        #expect(!PassiveBluetoothExperimentOneFieldExecutionGate.hasCompiledTodayResearchCapability)
+    @Test("ordinary exact-source app compiles no private research SPI call")
+    func ordinaryAppBuildRemainsCompileTimeNoGo() throws {
+        let source = try repositorySourceFile("NembraApp/App/AppBootstrap.swift")
+        let fieldCondition = "#if NEMBRA_ES80_TODAY_RESEARCH_APP && os(iOS) && !targetEnvironment(simulator) && !DEBUG"
+        let bridgeStart = try #require(
+            source.range(of: "static func makeResearchAuthorizedES80ForCurrentApplication() throws")?.lowerBound
+        )
+        let runtimeStart = try #require(
+            source.range(of: "@MainActor\nfinal class AppRuntime", range: bridgeStart..<source.endIndex)?.lowerBound
+        )
+        let bridge = source[bridgeStart..<runtimeStart]
+
+        #expect(source.contains("@_spi(NembraES80PrivateResearch) import NembraBluetoothCapture"))
+        #expect(source.contains("#if NEMBRA_ES80_TODAY_RESEARCH_APP"))
+        #expect(bridge.contains(fieldCondition))
+        #expect(bridge.contains("Self.makePackageResearchAuthorizedES80ForCurrentApplication()"))
+        #expect(bridge.contains("throw CanonicalES80ConstructionError.fieldExecutionNotAuthorized"))
     }
 
     @Test("missing or wrong field recipe cannot mint research admission")
@@ -110,8 +124,8 @@ struct PassiveBluetoothExperimentOnePrivateResearchAdmissionTests {
         }
     }
 
-    @Test("live research admission requires dedicated compiled capability plus physical iOS Release")
-    func liveResearchAdmissionIsMechanicallyFencedFromOrdinaryBuildsDebugAndSimulator() throws {
+    @Test("live package admission independently requires physical iOS Release")
+    func liveResearchAdmissionIsMechanicallyFencedFromDebugSimulatorAndNonIOS() throws {
         let source = try sourceFile(
             "Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneFieldExecutionGate.swift"
         )
@@ -126,8 +140,7 @@ struct PassiveBluetoothExperimentOnePrivateResearchAdmissionTests {
         )
         let liveProducer = source[liveStart..<deterministicStart]
         let deterministicSeam = source[deterministicStart...]
-        let requiredFence =
-            "#if NEMBRA_ES80_TODAY_RESEARCH && os(iOS) && !targetEnvironment(simulator) && !DEBUG"
+        let requiredFence = "#if os(iOS) && !targetEnvironment(simulator) && !DEBUG"
 
         let fence = try #require(liveProducer.range(of: requiredFence))
         let rejection = try #require(
@@ -138,11 +151,11 @@ struct PassiveBluetoothExperimentOnePrivateResearchAdmissionTests {
         #expect(fence.lowerBound < rejection.lowerBound)
         #expect(rejection.lowerBound < fenceEnd.lowerBound)
         #expect(!deterministicSeam.contains(requiredFence))
-        #expect(source.contains("static var hasCompiledTodayResearchCapability: Bool"))
+        #expect(!source.contains("NEMBRA_ES80_TODAY_RESEARCH &&"))
     }
 
-    @Test("TODAY signed-field wrapper carries only the dedicated compile capability through Xcode settings")
-    func todaySignedFieldWrapperOwnsCompileCapabilityInjection() throws {
+    @Test("TODAY signed-field wrapper compiles only the app research entrypoint before delegation")
+    func todaySignedFieldWrapperOwnsAppCompileCapabilityInjection() throws {
         let source = try repositorySourceFile(
             "scripts/ci/xcode27_today_research_field_candidate.sh"
         )
@@ -154,9 +167,10 @@ struct PassiveBluetoothExperimentOnePrivateResearchAdmissionTests {
         )
         #expect(
             source.contains(
-                "OTHER_SWIFT_FLAGS = $(inherited) -DNEMBRA_ES80_TODAY_RESEARCH"
+                "OTHER_SWIFT_FLAGS = $(inherited) -DNEMBRA_ES80_TODAY_RESEARCH_APP"
             )
         )
+        #expect(!source.contains("-DNEMBRA_ES80_TODAY_RESEARCH\n"))
         #expect(source.contains("export XCODE_XCCONFIG_FILE=\"$TODAY_XCCONFIG\""))
         #expect(!source.contains("export OTHER_SWIFT_FLAGS="))
         #expect(!source.contains("export SWIFT_ACTIVE_COMPILATION_CONDITIONS="))
@@ -166,13 +180,13 @@ struct PassiveBluetoothExperimentOnePrivateResearchAdmissionTests {
         #expect(!source.contains("INFOPLIST_KEY_NembraCaptureFieldRecipe"))
     }
 
-    @Test("research factory acquires package admission before any CoreBluetooth construction")
+    @Test("research SPI acquires package admission before any CoreBluetooth construction")
     func researchFactoryOrdersAuthorityBeforeTransport() throws {
         let source = try sourceFile(
             "Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCoordinator+CanonicalES80.swift"
         )
         let researchStart = try #require(
-            source.range(of: "static func makeResearchAuthorizedES80ForCurrentApplication() throws")?.lowerBound
+            source.range(of: "static func makePackageResearchAuthorizedES80ForCurrentApplication() throws")?.lowerBound
         )
         let releaseFactory = try #require(
             source.range(
@@ -187,6 +201,7 @@ struct PassiveBluetoothExperimentOnePrivateResearchAdmissionTests {
         let handoff = try #require(
             researchFactory.range(of: "makeLiveResearchES80Coordinator(admission: admission)")
         )
+        #expect(source[..<researchStart].contains("@_spi(NembraES80PrivateResearch)"))
         #expect(admission.lowerBound < handoff.lowerBound)
 
         let researchLiveStart = try #require(
