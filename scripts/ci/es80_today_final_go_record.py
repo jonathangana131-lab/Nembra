@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Compatibility import for the V14 TODAY Final GO foundation.
+"""Non-authorizing compatibility import for the V14 TODAY Final GO foundation.
 
-Importers may continue to consume the validated foundation API from this historical path, but direct
-execution is deliberately non-authorizing. The only executable Final GO path is
-`es80_today_final_go_hardened.py`, which replaces candidate-controlled Xcode authority with the
-owner-commanded default-branch subject and uses failure-atomic publication.
+Historical importers may continue to read foundation constants/helpers from this path, but this
+module cannot build or publish a Final GO record. The only executable authority path is
+``es80_today_final_go_hardened.py``. Foundation behavior tests target the explicit foundation
+module rather than using this compatibility surface as an authority proxy.
 """
 from __future__ import annotations
 
@@ -20,26 +20,19 @@ if _spec is None or _spec.loader is None:
 _foundation = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_foundation)
 
-# Preserve the historical import surface for tests and internal composition without copying or
-# reimplementing the validated foundation. Dunder metadata stays owned by this compatibility module.
+# Keep the historical read/import surface available while authority-bearing entrypoints fail closed.
+# The explicit foundation module owns the validator; the hardened executable is its only GO caller.
 for _name in dir(_foundation):
     if not _name.startswith("__"):
         globals()[_name] = getattr(_foundation, _name)
 
 
 def build_final_go_record(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    """Delegate to the foundation while honoring the two intentional injectable test/trust seams."""
-    original_git = _foundation._git
-    original_trusted_xcode_subject = _foundation._trusted_xcode_subject
-    _foundation._git = globals().get("_git", original_git)
-    _foundation._trusted_xcode_subject = globals().get(
-        "_trusted_xcode_subject", original_trusted_xcode_subject
+    del args, kwargs
+    raise FinalGoError(
+        "legacy Final GO compatibility import is non-authorizing; "
+        "use es80_today_final_go_hardened.py"
     )
-    try:
-        return _foundation.build_final_go_record(*args, **kwargs)
-    finally:
-        _foundation._git = original_git
-        _foundation._trusted_xcode_subject = original_trusted_xcode_subject
 
 
 def main(argv: list[str] | None = None) -> int:
