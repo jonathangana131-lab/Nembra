@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import importlib.util
+import json
 import os
 from pathlib import Path
 import stat
@@ -17,6 +18,7 @@ spec.loader.exec_module(hardened)
 class HardenedFinalGoCompositionTests(unittest.TestCase):
     SOURCE = "a" * 40
     WORKFLOW_SOURCE = "b" * 40
+    FRESH_CROSSCHECK = b'{"authority":"fresh-pinned-crosscheck","status":"PASS_NOT_FINAL_GO"}\n'
 
     def kwargs(self, root: Path):
         return {
@@ -56,14 +58,29 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             "workflowSourceCommitSHA": self.WORKFLOW_SOURCE,
         }
 
-    def test_composition_replaces_foundation_trust_seam_and_restores_it(self):
+    def test_composition_replaces_foundation_trust_seam_and_uses_private_fresh_crosscheck(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             original = hardened.foundation._trusted_xcode_subject
+            supplied = self.kwargs(root)["independent_crosscheck_receipt"]
+            observed: dict[str, object] = {}
+
+            def foundation_with_crosscheck_assertion(**kwargs):
+                trusted_receipt = kwargs["independent_crosscheck_receipt"]
+                observed["path"] = trusted_receipt
+                observed["bytes"] = trusted_receipt.read_bytes()
+                self.assertNotEqual(trusted_receipt, supplied)
+                self.assertEqual(trusted_receipt.stat().st_mode & 0o777, 0o600)
+                return self.fake_foundation(**kwargs)
+
             with mock.patch.object(
+                hardened,
+                "_fresh_crosscheck_receipt",
+                return_value=self.FRESH_CROSSCHECK,
+            ), mock.patch.object(
                 hardened.foundation,
                 "build_final_go_record",
-                side_effect=self.fake_foundation,
+                side_effect=foundation_with_crosscheck_assertion,
             ), mock.patch.object(
                 hardened.trusted_xcode,
                 "verify_trusted_capture_xcode_subject",
@@ -73,6 +90,8 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
 
             self.assertIs(hardened.foundation._trusted_xcode_subject, original)
             self.assertEqual(record["trustedXcodeAcceptance"], self.trusted_subject())
+            self.assertEqual(observed["bytes"], self.FRESH_CROSSCHECK)
+            self.assertFalse(Path(observed["path"]).exists())
             verify.assert_called_once()
             call = verify.call_args.kwargs
             self.assertEqual(call["source_commit_sha"], self.SOURCE)
@@ -83,6 +102,10 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             root = Path(temporary)
             original = hardened.foundation._trusted_xcode_subject
             with mock.patch.object(
+                hardened,
+                "_fresh_crosscheck_receipt",
+                return_value=self.FRESH_CROSSCHECK,
+            ), mock.patch.object(
                 hardened.foundation,
                 "build_final_go_record",
                 side_effect=self.fake_foundation,
@@ -101,6 +124,10 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             aliased = self.trusted_subject()
             aliased["workflowSourceCommitSHA"] = self.SOURCE
             with mock.patch.object(
+                hardened,
+                "_fresh_crosscheck_receipt",
+                return_value=self.FRESH_CROSSCHECK,
+            ), mock.patch.object(
                 hardened.foundation,
                 "build_final_go_record",
                 side_effect=self.fake_foundation,
@@ -111,6 +138,51 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(hardened.FinalGoError, "remain independent"):
                     hardened.build_final_go_record(**self.kwargs(root))
+
+    def test_fresh_crosscheck_rejects_supplied_claims_not_reproduced_by_pinned_execution(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            supplied = root / "caller.json"
+            supplied.write_text(
+                json.dumps({"authority": "caller", "status": "PASS_NOT_FINAL_GO"}),
+                encoding="utf-8",
+            )
+            with mock.patch.object(
+                hardened.trusted_crosscheck,
+                "execute_trusted_crosscheck",
+                return_value=(
+                    b'{"authority":"trusted","status":"PASS_NOT_FINAL_GO"}\n',
+                    {"authority": "trusted", "status": "PASS_NOT_FINAL_GO"},
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    hardened.FinalGoError,
+                    "disagrees with fresh pinned producer execution",
+                ):
+                    hardened._fresh_crosscheck_receipt(
+                        tooling_repo=root / "tooling",
+                        candidate_root=root / "candidate",
+                        expected_source_sha=self.SOURCE,
+                        supplied_receipt=supplied,
+                    )
+
+    def test_fresh_crosscheck_maps_trusted_execution_failure_to_final_go_error(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with mock.patch.object(
+                hardened.trusted_crosscheck,
+                "execute_trusted_crosscheck",
+                side_effect=hardened.trusted_crosscheck.TrustedCrosscheckExecutionError(
+                    "pinned crosscheck execution failed"
+                ),
+            ):
+                with self.assertRaisesRegex(hardened.FinalGoError, "pinned crosscheck execution failed"):
+                    hardened._fresh_crosscheck_receipt(
+                        tooling_repo=root / "tooling",
+                        candidate_root=root / "candidate",
+                        expected_source_sha=self.SOURCE,
+                        supplied_receipt=root / "caller.json",
+                    )
 
     def test_workflow_blob_lookup_reuses_foundation_closed_git_boundary(self):
         with tempfile.TemporaryDirectory() as temporary:
