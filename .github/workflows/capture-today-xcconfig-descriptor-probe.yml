@@ -10,143 +10,15 @@ permissions:
   contents: read
 
 jobs:
-  physical-ios-xcconfig-descriptor-probe:
-    name: Prove descriptor xcconfig reaches NembraBluetoothCapture
-    if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: xcode-27
-    timeout-minutes: 20
+  retirement-sentinel:
+    name: Retire deferred descriptor probe without Mac
+    runs-on: ubuntu-latest
     concurrency:
       group: nembra-capture-today-xcconfig-fd-${{ github.event.pull_request.number }}
       cancel-in-progress: true
-    env:
-      EXPECTED_PRODUCT_SHA: ca187f568f9d9259f01783d80d1e4a643a382f6e
-      WORKFLOW_PATH: .github/workflows/capture-today-xcconfig-descriptor-probe.yml
-
     steps:
-      - name: Checkout immutable validation head
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 2
-
-      - name: Verify validation branch is one workflow commit above exact repair
+      - name: Preserve V14 P0 runner priority
         run: |
-          set -euo pipefail
-          actual_head="$(git rev-parse HEAD)"
-          actual_parent="$(git rev-parse HEAD^)"
-          printf 'Validation head: %s\nExpected repair parent: %s\nActual repair parent: %s\n' \
-            "$actual_head" "$EXPECTED_PRODUCT_SHA" "$actual_parent"
-          test "$actual_parent" = "$EXPECTED_PRODUCT_SHA"
-          changed="$(git diff --name-only "$EXPECTED_PRODUCT_SHA" HEAD)"
-          test "$changed" = "$WORKFLOW_PATH"
-
-      - name: Verify descriptor-custodied TODAY wrapper shape
-        run: |
-          set -euo pipefail
-          wrapper='scripts/ci/xcode27_today_research_field_candidate.sh'
-          test -x "$wrapper"
-          git ls-files -s "$wrapper" | grep -Eq '^100755 '
-          grep -Fq 'exec 6< "$TODAY_XCCONFIG"' "$wrapper"
-          grep -Fq '/bin/rm -f "$TODAY_XCCONFIG"' "$wrapper"
-          grep -Fq '/bin/rmdir "$TODAY_SETTINGS_ROOT"' "$wrapper"
-          grep -Fq 'export XCODE_XCCONFIG_FILE="/dev/fd/6"' "$wrapper"
-          grep -Fq 'OTHER_SWIFT_FLAGS = $(inherited) -DNEMBRA_ES80_TODAY_RESEARCH' "$wrapper"
-          grep -Fq '"$CANONICAL_PRODUCER" "$@"' "$wrapper"
-
-      - name: Probe unlinked descriptor through Xcode into local Swift package
-        run: |
-          set -euo pipefail
-          probe='Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/_ResearchFlagDescriptorPropagationProbe.swift'
-          logs="$RUNNER_TEMP/nembra-xcconfig-fd-probe"
-          negative_derived="$RUNNER_TEMP/nembra-xcconfig-fd-negative-derived"
-          positive_derived="$RUNNER_TEMP/nembra-xcconfig-fd-positive-derived"
-          settings_root=''
-
-          mkdir -p "$logs"
-          cleanup() {
-            exec 6<&- 2>/dev/null || true
-            rm -f "$probe"
-            if [[ -n "$settings_root" ]]; then
-              rm -rf "$settings_root"
-            fi
-          }
-          trap cleanup EXIT
-
-          cat > "$probe" <<'SWIFT'
-          #if !NEMBRA_ES80_TODAY_RESEARCH
-          #error("NEMBRA_RESEARCH_FD_FLAG_PROBE_MISSING")
-          #endif
-
-          enum NembraTODAYResearchDescriptorPropagationProbe {
-              static let reachedBluetoothCapturePackage = true
-          }
-          SWIFT
-
-          common=(
-            -project Nembra.xcodeproj
-            -scheme Nembra
-            -configuration Release
-            -destination 'generic/platform=iOS'
-            CODE_SIGNING_ALLOWED=NO
-            CODE_SIGNING_REQUIRED=NO
-          )
-
-          # Negative control: ordinary Release must compile this local-package source and fail
-          # specifically because the private TODAY condition is absent.
-          set +e
-          xcodebuild "${common[@]}" -derivedDataPath "$negative_derived" clean build \
-            >"$logs/negative-control.log" 2>&1
-          negative_status=$?
-          set -e
-          if [[ "$negative_status" -eq 0 ]]; then
-            echo 'Ordinary Release unexpectedly compiled the research-only descriptor probe.' >&2
-            exit 1
-          fi
-          if ! grep -Fq 'NEMBRA_RESEARCH_FD_FLAG_PROBE_MISSING' "$logs/negative-control.log"; then
-            echo 'Negative control failed for a reason other than the package research flag probe.' >&2
-            tail -n 160 "$logs/negative-control.log" >&2 || true
-            exit 1
-          fi
-
-          # Positive control: reproduce #1489's exact custody mechanism. Xcode receives only an
-          # inherited /dev/fd descriptor after every mutable xcconfig pathname has been removed.
-          settings_root="$(/usr/bin/mktemp -d "${RUNNER_TEMP:-/tmp}/NembraES80TodayResearchFDProbe.XXXXXX")"
-          xcconfig="$settings_root/NembraES80TodayResearch.xcconfig"
-          cat > "$xcconfig" <<'XCCONFIG'
-          OTHER_SWIFT_FLAGS = $(inherited) -DNEMBRA_ES80_TODAY_RESEARCH
-          XCCONFIG
-          /bin/chmod 0400 "$xcconfig"
-          exec 6< "$xcconfig"
-          /bin/rm -f "$xcconfig"
-          /bin/rmdir "$settings_root"
-          settings_root=''
-          export XCODE_XCCONFIG_FILE='/dev/fd/6'
-
-          test -r "$XCODE_XCCONFIG_FILE"
-          if /usr/bin/find "${RUNNER_TEMP:-/tmp}" -maxdepth 1 -name 'NembraES80TodayResearchFDProbe.*' -print -quit | /usr/bin/grep -q .; then
-            echo 'Mutable descriptor-probe xcconfig pathname survived before Xcode admission.' >&2
-            exit 1
-          fi
-
-          xcodebuild "${common[@]}" -derivedDataPath "$positive_derived" clean build \
-            2>&1 | tee "$logs/positive-control.log"
-          exec 6<&-
-          unset XCODE_XCCONFIG_FILE
-
-          grep -Fq '_ResearchFlagDescriptorPropagationProbe.swift' "$logs/positive-control.log"
-          cleanup
-          trap - EXIT
-          test ! -e "$probe"
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-
-          printf 'Descriptor-backed TODAY research capability reached NembraBluetoothCapture on exact repair parent %s.\n' \
-            "$EXPECTED_PRODUCT_SHA"
-
-      - name: Upload descriptor propagation logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: nembra-today-xcconfig-fd-${{ github.run_number }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/nembra-xcconfig-fd-probe
-          if-no-files-found: warn
-          retention-days: 30
+          echo 'Descriptor-custody validation is deferred until post-capture hardening.'
+          echo 'This sentinel exists only to retire the older queued xcode-27 probe in the same PR concurrency group.'
+          echo 'No product, signing, Capture, BLE, or physical authority is accepted by this run.'
