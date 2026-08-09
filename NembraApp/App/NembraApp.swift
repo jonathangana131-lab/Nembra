@@ -304,7 +304,7 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
                             .font(.headline)
                             .frame(maxWidth: .infinity)
                             .frame(minHeight: 56)
-                            .foregroundStyle(canContinue ? Color.black : Color.secondary)
+                            .foregroundStyle(canContinue ? Color.black : Color.white)
                             .background(
                                 canContinue ? Color.white : Color.white.opacity(0.08),
                                 in: RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -540,16 +540,22 @@ private struct ES80ExperimentOneFieldNoGoView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: verticalSizeClass == .compact ? 16 : 28) {
-                VStack(alignment: .leading, spacing: verticalSizeClass == .compact ? 9 : 14) {
+            VStack(alignment: .leading, spacing: verticalSizeClass == .compact ? 10 : 28) {
+                VStack(alignment: .leading, spacing: verticalSizeClass == .compact ? 6 : 14) {
                     HStack(spacing: 12) {
                         ZStack {
                             RoundedRectangle(cornerRadius: 15, style: .continuous)
                                 .fill(.white.opacity(0.08))
-                                .frame(width: 52, height: 52)
+                                .frame(
+                                    width: verticalSizeClass == .compact ? 44 : 52,
+                                    height: verticalSizeClass == .compact ? 44 : 52
+                                )
 
                             Image(systemName: "lock.shield.fill")
-                                .font(.system(size: 23, weight: .semibold))
+                                .font(.system(
+                                    size: verticalSizeClass == .compact ? 20 : 23,
+                                    weight: .semibold
+                                ))
                                 .foregroundStyle(.white)
                         }
                         .accessibilityHidden(true)
@@ -561,13 +567,21 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                                 .foregroundStyle(.secondary)
 
                             Text("Capture locked")
-                                .font(.system(.largeTitle, design: .rounded, weight: .semibold))
+                                .font(.system(
+                                    verticalSizeClass == .compact ? .title2 : .largeTitle,
+                                    design: .rounded,
+                                    weight: .semibold
+                                ))
                                 .foregroundStyle(.white)
                         }
                     }
 
                     Text("This build is still finishing its final checks before it can collect real ES80 data.")
-                        .font(.title3.weight(.medium))
+                        .font(
+                            verticalSizeClass == .compact
+                                ? .subheadline.weight(.medium)
+                                : .title3.weight(.medium)
+                        )
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
 
