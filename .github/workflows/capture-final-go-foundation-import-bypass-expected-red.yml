@@ -1,0 +1,71 @@
+name: Capture Final GO Foundation Import Bypass Expected-Red
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - .github/workflows/capture-final-go-foundation-import-bypass-expected-red.yml
+
+permissions:
+  contents: read
+
+jobs:
+  foundation-import-authority:
+    name: Reject imported public foundation GO authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXPECTED_PARENT_SHA: cfbc0bc21edbb2d4ec278b5d9f9f5f5921c320fa
+      WORKFLOW_PATH: .github/workflows/capture-final-go-foundation-import-bypass-expected-red.yml
+    steps:
+      - name: Checkout immutable validation head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+
+      - name: Verify one workflow-only commit above library-only foundation head
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT_SHA"
+          changed="$(git diff --name-only "$EXPECTED_PARENT_SHA" HEAD)"
+          test "$changed" = "$WORKFLOW_PATH"
+
+      - name: Prove imported public foundation cannot mint Final GO
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import importlib.util
+          from pathlib import Path
+          import tempfile
+          from unittest import mock
+
+          root = Path.cwd()
+          ci = root / 'scripts' / 'ci'
+          tests = ci / 'tests'
+
+          def load(name, path):
+              spec = importlib.util.spec_from_file_location(name, path)
+              if spec is None or spec.loader is None:
+                  raise SystemExit(f'could not load {path}')
+              module = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(module)
+              return module
+
+          foundation = load('public_foundation_under_test', ci / 'es80_today_final_go_foundation.py')
+          fixture_module = load('foundation_authority_fixture', tests / 'test_es80_today_final_go_record.py')
+          fixture_module.final_go = foundation
+          case = fixture_module.FinalGoRecordTests(methodName='test_valid_exact_subjects_emit_go_but_no_physical_result')
+
+          with tempfile.TemporaryDirectory() as temporary:
+              _, _, kwargs = case.setup_case(Path(temporary))
+              with mock.patch.object(foundation, '_git', side_effect=case.git_side_effect):
+                  record = foundation.build_final_go_record(**kwargs)
+
+          if record.get('decision') == 'GO':
+              raise SystemExit(
+                  'PUBLIC FOUNDATION IMPORT MINTED FINAL GO: es80_today_final_go_foundation.py '
+                  'delegates to the authority-bearing implementation and therefore bypasses the '
+                  'canonical hardened default-branch trusted-Xcode composer'
+              )
+          PY
