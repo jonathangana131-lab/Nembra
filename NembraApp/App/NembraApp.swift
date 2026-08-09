@@ -513,6 +513,7 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
 
 @MainActor
 private struct ES80ExperimentOneFieldNoGoView: View {
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var engineeringDetailsExpanded = false
     @State private var runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity?
     @State private var runtimeBuildIdentityCheckFinished = false
@@ -536,8 +537,8 @@ private struct ES80ExperimentOneFieldNoGoView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: verticalSizeClass == .compact ? 16 : 28) {
+                VStack(alignment: .leading, spacing: verticalSizeClass == .compact ? 9 : 14) {
                     HStack(spacing: 12) {
                         ZStack {
                             RoundedRectangle(cornerRadius: 15, style: .continuous)
@@ -610,7 +611,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .padding(18)
+                .padding(verticalSizeClass == .compact ? 12 : 18)
                 .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(physicalLockAccessibilityLabel)
@@ -730,7 +731,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         }
                     }
                 }
-                .padding(18)
+                .padding(verticalSizeClass == .compact ? 12 : 18)
                 .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
                 Text("No scooter action is required yet. Capture can only unlock on a Nembra build explicitly cleared for this physical procedure; changing a setting or preference cannot bypass this lock.")
@@ -740,10 +741,11 @@ private struct ES80ExperimentOneFieldNoGoView: View {
             }
             .frame(maxWidth: 660)
             .padding(.horizontal, 22)
-            .padding(.top, 18)
-            .padding(.bottom, 42)
+            .padding(.top, verticalSizeClass == .compact ? 8 : 18)
+            .padding(.bottom, verticalSizeClass == .compact ? 20 : 42)
             .frame(maxWidth: .infinity)
         }
+        .accessibilityIdentifier("es80.capture.field-no-go-scroll")
         .background(Color.black.ignoresSafeArea())
         .navigationTitle("Nembra Capture")
         .navigationBarTitleDisplayMode(.inline)
