@@ -1,0 +1,182 @@
+name: Capture TODAY Command-Line Research Flag Probe
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - .github/workflows/capture-today-command-line-research-probe.yml
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  stale-validation-cleanup:
+    name: Retire stale validation reservations
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel older queued runs for this exact validation branch
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const workflow = 'capture-today-command-line-research-probe.yml'
+            const branch = context.payload.pull_request.head.ref
+            const currentHead = context.payload.pull_request.head.sha
+            for (const status of ['queued', 'in_progress']) {
+              const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: workflow,
+                status,
+                branch,
+                per_page: 100,
+              })
+              for (const run of runs) {
+                if (run.id === context.runId || run.event !== 'pull_request' || run.head_sha === currentHead) {
+                  continue
+                }
+                core.info(`Retiring stale validation run ${run.id} @ ${run.head_sha}`)
+                try {
+                  await github.rest.actions.cancelWorkflowRun({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    run_id: run.id,
+                  })
+                } catch (error) {
+                  core.warning(`Normal cancel failed for ${run.id}: ${error.message}`)
+                  try {
+                    await github.request('POST /repos/{owner}/{repo}/actions/runs/{run_id}/force-cancel', {
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      run_id: run.id,
+                    })
+                  } catch (forceError) {
+                    core.warning(`Force-cancel also failed for ${run.id}: ${forceError.message}`)
+                  }
+                }
+              }
+            }
+
+  physical-ios-command-line-research-probe:
+    name: Prove archive-time Research flag reaches NembraBluetoothCapture
+    needs: stale-validation-cleanup
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 20
+    concurrency:
+      group: nembra-capture-today-command-line-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    env:
+      EXPECTED_PRODUCT_SHA: f4cd76e301334ce96824d0b150ef03d2d2cb606b
+      WORKFLOW_PATH: .github/workflows/capture-today-command-line-research-probe.yml
+
+    steps:
+      - name: Checkout immutable validation head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+
+      - name: Verify validation branch is one workflow commit above exact flagship
+        run: |
+          set -euo pipefail
+          actual_head="$(git rev-parse HEAD)"
+          actual_parent="$(git rev-parse HEAD^)"
+          printf 'Validation head: %s\nExpected flagship parent: %s\nActual flagship parent: %s\n' \
+            "$actual_head" "$EXPECTED_PRODUCT_SHA" "$actual_parent"
+          test "$actual_parent" = "$EXPECTED_PRODUCT_SHA"
+          changed="$(git diff --name-only "$EXPECTED_PRODUCT_SHA" HEAD)"
+          test "$changed" = "$WORKFLOW_PATH"
+
+      - name: Verify current canonical producer route before probing
+        run: |
+          set -euo pipefail
+          producer='scripts/ci/xcode27_signed_field_candidate.sh'
+          wrapper='scripts/ci/xcode27_today_research_field_candidate.sh'
+          test -x "$producer"
+          test -x "$wrapper"
+          git ls-files -s "$producer" "$wrapper" | grep -Eq '^100755 '
+          grep -Fq 'if [[ "${1:-}" == "--nembra-today-research-build" ]]; then' "$producer"
+          grep -Fq 'unset XCODE_XCCONFIG_FILE OTHER_SWIFT_FLAGS SWIFT_ACTIVE_COMPILATION_CONDITIONS' "$producer"
+          grep -Fq "run_xcodebuild \"\$@\" 'OTHER_SWIFT_FLAGS=\$(inherited) -DNEMBRA_ES80_TODAY_RESEARCH' archive" "$producer"
+          grep -Fq 'exec "$PRODUCER" --nembra-today-research-build "$@"' "$wrapper"
+
+      - name: Probe archive-time build setting through Xcode into local Swift package
+        run: |
+          set -euo pipefail
+          probe='Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/_ResearchFlagCommandLinePropagationProbe.swift'
+          logs="$RUNNER_TEMP/nembra-command-line-research-probe"
+          negative_derived="$RUNNER_TEMP/nembra-command-line-research-negative-derived"
+          positive_derived="$RUNNER_TEMP/nembra-command-line-research-positive-derived"
+          negative_archive="$RUNNER_TEMP/NembraResearchNegative.xcarchive"
+          positive_archive="$RUNNER_TEMP/NembraResearchPositive.xcarchive"
+
+          mkdir -p "$logs"
+          cleanup() {
+            rm -f "$probe"
+          }
+          trap cleanup EXIT
+
+          cat > "$probe" <<'SWIFT'
+          #if !NEMBRA_ES80_TODAY_RESEARCH
+          #error("NEMBRA_RESEARCH_COMMAND_LINE_FLAG_PROBE_MISSING")
+          #endif
+
+          enum NembraTODAYResearchCommandLinePropagationProbe {
+              static let reachedBluetoothCapturePackage = true
+          }
+          SWIFT
+
+          common=(
+            -project Nembra.xcodeproj
+            -scheme Nembra
+            -configuration Release
+            -destination 'generic/platform=iOS'
+            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_REQUIRED=NO
+          )
+
+          set +e
+          xcodebuild "${common[@]}" \
+            -derivedDataPath "$negative_derived" \
+            -archivePath "$negative_archive" \
+            archive >"$logs/negative-control.log" 2>&1
+          negative_status=$?
+          set -e
+          if [[ "$negative_status" -eq 0 ]]; then
+            echo 'Ordinary Release archive unexpectedly compiled the research-only package probe.' >&2
+            exit 1
+          fi
+          if ! grep -Fq 'NEMBRA_RESEARCH_COMMAND_LINE_FLAG_PROBE_MISSING' "$logs/negative-control.log"; then
+            echo 'Negative archive control failed for a reason other than the package research flag probe.' >&2
+            tail -n 160 "$logs/negative-control.log" >&2 || true
+            exit 1
+          fi
+
+          xcodebuild "${common[@]}" \
+            -derivedDataPath "$positive_derived" \
+            -archivePath "$positive_archive" \
+            'OTHER_SWIFT_FLAGS=$(inherited) -DNEMBRA_ES80_TODAY_RESEARCH' \
+            archive 2>&1 | tee "$logs/positive-control.log"
+
+          grep -Fq '_ResearchFlagCommandLinePropagationProbe.swift' "$logs/positive-control.log"
+          test -d "$positive_archive"
+          cleanup
+          trap - EXIT
+          test ! -e "$probe"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+          printf 'Current TODAY archive-time Research capability reached NembraBluetoothCapture on exact flagship %s.\n' \
+            "$EXPECTED_PRODUCT_SHA"
+
+      - name: Upload propagation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-today-command-line-research-${{ github.run_number }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/nembra-command-line-research-probe
+          if-no-files-found: warn
+          retention-days: 30
