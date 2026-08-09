@@ -178,14 +178,31 @@ public struct AcceptedBatterySOCAnchor: Equatable, Sendable {
 /// this stream, not only SoC. Non-SoC siblings/callbacks advance receipt truth but simply return
 /// nil instead of an SoC anchor.
 public struct AcceptedBatterySOCStream: Equatable, Sendable {
+    /// Strong process-local authority ownership belongs to the real stream lineage, never to
+    /// detached anchors or validator snapshots. Because this is a reference, value copies of the
+    /// stream share one revocation authority; when every stream copy leaves scope the weak lease
+    /// handles held by retained evidence immediately fail closed.
+    private let currentnessOwner: BatteryEvidenceCurrentnessOwner
     public private(set) var validator: BatteryEvidenceStreamValidator
     public private(set) var continuitySegmentStartReceiptIdentity: BatteryEvidenceReceiptIdentity?
 
     public init() {
+        let currentnessOwner = BatteryEvidenceCurrentnessOwner()
+        self.currentnessOwner = currentnessOwner
         validator = BatteryEvidenceStreamValidator(
-            currentnessOwner: BatteryEvidenceCurrentnessOwner()
+            currentnessOwner: currentnessOwner
         )
         continuitySegmentStartReceiptIdentity = nil
+    }
+
+    /// Equality remains chronology-value equality. The hidden owner is process-local authority,
+    /// not product data, and must not become observable merely because the stream now retains it.
+    public static func == (
+        lhs: AcceptedBatterySOCStream,
+        rhs: AcceptedBatterySOCStream
+    ) -> Bool {
+        lhs.validator == rhs.validator
+            && lhs.continuitySegmentStartReceiptIdentity == rhs.continuitySegmentStartReceiptIdentity
     }
 
     /// Records an explicit observation gap while preserving the prior segment as retained history.
