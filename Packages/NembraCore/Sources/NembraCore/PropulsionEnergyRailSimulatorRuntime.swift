@@ -1,3 +1,5 @@
+import Foundation
+
 /// Simulator-only source/runtime owner for Energy Rail product QA.
 ///
 /// This type deliberately cannot mint verified-vehicle propulsion authority. Every
