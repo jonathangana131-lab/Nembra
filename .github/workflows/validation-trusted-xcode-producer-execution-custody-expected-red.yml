@@ -1,0 +1,30 @@
+name: VALIDATION ONLY Trusted Xcode Producer Execution Custody Expected Red
+
+on:
+  push:
+    branches:
+      - validation/v14-trusted-xcode-producer-execution-custody/gpt56-go
+  pull_request:
+    paths:
+      - .github/workflows/capture-xcode27-trusted-command.yml
+      - scripts/ci/tests/test_capture_trusted_xcode_producer_execution_custody.py
+      - .github/workflows/validation-trusted-xcode-producer-execution-custody-expected-red.yml
+
+permissions:
+  contents: read
+
+jobs:
+  expected-red:
+    name: Prove mutable producer execution is not trusted custody
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout immutable validation head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+      - name: Verify validation regression compiles
+        run: python3 -m py_compile scripts/ci/tests/test_capture_trusted_xcode_producer_execution_custody.py
+      - name: Expected red until producer bytes are executed from pinned Git object
+        run: python3 scripts/ci/tests/test_capture_trusted_xcode_producer_execution_custody.py -v
