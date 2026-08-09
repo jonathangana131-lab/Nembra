@@ -48,7 +48,8 @@ public enum RideHistoryDurationAttachmentError: Error, Equatable, Sendable {
 ///
 /// The attachment is deliberately not Codable and deliberately exposes no API that
 /// promotes its archive back into `CompletedRideDurationEvidence`. It proves only
-/// that the stored fields belong to the same immutable ride identity/continuity.
+/// that the stored archive names the exact same immutable `CompletedRideEvidence`
+/// snapshot as the history record. UUID + continuity alone are not sufficient.
 /// A future trusted restore boundary must independently re-establish production
 /// duration authority before Statistics or other authoritative consumers may use it.
 public struct RideHistoryDurationAttachment: Equatable, Sendable {
@@ -83,7 +84,8 @@ public struct RideHistoryDurationAttachment: Equatable, Sendable {
     ) throws {
         let archive = durationRecord.archive
         guard archive.sessionID == historyRecord.sessionID,
-              archive.rideContinuity == historyRecord.evidence.continuity else {
+              archive.rideContinuity == historyRecord.evidence.continuity,
+              archive.completedRideEvidence == historyRecord.evidence else {
             throw RideHistoryDurationAttachmentError.completedRideMismatch(historyRecord.sessionID)
         }
     }
