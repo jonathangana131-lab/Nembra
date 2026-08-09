@@ -1,0 +1,40 @@
+name: Capture Final GO GitHub API Custody QA
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/ci/es80_today_final_go_hardened.py'
+      - 'scripts/ci/tests/test_es80_today_final_go_hardened.py'
+      - 'scripts/ci/tests/test_es80_today_final_go_hardened_github_api_custody.py'
+      - '.github/workflows/capture-final-go-github-api-custody-qa.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  github-api-custody:
+    name: Verify repository-owned Final GO GitHub authority
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify exact PR head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD_SHA"
+
+      - name: Compile Final GO custody tests
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py
+          python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_hardened.py
+          python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_hardened_github_api_custody.py
+
+      - name: Preserve incumbent hardened composition
+        run: python3 scripts/ci/tests/test_es80_today_final_go_hardened.py -v
+
+      - name: Reject caller-injected GitHub authority metadata
+        run: python3 scripts/ci/tests/test_es80_today_final_go_hardened_github_api_custody.py -v
