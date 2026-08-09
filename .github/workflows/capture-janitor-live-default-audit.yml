@@ -1,3 +1,4 @@
+# Disposable exact-branch audit; remove before merge.
 name: Capture Janitor Live Default Audit
 
 on:
