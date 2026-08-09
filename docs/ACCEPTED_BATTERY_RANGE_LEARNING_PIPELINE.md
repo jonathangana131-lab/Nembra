@@ -21,6 +21,14 @@ The battery stream admits/consumes receipt chronology before range assembly. If 
 
 The ephemeral range span is independently fail-closed: invalid distance input does not partially mutate distance/coverage state; segment changes and explicit unobserved intervals discard pre-gap span evidence.
 
+## Currentness authority is not a copyable snapshot
+
+`AcceptedBatteryRangeLearningPipeline` deliberately does **not** expose its wrapped `BatteryEvidenceStreamValidator`.
+
+A validator value is internally coherent only for the chronology it has personally observed. If a caller caches the validator while receipt R1 is current, then the real owner crosses an observation gap or accepts R2, that cached R1 validator still describes the old world. Passing it back into a receipt-currentness API could make retained R1 material look current again.
+
+Therefore this bridge exports accepted anchors/candidate windows but no reusable by-value currentness authority. Live primary range presentation remains blocked until the package exposes a non-replayable owner-bound currentness projection. Do not solve that blocker with a wall-clock timeout or guessed ES80 cadence.
+
 ## Distance truth
 
 The bridge does not choose GPS, wheel, map-provider, or any other distance source. A higher authority supplies nonnegative distance deltas and classifies coverage. Omitted coverage is `.unknown`, never implicitly complete. Coverage degradation and explicit transport-gap evidence are sticky until the span rebases.
