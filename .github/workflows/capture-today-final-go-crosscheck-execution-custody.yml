@@ -1,6 +1,9 @@
 name: Capture TODAY Final GO Crosscheck Execution Custody
 
 on:
+  push:
+    branches:
+      - repair/v14-final-go-crosscheck-execution-custody-r2/gpt56-go
   pull_request:
     types: [opened, reopened, synchronize]
     paths:
@@ -12,6 +15,9 @@ on:
 permissions:
   contents: read
 
+env:
+  EXACT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
 jobs:
   crosscheck-execution-custody:
     name: Require pinned independent crosscheck execution
@@ -21,12 +27,10 @@ jobs:
       - name: Checkout exact validation head
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ env.EXACT_HEAD_SHA }}
           fetch-depth: 1
       - name: Verify immutable validation head
-        env:
-          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+        run: test "$(git rev-parse HEAD)" = "$EXACT_HEAD_SHA"
       - name: Compile crosscheck authority surface
         run: |
           set -euo pipefail
