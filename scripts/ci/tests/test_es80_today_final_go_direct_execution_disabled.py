@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reject public/compatibility Final GO execution and imported builder authority."""
+"""Reject non-canonical Final GO execution/import authority surfaces."""
 from __future__ import annotations
 
 import importlib.util
@@ -41,6 +41,9 @@ class FinalGoDirectExecutionDisabledTests(unittest.TestCase):
 
     def test_public_foundation_path_is_non_authorizing(self):
         self.assert_non_authorizing("es80_today_final_go_foundation.py")
+
+    def test_retired_private_implementation_path_is_non_authorizing(self):
+        self.assert_non_authorizing("_es80_today_final_go_foundation_impl.py")
 
     def test_imported_public_foundation_builder_is_non_authorizing(self):
         foundation = load_public_foundation()

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Non-authorizing compatibility surface for V14 TODAY Final GO foundation helpers.
 
-The closed-world validator implementation lives in `_es80_today_final_go_foundation_impl.py` and is
-consumed directly only by the canonical hardened composer plus adversarial test harnesses. This
+The closed-world validator implementation lives in `_es80_today_final_go_foundation_library.py` and
+is consumed directly only by the canonical hardened composer plus adversarial test harnesses. This
 public compatibility filename deliberately cannot mint a Final GO record either by direct execution
 or by importing `build_final_go_record(...)`.
 
@@ -16,18 +16,18 @@ from pathlib import Path
 import sys
 from typing import Any
 
-_IMPL_PATH = Path(__file__).with_name("_es80_today_final_go_foundation_impl.py")
-_spec = importlib.util.spec_from_file_location("nembra_today_final_go_foundation_impl", _IMPL_PATH)
+_LIBRARY_PATH = Path(__file__).with_name("_es80_today_final_go_foundation_library.py")
+_spec = importlib.util.spec_from_file_location("nembra_today_final_go_foundation_library", _LIBRARY_PATH)
 if _spec is None or _spec.loader is None:
-    raise RuntimeError("could not load Final GO foundation implementation")
-_impl = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_impl)
+    raise RuntimeError("could not load Final GO foundation library")
+_library = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_library)
 
-for _name in dir(_impl):
+for _name in dir(_library):
     if not _name.startswith("__"):
-        globals()[_name] = getattr(_impl, _name)
+        globals()[_name] = getattr(_library, _name)
 
-# Keep these exact source pins visible to canonical source-shape QA while the private implementation
+# Keep these exact source pins visible to canonical source-shape QA while the private library
 # remains the tested closed-world parser/validator.
 PINNED_CROSSCHECK_COMMIT = "d827a296048386bda62024ea3278775d5344c47c"
 PINNED_CROSSCHECK_BLOB = "c3b2b620280484c05316fc5c2fa2ca451f1fdc83"
@@ -39,14 +39,14 @@ RESEARCH_COMPILE_CONDITION = "NEMBRA_ES80_TODAY_RESEARCH"
 def build_final_go_record(*args: Any, **kwargs: Any) -> dict[str, Any]:
     """Fail closed: imported callers must use the canonical hardened composer instead."""
     del args, kwargs
-    raise _impl.FinalGoError(
+    raise _library.FinalGoError(
         "public Final GO foundation builder is non-authorizing; use es80_today_final_go_hardened.py"
     )
 
 
 def publish_record_no_replace(*args: Any, **kwargs: Any) -> str:
     """Retain publication helper compatibility without granting record-construction authority."""
-    return _impl.publish_record_no_replace(*args, **kwargs)
+    return _library.publish_record_no_replace(*args, **kwargs)
 
 
 def main(argv: list[str] | None = None) -> int:
