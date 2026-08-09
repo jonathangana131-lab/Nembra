@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import sys
 import tempfile
 import unittest
 
@@ -13,6 +14,7 @@ MODULE_PATH = Path(__file__).resolve().parents[1] / "es80_today_field_candidate_
 spec = importlib.util.spec_from_file_location("field_candidate_preflight", MODULE_PATH)
 preflight = importlib.util.module_from_spec(spec)
 assert spec and spec.loader
+sys.modules[spec.name] = preflight
 spec.loader.exec_module(preflight)
 
 
