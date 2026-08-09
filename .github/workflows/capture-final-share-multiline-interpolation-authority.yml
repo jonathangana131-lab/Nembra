@@ -1,0 +1,142 @@
+name: Capture Final Share Multiline Interpolation Authority QA
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - NembraApp/Features/Research/ES80CaptureShellView.swift
+      - .github/workflows/capture-final-share-conditional-authority.yml
+      - .github/workflows/capture-final-share-multiline-interpolation-authority.yml
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head-multiline-interpolation-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Verify exact PR head
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          printf 'Expected exact PR head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual"
+          test "$actual" = "$EXPECTED_HEAD_SHA"
+
+      - name: Reject multiline-string interpolation ambiguity in final Share authority
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          class ContractViolation(Exception):
+              pass
+
+          signature = "\n    private func prepareFinalShareForAnalysisAndSharing() {"
+          next_member = "\n    private func restartExperiment() {"
+          retained_anchor = "if finalShareData != nil,"
+          multiline_token = '\"\"\"'
+
+          def unique_offset(source: str, needle: str, label: str) -> int:
+              matches = [match.start() for match in re.finditer(re.escape(needle), source)]
+              if len(matches) != 1:
+                  raise ContractViolation(
+                      f"expected exactly one raw {label} boundary; found {len(matches)}"
+                  )
+              return matches[0]
+
+          def authority_source(source: str) -> tuple[int, int, str]:
+              # Raw-unique full member declarations fail closed if comments/strings try to spoof
+              # either authority boundary. This is intentionally the same conservative boundary
+              # shape already accepted by the companion regex guard.
+              start = unique_offset(source, signature, "final Share function")
+              end = unique_offset(source, next_member, "restartExperiment function")
+              if end <= start:
+                  raise ContractViolation("restartExperiment must follow final Share authority")
+              return start, end, source[start:end]
+
+          def validate_source(source: str) -> tuple[int, int]:
+              start, end, function_source = authority_source(source)
+
+              # The current conditional-authority lexer intentionally masks string literals. Swift 6
+              # multiline strings can contain executable interpolation whose expression body includes
+              # line-oriented #if/#else/#endif directives. Rather than partially reimplement Swift's
+              # interpolation lexer in an authority-critical checker, forbid every triple-quote token
+              # in this small function, including comments. Ordinary one-line interpolation remains
+              # legal and is already used by the production error message.
+              if multiline_token in function_source:
+                  raise ContractViolation(
+                      "final Share authority must not contain triple-quote tokens; multiline string interpolation can hide executable conditional compilation"
+                  )
+
+              if retained_anchor not in function_source:
+                  raise ContractViolation("missing retained final Share retry branch")
+              return start, end
+
+          source = Path(
+              "NembraApp/Features/Research/ES80CaptureShellView.swift"
+          ).read_text()
+
+          try:
+              start, end = validate_source(source)
+          except ContractViolation as error:
+              raise SystemExit(str(error)) from error
+
+          closing_brace = source.rfind("\n    }", start, end)
+          if closing_brace < 0:
+              raise SystemExit(
+                  "could not locate final Share closing brace for multiline-interpolation self-test"
+              )
+
+          # Keep the current legitimate one-line interpolation grammar legal.
+          ordinary_interpolation = (
+              source[:closing_brace]
+              + '\n        let ordinaryInterpolationProbe = "value \\(1)"\n'
+              + "        _ = ordinaryInterpolationProbe\n"
+              + source[closing_brace:]
+          )
+          try:
+              validate_source(ordinary_interpolation)
+          except ContractViolation as error:
+              raise SystemExit(
+                  "checker self-test rejected ordinary one-line string interpolation"
+              ) from error
+
+          # Swift 6 accepts executable code inside multiline-string interpolation. The companion
+          # conditional checker currently masks the whole multiline string, so a real #if in this
+          # interpolation would be invisible there. This conservative gate must reject that source
+          # class before it can become accepted authority code.
+          multiline_conditional_bypass = (
+              source[:closing_brace]
+              + '\n        let conditionalInterpolationProbe = """\n'
+              + "        \\({ () -> String in\n"
+              + "        #if NEVER_ENABLED_IN_RELEASE\n"
+              + '            return "hidden"\n'
+              + "        #else\n"
+              + '            return "visible"\n'
+              + "        #endif\n"
+              + "        }())\n"
+              + '        """\n'
+              + "        _ = conditionalInterpolationProbe\n"
+              + source[closing_brace:]
+          )
+          try:
+              validate_source(multiline_conditional_bypass)
+          except ContractViolation:
+              pass
+          else:
+              raise SystemExit(
+                  "checker self-test accepted executable conditional compilation hidden in multiline string interpolation"
+              )
+
+          print("final Share multiline-interpolation authority source contract: PASS")
+          PY
