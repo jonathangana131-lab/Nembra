@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Fail-closed cleanup for stale queued Xcode 27 PR QA runs.
+"""Fail-closed cleanup for stale Xcode 27 PR QA runs.
 
-The xcode-27 runner is scarce. This helper only cancels a queued
+The xcode-27 runner is scarce. This helper only cancels a queued or in-progress
 xcode27-pr-command run when GitHub's current open-PR state proves that the
 run's exact branch/SHA is no longer the exact head of any open PR.
 
@@ -25,6 +25,7 @@ from typing import Any, Iterable
 API_ROOT = "https://api.github.com"
 WORKFLOW = "xcode27-pr-command.yml"
 ALLOWED_EVENTS = {"pull_request", "issue_comment"}
+CANCELLABLE_STATUSES = {"queued", "in_progress"}
 
 
 @dataclass(frozen=True)
@@ -49,8 +50,9 @@ def classify_run(
 ) -> Decision:
     """Return a fail-closed cancellation decision using only current PR truth."""
 
-    if run.get("status") != "queued":
-        return Decision(False, "not queued")
+    status = run.get("status")
+    if status not in CANCELLABLE_STATUSES:
+        return Decision(False, "status is not cancellable")
     if run.get("event") not in ALLOWED_EVENTS:
         return Decision(False, "unsupported event; preserve")
 
@@ -75,9 +77,12 @@ def classify_run(
             return Decision(False, "protected current exact head of an open PR")
 
     if not prs:
-        return Decision(True, "no open PR remains for queued branch")
+        return Decision(True, f"no open PR remains for {status} branch")
 
-    return Decision(True, "queued SHA is not the current exact head of any open PR on branch")
+    return Decision(
+        True,
+        f"{status} SHA is not the current exact head of any open PR on branch",
+    )
 
 
 class GitHubAPI:
@@ -107,13 +112,17 @@ class GitHubAPI:
                 return json.loads(body.decode("utf-8"))
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"GitHub API {method} {path} failed: HTTP {exc.code}: {body}") from exc
+            raise RuntimeError(
+                f"GitHub API {method} {path} failed: HTTP {exc.code}: {body}"
+            ) from exc
 
-    def queued_runs(self) -> list[dict[str, Any]]:
+    def runs_with_status(self, status: str) -> list[dict[str, Any]]:
+        if status not in CANCELLABLE_STATUSES:
+            raise ValueError(f"unsupported cancellable status: {status}")
         runs: list[dict[str, Any]] = []
         for page in range(1, 21):
             query = urllib.parse.urlencode(
-                {"status": "queued", "per_page": 100, "page": page}
+                {"status": status, "per_page": 100, "page": page}
             )
             payload = self.request(
                 "GET",
@@ -123,6 +132,18 @@ class GitHubAPI:
             runs.extend(batch)
             if len(batch) < 100:
                 break
+        return runs
+
+    def candidate_runs(self) -> list[dict[str, Any]]:
+        runs: list[dict[str, Any]] = []
+        seen_ids: set[int] = set()
+        for status in ("queued", "in_progress"):
+            for run in self.runs_with_status(status):
+                run_id = int(run.get("id", -1))
+                if run_id in seen_ids:
+                    continue
+                seen_ids.add(run_id)
+                runs.append(run)
         return runs
 
     def open_prs_for_branch(self, branch: str) -> list[dict[str, Any]]:
@@ -167,6 +188,12 @@ def self_test() -> None:
     assert classify_run(
         run(), [], now=now, minimum_age_seconds=120
     ).cancel
+    assert classify_run(
+        run(status="in_progress"), [], now=now, minimum_age_seconds=120
+    ).cancel
+    assert classify_run(
+        run(status="in_progress"), [current_pr], now=now, minimum_age_seconds=120
+    ) == Decision(False, "protected current exact head of an open PR")
     assert not classify_run(
         run(created_at="2026-08-08T12:29:30Z"),
         [],
@@ -180,7 +207,7 @@ def self_test() -> None:
         run(head_branch=None), [], now=now, minimum_age_seconds=120
     ).cancel
     assert not classify_run(
-        run(status="in_progress"), [], now=now, minimum_age_seconds=120
+        run(status="completed"), [], now=now, minimum_age_seconds=120
     ).cancel
 
     print("xcode27_queue_janitor self-test: PASS")
@@ -188,7 +215,11 @@ def self_test() -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--apply", action="store_true", help="cancel proven-stale queued runs")
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="cancel proven-stale queued/in-progress runs",
+    )
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY"))
     parser.add_argument("--token", default=os.environ.get("GITHUB_TOKEN"))
@@ -211,7 +242,7 @@ def main() -> int:
         parser.error("--max-cancellations must be >= 1")
 
     api = GitHubAPI(args.token, args.repository)
-    runs = api.queued_runs()
+    runs = api.candidate_runs()
     now = dt.datetime.now(dt.timezone.utc)
     branch_cache: dict[str, list[dict[str, Any]] | None] = {}
     candidates: list[tuple[dict[str, Any], Decision]] = []
@@ -247,9 +278,13 @@ def main() -> int:
         elif "protected current exact head" in decision.reason:
             protected += 1
 
+    queued = sum(run.get("status") == "queued" for run in runs)
+    in_progress = sum(run.get("status") == "in_progress" for run in runs)
     print(
-        f"queued={len(runs)} stale_candidates={len(candidates)} "
-        f"protected_exact_open_heads={protected} lookup_failures_preserved={ambiguous}"
+        f"candidate_runs={len(runs)} queued={queued} in_progress={in_progress} "
+        f"stale_candidates={len(candidates)} "
+        f"protected_exact_open_heads={protected} "
+        f"lookup_failures_preserved={ambiguous}"
     )
 
     cancelled = 0
@@ -257,22 +292,27 @@ def main() -> int:
         run_id = int(run["id"])
         branch = run.get("head_branch")
         sha = run.get("head_sha")
+        status = run.get("status")
         prefix = "CANCEL" if args.apply else "WOULD_CANCEL"
-        print(f"{prefix} run={run_id} branch={branch} sha={sha} reason={decision.reason}")
+        print(
+            f"{prefix} run={run_id} status={status} branch={branch} sha={sha} "
+            f"reason={decision.reason}"
+        )
         if not args.apply:
             continue
         try:
             api.cancel_run(run_id)
             cancelled += 1
         except RuntimeError as exc:
-            # A queued run can race to completion/cancellation after listing. Preserve
-            # the fail-closed classification log and continue with independent runs.
             print(f"CANCEL_RACE run={run_id}: {exc}", file=sys.stderr)
 
     if args.apply:
         print(f"cancelled={cancelled} cap={args.max_cancellations}")
     else:
-        print("dry-run only; pass --apply to cancel proven-stale queued runs")
+        print(
+            "dry-run only; pass --apply to cancel proven-stale "
+            "queued/in-progress runs"
+        )
     return 0
 
 

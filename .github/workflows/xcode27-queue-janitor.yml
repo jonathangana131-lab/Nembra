@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - ci/xcode27-queue-janitor-v14-gpt56-go
+      - ci/xcode27-stale-active-janitor-v14-gpt56-go
     paths:
       - scripts/ci/xcode27_queue_janitor.py
       - .github/workflows/xcode27-queue-janitor.yml
@@ -40,7 +41,7 @@ jobs:
           --minimum-age-seconds 120
           --max-cancellations 200
 
-      - name: Cancel only proven-stale queued Xcode runs
+      - name: Cancel only proven-stale queued or in-progress Xcode runs
         if: github.ref == 'refs/heads/main'
         env:
           GITHUB_TOKEN: ${{ github.token }}
