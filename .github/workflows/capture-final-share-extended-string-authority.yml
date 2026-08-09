@@ -1,0 +1,140 @@
+name: Capture Final Share Extended String Authority QA
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - NembraApp/Features/Research/ES80CaptureShellView.swift
+      - .github/workflows/capture-final-share-conditional-authority.yml
+      - .github/workflows/capture-final-share-regex-lexical-authority.yml
+      - .github/workflows/capture-final-share-lexical-boundary-authority.yml
+      - .github/workflows/capture-final-share-extended-string-authority.yml
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head-extended-string-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Verify exact PR head
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          printf 'Expected exact PR head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual"
+          test "$actual" = "$EXPECTED_HEAD_SHA"
+
+      - name: Reject Swift extended strings in final Share authority
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          class ContractViolation(Exception):
+              pass
+
+          signature = "\n    private func prepareFinalShareForAnalysisAndSharing() {"
+          next_member = "\n    private func restartExperiment() {"
+          retained_anchor = "if finalShareData != nil,"
+          extended_string_opening = re.compile(r'#+(?=")')
+
+          def unique_offset(source: str, needle: str, label: str) -> int:
+              matches = [match.start() for match in re.finditer(re.escape(needle), source)]
+              if len(matches) != 1:
+                  raise ContractViolation(
+                      f"expected exactly one raw {label} boundary; found {len(matches)}"
+                  )
+              return matches[0]
+
+          def authority_source(source: str) -> tuple[int, int, str]:
+              # Raw-full declaration anchors deliberately fail closed if any comment/string tries
+              # to spoof either member boundary.
+              start = unique_offset(source, signature, "final Share function")
+              end = unique_offset(source, next_member, "restartExperiment function")
+              if end <= start:
+                  raise ContractViolation("restartExperiment must follow final Share authority")
+              return start, end, source[start:end]
+
+          def validate_source(source: str) -> tuple[int, int]:
+              start, end, function_source = authority_source(source)
+
+              # The sibling Final Share checkers use a deliberately small Swift lexical masker.
+              # Swift extended/raw strings (#"..."#, ##"..."##, #"""..."""#, ...)
+              # can legally contain otherwise-special quotes. Until the shared checkers grow a
+              # complete extended-string lexer, forbid that syntax in this tiny authority-critical
+              # member. Scan the raw bounded source on purpose: a delimiter spelling in a comment
+              # or documentation string is also rejected rather than creating another parser gap.
+              if extended_string_opening.search(function_source):
+                  raise ContractViolation(
+                      "final Share authority must not contain Swift extended/raw string delimiters while acceptance lexers use ordinary-string rules"
+                  )
+              if retained_anchor not in function_source:
+                  raise ContractViolation("missing retained final Share retry branch")
+              return start, end
+
+          source = Path(
+              "NembraApp/Features/Research/ES80CaptureShellView.swift"
+          ).read_text()
+
+          try:
+              start, end = validate_source(source)
+          except ContractViolation as error:
+              raise SystemExit(str(error)) from error
+
+          closing_brace = source.rfind("\n    }", start, end)
+          if closing_brace < 0:
+              raise SystemExit("could not locate final Share closing brace for extended-string self-test")
+
+          # Ordinary strings/comments remain legal; only Swift's pound-delimited string grammar is
+          # excluded from this small authority member.
+          ordinary_string = (
+              source[:closing_brace]
+              + '\n        let ordinaryStringProbe = "# ordinary text with a quote: \\""\n'
+              + "        _ = ordinaryStringProbe // # ordinary comment\n"
+              + source[closing_brace:]
+          )
+          try:
+              validate_source(ordinary_string)
+          except ContractViolation as error:
+              raise SystemExit(
+                  "checker self-test rejected ordinary string/comment syntax"
+              ) from error
+
+          # This is valid Swift extended-string syntax: an internal quote does not terminate the
+          # actual #"..."# literal. The sibling simple masker historically terminated at that quote,
+          # then treated the real closing quote as a new ordinary-string opener. The following real
+          # regex and #if could therefore be masked as string contents; a later comment quote can
+          # return the simple masker to code so it finishes without reporting an unterminated state.
+          raw_string_bypass = (
+              source[:closing_brace]
+              + '\n        let extendedStringProbe = #"prefix " suffix"#\n'
+              + "        let hiddenRegexProbe = /\\}/\n"
+              + "        _ = hiddenRegexProbe\n"
+              + "#if NEVER_ENABLED_IN_RELEASE\n"
+              + "        let hiddenConditionalProbe = true\n"
+              + "        _ = hiddenConditionalProbe\n"
+              + "#endif\n"
+              + '        // "\n'
+              + source[closing_brace:]
+          )
+          try:
+              validate_source(raw_string_bypass)
+          except ContractViolation:
+              pass
+          else:
+              raise SystemExit(
+                  "checker self-test accepted a Swift extended-string lexical bypass around regex/conditional authority"
+              )
+
+          print("final Share extended-string authority source contract: PASS")
+          PY
