@@ -1,0 +1,71 @@
+name: V14 Dashboard NembraCore Package Product Probe
+
+on:
+  push:
+    branches:
+      - validation/v14-dashboard-nembracore-package-product-probe/gpt56-go
+    paths:
+      - scripts/ci/dashboard_nembracore_package_product_probe.py
+      - .github/workflows/dashboard-nembracore-package-product-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  package-product-probe:
+    name: Probe real NembraCore module boundary
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact probe head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Verify exact probe head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+
+      - name: Rewrite runner workspace to real NembraCore package boundary
+        run: python3 scripts/ci/dashboard_nembracore_package_product_probe.py
+
+      - name: Validate patched project structure
+        run: |
+          plutil -lint Nembra.xcodeproj/project.pbxproj
+          scripts/validate_pbxproj_references.py
+          grep -Fq 'isa = XCLocalSwiftPackageReference; relativePath = Packages/NembraCore;' Nembra.xcodeproj/project.pbxproj
+          grep -Fq 'isa = XCSwiftPackageProductDependency;' Nembra.xcodeproj/project.pbxproj
+
+      - name: Resolve local NembraCore product
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Nembra.xcodeproj \
+            -scheme Nembra \
+            -resolvePackageDependencies \
+            2>&1 | tee /tmp/nembra-package-resolve.log
+
+      - name: Build app across real NembraCore module boundary
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Nembra.xcodeproj \
+            -scheme Nembra \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build \
+            2>&1 | tee /tmp/nembra-package-product-probe.log
+
+      - name: Upload migration diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dashboard-nembracore-package-product-probe-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            /tmp/nembra-package-resolve.log
+            /tmp/nembra-package-product-probe.log
+          if-no-files-found: warn
+          retention-days: 7
