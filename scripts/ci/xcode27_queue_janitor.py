@@ -164,6 +164,41 @@ def classify_trusted_run(
     return Decision(False, "live PR state is incomplete/ambiguous; preserve")
 
 
+class CrossOriginAuthorizationStrippingRedirectHandler(
+    urllib.request.HTTPRedirectHandler
+):
+    """Never forward the GitHub bearer credential to a different origin."""
+
+    @staticmethod
+    def _origin(url: str) -> tuple[str, str, int | None]:
+        parsed = urllib.parse.urlparse(url)
+        return parsed.scheme.lower(), (parsed.hostname or "").lower(), parsed.port
+
+    @staticmethod
+    def _strip_header(request: urllib.request.Request, header_name: str) -> None:
+        wanted = header_name.lower()
+        for store in (request.headers, request.unredirected_hdrs):
+            for key in list(store):
+                if key.lower() == wanted:
+                    del store[key]
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected is None:
+            return None
+        if self._origin(req.full_url) != self._origin(newurl):
+            self._strip_header(redirected, "Authorization")
+        return redirected
+
+
 class GitHubAPI:
     def __init__(self, token: str, repository: str) -> None:
         if "/" not in repository:
@@ -171,6 +206,9 @@ class GitHubAPI:
         self.token = token
         self.repository = repository
         self.owner, self.repo = repository.split("/", 1)
+        self._opener = urllib.request.build_opener(
+            CrossOriginAuthorizationStrippingRedirectHandler()
+        )
 
     def _request(self, method: str, path: str) -> bytes:
         request = urllib.request.Request(
@@ -184,7 +222,7 @@ class GitHubAPI:
             },
         )
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
+            with self._opener.open(request, timeout=30) as response:
                 return response.read()
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
@@ -336,6 +374,32 @@ def self_test() -> None:
     assert not classify_run(
         run(status="completed"), [], now=now, minimum_age_seconds=120
     ).cancel
+
+    redirect_handler = CrossOriginAuthorizationStrippingRedirectHandler()
+    source_request = urllib.request.Request(
+        "https://api.github.com/repos/owner/repo/actions/jobs/1/logs",
+        headers={"Authorization": "Bearer secret"},
+    )
+    cross_origin = redirect_handler.redirect_request(
+        source_request,
+        None,
+        302,
+        "Found",
+        {},
+        "https://results-receiver.actions.githubusercontent.com/logs?sig=test",
+    )
+    assert cross_origin is not None
+    assert cross_origin.get_header("Authorization") is None
+    same_origin = redirect_handler.redirect_request(
+        source_request,
+        None,
+        302,
+        "Found",
+        {},
+        "https://api.github.com/repos/owner/repo/actions/jobs/1/logs-next",
+    )
+    assert same_origin is not None
+    assert same_origin.get_header("Authorization") == "Bearer secret"
 
     exact_sha = "a" * 40
     moved_sha = "b" * 40
