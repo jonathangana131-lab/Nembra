@@ -17,6 +17,23 @@ spec.loader.exec_module(hardened)
 class HardenedFinalGoCompositionTests(unittest.TestCase):
     SOURCE = "a" * 40
     WORKFLOW_SOURCE = "b" * 40
+    IPA_SHA = "c" * 64
+    EXTERNAL_SHA = "d" * 64
+    FIELD_SHA = "e" * 64
+    INSPECTION_SHA = "f" * 64
+    RUNNER_BLOB = "1" * 40
+    INSPECTOR_BLOB = "2" * 40
+
+    def setUp(self):
+        self.reinspection_patcher = mock.patch.object(
+            hardened.signed_candidate_reinspection,
+            "verify_signed_candidate_reinspection",
+            return_value=self.reinspection_subject(),
+        )
+        self.reinspection_verify = self.reinspection_patcher.start()
+
+    def tearDown(self):
+        self.reinspection_patcher.stop()
 
     def kwargs(self, root: Path):
         return {
@@ -32,6 +49,29 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             "tooling_repo": root / "tooling",
             "operator_attestation": root / "attestation.json",
             "github_get_json": lambda path: (b"{}", {}),
+            "intended_device_udid_file": root / "private-device-id",
+        }
+
+    def reinspection_subject(self):
+        return {
+            "executionCustody": hardened.signed_candidate_reinspection.REINSPECTION_CUSTODY,
+            "inspectorSourceCommitSHA": self.SOURCE,
+            "privateRunnerGitBlob": self.RUNNER_BLOB,
+            "canonicalInspectorGitBlob": self.INSPECTOR_BLOB,
+            "retainedIPASHA256": self.IPA_SHA,
+            "retainedIPAByteCount": 12345,
+            "externalBuildRecordSHA256": self.EXTERNAL_SHA,
+            "fieldBuildEvidenceRecordSHA256": self.FIELD_SHA,
+            "signedArtifactInspectionSHA256": self.INSPECTION_SHA,
+        }
+
+    def candidate_subject(self):
+        return {
+            "retainedIPASHA256": self.IPA_SHA,
+            "retainedIPAByteCount": 12345,
+            "externalBuildRecordSHA256": self.EXTERNAL_SHA,
+            "fieldBuildEvidenceRecordSHA256": self.FIELD_SHA,
+            "signedArtifactInspectionSHA256": self.INSPECTION_SHA,
         }
 
     def fake_foundation(self, **kwargs):
@@ -47,6 +87,7 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
         return {
             "acceptedSourceCommitSHA": kwargs["expected_source_sha"],
             "trustedXcodeAcceptance": subject,
+            "acceptedSignedFieldCandidate": self.candidate_subject(),
         }
 
     def trusted_subject(self):
@@ -56,7 +97,7 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             "workflowSourceCommitSHA": self.WORKFLOW_SOURCE,
         }
 
-    def test_composition_replaces_foundation_trust_seam_and_restores_it(self):
+    def test_composition_requires_fresh_signed_reinspection_then_replaces_xcode_seam(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             original = hardened.foundation._trusted_xcode_subject
@@ -73,10 +114,84 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
 
             self.assertIs(hardened.foundation._trusted_xcode_subject, original)
             self.assertEqual(record["trustedXcodeAcceptance"], self.trusted_subject())
+            custody = record["acceptedSignedFieldCandidate"]["freshSignedArtifactReinspection"]
+            self.assertEqual(custody["executionCustody"], hardened.signed_candidate_reinspection.REINSPECTION_CUSTODY)
+            self.assertEqual(custody["privateRunnerGitBlob"], self.RUNNER_BLOB)
+            self.reinspection_verify.assert_called_once()
+            reinspection_call = self.reinspection_verify.call_args.kwargs
+            self.assertEqual(reinspection_call["candidate_root"], root / "candidate")
+            self.assertEqual(reinspection_call["frozen_source_repo"], root / "source")
+            self.assertEqual(reinspection_call["intended_device_udid_file"], root / "private-device-id")
+            self.assertEqual(reinspection_call["private_runner_path"], hardened.foundation.PRIVATE_RUNNER_PATH)
+            self.assertEqual(reinspection_call["inspector_path"], hardened.foundation.INSPECTOR_PATH)
             verify.assert_called_once()
-            call = verify.call_args.kwargs
-            self.assertEqual(call["source_commit_sha"], self.SOURCE)
-            self.assertEqual(call["expected_pr_number"], 833)
+
+    def test_reinspection_failure_stops_before_foundation_builder(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with mock.patch.object(
+                hardened.signed_candidate_reinspection,
+                "verify_signed_candidate_reinspection",
+                side_effect=hardened.signed_candidate_reinspection.SignedCandidateReinspectionError("fake signed IPA"),
+            ), mock.patch.object(hardened.foundation, "build_final_go_record") as foundation_builder:
+                with self.assertRaisesRegex(hardened.FinalGoError, "fake signed IPA"):
+                    hardened.build_final_go_record(**self.kwargs(root))
+            foundation_builder.assert_not_called()
+
+    def test_reinspection_subject_must_cross_bind_foundation_candidate(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            changed = self.reinspection_subject()
+            changed["signedArtifactInspectionSHA256"] = "0" * 64
+            with mock.patch.object(
+                hardened.signed_candidate_reinspection,
+                "verify_signed_candidate_reinspection",
+                return_value=changed,
+            ), mock.patch.object(
+                hardened.foundation,
+                "build_final_go_record",
+                side_effect=self.fake_foundation,
+            ), mock.patch.object(
+                hardened.trusted_xcode,
+                "verify_trusted_capture_xcode_subject",
+                return_value=self.trusted_subject(),
+            ):
+                with self.assertRaisesRegex(hardened.FinalGoError, "signedArtifactInspectionSHA256"):
+                    hardened.build_final_go_record(**self.kwargs(root))
+
+    def test_missing_private_device_file_fails_before_reinspection(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            values = self.kwargs(root)
+            values.pop("intended_device_udid_file")
+            with mock.patch.dict(os.environ, {}, clear=True):
+                with self.assertRaisesRegex(hardened.FinalGoError, hardened.PRIVATE_DEVICE_FILE_ENV):
+                    hardened.build_final_go_record(**values)
+
+    def test_private_device_file_can_come_from_existing_private_env_contract(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            values = self.kwargs(root)
+            values.pop("intended_device_udid_file")
+            private_file = root / "private-device-id"
+            with mock.patch.dict(
+                os.environ,
+                {hardened.PRIVATE_DEVICE_FILE_ENV: str(private_file)},
+                clear=False,
+            ), mock.patch.object(
+                hardened.foundation,
+                "build_final_go_record",
+                side_effect=self.fake_foundation,
+            ), mock.patch.object(
+                hardened.trusted_xcode,
+                "verify_trusted_capture_xcode_subject",
+                return_value=self.trusted_subject(),
+            ):
+                hardened.build_final_go_record(**values)
+            self.assertEqual(
+                self.reinspection_verify.call_args.kwargs["intended_device_udid_file"],
+                private_file,
+            )
 
     def test_trusted_subject_failure_becomes_foundation_final_go_error_and_restores_seam(self):
         with tempfile.TemporaryDirectory() as temporary:

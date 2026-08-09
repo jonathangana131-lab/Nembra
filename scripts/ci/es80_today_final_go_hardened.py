@@ -6,11 +6,13 @@ canonical executable loads `_es80_today_final_go_foundation_impl.py` directly so
 `es80_today_final_go_foundation.py` compatibility module can fail closed for imported builders and
 direct execution.
 
-This entrypoint removes the authority defects that must not remain on the executable GO path:
+This entrypoint removes authority defects that must not remain on the executable GO path:
 - trusted Xcode acceptance comes only from the owner-commanded default-branch workflow whose Git
   blob is pinned independently from the candidate PR head;
 - trusted workflow Git-object lookup reuses the private foundation's producer-owned, closed Git
-  custody boundary rather than caller PATH/config/replacement semantics; and
+  custody boundary rather than caller PATH/config/replacement semantics;
+- the signed field candidate is freshly re-inspected by the exact accepted-source private runner
+  and canonical Apple inspector before caller-authored signing metadata can become GO authority; and
 - record publication is failure-atomic after no-replace publication.
 
 No physical result is created by this tool. A generated GO record is procedural authorization for
@@ -20,11 +22,13 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sys
 from typing import Any, Callable
 
 MODULE_DIR = Path(__file__).resolve().parent
+PRIVATE_DEVICE_FILE_ENV = "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"
 
 
 def _load(name: str, filename: str):
@@ -45,6 +49,10 @@ trusted_xcode = _load(
     "es80_today_trusted_capture_xcode_subject.py",
 )
 publication = _load("nembra_final_go_publication", "es80_today_final_go_publication.py")
+signed_candidate_reinspection = _load(
+    "nembra_today_signed_candidate_reinspection",
+    "es80_today_signed_candidate_reinspection.py",
+)
 
 FinalGoError = foundation.FinalGoError
 
@@ -67,6 +75,17 @@ def _workflow_blob_sha_at_commit(tooling_repo: Path, commit: str, path: str) -> 
         ) from error
 
 
+def _private_device_file(explicit: Path | None) -> Path:
+    if explicit is not None:
+        return explicit
+    value = os.environ.get(PRIVATE_DEVICE_FILE_ENV)
+    if not value:
+        raise FinalGoError(
+            f"signed-candidate reinspection requires private intended-device file via {PRIVATE_DEVICE_FILE_ENV}"
+        )
+    return Path(value)
+
+
 def build_final_go_record(
     *,
     candidate_root: Path,
@@ -82,8 +101,21 @@ def build_final_go_record(
     operator_attestation: Path,
     github_get_json: Callable[[str], tuple[bytes, dict[str, Any]]] = foundation._api_get_json,
     now_utc=None,
+    intended_device_udid_file: Path | None = None,
 ) -> dict[str, Any]:
-    """Run the private foundation with its Xcode seam replaced by default-branch authority."""
+    """Run the private foundation only after fresh signed-candidate and Xcode authority."""
+    private_device_file = _private_device_file(intended_device_udid_file)
+    try:
+        fresh_candidate = signed_candidate_reinspection.verify_signed_candidate_reinspection(
+            candidate_root=candidate_root,
+            expected_source_sha=expected_source_sha,
+            frozen_source_repo=frozen_source_repo,
+            private_runner_path=foundation.PRIVATE_RUNNER_PATH,
+            inspector_path=foundation.INSPECTOR_PATH,
+            intended_device_udid_file=private_device_file,
+        )
+    except signed_candidate_reinspection.SignedCandidateReinspectionError as error:
+        raise FinalGoError(str(error)) from error
 
     def trusted_subject_adapter(
         *,
@@ -141,6 +173,28 @@ def build_final_go_record(
         raise FinalGoError("hardened Xcode subject candidate source diverged from accepted source")
     if subject.get("workflowSourceCommitSHA") == subject.get("candidateSourceCommitSHA"):
         raise FinalGoError("trusted workflow source must remain independent from candidate source")
+
+    candidate = record.get("acceptedSignedFieldCandidate")
+    if not isinstance(candidate, dict):
+        raise FinalGoError("hardened Final GO record lacks accepted signed field candidate subject")
+    for key in (
+        "retainedIPASHA256",
+        "retainedIPAByteCount",
+        "externalBuildRecordSHA256",
+        "fieldBuildEvidenceRecordSHA256",
+        "signedArtifactInspectionSHA256",
+    ):
+        if candidate.get(key) != fresh_candidate.get(key):
+            raise FinalGoError(f"fresh signed-candidate reinspection diverged from foundation subject: {key}")
+    if fresh_candidate.get("inspectorSourceCommitSHA") != record.get("acceptedSourceCommitSHA"):
+        raise FinalGoError("fresh signed-candidate inspector source diverged from accepted source")
+
+    candidate["freshSignedArtifactReinspection"] = {
+        "executionCustody": fresh_candidate["executionCustody"],
+        "inspectorSourceCommitSHA": fresh_candidate["inspectorSourceCommitSHA"],
+        "privateRunnerGitBlob": fresh_candidate["privateRunnerGitBlob"],
+        "canonicalInspectorGitBlob": fresh_candidate["canonicalInspectorGitBlob"],
+    }
     return record
 
 
