@@ -163,6 +163,40 @@ class DownloadedArtifactSingleSnapshotCustodyTests(unittest.TestCase):
             self.assertEqual(subject["externalBuildRecord"]["buildInstanceID"], self.INSTANCE_A)
             self.assertNotEqual(subject["externalBuildRecord"]["buildInstanceID"], self.INSTANCE_B)
 
+    def test_same_inode_same_size_in_place_mutation_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            archive = Path(temporary) / "downloaded.zip"
+            archive.write_bytes(b"A" * (2 * 1024 * 1024))
+            before = archive.stat()
+            original_read = trusted_xcode.os.read
+            mutated = False
+
+            def read_then_mutate(descriptor: int, count: int) -> bytes:
+                nonlocal mutated
+                chunk = original_read(descriptor, count)
+                if chunk and not mutated:
+                    with archive.open("r+b", buffering=0) as writer:
+                        writer.seek(1024 * 1024)
+                        writer.write(b"B" * 4096)
+                        os.fsync(writer.fileno())
+                    mutated = True
+                return chunk
+
+            with mock.patch.object(trusted_xcode.os, "read", side_effect=read_then_mutate):
+                with self.assertRaisesRegex(
+                    trusted_xcode.TrustedCaptureXcodeError,
+                    "changed while reading",
+                ):
+                    trusted_xcode._read_archive_snapshot(archive)
+
+            after = archive.stat()
+            self.assertTrue(mutated, "same-inode mutation fixture did not execute")
+            self.assertEqual(
+                (before.st_dev, before.st_ino, before.st_size),
+                (after.st_dev, after.st_ino, after.st_size),
+                "regression must preserve the fields already checked by the verifier",
+            )
+
     @unittest.skipUnless(hasattr(os, "O_NOFOLLOW"), "platform does not expose O_NOFOLLOW")
     def test_downloaded_archive_symlink_is_not_an_admissible_subject(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
