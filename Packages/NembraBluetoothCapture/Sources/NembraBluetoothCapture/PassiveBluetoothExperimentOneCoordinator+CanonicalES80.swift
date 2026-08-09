@@ -33,14 +33,14 @@ public extension PassiveBluetoothExperimentOneCoordinator {
     /// Narrow SPI entrypoint for the first stationary passive ES80 artifact.
     ///
     /// Normal Nembra source imports this package without the SPI and therefore cannot call this factory.
-    /// The TODAY field archive compiles an explicit SPI import/call in the app target, after which the
+    /// The TODAY field archive compiles an explicit app-module bridge to this SPI, after which the
     /// package itself derives an opaque ResearchAdmission from the exact running app's producer-shaped
     /// metadata plus executable / Info.plist hashes. Only after that succeeds is CoreBluetooth created.
     /// UserDefaults, launch arguments, imported JSON, target UUIDs and caller-provided Booleans cannot
     /// mint the package admission.
     @_spi(NembraES80PrivateResearch)
     @MainActor
-    static func makeResearchAuthorizedES80ForCurrentApplication() throws
+    static func makePackageResearchAuthorizedES80ForCurrentApplication() throws
         -> PassiveBluetoothExperimentOneCoordinator {
         let admission: PassiveBluetoothExperimentOneFieldExecutionGate.ResearchAdmission
         do {
