@@ -106,6 +106,7 @@ struct CompletedRideDurationEvidenceTests {
         #expect(bound.observedDurationNanoseconds == 120_000_000_000)
         #expect(bound.coverage == .complete)
         #expect(bound.observationSegmentCount == 1)
+        #expect(bound.isTrustedForProduction)
         try bound.validate(against: ride)
     }
 
@@ -208,10 +209,11 @@ struct CompletedRideDurationEvidenceTests {
         }
     }
 
-    @Test("durable round trip preserves bound evidence")
-    func codableRoundTrip() throws {
+    @Test("durable round trip preserves fields but generic decode drops production authority")
+    func codableRoundTripDemotesAuthorityUntilTrustedRestore() throws {
+        let ride = try completedRide()
         let original = try CompletedRideDurationEvidence(
-            completedRide: completedRide(),
+            completedRide: ride,
             duration: partialDuration()
         )
 
@@ -221,7 +223,50 @@ struct CompletedRideDurationEvidenceTests {
             from: data
         )
 
-        #expect(decoded == original)
+        #expect(decoded.sessionID == original.sessionID)
+        #expect(decoded.rideContinuity == original.rideContinuity)
+        #expect(decoded.observedDurationNanoseconds == original.observedDurationNanoseconds)
+        #expect(decoded.coverage == original.coverage)
+        #expect(decoded.observationSegmentCount == original.observationSegmentCount)
+        #expect(decoded.isTrustedForProduction == false)
+        #expect(decoded != original)
+        #expect(throws: CompletedRideDurationEvidenceError.untrustedImportedEvidence) {
+            try decoded.validate(against: ride)
+        }
+
+        let restored = try CompletedRideDurationEvidence.trustedRestored(
+            decoded,
+            matching: ride
+        )
+        #expect(restored.isTrustedForProduction)
+        #expect(restored == original)
+        try restored.validate(against: ride)
+    }
+
+    @Test("caller-authored matching JSON cannot validate as observed duration")
+    func matchingCallerAuthoredJSONStaysUntrusted() throws {
+        let ride = try completedRide()
+        let data = Data(
+            """
+            {
+              "sessionID": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+              "rideContinuity": "uninterruptedProcess",
+              "observedDurationNanoseconds": 999999999999,
+              "coverage": "complete",
+              "observationSegmentCount": 1
+            }
+            """.utf8
+        )
+
+        let decoded = try JSONDecoder().decode(
+            CompletedRideDurationEvidence.self,
+            from: data
+        )
+
+        #expect(decoded.isTrustedForProduction == false)
+        #expect(throws: CompletedRideDurationEvidenceError.untrustedImportedEvidence) {
+            try decoded.validate(against: ride)
+        }
     }
 
     @Test("decoded unavailable evidence cannot claim coverage or segments")
