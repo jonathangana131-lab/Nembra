@@ -27,6 +27,24 @@ public enum ScooterCommandError: Error, Equatable, Sendable {
 /// diagnostics and is never replayed as a fresh measurement.
 public protocol SpeedEvidenceProvider: Sendable {
     func speedEvidenceUpdates() async -> AsyncStream<SpeedEvidenceAvailability>
+
+    /// Returns the provider's current source-owned availability, never the
+    /// consumer's last dequeued stream element. Consumers that combine this
+    /// field-specific state with another service stream should revalidate through
+    /// this snapshot before promoting an event to current app authority.
+    ///
+    /// The default implementation is deliberately defined in terms of the
+    /// protocol's atomic initial-replay contract. Concrete providers may override
+    /// it with a more direct actor-owned snapshot when useful.
+    func speedEvidenceSnapshot() async -> SpeedEvidenceAvailability
+}
+
+public extension SpeedEvidenceProvider {
+    func speedEvidenceSnapshot() async -> SpeedEvidenceAvailability {
+        let stream = await speedEvidenceUpdates()
+        var iterator = stream.makeAsyncIterator()
+        return await iterator.next() ?? .unavailable
+    }
 }
 
 public protocol ScooterService: SpeedTelemetryProvider, Sendable {
