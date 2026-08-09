@@ -4,7 +4,6 @@ public enum AdaptiveBatteryRangeLiveTruthError: Error, Equatable, Sendable {
     case notVerifiedStateOfCharge
     case missingReceiptIdentity
     case observationNotCurrentlyAccepted
-    case currentnessOwnerRequired
 }
 
 /// Receipt-bound state-of-charge evidence that has crossed the battery stream validator.
@@ -15,9 +14,13 @@ public enum AdaptiveBatteryRangeLiveTruthError: Error, Equatable, Sendable {
 /// SoC observation whose exact raw receipt is still owned by the accepted battery chronology.
 ///
 /// Live currentness is deliberately stronger than receipt metadata. Every anchor carries an
-/// opaque process-local lease issued by `AcceptedBatterySOCStream`'s revocable currentness owner.
-/// Copying a validator at R1 therefore cannot preserve R1 authority after the real owner crosses
-/// a gap, consumes a newer receipt, or accepts R2.
+/// opaque process-local lease. Anchors minted by `AcceptedBatterySOCStream` receive its revocable
+/// owner lease. One-off projections from a standalone chronology validator receive a detached
+/// lease that can never be live; they remain useful for offline/negative span validation without
+/// becoming presentation authority.
+///
+/// Copying an owner-bound validator at R1 therefore cannot preserve R1 authority after the real
+/// owner crosses a gap, consumes a newer receipt, or accepts R2.
 ///
 /// `continuitySegmentStartReceiptIdentity` is present only when the anchor was minted by
 /// `AcceptedBatterySOCStream`, which observes the complete accepted battery chronology and can
@@ -49,20 +52,19 @@ public struct AcceptedBatterySOCAnchor: Equatable, Sendable {
         self.currentnessLease = currentnessLease
     }
 
-    /// Projects a verified vehicle SoC observation only when the supplied validator is itself
-    /// bound to the accepted stream's revocable currentness owner.
+    /// Projects a verified vehicle SoC observation whose immutable receipt metadata matches the
+    /// supplied validator.
     ///
-    /// A standalone validator remains useful for chronology checks but deliberately cannot mint
-    /// live range authority. This closes the replay pattern where a caller retained R1, created or
-    /// cached an R1-looking validator value, and later tried to present R1 as current after the real
-    /// owner crossed a gap/R2.
+    /// If that validator is bound to `AcceptedBatterySOCStream`, the result receives its live
+    /// owner lease. A standalone chronology validator deliberately yields a detached lease: the
+    /// resulting one-off anchor can be inspected and used to prove that unsegmented evidence is
+    /// rejected for learning, but `isCurrent` is false and live range estimation fails closed.
     ///
     /// A copy of an owner-bound validator still re-admits the supplied observation before minting
     /// the anchor. That proves immutable continuity metadata matches the accepted receipt, while
     /// the shared owner lease proves the receipt is still live in the real chronology.
     ///
-    /// This one-off projection intentionally has no continuity-segment identity. It is sufficient
-    /// for a current live estimate, but insufficient for learning across a span. Learning anchors
+    /// This one-off projection intentionally has no continuity-segment identity. Learning anchors
     /// must be minted by `AcceptedBatterySOCStream`, which observes every accepted boundary.
     public static func current(
         observation: BatteryEvidenceObservation,
@@ -89,11 +91,21 @@ public struct AcceptedBatterySOCAnchor: Equatable, Sendable {
             throw AdaptiveBatteryRangeLiveTruthError.observationNotCurrentlyAccepted
         }
 
-        guard let currentnessLease = validator.currentnessLease(
+        let currentnessLease: BatteryEvidenceCurrentnessLease
+        if let ownerLease = validator.currentnessLease(
             receiptIdentity: receiptIdentity,
             uptimeNanoseconds: observation.receivedAtUptimeNanoseconds
-        ) else {
-            throw AdaptiveBatteryRangeLiveTruthError.currentnessOwnerRequired
+        ) {
+            currentnessLease = ownerLease
+        } else {
+            // A standalone chronology validator cannot become live authority merely because its
+            // local value-state says R1 was accepted. Give the one-off projection a detached,
+            // unpublished lease so every live-currentness check fails closed.
+            let detachedOwner = BatteryEvidenceCurrentnessOwner()
+            currentnessLease = BatteryEvidenceCurrentnessLease(
+                owner: detachedOwner,
+                generation: detachedOwner.generation()
+            )
         }
 
         return Self(
