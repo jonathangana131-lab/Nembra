@@ -40,11 +40,13 @@ struct ES80CaptureLockedSurfaceVisualAcceptanceTests {
         )
         let lockedSurface = source[lockedSurfaceStart.lowerBound..<source.endIndex]
         let lockTitle = try #require(lockedSurface.range(of: "Text(\"Capture locked\")"))
-        let accessibilityRiderMessage = try #require(
-            lockedSurface.range(of: "\"Final exact-build checks are still in progress.\"")
-        )
         let defaultRiderMessage = try #require(
             lockedSurface.range(of: "\"This build is still finishing its final checks before it can collect real ES80 data.\"")
+        )
+        let accessibilityBoundary = try #require(
+            lockedSurface.range(
+                of: "Text(isAccessibilityLayout ? \"PHYSICAL CAPTURE · NO-GO\" : \"Not ready for scooter capture yet\")"
+            )
         )
         let physicalBoundary = try #require(
             lockedSurface.range(of: ".accessibilityIdentifier(\"es80.capture.physical-run-locked\")")
@@ -52,9 +54,20 @@ struct ES80CaptureLockedSurfaceVisualAcceptanceTests {
         let details = try #require(lockedSurface.range(of: "Text(\"Engineering details\")"))
         let rawRecipe = try #require(lockedSurface.range(of: "Text(recipeID)"))
 
-        #expect(lockTitle.lowerBound < accessibilityRiderMessage.lowerBound)
-        #expect(accessibilityRiderMessage.lowerBound < defaultRiderMessage.lowerBound)
-        #expect(defaultRiderMessage.lowerBound < physicalBoundary.lowerBound)
+        // Accessibility XXXL deliberately compacts the visible copy, but the full lock truth must
+        // remain available through one semantic label instead of being deleted or source-ordered
+        // relative to body Text nodes.
+        #expect(lockedSurface.contains("private var physicalLockAccessibilityLabel: String"))
+        #expect(lockedSurface.contains("This exact build has not been explicitly cleared for physical scooter capture."))
+        #expect(lockedSurface.contains("Final exact-build checks are still in progress."))
+        #expect(lockedSurface.contains(".accessibilityLabel(physicalLockAccessibilityLabel)"))
+        #expect(lockedSurface.contains("if !isAccessibilityLayout"))
+
+        // Product hierarchy remains human-first in the rendered body: title/build context, explicit
+        // physical NO-GO boundary, then the disclosure. Exact recipe/provenance stays subordinate.
+        #expect(lockTitle.lowerBound < defaultRiderMessage.lowerBound)
+        #expect(defaultRiderMessage.lowerBound < accessibilityBoundary.lowerBound)
+        #expect(accessibilityBoundary.lowerBound < physicalBoundary.lowerBound)
         #expect(physicalBoundary.lowerBound < details.lowerBound)
         #expect(details.lowerBound < rawRecipe.lowerBound)
         #expect(lockedSurface.contains("if engineeringDetailsExpanded"))
