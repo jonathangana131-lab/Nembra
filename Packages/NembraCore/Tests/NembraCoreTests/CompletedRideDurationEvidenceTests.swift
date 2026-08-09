@@ -230,7 +230,7 @@ struct CompletedRideDurationEvidenceTests {
         #expect(decoded.observationSegmentCount == original.observationSegmentCount)
         #expect(decoded.isTrustedForProduction == false)
         #expect(decoded != original)
-        #expect(throws: CompletedRideDurationEvidenceError.untrustedImportedEvidence) {
+        #expect(throws: CompletedRideDurationEvidenceError.invalidDurationEvidence) {
             try decoded.validate(against: ride)
         }
 
@@ -264,7 +264,7 @@ struct CompletedRideDurationEvidenceTests {
         )
 
         #expect(decoded.isTrustedForProduction == false)
-        #expect(throws: CompletedRideDurationEvidenceError.untrustedImportedEvidence) {
+        #expect(throws: CompletedRideDurationEvidenceError.invalidDurationEvidence) {
             try decoded.validate(against: ride)
         }
     }
