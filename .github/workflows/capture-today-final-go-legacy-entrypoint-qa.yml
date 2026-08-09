@@ -11,6 +11,7 @@ on:
       - scripts/ci/tests/test_es80_today_final_go_foundation.py
       - scripts/ci/tests/test_es80_today_final_go_legacy_entrypoint.py
       - scripts/ci/tests/test_es80_today_final_go_direct_execution_disabled.py
+      - scripts/ci/tests/test_es80_today_final_go_private_impl_execution_disabled.py
       - .github/workflows/capture-today-final-go-legacy-entrypoint-qa.yml
 
 permissions:
@@ -42,15 +43,20 @@ jobs:
           python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_foundation.py
           python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_legacy_entrypoint.py
           python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_direct_execution_disabled.py
+          python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_private_impl_execution_disabled.py
       - name: Preserve complete foundation adversarial coverage
         run: python3 scripts/ci/tests/test_es80_today_final_go_foundation.py
       - name: Reject direct legacy Final GO execution
         run: python3 scripts/ci/tests/test_es80_today_final_go_legacy_entrypoint.py -v
       - name: Reject direct public Final GO execution surfaces
         run: python3 scripts/ci/tests/test_es80_today_final_go_direct_execution_disabled.py -v
+      - name: Reject direct private implementation execution
+        run: python3 scripts/ci/tests/test_es80_today_final_go_private_impl_execution_disabled.py -v
       - name: Require hardened executable handoff
         run: |
           set -euo pipefail
           grep -Fq 'legacy foundation entrypoint is non-authorizing' scripts/ci/es80_today_final_go_record.py
           grep -Fq 'Final GO foundation is library-only and non-authorizing' scripts/ci/es80_today_final_go_foundation.py
+          grep -Fq 'private foundation implementation is non-authorizing' scripts/ci/_es80_today_final_go_foundation_impl.py
           grep -Fq 'es80_today_final_go_hardened.py' scripts/ci/es80_today_final_go_record.py
+          grep -Fq 'es80_today_final_go_hardened.py' scripts/ci/_es80_today_final_go_foundation_impl.py
