@@ -1,0 +1,77 @@
+name: Capture Final GO Partial-Publisher Expected-Red
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - .github/workflows/capture-final-go-partial-publisher-expected-red.yml
+
+permissions:
+  contents: read
+
+jobs:
+  partial-publisher-rollback:
+    name: Reject Final GO residue after partial publisher failure
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXPECTED_PARENT_SHA: 2ba699dd793fd4876f7137e9d9c151acdd6cd020
+      WORKFLOW_PATH: .github/workflows/capture-final-go-partial-publisher-expected-red.yml
+    steps:
+      - name: Checkout immutable validation head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+
+      - name: Verify one workflow-only commit above hardened Final GO head
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT_SHA"
+          changed="$(git diff --name-only "$EXPECTED_PARENT_SHA" HEAD)"
+          test "$changed" = "$WORKFLOW_PATH"
+
+      - name: Inject partial no-replace publish and require authoritative path rollback
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import importlib.util
+          import os
+          from pathlib import Path
+          import tempfile
+
+          module_path = Path('scripts/ci/es80_today_final_go_publication.py')
+          spec = importlib.util.spec_from_file_location('publication', module_path)
+          publication = importlib.util.module_from_spec(spec)
+          assert spec and spec.loader
+          spec.loader.exec_module(publication)
+
+          raw = b'{"authority":"today-final-go-procedural-record-not-physical-result","decision":"GO","schemaVersion":3}\n'
+
+          def link_then_fail(source: Path, destination: Path) -> None:
+              os.link(source, destination, follow_symlinks=False)
+              raise OSError('injected publisher failure after authoritative destination creation')
+
+          with tempfile.TemporaryDirectory() as temporary:
+              root = Path(temporary)
+              output = root / 'FinalGO.json'
+              try:
+                  publication.publish_record_no_replace(
+                      output,
+                      raw,
+                      publisher=link_then_fail,
+                  )
+              except Exception:
+                  pass
+              else:
+                  raise SystemExit('expected injected partial-publisher failure was not observed')
+
+              if output.exists() or output.is_symlink():
+                  raise SystemExit(
+                      'FAILED TRANSACTION LEFT FinalGO.json PRESENT: publisher created authority '
+                      'before throwing but transaction never entered rollback state'
+                  )
+              leftovers = list(root.glob('.FinalGO.json.*.staging'))
+              if leftovers:
+                  raise SystemExit(f'failed transaction left staging residue: {leftovers}')
+          PY
