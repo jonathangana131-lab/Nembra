@@ -181,6 +181,13 @@ struct DashboardView: View {
             if shouldShowStoppedControls {
                 stoppedControls
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
+            } else if vehicle.state.connection == .connected && !hasQualifiedLiveSpeed {
+                Label("Live speed required", systemImage: "speedometer")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityLabel("Controls unavailable until live speed is known")
+                    .accessibilityIdentifier("dashboard.controls-speed-unavailable-message")
             } else if isVehicleMoving {
                 Text("Controls available when stopped")
                     .font(.caption2)
@@ -328,12 +335,30 @@ struct DashboardView: View {
         )
     }
 
+    /// Stopped-only presentation requires current source-owned speed authority,
+    /// not merely a connected transport plus a cached numeric `VehicleState`.
+    /// #1477 deliberately exposes this authority only for Simulator QA today;
+    /// physical/deferred profiles therefore fail closed until a verified source
+    /// policy exists rather than borrowing Simulator truth.
+    private var qualifiedStoppedControlSpeedKilometersPerHour: Double? {
+        vehicle.simulatorQualifiedLiveSpeedKilometersPerHour
+    }
+
     private var shouldShowStoppedControls: Bool {
-        vehicle.state.connection == .connected && !isVehicleMoving
+        guard vehicle.state.connection == .connected,
+              let speed = qualifiedStoppedControlSpeedKilometersPerHour else {
+            return false
+        }
+        return speed < 0.5
+    }
+
+    private var hasQualifiedLiveSpeed: Bool {
+        qualifiedStoppedControlSpeedKilometersPerHour != nil
     }
 
     private var isVehicleMoving: Bool {
-        (vehicle.state.speedKilometersPerHour ?? 0) >= 0.5
+        guard let speed = qualifiedStoppedControlSpeedKilometersPerHour else { return false }
+        return speed >= 0.5
     }
 
     private var supportedModes: [RideMode] {
