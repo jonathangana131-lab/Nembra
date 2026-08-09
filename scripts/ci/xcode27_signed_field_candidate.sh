@@ -9,6 +9,24 @@ export PATH
 unset BASH_ENV ENV
 unset NEMBRA_INTENDED_FIELD_DEVICE_UDID
 
+# Research capability is an explicit signing-operator choice, never ambient build-setting state.
+# Scrub caller-controlled Xcode/Swift override channels before any child process can observe them.
+TODAY_RESEARCH_BUILD_MODE=0
+if [[ "${1:-}" == "--nembra-today-research-build" ]]; then
+  TODAY_RESEARCH_BUILD_MODE=1
+  shift
+fi
+unset XCODE_XCCONFIG_FILE OTHER_SWIFT_FLAGS SWIFT_ACTIVE_COMPILATION_CONDITIONS
+if [[ "$TODAY_RESEARCH_BUILD_MODE" == "1" ]]; then
+  RESEARCH_COMPILE_MODE="private-today-v1"
+  RESEARCH_COMPILE_AUTHORITY="canonical-producer-explicit-mode"
+  RESEARCH_COMPILE_CONDITION="NEMBRA_ES80_TODAY_RESEARCH"
+else
+  RESEARCH_COMPILE_MODE="standard"
+  RESEARCH_COMPILE_AUTHORITY="none"
+  RESEARCH_COMPILE_CONDITION="none"
+fi
+
 # Python participates directly in private-input validation and signed-field evidence admission.
 # Never discover it through caller PATH, and always use isolated mode so caller PYTHON* startup or
 # import state cannot execute before the exact descriptor-bound Nembra source.
@@ -118,13 +136,24 @@ run_xcodebuild() {
   fi
 }
 
+# Only the archive may receive the private TODAY compile capability, and only from the explicit
+# producer mode above. Export never receives compiler build settings.
+run_archive_xcodebuild() {
+  if [[ "$TODAY_RESEARCH_BUILD_MODE" == "1" ]]; then
+    run_xcodebuild "$@" 'OTHER_SWIFT_FLAGS=$(inherited) -DNEMBRA_ES80_TODAY_RESEARCH' archive
+  else
+    run_xcodebuild "$@" archive
+  fi
+}
+
 # A dirty invocation checkout is never accepted. The real build below is additionally produced from
 # a fresh detached worktree at SOURCE_SHA, preventing ignored/local/concurrent source mutation from
 # silently becoming bytes stamped as this exact commit.
 REPOSITORY_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
 if [[ -n "$REPOSITORY_STATUS" ]]; then
   echo "Signed field-candidate production refuses tracked changes or non-ignored untracked files." >&2
-  printf '%s\n' "$REPOSITORY_STATUS" >&2
+  printf '%s\
+' "$REPOSITORY_STATUS" >&2
   exit 7
 fi
 
@@ -359,7 +388,7 @@ fi
 mkdir -p "$EXPORT_DIR"
 
 set -o pipefail
-if ! run_xcodebuild \
+if ! run_archive_xcodebuild \
   -project Nembra.xcodeproj \
   -scheme Nembra \
   -configuration Release \
@@ -370,7 +399,6 @@ if ! run_xcodebuild \
   "NEMBRA_CAPTURE_BUILD_INSTANCE_ID=$BUILD_INSTANCE_ID" \
   "NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$SOURCE_SHA" \
   "NEMBRA_CAPTURE_FIELD_RECIPE=$FIELD_RECIPE_ID" \
-  archive \
   2>&1 | tee "$LOG_DIR/xcodebuild-archive.log"
 then
   echo "Signed field-candidate archive or archive-log capture failed." >&2
@@ -404,7 +432,8 @@ POST_BUILD_SOURCE_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
 POST_BUILD_HEAD="$(git rev-parse --verify HEAD^{commit})"
 if [[ "$POST_BUILD_HEAD" != "$SOURCE_SHA" || -n "$POST_BUILD_SOURCE_STATUS" ]]; then
   echo "Archive/export changed immutable source state; refusing exact-HEAD candidate evidence." >&2
-  printf '%s\n' "$POST_BUILD_SOURCE_STATUS" >&2
+  printf '%s\
+' "$POST_BUILD_SOURCE_STATUS" >&2
   exit 19
 fi
 
@@ -608,6 +637,9 @@ cp -R "$INSPECTION_DIR" "$FINAL_STAGING_DIR/inspection"
   echo "allow_provisioning_updates=$ALLOW_PROVISIONING_UPDATES"
   echo "field_launch_recipe_id=$FIELD_RECIPE_ID"
   echo "experiment_recipe_id=$FIELD_RECIPE_ID"
+  echo "research_compile_mode=$RESEARCH_COMPILE_MODE"
+  echo "research_compile_authority=$RESEARCH_COMPILE_AUTHORITY"
+  echo "research_compile_condition=$RESEARCH_COMPILE_CONDITION"
   echo "export_options_file=ExportOptions.plist"
   echo "export_options_sha256=$EXPORT_OPTIONS_SHA256"
   echo "archive_log=logs/xcodebuild-archive.log"

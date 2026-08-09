@@ -11,6 +11,7 @@ on:
       - scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
       - scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py
       - scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py
+      - scripts/ci/tests/test_xcode27_signed_field_candidate_build_setting_authority.py
       - scripts/ci/tests/test_xcode27_today_research_field_candidate.py
       - .github/workflows/capture-producer-custody-source.yml
 
@@ -45,5 +46,7 @@ jobs:
           python3 scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py
           python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
           python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_build_setting_authority.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_build_setting_authority.py
           python3 -m py_compile scripts/ci/tests/test_xcode27_today_research_field_candidate.py
           python3 scripts/ci/tests/test_xcode27_today_research_field_candidate.py
