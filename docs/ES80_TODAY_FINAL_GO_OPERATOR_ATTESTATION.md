@@ -117,7 +117,10 @@ Its required evidence inputs include:
 - `--frozen-source-repo`
 - `--tooling-repo`
 - `--operator-attestation`
+- `--intended-device-udid-file`
 - `--output`
+
+`--intended-device-udid-file` is a mandatory private execution input used for the fresh signed-candidate reinspection. Pass an absolute local path to the private mode-0600 UDID file; never pass the raw UDID itself as an argument and never place that file or value in GitHub, screenshots, public artifacts, or public notes. The hardened entrypoint intentionally suppresses this privacy-sensitive option from ordinary help output, so this runbook is the operator-facing contract for it.
 
 Do not infer those identifiers from stale PR prose. Use the exact accepted retained evidence and live GitHub subject that passed the current pinned authority contract.
 
