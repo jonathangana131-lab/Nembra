@@ -164,7 +164,49 @@ jobs:
           python3 scripts/ci/es80_field_authorization_envelope.py --self-test
 
       - name: Build, test, and capture Simulator states
-        run: scripts/ci/xcode27_simulator_capture.sh
+        run: |
+          set -euo pipefail
+          producer_path="scripts/ci/xcode27_simulator_capture.sh"
+          expected_blob="4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"
+
+          # Candidate-controlled validation above may mutate the checkout. Do not reopen the
+          # worktree pathname as authority. Read the reviewed object bytes into this shell, retain
+          # trailing newlines with a sentinel, independently hash the exact in-memory bytes, then
+          # interpret those same bytes. The candidate pathname is passed only as $0 so the frozen
+          # producer's existing relative ROOT calculation still resolves the exact checkout.
+          sentinel="__NEMBRA_TRUSTED_PRODUCER_EOF_4e9ae0cb__"
+          producer_bytes="$(
+            env -i \
+              PATH=/usr/bin:/bin \
+              HOME=/tmp \
+              LC_ALL=C \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              /usr/bin/git cat-file blob "$expected_blob"
+            builtin printf '%s' "$sentinel"
+          )"
+          case "$producer_bytes" in
+            *"$sentinel") producer_bytes="${producer_bytes%"$sentinel"}" ;;
+            *) echo "Trusted producer sentinel missing after Git-object materialization." >&2; exit 2 ;;
+          esac
+
+          materialized_blob="$(
+            builtin printf '%s' "$producer_bytes" |
+              env -i \
+                PATH=/usr/bin:/bin \
+                HOME=/tmp \
+                LC_ALL=C \
+                GIT_CONFIG_NOSYSTEM=1 \
+                GIT_CONFIG_GLOBAL=/dev/null \
+                GIT_NO_REPLACE_OBJECTS=1 \
+                /usr/bin/git hash-object --stdin
+          )"
+          printf 'Trusted Simulator execution blob: %s\n' "$materialized_blob"
+          test "$materialized_blob" = "$expected_blob"
+
+          builtin printf '%s' "$producer_bytes" |
+            /bin/bash -c 'source /dev/stdin' "$GITHUB_WORKSPACE/$producer_path"
 
       - name: Verify retained Capture evidence against trusted resolver authority
         env:
