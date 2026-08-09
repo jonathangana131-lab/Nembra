@@ -157,6 +157,20 @@ final class VehicleStore {
             currentAmps: nil
         )
 
+        // The shared vehicle state is itself a product boundary. Do not let an
+        // unclassified transport integer enter it and rely on every downstream
+        // screen to remember a separate battery gate. A connected initial value
+        // crosses only when its authority is explicit.
+        if resolvedState.connection == .connected,
+           let percent = resolvedState.batteryPercent,
+           AuthoritativeBatteryObservation(
+               percent: percent,
+               authority: batteryObservationAuthority,
+               observedAt: resolvedState.lastUpdated
+           ) == nil {
+            resolvedState.batteryPercent = nil
+        }
+
         if resolvedState.connection != .connected,
            resolvedState.batteryPercent == nil,
            let snapshot = try? retainedBatteryStorage?.load() {
@@ -303,13 +317,13 @@ final class VehicleStore {
             retainedBatteryObservedAt = nil
             retainedBatteryAuthority = nil
 
-            if let authority = batteryObservationAuthority {
-                lastConfirmedBatteryAuthority = authority
-                if let snapshot = RetainedBatterySnapshot(
-                    percent: batteryPercent,
-                    authority: authority,
-                    observedAt: incomingState.lastUpdated
-                ) {
+            if let observation = AuthoritativeBatteryObservation(
+                percent: batteryPercent,
+                authority: batteryObservationAuthority,
+                observedAt: incomingState.lastUpdated
+            ) {
+                lastConfirmedBatteryAuthority = observation.authority
+                if let snapshot = observation.retained() {
                     do {
                         try retainedBatteryStorage?.save(snapshot)
                     } catch {
@@ -318,8 +332,11 @@ final class VehicleStore {
                     }
                 }
             } else {
-                // A new live value with no configured authority must not inherit the provenance
-                // of an older retained observation merely because the numeric percent matches.
+                // An unclassified or invalid transport value does not enter shared product state.
+                // This prevents Home, Dashboard, Vehicle, Rides, or any future consumer from
+                // accidentally treating a raw integer as Battery truth before hardware evidence
+                // establishes its meaning.
+                nextState.batteryPercent = nil
                 lastConfirmedBatteryAuthority = nil
             }
         } else if incomingState.connection != .connected,
