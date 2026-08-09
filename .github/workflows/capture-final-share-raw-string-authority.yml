@@ -1,0 +1,106 @@
+name: Capture Final Share Raw String Authority QA
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - NembraApp/Features/Research/ES80CaptureShellView.swift
+      - .github/workflows/capture-final-share-conditional-authority.yml
+      - .github/workflows/capture-final-share-regex-lexical-authority.yml
+      - .github/workflows/capture-final-share-raw-string-authority.yml
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head-raw-string-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Verify exact PR head
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          printf 'Expected exact PR head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual"
+          test "$actual" = "$EXPECTED_HEAD_SHA"
+
+      - name: Reject raw-string lexer desynchronization in Final Share authority source
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          class ContractViolation(Exception):
+              pass
+
+          source_path = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")
+          signature = "\n    private func prepareFinalShareForAnalysisAndSharing() {"
+          next_member = "\n    private func restartExperiment() {"
+          raw_string_opener = re.compile(r'#+"')
+
+          def validate_source(source: str) -> None:
+              # The conditional- and regex-authority gates intentionally use a small conservative
+              # Swift lexical masker rather than a full Swift parser. Swift raw strings can contain
+              # ordinary quote bytes without closing; treating those quotes as normal-string ends can
+              # invert the masker's code/string state and hide a real #if or slash token. Until both
+              # companion lexers understand matching raw-string hash delimiters, fail closed on any
+              # raw-string opener in this one authority-critical source file. Comments/string prose
+              # that needs the literal bytes #" must use a non-raw spelling as well so this invariant
+              # remains byte-auditable.
+              match = raw_string_opener.search(source)
+              if match is not None:
+                  line = source.count("\n", 0, match.start()) + 1
+                  raise ContractViolation(
+                      f"raw Swift string opener is forbidden in Final Share authority source while companion lexers do not support raw-string delimiters (line {line})"
+                  )
+
+              if source.count(signature) != 1:
+                  raise ContractViolation("expected exactly one Final Share authority declaration")
+              if source.count(next_member) != 1:
+                  raise ContractViolation("expected exactly one restartExperiment declaration")
+
+          source = source_path.read_text()
+          try:
+              validate_source(source)
+          except ContractViolation as error:
+              raise SystemExit(str(error)) from error
+
+          start = source.index(signature)
+          end = source.index(next_member, start)
+
+          # Reproduce the concrete false-green against the older lexical masker. In valid Swift, a
+          # raw string may contain an ordinary quote without closing because its real terminator is
+          # quote + matching hash. The old masker exits at the ordinary quote, then enters a fake
+          # normal-string state at the true raw terminator. A harmless quote inside a real Swift
+          # comment can resynchronize that fake state after an enclosing inactive #if has already
+          # been masked, leaving the function visible to the checker even though Swift compiles it
+          # out. This companion contract must reject the mutation solely from the raw opener.
+          raw_string_conditional_bypass = (
+              source[:start]
+              + '\n    private let finalShareLexerPoison = #"a " b"#\n'
+              + '#if NEVER_ENABLED_IN_RELEASE\n'
+              + '    // "\n'
+              + source[start:end]
+              + '\n#endif\n'
+              + source[end:]
+          )
+          try:
+              validate_source(raw_string_conditional_bypass)
+          except ContractViolation:
+              pass
+          else:
+              raise SystemExit(
+                  "checker self-test accepted a raw-string lexer desynchronization that conditionally removes Final Share authority"
+              )
+
+          print("final Share raw-string authority source contract: PASS")
+          PY
