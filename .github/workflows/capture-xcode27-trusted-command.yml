@@ -170,7 +170,42 @@ jobs:
           python3 scripts/ci/es80_field_authorization_envelope.py --self-test
 
       - name: Build, test, and capture Simulator states
-        run: scripts/ci/xcode27_simulator_capture.sh
+        run: |
+          set -euo pipefail
+          producer_path="$TRUSTED_CAPTURE_EVIDENCE_PRODUCER_PATH"
+          expected_blob="$TRUSTED_CAPTURE_EVIDENCE_PRODUCER_BLOB_SHA"
+
+          # Re-prove the mutable worktree pathname after every earlier candidate-controlled step.
+          worktree_blob="$(env -i \
+            PATH=/usr/bin:/bin \
+            HOME=/tmp \
+            LC_ALL=C \
+            GIT_CONFIG_NOSYSTEM=1 \
+            GIT_CONFIG_GLOBAL=/dev/null \
+            GIT_NO_REPLACE_OBJECTS=1 \
+            /usr/bin/git hash-object --no-filters "$producer_path")"
+          printf 'Trusted producer execution check: expected=%s worktree=%s\n' \
+            "$expected_blob" "$worktree_blob"
+          test "$worktree_blob" = "$expected_blob"
+
+          # Do not execute the mutable pathname. Stream the pinned Git object through an isolated
+          # verifier that recomputes the Git blob identity over the exact bytes before forwarding
+          # them to Bash. Setting $0 to the canonical producer pathname preserves the harness root
+          # calculation without giving the worktree file execution authority.
+          env -i \
+            PATH=/usr/bin:/bin \
+            HOME=/tmp \
+            LC_ALL=C \
+            GIT_CONFIG_NOSYSTEM=1 \
+            GIT_CONFIG_GLOBAL=/dev/null \
+            GIT_NO_REPLACE_OBJECTS=1 \
+            /usr/bin/git cat-file blob "$expected_blob" \
+            | env -i \
+                PATH=/usr/bin:/bin \
+                HOME=/tmp \
+                LC_ALL=C \
+                /usr/bin/python3 -c 'import hashlib,sys; expected=sys.argv[1]; data=sys.stdin.buffer.read(); actual=hashlib.sha1(b"blob "+str(len(data)).encode("ascii")+b"\0"+data).hexdigest(); (actual == expected) or sys.exit("trusted producer object bytes failed Git-blob verification: expected="+expected+" actual="+actual); sys.stdout.buffer.write(data)' "$expected_blob" \
+            | /bin/bash -c 'source /dev/stdin' "scripts/ci/xcode27_simulator_capture.sh"
 
       - name: Verify retained Capture evidence against trusted resolver authority
         env:
