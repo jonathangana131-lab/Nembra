@@ -12,7 +12,9 @@ This entrypoint removes the authority defects that must not remain on the execut
 - trusted workflow Git-object lookup reuses the private foundation's producer-owned, closed Git
   custody boundary rather than caller PATH/config/replacement semantics;
 - the independent retained-candidate receipt must be exact fresh stdout from the pinned crosscheck
-  Git object rather than caller-authored JSON that merely names that object; and
+  Git object rather than caller-authored JSON that merely names that object;
+- signed-field candidate authority is independently re-derived from the exact retained IPA with
+  native Apple signing/provisioning inspection before foundation promotion; and
 - record publication is failure-atomic after no-replace publication.
 
 No physical result is created by this tool. A generated GO record is procedural authorization for
@@ -51,6 +53,10 @@ crosscheck_custody = _load(
     "nembra_final_go_crosscheck_receipt_custody",
     "es80_today_crosscheck_receipt_custody.py",
 )
+signed_candidate_reinspection = _load(
+    "nembra_final_go_signed_candidate_reinspection",
+    "es80_today_signed_candidate_reinspection.py",
+)
 
 FinalGoError = foundation.FinalGoError
 
@@ -65,6 +71,35 @@ def _workflow_blob_sha_at_commit(tooling_repo: Path, commit: str, path: str) -> 
         raise FinalGoError(
             "trusted default-branch workflow Git blob is unavailable from tooling repository"
         ) from error
+
+
+def _cross_bind_signed_candidate(
+    record: dict[str, Any],
+    fresh: dict[str, Any],
+) -> None:
+    """Require every signing/installable fact promoted by the foundation to match fresh IPA truth."""
+    candidate = record.get("acceptedSignedFieldCandidate")
+    if not isinstance(candidate, dict):
+        raise FinalGoError("hardened Final GO record lacks accepted signed-field candidate")
+
+    bindings = {
+        "retainedIPASHA256": "signedInstallableSHA256",
+        "retainedIPAByteCount": "ipaByteCount",
+        "signedArtifactInspectionSHA256": "inspectionRecordSHA256",
+        "executableSHA256": "executableSHA256",
+        "infoPlistSHA256": "infoPlistSHA256",
+        "teamIdentifier": "teamIdentifier",
+        "provisioningProfileSHA256": "provisioningProfileSHA256",
+        "provisioningProfileUUID": "provisioningProfileUUID",
+        "provisioningProfileExpirationUTC": "provisioningProfileExpirationUTC",
+        "codeDirectoryHash": "codeDirectoryHash",
+    }
+    for candidate_key, fresh_key in bindings.items():
+        if candidate.get(candidate_key) != fresh.get(fresh_key):
+            raise FinalGoError(
+                "fresh signed IPA reinspection diverged from foundation candidate: "
+                f"{candidate_key}"
+            )
 
 
 def build_final_go_record(
@@ -83,7 +118,7 @@ def build_final_go_record(
     github_get_json: Callable[[str], tuple[bytes, dict[str, Any]]] = foundation._api_get_json,
     now_utc=None,
 ) -> dict[str, Any]:
-    """Run the private foundation only after fresh pinned-crosscheck and Xcode authority."""
+    """Run the private foundation only after fresh independent machine-authority checks."""
     try:
         crosscheck_execution = crosscheck_custody.verify_crosscheck_receipt_custody(
             candidate_root=candidate_root,
@@ -95,6 +130,13 @@ def build_final_go_record(
             expected_tool_blob=foundation.PINNED_CROSSCHECK_BLOB,
         )
     except crosscheck_custody.CrosscheckReceiptCustodyError as error:
+        raise FinalGoError(str(error)) from error
+
+    try:
+        signed_reinspection = signed_candidate_reinspection.verify_signed_candidate_reinspection(
+            candidate_root=candidate_root,
+        )
+    except signed_candidate_reinspection.SignedCandidateReinspectionError as error:
         raise FinalGoError(str(error)) from error
 
     def trusted_subject_adapter(
@@ -144,6 +186,8 @@ def build_final_go_record(
     finally:
         foundation._trusted_xcode_subject = original
 
+    _cross_bind_signed_candidate(record, signed_reinspection)
+
     subject = record.get("trustedXcodeAcceptance")
     if not isinstance(subject, dict):
         raise FinalGoError("hardened Final GO record lacks trusted Xcode acceptance subject")
@@ -161,6 +205,7 @@ def build_final_go_record(
         if crosscheck.get(key) != crosscheck_execution.get(key):
             raise FinalGoError(f"fresh pinned crosscheck execution diverged from foundation subject: {key}")
     crosscheck["executionCustody"] = crosscheck_execution["executionCustody"]
+    record["independentSignedCandidateReinspection"] = signed_reinspection
     return record
 
 
