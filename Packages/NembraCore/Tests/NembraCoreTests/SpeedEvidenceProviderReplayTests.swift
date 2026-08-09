@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import NembraCore
 
@@ -91,22 +92,20 @@ struct SpeedEvidenceProviderReplayTests {
         let currentRefresh = authority.beginRefresh()
         let sample = try simulatorSample(uptimeNanoseconds: 10)
 
-        #expect(
-            !authority.commit(
-                .live(sample),
-                connectionIsConnected: true,
-                for: staleRefresh
-            )
+        let acceptedStaleRefresh = authority.commit(
+            .live(sample),
+            connectionIsConnected: true,
+            for: staleRefresh
         )
+        #expect(!acceptedStaleRefresh)
         #expect(authority.availability == .unavailable)
 
-        #expect(
-            authority.commit(
-                .live(sample),
-                connectionIsConnected: true,
-                for: currentRefresh
-            )
+        let acceptedCurrentRefresh = authority.commit(
+            .live(sample),
+            connectionIsConnected: true,
+            for: currentRefresh
         )
+        #expect(acceptedCurrentRefresh)
         #expect(authority.availability == .live(sample))
     }
 
@@ -118,13 +117,12 @@ struct SpeedEvidenceProviderReplayTests {
 
         authority.invalidate()
 
-        #expect(
-            !authority.commit(
-                .live(sample),
-                connectionIsConnected: true,
-                for: suspendedRefresh
-            )
+        let acceptedSuspendedRefresh = authority.commit(
+            .live(sample),
+            connectionIsConnected: true,
+            for: suspendedRefresh
         )
+        #expect(!acceptedSuspendedRefresh)
         #expect(authority.availability == .unavailable)
     }
 
@@ -134,13 +132,12 @@ struct SpeedEvidenceProviderReplayTests {
         let refresh = authority.beginRefresh()
         let sample = try simulatorSample(uptimeNanoseconds: 30)
 
-        #expect(
-            authority.commit(
-                .live(sample),
-                connectionIsConnected: false,
-                for: refresh
-            )
+        let acceptedDisconnectedSnapshot = authority.commit(
+            .live(sample),
+            connectionIsConnected: false,
+            for: refresh
         )
+        #expect(acceptedDisconnectedSnapshot)
         #expect(authority.availability == .unavailable)
     }
 
