@@ -26,7 +26,9 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: nembra-xcode27-queue-janitor
+  # PR-head churn must not cancel the main/scheduled global sweep. Those event classes
+  # deliberately execute different mutation steps below, so they need independent owners.
+  group: nembra-xcode27-queue-janitor-${{ github.event_name == 'pull_request_target' && 'pr-head' || 'global' }}
   cancel-in-progress: true
 
 jobs:
