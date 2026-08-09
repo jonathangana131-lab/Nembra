@@ -1,4 +1,4 @@
-import Synchronization
+import Foundation
 
 /// Process-local revocation authority for live battery currentness.
 ///
@@ -12,7 +12,7 @@ import Synchronization
 /// authority alive after the real stream/validator lineage is destroyed.
 ///
 /// No wall-clock timeout or guessed device cadence participates in this decision.
-final class BatteryEvidenceCurrentnessOwner: Sendable {
+final class BatteryEvidenceCurrentnessOwner: @unchecked Sendable {
     final class Generation: Sendable {}
 
     /// Shared identity object retained by leases without retaining the owner itself.
@@ -34,25 +34,34 @@ final class BatteryEvidenceCurrentnessOwner: Sendable {
         var requiresContinuityBoundary: Bool
     }
 
-    private let state: Mutex<State>
+    // NembraCore still supports macOS 12 for package validation. `Synchronization.Mutex`
+    // requires macOS 15, so use the long-supported Foundation lock while preserving the same
+    // process-local critical-section semantics. All mutable state is accessed only through
+    // `withState`, which is why this owner is explicitly @unchecked Sendable.
+    private let lock = NSLock()
+    private var state: State
     let leaseHandle: LeaseHandle
 
     init() {
         let handle = LeaseHandle()
-        state = Mutex(
-            State(
-                generation: Generation(),
-                acceptedReceiptIdentity: nil,
-                acceptedUptimeNanoseconds: nil,
-                requiresContinuityBoundary: false
-            )
+        state = State(
+            generation: Generation(),
+            acceptedReceiptIdentity: nil,
+            acceptedUptimeNanoseconds: nil,
+            requiresContinuityBoundary: false
         )
         leaseHandle = handle
         handle.owner = self
     }
 
+    private func withState<Result>(_ body: (inout State) -> Result) -> Result {
+        lock.lock()
+        defer { lock.unlock() }
+        return body(&state)
+    }
+
     func generation() -> Generation {
-        state.withLock { $0.generation }
+        withState { $0.generation }
     }
 
     /// Rotates currentness only when `generation` still owns this authority.
@@ -61,7 +70,7 @@ final class BatteryEvidenceCurrentnessOwner: Sendable {
         by generation: Generation,
         requiresContinuityBoundary: Bool
     ) -> Generation? {
-        state.withLock { state in
+        withState { state in
             guard state.generation === generation else { return nil }
             let replacement = Generation()
             state.generation = replacement
@@ -80,7 +89,7 @@ final class BatteryEvidenceCurrentnessOwner: Sendable {
         uptimeNanoseconds: UInt64,
         requiresContinuityBoundary: Bool
     ) -> Bool {
-        state.withLock { state in
+        withState { state in
             guard state.generation === generation else { return false }
             state.acceptedReceiptIdentity = receiptIdentity
             state.acceptedUptimeNanoseconds = uptimeNanoseconds
@@ -90,7 +99,7 @@ final class BatteryEvidenceCurrentnessOwner: Sendable {
     }
 
     func snapshotIfOwned(by generation: Generation) -> Snapshot? {
-        state.withLock { state in
+        withState { state in
             guard state.generation === generation else { return nil }
             return Snapshot(
                 acceptedReceiptIdentity: state.acceptedReceiptIdentity,
