@@ -4,6 +4,7 @@ public enum AdaptiveBatteryRangeLiveTruthError: Error, Equatable, Sendable {
     case notVerifiedStateOfCharge
     case missingReceiptIdentity
     case observationNotCurrentlyAccepted
+    case currentnessOwnerRequired
 }
 
 /// Receipt-bound state-of-charge evidence that has crossed the battery stream validator.
@@ -11,12 +12,16 @@ public enum AdaptiveBatteryRangeLiveTruthError: Error, Equatable, Sendable {
 /// This is the production-facing bridge between battery truth and adaptive range. It cannot
 /// be constructed from a percentage, a generic `BatterySOCReading`, persisted JSON, stock-app
 /// correlation data, or Simulator presentation state. A caller must present an authoritative
-/// SoC observation whose exact raw receipt is still the validator's current accepted receipt.
+/// SoC observation whose exact raw receipt is still owned by the accepted battery chronology.
+///
+/// Live currentness is deliberately stronger than receipt metadata. Every anchor carries an
+/// opaque process-local lease issued by `AcceptedBatterySOCStream`'s revocable currentness owner.
+/// Copying a validator at R1 therefore cannot preserve R1 authority after the real owner crosses
+/// a gap, consumes a newer receipt, or accepts R2.
 ///
 /// `continuitySegmentStartReceiptIdentity` is present only when the anchor was minted by
 /// `AcceptedBatterySOCStream`, which observes the complete accepted battery chronology and can
-/// prove which no-gap segment contains the sample. A one-off current projection deliberately
-/// leaves that identity nil: endpoint metadata alone cannot prove span continuity for learning.
+/// prove which no-gap segment contains the sample.
 ///
 /// The type is deliberately not Codable. Process-local receipt identity, continuity-segment
 /// identity, and live-currentness must never survive persistence/relaunch by serialization.
@@ -26,28 +31,35 @@ public struct AcceptedBatterySOCAnchor: Equatable, Sendable {
     public let receivedAtUptimeNanoseconds: UInt64
     public let continuity: BatteryEvidenceContinuity
     public let continuitySegmentStartReceiptIdentity: BatteryEvidenceReceiptIdentity?
+    let currentnessLease: BatteryEvidenceCurrentnessLease
 
     fileprivate init(
         percentage: Double,
         sourceReceiptIdentity: BatteryEvidenceReceiptIdentity,
         receivedAtUptimeNanoseconds: UInt64,
         continuity: BatteryEvidenceContinuity,
-        continuitySegmentStartReceiptIdentity: BatteryEvidenceReceiptIdentity?
+        continuitySegmentStartReceiptIdentity: BatteryEvidenceReceiptIdentity?,
+        currentnessLease: BatteryEvidenceCurrentnessLease
     ) {
         self.percentage = percentage
         self.sourceReceiptIdentity = sourceReceiptIdentity
         self.receivedAtUptimeNanoseconds = receivedAtUptimeNanoseconds
         self.continuity = continuity
         self.continuitySegmentStartReceiptIdentity = continuitySegmentStartReceiptIdentity
+        self.currentnessLease = currentnessLease
     }
 
-    /// Projects only a currently accepted verified vehicle SoC observation into live range input.
+    /// Projects a verified vehicle SoC observation only when the supplied validator is itself
+    /// bound to the accepted stream's revocable currentness owner.
     ///
-    /// A copy of the validator re-admits the supplied observation before minting the anchor. That
-    /// is stronger than comparing receipt+uptime alone: it also proves immutable continuity
-    /// metadata matches the receipt already accepted by the validator. A forged same-receipt
-    /// sibling with different `.continuous` / `.afterUnobservedInterval` metadata therefore
-    /// cannot become trusted range evidence.
+    /// A standalone validator remains useful for chronology checks but deliberately cannot mint
+    /// live range authority. This closes the replay pattern where a caller retained R1, created or
+    /// cached an R1-looking validator value, and later tried to present R1 as current after the real
+    /// owner crossed a gap/R2.
+    ///
+    /// A copy of an owner-bound validator still re-admits the supplied observation before minting
+    /// the anchor. That proves immutable continuity metadata matches the accepted receipt, while
+    /// the shared owner lease proves the receipt is still live in the real chronology.
     ///
     /// This one-off projection intentionally has no continuity-segment identity. It is sufficient
     /// for a current live estimate, but insufficient for learning across a span. Learning anchors
@@ -77,32 +89,53 @@ public struct AcceptedBatterySOCAnchor: Equatable, Sendable {
             throw AdaptiveBatteryRangeLiveTruthError.observationNotCurrentlyAccepted
         }
 
+        guard let currentnessLease = validator.currentnessLease(
+            receiptIdentity: receiptIdentity,
+            uptimeNanoseconds: observation.receivedAtUptimeNanoseconds
+        ) else {
+            throw AdaptiveBatteryRangeLiveTruthError.currentnessOwnerRequired
+        }
+
         return Self(
             percentage: percentage,
             sourceReceiptIdentity: receiptIdentity,
             receivedAtUptimeNanoseconds: observation.receivedAtUptimeNanoseconds,
             continuity: observation.continuity,
-            continuitySegmentStartReceiptIdentity: nil
+            continuitySegmentStartReceiptIdentity: nil,
+            currentnessLease: currentnessLease
         )
     }
 
-    /// True only while this exact receipt remains the validator's current accepted evidence.
-    /// A marked gap immediately makes a retained anchor non-current even before a replacement
-    /// battery sample arrives.
+    /// True only while this anchor's opaque owner lease and exact receipt remain current.
+    /// The validator argument is now a lineage check, not by-value authority: a stale copied
+    /// validator cannot revive the lease because every owner-bound copy observes revocation.
     public func isCurrent(in validator: BatteryEvidenceStreamValidator) -> Bool {
-        validator.requiresContinuityBoundary == false
-            && validator.lastAcceptedReceiptIdentity == sourceReceiptIdentity
-            && validator.lastAcceptedUptimeNanoseconds == receivedAtUptimeNanoseconds
+        validator.recognizesCurrentnessLease(
+            currentnessLease,
+            receiptIdentity: sourceReceiptIdentity,
+            uptimeNanoseconds: receivedAtUptimeNanoseconds
+        )
+    }
+
+    /// Owner-bound currentness without exposing or requiring a validator snapshot.
+    public var isCurrent: Bool {
+        currentnessLease.isCurrent(
+            receiptIdentity: sourceReceiptIdentity,
+            uptimeNanoseconds: receivedAtUptimeNanoseconds
+        )
     }
 }
 
 /// Chronology owner that binds accepted SoC samples to an immutable no-gap battery segment.
 ///
 /// The wrapped `BatteryEvidenceStreamValidator` remains the receipt/uptime/metadata authority.
-/// This layer adds only one fact the endpoint validator cannot reconstruct later: which accepted
-/// receipt began the current continuity segment. The segment start changes only when the first
-/// accepted post-gap receipt carries `.afterUnobservedInterval` (or on the first accepted receipt
-/// of a fresh stream).
+/// This layer additionally binds that validator to one revocable currentness owner and records
+/// which accepted receipt began the current continuity segment.
+///
+/// Copies of this value share the currentness owner. Once one live lineage advances, an older copy
+/// cannot keep minting current anchors from its stale value-state: the shared generation has moved.
+/// This deliberately turns copied stream values into fail-closed stale handles rather than
+/// parallel currentness authorities.
 ///
 /// All battery-bearing observations that participate in production chronology should pass through
 /// this stream, not only SoC. Non-SoC siblings/callbacks advance receipt truth but simply return
@@ -112,12 +145,15 @@ public struct AcceptedBatterySOCStream: Equatable, Sendable {
     public private(set) var continuitySegmentStartReceiptIdentity: BatteryEvidenceReceiptIdentity?
 
     public init() {
-        validator = BatteryEvidenceStreamValidator()
+        validator = BatteryEvidenceStreamValidator(
+            currentnessOwner: BatteryEvidenceCurrentnessOwner()
+        )
         continuitySegmentStartReceiptIdentity = nil
     }
 
     /// Records an explicit observation gap while preserving the prior segment as retained history.
     /// The segment identity switches only when a valid newer boundary receipt is accepted.
+    /// The owner-bound validator revokes every outstanding R1 lease immediately.
     public mutating func markUnobservedInterval() {
         validator.markUnobservedInterval()
     }
@@ -127,6 +163,10 @@ public struct AcceptedBatterySOCStream: Equatable, Sendable {
     /// Receipt admission happens before segment mutation. A rejected/malformed boundary therefore
     /// cannot silently rotate the segment or mint an anchor. Same-receipt semantic siblings keep
     /// the same segment because the parent validator requires identical immutable metadata.
+    ///
+    /// A newer callback revokes the preceding currentness generation before later admission checks,
+    /// matching the validator's stronger seen-chronology rule: a rejected newer callback must never
+    /// leave an older accepted SoC looking live.
     @discardableResult
     public mutating func accept(
         _ observation: BatteryEvidenceObservation
@@ -149,12 +189,20 @@ public struct AcceptedBatterySOCStream: Equatable, Sendable {
             return nil
         }
 
+        guard let currentnessLease = validator.currentnessLease(
+            receiptIdentity: receiptIdentity,
+            uptimeNanoseconds: observation.receivedAtUptimeNanoseconds
+        ) else {
+            throw AdaptiveBatteryRangeLiveTruthError.observationNotCurrentlyAccepted
+        }
+
         return AcceptedBatterySOCAnchor(
             percentage: percentage,
             sourceReceiptIdentity: receiptIdentity,
             receivedAtUptimeNanoseconds: observation.receivedAtUptimeNanoseconds,
             continuity: observation.continuity,
-            continuitySegmentStartReceiptIdentity: continuitySegmentStartReceiptIdentity
+            continuitySegmentStartReceiptIdentity: continuitySegmentStartReceiptIdentity,
+            currentnessLease: currentnessLease
         )
     }
 }
