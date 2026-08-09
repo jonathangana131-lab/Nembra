@@ -33,7 +33,7 @@ public struct PropulsionEnergyRailPresentation: Equatable, Sendable {
     /// A SwiftUI consumer may use this to drive localized display-clock motion; it is never evidence.
     public let allowsLiveMotion: Bool
 
-    private init(
+    fileprivate init(
         identity: PropulsionGaugeIdentity,
         currentness: PropulsionEnergyRailCurrentness,
         acceptedWatts: Double?,
