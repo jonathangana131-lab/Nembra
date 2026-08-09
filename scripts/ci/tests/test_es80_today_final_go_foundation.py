@@ -6,6 +6,11 @@ reopen that compatibility surface for tests, this harness loads the existing tes
 its module-global `final_go` reference to the real foundation before test discovery/execution.
 Class constants already captured from the compatibility export are identical foundation constants;
 all runtime builder, Git, validation, and publication calls resolve through this replacement.
+
+The legacy fixture predates the real retained-candidate environment/log files required by the
+independent crosscheck executable. Its synthetic receipt-validation cases therefore use a test-only
+crosscheck execution adapter that returns the fixture receipt bytes unchanged. The production pinned
+Git-blob executor is covered separately by the dedicated crosscheck execution-custody regression.
 """
 from __future__ import annotations
 
@@ -38,9 +43,31 @@ legacy_suite = _load(
 legacy_suite.final_go = foundation
 
 
+def _legacy_fixture_crosscheck_execution(
+    *,
+    receipt_path: Path,
+    candidate_root: Path,
+    expected_source_sha: str,
+    tooling_repo: Path,
+    now_utc,
+):
+    del candidate_root, expected_source_sha, tooling_repo, now_utc
+    raw, receipt = foundation._json_file(
+        receipt_path,
+        "legacy synthetic independent crosscheck receipt",
+        exact_keys=foundation.CROSSCHECK_KEYS,
+    )
+    return receipt, raw, foundation.PINNED_CROSSCHECK_BLOB
+
+
 def main() -> int:
-    suite = unittest.defaultTestLoader.loadTestsFromModule(legacy_suite)
-    result = unittest.TextTestRunner(verbosity=2).run(suite)
+    original_executor = foundation._trusted_crosscheck_execution
+    foundation._trusted_crosscheck_execution = _legacy_fixture_crosscheck_execution
+    try:
+        suite = unittest.defaultTestLoader.loadTestsFromModule(legacy_suite)
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+    finally:
+        foundation._trusted_crosscheck_execution = original_executor
     return 0 if result.wasSuccessful() else 1
 
 
