@@ -278,6 +278,56 @@ final class NembraAppTests: XCTestCase {
         XCTAssertFalse(model.isAnimationActive)
     }
 
+    @MainActor
+    func testSpeedEvidenceUnavailableRetiresInterpolationImmediately() throws {
+        let model = SpeedInstrumentModel()
+        model.configureInterpolationPolicy(.simulatorQA)
+        let first = try speedSample(kilometersPerHour: 10, uptimeNanoseconds: 1_000_000_000)
+        let second = try speedSample(kilometersPerHour: 20, uptimeNanoseconds: 1_200_000_000)
+
+        model.setSpeedEvidenceAvailability(.live(first))
+        model.setSpeedEvidenceAvailability(.live(second))
+        let midpoint = try XCTUnwrap(model.frame(
+            atUptimeNanoseconds: 1_280_000_000,
+            fallbackConfirmedKilometersPerHour: second.kilometersPerHour
+        ))
+        XCTAssertEqual(midpoint.kilometersPerHour, 15, accuracy: 0.000_1)
+        XCTAssertTrue(model.isAnimationActive)
+
+        model.setSpeedEvidenceAvailability(.unavailable)
+
+        XCTAssertNil(model.frame(
+            atUptimeNanoseconds: 1_290_000_000,
+            fallbackConfirmedKilometersPerHour: nil
+        ))
+        XCTAssertNil(model.latestMeasuredKilometersPerHour)
+        XCTAssertNil(model.latestMeasurementSource)
+        XCTAssertFalse(model.isAnimationActive)
+    }
+
+    @MainActor
+    func testRetainedSpeedEvidenceCannotContinueLiveInterpolation() throws {
+        let model = SpeedInstrumentModel()
+        model.configureInterpolationPolicy(.simulatorQA)
+        let first = try speedSample(kilometersPerHour: 10, uptimeNanoseconds: 1_000_000_000)
+        let second = try speedSample(kilometersPerHour: 20, uptimeNanoseconds: 1_200_000_000)
+
+        model.setSpeedEvidenceAvailability(.live(first))
+        model.setSpeedEvidenceAvailability(.live(second))
+        model.setSpeedEvidenceAvailability(.retained(second))
+
+        let retained = try XCTUnwrap(model.frame(
+            atUptimeNanoseconds: 1_280_000_000,
+            fallbackConfirmedKilometersPerHour: second.kilometersPerHour
+        ))
+        XCTAssertEqual(retained.kilometersPerHour, 20, accuracy: 0.000_1)
+        XCTAssertEqual(retained.origin, .confirmedVehicleState)
+        XCTAssertNil(retained.latestMeasuredKilometersPerHour)
+        XCTAssertNil(model.latestMeasuredKilometersPerHour)
+        XCTAssertNil(model.latestMeasurementSource)
+        XCTAssertFalse(model.isAnimationActive)
+    }
+
     private func speedSample(
         kilometersPerHour: Double,
         uptimeNanoseconds: UInt64
