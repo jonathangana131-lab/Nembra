@@ -209,11 +209,12 @@ final class VehicleStore {
                     // The current session remains authoritative even if local continuity storage fails.
                 }
             }
-        } else if incomingState.batteryPercent == nil,
-                  let retainedPercent = state.batteryPercent,
-                  state.dataAvailability == .retained {
+        } else if incomingState.connection != .connected,
+                  incomingState.batteryPercent == nil,
+                  let retainedPercent = state.batteryPercent {
             nextState.batteryPercent = retainedPercent
             nextState.lastUpdated = state.lastUpdated
+            retainedBatteryObservedAt = retainedBatteryObservedAt ?? state.lastUpdated
         }
 
         state = nextState
