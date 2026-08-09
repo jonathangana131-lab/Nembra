@@ -67,31 +67,50 @@ final class SpeedInstrumentModel {
         streamTask?.cancel()
         streamTask = nil
         // Leaving the surface ends this model's raw observation continuity.
-        // VehicleStore may keep receiving confirmed state globally, so preserve
-        // fallback eligibility while dropping raw/interpolated anchors that can
-        // no longer be known current when the view returns.
+        // Source-owned availability may still retain the latest accepted value,
+        // but no old raw/interpolated anchor is allowed to survive view teardown.
         clearRawPresentationContinuity()
     }
 
     /// Opens or closes raw-speed presentation continuity for the currently
     /// confirmed vehicle connection.
     ///
-    /// A disconnect/reconnecting/connecting boundary is authoritative evidence
-    /// of a presentation gap even though it says nothing about the scooter's
-    /// physical speed. Old raw samples therefore stop driving the live readout,
-    /// and samples delivered during the gap are ignored. Reconnection starts a
-    /// new presentation continuity without inventing a cadence-based timeout.
-    ///
-    /// Once a gap has been observed, a cached `VehicleState` speed must also not
-    /// regain live meaning merely because transport becomes connected again.
-    /// Retained presentation may still show that cached value explicitly as last
-    /// known; the live cockpit waits for a new accepted raw sample instead.
+    /// Connection loss is an immediate fail-closed boundary. Reconnection alone
+    /// intentionally does not restore `permitsLiveConfirmedFallback`; the
+    /// source-owned evidence provider must publish a new `.live` observation.
+    /// This method remains as a defensive transport boundary and as a narrow
+    /// test seam; the Dashboard's positive currentness authority is
+    /// `setSpeedEvidenceAvailability(_:)` below.
     func setConnectionContinuityActive(_ isActive: Bool) {
         acceptsTelemetryForCurrentConnection = isActive
         guard !isActive else { return }
 
         permitsLiveConfirmedFallback = false
         clearRawPresentationContinuity()
+    }
+
+    /// Consumes source-owned field currentness without inventing a cadence or
+    /// timeout. `.retained` and `.unavailable` immediately retire raw/interpolated
+    /// presentation even when aggregate transport remains connected. `.live`
+    /// reopens raw presentation only because the provider supplies the exact
+    /// accepted absolute sample that established current field continuity.
+    ///
+    /// The live sample is accepted here as well as on the non-replaying raw
+    /// telemetry stream so actor/task ordering cannot create a false blank. A
+    /// duplicate raw delivery carries the same monotonic receipt and is rejected
+    /// by the interpolator as stale rather than advancing evidence twice.
+    func setSpeedEvidenceAvailability(_ availability: SpeedEvidenceAvailability) {
+        switch availability {
+        case .unavailable, .retained:
+            acceptsTelemetryForCurrentConnection = false
+            permitsLiveConfirmedFallback = false
+            clearRawPresentationContinuity()
+
+        case let .live(sample):
+            acceptsTelemetryForCurrentConnection = true
+            permitsLiveConfirmedFallback = false
+            accept(sample)
+        }
     }
 
     /// Internal so the iOS test target can prove display semantics without a
@@ -125,10 +144,10 @@ final class SpeedInstrumentModel {
         )
     }
 
-    /// Returns a render-only frame. The fallback is the latest value already
-    /// confirmed in `VehicleState`; the caller decides whether that fallback is
-    /// still eligible for the current presentation continuity. It is never
-    /// converted into a telemetry sample internally.
+    /// Returns a render-only frame. The fallback is a caller-owned accepted
+    /// source value; the Dashboard now supplies it from `SpeedEvidenceAvailability`
+    /// rather than treating cached `VehicleState.speed` as field-current authority.
+    /// It is never converted into a telemetry sample internally.
     ///
     /// Reduce Motion changes presentation only: when an interpolation frame is
     /// active, the display snaps to the latest authoritative measurement that
@@ -226,7 +245,7 @@ final class SpeedInstrumentModel {
 ///
 /// Only the rolling speed readout redraws on SwiftUI's animation timeline.
 /// Status, accessibility formatting, vehicle controls, ride detection,
-/// persistence, distance, and safety continue to consume confirmed/raw domain
+/// persistence, distance, and safety continue to consume accepted domain/source
 /// state rather than the rendered interpolation frame.
 @MainActor
 struct DashboardSpeedInstrumentView: View {
@@ -237,23 +256,21 @@ struct DashboardSpeedInstrumentView: View {
     let modePersonality: DashboardModePersonality
 
     var body: some View {
-        let isRetained = vehicle.state.dataAvailability == .retained
-        let fallbackConfirmedKilometersPerHour = Self.confirmedFallbackForPresentation(
-            kilometersPerHour: vehicle.state.speedKilometersPerHour,
-            isRetained: isRetained,
-            isConnected: vehicle.state.connection == .connected,
-            permitsLiveConfirmedFallback: model.permitsLiveConfirmedFallback
+        let speedAvailability = vehicle.speedEvidenceAvailability
+        let isRetained = Self.isRetainedSpeedEvidence(speedAvailability)
+        let fallbackAcceptedKilometersPerHour = Self.evidenceBackedFallback(
+            speedAvailability
         )
         let usesMetric = VehicleDisplayFormatting.usesMetric
         let authoritativeKilometersPerHour = Self.validatedKilometersPerHour(
             model.latestMeasuredKilometersPerHour
-        ) ?? fallbackConfirmedKilometersPerHour
+        ) ?? fallbackAcceptedKilometersPerHour
 
         VStack(spacing: 0) {
             Spacer(minLength: 0)
 
             speedReadout(
-                fallbackConfirmedKilometersPerHour: fallbackConfirmedKilometersPerHour,
+                fallbackAcceptedKilometersPerHour: fallbackAcceptedKilometersPerHour,
                 usesMetric: usesMetric
             )
             .frame(maxWidth: .infinity)
@@ -261,8 +278,8 @@ struct DashboardSpeedInstrumentView: View {
             .animation(modeAnimation, value: modePersonality.speedScale)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Speed")
-            // VoiceOver stays anchored to the newest authoritative/raw speed,
-            // never a 60 Hz visual interpolation midpoint or malformed value.
+            // VoiceOver stays anchored to the newest source-owned accepted speed,
+            // never a 60 Hz visual interpolation midpoint or cached VehicleState.
             // Retained values carry their last-known qualifier on the speed
             // element itself so focus order cannot make cached evidence sound live.
             .accessibilityValue(
@@ -276,7 +293,7 @@ struct DashboardSpeedInstrumentView: View {
             Group {
                 if isRetained, authoritativeKilometersPerHour != nil {
                     Label("LAST KNOWN", systemImage: "clock.arrow.circlepath")
-                } else if vehicle.state.connection == .connected {
+                } else if Self.isLiveSpeedEvidence(speedAvailability) {
                     Text(Self.liveSpeedStatusText(
                         kilometersPerHour: authoritativeKilometersPerHour
                     ))
@@ -294,14 +311,22 @@ struct DashboardSpeedInstrumentView: View {
         .padding(.horizontal, 8)
         .task {
             model.configureInterpolationPolicy(vehicle.speedInstrumentInterpolationPolicy)
-            // Initialize the connection gate before subscribing so raw evidence
-            // cannot be accepted based on SwiftUI modifier callback ordering.
-            model.setConnectionContinuityActive(vehicle.state.connection == .connected)
+            // Initialize from source-owned field currentness before subscribing so
+            // raw task ordering cannot make a cached value look current.
+            model.setSpeedEvidenceAvailability(vehicle.speedEvidenceAvailability)
             let stream = await vehicle.speedTelemetryUpdates()
             model.start(stream: stream)
         }
+        .onChange(of: vehicle.speedEvidenceAvailability, initial: true) { _, availability in
+            model.setSpeedEvidenceAvailability(availability)
+        }
         .onChange(of: vehicle.state.connection, initial: true) { _, connection in
-            model.setConnectionContinuityActive(connection == .connected)
+            // Transport may retire authority immediately; it can never restore
+            // authority here. Positive currentness comes only from `.live` source
+            // evidence above.
+            if connection != .connected {
+                model.setConnectionContinuityActive(false)
+            }
         }
         .onDisappear {
             model.stop()
@@ -309,7 +334,7 @@ struct DashboardSpeedInstrumentView: View {
     }
 
     private func speedReadout(
-        fallbackConfirmedKilometersPerHour: Double?,
+        fallbackAcceptedKilometersPerHour: Double?,
         usesMetric: Bool
     ) -> some View {
         TimelineView(
@@ -320,7 +345,7 @@ struct DashboardSpeedInstrumentView: View {
         ) { _ in
             let frame = model.frame(
                 atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
-                fallbackConfirmedKilometersPerHour: fallbackConfirmedKilometersPerHour,
+                fallbackConfirmedKilometersPerHour: fallbackAcceptedKilometersPerHour,
                 prefersReducedMotion: reduceMotion
             )
 
@@ -356,6 +381,29 @@ struct DashboardSpeedInstrumentView: View {
         return usesMetric ? kilometersPerHour : kilometersPerHour * 0.621_371
     }
 
+    /// Presentation fallback is source-owned accepted speed only. Aggregate
+    /// `VehicleState.dataAvailability` and cached speed are deliberately excluded
+    /// because a field-specific speed gap can occur while the rest of the vehicle
+    /// state and transport remain current.
+    static func evidenceBackedFallback(
+        _ availability: SpeedEvidenceAvailability
+    ) -> Double? {
+        validatedKilometersPerHour(availability.lastAcceptedSample?.kilometersPerHour)
+    }
+
+    static func isRetainedSpeedEvidence(_ availability: SpeedEvidenceAvailability) -> Bool {
+        if case .retained = availability { return true }
+        return false
+    }
+
+    static func isLiveSpeedEvidence(_ availability: SpeedEvidenceAvailability) -> Bool {
+        if case .live = availability { return true }
+        return false
+    }
+
+    /// Kept as a narrow compatibility/test helper for callers that need to
+    /// reason about legacy confirmed-state presentation. The Dashboard itself no
+    /// longer uses this helper as positive speed-currentness authority.
     static func confirmedFallbackForPresentation(
         kilometersPerHour: Double?,
         isRetained: Bool,
