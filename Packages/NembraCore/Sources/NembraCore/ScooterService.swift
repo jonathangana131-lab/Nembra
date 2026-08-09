@@ -29,6 +29,31 @@ public protocol SpeedEvidenceProvider: Sendable {
     func speedEvidenceUpdates() async -> AsyncStream<SpeedEvidenceAvailability>
 }
 
+/// One source-issued coherent view of aggregate vehicle presentation state and
+/// field-specific speed currentness.
+///
+/// This snapshot exists because independently scheduled state/evidence streams can
+/// otherwise combine a newer reconnect with an older already-dequeued `.live`
+/// speed value. Such a cross-stream combination can resurrect stopped authority
+/// even when the source has already demoted that evidence. A coherent snapshot is
+/// valid only as the paired state emitted by one source turn; it is not protocol or
+/// physical scooter evidence by itself.
+public struct VehicleSpeedEvidenceSnapshot: Equatable, Sendable {
+    public let state: VehicleState
+    public let speedEvidenceAvailability: SpeedEvidenceAvailability
+}
+
+/// Optional source-owned stream for app consumers that must never assemble speed
+/// authority from independently scheduled vehicle/currentness streams.
+///
+/// Implementations must atomically register and replay the current pair, preserve
+/// source emission order, and coalesce obsolete queued snapshots with newest-only
+/// semantics. Providers without this stronger contract are intentionally not
+/// sufficient to authorize app-level live speed controls.
+public protocol VehicleSpeedEvidenceSnapshotProvider: Sendable {
+    func vehicleSpeedEvidenceUpdates() async -> AsyncStream<VehicleSpeedEvidenceSnapshot>
+}
+
 public protocol ScooterService: SpeedTelemetryProvider, Sendable {
     var profile: VehicleProfile { get }
 
