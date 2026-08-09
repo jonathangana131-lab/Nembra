@@ -19,6 +19,17 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
     WORKFLOW_SOURCE = "b" * 40
     CROSSCHECK_RECEIPT_SHA = "c" * 64
 
+    def setUp(self):
+        self.fresh_signed_patcher = mock.patch.object(
+            hardened,
+            "_fresh_signed_candidate_subject",
+            return_value=self.signed_candidate(),
+        )
+        self.fresh_signed = self.fresh_signed_patcher.start()
+
+    def tearDown(self):
+        self.fresh_signed_patcher.stop()
+
     def kwargs(self, root: Path):
         return {
             "candidate_root": root / "candidate",
@@ -32,7 +43,16 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             "frozen_source_repo": root / "source",
             "tooling_repo": root / "tooling",
             "operator_attestation": root / "attestation.json",
+            "intended_device_udid_file": root / "device-id",
             "github_get_json": lambda path: (b"{}", {}),
+        }
+
+    def signed_candidate(self):
+        return {
+            "sourceCommitSHA": self.SOURCE,
+            "retainedIPASHA256": "1" * 64,
+            "retainedIPAByteCount": 123,
+            "signedArtifactInspectionSHA256": "2" * 64,
         }
 
     def crosscheck_execution(self):
@@ -57,6 +77,7 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
         crosscheck.pop("executionCustody")
         return {
             "acceptedSourceCommitSHA": kwargs["expected_source_sha"],
+            "acceptedSignedFieldCandidate": self.signed_candidate(),
             "trustedXcodeAcceptance": subject,
             "independentRetainedCandidateCrosscheck": crosscheck,
         }
@@ -90,6 +111,7 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
 
             self.assertIs(hardened.foundation._trusted_xcode_subject, original)
             self.assertEqual(record["trustedXcodeAcceptance"], self.trusted_subject())
+            self.assertEqual(record["acceptedSignedFieldCandidate"], self.signed_candidate())
             self.assertEqual(
                 record["independentRetainedCandidateCrosscheck"]["executionCustody"],
                 crosscheck["executionCustody"],
@@ -105,6 +127,13 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
                 custody_call["expected_tool_blob"],
                 hardened.foundation.PINNED_CROSSCHECK_BLOB,
             )
+            self.fresh_signed.assert_called_once()
+            fresh_call = self.fresh_signed.call_args.kwargs
+            self.assertEqual(fresh_call["candidate_root"], root / "candidate")
+            self.assertEqual(fresh_call["expected_source_sha"], self.SOURCE)
+            self.assertEqual(fresh_call["frozen_source_repo"], root / "source")
+            self.assertEqual(fresh_call["intended_device_udid_file"], root / "device-id")
+            self.assertIn("now_utc", fresh_call)
             verify.assert_called_once()
             call = verify.call_args.kwargs
             self.assertEqual(call["source_commit_sha"], self.SOURCE)
@@ -179,6 +208,7 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
     def test_crosscheck_custody_failure_becomes_final_go_error_before_foundation(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
+            self.fresh_signed.reset_mock()
             with mock.patch.object(
                 hardened.crosscheck_custody,
                 "verify_crosscheck_receipt_custody",
@@ -192,6 +222,48 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
                 with self.assertRaisesRegex(hardened.FinalGoError, "unpinned crosscheck execution"):
                     hardened.build_final_go_record(**self.kwargs(root))
             foundation_builder.assert_not_called()
+            self.fresh_signed.assert_not_called()
+
+    def test_fresh_signed_candidate_failure_stops_before_foundation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.fresh_signed.side_effect = hardened.FinalGoError("fresh signed reject")
+            with mock.patch.object(
+                hardened.crosscheck_custody,
+                "verify_crosscheck_receipt_custody",
+                return_value=self.crosscheck_execution(),
+            ), mock.patch.object(
+                hardened.foundation,
+                "build_final_go_record",
+            ) as foundation_builder:
+                with self.assertRaisesRegex(hardened.FinalGoError, "fresh signed reject"):
+                    hardened.build_final_go_record(**self.kwargs(root))
+            foundation_builder.assert_not_called()
+
+    def test_rejects_foundation_candidate_divergent_from_fresh_reviewed_reinspection(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            divergent = self.signed_candidate()
+            divergent["retainedIPASHA256"] = "9" * 64
+            self.fresh_signed.return_value = divergent
+            with mock.patch.object(
+                hardened.crosscheck_custody,
+                "verify_crosscheck_receipt_custody",
+                return_value=self.crosscheck_execution(),
+            ), mock.patch.object(
+                hardened.foundation,
+                "build_final_go_record",
+                side_effect=self.fake_foundation,
+            ), mock.patch.object(
+                hardened.trusted_xcode,
+                "verify_trusted_capture_xcode_subject",
+                return_value=self.trusted_subject(),
+            ):
+                with self.assertRaisesRegex(
+                    hardened.FinalGoError,
+                    "diverged from fresh reviewed Apple reinspection",
+                ):
+                    hardened.build_final_go_record(**self.kwargs(root))
 
     def test_workflow_blob_lookup_reuses_foundation_closed_git_boundary(self):
         with tempfile.TemporaryDirectory() as temporary:
