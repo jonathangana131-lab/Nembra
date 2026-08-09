@@ -47,7 +47,7 @@ jobs:
         if: github.event_name != 'pull_request_target'
         uses: actions/checkout@v6
 
-      - name: Self-test fail-closed classifiers
+      - name: Self-test standard and trusted fail-closed classifiers
         run: |
           python3 scripts/ci/xcode27_queue_janitor.py --self-test
           python3 scripts/ci/capture_trusted_xcode27_queue_janitor.py --self-test
