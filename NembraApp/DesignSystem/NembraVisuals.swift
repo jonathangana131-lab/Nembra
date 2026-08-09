@@ -105,13 +105,16 @@ enum NembraEnergyRailVisualCurrentness: Equatable {
 /// `acceptedWatts` is the semantic measurement truth shown to accessibility and
 /// status semantics. `displayWatts`, `railFraction`, and `peakMarkerFraction` are
 /// display-clock values/geometry and must never be converted back into telemetry,
-/// persisted, or promoted into ride/protocol evidence. The view also refuses any
-/// display-clock motion unless currentness is live and the caller explicitly admits it.
+/// persisted, or promoted into ride/protocol evidence. `acceptedTargetFraction` is
+/// stable display geometry derived from the exact accepted measurement by the
+/// canonical package projection; it exists so Reduce Motion never has to consume a
+/// display-clock sweep or reconstruct watts in the app layer.
 struct NembraEnergyRailVisualState: Equatable {
     let currentness: NembraEnergyRailVisualCurrentness
     let acceptedWatts: Double?
     let displayWatts: Double?
     let railFraction: Double?
+    let acceptedTargetFraction: Double?
     let peakMarkerFraction: Double?
     let allowsLiveMotion: Bool
 
@@ -123,6 +126,7 @@ struct NembraEnergyRailVisualState: Equatable {
         acceptedWatts: Double?,
         displayWatts: Double?,
         railFraction: Double?,
+        acceptedTargetFraction: Double?,
         peakMarkerFraction: Double?,
         allowsLiveMotion: Bool
     ) {
@@ -130,6 +134,7 @@ struct NembraEnergyRailVisualState: Equatable {
         self.acceptedWatts = acceptedWatts
         self.displayWatts = displayWatts
         self.railFraction = railFraction
+        self.acceptedTargetFraction = acceptedTargetFraction
         self.peakMarkerFraction = peakMarkerFraction
         self.allowsLiveMotion = allowsLiveMotion
     }
@@ -157,6 +162,20 @@ struct NembraEnergyRailVisualState: Equatable {
             return semanticWatts
         }
         return displayWatts == 0 ? 0 : displayWatts
+    }
+
+    /// Stable package-derived target used only when spatial interpolation must be
+    /// suppressed. It remains presentation geometry, not telemetry or persistence.
+    var admittedAcceptedTargetFraction: Double? {
+        guard currentness == .live,
+              semanticWatts != nil,
+              let acceptedTargetFraction,
+              acceptedTargetFraction.isFinite,
+              acceptedTargetFraction >= 0,
+              acceptedTargetFraction <= 1 else {
+            return nil
+        }
+        return acceptedTargetFraction
     }
 
     var admittedRailFraction: Double? {
@@ -268,9 +287,10 @@ private struct NembraRollingPowerValueView: View {
 /// Localized SwiftUI renderer for the Nembra Energy Rail.
 ///
 /// The caller owns the display clock. This view does not add a second smoothing
-/// algorithm to `displayWatts` or `railFraction`; every render frame is drawn
-/// immediately so a newer accepted target can retarget the canonical gauge model
-/// without queued stale motion. Accessibility remains bound to accepted watts.
+/// algorithm to `displayWatts` or `railFraction`; every normal-motion render frame is
+/// drawn immediately so a newer accepted target can retarget the canonical gauge
+/// model without queued stale motion. Under Reduce Motion, the view snaps to accepted
+/// semantic watts and the stable canonical accepted-target geometry instead.
 struct NembraEnergyRailView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -304,7 +324,7 @@ struct NembraEnergyRailView: View {
                         style: StrokeStyle(lineWidth: baseRailWidth, lineCap: .round)
                     )
 
-                if let admittedFraction = state.admittedRailFraction {
+                if let admittedFraction = displayedRailFraction {
                     let fraction = CGFloat(admittedFraction)
 
                     if !reduceTransparency {
@@ -323,7 +343,8 @@ struct NembraEnergyRailView: View {
                             style: StrokeStyle(lineWidth: activeRailWidth, lineCap: .round)
                         )
 
-                    if let admittedMarker = state.admittedPeakMarkerFraction {
+                    if !reduceMotion,
+                       let admittedMarker = state.admittedPeakMarkerFraction {
                         peakMarker(at: CGFloat(admittedMarker), in: proxy.size)
                     }
                 }
@@ -336,7 +357,7 @@ struct NembraEnergyRailView: View {
     private var powerReadout: some View {
         VStack(spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
-                if let watts = state.admittedDisplayWatts {
+                if let watts = displayedWatts {
                     NembraRollingPowerValueView(value: watts, fontSize: powerFontSize)
                 } else {
                     Text("—")
@@ -353,6 +374,14 @@ struct NembraEnergyRailView: View {
                 .tracking(dynamicTypeSize.isAccessibilitySize ? 0.4 : 1.2)
                 .foregroundStyle(currentnessForeground)
         }
+    }
+
+    private var displayedWatts: Double? {
+        reduceMotion ? state.semanticWatts : state.admittedDisplayWatts
+    }
+
+    private var displayedRailFraction: Double? {
+        reduceMotion ? state.admittedAcceptedTargetFraction : state.admittedRailFraction
     }
 
     @ViewBuilder
