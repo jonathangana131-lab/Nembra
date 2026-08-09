@@ -32,7 +32,7 @@ jobs:
           printf 'Expected exact PR head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual"
           test "$actual" = "$EXPECTED_HEAD_SHA"
 
-      - name: Reject fake lexical member boundaries around final Share authority
+      - name: Reject Swift lexical boundary spoofing around final Share authority
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -43,123 +43,149 @@ jobs:
               pass
 
           signature = "private func prepareFinalShareForAnalysisAndSharing()"
-          next_member = "\n    private func restartExperiment()"
+          retained_anchor = "if finalShareData != nil,"
+
+          def mask_range(masked: list[str], start: int, end: int) -> None:
+              for index in range(start, end):
+                  if masked[index] != "\n":
+                      masked[index] = " "
+
+          def string_opener(text: str, index: int):
+              cursor = index
+              while cursor < len(text) and text[cursor] == "#":
+                  cursor += 1
+              hashes = cursor - index
+              if text.startswith('"""', cursor):
+                  return hashes, True, cursor + 3
+              if cursor < len(text) and text[cursor] == '"':
+                  return hashes, False, cursor + 1
+              return None
 
           def mask_comments_and_strings(text: str) -> str:
-              """Preserve offsets/newlines while hiding Swift comments and string literals."""
-              chars = list(text)
+              """Preserve offsets/newlines while hiding Swift comments and all string delimiters."""
               masked = list(text)
-              i = 0
+              index = 0
               state = "code"
               block_depth = 0
+              string_hashes = 0
+              string_multiline = False
 
-              while i < len(chars):
+              while index < len(text):
                   if state == "code":
-                      if text.startswith("//", i):
-                          masked[i] = masked[i + 1] = " "
-                          i += 2
+                      if text.startswith("//", index):
+                          mask_range(masked, index, index + 2)
+                          index += 2
                           state = "line-comment"
                           continue
-                      if text.startswith("/*", i):
-                          masked[i] = masked[i + 1] = " "
-                          i += 2
+                      if text.startswith("/*", index):
+                          mask_range(masked, index, index + 2)
+                          index += 2
                           state = "block-comment"
                           block_depth = 1
                           continue
-                      if text.startswith('"""', i):
-                          masked[i:i + 3] = "   "
-                          i += 3
-                          state = "multiline-string"
-                          continue
-                      if chars[i] == '"':
-                          masked[i] = " "
-                          i += 1
+
+                      opener = string_opener(text, index)
+                      if opener is not None:
+                          string_hashes, string_multiline, end = opener
+                          mask_range(masked, index, end)
+                          index = end
                           state = "string"
                           continue
-                      i += 1
+
+                      index += 1
                       continue
 
                   if state == "line-comment":
-                      if chars[i] == "\n":
+                      if text[index] == "\n":
                           state = "code"
                       else:
-                          masked[i] = " "
-                      i += 1
+                          masked[index] = " "
+                      index += 1
                       continue
 
                   if state == "block-comment":
-                      if text.startswith("/*", i):
-                          masked[i] = masked[i + 1] = " "
+                      if text.startswith("/*", index):
+                          mask_range(masked, index, index + 2)
                           block_depth += 1
-                          i += 2
+                          index += 2
                           continue
-                      if text.startswith("*/", i):
-                          masked[i] = masked[i + 1] = " "
+                      if text.startswith("*/", index):
+                          mask_range(masked, index, index + 2)
                           block_depth -= 1
-                          i += 2
+                          index += 2
                           if block_depth == 0:
                               state = "code"
                           continue
-                      if chars[i] != "\n":
-                          masked[i] = " "
-                      i += 1
+                      if text[index] != "\n":
+                          masked[index] = " "
+                      index += 1
                       continue
 
                   if state == "string":
-                      if chars[i] == "\\" and i + 1 < len(chars):
-                          masked[i] = masked[i + 1] = " "
-                          i += 2
-                          continue
-                      if chars[i] == '"':
-                          masked[i] = " "
-                          state = "code"
-                      elif chars[i] != "\n":
-                          masked[i] = " "
-                      i += 1
-                      continue
-
-                  if state == "multiline-string":
-                      if text.startswith('"""', i):
-                          masked[i:i + 3] = "   "
-                          i += 3
+                      quote = '"""' if string_multiline else '"'
+                      closing = quote + ("#" * string_hashes)
+                      if text.startswith(closing, index):
+                          mask_range(masked, index, index + len(closing))
+                          index += len(closing)
                           state = "code"
                           continue
-                      if chars[i] != "\n":
-                          masked[i] = " "
-                      i += 1
+
+                      # Ordinary Swift strings allow escaped quotes, including \""" inside a
+                      # multiline string. Extended/raw strings close only on the quote delimiter
+                      # followed by the exact opening hash count, so bare quotes remain content.
+                      if string_hashes == 0 and text[index] == "\\" and index + 1 < len(text):
+                          mask_range(masked, index, index + 2)
+                          index += 2
+                          continue
+
+                      if text[index] != "\n":
+                          masked[index] = " "
+                      index += 1
                       continue
 
-              if state in {"block-comment", "string", "multiline-string"}:
+              if state != "code":
                   raise ContractViolation("unterminated Swift lexical state: " + state)
               return "".join(masked)
 
-          def authority_source(source: str) -> tuple[int, int, str]:
+          def validate_source(source: str) -> tuple[int, int]:
               masked = mask_comments_and_strings(source)
-              starts = [
-                  match.start()
-                  for match in re.finditer(re.escape(signature), masked)
-              ]
+              starts = [match.start() for match in re.finditer(re.escape(signature), masked)]
               if len(starts) != 1:
                   raise ContractViolation(
                       "expected exactly one lexical final Share authority declaration"
                   )
 
               start = starts[0]
-              end = masked.find(next_member, start + len(signature))
-              if end < 0:
-                  raise ContractViolation(
-                      "missing lexical restartExperiment boundary after final Share authority"
-                  )
-              return start, end, source[start:end]
+              opening = masked.find("{", start + len(signature))
+              if opening < 0:
+                  raise ContractViolation("missing final Share function body")
 
-          def validate_source(source: str) -> tuple[int, int]:
-              start, end, function_source = authority_source(source)
-              function_code = mask_comments_and_strings(function_source)
+              # The authority function deliberately contains no code slash tokens. Reject a slash
+              # before brace accounting can be confused by a Swift regex body containing braces.
+              depth = 0
+              end = None
+              for index in range(opening, len(masked)):
+                  character = masked[index]
+                  if character == "/":
+                      raise ContractViolation(
+                          "final Share authority must not contain code slash tokens inside its lexical function body"
+                      )
+                  if character == "{":
+                      depth += 1
+                  elif character == "}":
+                      depth -= 1
+                      if depth < 0:
+                          raise ContractViolation("unbalanced final Share function braces")
+                      if depth == 0:
+                          end = index + 1
+                          break
 
-              if "/" in function_code:
-                  raise ContractViolation(
-                      "final Share authority must not contain code slash tokens inside its lexical member boundary"
-                  )
+              if end is None:
+                  raise ContractViolation("unterminated final Share function body")
+
+              function_source = source[start:end]
+              if retained_anchor not in function_source:
+                  raise ContractViolation("missing retained final Share retry branch")
               return start, end
 
           source = Path(
@@ -189,39 +215,67 @@ jobs:
               validate_source(harmless_fake_boundary)
           except ContractViolation as error:
               raise SystemExit(
-                  "checker self-test rejected a fake boundary confined to a string"
+                  "checker self-test rejected a fake boundary confined to an ordinary multiline string"
               ) from error
 
-          fake_boundary_bypass = (
+          # Swift permits an escaped triple quote inside an ordinary multiline string. The prior
+          # masker incorrectly treated the trailing triple quote as a terminator, exposing a fake
+          # restartExperiment member boundary and allowing later authority code to evade scanning.
+          escaped_triple_quote_bypass = (
               source[:closing_brace]
-              + '\n        let lexicalBoundaryDocumentation = """\n'
+              + '\n        let lexicalEscapedQuoteDocumentation = """\n'
+              + "alpha\n"
+              + '\\\"""\n'
               + "    private func restartExperiment()\n"
+              + "omega\n"
               + '        """\n'
-              + "        _ = lexicalBoundaryDocumentation\n"
+              + "        _ = lexicalEscapedQuoteDocumentation\n"
               + "        let lexicalBareBraceProbe = /\\}/\n"
               + "        _ = lexicalBareBraceProbe\n"
-              + "#if NEVER_ENABLED_IN_RELEASE\n"
-              + "        let hiddenConditionalProbe = true\n"
-              + "        _ = hiddenConditionalProbe\n"
-              + "#endif\n"
               + source[closing_brace:]
           )
           try:
-              validate_source(fake_boundary_bypass)
+              validate_source(escaped_triple_quote_bypass)
           except ContractViolation:
               pass
           else:
               raise SystemExit(
-                  "checker self-test accepted a regex/conditional bypass after a fake string member boundary"
+                  "checker self-test accepted an escaped-triple-quote lexical boundary bypass"
+              )
+
+          # Extended/raw multiline strings close only on triple quote + the matching hash count.
+          # Bare triple quotes are legal content. The prior masker stopped at those bare quotes,
+          # exposing the fake boundary below and truncating inspection before the regex payload.
+          raw_string_boundary_bypass = (
+              source[:closing_brace]
+              + '\n        let lexicalRawDocumentation = #"""\n'
+              + "alpha\n"
+              + '"""\n'
+              + "    private func restartExperiment()\n"
+              + "omega\n"
+              + '        """#\n'
+              + "        _ = lexicalRawDocumentation\n"
+              + "        let lexicalExtendedBraceProbe = #/\\}/#\n"
+              + "        _ = lexicalExtendedBraceProbe\n"
+              + source[closing_brace:]
+          )
+          try:
+              validate_source(raw_string_boundary_bypass)
+          except ContractViolation:
+              pass
+          else:
+              raise SystemExit(
+                  "checker self-test accepted a raw-string lexical boundary bypass"
               )
 
           comment_boundary_bypass = (
               source[:closing_brace]
-              + "\n        /*\n"
+              + "\n        /* outer\n"
+              + "        /* nested */\n"
               + "    private func restartExperiment()\n"
               + "        */\n"
-              + "        let lexicalExtendedBraceProbe = #/\\}/#\n"
-              + "        _ = lexicalExtendedBraceProbe\n"
+              + "        let lexicalCommentBraceProbe = /\\}/\n"
+              + "        _ = lexicalCommentBraceProbe\n"
               + source[closing_brace:]
           )
           try:
@@ -230,8 +284,8 @@ jobs:
               pass
           else:
               raise SystemExit(
-                  "checker self-test accepted an extended-regex bypass after a fake comment member boundary"
+                  "checker self-test accepted a nested-comment lexical boundary bypass"
               )
 
-          print("final Share lexical member-boundary authority source contract: PASS")
+          print("final Share Swift lexical boundary authority source contract: PASS")
           PY
