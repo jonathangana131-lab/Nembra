@@ -1,8 +1,16 @@
 # ES80 Field Authorization — Offline Signing Boundary (V14)
 
+## Scope
+
+This document defines the **release-grade external P-256 authorization boundary**.
+
+Under the active `CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md`, this P-256 ceremony is **POST-CAPTURE** unless a concrete defect on the normal private Research Field Build path is promoted as a TODAY blocker. The first private stationary passive `ES80-FINGERPRINT-v1` artifact may instead use the package-owned, exact-build-bound Research Field Build authority described by `docs/ES80_FINAL_GO_AUTHORITY.md` and `docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md`.
+
+Nothing in this document should be read as making production P-256 key creation, public-key pinning, or a signed authorization envelope a prerequisite for the first private research artifact merely because the release design exists.
+
 ## Purpose
 
-Nembra's package verifier can now cryptographically bind a software field authorization to two exact externally produced subjects:
+Nembra's package verifier can cryptographically bind a release-grade software field authorization to two exact externally produced subjects:
 
 - `NembraCaptureExternalBuildRecord.json` — the schema-v3 build/runtime identity record;
 - `NembraCaptureFieldBuildEvidenceRecord.json` — the canonical field-build evidence record whose `signedInstallableSHA256` identifies the exact retained IPA.
@@ -101,7 +109,7 @@ The base64 fields preserve the exact signed subject/payload bytes. The package v
 
 ## Offline invocation
 
-Use only after the exact signed IPA and its canonical evidence have been produced and independently reviewed. The private key and output envelope paths must be outside the repository. Keep the private key owner-only before invoking the signer. Review the explicit OpenSSL path and its root custody as part of the release-authority procedure; on the supported macOS release host the system executable is expected at `/usr/bin/openssl`.
+Use only when the release-grade P-256 path is intentionally being exercised and after the exact signed IPA and its canonical evidence have been produced and independently reviewed. The private key and output envelope paths must be outside the repository. Keep the private key owner-only before invoking the signer. Review the explicit OpenSSL path and its root custody as part of the release-authority procedure; on the supported macOS release host the system executable is expected at `/usr/bin/openssl`.
 
 ```sh
 chmod 600 /external/authority/nembra-field-authority-private.pem
@@ -141,17 +149,17 @@ The signer reports `authorityPublicKeyX963Base64` and `authorityPublicKeyX963SHA
 PassiveBluetoothCaptureFieldAuthorizationTrustAnchor.publicKeyX963Representation
 ```
 
-Do **not** auto-edit or auto-pin the key from this script. The production trust root is deliberately `nil` today. Pinning the reviewed public key must be a separate exact-source decision on the final field lineage after key custody is established.
+Do **not** auto-edit or auto-pin the key from this script. The production trust root is deliberately `nil` today. Pinning the reviewed public key must be a separate exact-source decision when the release-grade P-256 path is intentionally promoted; it is not required merely to satisfy the first-artifact TODAY Research Field Build path.
 
-## Final GO is external and non-self-referential
+## Release Final GO is external and non-self-referential
 
-The tracked V14 procedure source and trust-root-bearing app source must be frozen **before** the exact signed Research Field Build is produced. Nembra provenance binds exact `SOURCE_SHA`, so a post-build edit to a tracked runbook cannot be the authority that accepts that same build: the edit would create a new source SHA and make the signed artifact ancestor evidence.
+For the P-256 release-authorized path documented here, the tracked V14 procedure source and trust-root-bearing app source must be frozen **before** the exact signed field build is produced. Nembra provenance binds exact `SOURCE_SHA`, so a post-build edit to a tracked runbook cannot be the authority that accepts that same build: the edit would create a new source SHA and make the signed artifact ancestor evidence.
 
-After the exact signed IPA and canonical evidence are independently accepted, the external authority may issue the schema-v2 authorization envelope over the exact retained evidence subjects. After the exact retained IPA is installed without substitution and the running app's build/source/build-instance/executable/raw-Info.plist tuple rendezvous succeeds before any Bluetooth scan, the field handoff may retain an **external Final GO Record** outside the repository source tree.
+After the exact signed IPA and canonical evidence are independently accepted, the external authority may issue the schema-v2 authorization envelope over the exact retained evidence subjects. After the exact retained IPA is installed without substitution and the running app's build/source/build-instance/executable/raw-Info.plist tuple rendezvous succeeds before any Bluetooth scan, the release handoff may retain an **external Final GO Record** outside the repository source tree.
 
-That Final GO Record is an acceptance record for the exact envelope and exact accepted subjects. It must identify decision `GO`, exact source/build/build-instance, retained IPA digest, external-build/evidence/payload/envelope digests, reviewed authority public-key digest, procedure `V14`, recipe `ES80-FINGERPRINT-v1`, intended-device install evidence, pre-scan runtime rendezvous, expected Share artifact contract, and accepted stop/failure conditions. It is descriptive unless independently bound to the exact accepted cryptographic subjects; it cannot replace package verification or mint authority from caller-supplied text.
+That release Final GO Record is an acceptance record for the exact envelope and exact accepted subjects. It must identify decision `GO`, exact source/build/build-instance, retained IPA digest, external-build/evidence/payload/envelope digests, reviewed authority public-key digest, procedure `V14`, recipe `ES80-FINGERPRINT-v1`, intended-device install evidence, pre-scan runtime rendezvous, expected Share artifact contract, and accepted stop/failure conditions. It is descriptive unless independently bound to the exact accepted cryptographic subjects; it cannot replace package verification or mint authority from caller-supplied text.
 
-`docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md` is immutable procedure source for this authority chain. Do not require a post-build tracked edit that “flips” that file to GO. `docs/ES80_FINAL_GO_AUTHORITY.md` documents the complete non-self-referential phase ordering.
+`docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md` is tracked procedure source. Do not require a post-build tracked edit that “flips” that file to GO. `docs/ES80_FINAL_GO_AUTHORITY.md` documents both the TODAY Research Field Build authority and this later release-grade path.
 
 ## Development self-test
 
@@ -165,7 +173,7 @@ The trusted exact-head Xcode 27 workflow compiles the custody regression source 
 
 ## What a cryptographically valid envelope still does not prove
 
-Even if an independently held candidate key produces a signature that verifies, physical Experiment One remains blocked until all applicable V14 gates are deliberately closed, including:
+If the release-grade P-256 path is being used, a candidate key producing a signature that verifies is not sufficient physical authority. The release-authorized path still requires all applicable V14 gates, including:
 
 1. the final composed Capture SHA contains the reviewed production public trust root and has terminal exact-head app/package/UI acceptance;
 2. the exact real signed/installable iPhone IPA is retained and independently accepted;
@@ -174,8 +182,8 @@ Even if an independently held candidate key produces a signature that verifies, 
 5. the signed envelope refers to those exact accepted evidence bytes;
 6. the exact retained IPA is installed without rebuilding/substitution and the installed running app matches the accepted executable + raw Info.plist identity before any Bluetooth scan;
 7. the package field execution gate deliberately consumes non-forgeable verified authorization rather than caller/UI state;
-8. an external Final GO Record retained outside the repository source tree records decision `GO` for the exact accepted source/build/installable artifact, authorization envelope and evidence subjects, reviewed trust root, procedure `V14`, recipe `ES80-FINGERPRINT-v1`, intended-device install evidence, runtime rendezvous, expected artifact, and stop conditions. No post-build tracked runbook edit is required or permitted to create that authority.
+8. an external release Final GO Record retained outside the repository source tree records decision `GO` for the exact accepted source/build/installable artifact, authorization envelope and evidence subjects, reviewed trust root, procedure `V14`, recipe `ES80-FINGERPRINT-v1`, intended-device install evidence, runtime rendezvous, expected artifact, and stop conditions. No post-build tracked runbook edit is required or permitted to create that authority.
 
-Until then:
+The active TODAY path may instead authorize the first private stationary passive artifact through the deliberately compiled Research Field Build mechanism without invoking this P-256 release ceremony, provided every TODAY blocker/gate is closed and the external TODAY Final GO Record is retained as specified in the physical runbook.
 
-**PHYSICAL EXPERIMENT ONE / FIRST REAL ES80 CAPTURE REMAINS NO-GO / DO NOT RUN.**
+This document itself never authorizes physical execution. **THE CURRENT LIVE PHYSICAL STATUS REMAINS NO-GO / DO NOT RUN UNTIL THE APPLICABLE TODAY OR LATER AUTHORITY PATH HAS ACTUALLY CLOSED ITS GATES.**
