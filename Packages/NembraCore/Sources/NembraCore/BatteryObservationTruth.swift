@@ -48,6 +48,15 @@ public struct AuthoritativeBatteryObservation: Equatable, Sendable {
     public var physicalMeasurement: PhysicalBatterySOCObservation? {
         PhysicalBatterySOCObservation(self)
     }
+
+    /// Narrows further for range learning/estimation. A historical measured value is
+    /// still physically meaningful, but it is not current remaining-range evidence.
+    /// Range therefore requires both measured authority and explicit live currentness.
+    public func rangeEligible(
+        currentness: BatteryObservationCurrentness
+    ) -> RangeEligibleBatterySOCObservation? {
+        RangeEligibleBatterySOCObservation(self, currentness: currentness)
+    }
 }
 
 /// Battery state that has crossed the stricter physical-measurement boundary.
@@ -63,5 +72,39 @@ public struct PhysicalBatterySOCObservation: Equatable, Sendable {
         guard observation.authority == .measured else { return nil }
         self.percent = observation.percent
         self.observedAt = observation.observedAt
+    }
+}
+
+/// Currentness is intentionally orthogonal to measurement authority.
+///
+/// A retained observation can still be a genuine historical measurement; retention
+/// does not turn it into an estimate. Conversely, being live does not make an
+/// estimated/display-only percentage a physical measurement.
+public enum BatteryObservationCurrentness: String, Codable, Equatable, Sendable {
+    case live
+    case retained
+}
+
+/// Battery SoC that is safe to feed into a *current remaining-range* calculation.
+///
+/// This boundary is stricter than `PhysicalBatterySOCObservation`: the source must be
+/// a measured observation and it must be live. A retained measured snapshot remains
+/// valid historical evidence but cannot silently drive "range remaining now" after a
+/// reconnect, relaunch, or telemetry gap.
+public struct RangeEligibleBatterySOCObservation: Equatable, Sendable {
+    public let percent: Int
+    public let observedAt: Date
+
+    public init?(
+        _ observation: AuthoritativeBatteryObservation,
+        currentness: BatteryObservationCurrentness
+    ) {
+        guard currentness == .live,
+              let physical = observation.physicalMeasurement else {
+            return nil
+        }
+
+        self.percent = physical.percent
+        self.observedAt = physical.observedAt
     }
 }
