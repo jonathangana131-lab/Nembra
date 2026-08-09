@@ -1,0 +1,156 @@
+name: Temp ES80 rendezvous visual witness v2
+
+on:
+  push:
+    branches:
+      - tooling/es80-rendezvous-visual-witness-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Patch visual witness
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app_path = Path('NembraApp/App/NembraApp.swift')
+          app = app_path.read_text()
+
+          old_body = """                    if let researchBuild = researchBuildForRendezvous {
+                        fieldBuildRendezvous(researchBuild)
+                    } else if simulatorQAEvidenceLabel == nil {
+                        fieldBuildRendezvousUnavailable
+                    }
+"""
+          new_body = """                    if let presentation = fieldBuildRendezvousPresentation {
+                        fieldBuildRendezvous(presentation)
+                    } else if simulatorQAEvidenceLabel == nil {
+                        fieldBuildRendezvousUnavailable
+                    }
+"""
+          assert app.count(old_body) == 1, app.count(old_body)
+          app = app.replace(old_body, new_body, 1)
+
+          anchor = """    private func fieldBuildRendezvous(
+        _ build: PassiveBluetoothExperimentOneFieldExecutionGate.ResearchBuild
+    ) -> some View {
+"""
+          replacement = """    private struct FieldBuildRendezvousPresentation {
+        let eyebrow: String
+        let title: String
+        let instruction: String
+        let buildIdentifier: String
+        let sourceCommitSHA: String
+        let buildInstanceID: String
+        let footer: String
+        let isSyntheticSimulatorQA: Bool
+    }
+
+    private var fieldBuildRendezvousPresentation: FieldBuildRendezvousPresentation? {
+        if let build = researchBuildForRendezvous {
+            return FieldBuildRendezvousPresentation(
+                eyebrow: \"PRIVATE RESEARCH BUILD\",
+                title: \"Runtime provenance ready\",
+                instruction: \"Compare these running-build values with the independently inspected retained IPA before any Bluetooth scan.\",
+                buildIdentifier: build.buildIdentifier,
+                sourceCommitSHA: build.sourceCommitSHA,
+                buildInstanceID: build.buildInstanceID,
+                footer: \"Package research admission is available for this exact running build. Final GO is still required before the physical ES80 procedure; this does not verify scooter identity or protocol/telemetry semantics.\",
+                isSyntheticSimulatorQA: false
+            )
+        }
+#if DEBUG && targetEnvironment(simulator)
+        if simulatorQASnapshot != nil {
+            return FieldBuildRendezvousPresentation(
+                eyebrow: \"SIMULATOR QA / PROVENANCE PREVIEW\",
+                title: \"Synthetic runtime provenance\",
+                instruction: \"Layout and accessibility preview only. These values are synthetic and are not package research admission.\",
+                buildIdentifier: \"Capture Build V14-0123456789ab\",
+                sourceCommitSHA: \"0123456789abcdef0123456789abcdef01234567\",
+                buildInstanceID: \"01234567-89ab-cdef-0123-456789abcdef\",
+                footer: \"Synthetic software state only. No package research admission is available, no field authority is created, and this preview cannot authorize a physical procedure.\",
+                isSyntheticSimulatorQA: true
+            )
+        }
+#endif
+        return nil
+    }
+
+    private func fieldBuildRendezvous(
+        _ presentation: FieldBuildRendezvousPresentation
+    ) -> some View {
+"""
+          assert app.count(anchor) == 1, app.count(anchor)
+          app = app.replace(anchor, replacement, 1)
+          app = app.replace('Text("PRIVATE RESEARCH BUILD")', 'Text(presentation.eyebrow)', 1)
+          app = app.replace('Text("Runtime provenance ready")', 'Text(presentation.title)', 1)
+          app = app.replace('Text("Compare these running-build values with the independently inspected retained IPA before any Bluetooth scan.")', 'Text(presentation.instruction)', 1)
+          app = app.replace('value: build.buildIdentifier,', 'value: presentation.buildIdentifier,', 1)
+          app = app.replace('value: build.sourceCommitSHA,', 'value: presentation.sourceCommitSHA,', 1)
+          app = app.replace('value: build.buildInstanceID,', 'value: presentation.buildInstanceID,', 1)
+          app = app.replace('Text("Package research admission is available for this exact running build. Final GO is still required before the physical ES80 procedure; this does not verify scooter identity or protocol/telemetry semantics.")', 'Text(presentation.footer)', 1)
+          app = app.replace('.accessibilityIdentifier("es80.capture.preflight.field-rendezvous")', '.accessibilityIdentifier(presentation.isSyntheticSimulatorQA\n            ? "es80.capture.preflight.field-rendezvous-simulator-qa"\n            : "es80.capture.preflight.field-rendezvous")', 1)
+          app_path.write_text(app)
+
+          ui_path = Path('NembraUITests/NembraUITests.swift')
+          ui = ui_path.read_text()
+          old_audit = """            try app.performAccessibilityAudit()
+
+            if scenario == \"stationaryPreflight\" {
+"""
+          new_audit = """            if scenario == \"stationaryPreflight\" {
+                let rendezvousPreview = app.descendants(matching: .any)[\"es80.capture.preflight.field-rendezvous-simulator-qa\"]
+                XCTAssertTrue(
+                    rendezvousPreview.waitForExistence(timeout: 2),
+                    \"Simulator QA must render the presentation-only Research Build rendezvous before OFF 1.\"
+                )
+                keepScreenshot(named: \"Capture Research Build Rendezvous Synthetic\")
+            }
+
+            try app.performAccessibilityAudit()
+
+            if scenario == \"stationaryPreflight\" {
+"""
+          assert ui.count(old_audit) == 1, ui.count(old_audit)
+          ui = ui.replace(old_audit, new_audit, 1)
+          ui_path.write_text(ui)
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureFieldRuntimeRendezvousTests.swift')
+          test = test_path.read_text()
+          old_test = """        #expect(preflight.contains(\"case .noGo:\"))
+        #expect(preflight.contains(\"return nil\"))
+    }
+}
+"""
+          new_test = """        #expect(preflight.contains(\"case .noGo:\"))
+        #expect(preflight.contains(\"return nil\"))
+        #expect(preflight.contains(\"es80.capture.preflight.field-rendezvous-simulator-qa\"))
+        #expect(preflight.contains(\"No package research admission is available\"))
+        #expect(preflight.contains(\"no field authority is created\"))
+        #expect(preflight.contains(\"isSyntheticSimulatorQA: true\"))
+    }
+}
+"""
+          assert test.count(old_test) == 1, test.count(old_test)
+          test = test.replace(old_test, new_test, 1)
+          test_path.write_text(test)
+          PY
+          git diff --check
+          git diff --name-only
+          grep -F 'es80.capture.preflight.field-rendezvous-simulator-qa' NembraApp/App/NembraApp.swift
+          grep -F 'Capture Research Build Rendezvous Synthetic' NembraUITests/NembraUITests.swift
+          grep -F 'No package research admission is available' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureFieldRuntimeRendezvousTests.swift
+      - name: Commit visual witness
+        run: |
+          git config user.name 'nembra-go-bot'
+          git config user.email 'nembra-go-bot@users.noreply.github.com'
+          git add NembraApp/App/NembraApp.swift NembraUITests/NembraUITests.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureFieldRuntimeRendezvousTests.swift
+          git commit -m 'test(capture): retain field rendezvous visual witness'
+          git push origin HEAD:tooling/es80-rendezvous-visual-witness-gpt56
