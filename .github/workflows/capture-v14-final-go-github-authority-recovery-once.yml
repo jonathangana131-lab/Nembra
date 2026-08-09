@@ -1,0 +1,162 @@
+name: Capture V14 Final GO GitHub authority recovery once
+
+on:
+  push:
+    branches:
+      - recovery/v14-final-go-github-authority-main/chatgpt56-thinking-go
+    paths:
+      - .github/workflows/capture-v14-final-go-github-authority-recovery-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact recovery branch
+        uses: actions/checkout@v5
+        with:
+          ref: recovery/v14-final-go-github-authority-main/chatgpt56-thinking-go
+          fetch-depth: 0
+
+      - name: Close caller-injected GitHub authority seam
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source_path = Path("scripts/ci/es80_today_final_go_hardened.py")
+          source = source_path.read_text(encoding="utf-8")
+
+          def replace_exact(text: str, old: str, new: str, expected: int = 1) -> str:
+              count = text.count(old)
+              if count != expected:
+                  raise SystemExit(f"refusing recovery for {old!r}: expected {expected}, found {count}")
+              return text.replace(old, new)
+
+          source = replace_exact(
+              source,
+              '    github_get_json: Callable[[str], tuple[bytes, dict[str, Any]]] = foundation._api_get_json,\n',
+              '',
+          )
+          source = replace_exact(
+              source,
+              '    ) -> dict[str, Any]:\n        try:\n            return trusted_xcode.verify_trusted_capture_xcode_subject(\n',
+              '    ) -> dict[str, Any]:\n        if github_get_json is not foundation._api_get_json:\n            raise FinalGoError("private Final GO foundation attempted to replace live GitHub authority")\n        try:\n            return trusted_xcode.verify_trusted_capture_xcode_subject(\n',
+          )
+          source = replace_exact(
+              source,
+              '                github_get_json=github_get_json,\n',
+              '                github_get_json=foundation._api_get_json,\n',
+          )
+          source = replace_exact(
+              source,
+              '            github_get_json=github_get_json,\n',
+              '            github_get_json=foundation._api_get_json,\n',
+          )
+          source_path.write_text(source, encoding="utf-8")
+
+          test_path = Path("scripts/ci/tests/test_es80_today_final_go_hardened.py")
+          test = test_path.read_text(encoding="utf-8")
+          test = replace_exact(
+              test,
+              '            "github_get_json": lambda path: (b"{}", {}),\n',
+              '',
+          )
+          test = replace_exact(
+              test,
+              '            self.assertEqual(call["expected_pr_number"], 833)\n',
+              '            self.assertEqual(call["expected_pr_number"], 833)\n            self.assertIs(call["github_get_json"], hardened.foundation._api_get_json)\n',
+          )
+          test_path.write_text(test, encoding="utf-8")
+
+          custody_test = Path("scripts/ci/tests/test_es80_today_final_go_hardened_github_api_custody.py")
+          if custody_test.exists():
+              raise SystemExit("refusing to overwrite an existing GitHub authority custody regression")
+          custody_test.write_text('''#!/usr/bin/env python3
+"""V14 regression for canonical hardened Final-GO GitHub authority custody."""
+from __future__ import annotations
+
+import importlib.util
+import inspect
+from pathlib import Path
+import unittest
+
+MODULE_PATH = Path(__file__).resolve().parents[1] / "es80_today_final_go_hardened.py"
+spec = importlib.util.spec_from_file_location("hardened_final_go", MODULE_PATH)
+hardened = importlib.util.module_from_spec(spec)
+assert spec and spec.loader
+spec.loader.exec_module(hardened)
+
+
+class HardenedFinalGoGitHubAuthorityCustodyTests(unittest.TestCase):
+    def test_authority_bearing_public_builder_has_no_caller_github_metadata_seam(self):
+        signature = inspect.signature(hardened.build_final_go_record)
+        self.assertNotIn(
+            "github_get_json",
+            signature.parameters,
+            "Canonical hardened Final GO must obtain live GitHub authority through its own "
+            "custodied API path. A caller-selectable callback can fabricate PR/run/job/artifact "
+            "metadata while local pinned workflow/blob checks still pass.",
+        )
+
+        source = inspect.getsource(hardened.build_final_go_record)
+        self.assertIn("github_get_json=foundation._api_get_json", source)
+        self.assertIn(
+            "if github_get_json is not foundation._api_get_json:",
+            source,
+            "The private foundation seam must not be allowed to swap the repository-owned API client.",
+        )
+        self.assertIn(
+            "private Final GO foundation attempted to replace live GitHub authority",
+            source,
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
+''', encoding="utf-8")
+
+          workflow_path = Path(".github/workflows/capture-today-final-go-qa.yml")
+          workflow = workflow_path.read_text(encoding="utf-8")
+          workflow = replace_exact(
+              workflow,
+              '      - scripts/ci/tests/test_es80_today_final_go_hardened.py\n',
+              '      - scripts/ci/tests/test_es80_today_final_go_hardened.py\n      - scripts/ci/tests/test_es80_today_final_go_hardened_github_api_custody.py\n',
+          )
+          workflow = replace_exact(
+              workflow,
+              '          python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_git_custody.py\n',
+              '          python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened_github_api_custody.py scripts/ci/tests/test_es80_today_final_go_git_custody.py\n',
+          )
+          workflow = replace_exact(
+              workflow,
+              '      - name: Reject caller-forged Git authority\n        run: python3 scripts/ci/tests/test_es80_today_final_go_git_custody.py -v\n',
+              '      - name: Reject caller-injected GitHub authority metadata\n        run: python3 scripts/ci/tests/test_es80_today_final_go_hardened_github_api_custody.py -v\n\n      - name: Reject caller-forged Git authority\n        run: python3 scripts/ci/tests/test_es80_today_final_go_git_custody.py -v\n',
+          )
+          workflow = replace_exact(
+              workflow,
+              '          grep -Fq \'foundation._git(tooling_repo, "rev-parse"\' scripts/ci/es80_today_final_go_hardened.py\n',
+              '          grep -Fq \'private Final GO foundation attempted to replace live GitHub authority\' scripts/ci/es80_today_final_go_hardened.py\n          grep -Fq \'github_get_json=foundation._api_get_json\' scripts/ci/es80_today_final_go_hardened.py\n          grep -Fq \'foundation._git(tooling_repo, "rev-parse"\' scripts/ci/es80_today_final_go_hardened.py\n',
+          )
+          workflow_path.write_text(workflow, encoding="utf-8")
+          PY
+
+          python3 scripts/ci/tests/test_es80_today_final_go_hardened.py -v
+          python3 scripts/ci/tests/test_es80_today_final_go_hardened_github_api_custody.py -v
+          git diff --check
+          git diff -- scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened_github_api_custody.py .github/workflows/capture-today-final-go-qa.yml
+
+      - name: Commit recovery and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-v14-closure-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/capture-v14-final-go-github-authority-recovery-once.yml
+          git add scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened_github_api_custody.py .github/workflows/capture-today-final-go-qa.yml
+          git diff --cached --check
+          git commit -m "fix(capture): close Final GO GitHub authority injection"
+          git push origin HEAD:"$GITHUB_REF_NAME"
