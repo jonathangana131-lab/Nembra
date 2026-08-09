@@ -180,6 +180,9 @@ jobs:
           python3 - <<'PY'
           import hashlib
           import json
+          import plistlib
+          import re
+          import subprocess
           from pathlib import Path
 
           root = Path("Artifacts/Xcode27Simulator")
@@ -200,6 +203,88 @@ jobs:
           }
           if set(record) != expected_keys or record.get("schemaVersion") != 3:
               raise SystemExit("Capture external build record is not the exact closed-world schema v3 shape")
+
+          exact_head = subprocess.check_output(
+              ["git", "rev-parse", "--verify", "HEAD^{commit}"],
+              text=True,
+          ).strip()
+          if re.fullmatch(r"[0-9a-f]{40}", exact_head) is None:
+              raise SystemExit("Could not derive one exact lowercase 40-hex checkout SHA")
+
+          retained_plist = plistlib.loads(info_plist.read_bytes())
+          expected_build_identifier = f"Capture Build V14-{exact_head[:12]}"
+          expected_recipe = "ES80-FINGERPRINT-v1"
+          expected_procedure = "V14"
+          build_instance_pattern = re.compile(
+              r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+          )
+
+          def verify_semantic_tuple(subject, plist, expected_head):
+              expected_label = f"Capture Build V14-{expected_head[:12]}"
+              if subject.get("sourceCommitSHA") != expected_head:
+                  raise ValueError("external record sourceCommitSHA does not match immutable checkout HEAD")
+              if subject.get("buildIdentifier") != expected_label:
+                  raise ValueError("external record buildIdentifier does not match immutable checkout HEAD")
+              if subject.get("experimentRecipeID") != expected_recipe:
+                  raise ValueError("external record experimentRecipeID is not canonical ES80-FINGERPRINT-v1")
+              if subject.get("procedureVersion") != expected_procedure:
+                  raise ValueError("external record procedureVersion is not canonical V14")
+
+              build_instance = subject.get("buildInstanceID")
+              if not isinstance(build_instance, str) or build_instance_pattern.fullmatch(build_instance) is None:
+                  raise ValueError("external record buildInstanceID is not one canonical lowercase UUID")
+
+              embedded = {
+                  "buildIdentifier": plist.get("NembraCaptureBuildIdentifier"),
+                  "buildInstanceID": plist.get("NembraCaptureBuildInstanceID"),
+                  "sourceCommitSHA": plist.get("NembraCaptureBuildCommitSHA"),
+              }
+              for key, value in embedded.items():
+                  if value != subject.get(key):
+                      raise ValueError(f"retained Info.plist {key} does not match external record")
+
+          try:
+              verify_semantic_tuple(record, retained_plist, exact_head)
+          except ValueError as error:
+              raise SystemExit(str(error)) from error
+
+          def require_rejected(label, mutated_record=None, mutated_plist=None):
+              candidate_record = record if mutated_record is None else mutated_record
+              candidate_plist = retained_plist if mutated_plist is None else mutated_plist
+              try:
+                  verify_semantic_tuple(candidate_record, candidate_plist, exact_head)
+              except ValueError:
+                  return
+              raise SystemExit(f"semantic verifier self-test accepted {label}")
+
+          wrong_source = dict(record)
+          wrong_source["sourceCommitSHA"] = "0" * 40 if exact_head != "0" * 40 else "1" * 40
+          wrong_source["buildIdentifier"] = f"Capture Build V14-{wrong_source['sourceCommitSHA'][:12]}"
+          require_rejected("a detached source/build label", mutated_record=wrong_source)
+
+          wrong_instance = dict(record)
+          wrong_instance["buildInstanceID"] = (
+              "00000000-0000-0000-0000-000000000000"
+              if record["buildInstanceID"] != "00000000-0000-0000-0000-000000000000"
+              else "11111111-1111-1111-1111-111111111111"
+          )
+          require_rejected("a detached build-instance ID", mutated_record=wrong_instance)
+
+          wrong_recipe = dict(record)
+          wrong_recipe["experimentRecipeID"] = "ES80-FINGERPRINT-v2"
+          require_rejected("a detached experiment recipe", mutated_record=wrong_recipe)
+
+          wrong_procedure = dict(record)
+          wrong_procedure["procedureVersion"] = "V15"
+          require_rejected("a detached procedure version", mutated_record=wrong_procedure)
+
+          wrong_plist = dict(retained_plist)
+          wrong_plist["NembraCaptureBuildInstanceID"] = (
+              "22222222-2222-2222-2222-222222222222"
+              if record["buildInstanceID"] != "22222222-2222-2222-2222-222222222222"
+              else "33333333-3333-3333-3333-333333333333"
+          )
+          require_rejected("detached retained Info.plist metadata", mutated_plist=wrong_plist)
 
           def sha256(path: Path) -> str:
               digest = hashlib.sha256()
