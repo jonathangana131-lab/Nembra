@@ -153,7 +153,7 @@ jobs:
         env:
           EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
         run: |
-          python3 - <<'PY'
+          /usr/bin/python3 -I - <<'PY'
           import hashlib
           import json
           import os
@@ -172,7 +172,7 @@ jobs:
               raise SystemExit("Trusted resolver did not supply one canonical lowercase 40-hex SHA")
 
           actual_head = subprocess.check_output(
-              ["git", "rev-parse", "--verify", "HEAD^{commit}"],
+              ["/usr/bin/git", "rev-parse", "--verify", "HEAD^{commit}"],
               text=True,
           ).strip()
           if actual_head != expected_head:
@@ -218,6 +218,7 @@ jobs:
                   "buildIdentifier": plist.get("NembraCaptureBuildIdentifier"),
                   "buildInstanceID": plist.get("NembraCaptureBuildInstanceID"),
                   "sourceCommitSHA": plist.get("NembraCaptureBuildCommitSHA"),
+                  "experimentRecipeID": plist.get("NembraCaptureFieldRecipe"),
               }
               for key, value in embedded.items():
                   if value != subject.get(key):
