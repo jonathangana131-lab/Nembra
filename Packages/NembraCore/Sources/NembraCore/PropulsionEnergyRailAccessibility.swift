@@ -80,6 +80,20 @@ public struct PropulsionEnergyRailAccessibilityPresentation: Equatable, Sendable
             acceptedRevision: acceptedRevision
         )
     }
+
+    /// Package-internal fail-closed semantic state for projections that reject a
+    /// mismatched render/semantic composition. Keeping construction here prevents
+    /// an app adapter from having to synthesize accessibility currentness itself.
+    static func unavailable(
+        identity: PropulsionGaugeIdentity
+    ) -> PropulsionEnergyRailAccessibilityPresentation {
+        PropulsionEnergyRailAccessibilityPresentation(
+            identity: identity,
+            currentness: .unavailable,
+            acceptedWatts: nil,
+            acceptedRevision: nil
+        )
+    }
 }
 
 public extension PropulsionGaugeCockpitSnapshot {
@@ -97,7 +111,7 @@ public extension PropulsionGaugeCockpitSnapshot {
         switch measurement {
         case let .live(accepted):
             guard accepted.identity == identity else {
-                return unavailableEnergyRailAccessibilityPresentation()
+                return .unavailable(identity: identity)
             }
             return energyRailAccessibilityPresentation(
                 accepted: accepted,
@@ -106,7 +120,7 @@ public extension PropulsionGaugeCockpitSnapshot {
 
         case let .retained(accepted):
             guard accepted.identity == identity else {
-                return unavailableEnergyRailAccessibilityPresentation()
+                return .unavailable(identity: identity)
             }
             return energyRailAccessibilityPresentation(
                 accepted: accepted,
@@ -114,7 +128,7 @@ public extension PropulsionGaugeCockpitSnapshot {
             )
 
         case .unavailable:
-            return unavailableEnergyRailAccessibilityPresentation()
+            return .unavailable(identity: identity)
         }
     }
 
@@ -132,16 +146,6 @@ public extension PropulsionGaugeCockpitSnapshot {
                 receiptSequenceNumber: accepted.receiptSequenceNumber,
                 receivedAtUptimeNanoseconds: accepted.receivedAtUptimeNanoseconds
             )
-        )
-    }
-
-    private func unavailableEnergyRailAccessibilityPresentation()
-        -> PropulsionEnergyRailAccessibilityPresentation {
-        PropulsionEnergyRailAccessibilityPresentation(
-            identity: identity,
-            currentness: .unavailable,
-            acceptedWatts: nil,
-            acceptedRevision: nil
         )
     }
 }
