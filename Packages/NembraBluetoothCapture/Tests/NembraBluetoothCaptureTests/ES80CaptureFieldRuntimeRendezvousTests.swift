@@ -88,4 +88,13 @@ struct ES80CaptureFieldRuntimeRendezvousTests {
         #expect(preflight.contains("case .noGo:"))
         #expect(preflight.contains("return nil"))
     }
+
+    @Test("preflight accessibility distinguishes synthetic Simulator authority from a Research Field Build")
+    func accessibilityHintPreservesAuthorityBoundary() throws {
+        let preflight = try Self.preflightSource(Self.appSource())
+
+        #expect(preflight.contains("preflightContinueAccessibilityHint"))
+        #expect(preflight.contains("Simulator QA only. Select Charger Disconnected to continue through synthetic software setup. This does not authorize physical scooter capture."))
+        #expect(preflight.contains("this running build has package-owned research authority"))
+    }
 }
