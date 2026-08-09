@@ -83,4 +83,74 @@ struct SpeedEvidenceProviderReplayTests {
         #expect(sample.source == .simulatorQA)
         #expect(sample.kilometersPerHour == 0)
     }
+
+    @Test("superseded refresh token cannot publish old live authority")
+    func supersededConsumerRefreshFailsClosed() throws {
+        var authority = SpeedEvidenceConsumerAuthority()
+        let staleRefresh = authority.beginRefresh()
+        let currentRefresh = authority.beginRefresh()
+        let sample = try simulatorSample(uptimeNanoseconds: 10)
+
+        #expect(
+            !authority.commit(
+                .live(sample),
+                connectionIsConnected: true,
+                for: staleRefresh
+            )
+        )
+        #expect(authority.availability == .unavailable)
+
+        #expect(
+            authority.commit(
+                .live(sample),
+                connectionIsConnected: true,
+                for: currentRefresh
+            )
+        )
+        #expect(authority.availability == .live(sample))
+    }
+
+    @Test("connection invalidation revokes a suspended refresh before it resumes")
+    func connectionInvalidationRejectsSuspendedRefresh() throws {
+        var authority = SpeedEvidenceConsumerAuthority()
+        let suspendedRefresh = authority.beginRefresh()
+        let sample = try simulatorSample(uptimeNanoseconds: 20)
+
+        authority.invalidate()
+
+        #expect(
+            !authority.commit(
+                .live(sample),
+                connectionIsConnected: true,
+                for: suspendedRefresh
+            )
+        )
+        #expect(authority.availability == .unavailable)
+    }
+
+    @Test("non-connected service snapshot cannot promote live provider material")
+    func disconnectedSnapshotFailsClosed() throws {
+        var authority = SpeedEvidenceConsumerAuthority()
+        let refresh = authority.beginRefresh()
+        let sample = try simulatorSample(uptimeNanoseconds: 30)
+
+        #expect(
+            authority.commit(
+                .live(sample),
+                connectionIsConnected: false,
+                for: refresh
+            )
+        )
+        #expect(authority.availability == .unavailable)
+    }
+
+    private func simulatorSample(uptimeNanoseconds: UInt64) throws -> SpeedTelemetrySample {
+        try SpeedTelemetrySample(
+            source: .simulatorQA,
+            provenance: .absoluteMeasurement,
+            metersPerSecond: 0,
+            receivedAtUptimeNanoseconds: uptimeNanoseconds,
+            receivedAtDate: Date(timeIntervalSince1970: 0)
+        )
+    }
 }
