@@ -1,0 +1,50 @@
+name: Temp ES80 stale UI label patch
+
+on:
+  push:
+    branches:
+      - tooling/es80-stale-ui-label-patch-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Patch stale Capture QA expectations
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('NembraUITests/ES80ResearchCaptureUITests.swift')
+          s = p.read_text()
+          replacements = {
+              'One target repeated twice': 'One signal matched twice',
+              'Opening the correlated target': 'Opening the matched signal',
+              'Freezing final evidence': 'Securing capture',
+          }
+          for old, new in replacements.items():
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one occurrence of {old!r}, found {count}')
+              s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+          git diff --check
+          test "$(git diff --name-only)" = "NembraUITests/ES80ResearchCaptureUITests.swift"
+          grep -F 'One signal matched twice' NembraUITests/ES80ResearchCaptureUITests.swift
+          grep -F 'Opening the matched signal' NembraUITests/ES80ResearchCaptureUITests.swift
+          grep -F 'Securing capture' NembraUITests/ES80ResearchCaptureUITests.swift
+          ! grep -F 'One target repeated twice' NembraUITests/ES80ResearchCaptureUITests.swift
+          ! grep -F 'Opening the correlated target' NembraUITests/ES80ResearchCaptureUITests.swift
+          ! grep -F 'Freezing final evidence' NembraUITests/ES80ResearchCaptureUITests.swift
+      - name: Commit focused expectation repair
+        run: |
+          git config user.name 'nembra-go-bot'
+          git config user.email 'nembra-go-bot@users.noreply.github.com'
+          git add NembraUITests/ES80ResearchCaptureUITests.swift
+          git commit -m 'test(capture): refresh Simulator QA state copy'
+          git push origin HEAD:tooling/es80-stale-ui-label-patch-gpt56
