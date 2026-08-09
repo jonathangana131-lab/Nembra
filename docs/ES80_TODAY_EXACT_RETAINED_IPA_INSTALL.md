@@ -47,11 +47,11 @@ Do not place the private intended-device UDID in this document, GitHub comments,
 
 ## 1. Run the external retained-candidate cross-check
 
-Before installation, mechanically cross-check the **published retained candidate** with the independent verifier that lives outside the frozen app-candidate lineage. The accepted verifier commit for this handoff is:
+Before installation, mechanically cross-check the **published retained candidate** with the independent verifier that lives outside the frozen app-candidate lineage. The accepted **main-reachable** verifier commit for this handoff is:
 
-`c12c935cac5470d37e731359f9ffdb9b18d6f85d`
+`d827a296048386bda62024ea3278775d5344c47c`
 
-Its post-merge `Capture TODAY Independent Candidate Crosscheck QA` run `31293117963` completed successfully. This exact revision also rejects unknown retained-environment keys so an injected authority-looking field cannot silently widen the producer contract. Do not silently substitute a newer verifier merely because `main` moved.
+The exact verifier/test tree first passed `Capture TODAY Independent Candidate Crosscheck QA` on pre-merge head `4125d16ad839d4b677b389cce590157c0574b8c4`, run `31294257471`, with terminal `success`. The merged main revision above contains the identical verifier blob `c3b2b620280484c05316fc5c2fa2ca451f1fdc83`. This revision keeps the environment schema closed and additionally requires the exact Research Field Build tuple `private-today-v1 / canonical-producer-explicit-mode / NEMBRA_ES80_TODAY_RESEARCH`. Do not silently substitute a newer verifier merely because `main` moved.
 
 Use a separate clean Nembra tooling checkout. Do **not** copy the verifier into the retained candidate directory, and do not write the receipt into that directory.
 
@@ -59,7 +59,7 @@ Use a separate clean Nembra tooling checkout. Do **not** copy the verifier into 
 TOOL_REPO='/absolute/path/to/a/clean/Nembra/tooling-checkout'
 CANDIDATE_DIR='/absolute/path/to/the/accepted/candidate'
 EXPECTED_SOURCE_SHA='<exact frozen 40-hex Capture source SHA>'
-TOOL_COMMIT='c12c935cac5470d37e731359f9ffdb9b18d6f85d'
+TOOL_COMMIT='d827a296048386bda62024ea3278775d5344c47c'
 RECEIPT_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-crosscheck.XXXXXX)"
 RECEIPT="$RECEIPT_DIR/retained-candidate-crosscheck.json"
 TOOL="$RECEIPT_DIR/es80_today_independent_candidate_crosscheck.py"
@@ -90,6 +90,10 @@ A successful command is still only a supporting evidence check. Inspect the rece
 - `sourceCommitSHA` = the exact frozen Capture source SHA;
 - `experimentRecipeID` = `ES80-FINGERPRINT-v1`;
 - `procedureVersion` = `V14`;
+- `researchCompileMode` = `private-today-v1`;
+- `researchCompileAuthority` = `canonical-producer-explicit-mode`;
+- `researchCompileCondition` = `NEMBRA_ES80_TODAY_RESEARCH`;
+- `researchCompileTupleVerified` = `true`;
 - `singleRetainedIPA` = `true`;
 - `crossRecordDigestLinksVerified` = `true`;
 - `producerPhysicalAuthorizationRemainsNotGranted` = `true`;
@@ -119,6 +123,10 @@ required = {
     "sourceCommitSHA": expected_source,
     "experimentRecipeID": "ES80-FINGERPRINT-v1",
     "procedureVersion": "V14",
+    "researchCompileMode": "private-today-v1",
+    "researchCompileAuthority": "canonical-producer-explicit-mode",
+    "researchCompileCondition": "NEMBRA_ES80_TODAY_RESEARCH",
+    "researchCompileTupleVerified": True,
     "singleRetainedIPA": True,
     "crossRecordDigestLinksVerified": True,
     "producerPhysicalAuthorizationRemainsNotGranted": True,
@@ -238,6 +246,7 @@ Only after every step above succeeds, the private runbook may record:
 - exact build identifier;
 - exact build-instance ID;
 - independent retained-candidate cross-check receipt SHA-256 plus its `PASS_NOT_FINAL_GO` authority boundary;
+- research compile tuple verified as `private-today-v1 / canonical-producer-explicit-mode / NEMBRA_ES80_TODAY_RESEARCH`;
 - intended baseline: iPhone 12 / iOS 27;
 - installation route: exact retained IPA through Xcode device-management installation;
 - pre-install retained IPA SHA-256 match: yes;
@@ -256,6 +265,7 @@ Stop the TODAY handoff and leave `Installed on intended iPhone 12 / iOS 27` as *
 
 - external retained-candidate cross-check does not emit the exact `PASS_NOT_FINAL_GO`/`not-granted` authority boundary;
 - external cross-check source/build/build-instance/recipe/digest records disagree with the retained candidate;
+- external cross-check does not verify the exact Research Field Build tuple `private-today-v1 / canonical-producer-explicit-mode / NEMBRA_ES80_TODAY_RESEARCH`;
 - producer/inspector Git-blob claims do not match the exact frozen Capture source repository;
 - retained IPA SHA-256 mismatch before or after installation;
 - wrong candidate directory, source SHA, build identifier, build-instance ID, or recipe;
