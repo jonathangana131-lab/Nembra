@@ -38,6 +38,165 @@ jobs:
           from pathlib import Path
           import re
 
+          class ContractViolation(Exception):
+              pass
+
+          def mask_noncode(text: str) -> str:
+              """Preserve offsets while hiding braces inside ordinary Swift comments/strings."""
+              chars = list(text)
+              masked = list(text)
+              i = 0
+              state = "code"
+              block_depth = 0
+              while i < len(chars):
+                  if state == "code":
+                      if text.startswith("//", i):
+                          masked[i] = masked[i + 1] = " "
+                          i += 2
+                          state = "line-comment"
+                          continue
+                      if text.startswith("/*", i):
+                          masked[i] = masked[i + 1] = " "
+                          i += 2
+                          state = "block-comment"
+                          block_depth = 1
+                          continue
+                      if text.startswith('"""', i):
+                          masked[i:i + 3] = "   "
+                          i += 3
+                          state = "multiline-string"
+                          continue
+                      if chars[i] == '"':
+                          masked[i] = " "
+                          i += 1
+                          state = "string"
+                          continue
+                      i += 1
+                      continue
+
+                  if state == "line-comment":
+                      if chars[i] == "\n":
+                          state = "code"
+                      else:
+                          masked[i] = " "
+                      i += 1
+                      continue
+
+                  if state == "block-comment":
+                      if text.startswith("/*", i):
+                          masked[i] = masked[i + 1] = " "
+                          block_depth += 1
+                          i += 2
+                          continue
+                      if text.startswith("*/", i):
+                          masked[i] = masked[i + 1] = " "
+                          block_depth -= 1
+                          i += 2
+                          if block_depth == 0:
+                              state = "code"
+                          continue
+                      if chars[i] != "\n":
+                          masked[i] = " "
+                      i += 1
+                      continue
+
+                  if state == "string":
+                      if chars[i] == "\\" and i + 1 < len(chars):
+                          masked[i] = masked[i + 1] = " "
+                          i += 2
+                          continue
+                      if chars[i] == '"':
+                          masked[i] = " "
+                          state = "code"
+                      elif chars[i] != "\n":
+                          masked[i] = " "
+                      i += 1
+                      continue
+
+                  if state == "multiline-string":
+                      if text.startswith('"""', i):
+                          masked[i:i + 3] = "   "
+                          i += 3
+                          state = "code"
+                          continue
+                      if chars[i] != "\n":
+                          masked[i] = " "
+                      i += 1
+                      continue
+
+              if state in {"block-comment", "string", "multiline-string"}:
+                  raise ContractViolation(f"unterminated Swift lexical state: {state}")
+              return "".join(masked)
+
+          retained_tuple = re.compile(
+              r"if\s+finalShareData\s*!=\s*nil\s*,\s*"
+              r"finalShareIntegrityReport\s*!=\s*nil\s*,\s*"
+              r"finalShareFilename\s*!=\s*nil\s*\{\s*"
+              r"sharePreparationWarning\s*=\s*nil\s*"
+              r"return\s*\}",
+              re.DOTALL,
+          )
+          mint_call = "coordinator.finalizedShareArtifactForCurrentApplication(setup: setup)"
+
+          def depth_table(text: str) -> list[int]:
+              masked = mask_noncode(text)
+              depths = [0] * (len(masked) + 1)
+              depth = 0
+              for index, character in enumerate(masked):
+                  depths[index] = depth
+                  if character == "{":
+                      depth += 1
+                  elif character == "}":
+                      depth -= 1
+                      if depth < 0:
+                          raise ContractViolation("unbalanced closing brace in function source")
+              depths[len(masked)] = depth
+              if depth != 0:
+                  raise ContractViolation("unbalanced function source braces")
+              return depths
+
+          def validate(function_source: str) -> tuple[int, int]:
+              opening_brace = mask_noncode(function_source).find("{")
+              if opening_brace < 0:
+                  raise ContractViolation("missing function body")
+
+              match = retained_tuple.search(function_source)
+              if match is None:
+                  raise ContractViolation(
+                      "final Share retry must require retained bytes + integrity report + filename before returning"
+                  )
+
+              mint_index = function_source.find(mint_call)
+              if mint_index < 0:
+                  raise ContractViolation("missing package-owned final Share creation call")
+              if match.start() >= mint_index:
+                  raise ContractViolation(
+                      "retained retry authority must execute before any final Share artifact creation"
+                  )
+
+              depths = depth_table(function_source)
+              if depths[match.start()] != 1:
+                  raise ContractViolation(
+                      "retained retry branch must be a direct function-body statement, not nested in conditional/closure scope"
+                  )
+
+              line_start = function_source.rfind("\n", 0, match.start()) + 1
+              if function_source[line_start:match.start()].strip():
+                  raise ContractViolation(
+                      "retained retry branch must begin as a direct if statement on its source line"
+                  )
+
+              return_index = function_source.find("return", match.start(), match.end())
+              if return_index < 0 or depths[return_index] != 2:
+                  raise ContractViolation(
+                      "retained retry return must exit directly from the retained-tuple if branch"
+                  )
+
+              if depths[match.end()] != 1:
+                  raise ContractViolation("retained retry branch must close back into the function body")
+
+              return match.start(), match.end()
+
           source = Path("NembraApp/Features/Research/ES80CaptureShellView.swift").read_text()
           signature = "private func prepareFinalShareForAnalysisAndSharing()"
           start = source.find(signature)
@@ -48,28 +207,41 @@ jobs:
           next_member = remainder.find("\n    private ", len(signature))
           function_source = remainder if next_member < 0 else remainder[:next_member]
 
-          retained_tuple = re.compile(
-              r"if\s+finalShareData\s*!=\s*nil\s*,\s*"
-              r"finalShareIntegrityReport\s*!=\s*nil\s*,\s*"
-              r"finalShareFilename\s*!=\s*nil\s*\{\s*"
-              r"sharePreparationWarning\s*=\s*nil\s*"
-              r"return\s*\}",
-              re.DOTALL,
+          try:
+              branch_start, branch_end = validate(function_source)
+          except ContractViolation as error:
+              raise SystemExit(str(error)) from error
+
+          # Red-team the checker itself with the exact false-green class found in review. If the
+          # retained branch can be wrapped in an unreachable scope and still pass, this gate is not
+          # authority evidence.
+          nested = (
+              function_source[:branch_start]
+              + "if false {\n"
+              + function_source[branch_start:branch_end]
+              + "\n}\n"
+              + function_source[branch_end:]
           )
-          match = retained_tuple.search(function_source)
-          if match is None:
-              raise SystemExit(
-                  "final Share retry must require retained bytes + integrity report + filename before returning"
-              )
+          try:
+              validate(nested)
+          except ContractViolation:
+              pass
+          else:
+              raise SystemExit("checker self-test accepted an unreachable nested retained retry branch")
 
-          mint_call = "coordinator.finalizedShareArtifactForCurrentApplication(setup: setup)"
-          mint_index = function_source.find(mint_call)
-          if mint_index < 0:
-              raise SystemExit("missing package-owned final Share creation call")
-          if match.start() >= mint_index:
-              raise SystemExit(
-                  "retained retry authority must short-circuit before any final Share artifact creation"
-              )
+          closure_wrapped = (
+              function_source[:branch_start]
+              + "let retainedRetryProbe = {\n"
+              + function_source[branch_start:branch_end]
+              + "\n}\n_ = retainedRetryProbe\n"
+              + function_source[branch_end:]
+          )
+          try:
+              validate(closure_wrapped)
+          except ContractViolation:
+              pass
+          else:
+              raise SystemExit("checker self-test accepted a closure-nested retained retry branch")
 
-          print("retained final Share retry authority source contract: PASS")
+          print("retained final Share retry control-flow source contract: PASS")
           PY
