@@ -209,12 +209,12 @@ struct ES80CaptureShellView: View {
 
     private var captureVerticalSpacing: CGFloat {
         if verticalSizeClass == .compact { return 16 }
-        return dynamicTypeSize.isAccessibilitySize ? 16 : 24
+        return dynamicTypeSize.isAccessibilitySize ? 12 : 24
     }
 
     private var captureTopPadding: CGFloat {
         if verticalSizeClass == .compact { return 10 }
-        return dynamicTypeSize.isAccessibilitySize ? 12 : 18
+        return dynamicTypeSize.isAccessibilitySize ? 10 : 18
     }
 
     private var captureBottomPadding: CGFloat { verticalSizeClass == .compact ? 20 : 42 }
@@ -304,21 +304,32 @@ struct ES80CaptureShellView: View {
     private func simulatorQABadge(
         _ snapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot
     ) -> some View {
-        HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: 9) {
-            Image(systemName: "hammer.fill")
-                .accessibilityHidden(true)
-            Text("\(snapshot.evidenceLabel) · SYNTHETIC SOFTWARE STATE")
-                .fixedSize(horizontal: false, vertical: true)
+        HStack(alignment: .center, spacing: dynamicTypeSize.isAccessibilitySize ? 0 : 9) {
+            if !dynamicTypeSize.isAccessibilitySize {
+                Image(systemName: "hammer.fill")
+                    .accessibilityHidden(true)
+            }
+            Text(
+                dynamicTypeSize.isAccessibilitySize
+                    ? "SIMULATOR QA · SYNTHETIC"
+                    : "\(snapshot.evidenceLabel) · SYNTHETIC SOFTWARE STATE"
+            )
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : nil)
+            .fixedSize(horizontal: false, vertical: true)
         }
-        .font(.caption.monospaced().weight(.bold))
+        .font(
+            dynamicTypeSize.isAccessibilitySize
+                ? .caption2.monospaced().weight(.bold)
+                : .caption.monospaced().weight(.bold)
+        )
         .foregroundStyle(.orange)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, dynamicTypeSize.isAccessibilitySize ? 10 : 12)
+        .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 6 : 8)
         .background(
             .orange.opacity(0.10),
             in: RoundedRectangle(
-                cornerRadius: dynamicTypeSize.isAccessibilitySize ? 14 : 999,
+                cornerRadius: dynamicTypeSize.isAccessibilitySize ? 12 : 999,
                 style: .continuous
             )
         )
@@ -897,25 +908,40 @@ struct ES80CaptureShellView: View {
 
     private var completionPanel: some View {
         let analysisReady = presentationAnalysisReady
-        return VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 14) {
-                ZStack {
-                    Circle()
-                        .fill(analysisReady ? .white : .white.opacity(0.12))
-                        .frame(width: 52, height: 52)
-                    Image(systemName: analysisReady ? "checkmark" : "lock.fill")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(analysisReady ? .black : .white)
-                }
-                .accessibilityHidden(true)
-
+        return VStack(
+            alignment: .leading,
+            spacing: dynamicTypeSize.isAccessibilitySize ? 10 : 16
+        ) {
+            if dynamicTypeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(analysisReady ? "CAPTURE COMPLETE" : "CAPTURE SEALED")
-                        .font(.caption.monospaced().weight(.bold))
+                        .font(.caption2.monospaced().weight(.bold))
                         .foregroundStyle(.secondary)
                     Text(analysisReady ? "Ready for analysis" : "Integrity check required")
-                        .font(.title2.weight(.semibold))
+                        .font(.headline.weight(.semibold))
                         .foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(analysisReady ? .white : .white.opacity(0.12))
+                            .frame(width: 52, height: 52)
+                        Image(systemName: analysisReady ? "checkmark" : "lock.fill")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(analysisReady ? .black : .white)
+                    }
+                    .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(analysisReady ? "CAPTURE COMPLETE" : "CAPTURE SEALED")
+                            .font(.caption.monospaced().weight(.bold))
+                            .foregroundStyle(.secondary)
+                        Text(analysisReady ? "Ready for analysis" : "Integrity check required")
+                            .font(.title2.weight(.semibold))
+                            .foregroundStyle(.white)
+                    }
                 }
             }
 
@@ -928,7 +954,7 @@ struct ES80CaptureShellView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(18)
+        .padding(dynamicTypeSize.isAccessibilitySize ? 12 : 18)
         .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityValue(analysisReady ? "Ready for analysis" : "Capture sealed, integrity check required")
@@ -939,10 +965,20 @@ struct ES80CaptureShellView: View {
     private var completionDescription: some View {
 #if DEBUG && targetEnvironment(simulator)
         if simulatorQASnapshot != nil {
-            Text("Synthetic Simulator QA presentation only. No capture artifact bytes were created, and no physical, RF, protocol, telemetry, or command evidence is claimed.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            if dynamicTypeSize.isAccessibilitySize {
+                Text("Synthetic Simulator QA only. No physical capture evidence is claimed.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel(
+                        "Synthetic Simulator QA presentation only. No capture artifact bytes were created, and no physical, RF, protocol, telemetry, or command evidence is claimed."
+                    )
+            } else {
+                Text("Synthetic Simulator QA presentation only. No capture artifact bytes were created, and no physical, RF, protocol, telemetry, or command evidence is claimed.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         } else {
             verifiedCompletionDescription
         }
