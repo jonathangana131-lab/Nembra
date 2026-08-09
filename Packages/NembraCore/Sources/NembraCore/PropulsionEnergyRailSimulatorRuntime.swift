@@ -39,8 +39,8 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
 
     public init(
         vehicleID: String = "nembra-simulator",
-        presentationCeilingWatts: Double = Self.defaultPresentationCeilingWatts,
-        freshnessNanoseconds: UInt64 = Self.defaultFreshnessNanoseconds
+        presentationCeilingWatts: Double = PropulsionEnergyRailSimulatorRuntime.defaultPresentationCeilingWatts,
+        freshnessNanoseconds: UInt64 = PropulsionEnergyRailSimulatorRuntime.defaultFreshnessNanoseconds
     ) throws {
         let animationPolicy = try PropulsionGaugeAnimationPolicy(
             riseSettlingDurationNanoseconds: 220_000_000,
