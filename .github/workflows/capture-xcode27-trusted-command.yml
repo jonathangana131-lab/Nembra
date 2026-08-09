@@ -10,6 +10,8 @@ permissions:
 
 env:
   ARTIFACTS_DIR: ${{ github.workspace }}/Artifacts/Xcode27Simulator
+  TRUSTED_CAPTURE_EVIDENCE_PRODUCER_PATH: scripts/ci/xcode27_simulator_capture.sh
+  TRUSTED_CAPTURE_EVIDENCE_PRODUCER_BLOB_SHA: 4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9
 
 jobs:
   resolve:
@@ -102,6 +104,29 @@ jobs:
           actual_head="$(/usr/bin/git rev-parse --verify HEAD^{commit})"
           printf 'Trusted resolver head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual_head"
           test "$actual_head" = "$EXPECTED_HEAD_SHA"
+
+      - name: Verify trusted Capture evidence producer blob
+        run: |
+          set -euo pipefail
+          producer_path="$TRUSTED_CAPTURE_EVIDENCE_PRODUCER_PATH"
+          expected_blob="$TRUSTED_CAPTURE_EVIDENCE_PRODUCER_BLOB_SHA"
+          if [[ ! "$expected_blob" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Trusted Capture evidence-producer pin is not one canonical 40-hex Git blob." >&2
+            exit 31
+          fi
+          actual_blob="$(env -i \
+            PATH=/usr/bin:/bin \
+            HOME=/tmp \
+            LC_ALL=C \
+            GIT_CONFIG_NOSYSTEM=1 \
+            GIT_CONFIG_GLOBAL=/dev/null \
+            GIT_NO_REPLACE_OBJECTS=1 \
+            /usr/bin/git rev-parse --verify "HEAD:${producer_path}")"
+          printf 'Trusted evidence producer path: %s\nExpected blob: %s\nActual candidate blob: %s\n' \
+            "$producer_path" "$expected_blob" "$actual_blob"
+          test "$actual_blob" = "$expected_blob"
+          test -f "$producer_path"
+          bash -n "$producer_path"
 
       - name: Validate project structure
         run: |
