@@ -29,6 +29,7 @@ jobs:
 
           workflow_path = Path('.github/workflows/capture-xcode27-trusted-command.yml')
           workflow = workflow_path.read_text(encoding='utf-8')
+
           graph_needle = (
               '          root = Path(os.environ["GITHUB_WORKSPACE"])\n'
               '          expected = {\n'
@@ -52,29 +53,18 @@ jobs:
               raise SystemExit('expected exactly one trusted build-graph root seam')
           workflow = workflow.replace(graph_needle, graph_replacement, 1)
 
-          producer_needle = (
-              '          builtin printf \'%s\' "$producer_bytes" |\n'
-              '            /usr/bin/env -i \\\n'
-              '              PATH=/usr/bin:/bin:/usr/sbin:/sbin \\\n'
-              '              HOME=/tmp \\\n'
-              '              LC_ALL=C \\\n'
-              '              GIT_DIR="$GITHUB_WORKSPACE/.git" \\\n'
-          )
+          producer_marker = '              PATH=/usr/bin:/bin:/usr/sbin:/sbin \\\n'
+          if workflow.count(producer_marker) != 1:
+              raise SystemExit('expected exactly one pinned-producer privileged PATH seam')
           run_id_literal = '$' + '{{ github.run_id }}'
           run_attempt_literal = '$' + '{{ github.run_attempt }}'
           producer_replacement = (
-              '          builtin printf \'%s\' "$producer_bytes" |\n'
-              '            /usr/bin/env -i \\\n'
-              '              PATH=/usr/bin:/bin:/usr/sbin:/sbin \\\n'
-              '              HOME=/tmp \\\n'
-              '              LC_ALL=C \\\n'
-              f'              GITHUB_RUN_ID="{run_id_literal}" \\\n'
-              f'              GITHUB_RUN_ATTEMPT="{run_attempt_literal}" \\\n'
-              '              GIT_DIR="$GITHUB_WORKSPACE/.git" \\\n'
+              producer_marker
+              + f'              GITHUB_RUN_ID="{run_id_literal}" \\\n'
+              + f'              GITHUB_RUN_ATTEMPT="{run_attempt_literal}" \\\n'
           )
-          if workflow.count(producer_needle) != 1:
-              raise SystemExit('expected exactly one pinned-producer closed-env execution seam')
-          workflow_path.write_text(workflow.replace(producer_needle, producer_replacement, 1), encoding='utf-8')
+          workflow = workflow.replace(producer_marker, producer_replacement, 1)
+          workflow_path.write_text(workflow, encoding='utf-8')
           PY
 
           old_blob="524b011c6147142281c3fed62d3bb402c7f2be63"
