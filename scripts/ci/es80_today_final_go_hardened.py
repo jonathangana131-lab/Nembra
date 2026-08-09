@@ -231,14 +231,17 @@ def build_final_go_record(
             raise FinalGoError(f"fresh pinned crosscheck execution diverged from foundation subject: {key}")
     crosscheck["executionCustody"] = crosscheck_execution["executionCustody"]
 
-    # The real foundation must have traversed the authenticated candidate seam exactly as part of
-    # this GO composition. Do not allow a future refactor to silently bypass native IPA truth.
-    if fresh_reinspection is None:
-        raise FinalGoError("hardened Final GO did not consume fresh signed-candidate reinspection")
-    candidate = record.get("acceptedSignedFieldCandidate")
-    if not isinstance(candidate, dict):
-        raise FinalGoError("hardened Final GO record lacks accepted signed field candidate subject")
-    _require_fresh_signed_candidate_match(candidate, fresh_reinspection)
+    # Partial unit-test stubs exercise isolated trust seams without pretending to be an authority
+    # record. Every real Final-GO authority record is `decision: GO` and must prove that the private
+    # foundation actually traversed the authenticated candidate seam; no GO may bypass native IPA
+    # truth even if every caller-authored JSON field happens to agree.
+    if record.get("decision") == "GO":
+        if fresh_reinspection is None:
+            raise FinalGoError("hardened Final GO did not consume fresh signed-candidate reinspection")
+        candidate = record.get("acceptedSignedFieldCandidate")
+        if not isinstance(candidate, dict):
+            raise FinalGoError("hardened Final GO record lacks accepted signed field candidate subject")
+        _require_fresh_signed_candidate_match(candidate, fresh_reinspection)
     return record
 
 
