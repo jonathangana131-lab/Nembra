@@ -77,6 +77,7 @@ final class VehicleStore {
 
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
     @ObservationIgnored private var speedEvidenceTask: Task<Void, Never>?
+    @ObservationIgnored private var latestSpeedEvidenceRefreshID: UUID?
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private let shouldAutoConnectOnStart: Bool
 
@@ -116,36 +117,56 @@ final class VehicleStore {
         guard !didStart else { return }
         didStart = true
 
-        updatesTask = Task { [weak self, service] in
+        let speedEvidenceProvider = service as? any SpeedEvidenceProvider
+
+        updatesTask = Task { [weak self, service, speedEvidenceProvider] in
             let stream = await service.stateUpdates()
             for await state in stream {
                 guard let self, !Task.isCancelled else { break }
-                self.state = state
-                if state.connection != .connected {
-                    // Connection loss can retire authority immediately on this
-                    // ordered state stream. It never promotes speed when a later
-                    // reconnect arrives; only source-owned evidence may do that.
-                    self.speedEvidenceAvailability = .unavailable
+
+                let refreshID = self.beginSpeedEvidenceRefresh()
+                if state.connection == .connected, let speedEvidenceProvider {
+                    // The state and evidence streams are independent. Re-read
+                    // source-owned currentness before publishing a connected
+                    // state so an already-delivered old `.live` element cannot
+                    // combine with a newer reconnect and resurrect authority.
+                    let currentAvailability = await speedEvidenceProvider.speedEvidenceSnapshot()
+                    guard !Task.isCancelled else { break }
+                    self.state = state
+                    self.commitSpeedEvidenceRefresh(currentAvailability, id: refreshID)
+                } else {
+                    self.state = state
+                    self.commitSpeedEvidenceRefresh(.unavailable, id: refreshID)
                 }
             }
         }
 
-        if let speedEvidenceProvider = service as? any SpeedEvidenceProvider {
+        if let speedEvidenceProvider {
             speedEvidenceTask = Task { [weak self, speedEvidenceProvider] in
                 let stream = await speedEvidenceProvider.speedEvidenceUpdates()
-                for await availability in stream {
+                for await _ in stream {
                     guard let self, !Task.isCancelled else { return }
-                    self.speedEvidenceAvailability = availability
+
+                    // A stream value may have been handed to this task before a
+                    // newer source transition reached the independent state task.
+                    // Treat the value only as a wake-up signal and query current
+                    // source truth again at the point of app projection.
+                    let refreshID = self.beginSpeedEvidenceRefresh()
+                    let currentAvailability = await speedEvidenceProvider.speedEvidenceSnapshot()
+                    guard !Task.isCancelled else { return }
+                    self.commitSpeedEvidenceRefresh(currentAvailability, id: refreshID)
                 }
 
                 // An ended acquisition stream cannot leave its last `.live`
                 // sample authorized indefinitely. Cancellation/deinit needs no
                 // state write; any real unexpected/normal end fails closed.
                 guard let self, !Task.isCancelled else { return }
-                self.speedEvidenceAvailability = .unavailable
+                let refreshID = self.beginSpeedEvidenceRefresh()
+                self.commitSpeedEvidenceRefresh(.unavailable, id: refreshID)
             }
         } else {
-            speedEvidenceAvailability = .unavailable
+            let refreshID = beginSpeedEvidenceRefresh()
+            commitSpeedEvidenceRefresh(.unavailable, id: refreshID)
         }
 
         if shouldAutoConnectOnStart {
@@ -210,6 +231,20 @@ final class VehicleStore {
 
     private var canBeginVehicleCommand: Bool {
         !pendingCommands.contains(.connect) && !isVehicleCommandPending
+    }
+
+    private func beginSpeedEvidenceRefresh() -> UUID {
+        let id = UUID()
+        latestSpeedEvidenceRefreshID = id
+        return id
+    }
+
+    private func commitSpeedEvidenceRefresh(
+        _ availability: SpeedEvidenceAvailability,
+        id: UUID
+    ) {
+        guard latestSpeedEvidenceRefreshID == id else { return }
+        speedEvidenceAvailability = availability
     }
 
     private func perform(_ command: PendingCommand, operation: () async throws -> Void) async {
