@@ -4,6 +4,11 @@ on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
     paths:
+      - scripts/ci/es80_today_final_go_foundation.py
+      - scripts/ci/_es80_today_final_go_foundation_impl.py
+      - scripts/ci/es80_today_private_field_rendezvous.py
+      - scripts/ci/tests/test_es80_today_private_field_rendezvous.py
+      - scripts/ci/tests/test_es80_today_final_go_operator_attestation_authority.py
       - scripts/ci/es80_today_trusted_capture_xcode_subject.py
       - scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
       - scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py
@@ -36,9 +41,15 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
       - name: Compile Final GO hardening modules and tests
         run: |
+          python3 -m py_compile scripts/ci/es80_today_final_go_foundation.py scripts/ci/_es80_today_final_go_foundation_impl.py
+          python3 -m py_compile scripts/ci/es80_today_private_field_rendezvous.py scripts/ci/tests/test_es80_today_private_field_rendezvous.py scripts/ci/tests/test_es80_today_final_go_operator_attestation_authority.py
           python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py
           python3 -m py_compile scripts/ci/es80_today_final_go_publication.py scripts/ci/tests/test_es80_today_final_go_publication.py
           python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_git_custody.py
+      - name: Reject caller-authored operator authority
+        run: python3 scripts/ci/tests/test_es80_today_final_go_operator_attestation_authority.py -v
+      - name: Run private live field rendezvous adversarial suite
+        run: python3 scripts/ci/tests/test_es80_today_private_field_rendezvous.py -v
       - name: Run trusted subject adversarial suite
         run: python3 scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py -v
       - name: Preserve retained artifact admission contract
@@ -61,7 +72,12 @@ jobs:
           grep -Fq 'expected_blob="4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq 'run.get("event") == "issue_comment"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'run.get("head_branch") == DEFAULT_BRANCH' scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          grep -Fq 'caller-authored operator attestation is non-authorizing' scripts/ci/es80_today_final_go_foundation.py
+          grep -Fq 'AUTHORITY = "private-live-field-rendezvous-v1"' scripts/ci/es80_today_private_field_rendezvous.py
+          grep -Fq 'oneTimeObservationConsumption": "CONSUMED"' scripts/ci/es80_today_private_field_rendezvous.py
+          grep -Fq 'rawIntendedDeviceIdentifierPublished": False' scripts/ci/es80_today_private_field_rendezvous.py
           grep -Fq 'AMBIGUOUS NO-GO' scripts/ci/es80_today_final_go_publication.py
           grep -Fq 'foundation._trusted_xcode_subject = trusted_subject_adapter' scripts/ci/es80_today_final_go_hardened.py
+          grep -Fq 'foundation._operator_attestation = trusted_operator_adapter' scripts/ci/es80_today_final_go_hardened.py
           grep -Fq 'foundation._git(tooling_repo, "rev-parse"' scripts/ci/es80_today_final_go_hardened.py
           grep -Fq 'publication.publish_record_no_replace' scripts/ci/es80_today_final_go_hardened.py
