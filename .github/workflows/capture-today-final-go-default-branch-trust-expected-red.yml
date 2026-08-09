@@ -1,0 +1,26 @@
+name: Capture TODAY Final GO Default-Branch Trust Expected-Red
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/es80_today_final_go_record.py
+      - scripts/ci/tests/test_es80_today_final_go_default_branch_trust.py
+      - .github/workflows/capture-today-final-go-default-branch-trust-expected-red.yml
+
+permissions:
+  contents: read
+
+jobs:
+  expected-red:
+    name: Reject PR-controlled Final GO Xcode authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact validation head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Prove authority regression
+        run: python3 scripts/ci/tests/test_es80_today_final_go_default_branch_trust.py
