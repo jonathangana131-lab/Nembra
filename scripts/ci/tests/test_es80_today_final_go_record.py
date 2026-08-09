@@ -18,6 +18,7 @@ spec.loader.exec_module(final_go)
 
 class FinalGoRecordTests(unittest.TestCase):
     SOURCE = "a" * 40
+    WORKFLOW_SOURCE = "f" * 40
     BUILD = "Capture Build V14-" + SOURCE[:12]
     INSTANCE = "11111111-2222-3333-4444-555555555555"
     SIM_INSTANCE = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -196,26 +197,34 @@ class FinalGoRecordTests(unittest.TestCase):
         return path
 
     def make_github(self, archive_sha: str, archive_size: int):
+        pr = {
+            "number": self.PR,
+            "state": "open",
+            "head": {"sha": self.SOURCE, "repo": {"full_name": final_go.REPOSITORY}},
+            "base": {"repo": {"full_name": final_go.REPOSITORY}},
+        }
         run = {
             "id": self.RUN_ID,
             "name": final_go.TRUSTED_WORKFLOW_NAME,
             "path": final_go.TRUSTED_WORKFLOW_PATH,
-            "event": "pull_request",
-            "head_sha": self.SOURCE,
+            "event": "issue_comment",
+            "head_sha": self.WORKFLOW_SOURCE,
+            "head_branch": final_go.DEFAULT_BRANCH,
             "status": "completed",
             "conclusion": "success",
             "run_attempt": 1,
             "run_number": 42,
             "repository": {"full_name": final_go.REPOSITORY},
             "head_repository": {"full_name": final_go.REPOSITORY},
-            "pull_requests": [{"number": self.PR}],
+            "actor": {"login": final_go.REPOSITORY_OWNER},
+            "triggering_actor": {"login": final_go.REPOSITORY_OWNER},
         }
         required = [
-            "Reject stale PR head before scarce Mac work",
-            "Verify immutable PR head",
+            "Reject stale or detached Capture head before scarce Mac work",
+            "Verify immutable trusted Capture head",
             "Build, test, and capture Simulator states",
-            "Verify retained Capture build evidence",
-            "Reject head movement before acceptance completion",
+            "Verify retained Capture evidence against trusted resolver authority",
+            "Reject head movement before trusted acceptance completes",
         ]
         job = {
             "id": self.JOB_ID,
@@ -223,7 +232,7 @@ class FinalGoRecordTests(unittest.TestCase):
             "run_attempt": 1,
             "workflow_name": final_go.TRUSTED_WORKFLOW_NAME,
             "name": final_go.TRUSTED_JOB_NAME,
-            "head_sha": self.SOURCE,
+            "head_sha": self.WORKFLOW_SOURCE,
             "status": "completed",
             "conclusion": "success",
             "labels": ["xcode-27"],
@@ -237,9 +246,10 @@ class FinalGoRecordTests(unittest.TestCase):
             "expired": False,
             "digest": f"sha256:{archive_sha}",
             "size_in_bytes": archive_size,
-            "workflow_run": {"id": self.RUN_ID, "head_sha": self.SOURCE},
+            "workflow_run": {"id": self.RUN_ID, "head_sha": self.WORKFLOW_SOURCE},
         }
         records = {
+            f"/pulls/{self.PR}": pr,
             f"/actions/runs/{self.RUN_ID}": run,
             f"/actions/jobs/{self.JOB_ID}": job,
             f"/actions/artifacts/{self.ARTIFACT_ID}": artifact,
@@ -259,6 +269,10 @@ class FinalGoRecordTests(unittest.TestCase):
             return self.PRIVATE_BLOB
         if subject == f"{self.SOURCE}:{final_go.INSPECTOR_PATH}":
             return self.INSPECTOR_BLOB
+        if subject == f"{self.WORKFLOW_SOURCE}^{{commit}}":
+            return self.WORKFLOW_SOURCE
+        if subject == f"{self.WORKFLOW_SOURCE}:{final_go.TRUSTED_WORKFLOW_PATH}":
+            return final_go.TRUSTED_WORKFLOW_BLOB_SHA
         if subject == f"{final_go.PINNED_CROSSCHECK_COMMIT}^{{commit}}":
             return final_go.PINNED_CROSSCHECK_COMMIT
         if subject == f"{final_go.PINNED_CROSSCHECK_COMMIT}:{final_go.CROSSCHECK_PATH}":
@@ -322,11 +336,15 @@ class FinalGoRecordTests(unittest.TestCase):
             with self.assertRaisesRegex(final_go.FinalGoError, "workflow name mismatch"):
                 self.build(kwargs)
 
-    def test_rejects_non_pull_request_run_subject(self):
+    def test_rejects_candidate_controlled_pull_request_run_subject(self):
         with tempfile.TemporaryDirectory() as temporary:
             _, records, kwargs = self.setup_case(Path(temporary))
-            records[f"/actions/runs/{self.RUN_ID}"]["event"] = "issue_comment"
-            with self.assertRaisesRegex(final_go.FinalGoError, "workflow event mismatch"):
+            run = records[f"/actions/runs/{self.RUN_ID}"]
+            run["event"] = "pull_request"
+            run["name"] = "Xcode 27 PR Exact-Head QA"
+            run["path"] = ".github/workflows/xcode27-pr-command.yml"
+            run["head_sha"] = self.SOURCE
+            with self.assertRaisesRegex(final_go.FinalGoError, "workflow name mismatch"):
                 self.build(kwargs)
 
     def test_rejects_skipped_exact_head_completion_step(self):
@@ -334,8 +352,35 @@ class FinalGoRecordTests(unittest.TestCase):
             _, records, kwargs = self.setup_case(Path(temporary))
             job = records[f"/actions/jobs/{self.JOB_ID}"]
             job["steps"][-1]["conclusion"] = "skipped"
-            with self.assertRaisesRegex(final_go.FinalGoError, "Reject head movement before acceptance completion mismatch"):
+            with self.assertRaisesRegex(final_go.FinalGoError, "Reject head movement before trusted acceptance completes mismatch"):
                 self.build(kwargs)
+
+    def test_rejects_live_pr_head_movement(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            _, records, kwargs = self.setup_case(Path(temporary))
+            records[f"/pulls/{self.PR}"]["head"]["sha"] = "0" * 40
+            with self.assertRaisesRegex(final_go.FinalGoError, "live Capture PR head SHA mismatch"):
+                self.build(kwargs)
+
+    def test_rejects_non_owner_trusted_command_actor(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            _, records, kwargs = self.setup_case(Path(temporary))
+            records[f"/actions/runs/{self.RUN_ID}"]["actor"] = {"login": "not-owner"}
+            with self.assertRaisesRegex(final_go.FinalGoError, "command actor"):
+                self.build(kwargs)
+
+    def test_rejects_unpinned_trusted_workflow_blob(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            _, _, kwargs = self.setup_case(Path(temporary))
+
+            def drifted_git(repository: Path, *args: str):
+                if args[-1] == f"{self.WORKFLOW_SOURCE}:{final_go.TRUSTED_WORKFLOW_PATH}":
+                    return "9" * 40
+                return self.git_side_effect(repository, *args)
+
+            with mock.patch.object(final_go, "_git", side_effect=drifted_git):
+                with self.assertRaisesRegex(final_go.FinalGoError, "workflow Git blob mismatch"):
+                    final_go.build_final_go_record(**kwargs)
 
     def test_rejects_downloaded_artifact_substitution(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -448,6 +493,27 @@ class FinalGoRecordTests(unittest.TestCase):
             digest = final_go.publish_record_no_replace(output, raw)
             self.assertEqual(digest, hashlib.sha256(raw).hexdigest())
             self.assertEqual(output.read_bytes(), raw)
+
+    def test_post_publish_directory_fsync_failure_retracts_final_record(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "FinalGO.json"
+            raw = b'{"decision":"GO"}\n'
+            real_fsync = final_go.os.fsync
+            calls = 0
+
+            def fail_second_fsync(fd: int):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    raise OSError("injected post-publication directory fsync failure")
+                return real_fsync(fd)
+
+            with mock.patch.object(final_go.os, "fsync", side_effect=fail_second_fsync):
+                with self.assertRaisesRegex(OSError, "post-publication"):
+                    final_go.publish_record_no_replace(output, raw)
+            self.assertFalse(output.exists() or output.is_symlink())
+            self.assertEqual(list(root.glob(".FinalGO.json.*.staging")), [])
 
     def test_publication_refuses_existing_final_record(self):
         with tempfile.TemporaryDirectory() as temporary:

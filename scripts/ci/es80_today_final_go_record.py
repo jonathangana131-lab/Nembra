@@ -33,10 +33,13 @@ BASELINE_DEVICE = "iPhone 12"
 BASELINE_OS = "iOS 27"
 BUNDLE_ID = "com.jonathangana131.nembra"
 REPOSITORY = "jonathangana131-lab/Nembra"
-TRUSTED_WORKFLOW_NAME = "Xcode 27 PR Exact-Head QA"
-TRUSTED_WORKFLOW_PATH = ".github/workflows/xcode27-pr-command.yml"
-TRUSTED_JOB_NAME = "Build, test, and capture exact PR head"
-TRUSTED_ARTIFACT_PREFIX = "nembra-xcode27-pr-"
+REPOSITORY_OWNER = "jonathangana131-lab"
+DEFAULT_BRANCH = "main"
+TRUSTED_WORKFLOW_NAME = "Capture Trusted Xcode 27 Exact-Head QA"
+TRUSTED_WORKFLOW_PATH = ".github/workflows/capture-xcode27-trusted-command.yml"
+TRUSTED_WORKFLOW_BLOB_SHA = "e5ef72f50bed279e98ad28b94930831b747d0c20"
+TRUSTED_JOB_NAME = "Build, test, and capture trusted exact Capture head"
+TRUSTED_ARTIFACT_PREFIX = "nembra-capture-xcode27-"
 PINNED_CROSSCHECK_COMMIT = "d827a296048386bda62024ea3278775d5344c47c"
 PINNED_CROSSCHECK_BLOB = "c3b2b620280484c05316fc5c2fa2ca451f1fdc83"
 RESEARCH_COMPILE_MODE = "private-today-v1"
@@ -221,29 +224,58 @@ def _trusted_xcode_subject(
     job_id: int,
     artifact_id: int,
     artifact_archive_path: Path,
+    tooling_repo: Path,
     github_get_json: Callable[[str], tuple[bytes, dict[str, Any]]],
 ) -> dict[str, Any]:
+    pr_raw, pr = github_get_json(f"/pulls/{expected_pr_number}")
+    _eq(_positive_int(pr.get("number"), "trusted Capture PR number"), expected_pr_number, "trusted Capture PR number")
+    _eq(pr.get("state"), "open", "trusted Capture PR state")
+    head = pr.get("head")
+    base = pr.get("base")
+    if not isinstance(head, dict) or not isinstance(base, dict):
+        raise FinalGoError("trusted Capture PR lacks head/base subjects")
+    _eq(_shape(head.get("sha"), HEX40, "live Capture PR head SHA"), source, "live Capture PR head SHA")
+    if not isinstance(head.get("repo"), dict) or head["repo"].get("full_name") != REPOSITORY:
+        raise FinalGoError("trusted Capture PR head repository is not canonical Nembra")
+    if not isinstance(base.get("repo"), dict) or base["repo"].get("full_name") != REPOSITORY:
+        raise FinalGoError("trusted Capture PR base repository is not canonical Nembra")
+
     run_raw, run = github_get_json(f"/actions/runs/{run_id}")
     _eq(_positive_int(run.get("id"), "trusted Xcode run ID"), run_id, "trusted Xcode run ID")
     _eq(run.get("name"), TRUSTED_WORKFLOW_NAME, "trusted Xcode workflow name")
     _eq(run.get("path"), TRUSTED_WORKFLOW_PATH, "trusted Xcode workflow path")
-    _eq(run.get("event"), "pull_request", "trusted Xcode workflow event")
-    _eq(run.get("head_sha"), source, "trusted Xcode run exact source SHA")
+    _eq(run.get("event"), "issue_comment", "trusted Xcode workflow event")
+    _eq(run.get("head_branch"), DEFAULT_BRANCH, "trusted Xcode workflow branch")
     _eq(run.get("status"), "completed", "trusted Xcode run status")
     _eq(run.get("conclusion"), "success", "trusted Xcode run conclusion")
-    run_attempt = _positive_int(run.get("run_attempt"), "trusted Xcode run attempt")
-    run_number = _positive_int(run.get("run_number"), "trusted Xcode run number")
     repository = run.get("repository")
     head_repository = run.get("head_repository")
     if not isinstance(repository, dict) or repository.get("full_name") != REPOSITORY:
         raise FinalGoError("trusted Xcode run repository is not canonical Nembra")
     if not isinstance(head_repository, dict) or head_repository.get("full_name") != REPOSITORY:
-        raise FinalGoError("trusted Xcode run is not a same-repository subject")
-    pull_requests = run.get("pull_requests")
-    if not isinstance(pull_requests, list) or expected_pr_number not in [
-        item.get("number") for item in pull_requests if isinstance(item, dict)
-    ]:
-        raise FinalGoError("trusted Xcode run does not identify the expected Capture PR")
+        raise FinalGoError("trusted Xcode run head repository is not canonical Nembra")
+    actor = run.get("actor")
+    triggering_actor = run.get("triggering_actor")
+    if not isinstance(actor, dict) or actor.get("login") != REPOSITORY_OWNER:
+        raise FinalGoError("trusted Xcode command actor is not repository owner")
+    if not isinstance(triggering_actor, dict) or triggering_actor.get("login") != REPOSITORY_OWNER:
+        raise FinalGoError("trusted Xcode triggering actor is not repository owner")
+
+    workflow_source = _shape(run.get("head_sha"), HEX40, "trusted Xcode workflow source SHA")
+    _eq(
+        _git(tooling_repo, "rev-parse", "--verify", f"{workflow_source}^{{commit}}"),
+        workflow_source,
+        "trusted Xcode workflow source commit",
+    )
+    workflow_blob = _shape(
+        _git(tooling_repo, "rev-parse", f"{workflow_source}:{TRUSTED_WORKFLOW_PATH}"),
+        GIT_OID,
+        "trusted Xcode workflow Git blob",
+    )
+    _eq(workflow_blob, TRUSTED_WORKFLOW_BLOB_SHA, "trusted Xcode workflow Git blob")
+
+    run_attempt = _positive_int(run.get("run_attempt"), "trusted Xcode run attempt")
+    run_number = _positive_int(run.get("run_number"), "trusted Xcode run number")
 
     job_raw, job = github_get_json(f"/actions/jobs/{job_id}")
     _eq(_positive_int(job.get("id"), "trusted Xcode job ID"), job_id, "trusted Xcode job ID")
@@ -251,18 +283,18 @@ def _trusted_xcode_subject(
     _eq(job.get("run_attempt"), run_attempt, "trusted Xcode job run attempt")
     _eq(job.get("workflow_name"), TRUSTED_WORKFLOW_NAME, "trusted Xcode job workflow name")
     _eq(job.get("name"), TRUSTED_JOB_NAME, "trusted Xcode job name")
-    _eq(job.get("head_sha"), source, "trusted Xcode job exact source SHA")
+    _eq(job.get("head_sha"), workflow_source, "trusted Xcode job workflow source SHA")
     _eq(job.get("status"), "completed", "trusted Xcode job status")
     _eq(job.get("conclusion"), "success", "trusted Xcode job conclusion")
     labels = job.get("labels")
     if not isinstance(labels, list) or "xcode-27" not in labels:
         raise FinalGoError("trusted Xcode job did not run on the xcode-27 runner class")
     required_steps = {
-        "Reject stale PR head before scarce Mac work",
-        "Verify immutable PR head",
+        "Reject stale or detached Capture head before scarce Mac work",
+        "Verify immutable trusted Capture head",
         "Build, test, and capture Simulator states",
-        "Verify retained Capture build evidence",
-        "Reject head movement before acceptance completion",
+        "Verify retained Capture evidence against trusted resolver authority",
+        "Reject head movement before trusted acceptance completes",
     }
     steps = job.get("steps")
     if not isinstance(steps, list):
@@ -290,7 +322,7 @@ def _trusted_xcode_subject(
     if not isinstance(workflow_run, dict):
         raise FinalGoError("trusted Xcode artifact metadata lacks workflow_run subject")
     _eq(workflow_run.get("id"), run_id, "trusted Xcode artifact run ID")
-    _eq(workflow_run.get("head_sha"), source, "trusted Xcode artifact exact source SHA")
+    _eq(workflow_run.get("head_sha"), workflow_source, "trusted Xcode artifact workflow source SHA")
     archive_sha, archive_size = _sha_file(artifact_archive_path, "trusted Xcode artifact archive")
     digest = artifact.get("digest")
     if not isinstance(digest, str) or SHA256_DIGEST.fullmatch(digest) is None:
@@ -302,9 +334,14 @@ def _trusted_xcode_subject(
 
     embedded = _inspect_xcode_archive(artifact_archive_path, source)
     return {
+        "authority": "default-branch-owner-command-v1",
         "workflowName": TRUSTED_WORKFLOW_NAME,
         "workflowPath": TRUSTED_WORKFLOW_PATH,
+        "workflowSourceCommitSHA": workflow_source,
+        "workflowGitBlob": workflow_blob,
+        "candidateSourceCommitSHA": source,
         "prNumber": expected_pr_number,
+        "prAPIResponseSHA256": _sha(pr_raw),
         "runID": run_id,
         "runNumber": run_number,
         "runAttempt": run_attempt,
@@ -320,7 +357,7 @@ def _trusted_xcode_subject(
         "embeddedExternalBuildRecordSHA256": embedded["sha256"],
         "embeddedBuildIdentifier": embedded["buildIdentifier"],
         "embeddedBuildInstanceID": embedded["buildInstanceID"],
-        "classification": "live-github-exact-head-acceptance-plus-retained-artifact",
+        "classification": "owner-commanded-default-branch-workflow-plus-exact-candidate-retained-artifact",
     }
 
 
@@ -618,6 +655,7 @@ def build_final_go_record(
         job_id=_positive_int(trusted_xcode_job_id, "trusted Xcode job ID"),
         artifact_id=_positive_int(trusted_xcode_artifact_id, "trusted Xcode artifact ID"),
         artifact_archive_path=trusted_xcode_artifact_archive,
+        tooling_repo=tooling_repo,
         github_get_json=github_get_json,
     )
     crosscheck = _crosscheck_subject(
@@ -681,6 +719,44 @@ def _publish_file_no_replace(staging_path: Path, output_path: Path) -> None:
         raise OSError(number, os.strerror(number), str(output_path))
 
 
+def _fsync_directory(parent: Path) -> None:
+    directory_fd = os.open(parent, os.O_RDONLY)
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
+def _retract_published_record(output: Path, raw: bytes) -> None:
+    if not (output.exists() or output.is_symlink()):
+        _fsync_directory(output.parent)
+        return
+    if _regular(output, "failed published Final GO record") != raw:
+        raise FinalGoError(
+            "post-publication failure left changed destination bytes; refusing to delete unknown data"
+        )
+    output.unlink()
+    _fsync_directory(output.parent)
+    if output.exists() or output.is_symlink():
+        raise FinalGoError("post-publication rollback did not remove the authoritative destination")
+
+
+def _quarantine_published_record(output: Path, raw: bytes) -> Path | None:
+    if not (output.exists() or output.is_symlink()):
+        _fsync_directory(output.parent)
+        return None
+    if _regular(output, "ambiguous published Final GO record") != raw:
+        raise FinalGoError("ambiguous Final GO destination bytes changed before quarantine")
+    quarantine = output.parent / (
+        f".{output.name}.QUARANTINED-NO-GO.{os.getpid()}.{hashlib.sha256(os.urandom(32)).hexdigest()[:16]}"
+    )
+    _publish_file_no_replace(output, quarantine)
+    _fsync_directory(output.parent)
+    if output.exists() or output.is_symlink():
+        raise FinalGoError("quarantine move did not remove the authoritative Final GO destination")
+    return quarantine
+
+
 def publish_record_no_replace(
     output_path: Path,
     raw: bytes,
@@ -719,15 +795,11 @@ def publish_record_no_replace(
         publisher(staging, output)
         published = True
         staging = None
-        directory_fd = os.open(parent, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
+        _fsync_directory(parent)
         if _regular(output, "published Final GO record") != raw:
             raise FinalGoError("published Final GO record bytes differ from staged authority")
         return _sha(raw)
-    except Exception:
+    except Exception as original_error:
         if fd >= 0:
             os.close(fd)
         if not published and staging is not None:
@@ -735,7 +807,24 @@ def publish_record_no_replace(
                 staging.unlink(missing_ok=True)
             except OSError:
                 pass
-        raise
+        if published:
+            try:
+                _retract_published_record(output, raw)
+            except Exception as rollback_error:
+                try:
+                    quarantine = _quarantine_published_record(output, raw)
+                except Exception as quarantine_error:
+                    raise FinalGoError(
+                        "Final GO publication failed after rename and durable rollback/quarantine "
+                        f"could not be proven. Treat {output} as AMBIGUOUS NO-GO and do not consume it. "
+                        f"rollback={rollback_error}; quarantine={quarantine_error}"
+                    ) from quarantine_error
+                note = f"; bytes quarantined at {quarantine}" if quarantine is not None else ""
+                raise FinalGoError(
+                    "Final GO publication failed after rename; authoritative destination was "
+                    f"removed but ordinary rollback was not proven{note}"
+                ) from rollback_error
+        raise original_error
 
 
 def _args(argv: list[str]) -> argparse.Namespace:
