@@ -840,11 +840,13 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
     func testAccessibilityLaunchUsesSupportedXXXLCategoryName() throws {
         let source = try repositorySource(at: "NembraUITests/ES80ResearchCaptureUITests.swift")
+        let unsupportedLongFormToken =
+            "UICTContentSizeCategoryAccessibilityExtraExtra" + "ExtraLarge"
         XCTAssertFalse(
-            source.contains("UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"),
+            source.contains(unsupportedLongFormToken),
             "Capture UI tests must not use the unsupported long-form content-size token that silently falls back to normal text size."
         )
-        let supportedToken = "UICTContentSizeCategoryAccessibilityXXXL"
+        let supportedToken = "UICTContentSizeCategoryAccessibility" + "XXXL"
         XCTAssertEqual(
             source.components(separatedBy: supportedToken).count - 1,
             4,
