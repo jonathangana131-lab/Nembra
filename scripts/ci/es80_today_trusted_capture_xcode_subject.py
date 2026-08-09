@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Verify the default-branch trusted Capture Xcode authority subject.
 
-This module deliberately separates two authorities that GitHub represents with different SHAs:
-- the default-branch workflow source that is allowed to schedule the self-hosted Mac job; and
-- the exact Capture PR head whose retained evidence the trusted workflow validates.
+This module deliberately separates three identities that must not collapse into one another:
+- the default-branch workflow source allowed to schedule the self-hosted Mac job;
+- the exact Capture PR head whose retained evidence the trusted workflow validates; and
+- the exact authority-producing Simulator runner blob that the trusted workflow may execute.
 
 It creates software acceptance evidence only. It does not authorize physical Experiment One,
 Bluetooth writes, scooter identity, protocol semantics, or telemetry.
@@ -22,13 +23,16 @@ REPOSITORY_OWNER = "jonathangana131-lab"
 DEFAULT_BRANCH = "main"
 TRUSTED_WORKFLOW_NAME = "Capture Trusted Xcode 27 Exact-Head QA"
 TRUSTED_WORKFLOW_PATH = ".github/workflows/capture-xcode27-trusted-command.yml"
-TRUSTED_WORKFLOW_BLOB_SHA = "e5ef72f50bed279e98ad28b94930831b747d0c20"
+TRUSTED_WORKFLOW_BLOB_SHA = "1f1b9ccc5aed1a2fef14edf3a59896831c0c9bbe"
+TRUSTED_EVIDENCE_PRODUCER_PATH = "scripts/ci/xcode27_simulator_capture.sh"
+TRUSTED_EVIDENCE_PRODUCER_BLOB_SHA = "4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"
 TRUSTED_JOB_NAME = "Build, test, and capture trusted exact Capture head"
 TRUSTED_ARTIFACT_PREFIX = "nembra-capture-xcode27-"
 EXTERNAL_RECORD_NAME = "NembraCaptureExternalBuildRecord.json"
 REQUIRED_SUCCESSFUL_STEPS = (
     "Reject stale or detached Capture head before scarce Mac work",
     "Verify immutable trusted Capture head",
+    "Verify trusted Capture evidence producer blob",
     "Build, test, and capture Simulator states",
     "Verify retained Capture evidence against trusted resolver authority",
     "Reject head movement before trusted acceptance completes",
@@ -95,9 +99,11 @@ def verify_trusted_capture_xcode_subject(
 ) -> dict[str, Any]:
     """Return one closed trusted-Xcode subject or fail closed.
 
-    `workflow_blob_sha_at_commit` must read Git object identity from a repository checkout that can
-    resolve the workflow run's default-branch commit. The pinned blob makes workflow implementation
-    part of the authority subject rather than trusting candidate-controlled names/step labels.
+    `workflow_blob_sha_at_commit` is intentionally used for both authority-bearing Git objects. It
+    must read Git object identity from a hardened repository checkout capable of resolving both the
+    default-branch workflow source commit and the candidate source commit. Final GO therefore
+    independently proves the pinned workflow implementation and the pinned evidence producer; it
+    does not infer producer custody from a successful step name alone.
     """
 
     source = _normalized_sha(source_commit_sha, "candidate source commit SHA")
@@ -133,6 +139,13 @@ def verify_trusted_capture_xcode_subject(
     workflow_blob = workflow_blob_sha_at_commit(workflow_source, TRUSTED_WORKFLOW_PATH).lower()
     _require(_HEX40.fullmatch(workflow_blob) is not None, "invalid trusted workflow blob SHA")
     _require(workflow_blob == TRUSTED_WORKFLOW_BLOB_SHA, "trusted Xcode workflow implementation blob is not pinned authority")
+
+    producer_blob = workflow_blob_sha_at_commit(source, TRUSTED_EVIDENCE_PRODUCER_PATH).lower()
+    _require(_HEX40.fullmatch(producer_blob) is not None, "invalid trusted evidence-producer blob SHA")
+    _require(
+        producer_blob == TRUSTED_EVIDENCE_PRODUCER_BLOB_SHA,
+        "trusted Capture evidence-producer blob is not pinned authority",
+    )
 
     run_attempt = _positive_int(run.get("run_attempt"), "trusted Xcode run attempt")
     run_number = _positive_int(run.get("run_number"), "trusted Xcode run number")
@@ -189,6 +202,8 @@ def verify_trusted_capture_xcode_subject(
         "workflowPath": TRUSTED_WORKFLOW_PATH,
         "workflowSourceCommitSHA": workflow_source,
         "workflowBlobSHA": workflow_blob,
+        "evidenceProducerPath": TRUSTED_EVIDENCE_PRODUCER_PATH,
+        "evidenceProducerBlobSHA": producer_blob,
         "runID": run_id,
         "runNumber": run_number,
         "runAttempt": run_attempt,
