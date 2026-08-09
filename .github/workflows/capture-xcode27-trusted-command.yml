@@ -8,6 +8,10 @@ permissions:
   contents: read
   pull-requests: read
 
+concurrency:
+  group: ${{ github.event.comment.body == '/capture-xcode27' && format('nembra-capture-trusted-command-{0}', github.event.issue.number) || format('nembra-capture-trusted-noop-{0}', github.run_id) }}
+  cancel-in-progress: false
+
 env:
   ARTIFACTS_DIR: ${{ github.workspace }}/Artifacts/Xcode27Simulator
 
