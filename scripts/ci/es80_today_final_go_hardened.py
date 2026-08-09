@@ -12,7 +12,10 @@ This entrypoint removes the authority defects that must not remain on the execut
 - trusted workflow Git-object lookup reuses the private foundation's producer-owned, closed Git
   custody boundary rather than caller PATH/config/replacement semantics;
 - the independent retained-candidate receipt must be exact fresh stdout from the pinned crosscheck
-  Git object rather than caller-authored JSON that merely names that object; and
+  Git object rather than caller-authored JSON that merely names that object;
+- signed-field Apple signing/provisioning and intended-device membership are freshly re-derived by
+  the exact reviewed private runner + canonical inspector from the accepted source commit, then the
+  complete fresh candidate subject must equal the foundation candidate; and
 - record publication is failure-atomic after no-replace publication.
 
 No physical result is created by this tool. A generated GO record is procedural authorization for
@@ -20,6 +23,8 @@ one stationary passive Experiment One only after all supplied evidence is alread
 """
 from __future__ import annotations
 
+import argparse
+from datetime import datetime, timezone
 import importlib.util
 import json
 from pathlib import Path
@@ -51,6 +56,10 @@ crosscheck_custody = _load(
     "nembra_final_go_crosscheck_receipt_custody",
     "es80_today_crosscheck_receipt_custody.py",
 )
+trusted_signed_candidate = _load(
+    "nembra_trusted_signed_candidate_reinspection",
+    "es80_today_trusted_signed_candidate_reinspection.py",
+)
 
 FinalGoError = foundation.FinalGoError
 
@@ -67,6 +76,32 @@ def _workflow_blob_sha_at_commit(tooling_repo: Path, commit: str, path: str) -> 
         ) from error
 
 
+def _fresh_signed_candidate_subject(
+    *,
+    candidate_root: Path,
+    expected_source_sha: str,
+    frozen_source_repo: Path,
+    intended_device_udid_file: Path,
+    now_utc: datetime,
+) -> dict[str, Any]:
+    """Derive signed-candidate authority only from fresh reviewed Apple inspection output."""
+    try:
+        with trusted_signed_candidate.trusted_reinspection_candidate_root(
+            candidate_root=candidate_root,
+            expected_source_sha=expected_source_sha,
+            frozen_source_repo=frozen_source_repo,
+            intended_device_udid_file=intended_device_udid_file,
+        ) as fresh_candidate_root:
+            subject, _ = foundation._candidate_subject(
+                fresh_candidate_root,
+                expected_source_sha,
+                now_utc,
+            )
+            return subject
+    except trusted_signed_candidate.TrustedSignedCandidateReinspectionError as error:
+        raise FinalGoError(str(error)) from error
+
+
 def build_final_go_record(
     *,
     candidate_root: Path,
@@ -80,10 +115,13 @@ def build_final_go_record(
     frozen_source_repo: Path,
     tooling_repo: Path,
     operator_attestation: Path,
+    intended_device_udid_file: Path,
     github_get_json: Callable[[str], tuple[bytes, dict[str, Any]]] = foundation._api_get_json,
     now_utc=None,
 ) -> dict[str, Any]:
-    """Run the private foundation only after fresh pinned-crosscheck and Xcode authority."""
+    """Run the private foundation only after fresh signed-candidate, crosscheck, and Xcode authority."""
+    now = (now_utc or datetime.now(timezone.utc)).astimezone(timezone.utc)
+
     try:
         crosscheck_execution = crosscheck_custody.verify_crosscheck_receipt_custody(
             candidate_root=candidate_root,
@@ -96,6 +134,14 @@ def build_final_go_record(
         )
     except crosscheck_custody.CrosscheckReceiptCustodyError as error:
         raise FinalGoError(str(error)) from error
+
+    fresh_candidate = _fresh_signed_candidate_subject(
+        candidate_root=candidate_root,
+        expected_source_sha=expected_source_sha,
+        frozen_source_repo=frozen_source_repo,
+        intended_device_udid_file=intended_device_udid_file,
+        now_utc=now,
+    )
 
     def trusted_subject_adapter(
         *,
@@ -139,7 +185,7 @@ def build_final_go_record(
             tooling_repo=tooling_repo,
             operator_attestation=operator_attestation,
             github_get_json=github_get_json,
-            now_utc=now_utc,
+            now_utc=now,
         )
     finally:
         foundation._trusted_xcode_subject = original
@@ -161,6 +207,14 @@ def build_final_go_record(
         if crosscheck.get(key) != crosscheck_execution.get(key):
             raise FinalGoError(f"fresh pinned crosscheck execution diverged from foundation subject: {key}")
     crosscheck["executionCustody"] = crosscheck_execution["executionCustody"]
+
+    accepted_candidate = record.get("acceptedSignedFieldCandidate")
+    if not isinstance(accepted_candidate, dict):
+        raise FinalGoError("hardened Final GO record lacks accepted signed-field candidate")
+    if accepted_candidate != fresh_candidate:
+        raise FinalGoError(
+            "Final GO signed-field candidate diverged from fresh reviewed Apple reinspection"
+        )
     return record
 
 
@@ -171,8 +225,23 @@ def publish_record_no_replace(output_path: Path, raw: bytes) -> str:
         raise FinalGoError(str(error)) from error
 
 
+def _args(argv: list[str]) -> argparse.Namespace:
+    """Extend the incumbent closed-world CLI with private intended-device reinspection input."""
+    private_parser = argparse.ArgumentParser(add_help=False)
+    private_parser.add_argument(
+        "--intended-device-udid-file",
+        required=True,
+        type=Path,
+        help=argparse.SUPPRESS,
+    )
+    private, remaining = private_parser.parse_known_args(argv)
+    foundation_args = foundation._args(remaining)
+    setattr(foundation_args, "intended_device_udid_file", private.intended_device_udid_file)
+    return foundation_args
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = foundation._args(sys.argv[1:] if argv is None else argv)
+    args = _args(sys.argv[1:] if argv is None else argv)
     values = vars(args).copy()
     output = values.pop("output")
     try:
