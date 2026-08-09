@@ -3,6 +3,10 @@
 
 This is procedural authority only. It never creates physical evidence, identifies an ES80, or grants
 Bluetooth write authority. Missing, stale, substituted, expired, or unconfirmed evidence is NO-GO.
+
+The tool intentionally separates mechanically bound retained subjects from operator declarations.
+GitHub/Xcode terminal acceptance is still an externally inspected fact; this offline tool records
+the exact run/job/artifact subject but does not pretend to query or re-authorize GitHub itself.
 """
 from __future__ import annotations
 
@@ -20,6 +24,7 @@ PROCEDURE = "V14"
 BASELINE_DEVICE = "iPhone 12"
 BASELINE_OS = "iOS 27"
 BUNDLE_ID = "com.jonathangana131.nembra"
+INSTALL_ROUTE = "exact-retained-ipa-via-xcode-device-management"
 EXTERNAL_RECORD_NAME = "NembraCaptureExternalBuildRecord.json"
 FIELD_RECORD_NAME = "NembraCaptureFieldBuildEvidenceRecord.json"
 INSPECTION_NAME = "NembraCaptureSignedFieldArtifactInspection.json"
@@ -66,18 +71,47 @@ def _shape(value: Any, pattern: re.Pattern[str], label: str) -> str:
     return value
 
 
+def _positive_int(value: Any, label: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise FinalGoError(f"{label} must be one positive integer")
+    return value
+
+
 def build_final_go_record(
-    *, candidate_root: Path, expected_source_sha: str, installed_ipa_sha256: str,
-    expected_development_team: str, visible_recipe: str, visible_build_identifier: str,
-    visible_source_sha: str, visible_build_instance_id: str, installed_without_rebuild: bool,
-    terminal_software_acceptance: bool, retained_app_evidence_inspected: bool,
-    intended_device_membership_accepted: bool, no_application_write_authority: bool,
-    observed_device: str, observed_os: str, research_admission_live: bool,
-    canonical_coordinator_permitted: bool, preflight_healthy: bool,
-    charger_disconnected: bool, stationary: bool,
+    *,
+    candidate_root: Path,
+    expected_source_sha: str,
+    trusted_xcode_run_id: int,
+    trusted_xcode_job_id: int,
+    trusted_xcode_artifact: Path,
+    pre_install_ipa_sha256: str,
+    post_install_ipa_sha256: str,
+    installation_route: str,
+    expected_development_team: str,
+    visible_recipe: str,
+    visible_build_identifier: str,
+    visible_source_sha: str,
+    visible_build_instance_id: str,
+    installed_without_rebuild: bool,
+    terminal_software_acceptance: bool,
+    retained_app_evidence_inspected: bool,
+    intended_device_membership_accepted: bool,
+    no_application_write_authority: bool,
+    observed_device: str,
+    observed_os: str,
+    research_admission_live: bool,
+    canonical_coordinator_permitted: bool,
+    preflight_healthy: bool,
+    charger_disconnected: bool,
+    stationary: bool,
 ) -> dict[str, Any]:
     source = _shape(expected_source_sha, HEX40, "expected source SHA")
-    installed_ipa = _shape(installed_ipa_sha256, HEX64, "installed IPA SHA-256")
+    xcode_run_id = _positive_int(trusted_xcode_run_id, "trusted Xcode run ID")
+    xcode_job_id = _positive_int(trusted_xcode_job_id, "trusted Xcode job ID")
+    xcode_artifact_sha = _sha(_regular(trusted_xcode_artifact, "trusted Xcode retained artifact"))
+    pre_install_ipa = _shape(pre_install_ipa_sha256, HEX64, "pre-install IPA SHA-256")
+    post_install_ipa = _shape(post_install_ipa_sha256, HEX64, "post-install IPA SHA-256")
+    _eq(installation_route, INSTALL_ROUTE, "retained-IPA installation route")
     _shape(expected_development_team, TEAM, "expected development TeamIdentifier")
     _eq(observed_device, BASELINE_DEVICE, "observed baseline device")
     _eq(observed_os, BASELINE_OS, "observed baseline OS")
@@ -85,11 +119,15 @@ def build_final_go_record(
     root = candidate_root.resolve(strict=True) / "inspection"
     external_raw, external = _json(root / EXTERNAL_RECORD_NAME, "external build record")
     field_raw, field = _json(root / FIELD_RECORD_NAME, "field-build evidence record")
-    _, inspection = _json(root / INSPECTION_NAME, "signed artifact inspection")
+    inspection_raw, inspection = _json(root / INSPECTION_NAME, "signed artifact inspection")
     ipa_sha = _sha(_regular(root / IPA_RELATIVE_PATH, "retained IPA"))
-    external_sha, field_sha = _sha(external_raw), _sha(field_raw)
+    external_sha, field_sha, inspection_sha = _sha(external_raw), _sha(field_raw), _sha(inspection_raw)
 
-    for record, version, label in ((external, 3, "external"), (field, 1, "field"), (inspection, 2, "inspection")):
+    for record, version, label in (
+        (external, 3, "external"),
+        (field, 1, "field"),
+        (inspection, 2, "inspection"),
+    ):
         _eq(record.get("schemaVersion"), version, f"{label} schema version")
 
     _eq(external.get("sourceCommitSHA"), source, "external source SHA")
@@ -102,9 +140,13 @@ def build_final_go_record(
     _eq(external.get("procedureVersion"), PROCEDURE, "external procedure")
 
     shared = {
-        "buildIdentifier": build, "buildInstanceID": instance, "sourceCommitSHA": source,
-        "executableSHA256": executable, "infoPlistSHA256": info_plist,
-        "experimentRecipeID": RECIPE, "procedureVersion": PROCEDURE,
+        "buildIdentifier": build,
+        "buildInstanceID": instance,
+        "sourceCommitSHA": source,
+        "executableSHA256": executable,
+        "infoPlistSHA256": info_plist,
+        "experimentRecipeID": RECIPE,
+        "procedureVersion": PROCEDURE,
     }
     for label, record in (("field", field), ("inspection", inspection)):
         for key, expected in shared.items():
@@ -119,19 +161,33 @@ def build_final_go_record(
     )
     for record, key, expected, label in links:
         _eq(record.get(key), expected, label)
-    _eq(installed_ipa, ipa_sha, "installed IPA digest")
+    _eq(pre_install_ipa, ipa_sha, "pre-install retained IPA digest")
+    _eq(post_install_ipa, ipa_sha, "post-install retained IPA digest")
     _eq(field.get("signedInstallableKind"), "ipa", "field installable kind")
     _eq(inspection.get("signedInstallableKind"), "ipa", "inspection installable kind")
-    _eq(inspection.get("authority"), "signed-field-artifact-inspection-not-field-authorization", "inspection authority boundary")
+    _eq(
+        inspection.get("authority"),
+        "signed-field-artifact-inspection-not-field-authorization",
+        "inspection authority boundary",
+    )
     _eq(inspection.get("bundleIdentifier"), BUNDLE_ID, "inspection bundle identifier")
     _eq(inspection.get("platformName"), "iphoneos", "inspection platform")
     platforms = inspection.get("supportedPlatforms")
     if not isinstance(platforms, list) or "iPhoneOS" not in platforms:
         raise FinalGoError("signed inspection does not describe an iPhoneOS installable")
     _eq(inspection.get("teamIdentifier"), expected_development_team, "inspection team identifier")
-    _eq(inspection.get("provisioningApplicationIdentifier"), f"{expected_development_team}.{BUNDLE_ID}", "inspection provisioning application identifier")
-    _shape(inspection.get("provisioningProfileSHA256"), HEX64, "inspection provisioning profile SHA-256")
-    if not isinstance(inspection.get("provisioningProfileUUID"), str) or not inspection["provisioningProfileUUID"].strip():
+    _eq(
+        inspection.get("provisioningApplicationIdentifier"),
+        f"{expected_development_team}.{BUNDLE_ID}",
+        "inspection provisioning application identifier",
+    )
+    provisioning_profile_sha = _shape(
+        inspection.get("provisioningProfileSHA256"),
+        HEX64,
+        "inspection provisioning profile SHA-256",
+    )
+    profile_uuid = inspection.get("provisioningProfileUUID")
+    if not isinstance(profile_uuid, str) or not profile_uuid.strip():
         raise FinalGoError("signed inspection lacks provisioning profile identity")
     expiration = inspection.get("provisioningProfileExpirationUTC")
     if not isinstance(expiration, str) or not expiration.endswith("Z"):
@@ -140,7 +196,8 @@ def build_final_go_record(
         expiration_utc = datetime.fromisoformat(expiration[:-1] + "+00:00")
     except ValueError as error:
         raise FinalGoError("signed inspection provisioning profile expiration is malformed") from error
-    if expiration_utc <= datetime.now(timezone.utc):
+    now_utc = datetime.now(timezone.utc)
+    if expiration_utc <= now_utc:
         raise FinalGoError("provisioning profile expired before Final GO")
     authorities = inspection.get("signingAuthorities")
     if not isinstance(authorities, list) or not authorities:
@@ -154,37 +211,77 @@ def build_final_go_record(
     ):
         _eq(actual, expected, label)
 
-    confirmations = {
-        "terminalSoftwareAcceptanceForExactSource": terminal_software_acceptance,
-        "retainedAppEvidenceInspected": retained_app_evidence_inspected,
-        "independentIntendedDeviceMembershipAccepted": intended_device_membership_accepted,
+    # These are deliberately classified as operator declarations. The exact retained byte subjects
+    # they refer to are recorded separately below; a Boolean is never presented as proof by itself.
+    declarations = {
+        "terminalSoftwareAcceptanceForRecordedXcodeSubject": terminal_software_acceptance,
+        "retainedAppEvidenceInspectedForRecordedXcodeSubject": retained_app_evidence_inspected,
+        "independentIntendedDeviceMembershipAcceptedForRecordedInspection": intended_device_membership_accepted,
         "noApplicationCharacteristicWriteAuthority": no_application_write_authority,
         "installedWithoutRebuildOrSubstitution": installed_without_rebuild,
-        "observedBaselineDeviceAndOSMatched": True,
-        "visibleRendezvousMatchedRetainedEvidence": True,
         "privateResearchAdmissionLive": research_admission_live,
         "canonicalCoordinatorPermittedProcedure": canonical_coordinator_permitted,
         "preflightHealthyBeforeScan": preflight_healthy,
         "chargerFreshlyDeclaredDisconnected": charger_disconnected,
         "stationaryForSetup": stationary,
     }
-    missing = [key for key, value in confirmations.items() if value is not True]
+    missing = [key for key, value in declarations.items() if value is not True]
     if missing:
-        raise FinalGoError("required GO confirmations are not all true: " + ", ".join(missing))
+        raise FinalGoError("required GO declarations are not all true: " + ", ".join(missing))
 
+    generated_at = now_utc.replace(microsecond=0).isoformat().replace("+00:00", "Z")
     return {
-        "schemaVersion": 1, "authority": "today-final-go-procedural-record-not-physical-result",
-        "decision": "GO", "acceptedSourceCommitSHA": source, "acceptedBuildIdentifier": build,
-        "acceptedBuildInstanceID": instance, "retainedIPASHA256": ipa_sha,
-        "externalBuildRecordSHA256": external_sha, "fieldBuildEvidenceRecordSHA256": field_sha,
-        "retainedExecutableSHA256": executable, "retainedInfoPlistSHA256": info_plist,
-        "procedureVersion": PROCEDURE, "experimentRecipeID": RECIPE,
-        "baselineDevice": BASELINE_DEVICE, "baselineOS": BASELINE_OS,
-        "developmentTeam": expected_development_team, "confirmations": confirmations,
+        "schemaVersion": 2,
+        "authority": "today-final-go-procedural-record-not-physical-result",
+        "decision": "GO",
+        "generatedAtUTC": generated_at,
+        "acceptedSourceCommitSHA": source,
+        "acceptedBuildIdentifier": build,
+        "acceptedBuildInstanceID": instance,
+        "trustedXcodeAcceptanceSubject": {
+            "runID": xcode_run_id,
+            "jobID": xcode_job_id,
+            "retainedArtifactSHA256": xcode_artifact_sha,
+            "acceptedSourceCommitSHA": source,
+            "classification": "externally-inspected-terminal-software-acceptance-subject",
+        },
+        "signedFieldInspectionSubject": {
+            "inspectionRecordSHA256": inspection_sha,
+            "provisioningProfileSHA256": provisioning_profile_sha,
+            "provisioningProfileUUID": profile_uuid.strip(),
+            "provisioningProfileExpirationUTC": expiration,
+            "classification": "independently-inspected-signed-installable-evidence-not-field-authorization",
+        },
+        "retainedIPAInstallHandoff": {
+            "preInstallRetainedIPASHA256": pre_install_ipa,
+            "installationRoute": INSTALL_ROUTE,
+            "postInstallRetainedIPASHA256": post_install_ipa,
+            "installedWithoutRebuildOrSubstitution": True,
+        },
+        "retainedIPASHA256": ipa_sha,
+        "externalBuildRecordSHA256": external_sha,
+        "fieldBuildEvidenceRecordSHA256": field_sha,
+        "signedArtifactInspectionRecordSHA256": inspection_sha,
+        "retainedExecutableSHA256": executable,
+        "retainedInfoPlistSHA256": info_plist,
+        "procedureVersion": PROCEDURE,
+        "experimentRecipeID": RECIPE,
+        "baselineDevice": BASELINE_DEVICE,
+        "baselineOS": BASELINE_OS,
+        "developmentTeam": expected_development_team,
+        "verifiedBindings": {
+            "retainedCandidateTupleMatched": True,
+            "preAndPostInstallDigestsMatchedRetainedIPA": True,
+            "visibleRendezvousMatchedRetainedEvidence": True,
+            "provisioningProfileUnexpiredAtRecordCreation": True,
+        },
+        "operatorDeclarations": declarations,
         "expectedOutput": "exact raw Nembra Capture Share artifact for Experiment One",
         "stopConditions": [
-            "foreground loss or app lifecycle invalidation", "build/provenance/rendezvous mismatch",
-            "charger not disconnected or setup not stationary", "correlation ambiguity or target identity loss",
+            "foreground loss or app lifecycle invalidation",
+            "build/provenance/rendezvous mismatch",
+            "charger not disconnected or setup not stationary",
+            "correlation ambiguity or target identity loss",
             "continuity, chronology, Horizon, seal, or integrity failure",
             "export/share failure or artifact substitution",
             "any application characteristic write or scooter command authority",
@@ -195,13 +292,38 @@ def build_final_go_record(
 
 def _args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    for flag in ("candidate-root", "expected-source-sha", "installed-ipa-sha256", "expected-development-team",
-                 "visible-recipe", "visible-build-identifier", "visible-source-sha", "visible-build-instance-id",
-                 "observed-device", "observed-os"):
-        p.add_argument(f"--{flag}", required=True, type=Path if flag == "candidate-root" else str)
-    for flag in ("installed-without-rebuild", "terminal-software-acceptance", "retained-app-evidence-inspected",
-                 "intended-device-membership-accepted", "no-application-write-authority", "research-admission-live",
-                 "canonical-coordinator-permitted", "preflight-healthy", "charger-disconnected", "stationary"):
+    path_flags = ("candidate-root", "trusted-xcode-artifact")
+    string_flags = (
+        "expected-source-sha",
+        "pre-install-ipa-sha256",
+        "post-install-ipa-sha256",
+        "installation-route",
+        "expected-development-team",
+        "visible-recipe",
+        "visible-build-identifier",
+        "visible-source-sha",
+        "visible-build-instance-id",
+        "observed-device",
+        "observed-os",
+    )
+    for flag in path_flags:
+        p.add_argument(f"--{flag}", required=True, type=Path)
+    for flag in string_flags:
+        p.add_argument(f"--{flag}", required=True)
+    p.add_argument("--trusted-xcode-run-id", required=True, type=int)
+    p.add_argument("--trusted-xcode-job-id", required=True, type=int)
+    for flag in (
+        "installed-without-rebuild",
+        "terminal-software-acceptance",
+        "retained-app-evidence-inspected",
+        "intended-device-membership-accepted",
+        "no-application-write-authority",
+        "research-admission-live",
+        "canonical-coordinator-permitted",
+        "preflight-healthy",
+        "charger-disconnected",
+        "stationary",
+    ):
         p.add_argument(f"--{flag}", action="store_true")
     p.add_argument("--output", required=True, type=Path)
     return p.parse_args(argv)
