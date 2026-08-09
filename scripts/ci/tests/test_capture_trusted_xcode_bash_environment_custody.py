@@ -19,7 +19,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = ROOT / ".github/workflows/capture-xcode27-trusted-command.yml"
-PRODUCER = ROOT / "scripts/ci/xcode27_simulator_capture.sh"
+TRUSTED_PRODUCER_PATH = "scripts/ci/xcode27_simulator_capture.sh"
+TRUSTED_PRODUCER_BLOB_SHA = "4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"
 PRIVILEGED_SHELL = 'shell: "/bin/bash --noprofile --norc -p -e -o pipefail {0}"'
 
 
@@ -104,18 +105,28 @@ class TrustedRunnerBashEnvironmentCustodyTests(unittest.TestCase):
             "authority-producing Bash must consume pinned producer bytes behind the closed env -i boundary",
         )
 
-    def test_clean_inner_environment_preserves_trusted_run_identity_for_retained_metadata(self) -> None:
-        step = self._step("Build, test, and capture Simulator states")
-        producer = PRODUCER.read_text(encoding="utf-8")
+    def test_clean_inner_environment_preserves_trusted_run_identity_for_pinned_producer(self) -> None:
+        custody_step = self._step("Verify trusted Simulator evidence-producer custody")
+        build_step = self._step("Build, test, and capture Simulator states")
+        expected_path = f'producer_path="{TRUSTED_PRODUCER_PATH}"'
+        expected_blob = f'expected_blob="{TRUSTED_PRODUCER_BLOB_SHA}"'
 
-        self.assertIn('${GITHUB_RUN_ID:-local}', producer)
-        self.assertIn('${GITHUB_RUN_ATTEMPT:-0}', producer)
-        self.assertIn('capture-runner-metadata.json', producer)
+        # Bind this regression to the producer object the trusted workflow actually admits. The
+        # default-branch worktree copy is not the Capture candidate and can legitimately be a
+        # different blob, so reading it here would test the wrong authority subject.
+        self.assertIn(expected_path, custody_step)
+        self.assertIn(expected_blob, custody_step)
+        self.assertIn('/usr/bin/git rev-parse --verify "HEAD:${producer_path}"', custody_step)
+        self.assertIn('test "$actual_blob" = "$expected_blob"', custody_step)
 
-        self.assertIn('GITHUB_RUN_ID="${{ github.run_id }}"', step)
-        self.assertIn('GITHUB_RUN_ATTEMPT="${{ github.run_attempt }}"', step)
-        self.assertNotIn('GITHUB_RUN_ID="$GITHUB_RUN_ID"', step)
-        self.assertNotIn('GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT"', step)
+        self.assertIn(expected_path, build_step)
+        self.assertIn(expected_blob, build_step)
+        self.assertIn('/usr/bin/git cat-file blob "$expected_blob"', build_step)
+        self.assertIn('test "$materialized_blob" = "$expected_blob"', build_step)
+        self.assertIn('GITHUB_RUN_ID="${{ github.run_id }}"', build_step)
+        self.assertIn('GITHUB_RUN_ATTEMPT="${{ github.run_attempt }}"', build_step)
+        self.assertNotIn('GITHUB_RUN_ID="$GITHUB_RUN_ID"', build_step)
+        self.assertNotIn('GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT"', build_step)
 
     def test_retained_evidence_step_cannot_reopen_candidate_bash_startup_authority(self) -> None:
         step = self._step("Verify retained Capture evidence against trusted resolver authority")
