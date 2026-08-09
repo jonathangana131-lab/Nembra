@@ -6,6 +6,12 @@ on:
     paths:
       - scripts/ci/es80_today_final_go_record.py
       - scripts/ci/tests/test_es80_today_final_go_record.py
+      - scripts/ci/es80_today_final_go_hardened.py
+      - scripts/ci/tests/test_es80_today_final_go_hardened.py
+      - scripts/ci/es80_today_trusted_capture_xcode_subject.py
+      - scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
+      - scripts/ci/es80_today_final_go_publication.py
+      - scripts/ci/tests/test_es80_today_final_go_publication.py
       - .github/workflows/capture-today-final-go-qa.yml
 
 permissions:
@@ -13,7 +19,7 @@ permissions:
 
 jobs:
   final-go-authority:
-    name: Validate external Final GO authority
+    name: Validate hardened external Final GO authority
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -30,38 +36,49 @@ jobs:
       - name: Verify immutable PR head
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+
+      - name: Compile Final GO foundation, hardening, and adversarial tests
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          python3 -m py_compile scripts/ci/es80_today_final_go_record.py scripts/ci/tests/test_es80_today_final_go_record.py
+          python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
+          python3 -m py_compile scripts/ci/es80_today_final_go_publication.py scripts/ci/tests/test_es80_today_final_go_publication.py
+          python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py
 
-      - name: Compile Final GO verifier and adversarial tests
-        run: |
-          set -euo pipefail
-          python3 -m py_compile scripts/ci/es80_today_final_go_record.py
-          python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_record.py
-
-      - name: Run Final GO adversarial suite
+      - name: Preserve foundation adversarial coverage
         run: python3 scripts/ci/tests/test_es80_today_final_go_record.py -v
+
+      - name: Reject candidate-controlled trusted-Xcode authority
+        run: python3 scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py -v
+
+      - name: Require failure-atomic no-replace publication
+        run: python3 scripts/ci/tests/test_es80_today_final_go_publication.py -v
+
+      - name: Verify hardened composition seam
+        run: python3 scripts/ci/tests/test_es80_today_final_go_hardened.py -v
 
       - name: Reject naked Boolean Final GO CLI authority
         run: |
           set -euo pipefail
-          help="$(python3 scripts/ci/es80_today_final_go_record.py --help)"
+          help="$(python3 scripts/ci/es80_today_final_go_hardened.py --help)"
           ! grep -Eq -- '--(terminal-software-acceptance|installed-without-rebuild|retained-app-evidence-inspected|intended-device-membership-accepted|no-application-write-authority|research-admission-live|canonical-coordinator-permitted|preflight-healthy|charger-disconnected|stationary)' <<<"$help"
           grep -Fq -- '--operator-attestation' <<<"$help"
           grep -Fq -- '--trusted-xcode-run-id' <<<"$help"
           grep -Fq -- '--trusted-xcode-job-id' <<<"$help"
           grep -Fq -- '--trusted-xcode-artifact-id' <<<"$help"
 
-      - name: Verify current trusted workflow and Research tuple are pinned exactly
+      - name: Pin default-branch Xcode trust and Research tuple exactly
         run: |
           set -euo pipefail
-          grep -Fq 'TRUSTED_WORKFLOW_NAME = "Xcode 27 PR Exact-Head QA"' scripts/ci/es80_today_final_go_record.py
-          grep -Fq 'TRUSTED_JOB_NAME = "Build, test, and capture exact PR head"' scripts/ci/es80_today_final_go_record.py
+          grep -Fq 'TRUSTED_WORKFLOW_NAME = "Capture Trusted Xcode 27 Exact-Head QA"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          grep -Fq 'TRUSTED_WORKFLOW_PATH = ".github/workflows/capture-xcode27-trusted-command.yml"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          grep -Fq 'TRUSTED_WORKFLOW_BLOB_SHA = "e5ef72f50bed279e98ad28b94930831b747d0c20"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          grep -Fq 'name: Capture Trusted Xcode 27 Exact-Head QA' .github/workflows/capture-xcode27-trusted-command.yml
+          grep -Fq 'name: Build, test, and capture trusted exact Capture head' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq 'PINNED_CROSSCHECK_COMMIT = "d827a296048386bda62024ea3278775d5344c47c"' scripts/ci/es80_today_final_go_record.py
           grep -Fq 'PINNED_CROSSCHECK_BLOB = "c3b2b620280484c05316fc5c2fa2ca451f1fdc83"' scripts/ci/es80_today_final_go_record.py
           grep -Fq 'RESEARCH_COMPILE_MODE = "private-today-v1"' scripts/ci/es80_today_final_go_record.py
           grep -Fq 'RESEARCH_COMPILE_AUTHORITY = "canonical-producer-explicit-mode"' scripts/ci/es80_today_final_go_record.py
           grep -Fq 'RESEARCH_COMPILE_CONDITION = "NEMBRA_ES80_TODAY_RESEARCH"' scripts/ci/es80_today_final_go_record.py
-          grep -Fq 'name: Xcode 27 PR Exact-Head QA' .github/workflows/xcode27-pr-command.yml
-          grep -Fq 'name: Build, test, and capture exact PR head' .github/workflows/xcode27-pr-command.yml
+          grep -Fq 'publication.publish_record_no_replace' scripts/ci/es80_today_final_go_hardened.py
