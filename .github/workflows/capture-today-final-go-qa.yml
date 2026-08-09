@@ -110,7 +110,7 @@ jobs:
           grep -Fq 'PINNED_CROSSCHECK_COMMIT = "d827a296048386bda62024ea3278775d5344c47c"' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'PINNED_CROSSCHECK_BLOB = "c3b2b620280484c05316fc5c2fa2ca451f1fdc83"' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'producerExecutionAuthority' scripts/ci/es80_today_final_go_foundation.py
-          grep -Fq 'cat-file", "blob", object_id' scripts/ci/es80_today_final_go_foundation.py
+          grep -Fq '"cat-file", "blob", object_id' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'RESEARCH_COMPILE_MODE = "private-today-v1"' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'RESEARCH_COMPILE_AUTHORITY = "canonical-producer-explicit-mode"' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'RESEARCH_COMPILE_CONDITION = "NEMBRA_ES80_TODAY_RESEARCH"' scripts/ci/es80_today_final_go_foundation.py
