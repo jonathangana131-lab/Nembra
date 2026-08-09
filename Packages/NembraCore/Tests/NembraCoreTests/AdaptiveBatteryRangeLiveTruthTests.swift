@@ -13,28 +13,44 @@ struct AdaptiveBatteryRangeLiveTruthTests {
             sequence: 1,
             uptime: 1_000
         )
-        var validator = BatteryEvidenceStreamValidator()
-        try validator.accept(observation)
-
-        let anchor = try AcceptedBatterySOCAnchor.current(
-            observation: observation,
-            acceptedBy: validator
-        )
+        var stream = AcceptedBatterySOCStream()
+        let anchor = try #require(stream.accept(observation))
 
         #expect(anchor.percentage == 73)
         #expect(anchor.sourceReceiptIdentity == observation.receiptIdentity)
         #expect(anchor.receivedAtUptimeNanoseconds == 1_000)
-        #expect(anchor.continuitySegmentStartReceiptIdentity == nil)
-        #expect(anchor.isCurrent(in: validator))
+        #expect(anchor.continuitySegmentStartReceiptIdentity == anchor.sourceReceiptIdentity)
+        #expect(anchor.isCurrent)
+        #expect(anchor.isCurrent(in: stream.validator))
+    }
+
+    @Test("standalone chronology validator cannot mint live currentness authority")
+    func standaloneValidatorCannotMintCurrentAnchor() throws {
+        let epoch = UUID(uuidString: "11111111-1111-1111-1111-111111111112")!
+        let observation = try verifiedSOC(
+            percent: 73,
+            epoch: epoch,
+            sequence: 1,
+            uptime: 1_000
+        )
+        var validator = BatteryEvidenceStreamValidator()
+        try validator.accept(observation)
+
+        #expect(throws: AdaptiveBatteryRangeLiveTruthError.currentnessOwnerRequired) {
+            _ = try AcceptedBatterySOCAnchor.current(
+                observation: observation,
+                acceptedBy: validator
+            )
+        }
     }
 
     @Test("current projection rejects same receipt with forged continuous metadata")
     func currentProjectionRejectsForgedContinuousMetadata() throws {
         let epoch = UUID(uuidString: "12121212-1212-1212-1212-121212121212")!
-        var validator = BatteryEvidenceStreamValidator()
+        var stream = AcceptedBatterySOCStream()
         let beforeGap = try verifiedSOC(percent: 74, epoch: epoch, sequence: 1, uptime: 1_000)
-        try validator.accept(beforeGap)
-        validator.markUnobservedInterval()
+        _ = try stream.accept(beforeGap)
+        stream.markUnobservedInterval()
 
         let acceptedBoundary = try verifiedSOC(
             percent: 73,
@@ -43,7 +59,7 @@ struct AdaptiveBatteryRangeLiveTruthTests {
             uptime: 2_000,
             continuity: .afterUnobservedInterval
         )
-        try validator.accept(acceptedBoundary)
+        _ = try stream.accept(acceptedBoundary)
 
         let forgedSibling = try verifiedSOC(
             percent: 73,
@@ -56,12 +72,12 @@ struct AdaptiveBatteryRangeLiveTruthTests {
         #expect(throws: AdaptiveBatteryRangeLiveTruthError.observationNotCurrentlyAccepted) {
             _ = try AcceptedBatterySOCAnchor.current(
                 observation: forgedSibling,
-                acceptedBy: validator
+                acceptedBy: stream.validator
             )
         }
         #expect(try AcceptedBatterySOCAnchor.current(
             observation: acceptedBoundary,
-            acceptedBy: validator
+            acceptedBy: stream.validator
         ).continuity == .afterUnobservedInterval)
     }
 
@@ -69,8 +85,8 @@ struct AdaptiveBatteryRangeLiveTruthTests {
     func currentProjectionRejectsForgedPostGapMetadata() throws {
         let epoch = UUID(uuidString: "13131313-1313-1313-1313-131313131313")!
         let accepted = try verifiedSOC(percent: 73, epoch: epoch, sequence: 1, uptime: 1_000)
-        var validator = BatteryEvidenceStreamValidator()
-        try validator.accept(accepted)
+        var stream = AcceptedBatterySOCStream()
+        _ = try stream.accept(accepted)
 
         let forgedSibling = try verifiedSOC(
             percent: 73,
@@ -83,12 +99,12 @@ struct AdaptiveBatteryRangeLiveTruthTests {
         #expect(throws: AdaptiveBatteryRangeLiveTruthError.observationNotCurrentlyAccepted) {
             _ = try AcceptedBatterySOCAnchor.current(
                 observation: forgedSibling,
-                acceptedBy: validator
+                acceptedBy: stream.validator
             )
         }
         #expect(try AcceptedBatterySOCAnchor.current(
             observation: accepted,
-            acceptedBy: validator
+            acceptedBy: stream.validator
         ).continuity == .continuous)
     }
 
@@ -141,6 +157,7 @@ struct AdaptiveBatteryRangeLiveTruthTests {
         }
         #expect(stream.continuitySegmentStartReceiptIdentity == first.sourceReceiptIdentity)
         #expect(stream.validator.requiresContinuityBoundary)
+        #expect(first.isCurrent == false)
 
         let recovery = try #require(stream.accept(
             try verifiedSOC(
@@ -200,37 +217,36 @@ struct AdaptiveBatteryRangeLiveTruthTests {
             sequence: 1,
             uptime: 5_000
         )
-        var validator = BatteryEvidenceStreamValidator()
-        try validator.accept(observation)
-        let anchor = try AcceptedBatterySOCAnchor.current(
-            observation: observation,
-            acceptedBy: validator
-        )
+        var stream = AcceptedBatterySOCStream()
+        let anchor = try #require(stream.accept(observation))
         let model = AdaptiveBatteryRangeModel()
         let policy = try provisionalPolicy()
         #expect(model.estimateRemainingRange(
             atAcceptedSOC: anchor,
-            acceptedBy: validator,
+            acceptedBy: stream.validator,
             policy: policy
         ) != nil)
 
-        validator.markUnobservedInterval()
+        let staleValidator = stream.validator
+        stream.markUnobservedInterval()
 
-        #expect(anchor.isCurrent(in: validator) == false)
+        #expect(anchor.isCurrent == false)
+        #expect(anchor.isCurrent(in: stream.validator) == false)
+        #expect(anchor.isCurrent(in: staleValidator) == false)
         #expect(model.estimateRemainingRange(
             atAcceptedSOC: anchor,
-            acceptedBy: validator,
+            acceptedBy: staleValidator,
             policy: policy
         ) == nil)
         #expect(throws: AdaptiveBatteryRangeLiveTruthError.observationNotCurrentlyAccepted) {
             _ = try AcceptedBatterySOCAnchor.current(
                 observation: observation,
-                acceptedBy: validator
+                acceptedBy: staleValidator
             )
         }
     }
 
-    @Test("new post-gap receipt supersedes retained pre-gap anchor")
+    @Test("new post-gap receipt supersedes retained pre-gap anchor even through cached R1 validator")
     func postGapReceiptSupersedesOldAnchor() throws {
         let epoch = UUID(uuidString: "44444444-4444-4444-4444-444444444444")!
         let oldObservation = try verifiedSOC(
@@ -239,14 +255,12 @@ struct AdaptiveBatteryRangeLiveTruthTests {
             sequence: 1,
             uptime: 10_000
         )
-        var validator = BatteryEvidenceStreamValidator()
-        try validator.accept(oldObservation)
-        let oldAnchor = try AcceptedBatterySOCAnchor.current(
-            observation: oldObservation,
-            acceptedBy: validator
-        )
+        var stream = AcceptedBatterySOCStream()
+        let oldAnchor = try #require(stream.accept(oldObservation))
+        let staleValidator = stream.validator
+        var staleStream = stream
 
-        validator.markUnobservedInterval()
+        stream.markUnobservedInterval()
         let newObservation = try verifiedSOC(
             percent: 63,
             epoch: epoch,
@@ -254,27 +268,60 @@ struct AdaptiveBatteryRangeLiveTruthTests {
             uptime: 12_000,
             continuity: .afterUnobservedInterval
         )
-        try validator.accept(newObservation)
-        let newAnchor = try AcceptedBatterySOCAnchor.current(
-            observation: newObservation,
-            acceptedBy: validator
-        )
+        let newAnchor = try #require(stream.accept(newObservation))
 
-        #expect(oldAnchor.isCurrent(in: validator) == false)
-        #expect(newAnchor.isCurrent(in: validator))
+        #expect(oldAnchor.isCurrent == false)
+        #expect(oldAnchor.isCurrent(in: staleValidator) == false)
+        #expect(newAnchor.isCurrent)
+        #expect(newAnchor.isCurrent(in: stream.validator))
 
         let model = AdaptiveBatteryRangeModel()
         let policy = try provisionalPolicy()
         #expect(model.estimateRemainingRange(
             atAcceptedSOC: oldAnchor,
-            acceptedBy: validator,
+            acceptedBy: staleValidator,
             policy: policy
         ) == nil)
         #expect(model.estimateRemainingRange(
             atAcceptedSOC: newAnchor,
-            acceptedBy: validator,
+            acceptedBy: stream.validator,
             policy: policy
         ) != nil)
+
+        #expect(throws: BatteryEvidenceStreamValidationError.staleCurrentnessOwner) {
+            _ = try staleStream.accept(oldObservation)
+        }
+        #expect(throws: AdaptiveBatteryRangeLiveTruthError.observationNotCurrentlyAccepted) {
+            _ = try AcceptedBatterySOCAnchor.current(
+                observation: oldObservation,
+                acceptedBy: staleValidator
+            )
+        }
+    }
+
+    @Test("rejected newer callback still revokes old currentness for every copied validator")
+    func rejectedNewerReceiptRevokesCachedCurrentness() throws {
+        let epoch = UUID(uuidString: "45454545-4545-4545-4545-454545454545")!
+        var stream = AcceptedBatterySOCStream()
+        let first = try #require(stream.accept(
+            try verifiedSOC(percent: 64, epoch: epoch, sequence: 1, uptime: 10_000)
+        ))
+        let staleValidator = stream.validator
+
+        let backwardNewer = try verifiedSOC(
+            percent: 63,
+            epoch: epoch,
+            sequence: 2,
+            uptime: 9_000
+        )
+        #expect(throws: BatteryEvidenceStreamValidationError.nonMonotonicUptime) {
+            _ = try stream.accept(backwardNewer)
+        }
+
+        #expect(first.isCurrent == false)
+        #expect(first.isCurrent(in: staleValidator) == false)
+        #expect(stream.validator.lastAcceptedReceiptIdentity == nil)
+        #expect(staleValidator.lastAcceptedReceiptIdentity == nil)
     }
 
     @Test("live derived range carries source receipt and cannot be refreshed from superseded SoC")
@@ -286,19 +333,16 @@ struct AdaptiveBatteryRangeLiveTruthTests {
             sequence: 1,
             uptime: 20_000
         )
-        var validator = BatteryEvidenceStreamValidator()
-        try validator.accept(firstObservation)
-        let anchor = try AcceptedBatterySOCAnchor.current(
-            observation: firstObservation,
-            acceptedBy: validator
-        )
+        var stream = AcceptedBatterySOCStream()
+        let anchor = try #require(stream.accept(firstObservation))
+        let staleValidator = stream.validator
 
         let policy = try provisionalPolicy(efficiency: 120)
         let model = AdaptiveBatteryRangeModel()
         let liveEstimate = try #require(
             model.estimateRemainingRange(
                 atAcceptedSOC: anchor,
-                acceptedBy: validator,
+                acceptedBy: stream.validator,
                 policy: policy
             )
         )
@@ -306,7 +350,8 @@ struct AdaptiveBatteryRangeLiveTruthTests {
         #expect(liveEstimate.estimate.rawRemainingMeters == 6_000)
         #expect(liveEstimate.estimate.socProvenance == .authoritativeMeasurement)
         #expect(liveEstimate.sourceReceiptIdentity == anchor.sourceReceiptIdentity)
-        #expect(liveEstimate.isCurrent(in: validator))
+        #expect(liveEstimate.isCurrent(in: stream.validator))
+        #expect(liveEstimate.isCurrent(in: staleValidator))
 
         let secondObservation = try verifiedSOC(
             percent: 49,
@@ -314,12 +359,13 @@ struct AdaptiveBatteryRangeLiveTruthTests {
             sequence: 2,
             uptime: 21_000
         )
-        try validator.accept(secondObservation)
+        _ = try stream.accept(secondObservation)
 
-        #expect(liveEstimate.isCurrent(in: validator) == false)
+        #expect(liveEstimate.isCurrent(in: stream.validator) == false)
+        #expect(liveEstimate.isCurrent(in: staleValidator) == false)
         #expect(model.estimateRemainingRange(
             atAcceptedSOC: anchor,
-            acceptedBy: validator,
+            acceptedBy: staleValidator,
             policy: policy
         ) == nil)
     }
