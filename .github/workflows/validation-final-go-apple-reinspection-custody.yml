@@ -1,0 +1,39 @@
+name: Capture Final GO Apple Reinspection Custody QA
+
+on:
+  push:
+    branches:
+      - repair/v14-final-go-apple-reinspection-custody/gpt56-go
+  pull_request:
+    paths:
+      - scripts/ci/es80_today_trusted_signed_candidate_subject.py
+      - scripts/ci/tests/test_es80_today_trusted_signed_candidate_subject.py
+      - .github/workflows/validation-final-go-apple-reinspection-custody.yml
+
+permissions:
+  contents: read
+
+jobs:
+  custody:
+    name: Validate frozen Apple reinspection custody without claiming Apple verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout immutable head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - name: Compile trusted reinspection primitive and regressions
+        run: |
+          python3 -m py_compile scripts/ci/es80_today_trusted_signed_candidate_subject.py
+          python3 -m py_compile scripts/ci/tests/test_es80_today_trusted_signed_candidate_subject.py
+      - name: Validate custody, privacy, byte binding, and macOS fail-closed behavior
+        run: python3 scripts/ci/tests/test_es80_today_trusted_signed_candidate_subject.py -v
+      - name: Pin exact frozen #833 Apple inspection authority source
+        run: |
+          set -euo pipefail
+          grep -Fq 'FROZEN_CAPTURE_SOURCE_COMMIT = "f4cd76e301334ce96824d0b150ef03d2d2cb606b"' scripts/ci/es80_today_trusted_signed_candidate_subject.py
+          grep -Fq 'PRIVATE_RUNNER_BLOB = "f648b3080313f65da1e358ef3beb8c23d05966e6"' scripts/ci/es80_today_trusted_signed_candidate_subject.py
+          grep -Fq 'INSPECTOR_BLOB = "57ec5f42b23ade83f1367fa86fe8f60f2144f241"' scripts/ci/es80_today_trusted_signed_candidate_subject.py
+          grep -Fq 'trusted signed-field reinspection requires macOS Apple signing tools' scripts/ci/es80_today_trusted_signed_candidate_subject.py
+          grep -Fq 'physicalExperimentAuthorization": "not-granted"' scripts/ci/es80_today_trusted_signed_candidate_subject.py
