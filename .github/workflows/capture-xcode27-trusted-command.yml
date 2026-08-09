@@ -164,6 +164,7 @@ jobs:
           python3 scripts/ci/es80_field_authorization_envelope.py --self-test
 
       - name: Build, test, and capture Simulator states
+        shell: /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME=/tmp LC_ALL=C /bin/bash --noprofile --norc -e -o pipefail {0}
         run: |
           set -euo pipefail
           producer_path="scripts/ci/xcode27_simulator_capture.sh"
@@ -200,16 +201,14 @@ jobs:
                 PATH=/usr/bin:/bin:/usr/sbin:/sbin \
                 HOME=/tmp \
                 LC_ALL=C \
-                /bin/bash -c 'source /dev/stdin' "$GITHUB_WORKSPACE/$producer_path"
+                /bin/bash -c 'source /dev/stdin' "$(/bin/pwd -P)/$producer_path"
 
       - name: Verify retained Capture evidence against trusted resolver authority
-        env:
-          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+        shell: /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME=/tmp LC_ALL=C /bin/bash --noprofile --norc -e -o pipefail {0}
         run: |
           /usr/bin/python3 -I - <<'PY'
           import hashlib
           import json
-          import os
           import plistlib
           import re
           import subprocess
@@ -220,7 +219,7 @@ jobs:
           executable = root / "build-evidence" / "Nembra"
           info_plist = root / "build-evidence" / "Info.plist"
 
-          expected_head = os.environ.get("EXPECTED_HEAD_SHA", "").strip()
+          expected_head = "${{ needs.resolve.outputs.head_sha }}"
           if re.fullmatch(r"[0-9a-f]{40}", expected_head) is None:
               raise SystemExit("Trusted resolver did not supply one canonical lowercase 40-hex SHA")
 
