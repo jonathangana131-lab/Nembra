@@ -133,24 +133,29 @@ struct ES80CaptureShellView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: captureVerticalSpacing) {
-#if DEBUG && targetEnvironment(simulator)
-                    if dynamicTypeSize.isAccessibilitySize, let simulatorQASnapshot {
-                        simulatorQABadge(simulatorQASnapshot)
-                    }
-#endif
                     hero(for: currentPhase)
 #if DEBUG && targetEnvironment(simulator)
-                    if !dynamicTypeSize.isAccessibilitySize, let simulatorQASnapshot {
+                    if let simulatorQASnapshot {
                         simulatorQABadge(simulatorQASnapshot)
                     }
 #endif
-                    passiveSafetyPanel
-                    progressRail(status: status)
-                    primaryContent(
-                        for: currentPhase,
-                        status: status,
-                        nowUptimeNanoseconds: now
-                    )
+                    if prioritizesPrimaryContent(for: currentPhase) {
+                        primaryContent(
+                            for: currentPhase,
+                            status: status,
+                            nowUptimeNanoseconds: now
+                        )
+                        passiveSafetyPanel
+                        progressRail(status: status)
+                    } else {
+                        passiveSafetyPanel
+                        progressRail(status: status)
+                        primaryContent(
+                            for: currentPhase,
+                            status: status,
+                            nowUptimeNanoseconds: now
+                        )
+                    }
 
                     if let diagnosticMessage {
                         diagnosticBanner(diagnosticMessage)
@@ -218,6 +223,16 @@ struct ES80CaptureShellView: View {
     }
 
     private var captureBottomPadding: CGFloat { verticalSizeClass == .compact ? 20 : 42 }
+
+    private func prioritizesPrimaryContent(for phase: Phase) -> Bool {
+        guard dynamicTypeSize.isAccessibilitySize else { return false }
+        switch phase {
+        case .readyToSeal, .complete:
+            return true
+        default:
+            return false
+        }
+    }
 
     @ViewBuilder
     private func hero(for phase: Phase) -> some View {
@@ -307,7 +322,11 @@ struct ES80CaptureShellView: View {
         HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: 9) {
             Image(systemName: "hammer.fill")
                 .accessibilityHidden(true)
-            Text("\(snapshot.evidenceLabel) · SYNTHETIC SOFTWARE STATE")
+            Text(
+                dynamicTypeSize.isAccessibilitySize
+                    ? "SIMULATOR QA · SYNTHETIC"
+                    : "\(snapshot.evidenceLabel) · SYNTHETIC SOFTWARE STATE"
+            )
                 .fixedSize(horizontal: false, vertical: true)
         }
         .font(.caption.monospaced().weight(.bold))
@@ -895,54 +914,83 @@ struct ES80CaptureShellView: View {
         .accessibilityIdentifier("es80.capture.health")
     }
 
+    @ViewBuilder
     private var completionPanel: some View {
         let analysisReady = presentationAnalysisReady
-        return VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 14) {
-                ZStack {
-                    Circle()
-                        .fill(analysisReady ? .white : .white.opacity(0.12))
-                        .frame(width: 52, height: 52)
-                    Image(systemName: analysisReady ? "checkmark" : "lock.fill")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(analysisReady ? .black : .white)
-                }
-                .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(analysisReady ? "CAPTURE COMPLETE" : "CAPTURE SEALED")
-                        .font(.caption.monospaced().weight(.bold))
-                        .foregroundStyle(.secondary)
-                    Text(analysisReady ? "Ready for analysis" : "Integrity check required")
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(.white)
-                }
-            }
-
-            completionDescription
-
-            if coordinator.status.finalizationCleanup == .failed {
-                Text("The Capture is sealed, but Bluetooth cleanup did not finish. Keep this Capture and restart Nembra before starting another one.")
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(.orange)
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(analysisReady ? "CAPTURE COMPLETE" : "CAPTURE SEALED")
+                    .font(.caption2.monospaced().weight(.bold))
+                    .foregroundStyle(.secondary)
+                Text(analysisReady ? "Ready for analysis" : "Integrity check required")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true)
+
+                completionDescription
+
+                if coordinator.status.finalizationCleanup == .failed {
+                    Text("The Capture is sealed, but Bluetooth cleanup did not finish. Keep this Capture and restart Nembra before starting another one.")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
+            .padding(12)
+            .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .accessibilityElement(children: .combine)
+            .accessibilityValue(analysisReady ? "Ready for analysis" : "Capture sealed, integrity check required")
+            .accessibilityIdentifier("es80.capture.complete")
+        } else {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(analysisReady ? .white : .white.opacity(0.12))
+                            .frame(width: 52, height: 52)
+                        Image(systemName: analysisReady ? "checkmark" : "lock.fill")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(analysisReady ? .black : .white)
+                    }
+                    .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(analysisReady ? "CAPTURE COMPLETE" : "CAPTURE SEALED")
+                            .font(.caption.monospaced().weight(.bold))
+                            .foregroundStyle(.secondary)
+                        Text(analysisReady ? "Ready for analysis" : "Integrity check required")
+                            .font(.title2.weight(.semibold))
+                            .foregroundStyle(.white)
+                    }
+                }
+
+                completionDescription
+
+                if coordinator.status.finalizationCleanup == .failed {
+                    Text("The Capture is sealed, but Bluetooth cleanup did not finish. Keep this Capture and restart Nembra before starting another one.")
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(18)
+            .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .accessibilityElement(children: .combine)
+            .accessibilityValue(analysisReady ? "Ready for analysis" : "Capture sealed, integrity check required")
+            .accessibilityIdentifier("es80.capture.complete")
         }
-        .padding(18)
-        .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .accessibilityElement(children: .combine)
-        .accessibilityValue(analysisReady ? "Ready for analysis" : "Capture sealed, integrity check required")
-        .accessibilityIdentifier("es80.capture.complete")
     }
 
     @ViewBuilder
     private var completionDescription: some View {
 #if DEBUG && targetEnvironment(simulator)
         if simulatorQASnapshot != nil {
-            Text("Synthetic Simulator QA presentation only. No capture artifact bytes were created, and no physical, RF, protocol, telemetry, or command evidence is claimed.")
-                .font(.subheadline)
+            let fullSyntheticTruth = "Synthetic Simulator QA presentation only. No capture artifact bytes were created, and no physical, RF, protocol, telemetry, or command evidence is claimed."
+            Text(dynamicTypeSize.isAccessibilitySize ? "Synthetic QA only. No physical evidence." : fullSyntheticTruth)
+                .font(dynamicTypeSize.isAccessibilitySize ? .caption : .subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityLabel(fullSyntheticTruth)
         } else {
             verifiedCompletionDescription
         }
