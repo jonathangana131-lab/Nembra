@@ -7,11 +7,13 @@ on:
       - scripts/ci/es80_today_final_go_record.py
       - scripts/ci/es80_today_final_go_foundation.py
       - scripts/ci/_es80_today_final_go_foundation_impl.py
+      - scripts/ci/es80_today_final_go_hardened.py
       - scripts/ci/tests/test_es80_today_final_go_record.py
       - scripts/ci/tests/test_es80_today_final_go_foundation.py
       - scripts/ci/tests/test_es80_today_final_go_legacy_entrypoint.py
       - scripts/ci/tests/test_es80_today_final_go_direct_execution_disabled.py
       - scripts/ci/tests/test_es80_today_final_go_private_impl_execution_disabled.py
+      - scripts/ci/tests/test_es80_today_final_go_public_import_disabled.py
       - .github/workflows/capture-today-final-go-legacy-entrypoint-qa.yml
 
 permissions:
@@ -19,7 +21,7 @@ permissions:
 
 jobs:
   legacy-entrypoint:
-    name: Reject legacy executable Final GO authority
+    name: Reject legacy executable/imported Final GO authority
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -33,18 +35,20 @@ jobs:
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
-      - name: Compile compatibility path, foundation, and regressions
+      - name: Compile compatibility paths, private foundation, and regressions
         run: |
           set -euo pipefail
           python3 -m py_compile scripts/ci/es80_today_final_go_record.py
           python3 -m py_compile scripts/ci/es80_today_final_go_foundation.py
           python3 -m py_compile scripts/ci/_es80_today_final_go_foundation_impl.py
+          python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py
           python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_record.py
           python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_foundation.py
           python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_legacy_entrypoint.py
           python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_direct_execution_disabled.py
           python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_private_impl_execution_disabled.py
-      - name: Preserve complete foundation adversarial coverage
+          python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_public_import_disabled.py
+      - name: Preserve complete private foundation adversarial coverage
         run: python3 scripts/ci/tests/test_es80_today_final_go_foundation.py
       - name: Reject direct legacy Final GO execution
         run: python3 scripts/ci/tests/test_es80_today_final_go_legacy_entrypoint.py -v
@@ -52,11 +56,14 @@ jobs:
         run: python3 scripts/ci/tests/test_es80_today_final_go_direct_execution_disabled.py -v
       - name: Reject direct private implementation execution
         run: python3 scripts/ci/tests/test_es80_today_final_go_private_impl_execution_disabled.py -v
+      - name: Reject imported public Final GO builder authority
+        run: python3 scripts/ci/tests/test_es80_today_final_go_public_import_disabled.py -v
       - name: Require hardened executable handoff
         run: |
           set -euo pipefail
           grep -Fq 'legacy foundation entrypoint is non-authorizing' scripts/ci/es80_today_final_go_record.py
-          grep -Fq 'Final GO foundation is library-only and non-authorizing' scripts/ci/es80_today_final_go_foundation.py
+          grep -Fq 'Final GO foundation public import is non-authorizing' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'private foundation implementation is non-authorizing' scripts/ci/_es80_today_final_go_foundation_impl.py
+          grep -Fq '_es80_today_final_go_foundation_impl.py' scripts/ci/es80_today_final_go_hardened.py
           grep -Fq 'es80_today_final_go_hardened.py' scripts/ci/es80_today_final_go_record.py
           grep -Fq 'es80_today_final_go_hardened.py' scripts/ci/_es80_today_final_go_foundation_impl.py
