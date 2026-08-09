@@ -245,9 +245,9 @@ struct DashboardSpeedInstrumentView: View {
             .animation(modeAnimation, value: modePersonality.speedScale)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Speed")
-            // VoiceOver announces the newest authoritative/confirmed value,
-            // never a visual midpoint that no sensor actually measured.
-            .accessibilityValue(accessibilitySpeed(frame: frame))
+            // VoiceOver consumes field-specific accepted speed semantics, never
+            // a 60 Hz render midpoint or cached aggregate speed as fresh truth.
+            .accessibilityValue(accessibilitySpeed())
             .accessibilityIdentifier("dashboard.speed")
 
             Group {
@@ -275,10 +275,15 @@ struct DashboardSpeedInstrumentView: View {
         return VehicleDisplayFormatting.usesMetric ? nonnegative : nonnegative * 0.621_371
     }
 
-    private func accessibilitySpeed(frame: SpeedInstrumentDisplayFrame?) -> String {
-        let authoritativeKilometersPerHour = frame?.latestMeasuredKilometersPerHour
-            ?? vehicle.state.speedKilometersPerHour
-        return VehicleDisplayFormatting.speed(kilometersPerHour: authoritativeKilometersPerHour)
+    private func accessibilitySpeed() -> String {
+        switch vehicle.speedEvidenceAvailability {
+        case .unavailable:
+            return "Unavailable"
+        case let .retained(sample):
+            return "Last known \(VehicleDisplayFormatting.speed(kilometersPerHour: sample.kilometersPerHour))"
+        case let .live(sample):
+            return VehicleDisplayFormatting.speed(kilometersPerHour: sample.kilometersPerHour)
+        }
     }
 
     private var speedUnitText: String {
