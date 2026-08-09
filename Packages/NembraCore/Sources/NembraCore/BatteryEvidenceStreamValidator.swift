@@ -227,7 +227,7 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
                 uptimeNanoseconds: uptimeNanoseconds
               ) else { return nil }
         return BatteryEvidenceCurrentnessLease(
-            owner: currentnessOwner,
+            ownerHandle: currentnessOwner.leaseHandle,
             generation: currentnessGeneration
         )
     }
@@ -239,7 +239,7 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
     ) -> Bool {
         guard let currentnessOwner,
               let currentnessGeneration,
-              currentnessOwner === lease.owner,
+              currentnessOwner.leaseHandle === lease.ownerHandle,
               currentnessGeneration === lease.generation else { return false }
         return lease.isCurrent(
             receiptIdentity: receiptIdentity,
