@@ -66,9 +66,9 @@ The producer itself will create another fresh detached worktree internally. The 
 
 ## 2. Create the private intended-device verification file
 
-Choose a private path outside the repository. The producer requires an absolute regular non-symlink mode-`0600` file and independently validates its contents/mode.
+Choose a private path outside the repository. The producer requires an absolute regular non-symlink mode-`0600` file and independently validates its contents/mode. The file must contain the exact identifier bytes with **no trailing newline or other leading/trailing whitespace**; frozen `a0f4` rejects whitespace rather than trimming it.
 
-This example reads the UDID without placing the value in the command line or echoing it back to the terminal:
+This example reads the UDID without placing the value in the command line or echoing it back to the terminal, and writes the exact bytes without appending a newline:
 
 ```bash
 umask 077
@@ -79,15 +79,16 @@ UDID_FILE="$HOME/.nembra-private/es80-intended-device.udid"
 printf 'Intended iPhone UDID: ' >&2
 IFS= read -r -s INTENDED_UDID
 printf '\n' >&2
-printf '%s\n' "$INTENDED_UDID" > "$UDID_FILE"
+printf '%s' "$INTENDED_UDID" > "$UDID_FILE"
 unset INTENDED_UDID
 /bin/chmod 600 "$UDID_FILE"
 
+test -s "$UDID_FILE"
 test -f "$UDID_FILE" && test ! -L "$UDID_FILE"
 test "$(/usr/bin/stat -f '%Lp' "$UDID_FILE")" = '600'
 ```
 
-Keep this file private. Do not commit it and do not copy it into the retained candidate directory.
+Keep this file private. Do not commit it and do not copy it into the retained candidate directory. Do not "fix" it by adding a conventional final newline: this private verification subject is intentionally one exact opaque value.
 
 ## 3. Set the signing inputs without changing the source subject
 
@@ -177,7 +178,7 @@ Stop and preserve the exact blocker if any of these occurs:
 - more than one IPA is exported or the retained `NembraField.ipa` is missing;
 - the resulting evidence names a different source SHA, recipe, or build subject;
 - the candidate destination existed before production or appears partially published after a failure;
-- the intended-device verification file is not private mode `0600` regular non-symlink input;
+- the intended-device verification file is not private mode `0600` regular non-symlink input or contains leading/trailing whitespace/newline;
 - the next step would require rebuilding, re-exporting, substituting another app/IPA, or using Xcode Run;
 - anyone proposes Bluetooth scanning before the hardened Final GO record exists.
 
