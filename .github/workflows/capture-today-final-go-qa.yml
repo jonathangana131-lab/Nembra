@@ -58,7 +58,7 @@ jobs:
       - name: Preserve foundation adversarial coverage
         run: python3 scripts/ci/tests/test_es80_today_final_go_foundation.py
 
-      - name: Reject direct public Final GO execution surfaces
+      - name: Reject direct/imported public Final GO execution surfaces
         run: python3 scripts/ci/tests/test_es80_today_final_go_direct_execution_disabled.py -v
 
       - name: Reject candidate-controlled trusted-Xcode authority
@@ -113,6 +113,8 @@ jobs:
           grep -Fq 'RESEARCH_COMPILE_MODE = "private-today-v1"' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'RESEARCH_COMPILE_AUTHORITY = "canonical-producer-explicit-mode"' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'RESEARCH_COMPILE_CONDITION = "NEMBRA_ES80_TODAY_RESEARCH"' scripts/ci/es80_today_final_go_foundation.py
-          grep -Fq 'foundation = _load("nembra_final_go_foundation", "es80_today_final_go_foundation.py")' scripts/ci/es80_today_final_go_hardened.py
+          grep -Fq 'public Final GO foundation builder is non-authorizing' scripts/ci/es80_today_final_go_foundation.py
+          grep -Fq 'foundation = _load(' scripts/ci/es80_today_final_go_hardened.py
+          grep -Fq '"_es80_today_final_go_foundation_impl.py"' scripts/ci/es80_today_final_go_hardened.py
           grep -Fq 'foundation._git(tooling_repo, "rev-parse"' scripts/ci/es80_today_final_go_hardened.py
           grep -Fq 'publication.publish_record_no_replace' scripts/ci/es80_today_final_go_hardened.py
