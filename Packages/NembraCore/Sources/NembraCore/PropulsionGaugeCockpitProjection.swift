@@ -141,6 +141,8 @@ public extension PropulsionGaugeDisplayModel {
               let scale,
               let admittedScaleOrigin,
               accepted.identity == identity,
+              accepted.watts.isFinite,
+              accepted.watts >= 0,
               scale.identity == identity,
               scale.origin == admittedScaleOrigin,
               scale.ceilingWatts.isFinite,
