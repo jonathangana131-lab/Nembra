@@ -1,8 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>NembraCaptureBuildIdentifier</key><string>$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)</string>
-<key>NembraCaptureBuildInstanceID</key><string>$(NEMBRA_CAPTURE_BUILD_INSTANCE_ID)</string>
-<key>NembraCaptureBuildCommitSHA</key><string>$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)</string>
-<key>NembraCaptureFieldRecipe</key><string>$(NEMBRA_CAPTURE_FIELD_RECIPE)</string>
-</dict></plist>
+<plist version="1.0">
+<dict>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>Nembra Capture uses Bluetooth once to read the scooter's advertised and GATT data so Nembra can learn the ES80 protocol.</string>
+    <key>NSBluetoothPeripheralUsageDescription</key>
+    <string>Nembra Capture uses Bluetooth once to read the scooter's advertised and GATT data so Nembra can learn the ES80 protocol.</string>
+    <key>NembraCaptureBuildIdentifier</key>
+    <string>$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)</string>
+    <key>NembraCaptureBuildInstanceID</key>
+    <string>$(NEMBRA_CAPTURE_BUILD_INSTANCE_ID)</string>
+    <key>NembraCaptureBuildCommitSHA</key>
+    <string>$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)</string>
+    <key>NembraCaptureFieldRecipe</key>
+    <string>$(NEMBRA_CAPTURE_FIELD_RECIPE)</string>
+</dict>
+</plist>
