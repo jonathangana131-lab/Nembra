@@ -49,17 +49,63 @@ OTHER_SWIFT_FLAGS = $(inherited) -DNEMBRA_ES80_TODAY_RESEARCH
 XCCONFIG
 /bin/chmod 0400 "$TODAY_XCCONFIG"
 
-# Bind the exact overlay bytes to one inherited descriptor, then remove every mutable pathname
-# before the canonical signed-field producer starts. Mode 0400 alone does not protect a same-user
-# producer from chmod/replacement races: the owning account can still reopen or replace that path.
-# `/dev/fd/6` instead names this already-open file description in the delegated producer/xcodebuild
-# process tree. The unlinked inode remains readable for the archive while no pathname remains that a
-# concurrent process can swap into the Xcode settings channel.
+# Open first, then immediately retire every mutable pathname. A same-UID process can replace a
+# mode-0400 pathname before this open, so the open descriptor is not trusted merely because it is
+# readable. The descriptor itself is re-proven below against the one canonical overlay byte string
+# before any signed-field producer or xcodebuild process is admitted.
 exec 6< "$TODAY_XCCONFIG"
 /bin/rm -f "$TODAY_XCCONFIG"
 /bin/rmdir "$TODAY_SETTINGS_ROOT"
-export XCODE_XCCONFIG_FILE="/dev/fd/6"
 
+if ! /usr/bin/python3 -I - 6 <<'PYVERIFY'
+import os
+import stat
+import sys
+
+fd = int(sys.argv[1])
+expected = b"OTHER_SWIFT_FLAGS = $(inherited) -DNEMBRA_ES80_TODAY_RESEARCH\n"
+
+
+def stable_identity(metadata):
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_uid,
+        metadata.st_gid,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+metadata = os.fstat(fd)
+if not stat.S_ISREG(metadata.st_mode):
+    raise SystemExit("TODAY Research Xcode settings descriptor is not a regular file")
+if stat.S_IMODE(metadata.st_mode) != 0o400:
+    raise SystemExit("TODAY Research Xcode settings descriptor is not mode 0400")
+if metadata.st_size != len(expected):
+    raise SystemExit("TODAY Research Xcode settings descriptor size is not canonical")
+
+before = os.lseek(fd, 0, os.SEEK_CUR)
+if before != 0:
+    raise SystemExit("TODAY Research Xcode settings descriptor was not positioned at byte zero")
+actual = os.pread(fd, len(expected) + 1, 0)
+if actual != expected:
+    raise SystemExit("TODAY Research Xcode settings descriptor bytes are not canonical")
+
+final_metadata = os.fstat(fd)
+if stable_identity(final_metadata) != stable_identity(metadata):
+    raise SystemExit("TODAY Research Xcode settings descriptor changed during verification")
+if os.lseek(fd, 0, os.SEEK_CUR) != before:
+    raise SystemExit("TODAY Research Xcode settings verification changed the descriptor offset")
+PYVERIFY
+then
+  echo "TODAY Research Xcode settings descriptor failed exact opened-subject verification." >&2
+  exit 3
+fi
+
+export XCODE_XCCONFIG_FILE="/dev/fd/6"
 if [[ ! -r "$XCODE_XCCONFIG_FILE" ]]; then
   echo "TODAY Research Xcode settings descriptor is unavailable before signed production." >&2
   exit 3
