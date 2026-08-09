@@ -22,6 +22,10 @@ struct VehicleControlsView: View {
                 modeSection
             }
 
+            if !userFacingSpeedLimitControls.isEmpty {
+                speedLimitSection
+            }
+
             if vehicle.profile.capabilities.supportsCruise {
                 cruiseSection
             }
@@ -29,6 +33,7 @@ struct VehicleControlsView: View {
             if vehicle.profile.capabilities.supportsStartMode {
                 startModeSection
             }
+
         }
         .navigationTitle("Vehicle Controls")
         .navigationBarTitleDisplayMode(.inline)
@@ -180,6 +185,76 @@ struct VehicleControlsView: View {
         }
     }
 
+    private var speedLimitSection: some View {
+        Section {
+            ForEach(userFacingSpeedLimitControls) { control in
+                let currentValue = vehicle.state.speedLimitsKilometersPerHour[control.slot]
+                let isPending = vehicle.pendingSpeedLimit?.slot == control.slot
+
+                Menu {
+                    ForEach(
+                        control.range.minimumKilometersPerHour...control.range.maximumKilometersPerHour,
+                        id: \.self
+                    ) { value in
+                        Button {
+                            Task {
+                                await vehicle.setSpeedLimit(
+                                    kilometersPerHour: value,
+                                    slot: control.slot
+                                )
+                            }
+                        } label: {
+                            if currentValue == value {
+                                Label("\(value) km/h", systemImage: "checkmark")
+                            } else {
+                                Text("\(value) km/h")
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(control.mode.displayName)
+                                .foregroundStyle(.primary)
+                            Text(
+                                "\(control.range.minimumKilometersPerHour)–\(control.range.maximumKilometersPerHour) km/h verified range"
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        if isPending {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Text(currentValue.map { "\($0) km/h" } ?? "Unavailable")
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .disabled(!commandsAvailable || vehicle.isVehicleCommandPending)
+                .accessibilityLabel("\(control.mode.displayName) speed limit")
+                .accessibilityValue(
+                    isPending
+                        ? "Updating"
+                        : currentValue.map { "\($0) kilometers per hour" } ?? "Current value unavailable"
+                )
+            }
+        } header: {
+            Text("Speed Limits")
+        } footer: {
+            Text("Only ride-mode mappings and ranges verified by the active scooter profile appear here. Nembra does not infer or guess ES80 limiter slots.")
+        }
+    }
+
     private var cruiseSection: some View {
         Section {
             confirmedChoiceRow(
@@ -257,6 +332,35 @@ struct VehicleControlsView: View {
         return selected ? "Selected" : "Not selected"
     }
 
+    private struct UserFacingSpeedLimitControl: Identifiable {
+        let mode: RideMode
+        let slot: SpeedLimitSlot
+        let range: SpeedLimitRange
+
+        var id: RideMode { mode }
+    }
+
+    private var userFacingSpeedLimitControls: [UserFacingSpeedLimitControl] {
+        let capabilities = vehicle.profile.capabilities
+        guard capabilities.supportsSpeedLimit,
+              capabilities.hasUserFacingSpeedLimitMapping else {
+            return []
+        }
+
+        return RideMode.allCases.compactMap { mode in
+            guard let slot = capabilities.verifiedSpeedLimitSlotByRideMode[mode],
+                  let range = capabilities.speedLimitRangesBySlot[slot] else {
+                return nil
+            }
+
+            return UserFacingSpeedLimitControl(
+                mode: mode,
+                slot: slot,
+                range: range
+            )
+        }
+    }
+
     private var supportedModes: [RideMode] {
         RideMode.allCases.filter(vehicle.profile.capabilities.supportedRideModes.contains)
     }
@@ -282,6 +386,7 @@ struct VehicleControlsView: View {
         case .disconnected: return "Offline"
         }
     }
+
 }
 
 /// Product-facing Battery/Range surface.
