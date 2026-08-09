@@ -25,6 +25,8 @@ TRUSTED_WORKFLOW_PATH = ".github/workflows/capture-xcode27-trusted-command.yml"
 TRUSTED_WORKFLOW_BLOB_SHA = "e5ef72f50bed279e98ad28b94930831b747d0c20"
 TRUSTED_JOB_NAME = "Build, test, and capture trusted exact Capture head"
 TRUSTED_ARTIFACT_PREFIX = "nembra-capture-xcode27-"
+TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_PATH = "scripts/ci/xcode27_simulator_capture.sh"
+TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_BLOB_SHA = "4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"
 EXTERNAL_RECORD_NAME = "NembraCaptureExternalBuildRecord.json"
 RECIPE = "ES80-FINGERPRINT-v1"
 PROCEDURE = "V14"
@@ -41,6 +43,7 @@ EXTERNAL_KEYS = {
 REQUIRED_SUCCESSFUL_STEPS = (
     "Reject stale or detached Capture head before scarce Mac work",
     "Verify immutable trusted Capture head",
+    "Verify trusted Simulator evidence-producer custody",
     "Build, test, and capture Simulator states",
     "Verify retained Capture evidence against trusted resolver authority",
     "Reject head movement before trusted acceptance completes",
@@ -176,8 +179,9 @@ def verify_trusted_capture_xcode_subject(
     """Return one closed trusted-Xcode subject or fail closed.
 
     `workflow_blob_sha_at_commit` must read Git object identity from a repository checkout that can
-    resolve the workflow run's default-branch commit. The pinned blob makes workflow implementation
-    part of the authority subject rather than trusting candidate-controlled names/step labels.
+    resolve both the workflow run's default-branch commit and the exact candidate source commit. The
+    pinned workflow and Simulator evidence-producer blobs make the acceptance implementation part
+    of the authority subject rather than trusting candidate-controlled names or step labels.
     """
 
     source = _normalized_sha(source_commit_sha, "candidate source commit SHA")
@@ -245,6 +249,19 @@ def verify_trusted_capture_xcode_subject(
     _require(
         workflow_blob == TRUSTED_WORKFLOW_BLOB_SHA,
         "trusted Xcode workflow implementation blob is not pinned authority",
+    )
+
+    producer_blob = workflow_blob_sha_at_commit(
+        source,
+        TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_PATH,
+    ).lower()
+    _require(
+        _HEX40.fullmatch(producer_blob) is not None,
+        "invalid trusted Simulator evidence-producer Git blob SHA",
+    )
+    _require(
+        producer_blob == TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_BLOB_SHA,
+        "trusted Simulator evidence-producer Git blob is not pinned authority",
     )
 
     run_attempt = _positive_int(run.get("run_attempt"), "trusted Xcode run attempt")
@@ -323,6 +340,8 @@ def verify_trusted_capture_xcode_subject(
         "workflowPath": TRUSTED_WORKFLOW_PATH,
         "workflowSourceCommitSHA": workflow_source,
         "workflowBlobSHA": workflow_blob,
+        "simulatorEvidenceProducerPath": TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_PATH,
+        "simulatorEvidenceProducerBlobSHA": producer_blob,
         "runID": run_id,
         "runNumber": run_number,
         "runAttempt": run_attempt,
