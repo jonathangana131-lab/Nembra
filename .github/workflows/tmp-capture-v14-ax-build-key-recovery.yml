@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   repair:
-    if: github.event.head_commit.message == 'ci: stage Capture AX build-key recovery'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout exact recovery head
@@ -25,48 +24,41 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           app_path = Path('NembraApp/App/NembraApp.swift')
           app = app_path.read_text(encoding='utf-8')
-          old = '''                        Text("BUILD")
-                              .font(.caption2.monospaced().weight(.bold))
-                              .foregroundStyle(.secondary)
-
-                          if let buildIdentityVisualLabel {
-          '''
-          new = '''                        Text("BUILD")
-                              .font(.caption2.monospaced().weight(.bold))
-                              .foregroundStyle(.secondary)
-                              .lineLimit(1)
-                              .fixedSize(horizontal: true, vertical: false)
-
-                          if let buildIdentityVisualLabel {
-          '''
-          count = app.count(old)
+          pattern = re.compile(
+              r'(Text\("BUILD"\)\n\s+\.font\(\.caption2\.monospaced\(\)\.weight\(\.bold\)\)\n\s+\.foregroundStyle\(\.secondary\))(\n\n\s+if let buildIdentityVisualLabel \{)'
+          )
+          replacement = (
+              r'\1\n'
+              r'                            .lineLimit(1)\n'
+              r'                            .fixedSize(horizontal: true, vertical: false)'
+              r'\2'
+          )
+          app, count = pattern.subn(replacement, app, count=1)
           if count != 1:
               raise SystemExit(f'expected one BUILD row anchor, found {count}')
-          app = app.replace(old, new, 1)
           app_path.write_text(app, encoding='utf-8')
 
           test_path = Path('NembraUITests/ES80ResearchCaptureUITests.swift')
           tests = test_path.read_text(encoding='utf-8')
-          old_test = '''        XCTAssertTrue(physicalBoundary.waitForExistence(timeout: 3))
-                  XCTAssertTrue(engineeringDetails.waitForExistence(timeout: 3))
-                  XCTAssertFalse(
-          '''
-          new_test = '''        XCTAssertTrue(physicalBoundary.waitForExistence(timeout: 3))
-                  XCTAssertTrue(engineeringDetails.waitForExistence(timeout: 3))
-                  XCTAssertLessThan(
-                      buildIdentity.frame.height,
-                      physicalBoundary.frame.height,
-                      "Build identity must remain a compact single-row rendezvous at Accessibility XXXL."
-                  )
-                  XCTAssertFalse(
-          '''
-          count = tests.count(old_test)
+          anchor = (
+              '        XCTAssertTrue(physicalBoundary.waitForExistence(timeout: 3))\n'
+              '        XCTAssertTrue(engineeringDetails.waitForExistence(timeout: 3))\n'
+          )
+          insertion = anchor + (
+              '        XCTAssertLessThan(\n'
+              '            buildIdentity.frame.height,\n'
+              '            physicalBoundary.frame.height,\n'
+              '            "Build identity must remain a compact single-row rendezvous at Accessibility XXXL."\n'
+              '        )\n'
+          )
+          count = tests.count(anchor)
           if count != 1:
               raise SystemExit(f'expected one XXXL test anchor, found {count}')
-          tests = tests.replace(old_test, new_test, 1)
+          tests = tests.replace(anchor, insertion, 1)
           test_path.write_text(tests, encoding='utf-8')
           PY
 
