@@ -44,7 +44,7 @@ struct BatteryRangeCurrentnessOwnerLifetimeTests {
         )
 
         var stream = AcceptedBatterySOCStream()
-        let acceptedAnchor = stream.accept(observation)
+        let acceptedAnchor = try stream.accept(observation)
         let anchor = try #require(acceptedAnchor)
         let estimate = try #require(AdaptiveBatteryRangeModel().estimateRemainingRange(
             atAcceptedSOC: anchor,
