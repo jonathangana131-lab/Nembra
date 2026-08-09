@@ -99,6 +99,16 @@ class FieldCandidatePreflightTests(unittest.TestCase):
             allow_provisioning_updates="0",
         )
 
+    def with_udid_path(self, inputs, path: Path):
+        return preflight.Inputs(
+            source_repo=inputs.source_repo,
+            expected_source_sha=inputs.expected_source_sha,
+            development_team=inputs.development_team,
+            export_options_plist=inputs.export_options_plist,
+            intended_device_udid_file=path,
+            allow_provisioning_updates=inputs.allow_provisioning_updates,
+        )
+
     def test_ready_report_is_explicitly_non_authorizing_and_secret_minimizing(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -178,6 +188,53 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             inputs = self.make_inputs(root, udid_mode=0o644)
+            report, exit_code = preflight.evaluate_preflight(
+                inputs,
+                runner=FakeRunner(self.SOURCE),
+                system_name="Darwin",
+            )
+
+        self.assertEqual(exit_code, 2)
+        self.assertFalse(report["checks"]["privateIntendedDeviceInput"])
+        self.assertIn("private-intended-device-input-invalid", report["problems"])
+        self.assertNotIn(self.PRIVATE_UDID, json.dumps(report))
+
+    def test_private_udid_file_inside_source_repo_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inputs = self.make_inputs(root)
+            inside_repo = inputs.source_repo / "private-intended-device.txt"
+            inside_repo.write_text(self.PRIVATE_UDID, encoding="utf-8")
+            inside_repo.chmod(0o600)
+            inputs = self.with_udid_path(inputs, inside_repo)
+
+            report, exit_code = preflight.evaluate_preflight(
+                inputs,
+                runner=FakeRunner(self.SOURCE),
+                system_name="Darwin",
+            )
+
+        self.assertEqual(exit_code, 2)
+        self.assertFalse(report["checks"]["privateIntendedDeviceInput"])
+        self.assertIn("private-intended-device-input-invalid", report["problems"])
+        self.assertNotIn(self.PRIVATE_UDID, json.dumps(report))
+
+    def test_private_udid_file_with_symlinked_ancestor_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inputs = self.make_inputs(root)
+            real_parent = root / "private-real"
+            real_parent.mkdir()
+            private_file = real_parent / "device-id"
+            private_file.write_text(self.PRIVATE_UDID, encoding="utf-8")
+            private_file.chmod(0o600)
+            symlink_parent = root / "private-link"
+            try:
+                symlink_parent.symlink_to(real_parent, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("symlink creation unavailable")
+            inputs = self.with_udid_path(inputs, symlink_parent / "device-id")
+
             report, exit_code = preflight.evaluate_preflight(
                 inputs,
                 runner=FakeRunner(self.SOURCE),
