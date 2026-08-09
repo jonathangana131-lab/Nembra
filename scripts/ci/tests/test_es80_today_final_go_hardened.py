@@ -17,6 +17,7 @@ spec.loader.exec_module(hardened)
 class HardenedFinalGoCompositionTests(unittest.TestCase):
     SOURCE = "a" * 40
     WORKFLOW_SOURCE = "b" * 40
+    RECEIPT_SHA = "c" * 64
 
     def kwargs(self, root: Path):
         return {
@@ -34,6 +35,16 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             "github_get_json": lambda path: (b"{}", {}),
         }
 
+    def trusted_crosscheck_execution(self):
+        return {
+            "receiptSHA256": self.RECEIPT_SHA,
+            "toolCommit": hardened.foundation.PINNED_CROSSCHECK_COMMIT,
+            "toolGitBlob": hardened.foundation.PINNED_CROSSCHECK_BLOB,
+            "executionCustody": {
+                "classification": "fresh-pinned-tool-stdout-exact-receipt",
+            },
+        }
+
     def fake_foundation(self, **kwargs):
         subject = hardened.foundation._trusted_xcode_subject(
             source=kwargs["expected_source_sha"],
@@ -44,9 +55,15 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             artifact_archive_path=kwargs["trusted_xcode_artifact_archive"],
             github_get_json=kwargs["github_get_json"],
         )
+        execution = self.trusted_crosscheck_execution()
         return {
             "acceptedSourceCommitSHA": kwargs["expected_source_sha"],
             "trustedXcodeAcceptance": subject,
+            "independentRetainedCandidateCrosscheck": {
+                "receiptSHA256": execution["receiptSHA256"],
+                "toolCommit": execution["toolCommit"],
+                "toolGitBlob": execution["toolGitBlob"],
+            },
         }
 
     def trusted_subject(self):
@@ -61,6 +78,10 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             root = Path(temporary)
             original = hardened.foundation._trusted_xcode_subject
             with mock.patch.object(
+                hardened.crosscheck_custody,
+                "verify_crosscheck_receipt_custody",
+                return_value=self.trusted_crosscheck_execution(),
+            ) as verify_crosscheck, mock.patch.object(
                 hardened.foundation,
                 "build_final_go_record",
                 side_effect=self.fake_foundation,
@@ -73,6 +94,11 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
 
             self.assertIs(hardened.foundation._trusted_xcode_subject, original)
             self.assertEqual(record["trustedXcodeAcceptance"], self.trusted_subject())
+            self.assertEqual(
+                record["independentRetainedCandidateCrosscheck"]["executionCustody"],
+                self.trusted_crosscheck_execution()["executionCustody"],
+            )
+            verify_crosscheck.assert_called_once()
             verify.assert_called_once()
             call = verify.call_args.kwargs
             self.assertEqual(call["source_commit_sha"], self.SOURCE)
@@ -83,6 +109,10 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             root = Path(temporary)
             original = hardened.foundation._trusted_xcode_subject
             with mock.patch.object(
+                hardened.crosscheck_custody,
+                "verify_crosscheck_receipt_custody",
+                return_value=self.trusted_crosscheck_execution(),
+            ), mock.patch.object(
                 hardened.foundation,
                 "build_final_go_record",
                 side_effect=self.fake_foundation,
@@ -101,6 +131,10 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             aliased = self.trusted_subject()
             aliased["workflowSourceCommitSHA"] = self.SOURCE
             with mock.patch.object(
+                hardened.crosscheck_custody,
+                "verify_crosscheck_receipt_custody",
+                return_value=self.trusted_crosscheck_execution(),
+            ), mock.patch.object(
                 hardened.foundation,
                 "build_final_go_record",
                 side_effect=self.fake_foundation,
