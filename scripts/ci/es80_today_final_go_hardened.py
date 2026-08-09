@@ -16,7 +16,6 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
-import subprocess
 import sys
 from typing import Any, Callable
 
@@ -43,19 +42,13 @@ FinalGoError = foundation.FinalGoError
 
 
 def _workflow_blob_sha_at_commit(tooling_repo: Path, commit: str, path: str) -> str:
+    """Resolve one workflow blob through the foundation's hostile-Git-safe object lookup."""
     try:
-        completed = subprocess.run(
-            ["git", "-C", str(tooling_repo), "rev-parse", f"{commit}:{path}"],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-    except (OSError, subprocess.CalledProcessError) as error:
+        return foundation._git(tooling_repo, "rev-parse", f"{commit}:{path}").lower()
+    except foundation.FinalGoError as error:
         raise FinalGoError(
             "trusted default-branch workflow Git blob is unavailable from tooling repository"
         ) from error
-    return completed.stdout.strip().lower()
 
 
 def build_final_go_record(
