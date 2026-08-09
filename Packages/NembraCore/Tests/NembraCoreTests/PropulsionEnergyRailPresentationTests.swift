@@ -171,4 +171,29 @@ struct PropulsionEnergyRailPresentationTests {
         #expect(presentation.scaleOrigin == nil)
         #expect(!presentation.allowsLiveMotion)
     }
+
+    @Test("same-identity scale from the wrong authority cannot normalize accepted target geometry")
+    func scaleAuthorityMismatchFailsTargetClosed() throws {
+        let identity = try makeIdentity()
+        var model = try displayModel(identity: identity)
+
+        try model.accept(sample(identity: identity, watts: 500, receipt: 6, uptime: 1_000_000_000))
+        let verifiedScale = try PropulsionGaugeScale.verifiedObservedEnvelope(
+            identity: identity,
+            ceilingWatts: 900
+        )
+
+        let presentation = model.cockpitSnapshot(
+            atUptimeNanoseconds: 1_000_000_000,
+            scale: verifiedScale
+        ).energyRailPresentation
+
+        #expect(presentation.currentness == .live)
+        #expect(presentation.acceptedWatts == 500)
+        #expect(presentation.railFraction == nil)
+        #expect(presentation.acceptedTargetRailFraction == nil)
+        #expect(presentation.acceptedPeakMarkerFraction == nil)
+        #expect(presentation.scaleOrigin == nil)
+        #expect(!presentation.allowsLiveMotion)
+    }
 }
