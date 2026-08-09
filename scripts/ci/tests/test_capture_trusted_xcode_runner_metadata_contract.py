@@ -41,6 +41,11 @@ def workflow_step(name: str) -> str:
     return text[start:] if next_step < 0 else text[start:next_step]
 
 
+def normalize_shell_continuations(text: str) -> str:
+    """Join backslash-newline shell continuations without changing command-token order."""
+    return re.sub(r"\\[ \t]*\n[ \t]*", " ", text)
+
+
 class TrustedRunnerMetadataContractTests(unittest.TestCase):
     def test_pinned_producer_requires_trusted_github_run_identity(self) -> None:
         self.assertEqual(
@@ -50,15 +55,16 @@ class TrustedRunnerMetadataContractTests(unittest.TestCase):
         )
 
         step = workflow_step("Build, test, and capture Simulator states")
+        normalized_step = normalize_shell_continuations(step)
 
         self.assertRegex(
-            step,
-            re.compile(r"\|\s*/usr/bin/env\s+-i\b(?:(?!^      - name: ).){0,2200}?/bin/bash\b", re.MULTILINE | re.DOTALL),
+            normalized_step,
+            re.compile(r"\|\s*/usr/bin/env\s+-i\b.*?/bin/bash\s+--noprofile\s+--norc\s+-p\b", re.DOTALL),
         )
-        self.assertIn('GITHUB_RUN_ID="${{ github.run_id }}"', step)
-        self.assertIn('GITHUB_RUN_ATTEMPT="${{ github.run_attempt }}"', step)
-        self.assertNotIn('GITHUB_RUN_ID="$GITHUB_RUN_ID"', step)
-        self.assertNotIn('GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT"', step)
+        self.assertIn('GITHUB_RUN_ID="${{ github.run_id }}"', normalized_step)
+        self.assertIn('GITHUB_RUN_ATTEMPT="${{ github.run_attempt }}"', normalized_step)
+        self.assertNotIn('GITHUB_RUN_ID="$GITHUB_RUN_ID"', normalized_step)
+        self.assertNotIn('GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT"', normalized_step)
 
 
 if __name__ == "__main__":
