@@ -163,6 +163,63 @@ private struct NembraEnergyRailArc: Shape {
     }
 }
 
+/// Accepted-watt numeral renderer using the same fixed-slot rolling primitive as
+/// the speed instrument. Intermediate glyph motion is display-only; VoiceOver is
+/// owned by the enclosing Energy Rail and announces only the accepted semantic value.
+private struct NembraRollingPowerValueView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let value: Double
+    let fontSize: CGFloat
+
+    private static let numberModel: RollingNumberModel? = {
+        guard let layout = try? RollingNumberLayout(integerDigits: 4) else { return nil }
+        return try? RollingNumberModel(layout: layout)
+    }()
+
+    /// Compact fallback capacity only, never a physical motor/controller maximum.
+    private static let maximumFallbackDisplayInteger = 99_999.0
+
+    var body: some View {
+        if let numberModel = Self.numberModel,
+           let snapshot = try? numberModel.snapshot(for: value) {
+            HStack(spacing: -4) {
+                ForEach(snapshot.digits.indices, id: \.self) { index in
+                    let digit = snapshot.digits[index]
+                    Text(String(digit.digit))
+                        .font(.system(size: fontSize, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .opacity(digit.isVisible ? 1 : 0)
+                        .contentTransition(
+                            reduceMotion ? .identity : .numericText(value: value)
+                        )
+                }
+            }
+            .animation(
+                reduceMotion ? nil : .linear(duration: 0.08),
+                value: snapshot.scaledValue
+            )
+        } else if let fallbackText {
+            Text(fallbackText)
+                .font(.system(size: fontSize, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .contentTransition(
+                    reduceMotion ? .identity : .numericText(value: value)
+                )
+        } else {
+            Text("—")
+                .font(.system(size: fontSize, weight: .semibold, design: .rounded))
+        }
+    }
+
+    private var fallbackText: String? {
+        guard value.isFinite, value >= 0 else { return nil }
+        let rounded = value.rounded(.toNearestOrAwayFromZero)
+        guard rounded <= Self.maximumFallbackDisplayInteger else { return nil }
+        return String(Int(rounded))
+    }
+}
+
 /// Localized SwiftUI renderer for the Nembra Energy Rail.
 ///
 /// The caller owns the display clock. This view does not add a second smoothing
@@ -235,12 +292,7 @@ struct NembraEnergyRailView: View {
         VStack(spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 if let watts = state.semanticWatts {
-                    Text(watts, format: .number.precision(.fractionLength(0)))
-                        .font(.system(size: powerFontSize, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .contentTransition(
-                            reduceMotion ? .identity : .numericText(value: watts)
-                        )
+                    NembraRollingPowerValueView(value: watts, fontSize: powerFontSize)
                 } else {
                     Text("—")
                         .font(.system(size: powerFontSize, weight: .semibold, design: .rounded))
@@ -250,10 +302,6 @@ struct NembraEnergyRailView: View {
                     .font(dynamicTypeSize.isAccessibilitySize ? .body.weight(.bold) : .caption.weight(.bold))
                     .foregroundStyle(.secondary)
             }
-            .animation(
-                reduceMotion ? nil : .snappy(duration: 0.18),
-                value: state.semanticWatts
-            )
 
             Text(currentnessLabel)
                 .font(dynamicTypeSize.isAccessibilitySize ? .caption.weight(.bold) : .caption2.weight(.bold))
