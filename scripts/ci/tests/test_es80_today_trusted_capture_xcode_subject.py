@@ -103,15 +103,26 @@ class TrustedCaptureXcodeSubjectTests(unittest.TestCase):
             f"/actions/artifacts/{self.ARTIFACT}": artifact,
         }
 
-    def verify(self, archive: Path, records: dict[str, dict], *, blob: str | None = None):
+    def verify(
+        self,
+        archive: Path,
+        records: dict[str, dict],
+        *,
+        blob: str | None = None,
+        producer_blob: str | None = None,
+    ):
         def get(path: str):
             value = records[path]
             return json.dumps(value, sort_keys=True).encode(), value
 
         def blob_at(commit: str, path: str) -> str:
-            self.assertEqual(commit, self.WORKFLOW_SOURCE)
-            self.assertEqual(path, trusted_xcode.TRUSTED_WORKFLOW_PATH)
-            return blob or trusted_xcode.TRUSTED_WORKFLOW_BLOB_SHA
+            if path == trusted_xcode.TRUSTED_WORKFLOW_PATH:
+                self.assertEqual(commit, self.WORKFLOW_SOURCE)
+                return blob or trusted_xcode.TRUSTED_WORKFLOW_BLOB_SHA
+            if path == trusted_xcode.TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_PATH:
+                self.assertEqual(commit, self.SOURCE)
+                return producer_blob or trusted_xcode.TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_BLOB_SHA
+            self.fail(f"unexpected Git-blob authority lookup: {commit}:{path}")
 
         return trusted_xcode.verify_trusted_capture_xcode_subject(
             source_commit_sha=self.SOURCE,
@@ -133,6 +144,14 @@ class TrustedCaptureXcodeSubjectTests(unittest.TestCase):
         self.assertEqual(subject["candidateSourceCommitSHA"], self.SOURCE)
         self.assertEqual(subject["workflowSourceCommitSHA"], self.WORKFLOW_SOURCE)
         self.assertEqual(subject["workflowBlobSHA"], trusted_xcode.TRUSTED_WORKFLOW_BLOB_SHA)
+        self.assertEqual(
+            subject["simulatorEvidenceProducerPath"],
+            trusted_xcode.TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_PATH,
+        )
+        self.assertEqual(
+            subject["simulatorEvidenceProducerBlobSHA"],
+            trusted_xcode.TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_BLOB_SHA,
+        )
         self.assertNotEqual(subject["candidateSourceCommitSHA"], subject["workflowSourceCommitSHA"])
 
     def test_rejects_candidate_pr_controlled_workflow_even_with_exact_candidate_artifact(self):
@@ -167,6 +186,16 @@ class TrustedCaptureXcodeSubjectTests(unittest.TestCase):
                 "workflow implementation blob",
             ):
                 self.verify(archive, records, blob="f" * 40)
+
+    def test_rejects_unpinned_simulator_evidence_producer_blob(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            archive, archive_sha, archive_size = self.make_archive(Path(temporary))
+            records = self.trusted_records(archive_sha, archive_size)
+            with self.assertRaisesRegex(
+                trusted_xcode.TrustedCaptureXcodeError,
+                "evidence-producer Git blob",
+            ):
+                self.verify(archive, records, producer_blob="f" * 40)
 
     def test_rejects_non_owner_command_actor(self):
         with tempfile.TemporaryDirectory() as temporary:
