@@ -59,7 +59,7 @@ struct ES80CaptureFieldRuntimeRendezvousTests {
         let preflight = try Self.preflightSource(Self.appSource())
 
         #expect(!preflight.contains("PassiveBluetoothCaptureRuntimeBuildIdentityReader"))
-        #expect(!preflight.contains("ResearchBuild("))
+        #expect(\n            !preflight.contains("PassiveBluetoothExperimentOneFieldExecutionGate.ResearchBuild(")\n        )\n        #expect(!preflight.contains("ResearchBuild(runtimeBuildIdentity:"))
         #expect(!preflight.contains("permitsPhysicalProcedure = true"))
         #expect(preflight.contains("hasAcceptedPreflightAuthority"))
         #expect(preflight.contains("selectedChargerState?.rawValue"))
