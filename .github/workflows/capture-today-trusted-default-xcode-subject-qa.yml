@@ -1,4 +1,4 @@
-name: Capture TODAY Trusted Default-Branch Xcode Subject QA
+name: Capture TODAY Final GO Hardening QA
 
 on:
   pull_request:
@@ -6,14 +6,16 @@ on:
     paths:
       - scripts/ci/es80_today_trusted_capture_xcode_subject.py
       - scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
+      - scripts/ci/es80_today_final_go_publication.py
+      - scripts/ci/tests/test_es80_today_final_go_publication.py
       - .github/workflows/capture-today-trusted-default-xcode-subject-qa.yml
 
 permissions:
   contents: read
 
 jobs:
-  trusted-subject:
-    name: Validate trusted default-branch Xcode authority subject
+  hardening:
+    name: Validate Final GO trust and publication primitives
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -29,13 +31,18 @@ jobs:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
 
-      - name: Compile trusted subject verifier and tests
+      - name: Compile Final GO hardening modules and tests
         run: |
           python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py
           python3 -m py_compile scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
+          python3 -m py_compile scripts/ci/es80_today_final_go_publication.py
+          python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_publication.py
 
       - name: Run trusted subject adversarial suite
         run: python3 scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py -v
+
+      - name: Run failure-atomic publication adversarial suite
+        run: python3 scripts/ci/tests/test_es80_today_final_go_publication.py -v
 
       - name: Pin exact default-branch workflow authority
         run: |
@@ -45,3 +52,5 @@ jobs:
           grep -Fq 'TRUSTED_WORKFLOW_BLOB_SHA = "e5ef72f50bed279e98ad28b94930831b747d0c20"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'run.get("event") == "issue_comment"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'run.get("head_branch") == DEFAULT_BRANCH' scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          grep -Fq 'AMBIGUOUS NO-GO' scripts/ci/es80_today_final_go_publication.py
+          grep -Fq 'QUARANTINED-NO-GO' scripts/ci/es80_today_final_go_publication.py
