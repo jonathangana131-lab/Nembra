@@ -38,7 +38,7 @@ struct CompletedRideDurationPersistenceInvariantTests {
         }
     }
 
-    @Test("decoded complete coverage cannot claim multiple observation segments")
+    @Test("decoded complete archive cannot claim multiple observation segments")
     func malformedCompleteMultipleSegmentsRejected() {
         let data = Data(
             """
@@ -53,11 +53,11 @@ struct CompletedRideDurationPersistenceInvariantTests {
         )
 
         #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(CompletedRideDurationEvidence.self, from: data)
+            try JSONDecoder().decode(CompletedRideDurationEvidenceArchive.self, from: data)
         }
     }
 
-    @Test("partial coverage with one observed segment remains representable")
+    @Test("partial coverage with one observed segment remains representable in archive")
     func partialSingleSegmentAccepted() throws {
         let data = Data(
             """
@@ -72,7 +72,7 @@ struct CompletedRideDurationPersistenceInvariantTests {
         )
 
         let decoded = try JSONDecoder().decode(
-            CompletedRideDurationEvidence.self,
+            CompletedRideDurationEvidenceArchive.self,
             from: data
         )
 
