@@ -102,13 +102,15 @@ enum NembraEnergyRailVisualCurrentness: Equatable {
 
 /// App-side visual input for the signature propulsion instrument.
 ///
-/// `acceptedWatts` is the semantic number shown to the user. `railFraction` and
-/// `peakMarkerFraction` are display-only geometry and must never be converted back
-/// into watts, persisted, or promoted into ride/protocol evidence. The view also
-/// refuses rail motion unless currentness is live and the caller explicitly admits it.
+/// `acceptedWatts` is the semantic measurement truth shown to accessibility and
+/// status semantics. `displayWatts`, `railFraction`, and `peakMarkerFraction` are
+/// display-clock values/geometry and must never be converted back into telemetry,
+/// persisted, or promoted into ride/protocol evidence. The view also refuses any
+/// display-clock motion unless currentness is live and the caller explicitly admits it.
 struct NembraEnergyRailVisualState: Equatable {
     let currentness: NembraEnergyRailVisualCurrentness
     let acceptedWatts: Double?
+    let displayWatts: Double?
     let railFraction: Double?
     let peakMarkerFraction: Double?
     let allowsLiveMotion: Bool
@@ -119,12 +121,14 @@ struct NembraEnergyRailVisualState: Equatable {
     private init(
         currentness: NembraEnergyRailVisualCurrentness,
         acceptedWatts: Double?,
+        displayWatts: Double?,
         railFraction: Double?,
         peakMarkerFraction: Double?,
         allowsLiveMotion: Bool
     ) {
         self.currentness = currentness
         self.acceptedWatts = acceptedWatts
+        self.displayWatts = displayWatts
         self.railFraction = railFraction
         self.peakMarkerFraction = peakMarkerFraction
         self.allowsLiveMotion = allowsLiveMotion
@@ -138,6 +142,21 @@ struct NembraEnergyRailVisualState: Equatable {
             return nil
         }
         return acceptedWatts == 0 ? 0 : acceptedWatts
+    }
+
+    /// Numeral value for the display clock only. Retained/unavailable states and
+    /// motion denial snap back to exact accepted semantic truth. A malformed render
+    /// value never erases a valid accepted measurement.
+    var admittedDisplayWatts: Double? {
+        guard let semanticWatts else { return nil }
+        guard currentness == .live,
+              allowsLiveMotion,
+              let displayWatts,
+              displayWatts.isFinite,
+              displayWatts >= 0 else {
+            return semanticWatts
+        }
+        return displayWatts == 0 ? 0 : displayWatts
     }
 
     var admittedRailFraction: Double? {
@@ -180,7 +199,7 @@ private struct NembraEnergyRailArc: Shape {
     }
 }
 
-/// Accepted-watt numeral renderer using the same fixed-slot rolling primitive as
+/// Display-clock watt numeral renderer using the same fixed-slot rolling primitive as
 /// the speed instrument. Intermediate glyph motion is display-only; VoiceOver is
 /// owned by the enclosing Energy Rail and announces only the accepted semantic value.
 private struct NembraRollingPowerValueView: View {
@@ -244,9 +263,9 @@ private struct NembraRollingPowerValueView: View {
 /// Localized SwiftUI renderer for the Nembra Energy Rail.
 ///
 /// The caller owns the display clock. This view does not add a second smoothing
-/// algorithm to `railFraction`; every render frame is drawn immediately so a newer
-/// accepted target can retarget the canonical gauge model without queued stale motion.
-/// Only the semantic accepted watt number receives a brief numeric transition.
+/// algorithm to `displayWatts` or `railFraction`; every render frame is drawn
+/// immediately so a newer accepted target can retarget the canonical gauge model
+/// without queued stale motion. Accessibility remains bound to accepted watts.
 struct NembraEnergyRailView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -312,7 +331,7 @@ struct NembraEnergyRailView: View {
     private var powerReadout: some View {
         VStack(spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
-                if let watts = state.semanticWatts {
+                if let watts = state.admittedDisplayWatts {
                     NembraRollingPowerValueView(value: watts, fontSize: powerFontSize)
                 } else {
                     Text("—")
