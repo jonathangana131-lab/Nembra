@@ -22,7 +22,8 @@ REPOSITORY_OWNER = "jonathangana131-lab"
 DEFAULT_BRANCH = "main"
 TRUSTED_WORKFLOW_NAME = "Capture Trusted Xcode 27 Exact-Head QA"
 TRUSTED_WORKFLOW_PATH = ".github/workflows/capture-xcode27-trusted-command.yml"
-TRUSTED_WORKFLOW_BLOB_SHA = "e5ef72f50bed279e98ad28b94930831b747d0c20"
+TRUSTED_WORKFLOW_BLOB_SHA = "35ac8290d7397743d705debf1787fa0af699230c"
+TRUSTED_CAPTURE_SIMULATOR_RUNNER_BLOB_SHA = "4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"
 TRUSTED_JOB_NAME = "Build, test, and capture trusted exact Capture head"
 TRUSTED_ARTIFACT_PREFIX = "nembra-capture-xcode27-"
 EXTERNAL_RECORD_NAME = "NembraCaptureExternalBuildRecord.json"
@@ -41,6 +42,7 @@ EXTERNAL_KEYS = {
 REQUIRED_SUCCESSFUL_STEPS = (
     "Reject stale or detached Capture head before scarce Mac work",
     "Verify immutable trusted Capture head",
+    "Verify trusted Capture Simulator runner custody",
     "Build, test, and capture Simulator states",
     "Verify retained Capture evidence against trusted resolver authority",
     "Reject head movement before trusted acceptance completes",
@@ -176,8 +178,9 @@ def verify_trusted_capture_xcode_subject(
     """Return one closed trusted-Xcode subject or fail closed.
 
     `workflow_blob_sha_at_commit` must read Git object identity from a repository checkout that can
-    resolve the workflow run's default-branch commit. The pinned blob makes workflow implementation
-    part of the authority subject rather than trusting candidate-controlled names/step labels.
+    resolve the workflow run's default-branch commit. The pinned workflow blob and required runner
+    custody step make the authority-bearing Simulator runner part of the trusted subject instead of
+    allowing candidate-controlled executable bytes to define their own acceptance.
     """
 
     source = _normalized_sha(source_commit_sha, "candidate source commit SHA")
@@ -323,6 +326,7 @@ def verify_trusted_capture_xcode_subject(
         "workflowPath": TRUSTED_WORKFLOW_PATH,
         "workflowSourceCommitSHA": workflow_source,
         "workflowBlobSHA": workflow_blob,
+        "trustedSimulatorRunnerBlobSHA": TRUSTED_CAPTURE_SIMULATOR_RUNNER_BLOB_SHA,
         "runID": run_id,
         "runNumber": run_number,
         "runAttempt": run_attempt,
