@@ -1,0 +1,318 @@
+name: TEMP ES80 Simulator conditional syntax repair
+
+on:
+  push:
+    branches:
+      - fix/es80-today-simulator-conditional-syntax-0519-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Repair syntactically split Simulator QA branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object NembraApp/Features/Research/ES80CaptureShellView.swift)" = "bf6c9202666620f376e2558ffda82bd2abfffd1b"
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")
+          text = path.read_text(encoding="utf-8")
+
+          def replace_once(old: str, new: str) -> None:
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one match, found {count}: {old[:100]!r}")
+              text = text.replace(old, new, 1)
+
+          old_share = '''#if DEBUG && targetEnvironment(simulator)
+            if let simulatorQASnapshot {
+                if simulatorQASnapshot.artifactState == .shareRetry {
+                    primaryButton(
+                        "Retry Share file",
+                        systemImage: "arrow.clockwise",
+                        identifier: "es80.capture.prepare-share"
+                    ) {}
+                } else {
+                    primaryButton(
+                        "Share Capture",
+                        systemImage: "square.and.arrow.up",
+                        identifier: "es80.capture.share"
+                    ) {}
+                }
+            } else {
+#endif
+                if let finalShareTransfer {
+                    ShareLink(
+                        item: finalShareTransfer,
+                        preview: SharePreview(finalShareTransfer.filename)
+                    ) {
+                        Label("Share Capture", systemImage: "square.and.arrow.up")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 56)
+                            .foregroundStyle(.black)
+                            .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("es80.capture.share")
+                } else if coordinator.finalizedArtifact != nil {
+                    primaryButton(
+                        finalShareIntegrityReport == nil ? "Verify Capture file" : "Retry Share file",
+                        systemImage: "arrow.clockwise",
+                        identifier: "es80.capture.prepare-share"
+                    ) {
+                        prepareFinalShareForAnalysisAndSharing()
+                    }
+                } else {
+                    primaryButton(
+                        "Share unavailable",
+                        systemImage: "exclamationmark.triangle",
+                        disabled: true,
+                        identifier: "es80.capture.share-unavailable"
+                    ) {}
+                }
+#if DEBUG && targetEnvironment(simulator)
+            }
+#endif'''
+
+          new_share = '''#if DEBUG && targetEnvironment(simulator)
+            if let simulatorQASnapshot {
+                if simulatorQASnapshot.artifactState == .shareRetry {
+                    primaryButton(
+                        "Retry Share file",
+                        systemImage: "arrow.clockwise",
+                        identifier: "es80.capture.prepare-share"
+                    ) {}
+                } else {
+                    primaryButton(
+                        "Share Capture",
+                        systemImage: "square.and.arrow.up",
+                        identifier: "es80.capture.share"
+                    ) {}
+                }
+            } else {
+                completionShareControls
+            }
+#else
+            completionShareControls
+#endif'''
+          replace_once(old_share, new_share)
+
+          old_summary = '''#if DEBUG && targetEnvironment(simulator)
+            if simulatorQASnapshot != nil {
+                Text("Synthetic Simulator QA presentation only. No capture artifact bytes were created, and no physical, RF, protocol, telemetry, or command evidence is claimed.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let report = finalShareIntegrityReport {
+#else
+            if let report = finalShareIntegrityReport {
+#endif
+                Text("The exact \\(report.finalShareByteCount.formatted())-byte Capture passed every required file-integrity check and is ready to share for analysis. Nembra has not identified scooter data fields from this file yet.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let artifact = coordinator.finalizedArtifact {
+                Text("\\(artifact.captureJSON.count.formatted()) Capture bytes are sealed. Nembra still needs to verify the final Share file before this run is ready for analysis.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }'''
+
+          new_summary = '''#if DEBUG && targetEnvironment(simulator)
+            if simulatorQASnapshot != nil {
+                Text("Synthetic Simulator QA presentation only. No capture artifact bytes were created, and no physical, RF, protocol, telemetry, or command evidence is claimed.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                completionEvidenceSummary
+            }
+#else
+            completionEvidenceSummary
+#endif'''
+          replace_once(old_summary, new_summary)
+
+          old_details = '''#if DEBUG && targetEnvironment(simulator)
+                    if let simulatorQASnapshot {
+                        Text("SIMULATOR QA / SYNTHETIC SOFTWARE STATE")
+                            .font(.caption.monospaced().weight(.bold))
+                            .foregroundStyle(.orange)
+                            .accessibilityIdentifier("es80.capture.details.simulator-qa")
+                        detailRow("Scenario", value: simulatorQASnapshot.title)
+                        detailRow("Recipe", value: simulatorQASnapshot.recipeID.rawValue)
+                        detailRow("Physical procedure", value: "Locked")
+                        detailRow("Bluetooth transport", value: "Not used")
+                        detailRow("Capture artifact", value: "Not created")
+                        Text("These details describe presentation QA only. They do not read, summarize, or imply a live coordinator evidence state.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+#endif
+                        detailRow("Correlation", value: correlationDetailValue)
+                        detailRow("Cleanup", value: finalizationCleanupDetailValue)
+
+                        if let report = finalShareIntegrityReport {
+                            detailRow("Analysis readiness", value: "Ready")
+                            detailRow("Recipe", value: report.experimentRecipeID.rawValue)
+                            detailRow("Procedure", value: report.procedureVersion)
+                            detailRow("Final Share bytes", value: report.finalShareByteCount.formatted())
+                            digestDetailRow("Final Share SHA-256", value: report.finalShareSHA256)
+                            digestDetailRow("Software Export SHA-256", value: report.softwareExport.envelopeSHA256)
+                            digestDetailRow("Capture SHA-256", value: report.softwareExport.capture.sha256)
+                            detailRow("Capture session", value: report.softwareExport.capture.captureSessionID.uuidString)
+                            detailRow("Recorded events", value: report.softwareExport.capture.recordCount.formatted())
+                            detailRow("Raw value events", value: report.softwareExport.capture.rawValueRecordCount.formatted())
+                            detailRow("Build", value: report.softwareExport.buildIdentifier)
+                            detailRow("Build instance", value: report.buildInstanceID)
+                            detailRow("Source commit", value: report.softwareExport.sourceCommitSHA)
+                            digestDetailRow("Runtime executable SHA-256", value: report.softwareExport.executableSHA256)
+                        } else if let artifact = coordinator.finalizedArtifact {
+                            detailRow("Analysis readiness", value: "Not yet verified")
+                            detailRow("Capture bytes", value: artifact.captureJSON.count.formatted())
+                            detailRow("Observation windows", value: artifact.powerCycleResult.windows.count.formatted())
+                        }
+#if DEBUG && targetEnvironment(simulator)
+                    }
+#endif'''
+
+          new_details = '''#if DEBUG && targetEnvironment(simulator)
+                    if let simulatorQASnapshot {
+                        Text("SIMULATOR QA / SYNTHETIC SOFTWARE STATE")
+                            .font(.caption.monospaced().weight(.bold))
+                            .foregroundStyle(.orange)
+                            .accessibilityIdentifier("es80.capture.details.simulator-qa")
+                        detailRow("Scenario", value: simulatorQASnapshot.title)
+                        detailRow("Recipe", value: simulatorQASnapshot.recipeID.rawValue)
+                        detailRow("Physical procedure", value: "Locked")
+                        detailRow("Bluetooth transport", value: "Not used")
+                        detailRow("Capture artifact", value: "Not created")
+                        Text("These details describe presentation QA only. They do not read, summarize, or imply a live coordinator evidence state.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        liveCaptureDetailsRows
+                    }
+#else
+                    liveCaptureDetailsRows
+#endif'''
+          replace_once(old_details, new_details)
+
+          share_helper = '''
+
+    @ViewBuilder
+    private var completionShareControls: some View {
+        if let finalShareTransfer {
+            ShareLink(
+                item: finalShareTransfer,
+                preview: SharePreview(finalShareTransfer.filename)
+            ) {
+                Label("Share Capture", systemImage: "square.and.arrow.up")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 56)
+                    .foregroundStyle(.black)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("es80.capture.share")
+        } else if coordinator.finalizedArtifact != nil {
+            primaryButton(
+                finalShareIntegrityReport == nil ? "Verify Capture file" : "Retry Share file",
+                systemImage: "arrow.clockwise",
+                identifier: "es80.capture.prepare-share"
+            ) {
+                prepareFinalShareForAnalysisAndSharing()
+            }
+        } else {
+            primaryButton(
+                "Share unavailable",
+                systemImage: "exclamationmark.triangle",
+                disabled: true,
+                identifier: "es80.capture.share-unavailable"
+            ) {}
+        }
+    }
+
+    @ViewBuilder
+    private var completionEvidenceSummary: some View {
+        if let report = finalShareIntegrityReport {
+            Text("The exact \\(report.finalShareByteCount.formatted())-byte Capture passed every required file-integrity check and is ready to share for analysis. Nembra has not identified scooter data fields from this file yet.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if let artifact = coordinator.finalizedArtifact {
+            Text("\\(artifact.captureJSON.count.formatted()) Capture bytes are sealed. Nembra still needs to verify the final Share file before this run is ready for analysis.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+'''
+          replace_once("\n    private var captureDetailsSheet: some View {", share_helper + "\n    private var captureDetailsSheet: some View {")
+
+          details_helper = '''
+
+    @ViewBuilder
+    private var liveCaptureDetailsRows: some View {
+        detailRow("Correlation", value: correlationDetailValue)
+        detailRow("Cleanup", value: finalizationCleanupDetailValue)
+
+        if let report = finalShareIntegrityReport {
+            detailRow("Analysis readiness", value: "Ready")
+            detailRow("Recipe", value: report.experimentRecipeID.rawValue)
+            detailRow("Procedure", value: report.procedureVersion)
+            detailRow("Final Share bytes", value: report.finalShareByteCount.formatted())
+            digestDetailRow("Final Share SHA-256", value: report.finalShareSHA256)
+            digestDetailRow("Software Export SHA-256", value: report.softwareExport.envelopeSHA256)
+            digestDetailRow("Capture SHA-256", value: report.softwareExport.capture.sha256)
+            detailRow("Capture session", value: report.softwareExport.capture.captureSessionID.uuidString)
+            detailRow("Recorded events", value: report.softwareExport.capture.recordCount.formatted())
+            detailRow("Raw value events", value: report.softwareExport.capture.rawValueRecordCount.formatted())
+            detailRow("Build", value: report.softwareExport.buildIdentifier)
+            detailRow("Build instance", value: report.buildInstanceID)
+            detailRow("Source commit", value: report.softwareExport.sourceCommitSHA)
+            digestDetailRow("Runtime executable SHA-256", value: report.softwareExport.executableSHA256)
+        } else if let artifact = coordinator.finalizedArtifact {
+            detailRow("Analysis readiness", value: "Not yet verified")
+            detailRow("Capture bytes", value: artifact.captureJSON.count.formatted())
+            detailRow("Observation windows", value: artifact.powerCycleResult.windows.count.formatted())
+        }
+    }
+'''
+          replace_once("\n    private func phase(\n", details_helper + "\n    private func phase(\n")
+
+          if "            } else {\n#endif" in text:
+              raise SystemExit("split conditional else remains")
+          if "            } else if let report = finalShareIntegrityReport {\n#else" in text:
+              raise SystemExit("split conditional report branch remains")
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+          git diff --check
+          test "$(git hash-object NembraApp/Features/Research/ES80CaptureShellView.swift)" != "bf6c9202666620f376e2558ffda82bd2abfffd1b"
+
+      - name: Commit guarded repair and retire temp workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-v14-simulator-repair"
+          git config user.email "nembra-v14-simulator-repair@users.noreply.github.com"
+          git add NembraApp/Features/Research/ES80CaptureShellView.swift
+          git rm .github/workflows/temp-es80-simulator-conditional-syntax-gpt56.yml
+          git commit -m "fix: close Simulator QA conditional branches"
+          git push origin HEAD:fix/es80-today-simulator-conditional-syntax-0519-gpt56
