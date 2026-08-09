@@ -174,8 +174,8 @@ jobs:
           expected_blob="4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"
 
           # Re-prove the mutable worktree file after every earlier candidate-controlled validation.
-          # This is diagnostic defense-in-depth; the authority-producing interpreter input below is
-          # the immutable pinned Git object itself, not this pathname.
+          # This remains diagnostic defense-in-depth. Authority-producing interpreter input below is
+          # independently authenticated from the exact bytes returned by the pinned Git object.
           worktree_blob="$(
             /usr/bin/env -i \
               PATH=/usr/bin:/bin \
@@ -184,27 +184,51 @@ jobs:
               GIT_CONFIG_NOSYSTEM=1 \
               GIT_CONFIG_GLOBAL=/dev/null \
               GIT_NO_REPLACE_OBJECTS=1 \
-              /usr/bin/git hash-object -- "$producer_path"
+              /usr/bin/git -C /tmp hash-object -- "$GITHUB_WORKSPACE/$producer_path"
           )"
           test "$worktree_blob" = "$expected_blob"
 
-          # Stream the accepted Git object directly into a separately sanitized Bash interpreter.
-          # The candidate pathname is only $0 so the frozen runner's dirname($0)/../.. ROOT
-          # calculation still resolves the exact checkout; neither mutable pathname bytes nor
-          # inherited BASH_ENV/ENV/shell functions can execute before the pinned producer.
-          /usr/bin/env -i \
-            PATH=/usr/bin:/bin \
-            HOME=/tmp \
-            LC_ALL=C \
-            GIT_CONFIG_NOSYSTEM=1 \
-            GIT_CONFIG_GLOBAL=/dev/null \
-            GIT_NO_REPLACE_OBJECTS=1 \
-            /usr/bin/git cat-file blob "$expected_blob" \
-            | /usr/bin/env -i \
-                PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+          # Git object names alone are insufficient after same-UID candidate code has run: a loose
+          # object pathname can be replaced so `cat-file <expected oid>` returns different contents.
+          # Materialize once, preserve trailing newlines with a sentinel, independently recompute the
+          # Git-blob ID outside the candidate repository, then interpret those exact same bytes.
+          sentinel="__NEMBRA_TRUSTED_PRODUCER_EOF_4e9ae0cb__"
+          producer_bytes="$(
+            /usr/bin/env -i \
+              PATH=/usr/bin:/bin \
+              HOME=/tmp \
+              LC_ALL=C \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              /usr/bin/git cat-file blob "$expected_blob" &&
+            builtin printf '%s' "$sentinel"
+          )"
+          case "$producer_bytes" in
+            *"$sentinel") producer_bytes="${producer_bytes%"$sentinel"}" ;;
+            *) builtin printf 'Trusted producer sentinel missing after Git-object materialization.\n' >&2; exit 2 ;;
+          esac
+
+          materialized_blob="$(
+            builtin printf '%s' "$producer_bytes" |
+              /usr/bin/env -i \
+                PATH=/usr/bin:/bin \
                 HOME=/tmp \
                 LC_ALL=C \
-                /bin/bash -c 'source /dev/stdin' "$GITHUB_WORKSPACE/$producer_path"
+                GIT_CONFIG_NOSYSTEM=1 \
+                GIT_CONFIG_GLOBAL=/dev/null \
+                GIT_NO_REPLACE_OBJECTS=1 \
+                /usr/bin/git -C /tmp hash-object --stdin
+          )"
+          builtin printf 'Trusted Simulator execution blob: %s\n' "$materialized_blob"
+          test "$materialized_blob" = "$expected_blob"
+
+          builtin printf '%s' "$producer_bytes" |
+            /usr/bin/env -i \
+              PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+              HOME=/tmp \
+              LC_ALL=C \
+              /bin/bash --noprofile --norc -p -c 'source /dev/stdin' "$GITHUB_WORKSPACE/$producer_path"
 
       - name: Verify retained Capture evidence against trusted resolver authority
         shell: "/bin/bash --noprofile --norc -p -e -o pipefail {0}"
