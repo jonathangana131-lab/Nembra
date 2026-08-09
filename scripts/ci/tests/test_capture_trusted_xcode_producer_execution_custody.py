@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Source regression for trusted Capture producer execution custody.
 
-The default-branch workflow may inspect a candidate Git blob, but that inspection is not enough if
-candidate-controlled code runs afterwards and the authority-producing step later executes the
-mutable worktree pathname. The bytes actually interpreted by Bash must come from the already-pinned
-Git object, while preserving the candidate workspace pathname only as `$0` so the frozen runner's
-relative ROOT calculation still points at the exact candidate checkout.
+The authority-producing workflow must never execute mutable candidate pathname bytes, and an object
+name alone is not sufficient once candidate-controlled same-UID code has run. The workflow must
+materialize the pinned Git object, independently re-hash those exact returned bytes, and interpret
+only that authenticated byte subject. The candidate pathname survives solely as `$0` for the frozen
+producer's relative repository-root calculation.
 """
 from pathlib import Path
 import re
@@ -18,7 +18,7 @@ PRODUCER_BLOB = "4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"
 
 
 class TrustedProducerExecutionCustodyTests(unittest.TestCase):
-    def test_authority_runner_executes_pinned_git_object_not_mutable_worktree_path(self) -> None:
+    def test_authority_runner_executes_authenticated_git_object_bytes_not_mutable_path(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")
 
         custody_marker = "- name: Verify trusted Simulator evidence-producer custody"
@@ -39,15 +39,28 @@ class TrustedProducerExecutionCustodyTests(unittest.TestCase):
             rf"(?m)^\s*run:\s*{re.escape(PRODUCER_PATH)}\s*$",
             "trusted Capture still executes the mutable candidate worktree pathname",
         )
-        self.assertIn('/usr/bin/git hash-object -- "$producer_path"', execution_block)
+        self.assertIn(
+            '/usr/bin/git -C /tmp hash-object -- "$GITHUB_WORKSPACE/$producer_path"',
+            execution_block,
+        )
         self.assertIn('/usr/bin/git cat-file blob "$expected_blob"', execution_block)
+        self.assertIn('/usr/bin/git -C /tmp hash-object --stdin', execution_block)
+        self.assertIn('test "$materialized_blob" = "$expected_blob"', execution_block)
         self.assertIn("GIT_CONFIG_NOSYSTEM=1", execution_block)
         self.assertIn("GIT_CONFIG_GLOBAL=/dev/null", execution_block)
         self.assertIn("GIT_NO_REPLACE_OBJECTS=1", execution_block)
         self.assertIn(
-            "/bin/bash -c 'source /dev/stdin' \"$GITHUB_WORKSPACE/$producer_path\"",
+            "/bin/bash --noprofile --norc -p -c 'source /dev/stdin' \"$GITHUB_WORKSPACE/$producer_path\"",
             execution_block,
         )
+
+        materialize = execution_block.index('/usr/bin/git cat-file blob "$expected_blob"')
+        rehash = execution_block.index('/usr/bin/git -C /tmp hash-object --stdin')
+        compare = execution_block.index('test "$materialized_blob" = "$expected_blob"')
+        execute = execution_block.index("/bin/bash --noprofile --norc -p -c 'source /dev/stdin'")
+        self.assertLess(materialize, rehash)
+        self.assertLess(rehash, compare)
+        self.assertLess(compare, execute)
 
         blob_literals = re.findall(r"[0-9a-f]{40}", execution_block)
         if blob_literals:
