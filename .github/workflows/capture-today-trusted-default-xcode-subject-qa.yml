@@ -1,106 +1,76 @@
-name: Capture TODAY Final GO QA
+name: Capture TODAY Final GO Hardening QA
 
 on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
     paths:
-      - scripts/ci/es80_today_final_go_record.py
       - scripts/ci/es80_today_final_go_foundation.py
       - scripts/ci/_es80_today_final_go_foundation_impl.py
-      - scripts/ci/tests/test_es80_today_final_go_record.py
-      - scripts/ci/tests/test_es80_today_final_go_foundation.py
       - scripts/ci/tests/test_es80_today_final_go_direct_execution_disabled.py
       - scripts/ci/tests/test_es80_today_final_go_private_impl_execution_disabled.py
       - scripts/ci/tests/test_es80_today_final_go_local_evidence_descriptor_custody.py
-      - scripts/ci/es80_today_final_go_hardened.py
-      - scripts/ci/tests/test_es80_today_final_go_hardened.py
-      - scripts/ci/tests/test_es80_today_final_go_git_custody.py
       - scripts/ci/es80_today_trusted_capture_xcode_subject.py
       - scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
+      - scripts/ci/tests/test_es80_today_trusted_xcode_download_snapshot_custody.py
       - scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py
       - scripts/ci/tests/test_capture_trusted_xcode_producer_execution_custody.py
       - scripts/ci/tests/test_capture_trusted_xcode_bash_environment_custody.py
       - scripts/ci/es80_today_final_go_publication.py
       - scripts/ci/tests/test_es80_today_final_go_publication.py
+      - scripts/ci/es80_today_final_go_hardened.py
+      - scripts/ci/tests/test_es80_today_final_go_hardened.py
+      - scripts/ci/tests/test_es80_today_final_go_git_custody.py
       - .github/workflows/capture-xcode27-trusted-command.yml
-      - .github/workflows/capture-today-final-go-qa.yml
+      - .github/workflows/capture-today-trusted-default-xcode-subject-qa.yml
 
 permissions:
   contents: read
 
 jobs:
-  final-go-authority:
-    name: Validate hardened external Final GO authority
+  hardening:
+    name: Validate hardened Final GO composition
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    concurrency:
-      group: nembra-capture-today-final-go-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
-      cancel-in-progress: true
-
     steps:
-      - name: Checkout immutable PR head
+      - name: Checkout exact PR head
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-
-      - name: Verify immutable PR head
+          fetch-depth: 1
+      - name: Verify immutable validation head
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
-
-      - name: Compile Final GO foundation, hardening, and adversarial tests
+      - name: Compile Final GO hardening modules and tests
         run: |
-          set -euo pipefail
-          python3 -m py_compile scripts/ci/es80_today_final_go_record.py scripts/ci/es80_today_final_go_foundation.py scripts/ci/_es80_today_final_go_foundation_impl.py scripts/ci/tests/test_es80_today_final_go_record.py scripts/ci/tests/test_es80_today_final_go_foundation.py scripts/ci/tests/test_es80_today_final_go_direct_execution_disabled.py scripts/ci/tests/test_es80_today_final_go_private_impl_execution_disabled.py scripts/ci/tests/test_es80_today_final_go_local_evidence_descriptor_custody.py
-          python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py scripts/ci/tests/test_capture_trusted_xcode_producer_execution_custody.py scripts/ci/tests/test_capture_trusted_xcode_bash_environment_custody.py
+          python3 -m py_compile scripts/ci/es80_today_final_go_foundation.py scripts/ci/_es80_today_final_go_foundation_impl.py scripts/ci/tests/test_es80_today_final_go_direct_execution_disabled.py scripts/ci/tests/test_es80_today_final_go_private_impl_execution_disabled.py scripts/ci/tests/test_es80_today_final_go_local_evidence_descriptor_custody.py
+          python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_xcode_download_snapshot_custody.py scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py scripts/ci/tests/test_capture_trusted_xcode_producer_execution_custody.py scripts/ci/tests/test_capture_trusted_xcode_bash_environment_custody.py
           python3 -m py_compile scripts/ci/es80_today_final_go_publication.py scripts/ci/tests/test_es80_today_final_go_publication.py
           python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_git_custody.py
-
-      - name: Preserve foundation adversarial coverage
-        run: python3 scripts/ci/tests/test_es80_today_final_go_foundation.py
-
       - name: Reject direct/imported public Final GO execution surfaces
         run: python3 scripts/ci/tests/test_es80_today_final_go_direct_execution_disabled.py -v
-
       - name: Reject direct private Final GO implementation execution
         run: python3 scripts/ci/tests/test_es80_today_final_go_private_impl_execution_disabled.py -v
-
       - name: Preserve descriptor-bound local evidence reads
         run: python3 scripts/ci/tests/test_es80_today_final_go_local_evidence_descriptor_custody.py -v
-
-      - name: Reject candidate-controlled trusted-Xcode authority
+      - name: Run trusted subject adversarial suite
         run: python3 scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py -v
-
+      - name: Preserve downloaded trusted-Xcode single-snapshot custody
+        run: python3 scripts/ci/tests/test_es80_today_trusted_xcode_download_snapshot_custody.py -v
       - name: Preserve retained artifact admission contract
         run: python3 scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py -v
-
       - name: Preserve pinned producer interpreter custody
         run: python3 scripts/ci/tests/test_capture_trusted_xcode_producer_execution_custody.py -v
-
       - name: Preserve closed Bash startup custody
         run: python3 scripts/ci/tests/test_capture_trusted_xcode_bash_environment_custody.py -v
-
-      - name: Require failure-atomic no-replace publication
+      - name: Run failure-atomic publication adversarial suite
         run: python3 scripts/ci/tests/test_es80_today_final_go_publication.py -v
-
-      - name: Verify hardened composition seam
+      - name: Run hardened composition suite
         run: python3 scripts/ci/tests/test_es80_today_final_go_hardened.py -v
-
-      - name: Reject caller-forged Git authority
+      - name: Run closed Git custody suite
         run: python3 scripts/ci/tests/test_es80_today_final_go_git_custody.py -v
-
-      - name: Reject naked Boolean Final GO CLI authority
-        run: |
-          set -euo pipefail
-          help="$(python3 scripts/ci/es80_today_final_go_hardened.py --help)"
-          ! grep -Eq -- '--(terminal-software-acceptance|installed-without-rebuild|retained-app-evidence-inspected|intended-device-membership-accepted|no-application-write-authority|research-admission-live|canonical-coordinator-permitted|preflight-healthy|charger-disconnected|stationary)' <<<"$help"
-          grep -Fq -- '--operator-attestation' <<<"$help"
-          grep -Fq -- '--trusted-xcode-run-id' <<<"$help"
-          grep -Fq -- '--trusted-xcode-job-id' <<<"$help"
-          grep -Fq -- '--trusted-xcode-artifact-id' <<<"$help"
-
-      - name: Pin default-branch Xcode trust and Research tuple exactly
+      - name: Pin hardened authority boundaries
         run: |
           set -euo pipefail
           grep -Fq 'TRUSTED_WORKFLOW_NAME = "Capture Trusted Xcode 27 Exact-Head QA"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
@@ -108,8 +78,6 @@ jobs:
           grep -Fq 'TRUSTED_WORKFLOW_BLOB_SHA = "9d6a63da8cfb52894f39451f916015a26b84ffd4"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_PATH = "scripts/ci/xcode27_simulator_capture.sh"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_BLOB_SHA = "4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
-          grep -Fq 'name: Capture Trusted Xcode 27 Exact-Head QA' .github/workflows/capture-xcode27-trusted-command.yml
-          grep -Fq 'name: Build, test, and capture trusted exact Capture head' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq 'name: Verify trusted Simulator evidence-producer custody' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq 'expected_blob="4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq 'shell: "/bin/bash --noprofile --norc -p -e -o pipefail {0}"' .github/workflows/capture-xcode27-trusted-command.yml
@@ -119,16 +87,15 @@ jobs:
           grep -Fq '/usr/bin/git cat-file blob "$expected_blob"' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq '| /usr/bin/env -i \' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq "/bin/bash -c 'source /dev/stdin' \"\$GITHUB_WORKSPACE/\$producer_path\"" .github/workflows/capture-xcode27-trusted-command.yml
+          grep -Fq 'public Final GO foundation builder is non-authorizing' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'private foundation implementation is non-authorizing' scripts/ci/_es80_today_final_go_foundation_impl.py
           grep -Fq 'O_NOFOLLOW' scripts/ci/_es80_today_final_go_foundation_impl.py
           grep -Fq 'os.fstat(fd)' scripts/ci/_es80_today_final_go_foundation_impl.py
-          grep -Fq 'PINNED_CROSSCHECK_COMMIT = "d827a296048386bda62024ea3278775d5344c47c"' scripts/ci/es80_today_final_go_foundation.py
-          grep -Fq 'PINNED_CROSSCHECK_BLOB = "c3b2b620280484c05316fc5c2fa2ca451f1fdc83"' scripts/ci/es80_today_final_go_foundation.py
-          grep -Fq 'RESEARCH_COMPILE_MODE = "private-today-v1"' scripts/ci/es80_today_final_go_foundation.py
-          grep -Fq 'RESEARCH_COMPILE_AUTHORITY = "canonical-producer-explicit-mode"' scripts/ci/es80_today_final_go_foundation.py
-          grep -Fq 'RESEARCH_COMPILE_CONDITION = "NEMBRA_ES80_TODAY_RESEARCH"' scripts/ci/es80_today_final_go_foundation.py
-          grep -Fq 'public Final GO foundation builder is non-authorizing' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'foundation = _load(' scripts/ci/es80_today_final_go_hardened.py
           grep -Fq '"_es80_today_final_go_foundation_impl.py"' scripts/ci/es80_today_final_go_hardened.py
+          grep -Fq 'run.get("event") == "issue_comment"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          grep -Fq 'run.get("head_branch") == DEFAULT_BRANCH' scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          grep -Fq 'AMBIGUOUS NO-GO' scripts/ci/es80_today_final_go_publication.py
+          grep -Fq 'foundation._trusted_xcode_subject = trusted_subject_adapter' scripts/ci/es80_today_final_go_hardened.py
           grep -Fq 'foundation._git(tooling_repo, "rev-parse"' scripts/ci/es80_today_final_go_hardened.py
           grep -Fq 'publication.publish_record_no_replace' scripts/ci/es80_today_final_go_hardened.py

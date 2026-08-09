@@ -103,6 +103,25 @@ jobs:
           printf 'Trusted resolver head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual_head"
           test "$actual_head" = "$EXPECTED_HEAD_SHA"
 
+      - name: Verify trusted Simulator evidence-producer custody
+        run: |
+          set -euo pipefail
+          producer_path="scripts/ci/xcode27_simulator_capture.sh"
+          expected_blob="4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"
+          actual_blob="$(
+            env -i \
+              PATH=/usr/bin:/bin \
+              HOME=/tmp \
+              LC_ALL=C \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              /usr/bin/git rev-parse --verify "HEAD:${producer_path}"
+          )"
+          printf 'Trusted Simulator producer: %s\nExpected blob: %s\nActual blob: %s\n' \
+            "$producer_path" "$expected_blob" "$actual_blob"
+          test "$actual_blob" = "$expected_blob"
+
       - name: Validate project structure
         run: |
           plutil -lint Nembra.xcodeproj/project.pbxproj
@@ -145,10 +164,102 @@ jobs:
           python3 scripts/ci/es80_field_authorization_envelope.py --self-test
 
       - name: Build, test, and capture Simulator states
-        run: scripts/ci/xcode27_simulator_capture.sh
+        shell: "/bin/bash --noprofile --norc -p -e -o pipefail {0}"
+        env:
+          BASH_ENV: ""
+          ENV: ""
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          producer_path="scripts/ci/xcode27_simulator_capture.sh"
+          expected_blob="4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"
+
+          # Candidate-controlled validation may mutate .git/index. Populate a new private index
+          # directly from the resolver-approved commit so assume-unchanged and skip-worktree bits
+          # from the candidate index cannot hide tracked worktree divergence from the frozen runner.
+          trusted_index="$(/usr/bin/mktemp -t nembra-capture-index)"
+          /bin/rm -f -- "$trusted_index"
+          trap '/bin/rm -f -- "$trusted_index"' EXIT
+          /usr/bin/env -i \
+            PATH=/usr/bin:/bin \
+            HOME=/tmp \
+            LC_ALL=C \
+            GIT_CONFIG_NOSYSTEM=1 \
+            GIT_CONFIG_GLOBAL=/dev/null \
+            GIT_NO_REPLACE_OBJECTS=1 \
+            GIT_INDEX_FILE="$trusted_index" \
+            /usr/bin/git read-tree "$EXPECTED_HEAD_SHA"
+
+          trusted_status="$(
+            /usr/bin/env -i \
+              PATH=/usr/bin:/bin \
+              HOME=/tmp \
+              LC_ALL=C \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              GIT_INDEX_FILE="$trusted_index" \
+              /usr/bin/git \
+                -c core.fsmonitor=false \
+                -c core.ignorestat=false \
+                -c core.filemode=true \
+                status --porcelain=v1 --untracked-files=all
+          )"
+          if [[ -n "$trusted_status" ]]; then
+            printf 'Trusted resolver-bound worktree is not clean:\n%s\n' "$trusted_status" >&2
+            exit 1
+          fi
+          test -z "$trusted_status"
+
+          # Re-prove the mutable worktree producer file after every earlier candidate-controlled
+          # validation. This is diagnostic defense-in-depth; authority-producing interpreter input
+          # below is the immutable pinned Git object itself, not this pathname.
+          worktree_blob="$(
+            /usr/bin/env -i \
+              PATH=/usr/bin:/bin \
+              HOME=/tmp \
+              LC_ALL=C \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              /usr/bin/git hash-object -- "$producer_path"
+          )"
+          test "$worktree_blob" = "$expected_blob"
+
+          # Stream the accepted Git object directly into a separately sanitized Bash interpreter.
+          # The candidate pathname is only $0 so the frozen runner's dirname($0)/../.. ROOT
+          # calculation still resolves the exact checkout. Give its Git status the fresh trusted
+          # index too, so candidate index flags cannot become source-clean authority.
+          /usr/bin/env -i \
+            PATH=/usr/bin:/bin \
+            HOME=/tmp \
+            LC_ALL=C \
+            GIT_CONFIG_NOSYSTEM=1 \
+            GIT_CONFIG_GLOBAL=/dev/null \
+            GIT_NO_REPLACE_OBJECTS=1 \
+            /usr/bin/git cat-file blob "$expected_blob" \
+            | /usr/bin/env -i \
+                PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+                HOME=/tmp \
+                LC_ALL=C \
+                GIT_CONFIG_NOSYSTEM=1 \
+                GIT_CONFIG_GLOBAL=/dev/null \
+                GIT_NO_REPLACE_OBJECTS=1 \
+                GIT_INDEX_FILE="$trusted_index" \
+                GIT_CONFIG_COUNT=3 \
+                GIT_CONFIG_KEY_0=core.fsmonitor \
+                GIT_CONFIG_VALUE_0=false \
+                GIT_CONFIG_KEY_1=core.ignorestat \
+                GIT_CONFIG_VALUE_1=false \
+                GIT_CONFIG_KEY_2=core.filemode \
+                GIT_CONFIG_VALUE_2=true \
+                /bin/bash -c 'source /dev/stdin' "$GITHUB_WORKSPACE/$producer_path"
 
       - name: Verify retained Capture evidence against trusted resolver authority
+        shell: "/bin/bash --noprofile --norc -p -e -o pipefail {0}"
         env:
+          BASH_ENV: ""
+          ENV: ""
           EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
         run: |
           /usr/bin/python3 -I - <<'PY'
