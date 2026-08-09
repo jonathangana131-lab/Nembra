@@ -181,23 +181,17 @@ def _open_private_identifier_without_symlink_components(
                 next_descriptor = os.open(component, directory_flags, dir_fd=parent_descriptor)
             except OSError:
                 return None
-
             try:
                 next_metadata = os.fstat(next_descriptor)
-                if (next_metadata.st_dev, next_metadata.st_ino) == repository_identity:
-                    return None
             except OSError:
+                os.close(next_descriptor)
                 return None
-            finally:
-                if "next_metadata" not in locals() or (
-                    next_metadata.st_dev,
-                    next_metadata.st_ino,
-                ) == repository_identity:
-                    os.close(next_descriptor)
+            if (next_metadata.st_dev, next_metadata.st_ino) == repository_identity:
+                os.close(next_descriptor)
+                return None
 
             os.close(parent_descriptor)
             parent_descriptor = next_descriptor
-            del next_metadata
 
         try:
             return os.open(components[-1], file_flags, dir_fd=parent_descriptor)
