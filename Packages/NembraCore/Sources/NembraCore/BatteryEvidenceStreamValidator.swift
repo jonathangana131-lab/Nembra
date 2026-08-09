@@ -32,10 +32,9 @@ public enum BatteryEvidenceStreamValidationError: Error, Equatable, Sendable {
 ///
 /// `BatteryEvidenceStreamValidator` deliberately remains a value type for deterministic
 /// chronology testing. Accepted/seen chronology stays value data. Live-currentness authority is
-/// different: validators owned by `AcceptedBatterySOCStream` share one revocable reference-backed
-/// generation. Copying such a validator cannot snapshot R1 currentness and replay it after the
-/// owner crosses a gap or newer receipt, even though the copy still truthfully reports its local
-/// last accepted chronology for diagnostics.
+/// different: owner-bound validators keep only a weak shared handle plus generation. The owning
+/// `AcceptedBatterySOCStream` retains the strong owner. A cached validator therefore cannot keep
+/// R1 authority alive after every real stream lineage has been released.
 public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
     private var acceptedReceiptIdentity: BatteryEvidenceReceiptIdentity?
     private var acceptedUptimeNanoseconds: UInt64?
@@ -59,9 +58,9 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
     private var seenUptimeFloorNanoseconds: UInt64?
 
     /// Present only when a higher owner such as `AcceptedBatterySOCStream` binds this validator
-    /// to live-currentness authority. Standalone validators remain useful chronology checkers but
-    /// cannot mint owner-bound live range authority.
-    private var currentnessOwner: BatteryEvidenceCurrentnessOwner?
+    /// to live-currentness authority. The handle is strongly retained but points weakly to the
+    /// owner. Standalone validators have no handle and remain pure chronology checkers.
+    private var currentnessOwnerHandle: BatteryEvidenceCurrentnessOwner.LeaseHandle?
     private var currentnessGeneration: BatteryEvidenceCurrentnessOwner.Generation?
 
     /// Accepted chronology remains the local value-state even if a later observed callback revokes
@@ -87,16 +86,15 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
         lastSeenReceiptUptimeNanoseconds = nil
         lastSeenReceiptContinuity = nil
         seenUptimeFloorNanoseconds = nil
-        currentnessOwner = nil
+        currentnessOwnerHandle = nil
         currentnessGeneration = nil
     }
 
-    /// Trusted owner binding used by the accepted SoC chronology owner. A raw public validator
-    /// intentionally has no live-currentness capability; it can validate order but cannot by
-    /// itself prove that a retained receipt is still the live owner's receipt.
+    /// Trusted binding used by the accepted SoC chronology owner. The validator receives only the
+    /// owner's weak lease handle; retaining/copying the validator does not retain authority itself.
     init(currentnessOwner: BatteryEvidenceCurrentnessOwner) {
         self.init()
-        self.currentnessOwner = currentnessOwner
+        currentnessOwnerHandle = currentnessOwner.leaseHandle
         currentnessGeneration = currentnessOwner.generation()
     }
 
@@ -114,9 +112,9 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
     public mutating func markUnobservedInterval() {
         continuityBoundaryRequired = true
 
-        guard let currentnessOwner,
+        guard let owner = currentOwner,
               let currentnessGeneration,
-              let replacement = currentnessOwner.invalidateIfOwned(
+              let replacement = owner.invalidateIfOwned(
                 by: currentnessGeneration,
                 requiresContinuityBoundary: true
               ) else { return }
@@ -214,20 +212,22 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
     }
 
     /// Returns the owner-bound lease for exactly the receipt this validator still owns.
-    /// Standalone validators and stale copies deliberately return nil.
+    /// Standalone validators, stale copies, and validators whose real owner has been released
+    /// deliberately return nil.
     func currentnessLease(
         receiptIdentity: BatteryEvidenceReceiptIdentity,
         uptimeNanoseconds: UInt64
     ) -> BatteryEvidenceCurrentnessLease? {
-        guard let currentnessOwner,
+        guard let currentnessOwnerHandle,
+              let owner = currentnessOwnerHandle.owner,
               let currentnessGeneration,
-              currentnessOwner.isCurrent(
+              owner.isCurrent(
                 generation: currentnessGeneration,
                 receiptIdentity: receiptIdentity,
                 uptimeNanoseconds: uptimeNanoseconds
               ) else { return nil }
         return BatteryEvidenceCurrentnessLease(
-            ownerHandle: currentnessOwner.leaseHandle,
+            ownerHandle: currentnessOwnerHandle,
             generation: currentnessGeneration
         )
     }
@@ -237,9 +237,9 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
         receiptIdentity: BatteryEvidenceReceiptIdentity,
         uptimeNanoseconds: UInt64
     ) -> Bool {
-        guard let currentnessOwner,
+        guard let currentnessOwnerHandle,
+              currentnessOwnerHandle === lease.ownerHandle,
               let currentnessGeneration,
-              currentnessOwner.leaseHandle === lease.ownerHandle,
               currentnessGeneration === lease.generation else { return false }
         return lease.isCurrent(
             receiptIdentity: receiptIdentity,
@@ -252,7 +252,7 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
         rhs: BatteryEvidenceStreamValidator
     ) -> Bool {
         // Equality remains chronology-value equality for diagnostics/tests. Live-currentness
-        // authority is intentionally not reducible to value equality.
+        // authority is intentionally not reducible to owner/handle identity.
         lhs.acceptedReceiptIdentity == rhs.acceptedReceiptIdentity
             && lhs.acceptedUptimeNanoseconds == rhs.acceptedUptimeNanoseconds
             && lhs.continuityBoundaryRequired == rhs.continuityBoundaryRequired
@@ -262,21 +262,27 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
             && lhs.seenUptimeFloorNanoseconds == rhs.seenUptimeFloorNanoseconds
     }
 
+    private var currentOwner: BatteryEvidenceCurrentnessOwner? {
+        currentnessOwnerHandle?.owner
+    }
+
     private func requireCurrentnessOwnershipIfBound() throws {
-        guard let currentnessOwner,
-              let currentnessGeneration else { return }
-        guard currentnessOwner.snapshotIfOwned(by: currentnessGeneration) != nil else {
+        guard currentnessOwnerHandle != nil else { return }
+        guard let owner = currentOwner,
+              let currentnessGeneration,
+              owner.snapshotIfOwned(by: currentnessGeneration) != nil else {
             throw BatteryEvidenceStreamValidationError.staleCurrentnessOwner
         }
     }
 
     private mutating func invalidateCurrentnessForNewReceiptIfBound() throws {
-        guard let currentnessOwner,
-              let currentnessGeneration else { return }
-        guard let replacement = currentnessOwner.invalidateIfOwned(
-            by: currentnessGeneration,
-            requiresContinuityBoundary: continuityBoundaryRequired
-        ) else {
+        guard currentnessOwnerHandle != nil else { return }
+        guard let owner = currentOwner,
+              let currentnessGeneration,
+              let replacement = owner.invalidateIfOwned(
+                by: currentnessGeneration,
+                requiresContinuityBoundary: continuityBoundaryRequired
+              ) else {
             throw BatteryEvidenceStreamValidationError.staleCurrentnessOwner
         }
         self.currentnessGeneration = replacement
@@ -286,14 +292,15 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
         receiptIdentity: BatteryEvidenceReceiptIdentity,
         uptimeNanoseconds: UInt64
     ) throws {
-        guard let currentnessOwner,
-              let currentnessGeneration else { return }
-        guard currentnessOwner.publishIfOwned(
-            by: currentnessGeneration,
-            receiptIdentity: receiptIdentity,
-            uptimeNanoseconds: uptimeNanoseconds,
-            requiresContinuityBoundary: continuityBoundaryRequired
-        ) else {
+        guard currentnessOwnerHandle != nil else { return }
+        guard let owner = currentOwner,
+              let currentnessGeneration,
+              owner.publishIfOwned(
+                by: currentnessGeneration,
+                receiptIdentity: receiptIdentity,
+                uptimeNanoseconds: uptimeNanoseconds,
+                requiresContinuityBoundary: continuityBoundaryRequired
+              ) else {
             throw BatteryEvidenceStreamValidationError.staleCurrentnessOwner
         }
     }
@@ -302,13 +309,14 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
         receiptIdentity: BatteryEvidenceReceiptIdentity,
         uptimeNanoseconds: UInt64
     ) throws {
-        guard let currentnessOwner,
-              let currentnessGeneration else { return }
-        guard currentnessOwner.isCurrent(
-            generation: currentnessGeneration,
-            receiptIdentity: receiptIdentity,
-            uptimeNanoseconds: uptimeNanoseconds
-        ) else {
+        guard currentnessOwnerHandle != nil else { return }
+        guard let owner = currentOwner,
+              let currentnessGeneration,
+              owner.isCurrent(
+                generation: currentnessGeneration,
+                receiptIdentity: receiptIdentity,
+                uptimeNanoseconds: uptimeNanoseconds
+              ) else {
             throw BatteryEvidenceStreamValidationError.staleCurrentnessOwner
         }
     }
