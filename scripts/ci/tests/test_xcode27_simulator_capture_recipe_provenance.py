@@ -54,6 +54,23 @@ class SimulatorCaptureRecipeProvenanceTests(unittest.TestCase):
         self.assertLess(self.app_source.index(qa_guard), self.app_source.index(field_recipe_guard))
         self.assertLess(self.app_source.index(qa_return), self.app_source.index(field_recipe_guard))
 
+    def test_standard_debug_simulator_scenario_precedes_embedded_field_recipe(self):
+        scenario_guard = "if AppBootstrap.simulationScenario("
+        field_recipe_guard = (
+            "if let fieldRecipe = infoDictionary[captureFieldRecipeInfoPlistKey] as? String,"
+        )
+
+        self.assertIn(
+            'SIMCTL_CHILD_NEMBRA_SIMULATION_SCENARIO="$state"',
+            self.capture_source,
+        )
+        self.assertIn(scenario_guard, self.app_source)
+        scenario_guard_index = self.app_source.index(scenario_guard)
+        standard_return_index = self.app_source.index("return .standard", scenario_guard_index)
+        field_recipe_guard_index = self.app_source.index(field_recipe_guard)
+        self.assertLess(scenario_guard_index, field_recipe_guard_index)
+        self.assertLess(standard_return_index, field_recipe_guard_index)
+
     def test_external_record_uses_the_same_recipe_authority(self):
         self.assertIn('"$CAPTURE_RECIPE_IDENTIFIER" \\', self.capture_source)
         self.assertIn('"experimentRecipeID": recipe_identifier,', self.capture_source)
