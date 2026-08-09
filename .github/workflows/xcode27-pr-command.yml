@@ -185,6 +185,7 @@ jobs:
           import os
           import plistlib
           import re
+          import subprocess
           from pathlib import Path
 
           root = Path("Artifacts/Xcode27Simulator")
@@ -209,6 +210,29 @@ jobs:
           exact_head = os.environ.get("EXPECTED_HEAD_SHA", "")
           if re.fullmatch(r"[0-9a-f]{40}", exact_head) is None:
               raise SystemExit("Trusted resolver did not provide one exact lowercase 40-hex PR head SHA")
+
+          def verify_checkout_binding(resolver_head, observed_checkout_head):
+              if re.fullmatch(r"[0-9a-f]{40}", observed_checkout_head) is None:
+                  raise ValueError("post-build checkout HEAD is not one canonical lowercase 40-hex commit SHA")
+              if observed_checkout_head != resolver_head:
+                  raise ValueError("checkout HEAD changed after trusted exact-head resolution/build execution")
+
+          current_checkout_head = subprocess.check_output(
+              ["git", "rev-parse", "--verify", "HEAD^{commit}"],
+              text=True,
+          ).strip()
+          try:
+              verify_checkout_binding(exact_head, current_checkout_head)
+          except ValueError as error:
+              raise SystemExit(str(error)) from error
+
+          moved_checkout = "0" * 40 if exact_head != "0" * 40 else "1" * 40
+          try:
+              verify_checkout_binding(exact_head, moved_checkout)
+          except ValueError:
+              pass
+          else:
+              raise SystemExit("checkout-binding self-test accepted a moved post-build checkout SHA")
 
           retained_plist = plistlib.loads(info_plist.read_bytes())
           expected_recipe = "ES80-FINGERPRINT-v1"
