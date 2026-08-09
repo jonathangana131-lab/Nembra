@@ -116,7 +116,6 @@ def build_final_go_record(
     tooling_repo: Path,
     operator_attestation: Path,
     intended_device_udid_file: Path,
-    github_get_json: Callable[[str], tuple[bytes, dict[str, Any]]] = foundation._api_get_json,
     now_utc=None,
 ) -> dict[str, Any]:
     """Run the private foundation only after fresh signed-candidate, crosscheck, and Xcode authority."""
@@ -153,6 +152,8 @@ def build_final_go_record(
         artifact_archive_path: Path,
         github_get_json: Callable[[str], tuple[bytes, dict[str, Any]]],
     ) -> dict[str, Any]:
+        if github_get_json is not foundation._api_get_json:
+            raise FinalGoError("private Final GO foundation attempted to replace live GitHub authority")
         try:
             return trusted_xcode.verify_trusted_capture_xcode_subject(
                 source_commit_sha=source,
@@ -161,7 +162,7 @@ def build_final_go_record(
                 job_id=job_id,
                 artifact_id=artifact_id,
                 artifact_archive_path=artifact_archive_path,
-                github_get_json=github_get_json,
+                github_get_json=foundation._api_get_json,
                 workflow_blob_sha_at_commit=lambda commit, path: _workflow_blob_sha_at_commit(
                     tooling_repo, commit, path
                 ),
@@ -184,7 +185,7 @@ def build_final_go_record(
             frozen_source_repo=frozen_source_repo,
             tooling_repo=tooling_repo,
             operator_attestation=operator_attestation,
-            github_get_json=github_get_json,
+            github_get_json=foundation._api_get_json,
             now_utc=now,
         )
     finally:
