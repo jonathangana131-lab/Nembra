@@ -278,6 +278,18 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertEqual(handoff.count(raw_write), 1)
         self.assertNotIn('printf \'%s\\n\' "$INTENDED_UDID" > "$UDID_FILE"', handoff)
 
+    def test_production_handoff_resolves_physical_home_before_private_path_and_secret(self):
+        handoff = HANDOFF_PATH.read_text(encoding="utf-8")
+        home_resolution = 'HOME_PHYSICAL="$(cd -P -- "$HOME" && /bin/pwd -P)"'
+        private_dir = 'PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"'
+        secret_read = "IFS= read -r -s INTENDED_UDID"
+
+        self.assertIn(home_resolution, handoff)
+        self.assertIn(private_dir, handoff)
+        self.assertNotIn('PRIVATE_DIR="$HOME/.nembra-private"', handoff)
+        self.assertLess(handoff.index(home_resolution), handoff.index(private_dir))
+        self.assertLess(handoff.index(private_dir), handoff.index(secret_read))
+
     def test_non_xcode_27_selection_fails_closed(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
