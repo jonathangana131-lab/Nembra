@@ -1,3 +1,4 @@
+import Foundation
 import MapKit
 import SwiftUI
 
@@ -63,14 +64,61 @@ private struct NembraNavigationHost<Content: View>: View {
     }
 }
 
+private struct NembraRecentDestination: Codable, Identifiable, Equatable {
+    let id: String
+    let name: String
+    let address: String?
+    let latitude: Double
+    let longitude: Double
+
+    init(item: MKMapItem) {
+        let coordinate = item.placemark.coordinate
+        name = item.name?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty ?? "Destination"
+        address = item.placemark.title?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
+        latitude = coordinate.latitude
+        longitude = coordinate.longitude
+        id = "\(latitude.rounded(toPlaces: 5)),\(longitude.rounded(toPlaces: 5))"
+    }
+
+    var mapItem: MKMapItem {
+        let coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+        let placemark = MKPlacemark(coordinate: coordinate)
+        let item = MKMapItem(placemark: placemark)
+        item.name = name
+        return item
+    }
+}
+
+private extension String {
+    var nonEmpty: String? {
+        isEmpty ? nil : self
+    }
+}
+
+private extension Double {
+    func rounded(toPlaces places: Int) -> Double {
+        let divisor = pow(10.0, Double(places))
+        return (self * divisor).rounded() / divisor
+    }
+}
+
 private struct NembraNavigationView: View {
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("navigation.recentDestinations.v1") private var recentDestinationsJSON = ""
     @State private var query = ""
     @State private var results: [MKMapItem] = []
     @State private var selectedItem: MKMapItem?
     @State private var cameraPosition: MapCameraPosition = .automatic
     @State private var isSearching = false
     @State private var searchError: String?
+
+    private var recentDestinations: [NembraRecentDestination] {
+        guard let data = recentDestinationsJSON.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode([NembraRecentDestination].self, from: data) else {
+            return []
+        }
+        return decoded
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -142,13 +190,17 @@ private struct NembraNavigationView: View {
         if let selectedItem {
             selectedDestinationCard(selectedItem)
         } else if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            ContentUnavailableView(
-                "Find a destination",
-                systemImage: "magnifyingglass",
-                description: Text("Search for a place or address. Nembra will preview it here without using scooter telemetry.")
-            )
-            .frame(maxWidth: .infinity, minHeight: 230)
-            .accessibilityIdentifier("navigation.empty")
+            if recentDestinations.isEmpty {
+                ContentUnavailableView(
+                    "Find a destination",
+                    systemImage: "magnifyingglass",
+                    description: Text("Search for a place or address. Nembra will preview it here without using scooter telemetry.")
+                )
+                .frame(maxWidth: .infinity, minHeight: 230)
+                .accessibilityIdentifier("navigation.empty")
+            } else {
+                recentDestinationList
+            }
         } else if isSearching {
             ProgressView("Searching…")
                 .frame(maxWidth: .infinity, minHeight: 230)
@@ -170,26 +222,55 @@ private struct NembraNavigationView: View {
                 Button {
                     select(item)
                 } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(item.name ?? "Unnamed place")
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-
-                        if let address = item.placemark.title {
-                            Text(address)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 4)
+                    destinationRow(
+                        name: item.name ?? "Unnamed place",
+                        address: item.placemark.title
+                    )
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("navigation.result")
             }
             .listStyle(.plain)
         }
+    }
+
+    private var recentDestinationList: some View {
+        List {
+            Section {
+                ForEach(recentDestinations) { destination in
+                    Button {
+                        selectRecent(destination)
+                    } label: {
+                        destinationRow(name: destination.name, address: destination.address)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("navigation.recent")
+                }
+            } header: {
+                Text("Recent destinations")
+            } footer: {
+                Text("Recent places are stored on this device. They do not contain scooter telemetry.")
+            }
+        }
+        .listStyle(.insetGrouped)
+        .accessibilityIdentifier("navigation.recents")
+    }
+
+    private func destinationRow(name: String, address: String?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(name)
+                .font(.headline)
+                .foregroundStyle(.primary)
+
+            if let address {
+                Text(address)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
     }
 
     private func selectedDestinationCard(_ item: MKMapItem) -> some View {
@@ -275,12 +356,37 @@ private struct NembraNavigationView: View {
 
     private func select(_ item: MKMapItem) {
         selectedItem = item
+        remember(item)
         cameraPosition = .region(
             MKCoordinateRegion(
                 center: item.placemark.coordinate,
                 span: MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02)
             )
         )
+    }
+
+    private func selectRecent(_ destination: NembraRecentDestination) {
+        selectedItem = destination.mapItem
+        remember(destination.mapItem)
+        cameraPosition = .region(
+            MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: destination.latitude, longitude: destination.longitude),
+                span: MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02)
+            )
+        )
+    }
+
+    private func remember(_ item: MKMapItem) {
+        let recent = NembraRecentDestination(item: item)
+        var updated = recentDestinations.filter { $0.id != recent.id }
+        updated.insert(recent, at: 0)
+        updated = Array(updated.prefix(6))
+
+        guard let data = try? JSONEncoder().encode(updated),
+              let encoded = String(data: data, encoding: .utf8) else {
+            return
+        }
+        recentDestinationsJSON = encoded
     }
 
     private func openDirections(to item: MKMapItem) {
