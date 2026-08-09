@@ -156,7 +156,9 @@ final class NembraAppTests: XCTestCase {
         XCTAssertEqual(frame.kilometersPerHour, 18.4, accuracy: 0.000_1)
         XCTAssertEqual(frame.origin, .confirmedVehicleState)
         XCTAssertNil(frame.latestMeasuredKilometersPerHour)
+        XCTAssertNil(model.latestMeasuredKilometersPerHour)
         XCTAssertEqual(model.measurementRevision, 0)
+        XCTAssertTrue(model.permitsLiveConfirmedFallback)
     }
 
     @MainActor
@@ -171,6 +173,7 @@ final class NembraAppTests: XCTestCase {
         ))
         XCTAssertEqual(frame.kilometersPerHour, 20, accuracy: 0.000_1)
         XCTAssertEqual(frame.origin, .measuredTelemetry)
+        XCTAssertEqual(try XCTUnwrap(model.latestMeasuredKilometersPerHour), 20, accuracy: 0.000_1)
         XCTAssertFalse(model.isAnimationActive)
     }
 
@@ -197,6 +200,7 @@ final class NembraAppTests: XCTestCase {
         XCTAssertEqual(midpoint.kilometersPerHour, 15, accuracy: 0.000_1)
         XCTAssertEqual(midpoint.latestMeasuredKilometersPerHour, 20)
         XCTAssertEqual(midpoint.origin, .visuallyInterpolated)
+        XCTAssertEqual(try XCTUnwrap(model.latestMeasuredKilometersPerHour), 20, accuracy: 0.000_1)
 
         let settled = try XCTUnwrap(model.frame(
             atUptimeNanoseconds: 1_400_000_000,
@@ -240,6 +244,7 @@ final class NembraAppTests: XCTestCase {
         model.configureInterpolationPolicy(.simulatorQA)
         model.accept(try speedSample(kilometersPerHour: 12, uptimeNanoseconds: 2_000_000_000))
         XCTAssertEqual(model.measurementRevision, 1)
+        XCTAssertEqual(try XCTUnwrap(model.latestMeasuredKilometersPerHour), 12, accuracy: 0.000_1)
 
         model.accept(try speedSample(kilometersPerHour: 30, uptimeNanoseconds: 1_900_000_000))
         XCTAssertEqual(model.measurementRevision, 1)
@@ -253,6 +258,7 @@ final class NembraAppTests: XCTestCase {
         )
         model.accept(estimate)
         XCTAssertEqual(model.measurementRevision, 1)
+        XCTAssertEqual(try XCTUnwrap(model.latestMeasuredKilometersPerHour), 12, accuracy: 0.000_1)
 
         let frame = try XCTUnwrap(model.frame(
             atUptimeNanoseconds: 2_500_000_000,
@@ -276,6 +282,220 @@ final class NembraAppTests: XCTestCase {
         XCTAssertEqual(frame.kilometersPerHour, 20, accuracy: 0.000_1)
         XCTAssertEqual(frame.origin, .measuredTelemetry)
         XCTAssertFalse(model.isAnimationActive)
+    }
+
+    @MainActor
+    func testStoppingObservationDropsRawAnchorButKeepsConfirmedFallbackEligible() throws {
+        let model = SpeedInstrumentModel()
+        model.accept(try speedSample(kilometersPerHour: 12, uptimeNanoseconds: 2_000_000_000))
+
+        let liveRaw = try XCTUnwrap(model.frame(
+            atUptimeNanoseconds: 2_000_000_000,
+            fallbackConfirmedKilometersPerHour: 7
+        ))
+        XCTAssertEqual(liveRaw.kilometersPerHour, 12, accuracy: 0.000_1)
+        XCTAssertEqual(liveRaw.origin, .measuredTelemetry)
+
+        model.stop()
+
+        XCTAssertNil(model.latestMeasurementSource)
+        XCTAssertNil(model.latestMeasuredKilometersPerHour)
+        XCTAssertFalse(model.isAnimationActive)
+        XCTAssertTrue(model.permitsLiveConfirmedFallback)
+        XCTAssertEqual(model.measurementRevision, 1)
+
+        let resumedFallback = try XCTUnwrap(model.frame(
+            atUptimeNanoseconds: 3_000_000_000,
+            fallbackConfirmedKilometersPerHour: 7
+        ))
+        XCTAssertEqual(resumedFallback.kilometersPerHour, 7, accuracy: 0.000_1)
+        XCTAssertEqual(resumedFallback.origin, .confirmedVehicleState)
+    }
+
+    @MainActor
+    func testConnectionGapInvalidatesRawSpeedAndRejectsGapSamples() throws {
+        let model = SpeedInstrumentModel()
+        model.configureInterpolationPolicy(.simulatorQA)
+        model.accept(try speedSample(kilometersPerHour: 12, uptimeNanoseconds: 2_000_000_000))
+        XCTAssertEqual(model.measurementRevision, 1)
+        XCTAssertEqual(try XCTUnwrap(model.latestMeasuredKilometersPerHour), 12, accuracy: 0.000_1)
+        XCTAssertTrue(model.permitsLiveConfirmedFallback)
+
+        model.setConnectionContinuityActive(false)
+        XCTAssertNil(model.latestMeasurementSource)
+        XCTAssertNil(model.latestMeasuredKilometersPerHour)
+        XCTAssertFalse(model.isAnimationActive)
+        XCTAssertFalse(model.permitsLiveConfirmedFallback)
+
+        let retainedFallback = try XCTUnwrap(model.frame(
+            atUptimeNanoseconds: 2_100_000_000,
+            fallbackConfirmedKilometersPerHour: 7
+        ))
+        XCTAssertEqual(retainedFallback.kilometersPerHour, 7, accuracy: 0.000_1)
+        XCTAssertEqual(retainedFallback.origin, .confirmedVehicleState)
+
+        model.accept(try speedSample(kilometersPerHour: 30, uptimeNanoseconds: 3_000_000_000))
+        XCTAssertEqual(model.measurementRevision, 1)
+        XCTAssertNil(model.latestMeasuredKilometersPerHour)
+
+        model.setConnectionContinuityActive(true)
+        XCTAssertFalse(model.permitsLiveConfirmedFallback)
+        model.accept(try speedSample(kilometersPerHour: 8, uptimeNanoseconds: 4_000_000_000))
+        XCTAssertEqual(model.measurementRevision, 2)
+        XCTAssertEqual(try XCTUnwrap(model.latestMeasuredKilometersPerHour), 8, accuracy: 0.000_1)
+    }
+
+    @MainActor
+    func testConfirmedFallbackRemainsRetainedAcrossKnownReconnectGap() throws {
+        XCTAssertEqual(
+            try XCTUnwrap(DashboardSpeedInstrumentView.confirmedFallbackForPresentation(
+                kilometersPerHour: 7,
+                isRetained: false,
+                isConnected: true,
+                permitsLiveConfirmedFallback: true
+            )),
+            7,
+            accuracy: 0.000_1
+        )
+
+        XCTAssertEqual(
+            try XCTUnwrap(DashboardSpeedInstrumentView.confirmedFallbackForPresentation(
+                kilometersPerHour: 7,
+                isRetained: true,
+                isConnected: false,
+                permitsLiveConfirmedFallback: false
+            )),
+            7,
+            accuracy: 0.000_1
+        )
+
+        XCTAssertNil(DashboardSpeedInstrumentView.confirmedFallbackForPresentation(
+            kilometersPerHour: 7,
+            isRetained: false,
+            isConnected: true,
+            permitsLiveConfirmedFallback: false
+        ))
+        XCTAssertNil(DashboardSpeedInstrumentView.confirmedFallbackForPresentation(
+            kilometersPerHour: 7,
+            isRetained: false,
+            isConnected: false,
+            permitsLiveConfirmedFallback: true
+        ))
+        XCTAssertNil(DashboardSpeedInstrumentView.confirmedFallbackForPresentation(
+            kilometersPerHour: .nan,
+            isRetained: true,
+            isConnected: false,
+            permitsLiveConfirmedFallback: false
+        ))
+    }
+
+    @MainActor
+    func testDashboardSpeedDisplayRejectsMalformedValuesInsteadOfManufacturingZero() throws {
+        XCTAssertNil(DashboardSpeedInstrumentView.displayedValue(kilometersPerHour: nil, usesMetric: true))
+        XCTAssertNil(DashboardSpeedInstrumentView.displayedValue(kilometersPerHour: -0.01, usesMetric: true))
+        XCTAssertNil(DashboardSpeedInstrumentView.displayedValue(kilometersPerHour: .nan, usesMetric: true))
+        XCTAssertNil(DashboardSpeedInstrumentView.displayedValue(kilometersPerHour: .infinity, usesMetric: true))
+        XCTAssertNil(DashboardSpeedInstrumentView.displayedValue(kilometersPerHour: -.infinity, usesMetric: true))
+
+        XCTAssertEqual(
+            try XCTUnwrap(DashboardSpeedInstrumentView.displayedValue(kilometersPerHour: -0.0, usesMetric: true)),
+            0,
+            accuracy: 0.000_1
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(DashboardSpeedInstrumentView.displayedValue(kilometersPerHour: 10, usesMetric: false)),
+            6.213_71,
+            accuracy: 0.000_1
+        )
+    }
+
+    @MainActor
+    func testDashboardSpeedAccessibilityPreservesUnavailableAndRetainedTruth() {
+        XCTAssertEqual(
+            DashboardSpeedInstrumentView.accessibilitySpeedValue(kilometersPerHour: nil, isRetained: false),
+            "Unavailable"
+        )
+        XCTAssertEqual(
+            DashboardSpeedInstrumentView.accessibilitySpeedValue(kilometersPerHour: -0.01, isRetained: true),
+            "Unavailable"
+        )
+        XCTAssertEqual(
+            DashboardSpeedInstrumentView.accessibilitySpeedValue(kilometersPerHour: .nan, isRetained: false),
+            "Unavailable"
+        )
+        XCTAssertEqual(
+            DashboardSpeedInstrumentView.accessibilitySpeedValue(kilometersPerHour: .infinity, isRetained: true),
+            "Unavailable"
+        )
+
+        let live = DashboardSpeedInstrumentView.accessibilitySpeedValue(
+            kilometersPerHour: 0,
+            isRetained: false
+        )
+        XCTAssertNotEqual(live, "Unavailable")
+        XCTAssertFalse(live.localizedCaseInsensitiveContains("last known"))
+
+        let retained = DashboardSpeedInstrumentView.accessibilitySpeedValue(
+            kilometersPerHour: 7,
+            isRetained: true
+        )
+        XCTAssertTrue(retained.localizedCaseInsensitiveContains("last known"))
+        XCTAssertNotEqual(retained, "Unavailable")
+
+        // Compact speed representability is presentation capacity, not a
+        // physical maximum. The same accepted semantic projection must fail
+        // closed whenever either metric or imperial display would need four
+        // integral digits, and retained state must not become punctuation.
+        XCTAssertEqual(
+            DashboardSpeedInstrumentView.accessibilitySpeedValue(
+                kilometersPerHour: 2_000,
+                isRetained: false
+            ),
+            "Unavailable"
+        )
+        XCTAssertEqual(
+            DashboardSpeedInstrumentView.accessibilitySpeedValue(
+                kilometersPerHour: 2_000,
+                isRetained: true
+            ),
+            "Unavailable"
+        )
+        XCTAssertEqual(VehicleDisplayFormatting.speed(kilometersPerHour: 2_000), "—")
+        XCTAssertEqual(
+            VehicleDisplayFormatting.accessibilitySpeed(
+                kilometersPerHour: Double.greatestFiniteMagnitude,
+                isRetained: true
+            ),
+            "Unavailable"
+        )
+
+        let halfStep = DashboardSpeedInstrumentView.accessibilitySpeedValue(
+            kilometersPerHour: 22.5,
+            isRetained: false
+        )
+        let expectedRoundedInteger = VehicleDisplayFormatting.usesMetric ? "23" : "14"
+        XCTAssertTrue(
+            halfStep.contains(expectedRoundedInteger),
+            "Semantic speed rounding must match the visible nearest-away-from-zero rolling digit."
+        )
+        XCTAssertNotEqual(
+            DashboardSpeedInstrumentView.accessibilitySpeedValue(
+                kilometersPerHour: 999.4,
+                isRetained: false
+            ),
+            "Unavailable"
+        )
+    }
+
+    @MainActor
+    func testDashboardReadyStatusRequiresKnownFiniteNonnegativeSpeed() {
+        XCTAssertEqual(DashboardSpeedInstrumentView.liveSpeedStatusText(kilometersPerHour: nil), "NO LIVE SPEED")
+        XCTAssertEqual(DashboardSpeedInstrumentView.liveSpeedStatusText(kilometersPerHour: -0.01), "NO LIVE SPEED")
+        XCTAssertEqual(DashboardSpeedInstrumentView.liveSpeedStatusText(kilometersPerHour: .nan), "NO LIVE SPEED")
+        XCTAssertEqual(DashboardSpeedInstrumentView.liveSpeedStatusText(kilometersPerHour: .infinity), "NO LIVE SPEED")
+        XCTAssertEqual(DashboardSpeedInstrumentView.liveSpeedStatusText(kilometersPerHour: 0), "READY")
+        XCTAssertEqual(DashboardSpeedInstrumentView.liveSpeedStatusText(kilometersPerHour: 0.49), "READY")
+        XCTAssertEqual(DashboardSpeedInstrumentView.liveSpeedStatusText(kilometersPerHour: 0.5), "RIDING")
     }
 
     private func speedSample(
