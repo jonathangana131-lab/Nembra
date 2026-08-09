@@ -10,7 +10,6 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
     @MainActor
     func testV14ResearchLaunchMechanicallyBlocksPhysicalExperimentWhilePackageIsNoGo() {
-        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments = ["--es80-passive-capture"]
         app.launch()
@@ -161,7 +160,6 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
     @MainActor
     func testV14NoGoRemainsLegibleAtAccessibilityExtraExtraExtraLarge() {
-        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments = [
             "--es80-passive-capture",
@@ -277,7 +275,6 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
     @MainActor
     func testV14SimulatorQARendersStationaryPreflightWithoutPromotingFieldGo() {
-        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments = [
             "--es80-passive-capture-simulator-qa",
@@ -303,7 +300,6 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
     @MainActor
     func testV14SimulatorQARendersObservationHorizonReadyInRealCaptureShell() {
-        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments = [
             "--es80-passive-capture-simulator-qa",
@@ -326,7 +322,6 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
     @MainActor
     func testV14SimulatorQARendersCompleteAndShareRetryStates() {
-        XCUIDevice.shared.orientation = .portrait
         let complete = XCUIApplication()
         complete.launchArguments = [
             "--es80-passive-capture-simulator-qa",
@@ -381,7 +376,6 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
     @MainActor
     func testV14SimulatorQACaptureCompleteRemainsActionableAtAccessibilityExtraExtraExtraLarge() {
-        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments = [
             "--es80-passive-capture-simulator-qa",
@@ -478,7 +472,6 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
     @MainActor
     func testV14SimulatorQAHorizonReadyRemainsActionableAtAccessibilityExtraExtraExtraLarge() {
-        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments = [
             "--es80-passive-capture-simulator-qa",
@@ -616,7 +609,6 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
     @MainActor
     func testV14SimulatorQACapturesRepresentativeInProgressAndRecoveryStates() {
-        XCUIDevice.shared.orientation = .portrait
         struct ScenarioExpectation {
             let scenario: String
             let requiredText: String
@@ -807,8 +799,16 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "Horizon seal alone must not render Ready for analysis."
         )
         XCTAssertTrue(
-            source.contains("guard let data = finalShareData"),
-            "A temporary Share-file retry must reuse retained verified bytes rather than mint a new evidence artifact."
+            source.contains("if finalShareData != nil,"),
+            "A temporary Share-file retry must require retained verified final Share bytes."
+        )
+        XCTAssertTrue(
+            source.contains("finalShareIntegrityReport != nil,"),
+            "A temporary Share-file retry must retain the exact integrity report rather than mint new evidence."
+        )
+        XCTAssertTrue(
+            source.contains("finalShareFilename != nil {"),
+            "A temporary Share-file retry must retain the verified filename alongside the verified bytes."
         )
         XCTAssertTrue(
             source.contains("finalShareIntegrityReport = report"),
@@ -936,7 +936,6 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
     @MainActor
     func testV14SimulatorQAHorizonReadyDynamicTypeSurfacesRemainReviewableAtAccessibilityExtraExtraExtraLarge() {
-        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments = [
             "--es80-passive-capture-simulator-qa",
