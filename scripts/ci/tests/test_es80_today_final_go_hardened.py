@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import importlib.util
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -109,6 +110,51 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(hardened.FinalGoError, "remain independent"):
                     hardened.build_final_go_record(**self.kwargs(root))
+
+    def test_workflow_blob_lookup_ignores_git_replacement_objects(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "tooling"
+            repo.mkdir()
+
+            def git(*arguments: str) -> str:
+                return subprocess.check_output(
+                    ["/usr/bin/git", "-C", str(repo), *arguments],
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                ).strip()
+
+            subprocess.run(["/usr/bin/git", "-C", str(repo), "init", "-q"], check=True)
+            git("config", "user.email", "capture-v14@example.invalid")
+            git("config", "user.name", "Capture V14 adversarial test")
+
+            workflow = repo / "workflow.yml"
+            workflow.write_text("trusted-default-workflow\n", encoding="utf-8")
+            git("add", "workflow.yml")
+            git("commit", "-q", "-m", "trusted workflow")
+            trusted_commit = git("rev-parse", "HEAD")
+            trusted_blob = git("rev-parse", f"{trusted_commit}:workflow.yml")
+
+            workflow.write_text("candidate-controlled-workflow\n", encoding="utf-8")
+            git("add", "workflow.yml")
+            git("commit", "-q", "-m", "untrusted workflow")
+            untrusted_commit = git("rev-parse", "HEAD")
+            untrusted_blob = git("rev-parse", f"{untrusted_commit}:workflow.yml")
+            self.assertNotEqual(trusted_blob, untrusted_blob)
+
+            git("replace", untrusted_commit, trusted_commit)
+            self.assertEqual(
+                git("rev-parse", f"{untrusted_commit}:workflow.yml"),
+                trusted_blob,
+                "attack setup must prove ordinary git rev-parse follows refs/replace",
+            )
+
+            resolved = hardened._workflow_blob_sha_at_commit(
+                repo,
+                untrusted_commit,
+                "workflow.yml",
+            )
+            self.assertEqual(resolved, untrusted_blob)
+            self.assertNotEqual(resolved, trusted_blob)
 
     def test_publication_delegates_only_to_failure_atomic_primitive(self):
         with tempfile.TemporaryDirectory() as temporary:
