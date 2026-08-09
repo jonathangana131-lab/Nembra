@@ -30,4 +30,4 @@ jobs:
       - name: Reject candidate Python import authority
         run: |
           set -euo pipefail
-          /usr/bin/python3 -I -m unittest scripts.ci.tests.test_capture_trusted_xcode_python_import_custody
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_trusted_xcode_python_import_custody.py
