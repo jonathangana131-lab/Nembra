@@ -37,6 +37,22 @@ class Decision:
     reason: str
 
 
+class GitHubAPIError(RuntimeError):
+    """HTTP failure that preserves status for narrowly authorized recovery."""
+
+    def __init__(self, method: str, path: str, status: int, body: str) -> None:
+        super().__init__(f"GitHub API {method} {path} failed: HTTP {status}: {body}")
+        self.method = method
+        self.path = path
+        self.status = status
+
+
+def should_force_cancel(error: BaseException) -> bool:
+    """Only GitHub's documented 500 cancel failure earns force-cancel fallback."""
+
+    return isinstance(error, GitHubAPIError) and error.status == 500
+
+
 def _parse_github_time(value: str) -> dt.datetime:
     parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
@@ -115,9 +131,7 @@ class GitHubAPI:
                 return json.loads(body.decode("utf-8"))
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(
-                f"GitHub API {method} {path} failed: HTTP {exc.code}: {body}"
-            ) from exc
+            raise GitHubAPIError(method, path, exc.code, body) from exc
 
     def runs_with_status(self, status: str) -> list[dict[str, Any]]:
         if status not in CANCELLABLE_STATUSES:
@@ -161,6 +175,12 @@ class GitHubAPI:
     def cancel_run(self, run_id: int) -> None:
         self.request(
             "POST", f"/repos/{self.owner}/{self.repo}/actions/runs/{run_id}/cancel"
+        )
+
+    def force_cancel_run(self, run_id: int) -> None:
+        self.request(
+            "POST",
+            f"/repos/{self.owner}/{self.repo}/actions/runs/{run_id}/force-cancel",
         )
 
 
@@ -221,6 +241,14 @@ def self_test() -> None:
     assert not classify_run(
         run(status="completed"), [], now=now, minimum_age_seconds=120
     ).cancel
+
+    # Force-cancel is not a generic retry. It is authorized only for the specific
+    # GitHub HTTP 500 failure returned by ordinary cancel after stale identity was
+    # already proven; conflicts/auth/transport/unknown failures still preserve.
+    assert should_force_cancel(GitHubAPIError("POST", "/cancel", 500, "server"))
+    assert not should_force_cancel(GitHubAPIError("POST", "/cancel", 409, "conflict"))
+    assert not should_force_cancel(GitHubAPIError("POST", "/cancel", 403, "forbidden"))
+    assert not should_force_cancel(RuntimeError("transport/ambiguous"))
 
     print("xcode27_queue_janitor self-test: PASS")
 
@@ -315,8 +343,51 @@ def main() -> int:
         try:
             api.cancel_run(run_id)
             cancelled += 1
+            continue
         except RuntimeError as exc:
-            print(f"CANCEL_RACE run={run_id}: {exc}", file=sys.stderr)
+            if not should_force_cancel(exc):
+                print(f"CANCEL_RACE run={run_id}: {exc}", file=sys.stderr)
+                continue
+            print(
+                f"CANCEL_HTTP_500 run={run_id}: revalidating stale authority before force-cancel",
+                file=sys.stderr,
+            )
+
+        # A normal cancel 500 is the only force-cancel admission, but re-read the
+        # branch's open-PR truth before the stronger mutation so a reopened/moved
+        # PR cannot inherit an earlier stale classification.
+        if not branch:
+            print(
+                f"PRESERVE_FORCE_CANCEL run={run_id}: missing branch on revalidation",
+                file=sys.stderr,
+            )
+            continue
+        try:
+            refreshed_prs = api.open_prs_for_branch(branch)
+            refreshed = classify_run(
+                run,
+                refreshed_prs,
+                now=dt.datetime.now(dt.timezone.utc),
+                minimum_age_seconds=0,
+            )
+        except RuntimeError as exc:
+            print(
+                f"PRESERVE_FORCE_CANCEL run={run_id}: revalidation failed: {exc}",
+                file=sys.stderr,
+            )
+            continue
+        if not refreshed.cancel:
+            print(
+                f"PRESERVE_FORCE_CANCEL run={run_id}: {refreshed.reason}",
+                file=sys.stderr,
+            )
+            continue
+        try:
+            api.force_cancel_run(run_id)
+            cancelled += 1
+            print(f"FORCE_CANCELLED run={run_id}")
+        except RuntimeError as exc:
+            print(f"FORCE_CANCEL_RACE run={run_id}: {exc}", file=sys.stderr)
 
     if args.apply:
         print(f"cancelled={cancelled} cap={args.max_cancellations}")
