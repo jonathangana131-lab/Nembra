@@ -1,6 +1,214 @@
 import Foundation
 import Observation
 
+// MARK: - Battery truth app-target bridge
+//
+// The Xcode app target currently compiles selected NembraCore sources directly instead of
+// linking the package target. BatteryPersistence.swift, BatteryObservationTruth.swift, and
+// BatterySnapshotStorage.swift are not yet members of that explicit source list even though
+// VehicleStore/AppBootstrap already consume their accepted domain types. Keep the exact
+// authority/persistence semantics available to the production app here until the project target
+// graph is normalized. This bridge assigns no ES80 transport meaning and must not be used to
+// promote unclassified Bluetooth values.
+
+enum BatteryObservationAuthority: String, Codable, CaseIterable, Sendable {
+    case measured
+    case estimated
+    case displayOnly
+}
+
+struct RetainedBatterySnapshot: Equatable, Codable, Sendable {
+    static let schemaVersion = 1
+
+    let schemaVersion: Int
+    let percent: Int
+    let authority: BatteryObservationAuthority
+    let observedAt: Date
+    let retainedAt: Date
+
+    init?(
+        percent: Int,
+        authority: BatteryObservationAuthority,
+        observedAt: Date,
+        retainedAt: Date = .now
+    ) {
+        guard (0...100).contains(percent),
+              observedAt.timeIntervalSince1970.isFinite,
+              retainedAt.timeIntervalSince1970.isFinite,
+              retainedAt >= observedAt else {
+            return nil
+        }
+
+        self.schemaVersion = Self.schemaVersion
+        self.percent = percent
+        self.authority = authority
+        self.observedAt = observedAt
+        self.retainedAt = retainedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case percent
+        case authority
+        case observedAt
+        case retainedAt
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        let percent = try container.decode(Int.self, forKey: .percent)
+        let authority = try container.decode(BatteryObservationAuthority.self, forKey: .authority)
+        let observedAt = try container.decode(Date.self, forKey: .observedAt)
+        let retainedAt = try container.decode(Date.self, forKey: .retainedAt)
+
+        guard schemaVersion == Self.schemaVersion else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .schemaVersion,
+                in: container,
+                debugDescription: "Unsupported retained battery snapshot schema"
+            )
+        }
+        guard (0...100).contains(percent) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .percent,
+                in: container,
+                debugDescription: "Retained battery percent must be within 0...100"
+            )
+        }
+        guard observedAt.timeIntervalSince1970.isFinite,
+              retainedAt.timeIntervalSince1970.isFinite,
+              retainedAt >= observedAt else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .retainedAt,
+                in: container,
+                debugDescription: "Retained battery chronology is invalid"
+            )
+        }
+
+        self.schemaVersion = schemaVersion
+        self.percent = percent
+        self.authority = authority
+        self.observedAt = observedAt
+        self.retainedAt = retainedAt
+    }
+
+    func age(at date: Date) -> TimeInterval? {
+        let seconds = date.timeIntervalSince(observedAt)
+        guard seconds.isFinite, seconds >= 0 else { return nil }
+        return seconds
+    }
+}
+
+enum RetainedBatterySnapshotCodec {
+    static func encode(_ snapshot: RetainedBatterySnapshot) throws -> Data {
+        try JSONEncoder().encode(snapshot)
+    }
+
+    static func decode(_ data: Data) throws -> RetainedBatterySnapshot {
+        try JSONDecoder().decode(RetainedBatterySnapshot.self, from: data)
+    }
+}
+
+struct AuthoritativeBatteryObservation: Equatable, Sendable {
+    let percent: Int
+    let authority: BatteryObservationAuthority
+    let observedAt: Date
+
+    init?(
+        percent: Int,
+        authority: BatteryObservationAuthority?,
+        observedAt: Date
+    ) {
+        guard let authority,
+              (0...100).contains(percent),
+              observedAt.timeIntervalSince1970.isFinite else {
+            return nil
+        }
+
+        self.percent = percent
+        self.authority = authority
+        self.observedAt = observedAt
+    }
+
+    func retained(at retainedAt: Date = .now) -> RetainedBatterySnapshot? {
+        RetainedBatterySnapshot(
+            percent: percent,
+            authority: authority,
+            observedAt: observedAt,
+            retainedAt: retainedAt
+        )
+    }
+
+    var physicalMeasurement: PhysicalBatterySOCObservation? {
+        PhysicalBatterySOCObservation(self)
+    }
+}
+
+struct PhysicalBatterySOCObservation: Equatable, Sendable {
+    let percent: Int
+    let observedAt: Date
+
+    init?(_ observation: AuthoritativeBatteryObservation) {
+        guard observation.authority == .measured else { return nil }
+        self.percent = observation.percent
+        self.observedAt = observation.observedAt
+    }
+}
+
+protocol RetainedBatterySnapshotStorage: Sendable {
+    func load() throws -> RetainedBatterySnapshot?
+    func save(_ snapshot: RetainedBatterySnapshot) throws
+    func clear() throws
+}
+
+struct UserDefaultsRetainedBatterySnapshotStorage: RetainedBatterySnapshotStorage, @unchecked Sendable {
+    static let defaultKey = "nembra.vehicle.battery.retained.v1"
+
+    private let defaults: UserDefaults
+    private let key: String
+
+    init(defaults: UserDefaults = .standard, key: String = Self.defaultKey) {
+        self.defaults = defaults
+        self.key = key
+    }
+
+    func load() throws -> RetainedBatterySnapshot? {
+        guard let data = defaults.data(forKey: key) else { return nil }
+        return try RetainedBatterySnapshotCodec.decode(data)
+    }
+
+    func save(_ snapshot: RetainedBatterySnapshot) throws {
+        let data = try RetainedBatterySnapshotCodec.encode(snapshot)
+        defaults.set(data, forKey: key)
+    }
+
+    func clear() throws {
+        defaults.removeObject(forKey: key)
+    }
+}
+
+final class InMemoryRetainedBatterySnapshotStorage: RetainedBatterySnapshotStorage, @unchecked Sendable {
+    private let lock = NSLock()
+    private var snapshot: RetainedBatterySnapshot?
+
+    init(snapshot: RetainedBatterySnapshot? = nil) {
+        self.snapshot = snapshot
+    }
+
+    func load() throws -> RetainedBatterySnapshot? {
+        lock.withLock { snapshot }
+    }
+
+    func save(_ snapshot: RetainedBatterySnapshot) throws {
+        lock.withLock { self.snapshot = snapshot }
+    }
+
+    func clear() throws {
+        lock.withLock { snapshot = nil }
+    }
+}
+
 /// Presentation timing is injected explicitly so Simulator QA can exercise the
 /// speed animation without silently choosing a production MAXSHOT cadence.
 struct SpeedInstrumentInterpolationPolicy: Equatable, Sendable {
