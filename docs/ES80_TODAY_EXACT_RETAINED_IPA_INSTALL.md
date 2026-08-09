@@ -49,9 +49,9 @@ Do not place the private intended-device UDID in this document, GitHub comments,
 
 Before installation, mechanically cross-check the **published retained candidate** with the independent verifier that lives outside the frozen app-candidate lineage. The accepted verifier commit for this handoff is:
 
-`699a1616b6ebd6e3443ca8fdd75daea9bbe6063a`
+`c12c935cac5470d37e731359f9ffdb9b18d6f85d`
 
-Its post-merge `Capture TODAY Independent Candidate Crosscheck QA` run `31292812633` completed successfully. Do not silently substitute a newer verifier merely because `main` moved.
+Its post-merge `Capture TODAY Independent Candidate Crosscheck QA` run `31293117963` completed successfully. This exact revision also rejects unknown retained-environment keys so an injected authority-looking field cannot silently widen the producer contract. Do not silently substitute a newer verifier merely because `main` moved.
 
 Use a separate clean Nembra tooling checkout. Do **not** copy the verifier into the retained candidate directory, and do not write the receipt into that directory.
 
@@ -59,7 +59,7 @@ Use a separate clean Nembra tooling checkout. Do **not** copy the verifier into 
 TOOL_REPO='/absolute/path/to/a/clean/Nembra/tooling-checkout'
 CANDIDATE_DIR='/absolute/path/to/the/accepted/candidate'
 EXPECTED_SOURCE_SHA='<exact frozen 40-hex Capture source SHA>'
-TOOL_COMMIT='699a1616b6ebd6e3443ca8fdd75daea9bbe6063a'
+TOOL_COMMIT='c12c935cac5470d37e731359f9ffdb9b18d6f85d'
 RECEIPT_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-crosscheck.XXXXXX)"
 RECEIPT="$RECEIPT_DIR/retained-candidate-crosscheck.json"
 TOOL="$RECEIPT_DIR/es80_today_independent_candidate_crosscheck.py"
