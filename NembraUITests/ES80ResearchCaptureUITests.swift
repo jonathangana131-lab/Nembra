@@ -799,7 +799,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "Horizon seal alone must not render Ready for analysis."
         )
         XCTAssertTrue(
-            source.contains("if let data = finalShareData"),
+            source.contains("guard let data = finalShareData"),
             "A temporary Share-file retry must reuse retained verified bytes rather than mint a new evidence artifact."
         )
         XCTAssertTrue(
