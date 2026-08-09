@@ -625,13 +625,13 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             ),
             ScenarioExpectation(
                 scenario: "secondPoweredOn",
-                requiredText: "One target repeated twice",
+                requiredText: "One signal matched twice",
                 requiredIdentifier: "es80.capture.confirm-correlated-target",
                 screenshotName: "Nembra Capture V14 — SIMULATOR QA — Scooter Signal Found"
             ),
             ScenarioExpectation(
                 scenario: "passiveDiscovery",
-                requiredText: "Opening the correlated target",
+                requiredText: "Opening the matched signal",
                 requiredIdentifier: nil,
                 screenshotName: "Nembra Capture V14 — SIMULATOR QA — Passive Connection"
             ),
@@ -643,7 +643,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             ),
             ScenarioExpectation(
                 scenario: "horizonSealed",
-                requiredText: "Freezing final evidence",
+                requiredText: "Securing capture",
                 requiredIdentifier: nil,
                 screenshotName: "Nembra Capture V14 — SIMULATOR QA — Sealing"
             ),
