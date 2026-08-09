@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """Canonical hardened entrypoint for the external V14 ES80 TODAY Final GO record.
 
-The Final GO foundation remains the closed-world validator for signed candidate, independent
-crosscheck, install/runtime rendezvous, and operator attestation. This executable loads that
-foundation directly; the historical `es80_today_final_go_record.py` compatibility module is
-non-authorizing for both direct execution and imported builder calls.
-
-This entrypoint removes the authority defects that must not remain on the executable GO path:
+The Final GO foundation remains the closed-world parser/validator for signed candidate,
+independent crosscheck, and the exact local human-observation schema. This executable replaces
+both authority-bearing seams that must not remain caller-constructible:
 - trusted Xcode acceptance comes only from the owner-commanded default-branch workflow whose Git
-  blob is pinned independently from the candidate PR head;
-- trusted workflow Git-object lookup reuses the foundation's producer-owned, closed Git custody
-  boundary rather than caller PATH/config/replacement semantics; and
-- record publication is failure-atomic after no-replace publication.
+  blob is pinned independently from the candidate PR head; and
+- the local operator observation record is accepted only when one fresh, unedited GitHub comment
+  from the repository OWNER binds its exact digest plus the exact candidate/PR subject.
+
+The operator record remains human observation/declaration, not machine telemetry. GitHub custody
+proves authorship of the declaration only; signed candidate, retained-artifact, and Xcode subjects
+remain the separate machine-verifiable facts. Record publication is failure-atomic after
+no-replace publication.
 
 No physical result is created by this tool. A generated GO record is procedural authorization for
 one stationary passive Experiment One only after all supplied evidence is already legitimate.
@@ -20,11 +21,13 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sys
 from typing import Any, Callable
 
 MODULE_DIR = Path(__file__).resolve().parent
+OPERATOR_COMMENT_ID_ENV = "NEMBRA_FINAL_GO_OPERATOR_ATTESTATION_COMMENT_ID"
 
 
 def _load(name: str, filename: str):
@@ -40,6 +43,10 @@ foundation = _load("nembra_final_go_foundation", "es80_today_final_go_foundation
 trusted_xcode = _load(
     "nembra_trusted_capture_xcode_subject",
     "es80_today_trusted_capture_xcode_subject.py",
+)
+trusted_operator = _load(
+    "nembra_trusted_operator_attestation_subject",
+    "es80_today_trusted_operator_attestation_subject.py",
 )
 publication = _load("nembra_final_go_publication", "es80_today_final_go_publication.py")
 
@@ -64,6 +71,21 @@ def _workflow_blob_sha_at_commit(tooling_repo: Path, commit: str, path: str) -> 
         ) from error
 
 
+def _operator_comment_id_from_environment() -> int:
+    raw = os.environ.get(OPERATOR_COMMENT_ID_ENV, "").strip()
+    if not raw:
+        raise FinalGoError(
+            f"{OPERATOR_COMMENT_ID_ENV} is required and must identify one fresh repository-owner attestation comment"
+        )
+    try:
+        value = int(raw, 10)
+    except ValueError as error:
+        raise FinalGoError(f"{OPERATOR_COMMENT_ID_ENV} must be one positive integer") from error
+    if value <= 0:
+        raise FinalGoError(f"{OPERATOR_COMMENT_ID_ENV} must be one positive integer")
+    return value
+
+
 def build_final_go_record(
     *,
     candidate_root: Path,
@@ -77,10 +99,11 @@ def build_final_go_record(
     frozen_source_repo: Path,
     tooling_repo: Path,
     operator_attestation: Path,
+    operator_attestation_comment_id: int,
     github_get_json: Callable[[str], tuple[bytes, dict[str, Any]]] = foundation._api_get_json,
     now_utc=None,
 ) -> dict[str, Any]:
-    """Run the foundation with its Xcode trust seam replaced by pinned default-branch authority."""
+    """Run the foundation with both Xcode and operator authority replaced by trusted subjects."""
 
     def trusted_subject_adapter(
         *,
@@ -108,8 +131,25 @@ def build_final_go_record(
         except trusted_xcode.TrustedCaptureXcodeError as error:
             raise FinalGoError(str(error)) from error
 
-    original = foundation._trusted_xcode_subject
+    original_xcode = foundation._trusted_xcode_subject
+    original_operator = foundation._operator_attestation
+
+    def trusted_operator_adapter(path: Path, candidate: dict[str, Any], now_utc) -> dict[str, Any]:
+        parsed_subject = original_operator(path, candidate, now_utc)
+        try:
+            return trusted_operator.verify_trusted_operator_attestation_subject(
+                parsed_subject=parsed_subject,
+                candidate=candidate,
+                expected_pr_number=expected_pr_number,
+                comment_id=operator_attestation_comment_id,
+                github_get_json=github_get_json,
+                now_utc=now_utc,
+            )
+        except trusted_operator.TrustedOperatorAttestationError as error:
+            raise FinalGoError(str(error)) from error
+
     foundation._trusted_xcode_subject = trusted_subject_adapter
+    foundation._operator_attestation = trusted_operator_adapter
     try:
         record = foundation.build_final_go_record(
             candidate_root=candidate_root,
@@ -127,7 +167,8 @@ def build_final_go_record(
             now_utc=now_utc,
         )
     finally:
-        foundation._trusted_xcode_subject = original
+        foundation._trusted_xcode_subject = original_xcode
+        foundation._operator_attestation = original_operator
 
     subject = record.get("trustedXcodeAcceptance")
     if not isinstance(subject, dict):
@@ -138,6 +179,24 @@ def build_final_go_record(
         raise FinalGoError("hardened Xcode subject candidate source diverged from accepted source")
     if subject.get("workflowSourceCommitSHA") == subject.get("candidateSourceCommitSHA"):
         raise FinalGoError("trusted workflow source must remain independent from candidate source")
+
+    operator_subject = record.get("exactRetainedIPAInstallAndRuntimeAttestation")
+    if not isinstance(operator_subject, dict):
+        raise FinalGoError("hardened Final GO record lacks trusted operator observation subject")
+    if operator_subject.get("authority") != trusted_operator.AUTHORITY:
+        raise FinalGoError("hardened Final GO record did not consume owner-attested operator authority")
+    if operator_subject.get("classification") != trusted_operator.CLASSIFICATION:
+        raise FinalGoError("hardened operator subject truth classification drifted")
+    binding = operator_subject.get("candidateBinding")
+    candidate_subject = record.get("acceptedSignedFieldCandidate")
+    if not isinstance(binding, dict) or not isinstance(candidate_subject, dict):
+        raise FinalGoError("hardened operator/candidate binding is unavailable")
+    if binding.get("sourceCommitSHA") != record.get("acceptedSourceCommitSHA"):
+        raise FinalGoError("hardened operator subject source diverged from accepted source")
+    if binding.get("retainedIPASHA256") != candidate_subject.get("retainedIPASHA256"):
+        raise FinalGoError("hardened operator subject retained IPA diverged from accepted candidate")
+    if binding.get("buildInstanceID") != candidate_subject.get("buildInstanceID"):
+        raise FinalGoError("hardened operator subject build instance diverged from accepted candidate")
     return record
 
 
@@ -153,6 +212,7 @@ def main(argv: list[str] | None = None) -> int:
     values = vars(args).copy()
     output = values.pop("output")
     try:
+        values["operator_attestation_comment_id"] = _operator_comment_id_from_environment()
         record = build_final_go_record(**values)
         raw = (json.dumps(record, indent=2, sort_keys=True) + "\n").encode()
         record_sha = publish_record_no_replace(output, raw)
