@@ -65,6 +65,7 @@ struct PropulsionEnergyRailAccessibilityTests {
         let later = laterSnapshot.energyRailAccessibilityPresentation
 
         #expect(early == later)
+        #expect(early.semanticRevision == later.semanticRevision)
         #expect(early.identity == identity)
         #expect(early.currentness == .live)
         #expect(early.acceptedWatts == 800)
@@ -92,9 +93,36 @@ struct PropulsionEnergyRailAccessibilityTests {
         ).energyRailAccessibilityPresentation
 
         #expect(first.acceptedRevision != second.acceptedRevision)
+        #expect(first.semanticRevision != second.semanticRevision)
         #expect(first.acceptedWatts == 420)
         #expect(second.acceptedWatts == 510)
         #expect(second.acceptedRevision?.receiptSequenceNumber == 5)
+    }
+
+    @Test("live to retained changes accessibility semantics without inventing a measurement")
+    func freshnessTransitionAdvancesSemanticRevisionOnly() throws {
+        let identity = try makeIdentity()
+        var model = try displayModel(identity: identity, staleAfterNanoseconds: 1_000_000_000)
+
+        try model.accept(sample(identity: identity, watts: 640, receipt: 6, uptime: 1_000_000_000))
+        let live = model.cockpitSnapshot(
+            atUptimeNanoseconds: 1_500_000_000,
+            scale: nil
+        ).energyRailAccessibilityPresentation
+        let retained = model.cockpitSnapshot(
+            atUptimeNanoseconds: 2_000_000_001,
+            scale: nil
+        ).energyRailAccessibilityPresentation
+
+        #expect(live.currentness == .live)
+        #expect(retained.currentness == .retained)
+        #expect(live.acceptedWatts == 640)
+        #expect(retained.acceptedWatts == 640)
+        #expect(live.acceptedRevision == retained.acceptedRevision)
+        #expect(live.semanticRevision != retained.semanticRevision)
+        #expect(live.semanticRevision.currentness == .live)
+        #expect(retained.semanticRevision.currentness == .retained)
+        #expect(retained.semanticRevision.acceptedRevision == retained.acceptedRevision)
     }
 
     @Test("retained watts stay semantic but remain explicitly retained")
@@ -112,6 +140,8 @@ struct PropulsionEnergyRailAccessibilityTests {
         #expect(presentation.acceptedWatts == 640)
         #expect(presentation.acceptedRevision?.receiptSequenceNumber == 6)
         #expect(presentation.acceptedRevision?.receivedAtUptimeNanoseconds == 1_000_000_000)
+        #expect(presentation.semanticRevision.currentness == .retained)
+        #expect(presentation.semanticRevision.acceptedRevision == presentation.acceptedRevision)
     }
 
     @Test("unavailable Energy Rail semantics never manufacture zero or a revision")
@@ -131,6 +161,9 @@ struct PropulsionEnergyRailAccessibilityTests {
         #expect(presentation.currentness == .unavailable)
         #expect(presentation.acceptedWatts == nil)
         #expect(presentation.acceptedRevision == nil)
+        #expect(presentation.semanticRevision.identity == identity)
+        #expect(presentation.semanticRevision.currentness == .unavailable)
+        #expect(presentation.semanticRevision.acceptedRevision == nil)
     }
 
     @Test("continuity generation distinguishes restarted receipt identities")
@@ -166,6 +199,7 @@ struct PropulsionEnergyRailAccessibilityTests {
         #expect(first.acceptedRevision?.receiptSequenceNumber == second.acceptedRevision?.receiptSequenceNumber)
         #expect(first.acceptedRevision?.receivedAtUptimeNanoseconds == second.acceptedRevision?.receivedAtUptimeNanoseconds)
         #expect(first.acceptedRevision != second.acceptedRevision)
+        #expect(first.semanticRevision != second.semanticRevision)
         #expect(second.acceptedRevision?.continuityGeneration == 2)
     }
 }
