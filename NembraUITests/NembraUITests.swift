@@ -101,6 +101,63 @@ final class NembraUITests: XCTestCase {
                 "Capture accessibility audit scenario \(scenario) must remain visibly synthetic and non-authorizing."
             )
 
+            if scenario == "stationaryPreflight" {
+                let chargerDisconnected = app.descendants(matching: .any)[
+                    "es80.capture.preflight.charger-disconnected"
+                ]
+                XCTAssertTrue(
+                    chargerDisconnected.waitForExistence(timeout: 3),
+                    "Simulator preflight must expose the explicit charger-disconnected declaration."
+                )
+                chargerDisconnected.tap()
+
+                let continueToSetup = app.descendants(matching: .any)["es80.capture.preflight.continue"]
+                XCTAssertTrue(
+                    continueToSetup.waitForExistence(timeout: 3),
+                    "A disconnected declaration must expose the real preflight-to-shell handoff action."
+                )
+                XCTAssertTrue(continueToSetup.isEnabled)
+                continueToSetup.tap()
+
+                XCTAssertTrue(
+                    app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5),
+                    "Disconnected -> Continue must enter the real Capture shell."
+                )
+                XCTAssertTrue(
+                    app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3),
+                    "The exact synthetic QA snapshot must survive the stationary-preflight handoff."
+                )
+                XCTAssertTrue(
+                    app.staticTexts["Ready for OFF 1"].waitForExistence(timeout: 3),
+                    "The retained stationary-preflight snapshot must map to the intended OFF 1 shell phase."
+                )
+
+                let confirmSetup = app.descendants(matching: .any)["es80.capture.confirm-setup"]
+                XCTAssertTrue(
+                    confirmSetup.waitForExistence(timeout: 3),
+                    "The existing final stationary setup declaration must remain reachable after charger preflight."
+                )
+                confirmSetup.tap()
+
+                XCTAssertTrue(
+                    app.staticTexts["OFF 1 / READY"].waitForExistence(timeout: 3),
+                    "After the final setup declaration, the synthetic fixture must render OFF 1 ready."
+                )
+                XCTAssertTrue(
+                    app.staticTexts["Scooter OFF"].waitForExistence(timeout: 3),
+                    "The stationary-preflight handoff must retain the intended scooter-off presentation fixture."
+                )
+                XCTAssertFalse(
+                    app.descendants(matching: .any)["es80.capture.field-no-go"].exists,
+                    "Synthetic Simulator QA must remain visibly non-authorizing without falling into the production NO-GO shell."
+                )
+
+                let attachment = XCTAttachment(screenshot: app.screenshot())
+                attachment.name = "Nembra Capture V14 — SIMULATOR QA — Preflight Handoff — OFF 1 Ready"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+
             try app.performAccessibilityAudit()
             app.terminate()
         }
