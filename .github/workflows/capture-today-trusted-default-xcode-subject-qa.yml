@@ -4,6 +4,8 @@ on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
     paths:
+      - scripts/ci/es80_today_final_go_foundation.py
+      - scripts/ci/es80_today_final_go_foundation_impl.py
       - scripts/ci/es80_today_trusted_capture_xcode_subject.py
       - scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
       - scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py
@@ -36,6 +38,7 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
       - name: Compile Final GO hardening modules and tests
         run: |
+          python3 -m py_compile scripts/ci/es80_today_final_go_foundation.py scripts/ci/es80_today_final_go_foundation_impl.py
           python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py
           python3 -m py_compile scripts/ci/es80_today_final_go_publication.py scripts/ci/tests/test_es80_today_final_go_publication.py
           python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_git_custody.py
@@ -61,6 +64,7 @@ jobs:
           grep -Fq 'expected_blob="4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq 'run.get("event") == "issue_comment"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'run.get("head_branch") == DEFAULT_BRANCH' scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          grep -Fq 'foundation module is library-only and non-authorizing' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'AMBIGUOUS NO-GO' scripts/ci/es80_today_final_go_publication.py
           grep -Fq 'foundation._trusted_xcode_subject = trusted_subject_adapter' scripts/ci/es80_today_final_go_hardened.py
           grep -Fq 'foundation._git(tooling_repo, "rev-parse"' scripts/ci/es80_today_final_go_hardened.py
