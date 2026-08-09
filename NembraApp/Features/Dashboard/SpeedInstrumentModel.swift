@@ -4,7 +4,7 @@ import Observation
 import SwiftUI
 
 enum SpeedInstrumentDisplayOrigin: Equatable {
-    case confirmedVehicleState
+    case acceptedSourceFallback
     case measuredTelemetry
     case visuallyInterpolated
 }
@@ -30,6 +30,7 @@ final class SpeedInstrumentModel {
     private(set) var measurementRevision: UInt64 = 0
     private(set) var latestMeasurementSource: SpeedTelemetrySource?
     private(set) var latestMeasuredKilometersPerHour: Double?
+    private(set) var latestMeasurementUptimeNanoseconds: UInt64?
     private(set) var isAnimationActive = false
 
     @ObservationIgnored private var interpolator = SpeedDisplayInterpolator()
@@ -84,6 +85,7 @@ final class SpeedInstrumentModel {
         previousMeasurementUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
         latestMeasurementSource = sample.source
         latestMeasuredKilometersPerHour = sample.kilometersPerHour
+        latestMeasurementUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
         measurementRevision &+= 1
 
         let startsInterpolating = interpolator
@@ -95,9 +97,8 @@ final class SpeedInstrumentModel {
         )
     }
 
-    /// Returns a render-only frame. The fallback is a caller-owned accepted
-    /// source value. The Dashboard supplies it from `SpeedEvidenceAvailability`,
-    /// never cached aggregate vehicle state.
+    /// Returns a render-only frame. The fallback is caller-owned accepted source
+    /// evidence and is never promoted into telemetry by this model.
     ///
     /// Reduce Motion changes presentation only: when an interpolation frame is
     /// active, the display snaps to the latest authoritative measurement that
@@ -105,7 +106,7 @@ final class SpeedInstrumentModel {
     /// interpolation state is mutated by this preference.
     func frame(
         atUptimeNanoseconds uptimeNanoseconds: UInt64,
-        fallbackConfirmedKilometersPerHour: Double?,
+        fallbackAcceptedKilometersPerHour: Double?,
         prefersReducedMotion: Bool = false
     ) -> SpeedInstrumentDisplayFrame? {
         _ = measurementRevision
@@ -126,17 +127,52 @@ final class SpeedInstrumentModel {
             )
         }
 
-        guard let fallbackConfirmedKilometersPerHour,
-              fallbackConfirmedKilometersPerHour.isFinite,
-              fallbackConfirmedKilometersPerHour >= 0 else {
-            return nil
-        }
-
-        return SpeedInstrumentDisplayFrame(
-            kilometersPerHour: fallbackConfirmedKilometersPerHour,
-            latestMeasuredKilometersPerHour: nil,
-            origin: .confirmedVehicleState
+        return acceptedSourceFallbackFrame(
+            kilometersPerHour: fallbackAcceptedKilometersPerHour
         )
+    }
+
+    /// Synchronous visual truth boundary for the current field-specific source state.
+    ///
+    /// SwiftUI may render a newly observed availability value before `.onChange`
+    /// retires or retargets the local interpolator. Do not let callback scheduling
+    /// decide what numeric truth is visible during that render:
+    /// - unavailable renders no number immediately;
+    /// - retained renders exactly its accepted last-known sample;
+    /// - live may consume local interpolation only when that interpolation is already
+    ///   targeted at the exact current accepted sample. Otherwise it snaps to the
+    ///   current source sample until lifecycle cleanup/retargeting catches up.
+    func presentationFrame(
+        for availability: SpeedEvidenceAvailability,
+        atUptimeNanoseconds uptimeNanoseconds: UInt64,
+        prefersReducedMotion: Bool = false
+    ) -> SpeedInstrumentDisplayFrame? {
+        switch availability {
+        case .unavailable:
+            return nil
+
+        case let .retained(sample):
+            return acceptedSourceFallbackFrame(
+                kilometersPerHour: sample.kilometersPerHour
+            )
+
+        case let .live(sample):
+            let isInterpolatorTargetCurrent = latestMeasurementSource == sample.source
+                && latestMeasurementUptimeNanoseconds == sample.receivedAtUptimeNanoseconds
+                && latestMeasuredKilometersPerHour == sample.kilometersPerHour
+
+            guard isInterpolatorTargetCurrent else {
+                return acceptedSourceFallbackFrame(
+                    kilometersPerHour: sample.kilometersPerHour
+                )
+            }
+
+            return frame(
+                atUptimeNanoseconds: uptimeNanoseconds,
+                fallbackAcceptedKilometersPerHour: sample.kilometersPerHour,
+                prefersReducedMotion: prefersReducedMotion
+            )
+        }
     }
 
     /// Duration is derived only when an injected policy enables interpolation.
@@ -158,6 +194,22 @@ final class SpeedInstrumentModel {
         return min(
             max(requested, policy.minimumTransitionNanoseconds),
             policy.maximumContinuousSampleIntervalNanoseconds
+        )
+    }
+
+    private func acceptedSourceFallbackFrame(
+        kilometersPerHour: Double?
+    ) -> SpeedInstrumentDisplayFrame? {
+        guard let kilometersPerHour,
+              kilometersPerHour.isFinite,
+              kilometersPerHour >= 0 else {
+            return nil
+        }
+
+        return SpeedInstrumentDisplayFrame(
+            kilometersPerHour: kilometersPerHour,
+            latestMeasuredKilometersPerHour: nil,
+            origin: .acceptedSourceFallback
         )
     }
 
@@ -188,6 +240,7 @@ final class SpeedInstrumentModel {
         previousMeasurementUptimeNanoseconds = nil
         latestMeasurementSource = nil
         latestMeasuredKilometersPerHour = nil
+        latestMeasurementUptimeNanoseconds = nil
     }
 }
 
@@ -206,7 +259,6 @@ struct DashboardSpeedInstrumentView: View {
 
     var body: some View {
         let speedAvailability = vehicle.speedEvidenceAvailability
-        let fallbackAcceptedKilometersPerHour = speedAvailability.lastAcceptedSample?.kilometersPerHour
 
         TimelineView(
             .animation(
@@ -214,9 +266,9 @@ struct DashboardSpeedInstrumentView: View {
                 paused: reduceMotion || !model.isAnimationActive
             )
         ) { _ in
-            let frame = model.frame(
+            let frame = model.presentationFrame(
+                for: speedAvailability,
                 atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
-                fallbackConfirmedKilometersPerHour: fallbackAcceptedKilometersPerHour,
                 prefersReducedMotion: reduceMotion
             )
 
