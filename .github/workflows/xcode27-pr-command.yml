@@ -179,7 +179,7 @@ jobs:
         env:
           EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
         run: |
-          python3 - <<'PY'
+          /usr/bin/python3 -I - <<'PY'
           import hashlib
           import json
           import os
@@ -212,7 +212,7 @@ jobs:
               raise SystemExit("Trusted resolver did not provide one exact lowercase 40-hex PR head SHA")
 
           checkout_head = subprocess.check_output(
-              ["git", "rev-parse", "--verify", "HEAD^{commit}"],
+              ["/usr/bin/git", "rev-parse", "--verify", "HEAD^{commit}"],
               text=True,
           ).strip()
 
