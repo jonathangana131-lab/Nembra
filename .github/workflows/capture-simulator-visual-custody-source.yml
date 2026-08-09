@@ -4,7 +4,9 @@ on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
     paths:
+      - NembraApp/Info.plist
       - scripts/ci/xcode27_simulator_capture.sh
+      - scripts/ci/tests/test_xcode27_simulator_capture_recipe_provenance.py
       - scripts/ci/tests/test_xcode27_simulator_visual_evidence_descriptor_custody_source.py
       - scripts/ci/tests/test_xcode27_simulator_visual_evidence_manifest_subject_custody_source.py
       - scripts/ci/tests/test_xcode27_simulator_visual_evidence_mutation_race_source.py
@@ -32,6 +34,8 @@ jobs:
       - name: Validate Simulator visual-evidence custody
         run: |
           bash -n scripts/ci/xcode27_simulator_capture.sh
+          python3 -m py_compile scripts/ci/tests/test_xcode27_simulator_capture_recipe_provenance.py
+          python3 scripts/ci/tests/test_xcode27_simulator_capture_recipe_provenance.py
           python3 -m py_compile scripts/ci/tests/test_xcode27_simulator_visual_evidence_descriptor_custody_source.py
           python3 scripts/ci/tests/test_xcode27_simulator_visual_evidence_descriptor_custody_source.py
           python3 -m py_compile scripts/ci/tests/test_xcode27_simulator_visual_evidence_manifest_subject_custody_source.py

@@ -128,6 +128,7 @@ xcodebuild \
   "NEMBRA_CAPTURE_BUILD_IDENTIFIER=$CAPTURE_BUILD_IDENTIFIER" \
   "NEMBRA_CAPTURE_BUILD_INSTANCE_ID=$CAPTURE_BUILD_INSTANCE_ID" \
   "NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$CAPTURE_BUILD_COMMIT_SHA" \
+  "NEMBRA_CAPTURE_FIELD_RECIPE=$CAPTURE_RECIPE_IDENTIFIER" \
   test \
   | tee "$ARTIFACTS_DIR/logs/xcodebuild-test.log"
 TEST_STATUS=${PIPESTATUS[0]}
@@ -164,6 +165,7 @@ INFO_PLIST="$APP_PATH/Info.plist"
 EMBEDDED_BUILD_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :NembraCaptureBuildIdentifier' "$INFO_PLIST" 2>/dev/null || true)"
 EMBEDDED_BUILD_INSTANCE_ID="$(/usr/libexec/PlistBuddy -c 'Print :NembraCaptureBuildInstanceID' "$INFO_PLIST" 2>/dev/null || true)"
 EMBEDDED_BUILD_COMMIT_SHA="$(/usr/libexec/PlistBuddy -c 'Print :NembraCaptureBuildCommitSHA' "$INFO_PLIST" 2>/dev/null || true)"
+EMBEDDED_FIELD_RECIPE="$(/usr/libexec/PlistBuddy -c 'Print :NembraCaptureFieldRecipe' "$INFO_PLIST" 2>/dev/null || true)"
 if [[ "$EMBEDDED_BUILD_IDENTIFIER" != "$CAPTURE_BUILD_IDENTIFIER" ]]; then
   echo "Built app did not preserve the exact Capture build identifier." >&2
   exit 10
@@ -175,6 +177,10 @@ fi
 if [[ "$EMBEDDED_BUILD_COMMIT_SHA" != "$CAPTURE_BUILD_COMMIT_SHA" ]]; then
   echo "Built app did not preserve the exact Capture source commit SHA." >&2
   exit 11
+fi
+if [[ "$EMBEDDED_FIELD_RECIPE" != "$CAPTURE_RECIPE_IDENTIFIER" ]]; then
+  echo "Built app did not preserve the exact Capture experiment recipe." >&2
+  exit 24
 fi
 
 EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$INFO_PLIST")"
