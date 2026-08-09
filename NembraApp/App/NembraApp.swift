@@ -552,6 +552,19 @@ private struct ES80ExperimentOneFieldNoGoView: View {
             : "Capture build identity checking"
     }
 
+    private var buildIdentityVisualLabel: String? {
+        guard let runtimeBuildIdentity else { return nil }
+        guard isAccessibilityLayout else { return runtimeBuildIdentity.buildIdentifier }
+
+        let prefix = "Capture Build "
+        let compact = runtimeBuildIdentity.buildIdentifier.hasPrefix(prefix)
+            ? String(runtimeBuildIdentity.buildIdentifier.dropFirst(prefix.count))
+            : runtimeBuildIdentity.buildIdentifier
+        let components = compact.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: true)
+        guard components.count == 2 else { return compact }
+        return "\(components[0]) · \(components[1].prefix(8))"
+    }
+
     private var isAccessibilityLayout: Bool {
         dynamicTypeSize.isAccessibilitySize
     }
@@ -617,12 +630,17 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                             .font(.caption2.monospaced().weight(.bold))
                             .foregroundStyle(.secondary)
 
-                        if let runtimeBuildIdentity {
-                            Text(runtimeBuildIdentity.buildIdentifier)
-                                .font(.caption.monospaced().weight(.semibold))
+                        if let buildIdentityVisualLabel {
+                            Text(buildIdentityVisualLabel)
+                                .font(
+                                    isAccessibilityLayout
+                                        ? .caption2.monospaced().weight(.semibold)
+                                        : .caption.monospaced().weight(.semibold)
+                                )
                                 .foregroundStyle(.white)
                                 .lineLimit(1)
-                                .minimumScaleFactor(0.75)
+                                .minimumScaleFactor(isAccessibilityLayout ? 0.85 : 0.75)
+                                .layoutPriority(1)
                         } else if runtimeBuildIdentityCheckFinished {
                             Text("Identity unavailable")
                                 .font(.caption.weight(.semibold))
