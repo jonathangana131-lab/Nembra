@@ -48,6 +48,9 @@ final class VehicleStore {
     private let batteryObservationAuthority: BatteryObservationAuthority?
 
     var state: VehicleState
+    /// Source-owned currentness for speed. Cached `VehicleState` speed never
+    /// promotes this value by itself.
+    private(set) var speedEvidenceAvailability: SpeedEvidenceAvailability = .unavailable
     var pendingCommands: Set<PendingCommand> = []
     var pendingRideMode: RideMode?
     var pendingCruiseValue: Bool?
@@ -89,11 +92,37 @@ final class VehicleStore {
         return state.connection == .connected ? .live : .retained
     }
 
+    /// Simulator-only qualified live speed for truth-sensitive presentation and
+    /// stopped-control admission. Aggregate connection can only remove authority;
+    /// it never promotes a cached speed number into current evidence.
+    var simulatorQualifiedLiveSpeedKilometersPerHour: Double? {
+        guard state.connection == .connected,
+              profile == .simulatorQA,
+              case let .live(sample) = speedEvidenceAvailability,
+              sample.source == .simulatorQA,
+              sample.provenance == .absoluteMeasurement else {
+            return nil
+        }
+        let speed = sample.kilometersPerHour
+        guard speed.isFinite, speed >= 0 else { return nil }
+        return speed
+    }
+
+    /// Current software authority for a stopped-only lock request. Physical and
+    /// otherwise-unverified profiles intentionally remain unavailable until a
+    /// verified source policy exists; the real ES80 capture must establish that.
+    var canLockFromCurrentSpeedEvidence: Bool {
+        guard let speed = simulatorQualifiedLiveSpeedKilometersPerHour else { return false }
+        return speed < 0.5
+    }
+
     var isVehicleCommandPending: Bool {
         pendingCommands.contains { $0 != .connect }
     }
 
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
+    @ObservationIgnored private var speedEvidenceTask: Task<Void, Never>?
+    @ObservationIgnored private var speedEvidenceConsumerAuthority = SpeedEvidenceConsumerAuthority()
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private let shouldAutoConnectOnStart: Bool
 
@@ -143,18 +172,59 @@ final class VehicleStore {
 
     deinit {
         updatesTask?.cancel()
+        speedEvidenceTask?.cancel()
     }
 
     func start() async {
         guard !didStart else { return }
         didStart = true
 
-        updatesTask = Task { [weak self, service] in
+        let speedEvidenceProvider = service as? any SpeedEvidenceProvider
+
+        updatesTask = Task { [weak self, service, speedEvidenceProvider] in
             let stream = await service.stateUpdates()
-            for await state in stream {
+            for await incomingState in stream {
                 guard let self, !Task.isCancelled else { break }
-                self.apply(state)
+                let previousConnection = self.state.connection
+                self.apply(incomingState)
+
+                guard let speedEvidenceProvider else {
+                    if incomingState.connection != .connected {
+                        self.invalidateSpeedEvidenceAuthority()
+                    }
+                    continue
+                }
+
+                // Transport transitions revoke projected field authority first.
+                // Revalidation samples current service state and then the current
+                // source-owned speed snapshot; connection alone never revives a
+                // cached pre-gap speed.
+                if incomingState.connection != previousConnection {
+                    self.invalidateSpeedEvidenceAuthority()
+                    await self.refreshSpeedEvidenceAuthority(using: speedEvidenceProvider)
+                } else if incomingState.connection != .connected {
+                    self.invalidateSpeedEvidenceAuthority()
+                }
             }
+        }
+
+        if let speedEvidenceProvider {
+            speedEvidenceTask = Task { [weak self, speedEvidenceProvider] in
+                let stream = await speedEvidenceProvider.speedEvidenceUpdates()
+                for await _ in stream {
+                    guard let self, !Task.isCancelled else { return }
+
+                    // Stream values are wake-up triggers only. They may already be
+                    // obsolete when this task resumes, so current app authority is
+                    // rebuilt from the provider's current source-owned snapshot.
+                    await self.refreshSpeedEvidenceAuthority(using: speedEvidenceProvider)
+                }
+
+                guard let self, !Task.isCancelled else { return }
+                self.invalidateSpeedEvidenceAuthority()
+            }
+        } else {
+            speedEvidenceAvailability = .unavailable
         }
 
         if shouldAutoConnectOnStart {
@@ -184,6 +254,10 @@ final class VehicleStore {
 
     func setLocked(_ locked: Bool) async {
         guard canBeginVehicleCommand else { return }
+        if locked && !canLockFromCurrentSpeedEvidence {
+            lastErrorMessage = "Live stopped-speed evidence is required before locking."
+            return
+        }
         await perform(.lock) { try await service.setLocked(locked) }
     }
 
@@ -266,6 +340,34 @@ final class VehicleStore {
         }
 
         state = nextState
+    }
+
+    /// Retires current speed authority and invalidates every in-flight refresh.
+    private func invalidateSpeedEvidenceAuthority() {
+        speedEvidenceConsumerAuthority.invalidate()
+        speedEvidenceAvailability = speedEvidenceConsumerAuthority.availability
+    }
+
+    /// Rebuilds the app projection from current source-owned state instead of
+    /// trusting whichever availability event happened to wake the consumer.
+    private func refreshSpeedEvidenceAuthority(
+        using speedEvidenceProvider: any SpeedEvidenceProvider
+    ) async {
+        let refreshToken = speedEvidenceConsumerAuthority.beginRefresh()
+        speedEvidenceAvailability = speedEvidenceConsumerAuthority.availability
+
+        let connection = await service.snapshot().connection
+        let currentAvailability = await speedEvidenceProvider.speedEvidenceSnapshot()
+
+        guard !Task.isCancelled else { return }
+        guard speedEvidenceConsumerAuthority.commit(
+            currentAvailability,
+            connectionIsConnected: connection == .connected,
+            for: refreshToken
+        ) else {
+            return
+        }
+        speedEvidenceAvailability = speedEvidenceConsumerAuthority.availability
     }
 
     private func perform(_ command: PendingCommand, operation: () async throws -> Void) async {
