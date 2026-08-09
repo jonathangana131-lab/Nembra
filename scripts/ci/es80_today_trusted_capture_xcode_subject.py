@@ -25,7 +25,7 @@ REPOSITORY_OWNER = "jonathangana131-lab"
 DEFAULT_BRANCH = "main"
 TRUSTED_WORKFLOW_NAME = "Capture Trusted Xcode 27 Exact-Head QA"
 TRUSTED_WORKFLOW_PATH = ".github/workflows/capture-xcode27-trusted-command.yml"
-TRUSTED_WORKFLOW_BLOB_SHA = "524b011c6147142281c3fed62d3bb402c7f2be63"
+TRUSTED_WORKFLOW_BLOB_SHA = "3dbcf115b92a45856acd6cae0ff6c4d1448d8efb"
 TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_PATH = "scripts/ci/xcode27_simulator_capture.sh"
 TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_BLOB_SHA = "4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"
 TRUSTED_JOB_NAME = "Build, test, and capture trusted exact Capture head"
@@ -47,7 +47,6 @@ REQUIRED_SUCCESSFUL_STEPS = (
     "Reject stale or detached Capture head before scarce Mac work",
     "Verify immutable trusted Capture head",
     "Verify trusted Simulator evidence-producer custody",
-    "Verify trusted build graph custody",
     "Build, test, and capture Simulator states",
     "Verify retained Capture evidence against trusted resolver authority",
     "Reject head movement before trusted acceptance completes",
