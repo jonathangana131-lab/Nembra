@@ -92,7 +92,7 @@ struct VehicleControlsView: View {
                         }
                     }
                 }
-                .disabled(!commandsAvailable || vehicle.isVehicleCommandPending)
+                .disabled(!commandsAvailable || vehicle.isVehicleCommandPending || isSelected)
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
                 .accessibilityValue(choiceAccessibilityValue(selected: isSelected, pending: isPending))
             }
