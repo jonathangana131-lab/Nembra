@@ -278,28 +278,33 @@ struct DashboardView: View {
             if !supportedModes.isEmpty {
                 HStack(spacing: 5) {
                     ForEach(supportedModes, id: \.self) { mode in
+                        let isSelected = vehicle.state.rideMode == mode
+                        let isPending = vehicle.pendingRideMode == mode
+
                         Button {
                             Task { await vehicle.setMode(mode) }
                         } label: {
                             ZStack {
-                                if vehicle.state.rideMode == mode {
+                                if isSelected {
                                     RoundedRectangle(cornerRadius: 11, style: .continuous)
                                         .fill(.white.opacity(0.12))
                                 }
 
-                                if vehicle.pendingRideMode == mode {
+                                if isPending {
                                     ProgressView().controlSize(.mini)
                                 } else {
                                     Text(modeAbbreviation(mode))
-                                        .font(.caption.weight(vehicle.state.rideMode == mode ? .bold : .semibold))
-                                        .foregroundStyle(vehicle.state.rideMode == mode ? .white : .secondary)
+                                        .font(.caption.weight(isSelected ? .bold : .semibold))
+                                        .foregroundStyle(isSelected ? .white : .secondary)
                                 }
                             }
                             .frame(width: 34, height: 34)
                         }
                         .buttonStyle(.glass)
-                        .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending)
+                        .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending || isSelected)
                         .accessibilityLabel(mode.displayName)
+                        .accessibilityValue(modeChoiceAccessibilityValue(selected: isSelected, pending: isPending))
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
                         .accessibilityIdentifier("dashboard.mode.\(mode.displayName.lowercased())")
                     }
                 }
@@ -411,6 +416,13 @@ struct DashboardView: View {
         case .drive: "D"
         case .sport: "S"
         }
+    }
+
+    private func modeChoiceAccessibilityValue(selected: Bool, pending: Bool) -> String {
+        if pending {
+            return "Updating"
+        }
+        return selected ? "Selected" : "Not selected"
     }
 
     private var modeAccessibilityValue: String {
