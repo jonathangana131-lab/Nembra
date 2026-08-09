@@ -103,25 +103,6 @@ jobs:
           printf 'Trusted resolver head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual_head"
           test "$actual_head" = "$EXPECTED_HEAD_SHA"
 
-      - name: Verify trusted Simulator evidence-producer custody
-        run: |
-          set -euo pipefail
-          producer_path="scripts/ci/xcode27_simulator_capture.sh"
-          expected_blob="4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9"
-          actual_blob="$(
-            env -i \
-              PATH=/usr/bin:/bin \
-              HOME=/tmp \
-              LC_ALL=C \
-              GIT_CONFIG_NOSYSTEM=1 \
-              GIT_CONFIG_GLOBAL=/dev/null \
-              GIT_NO_REPLACE_OBJECTS=1 \
-              /usr/bin/git rev-parse --verify "HEAD:${producer_path}"
-          )"
-          printf 'Trusted Simulator producer: %s\nExpected blob: %s\nActual blob: %s\n' \
-            "$producer_path" "$expected_blob" "$actual_blob"
-          test "$actual_blob" = "$expected_blob"
-
       - name: Validate project structure
         run: |
           plutil -lint Nembra.xcodeproj/project.pbxproj
@@ -163,8 +144,48 @@ jobs:
           python3 scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
           python3 scripts/ci/es80_field_authorization_envelope.py --self-test
 
+      - name: Verify trusted Simulator evidence-producer custody
+        env:
+          TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_BLOB_SHA: 4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9
+        run: |
+          set -euo pipefail
+          producer_path="scripts/ci/xcode27_simulator_capture.sh"
+          actual_blob="$(
+            env -i \
+              PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+              HOME="${RUNNER_TEMP:-/tmp}" \
+              LC_ALL=C \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              /usr/bin/git rev-parse --verify "HEAD:${producer_path}"
+          )"
+          printf 'Trusted Simulator producer: %s\nExpected blob: %s\nActual blob: %s\n' \
+            "$producer_path" "$TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_BLOB_SHA" "$actual_blob"
+          test "$actual_blob" = "$TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_BLOB_SHA"
+          env -i \
+            PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+            HOME="${RUNNER_TEMP:-/tmp}" \
+            LC_ALL=C \
+            GIT_CONFIG_NOSYSTEM=1 \
+            GIT_CONFIG_GLOBAL=/dev/null \
+            GIT_NO_REPLACE_OBJECTS=1 \
+            /usr/bin/git cat-file -e "${TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_BLOB_SHA}^{blob}"
+
       - name: Build, test, and capture Simulator states
-        run: scripts/ci/xcode27_simulator_capture.sh
+        env:
+          TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_BLOB_SHA: 4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9
+        run: |
+          set -euo pipefail
+          env -i \
+            PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+            HOME="${RUNNER_TEMP:-/tmp}" \
+            LC_ALL=C \
+            GIT_CONFIG_NOSYSTEM=1 \
+            GIT_CONFIG_GLOBAL=/dev/null \
+            GIT_NO_REPLACE_OBJECTS=1 \
+            /usr/bin/git cat-file blob "$TRUSTED_SIMULATOR_EVIDENCE_PRODUCER_BLOB_SHA" \
+            | /bin/bash -s scripts/ci/xcode27_simulator_capture.sh
 
       - name: Verify retained Capture evidence against trusted resolver authority
         env:
