@@ -1,0 +1,112 @@
+name: V14 Capture owner-command serialization once
+
+on:
+  push:
+    branches:
+      - 'repair/v14-capture-owner-command-serialization-current-main/gpt56-go'
+    paths:
+      - '.github/workflows/v14-capture-owner-command-serialization-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact repair head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Serialize exact owner commands and rotate trust pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/capture-xcode27-trusted-command.yml')
+          text = path.read_text(encoding='utf-8')
+          dollar = '$'
+          jobs_needle = 'env:\n  ARTIFACTS_DIR: ${{ github.workspace }}/Artifacts/Xcode27Simulator\n\njobs:\n'
+          group = (
+              'concurrency:\n'
+              '  group: nembra-capture-xcode27-command-v14-field-command-v1-'
+              + dollar + '{{ github.event.issue.number }}-'
+              + dollar + "{{ github.event.comment.body == '/capture-xcode27' && github.actor == github.repository_owner && 'owner-command' || github.run_id }}\n"
+              '  cancel-in-progress: false\n\n'
+          )
+          replacement = 'env:\n  ARTIFACTS_DIR: ${{ github.workspace }}/Artifacts/Xcode27Simulator\n\n' + group + 'jobs:\n'
+          if text.count(jobs_needle) != 1:
+              raise SystemExit('expected one top-level env/jobs seam')
+          text = text.replace(jobs_needle, replacement, 1)
+
+          legacy = (
+              '      group: nembra-capture-xcode27-'
+              + dollar + '{{ needs.resolve.outputs.pr_number }}-'
+              + dollar + '{{ needs.resolve.outputs.head_sha }}\n'
+          )
+          repaired = (
+              '      group: nembra-capture-xcode27-authority-v14-field-command-v1-'
+              + dollar + '{{ needs.resolve.outputs.pr_number }}-'
+              + dollar + '{{ needs.resolve.outputs.head_sha }}\n'
+          )
+          if text.count(legacy) != 1:
+              raise SystemExit('expected one legacy authority concurrency group')
+          text = text.replace(legacy, repaired, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          old_blob='9c1e48c559acb02e8fe2c4fee960940519404d7e'
+          new_blob="$(git hash-object .github/workflows/capture-xcode27-trusted-command.yml)"
+          export OLD_TRUSTED_WORKFLOW_BLOB="$old_blob"
+          export NEW_TRUSTED_WORKFLOW_BLOB="$new_blob"
+          printf 'Trusted workflow pin: %s -> %s\n' "$old_blob" "$new_blob"
+
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          old = os.environ['OLD_TRUSTED_WORKFLOW_BLOB']
+          new = os.environ['NEW_TRUSTED_WORKFLOW_BLOB']
+          paths = (
+              Path('scripts/ci/es80_today_trusted_capture_xcode_subject.py'),
+              Path('.github/workflows/capture-today-final-go-qa.yml'),
+              Path('.github/workflows/capture-today-trusted-default-xcode-subject-qa.yml'),
+          )
+          for path in paths:
+              text = path.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one old workflow pin, found {count}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
+          if git grep -n "$old_blob" -- .github scripts; then
+            printf 'Old trusted workflow pin remains in authority surface.\n' >&2
+            exit 1
+          fi
+          grep -Fq "TRUSTED_WORKFLOW_BLOB_SHA = \"$new_blob\"" scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          python3 -m py_compile \
+            scripts/ci/es80_today_trusted_capture_xcode_subject.py \
+            scripts/ci/tests/test_capture_trusted_xcode_prevalidation_process_custody.py \
+            scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
+          python3 scripts/ci/tests/test_capture_trusted_xcode_prevalidation_process_custody.py -v
+          python3 scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py -v
+          git diff --check
+
+          rm -- .github/workflows/v14-capture-owner-command-serialization-once.yml
+          git config user.name 'nembra-v14-bot'
+          git config user.email 'nembra-v14-bot@users.noreply.github.com'
+          git add \
+            .github/workflows/capture-xcode27-trusted-command.yml \
+            .github/workflows/capture-today-final-go-qa.yml \
+            .github/workflows/capture-today-trusted-default-xcode-subject-qa.yml \
+            scripts/ci/es80_today_trusted_capture_xcode_subject.py \
+            scripts/ci/tests/test_capture_trusted_xcode_prevalidation_process_custody.py \
+            .github/workflows/v14-capture-owner-command-serialization-once.yml
+          git diff --cached --check
+          git commit -m 'fix(capture): serialize trusted owner commands'
+          git push origin HEAD:repair/v14-capture-owner-command-serialization-current-main/gpt56-go
