@@ -17,6 +17,8 @@ on:
       - scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py
       - scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py
       - scripts/ci/tests/test_capture_trusted_xcode_producer_execution_custody.py
+      - scripts/ci/es80_today_trusted_operator_attestation_subject.py
+      - scripts/ci/tests/test_es80_today_trusted_operator_attestation_subject.py
       - scripts/ci/es80_today_final_go_publication.py
       - scripts/ci/tests/test_es80_today_final_go_publication.py
       - .github/workflows/capture-xcode27-trusted-command.yml
@@ -51,6 +53,7 @@ jobs:
           set -euo pipefail
           python3 -m py_compile scripts/ci/es80_today_final_go_record.py scripts/ci/es80_today_final_go_foundation.py scripts/ci/_es80_today_final_go_foundation_impl.py scripts/ci/tests/test_es80_today_final_go_record.py scripts/ci/tests/test_es80_today_final_go_foundation.py scripts/ci/tests/test_es80_today_final_go_direct_execution_disabled.py
           python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py scripts/ci/tests/test_capture_trusted_xcode_producer_execution_custody.py
+          python3 -m py_compile scripts/ci/es80_today_trusted_operator_attestation_subject.py scripts/ci/tests/test_es80_today_trusted_operator_attestation_subject.py
           python3 -m py_compile scripts/ci/es80_today_final_go_publication.py scripts/ci/tests/test_es80_today_final_go_publication.py
           python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_git_custody.py
 
@@ -68,6 +71,9 @@ jobs:
 
       - name: Preserve pinned producer interpreter custody
         run: python3 scripts/ci/tests/test_capture_trusted_xcode_producer_execution_custody.py -v
+
+      - name: Require owner-authenticated operator observation custody
+        run: python3 scripts/ci/tests/test_es80_today_trusted_operator_attestation_subject.py -v
 
       - name: Require failure-atomic no-replace publication
         run: python3 scripts/ci/tests/test_es80_today_final_go_publication.py -v
@@ -87,8 +93,9 @@ jobs:
           grep -Fq -- '--trusted-xcode-run-id' <<<"$help"
           grep -Fq -- '--trusted-xcode-job-id' <<<"$help"
           grep -Fq -- '--trusted-xcode-artifact-id' <<<"$help"
+          grep -Fq 'NEMBRA_FINAL_GO_OPERATOR_ATTESTATION_COMMENT_ID' scripts/ci/es80_today_final_go_hardened.py
 
-      - name: Pin default-branch Xcode trust and Research tuple exactly
+      - name: Pin default-branch Xcode trust, operator truth boundary, and Research tuple exactly
         run: |
           set -euo pipefail
           grep -Fq 'TRUSTED_WORKFLOW_NAME = "Capture Trusted Xcode 27 Exact-Head QA"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
@@ -103,6 +110,8 @@ jobs:
           grep -Fq '/usr/bin/git hash-object -- "$producer_path"' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq '/usr/bin/git cat-file blob "$expected_blob"' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq "/bin/bash -c 'source /dev/stdin' \"\$GITHUB_WORKSPACE/\$producer_path\"" .github/workflows/capture-xcode27-trusted-command.yml
+          grep -Fq 'AUTHORITY = "github-owner-attested-operator-observation-v1"' scripts/ci/es80_today_trusted_operator_attestation_subject.py
+          grep -Fq 'CLASSIFICATION = "owner-authenticated-human-observation-not-machine-or-physical-telemetry"' scripts/ci/es80_today_trusted_operator_attestation_subject.py
           grep -Fq 'PINNED_CROSSCHECK_COMMIT = "d827a296048386bda62024ea3278775d5344c47c"' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'PINNED_CROSSCHECK_BLOB = "c3b2b620280484c05316fc5c2fa2ca451f1fdc83"' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'RESEARCH_COMPILE_MODE = "private-today-v1"' scripts/ci/es80_today_final_go_foundation.py
