@@ -1,4 +1,6 @@
 import SwiftUI
+import struct NembraCore.PropulsionEnergyRailAccessibilityPresentation
+import struct NembraCore.PropulsionEnergyRailAccessibilitySemanticRevision
 import struct NembraCore.PropulsionEnergyRailAppProjection
 
 enum NembraMetrics {
@@ -101,6 +103,83 @@ enum NembraEnergyRailVisualCurrentness: Equatable {
     case unavailable
 }
 
+/// Stable assistive semantic state carried separately from the 60 Hz rail/render clock.
+/// The package semantic revision is the sole equality key for package-backed states;
+/// display watts and geometry can therefore redraw freely without invalidating the
+/// accessibility representation.
+private struct NembraEnergyRailAccessibilityState: Equatable {
+    private enum Revision: Equatable {
+        case package(PropulsionEnergyRailAccessibilitySemanticRevision)
+        case unavailable
+    }
+
+    private let revision: Revision
+    let currentness: NembraEnergyRailVisualCurrentness
+    let acceptedWatts: Double?
+
+    static let unavailable = NembraEnergyRailAccessibilityState(
+        revision: .unavailable,
+        currentness: .unavailable,
+        acceptedWatts: nil
+    )
+
+    init?(presentation: PropulsionEnergyRailAccessibilityPresentation) {
+        switch presentation.currentness {
+        case .live:
+            guard let watts = presentation.acceptedWatts,
+                  watts.isFinite,
+                  watts >= 0,
+                  presentation.acceptedRevision != nil else {
+                return nil
+            }
+            revision = .package(presentation.semanticRevision)
+            currentness = .live
+            acceptedWatts = watts == 0 ? 0 : watts
+
+        case .retained:
+            guard let watts = presentation.acceptedWatts,
+                  watts.isFinite,
+                  watts >= 0,
+                  presentation.acceptedRevision != nil else {
+                return nil
+            }
+            revision = .package(presentation.semanticRevision)
+            currentness = .retained
+            acceptedWatts = watts == 0 ? 0 : watts
+
+        case .unavailable:
+            guard presentation.acceptedWatts == nil,
+                  presentation.acceptedRevision == nil else {
+                return nil
+            }
+            revision = .package(presentation.semanticRevision)
+            currentness = .unavailable
+            acceptedWatts = nil
+        }
+    }
+
+    static func == (
+        lhs: NembraEnergyRailAccessibilityState,
+        rhs: NembraEnergyRailAccessibilityState
+    ) -> Bool {
+        lhs.revision == rhs.revision
+    }
+
+    var value: String {
+        guard let acceptedWatts else { return "Unavailable" }
+        let formatted = acceptedWatts.formatted(.number.precision(.fractionLength(0)))
+
+        switch currentness {
+        case .live:
+            return "\(formatted) watts"
+        case .retained:
+            return "\(formatted) watts, last known"
+        case .unavailable:
+            return "Unavailable"
+        }
+    }
+}
+
 /// App-side visual input for the signature propulsion instrument.
 ///
 /// `acceptedWatts` is the semantic measurement truth shown to accessibility and
@@ -118,6 +197,7 @@ struct NembraEnergyRailVisualState: Equatable {
     let acceptedTargetFraction: Double?
     let peakMarkerFraction: Double?
     let allowsLiveMotion: Bool
+    fileprivate let accessibilityState: NembraEnergyRailAccessibilityState
 
     /// The only app-constructible state before the package projection is linked into
     /// the app target. This lets the real Cockpit surface ship truthfully today while
@@ -129,7 +209,8 @@ struct NembraEnergyRailVisualState: Equatable {
         railFraction: nil,
         acceptedTargetFraction: nil,
         peakMarkerFraction: nil,
-        allowsLiveMotion: false
+        allowsLiveMotion: false,
+        accessibilityState: .unavailable
     )
 
     /// Raw visual construction remains file-private. Numeric/live state may only be
@@ -141,7 +222,8 @@ struct NembraEnergyRailVisualState: Equatable {
         railFraction: Double?,
         acceptedTargetFraction: Double?,
         peakMarkerFraction: Double?,
-        allowsLiveMotion: Bool
+        allowsLiveMotion: Bool,
+        accessibilityState: NembraEnergyRailAccessibilityState
     ) {
         self.currentness = currentness
         self.acceptedWatts = acceptedWatts
@@ -150,17 +232,27 @@ struct NembraEnergyRailVisualState: Equatable {
         self.acceptedTargetFraction = acceptedTargetFraction
         self.peakMarkerFraction = peakMarkerFraction
         self.allowsLiveMotion = allowsLiveMotion
+        self.accessibilityState = accessibilityState
     }
 
     /// The sole numeric bridge from package-owned propulsion authority into SwiftUI.
     /// `PropulsionEnergyRailAppProjection` itself cannot be caller-constructed outside
     /// NembraCore, so app code cannot use this initializer to manufacture accepted watts.
     init(projection: PropulsionEnergyRailAppProjection) {
+        guard let accessibilityState = NembraEnergyRailAccessibilityState(
+            presentation: projection.accessibilityPresentation
+        ) else {
+            self = .unavailable
+            return
+        }
+
         switch projection.currentness {
         case .live:
             guard let acceptedWatts = projection.acceptedWatts,
                   acceptedWatts.isFinite,
-                  acceptedWatts >= 0 else {
+                  acceptedWatts >= 0,
+                  accessibilityState.currentness == .live,
+                  accessibilityState.acceptedWatts == acceptedWatts else {
                 self = .unavailable
                 return
             }
@@ -172,13 +264,16 @@ struct NembraEnergyRailVisualState: Equatable {
                 railFraction: projection.railFraction,
                 acceptedTargetFraction: projection.acceptedTargetFraction,
                 peakMarkerFraction: projection.acceptedPeakMarkerFraction,
-                allowsLiveMotion: projection.allowsLiveMotion
+                allowsLiveMotion: projection.allowsLiveMotion,
+                accessibilityState: accessibilityState
             )
 
         case .retained:
             guard let acceptedWatts = projection.acceptedWatts,
                   acceptedWatts.isFinite,
-                  acceptedWatts >= 0 else {
+                  acceptedWatts >= 0,
+                  accessibilityState.currentness == .retained,
+                  accessibilityState.acceptedWatts == acceptedWatts else {
                 self = .unavailable
                 return
             }
@@ -192,11 +287,26 @@ struct NembraEnergyRailVisualState: Equatable {
                 railFraction: nil,
                 acceptedTargetFraction: nil,
                 peakMarkerFraction: nil,
-                allowsLiveMotion: false
+                allowsLiveMotion: false,
+                accessibilityState: accessibilityState
             )
 
         case .unavailable:
-            self = .unavailable
+            guard accessibilityState.currentness == .unavailable,
+                  accessibilityState.acceptedWatts == nil else {
+                self = .unavailable
+                return
+            }
+            self.init(
+                currentness: .unavailable,
+                acceptedWatts: nil,
+                displayWatts: nil,
+                railFraction: nil,
+                acceptedTargetFraction: nil,
+                peakMarkerFraction: nil,
+                allowsLiveMotion: false,
+                accessibilityState: accessibilityState
+            )
         }
     }
 
@@ -345,6 +455,27 @@ private struct NembraRollingPowerValueView: View {
     }
 }
 
+/// Stable accessibility replacement for the Energy Rail's rapidly changing visual subtree.
+/// Equality deliberately follows only package semantic revision (via `state == state`), so
+/// display-clock watt/rail frames cannot create assistive-technology invalidations.
+private struct NembraEnergyRailAccessibilityRepresentation: View, Equatable {
+    let state: NembraEnergyRailAccessibilityState
+
+    static func == (
+        lhs: NembraEnergyRailAccessibilityRepresentation,
+        rhs: NembraEnergyRailAccessibilityRepresentation
+    ) -> Bool {
+        lhs.state == rhs.state
+    }
+
+    var body: some View {
+        Text("Propulsion power")
+            .accessibilityLabel("Propulsion power")
+            .accessibilityValue(state.value)
+            .accessibilityIdentifier("dashboard.energy-rail")
+    }
+}
+
 /// Localized SwiftUI renderer for the Nembra Energy Rail.
 ///
 /// The caller owns the display clock. This view does not add a second smoothing
@@ -370,10 +501,10 @@ struct NembraEnergyRailView: View {
             powerReadout
         }
         .frame(maxWidth: .infinity, minHeight: componentMinimumHeight)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Propulsion power")
-        .accessibilityValue(accessibilityValue)
-        .accessibilityIdentifier("dashboard.energy-rail")
+        .accessibilityRepresentation {
+            NembraEnergyRailAccessibilityRepresentation(state: state.accessibilityState)
+                .equatable()
+        }
     }
 
     private var railLayer: some View {
@@ -486,20 +617,6 @@ struct NembraEnergyRailView: View {
             Color.primary.opacity(colorSchemeContrast == .increased ? 0.66 : 0.50)
         default:
             Color.primary.opacity(colorSchemeContrast == .increased ? 0.50 : 0.32)
-        }
-    }
-
-    private var accessibilityValue: String {
-        guard let watts = state.semanticWatts else { return "Unavailable" }
-        let formatted = watts.formatted(.number.precision(.fractionLength(0)))
-
-        switch state.currentness {
-        case .live:
-            return "\(formatted) watts"
-        case .retained:
-            return "\(formatted) watts, last known"
-        case .unavailable:
-            return "Unavailable"
         }
     }
 
