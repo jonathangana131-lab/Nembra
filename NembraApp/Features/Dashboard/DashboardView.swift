@@ -443,11 +443,13 @@ struct DashboardView: View {
             HStack(spacing: 7) {
                 if vehicle.profile.capabilities.supportsHeadlight,
                    let isOn = vehicle.state.isHeadlightOn {
+                    let isPending = vehicle.pendingCommands.contains(.headlight)
+
                     Button {
                         Task { await vehicle.setHeadlight(!isOn) }
                     } label: {
                         ZStack {
-                            if vehicle.pendingCommands.contains(.headlight) {
+                            if isPending {
                                 ProgressView().controlSize(.mini)
                             } else {
                                 Image(systemName: isOn ? "lightbulb.fill" : "lightbulb")
@@ -458,22 +460,30 @@ struct DashboardView: View {
                     .buttonStyle(.glass)
                     .disabled(vehicle.isVehicleCommandPending)
                     .accessibilityLabel(isOn ? "Turn light off" : "Turn light on")
-                    .accessibilityValue(isOn ? "On" : "Off")
+                    .accessibilityValue(isPending ? "Updating" : (isOn ? "On" : "Off"))
                     .accessibilityIdentifier("dashboard.control.light")
                 }
 
                 if vehicle.profile.capabilities.supportsLock,
                    let isLocked = vehicle.state.isLocked {
+                    let isPending = vehicle.pendingCommands.contains(.lock)
+
                     Button {
                         showLockConfirmation = true
                     } label: {
-                        Image(systemName: isLocked ? "lock.fill" : "lock.open")
-                            .frame(width: 44, height: 44)
+                        ZStack {
+                            if isPending {
+                                ProgressView().controlSize(.mini)
+                            } else {
+                                Image(systemName: isLocked ? "lock.fill" : "lock.open")
+                            }
+                        }
+                        .frame(width: 44, height: 44)
                     }
                     .buttonStyle(.glass)
                     .disabled(vehicle.isVehicleCommandPending)
                     .accessibilityLabel(isLocked ? "Unlock scooter" : "Lock scooter")
-                    .accessibilityValue(isLocked ? "Secured" : "Ready")
+                    .accessibilityValue(isPending ? "Updating" : (isLocked ? "Secured" : "Ready"))
                     .accessibilityIdentifier("dashboard.control.lock")
                 }
             }
