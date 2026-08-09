@@ -20,4 +20,15 @@ jobs:
       - name: Verify Swift toolchain
         run: swift --version
       - name: Run NembraCore tests with warnings as errors
-        run: swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors
+        shell: bash
+        run: |
+          set -o pipefail
+          swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors 2>&1 | tee /tmp/nembra-core-swift-test.log
+      - name: Retain exact Swift test diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v14-battery-range-nembracore-swift-test-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/nembra-core-swift-test.log
+          if-no-files-found: error
+          retention-days: 7
