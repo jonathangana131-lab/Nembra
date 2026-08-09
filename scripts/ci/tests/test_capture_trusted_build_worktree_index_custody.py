@@ -8,7 +8,9 @@ resolver-approved commit *and* the real GitHub workspace bytes immediately befor
 """
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -16,6 +18,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = ROOT / ".github/workflows/capture-xcode27-trusted-command.yml"
+TRUSTED_SUBJECT = ROOT / "scripts/ci/es80_today_trusted_capture_xcode_subject.py"
 AUTHORITY_STEP = "      - name: Build, test, and capture Simulator states"
 
 
@@ -159,6 +162,16 @@ class TrustedBuildWorktreeIndexCustodyTests(unittest.TestCase):
         step = self._authority_step()
         self.assertRegex(step, r'trusted_index="\$\(/usr/bin/mktemp -t nembra-capture-index\)"')
         self.assertIn("trap '/bin/rm -f -- \"$trusted_index\"' EXIT", step)
+
+    def test_hardened_workflow_blob_is_the_exact_final_go_pin(self) -> None:
+        workflow_bytes = WORKFLOW.read_bytes()
+        actual_blob = hashlib.sha1(
+            f"blob {len(workflow_bytes)}\0".encode("ascii") + workflow_bytes
+        ).hexdigest()
+        subject = TRUSTED_SUBJECT.read_text(encoding="utf-8")
+        match = re.search(r'^TRUSTED_WORKFLOW_BLOB_SHA = "([0-9a-f]{40})"$', subject, re.MULTILINE)
+        self.assertIsNotNone(match, "Final GO subject has no canonical trusted workflow blob pin")
+        self.assertEqual(actual_blob, match.group(1))
 
 
 if __name__ == "__main__":
