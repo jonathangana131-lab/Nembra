@@ -1,0 +1,38 @@
+name: Capture Janitor Live Default Audit
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-janitor-live-default-trust/gpt56-go
+    paths:
+      - scripts/ci/capture_trusted_queue_janitor.py
+      - .github/workflows/capture-janitor-live-default-audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact audit head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+      - name: Verify exact audit head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+      - name: Compile janitor
+        run: python3 -m py_compile scripts/ci/capture_trusted_queue_janitor.py
+      - name: Run embedded fail-closed self-test
+        run: python3 scripts/ci/capture_trusted_queue_janitor.py --self-test
+      - name: Pin live-default authority source
+        run: |
+          set -euo pipefail
+          grep -Fq 'default_branch = gh.default_branch()' scripts/ci/capture_trusted_queue_janitor.py
+          grep -Fq 'current_workflow_blob = gh.workflow_blob(default_branch)' scripts/ci/capture_trusted_queue_janitor.py
+          grep -Fq 'REFUSE_MUTATION: current trusted workflow generation unavailable' scripts/ci/capture_trusted_queue_janitor.py
+          grep -Fq 'run_workflow_blob = gh.workflow_blob(run_head_sha)' scripts/ci/capture_trusted_queue_janitor.py
+          ! grep -Fq 'open(WORKFLOW_PATH' scripts/ci/capture_trusted_queue_janitor.py
