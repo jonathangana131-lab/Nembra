@@ -47,6 +47,47 @@ public extension SpeedEvidenceProvider {
     }
 }
 
+/// Consumer-side admission for one asynchronous refresh of source-owned speed
+/// currentness. The opaque token makes supersession mechanical rather than a
+/// scheduling assumption: once a connection transition or a newer refresh calls
+/// `invalidate()`/`beginRefresh()`, an older suspended refresh can no longer
+/// publish authority when it resumes.
+///
+/// This is intentionally internal. It is app-session coordination, not scooter
+/// evidence and not a persisted/protocol-facing authority type.
+struct SpeedEvidenceConsumerAuthority {
+    struct RefreshToken: Equatable, Sendable {
+        fileprivate let identity: UUID
+    }
+
+    private var activeRefreshIdentity = UUID()
+    private(set) var availability: SpeedEvidenceAvailability = .unavailable
+
+    mutating func invalidate() {
+        activeRefreshIdentity = UUID()
+        availability = .unavailable
+    }
+
+    mutating func beginRefresh() -> RefreshToken {
+        invalidate()
+        return RefreshToken(identity: activeRefreshIdentity)
+    }
+
+    /// Commits only the newest admitted refresh. Connection state is supplied by
+    /// the consumer's current service snapshot; a non-connected result remains
+    /// unavailable even if the field provider still has retained/live material.
+    @discardableResult
+    mutating func commit(
+        _ candidate: SpeedEvidenceAvailability,
+        connectionIsConnected: Bool,
+        for token: RefreshToken
+    ) -> Bool {
+        guard token.identity == activeRefreshIdentity else { return false }
+        availability = connectionIsConnected ? candidate : .unavailable
+        return true
+    }
+}
+
 public protocol ScooterService: SpeedTelemetryProvider, Sendable {
     var profile: VehicleProfile { get }
 
