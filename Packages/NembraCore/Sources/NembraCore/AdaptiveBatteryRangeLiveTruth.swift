@@ -178,14 +178,31 @@ public struct AcceptedBatterySOCAnchor: Equatable, Sendable {
 /// this stream, not only SoC. Non-SoC siblings/callbacks advance receipt truth but simply return
 /// nil instead of an SoC anchor.
 public struct AcceptedBatterySOCStream: Equatable, Sendable {
+    /// Strong lifetime owner for exactly this stream lineage. Validators, anchors, and estimates
+    /// retain only the owner's weak lease handle, so copied/cached evidence cannot keep authority
+    /// alive once every real stream copy is released.
+    private let currentnessOwner: BatteryEvidenceCurrentnessOwner
     public private(set) var validator: BatteryEvidenceStreamValidator
     public private(set) var continuitySegmentStartReceiptIdentity: BatteryEvidenceReceiptIdentity?
 
     public init() {
+        let currentnessOwner = BatteryEvidenceCurrentnessOwner()
+        self.currentnessOwner = currentnessOwner
         validator = BatteryEvidenceStreamValidator(
-            currentnessOwner: BatteryEvidenceCurrentnessOwner()
+            currentnessOwner: currentnessOwner
         )
         continuitySegmentStartReceiptIdentity = nil
+    }
+
+    /// Equality remains chronology-value equality, matching the prior synthesized behavior.
+    /// Process-local owner identity is authority/lifetime state and is intentionally not promoted
+    /// into value equality.
+    public static func == (
+        lhs: AcceptedBatterySOCStream,
+        rhs: AcceptedBatterySOCStream
+    ) -> Bool {
+        lhs.validator == rhs.validator
+            && lhs.continuitySegmentStartReceiptIdentity == rhs.continuitySegmentStartReceiptIdentity
     }
 
     /// Records an explicit observation gap while preserving the prior segment as retained history.
