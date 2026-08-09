@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Run the historical Final GO adversarial suite against the authority-bearing foundation module.
+"""Run the historical Final GO adversarial suite against the private validator implementation.
 
-The historical `es80_today_final_go_record.py` import is intentionally non-authorizing. Rather than
-reopen that compatibility surface for tests, this harness loads the existing test module and swaps
-its module-global `final_go` reference to the real foundation before test discovery/execution.
-Class constants already captured from the compatibility export are identical foundation constants;
-all runtime builder, Git, validation, and publication calls resolve through this replacement.
+The historical `es80_today_final_go_record.py` and public `es80_today_final_go_foundation.py`
+imports are intentionally non-authorizing. Rather than reopen either compatibility surface for
+tests, this harness loads the existing test module and swaps its module-global `final_go` reference
+to the private implementation before test discovery/execution. Class constants already captured
+from the compatibility export are identical implementation constants; all runtime builder, Git,
+validation, and publication calls resolve through this replacement.
 """
 from __future__ import annotations
 
@@ -28,8 +29,8 @@ def _load(name: str, path: Path):
 
 
 foundation = _load(
-    "nembra_today_final_go_foundation_under_test",
-    MODULE_DIR / "es80_today_final_go_foundation.py",
+    "nembra_today_final_go_foundation_impl_under_test",
+    MODULE_DIR / "_es80_today_final_go_foundation_impl.py",
 )
 legacy_suite = _load(
     "nembra_today_final_go_foundation_suite",
