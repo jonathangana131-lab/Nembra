@@ -1,44 +1,30 @@
 name: ES80 Preflight Handoff Runtime QA
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches:
+      - validation/es80-preflight-handoff-aae86-gpt56
 
 permissions:
   contents: read
-  pull-requests: read
 
 jobs:
-  preflight-handoff:
-    name: Prove stationary preflight preserves synthetic OFF1 fixture
-    if: github.event.pull_request.head.repo.full_name == github.repository
+  runtime-proof:
     runs-on: xcode-27
     timeout-minutes: 20
-
     steps:
-      - name: Checkout immutable validation head
+      - name: Checkout validation head
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 2
 
-      - name: Prove exact product parent and workflow-only committed delta
-        env:
-          EXPECTED_PRODUCT_PARENT: aae86cc243a48dd0993db4ca9c00f0a4284bee85
-          EXPECTED_WORKFLOW: .github/workflows/qa-es80-preflight-handoff-aae86-gpt56.yml
+      - name: Prove immutable product parent
         run: |
           set -euo pipefail
-          actual_head="$(git rev-parse HEAD)"
-          event_head="${{ github.event.pull_request.head.sha }}"
-          parent="$(git rev-parse HEAD^)"
-          printf 'Validation head: %s\nEvent head: %s\nProduct parent: %s\n' "$actual_head" "$event_head" "$parent"
-          test "$actual_head" = "$event_head"
-          test "$parent" = "$EXPECTED_PRODUCT_PARENT"
-          changed="$(git diff --name-only HEAD^ HEAD)"
-          printf 'Committed validation delta:\n%s\n' "$changed"
-          test "$changed" = "$EXPECTED_WORKFLOW"
+          test "$(git rev-parse HEAD^)" = "aae86cc243a48dd0993db4ca9c00f0a4284bee85"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/qa-es80-preflight-handoff-aae86-gpt56.yml"
 
-      - name: Inject validation-only UI traversal
+      - name: Inject validation-only handoff traversal
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -61,18 +47,9 @@ jobs:
         XCTAssertTrue(continueButton.isEnabled)
         continueButton.tap()
 
-        XCTAssertTrue(
-            app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5),
-            "Accepted stationary preflight must enter the real Capture shell."
-        )
-        XCTAssertTrue(
-            app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3),
-            "The exact package-owned synthetic authority must survive the preflight handoff."
-        )
-        XCTAssertTrue(
-            app.staticTexts["OFF 1 / READY"].waitForExistence(timeout: 3),
-            "The stationaryPreflight fixture must retain its intended first-powered-off phase after handoff."
-        )
+        XCTAssertTrue(app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["OFF 1 / READY"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["Scooter OFF"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
         XCTAssertFalse(app.buttons["Vehicle controls"].exists)
@@ -81,57 +58,29 @@ jobs:
         attachment.name = "Nembra Capture V14 — SIMULATOR QA — Preflight Handoff OFF1"
 '''
           if source.count(old) != 1:
-              raise SystemExit("expected exact stationary-preflight test block once")
+              raise SystemExit("stationary-preflight test block changed unexpectedly")
           path.write_text(source.replace(old, new), encoding="utf-8")
           PY
 
-      - name: Validate project and toolchain
+      - name: Run focused iOS 27 UI test
         run: |
           set -euo pipefail
           plutil -lint Nembra.xcodeproj/project.pbxproj
           scripts/validate_pbxproj_references.py
-          xcodebuild -version
+          mkdir -p Artifacts/ES80PreflightHandoff/logs Artifacts/ES80PreflightHandoff/test-attachments
 
-      - name: Run focused iOS 27 Simulator handoff proof
-        env:
-          ARTIFACTS_DIR: ${{ github.workspace }}/Artifacts/ES80PreflightHandoff
-          DERIVED_DATA: ${{ runner.temp }}/NembraES80PreflightHandoffDerivedData
-        run: |
-          set -euo pipefail
-          mkdir -p "$ARTIFACTS_DIR/logs" "$ARTIFACTS_DIR/test-attachments"
-
-          runtime_id="$(xcrun simctl list runtimes -j | python3 -c '
-          import json,sys
-          runtimes=json.load(sys.stdin)["runtimes"]
-          candidates=[r for r in runtimes if r.get("isAvailable", True) and str(r.get("identifier", "")).startswith("com.apple.CoreSimulator.SimRuntime.iOS-27")]
-          if not candidates: raise SystemExit(1)
-          candidates.sort(key=lambda r: tuple(int(p) for p in str(r.get("version", "0")).split(".") if p.isdigit()), reverse=True)
-          print(candidates[0]["identifier"])
-          ')"
-
-          device_type="$(xcrun simctl list devicetypes -j | python3 -c '
-          import json,sys
-          items=json.load(sys.stdin)["devicetypes"]
-          preferred=["iPhone 12", "iPhone 17", "iPhone 17 Pro", "iPhone 16"]
-          for name in preferred:
-              for item in items:
-                  if item.get("name") == name:
-                      print(item["identifier"]); raise SystemExit(0)
-          raise SystemExit(1)
-          ')"
-
-          udid="$(xcrun simctl create "Nembra ES80 Handoff $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" "$device_type" "$runtime_id")"
+          runtime_id="$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x.get("isAvailable", True) and str(x.get("identifier", "")).startswith("com.apple.CoreSimulator.SimRuntime.iOS-27")]; r.sort(key=lambda x: str(x.get("version", "")), reverse=True); print(r[0]["identifier"])')"
+          device_type="$(xcrun simctl list devicetypes -j | python3 -c 'import json,sys; i=json.load(sys.stdin)["devicetypes"]; p=["iPhone 12","iPhone 17","iPhone 17 Pro","iPhone 16"]; print(next(x["identifier"] for n in p for x in i if x.get("name")==n))')"
+          udid="$(xcrun simctl create "Nembra ES80 Handoff $GITHUB_RUN_ID" "$device_type" "$runtime_id")"
           cleanup() {
-            xcrun simctl spawn "$udid" log show --last 10m --style compact --predicate 'process == "Nembra"' > "$ARTIFACTS_DIR/logs/nembra-system.log" 2>&1 || true
+            xcrun simctl spawn "$udid" log show --last 10m --style compact --predicate 'process == "Nembra"' > Artifacts/ES80PreflightHandoff/logs/nembra-system.log 2>&1 || true
             xcrun simctl shutdown "$udid" >/dev/null 2>&1 || true
             xcrun simctl delete "$udid" >/dev/null 2>&1 || true
           }
           trap cleanup EXIT INT TERM
-
           xcrun simctl boot "$udid"
           xcrun simctl bootstatus "$udid" -b
 
-          result_bundle="$ARTIFACTS_DIR/PreflightHandoff.xcresult"
           set +e
           set -o pipefail
           xcodebuild \
@@ -139,29 +88,27 @@ jobs:
             -scheme Nembra \
             -configuration Debug \
             -destination "platform=iOS Simulator,id=$udid" \
-            -derivedDataPath "$DERIVED_DATA" \
-            -resultBundlePath "$result_bundle" \
+            -derivedDataPath "${RUNNER_TEMP}/NembraES80HandoffDerivedData" \
+            -resultBundlePath Artifacts/ES80PreflightHandoff/PreflightHandoff.xcresult \
             -test-timeouts-enabled YES \
             -default-test-execution-time-allowance 120 \
             -maximum-test-execution-time-allowance 120 \
             -collect-test-diagnostics never \
             -only-testing:NembraUITests/ES80ResearchCaptureUITests/testV14SimulatorQARendersStationaryPreflightWithoutPromotingFieldGo \
             CODE_SIGNING_ALLOWED=NO \
-            test | tee "$ARTIFACTS_DIR/logs/xcodebuild-focused-handoff.log"
+            test | tee Artifacts/ES80PreflightHandoff/logs/xcodebuild-focused-handoff.log
           status=${PIPESTATUS[0]}
           set -e
 
-          if [[ -d "$result_bundle" ]]; then
+          if [[ -d Artifacts/ES80PreflightHandoff/PreflightHandoff.xcresult ]]; then
             xcrun xcresulttool export attachments \
-              --path "$result_bundle" \
-              --output-path "$ARTIFACTS_DIR/test-attachments" \
-              > "$ARTIFACTS_DIR/logs/xcresult-attachments.log" 2>&1 || true
-            find "$ARTIFACTS_DIR/test-attachments" -type f -print | sort > "$ARTIFACTS_DIR/test-attachments.txt" || true
+              --path Artifacts/ES80PreflightHandoff/PreflightHandoff.xcresult \
+              --output-path Artifacts/ES80PreflightHandoff/test-attachments \
+              > Artifacts/ES80PreflightHandoff/logs/xcresult-attachments.log 2>&1 || true
           fi
-
           exit "$status"
 
-      - name: Upload focused runtime evidence
+      - name: Upload focused evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
