@@ -33,6 +33,24 @@ public struct UserDefaultsRetainedBatterySnapshotStorage: RetainedBatterySnapsho
     }
 
     public func save(_ snapshot: RetainedBatterySnapshot) throws {
+        if let existing = try load() {
+            // Durable chronology is evidence chronology, not write chronology.
+            // A surrounding aggregate state publication may carry the same cached
+            // battery value with a newer timestamp. Re-saving that unchanged value
+            // must not manufacture a newer battery observation.
+            if snapshot.percent == existing.percent,
+               snapshot.authority == existing.authority {
+                return
+            }
+
+            // Persistence is monotonic in observation time. A delayed write cannot
+            // roll retained battery truth back to older evidence, even when its value
+            // differs from the current snapshot.
+            if snapshot.observedAt <= existing.observedAt {
+                return
+            }
+        }
+
         let data = try RetainedBatterySnapshotCodec.encode(snapshot)
         defaults.set(data, forKey: key)
     }
