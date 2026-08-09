@@ -104,31 +104,129 @@ def _regular_nonsymlink(path: Path) -> os.stat_result | None:
     return info
 
 
-def _private_udid_file_is_ready(path: Path) -> bool:
-    """Mirror the normal-path privacy/format contract enforced by frozen a0f4's private runner.
+def _stable_file_identity(
+    metadata: os.stat_result,
+) -> tuple[int, int, int, int, int, int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_uid,
+        metadata.st_gid,
+        metadata.st_nlink,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
 
-    This remains only an early operator check. The frozen producer reopens and independently
-    validates the file component-by-component before signed evidence admission.
-    """
-    if not path.is_absolute():
-        return False
-    info = _regular_nonsymlink(path)
-    if info is None:
-        return False
-    if stat.S_IMODE(info.st_mode) != 0o600:
-        return False
-    if info.st_size < 1 or info.st_size > MAX_PRIVATE_IDENTIFIER_BYTES:
-        return False
-    if info.st_nlink != 1:
-        return False
-    if hasattr(os, "geteuid") and info.st_uid != os.geteuid():
-        return False
+
+def _repository_directory_identity(source_repo: Path) -> tuple[int, int] | None:
     try:
-        raw = path.read_bytes()
+        resolved = source_repo.resolve(strict=True)
+        metadata = os.stat(resolved)
     except OSError:
+        return None
+    if not stat.S_ISDIR(metadata.st_mode):
+        return None
+    return metadata.st_dev, metadata.st_ino
+
+
+def _open_private_identifier_without_symlink_components(
+    path: Path,
+    source_repo: Path,
+) -> int | None:
+    """Mirror frozen a0f4's component-wise no-follow and outside-repository boundary."""
+    if (
+        not hasattr(os, "O_NOFOLLOW")
+        or not hasattr(os, "O_DIRECTORY")
+        or os.open not in os.supports_dir_fd
+    ):
+        return None
+    if not path.is_absolute() or path.anchor != os.sep:
+        return None
+
+    components = path.parts[1:]
+    if not components or any(component in ("", ".", "..") for component in components):
+        return None
+
+    repository_identity = _repository_directory_identity(source_repo)
+    if repository_identity is None:
+        return None
+
+    close_on_exec = os.O_CLOEXEC if hasattr(os, "O_CLOEXEC") else 0
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | close_on_exec
+    file_flags = os.O_RDONLY | os.O_NOFOLLOW | close_on_exec
+
+    try:
+        parent_descriptor = os.open(os.sep, directory_flags)
+    except OSError:
+        return None
+
+    try:
+        root_metadata = os.fstat(parent_descriptor)
+        if (root_metadata.st_dev, root_metadata.st_ino) == repository_identity:
+            return None
+
+        for component in components[:-1]:
+            try:
+                next_descriptor = os.open(component, directory_flags, dir_fd=parent_descriptor)
+            except OSError:
+                return None
+
+            next_metadata = os.fstat(next_descriptor)
+            if (next_metadata.st_dev, next_metadata.st_ino) == repository_identity:
+                os.close(next_descriptor)
+                return None
+            os.close(parent_descriptor)
+            parent_descriptor = next_descriptor
+
+        try:
+            return os.open(components[-1], file_flags, dir_fd=parent_descriptor)
+        except OSError:
+            return None
+    finally:
+        os.close(parent_descriptor)
+
+
+def _private_udid_file_is_ready(path: Path, source_repo: Path) -> bool:
+    """Fail closed unless the private identifier matches frozen a0f4's input custody contract.
+
+    This remains only an early operator check. The frozen producer independently reopens and
+    validates the same subject before signed evidence admission.
+    """
+    descriptor = _open_private_identifier_without_symlink_components(path, source_repo)
+    if descriptor is None:
         return False
-    if len(raw) != info.st_size or len(raw) > MAX_PRIVATE_IDENTIFIER_BYTES:
-        return False
+
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            return False
+        # The frozen runner permits any user-only mode. Preflight intentionally requires exactly
+        # 0600 because that is the documented operator handoff and is stricter, never looser.
+        if stat.S_IMODE(info.st_mode) != 0o600:
+            return False
+        if info.st_size < 1 or info.st_size > MAX_PRIVATE_IDENTIFIER_BYTES:
+            return False
+        if info.st_nlink != 1:
+            return False
+        if hasattr(os, "geteuid") and info.st_uid != os.geteuid():
+            return False
+        try:
+            with os.fdopen(os.dup(descriptor), "rb") as handle:
+                raw = handle.read(MAX_PRIVATE_IDENTIFIER_BYTES + 1)
+            final_info = os.fstat(descriptor)
+        except OSError:
+            return False
+        if (
+            len(raw) != info.st_size
+            or len(raw) > MAX_PRIVATE_IDENTIFIER_BYTES
+            or _stable_file_identity(final_info) != _stable_file_identity(info)
+        ):
+            return False
+    finally:
+        os.close(descriptor)
+
     try:
         value = raw.decode("utf-8")
     except UnicodeDecodeError:
@@ -254,7 +352,8 @@ def evaluate_preflight(
     checks["allowProvisioningUpdates"] = inputs.allow_provisioning_updates in {"0", "1"}
     checks["exportOptionsPlist"] = _export_options_are_ready(inputs.export_options_plist)
     checks["privateIntendedDeviceInput"] = _private_udid_file_is_ready(
-        inputs.intended_device_udid_file
+        inputs.intended_device_udid_file,
+        inputs.source_repo,
     )
 
     try:
