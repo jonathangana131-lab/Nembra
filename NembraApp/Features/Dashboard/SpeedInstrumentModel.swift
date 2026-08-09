@@ -20,6 +20,12 @@ struct SpeedInstrumentDisplayFrame: Equatable {
 }
 
 extension SpeedEvidenceAvailability {
+    /// Strict production-default sanitizer. Simulator evidence is unavailable
+    /// unless an explicit Simulator profile opts in through the function below.
+    var dashboardPresentationAvailability: SpeedEvidenceAvailability {
+        dashboardPresentationAvailability(allowsSimulatorQA: false)
+    }
+
     /// Dashboard presentation accepts only absolute-measurement speed evidence
     /// whose source is permitted for the active app profile.
     ///
@@ -30,7 +36,7 @@ extension SpeedEvidenceAvailability {
     /// Simulator QA profile. Physical/unverified profiles therefore cannot borrow
     /// synthetic speed merely by wrapping it as `.live` or `.retained`.
     func dashboardPresentationAvailability(
-        allowsSimulatorQA: Bool = false
+        allowsSimulatorQA: Bool
     ) -> SpeedEvidenceAvailability {
         func admits(_ sample: SpeedTelemetrySample) -> Bool {
             guard sample.isAuthoritativeMeasurement else { return false }
