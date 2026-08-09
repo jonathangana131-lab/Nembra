@@ -53,6 +53,13 @@ public struct PropulsionGaugeCockpitSnapshot: Equatable, Sendable {
 
     /// Render-only position for the live propulsion band. Never telemetry evidence.
     public let visualPropulsionFraction: Double?
+    /// Exact accepted measurement normalized against the same admitted presentation scale.
+    ///
+    /// This is still presentation-only geometry, not a second power measurement. Unlike
+    /// `visualPropulsionFraction`, it does not interpolate at the display clock, so accessibility
+    /// consumers such as Reduce Motion can present the accepted target without reconstructing watts
+    /// from a render frame.
+    public let acceptedPropulsionFraction: Double?
     /// Render-only marker derived from accepted peak samples inside the canonical hold window.
     public let recentAcceptedPeakMarkerFraction: Double?
     /// The compatible presentation-scale origin admitted by the canonical gauge frame.
@@ -63,12 +70,14 @@ public struct PropulsionGaugeCockpitSnapshot: Equatable, Sendable {
         identity: PropulsionGaugeIdentity,
         measurement: PropulsionGaugeCockpitMeasurement,
         visualPropulsionFraction: Double?,
+        acceptedPropulsionFraction: Double?,
         recentAcceptedPeakMarkerFraction: Double?,
         scaleOrigin: PropulsionGaugeScaleOrigin?
     ) {
         self.identity = identity
         self.measurement = measurement
         self.visualPropulsionFraction = visualPropulsionFraction
+        self.acceptedPropulsionFraction = acceptedPropulsionFraction
         self.recentAcceptedPeakMarkerFraction = recentAcceptedPeakMarkerFraction
         self.scaleOrigin = scaleOrigin
     }
@@ -92,6 +101,7 @@ public extension PropulsionGaugeDisplayModel {
                 identity: frame.identity,
                 measurement: .unavailable,
                 visualPropulsionFraction: nil,
+                acceptedPropulsionFraction: nil,
                 recentAcceptedPeakMarkerFraction: nil,
                 scaleOrigin: nil
             )
@@ -102,6 +112,7 @@ public extension PropulsionGaugeDisplayModel {
                 identity: frame.identity,
                 measurement: measurement,
                 visualPropulsionFraction: nil,
+                acceptedPropulsionFraction: nil,
                 recentAcceptedPeakMarkerFraction: nil,
                 scaleOrigin: nil
             )
@@ -111,9 +122,43 @@ public extension PropulsionGaugeDisplayModel {
             identity: frame.identity,
             measurement: measurement,
             visualPropulsionFraction: frame.normalizedPropulsion,
+            acceptedPropulsionFraction: acceptedPropulsionFraction(
+                from: measurement,
+                scale: scale,
+                admittedScaleOrigin: frame.scaleOrigin
+            ),
             recentAcceptedPeakMarkerFraction: frame.acceptedPeakNormalized,
             scaleOrigin: frame.scaleOrigin
         )
+    }
+
+    private func acceptedPropulsionFraction(
+        from measurement: PropulsionGaugeCockpitMeasurement,
+        scale: PropulsionGaugeScale?,
+        admittedScaleOrigin: PropulsionGaugeScaleOrigin?
+    ) -> Double? {
+        guard case let .live(accepted) = measurement,
+              let scale,
+              let admittedScaleOrigin,
+              accepted.identity == identity,
+              scale.identity == identity,
+              scale.origin == admittedScaleOrigin,
+              scale.ceilingWatts.isFinite,
+              scale.ceilingWatts > 0 else {
+            return nil
+        }
+
+        switch (scale.origin, accepted.authority) {
+        case (.verifiedObservedEnvelope, .verifiedVehicleMeasurement),
+             (.simulator, .simulator):
+            break
+        default:
+            return nil
+        }
+
+        let fraction = accepted.watts / scale.ceilingWatts
+        guard fraction.isFinite else { return nil }
+        return min(1, max(0, fraction))
     }
 
     private func cockpitMeasurement(
