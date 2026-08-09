@@ -20,6 +20,7 @@ jobs:
       STALE_TRUST_SHA: '941fb98829457fb73fb747880e8ea32708cb4605'
       SURVIVOR_RUN_ID: '31312433441'
       SURVIVOR_TRUST_SHA: 'a80229e9bac1f10211195d64675a84ac4786976a'
+      SURVIVOR_MIN_ATTEMPT: '3'
     steps:
       - name: Cancel only obsolete trusted generation
         env:
@@ -32,6 +33,7 @@ jobs:
           repo=os.environ['GITHUB_REPOSITORY']; token=os.environ['GITHUB_TOKEN']
           stale_id=int(os.environ['STALE_RUN_ID']); survivor_id=int(os.environ['SURVIVOR_RUN_ID'])
           stale_sha=os.environ['STALE_TRUST_SHA']; survivor_sha=os.environ['SURVIVOR_TRUST_SHA']
+          survivor_min_attempt=int(os.environ['SURVIVOR_MIN_ATTEMPT'])
           api=f'https://api.github.com/repos/{repo}/actions/runs'
           def req(method,url):
               r=urllib.request.Request(url,method=method,headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'nembra-v14-stale-run-closer'})
@@ -49,7 +51,8 @@ jobs:
               if run.get('head_sha')!=esha: raise SystemExit(f'{label} trust SHA mismatch')
           if stale.get('status') not in {'queued','pending','in_progress'}: raise SystemExit(f'stale no longer alive: {stale.get("status")}/{stale.get("conclusion")}')
           if survivor.get('status') not in {'queued','pending','in_progress'}: raise SystemExit(f'survivor not alive: {survivor.get("status")}/{survivor.get("conclusion")}')
+          if int(survivor.get('run_attempt') or 0) < survivor_min_attempt: raise SystemExit('survivor retry attempt is not yet active')
           if survivor.get('created_at','') <= stale.get('created_at',''): raise SystemExit('survivor not newer')
           req('POST',f'{api}/{stale_id}/cancel')
-          print(f'cancel requested for {stale_id}; preserved {survivor_id}')
+          print(f'cancel requested for {stale_id}; preserved {survivor_id} attempt {survivor.get("run_attempt")}')
           PY
