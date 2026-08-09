@@ -7,6 +7,7 @@ on:
       - scripts/ci/es80_today_final_go_record.py
       - scripts/ci/es80_today_final_go_foundation.py
       - scripts/ci/tests/test_es80_today_final_go_record.py
+      - scripts/ci/tests/test_es80_today_final_go_foundation.py
       - scripts/ci/es80_today_final_go_hardened.py
       - scripts/ci/tests/test_es80_today_final_go_hardened.py
       - scripts/ci/tests/test_es80_today_final_go_git_custody.py
@@ -44,13 +45,13 @@ jobs:
       - name: Compile Final GO foundation, hardening, and adversarial tests
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/ci/es80_today_final_go_record.py scripts/ci/es80_today_final_go_foundation.py scripts/ci/tests/test_es80_today_final_go_record.py
+          python3 -m py_compile scripts/ci/es80_today_final_go_record.py scripts/ci/es80_today_final_go_foundation.py scripts/ci/tests/test_es80_today_final_go_record.py scripts/ci/tests/test_es80_today_final_go_foundation.py
           python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py
           python3 -m py_compile scripts/ci/es80_today_final_go_publication.py scripts/ci/tests/test_es80_today_final_go_publication.py
           python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_git_custody.py
 
       - name: Preserve foundation adversarial coverage
-        run: python3 scripts/ci/tests/test_es80_today_final_go_record.py -v
+        run: python3 scripts/ci/tests/test_es80_today_final_go_foundation.py
 
       - name: Reject candidate-controlled trusted-Xcode authority
         run: python3 scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py -v
@@ -90,5 +91,6 @@ jobs:
           grep -Fq 'RESEARCH_COMPILE_MODE = "private-today-v1"' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'RESEARCH_COMPILE_AUTHORITY = "canonical-producer-explicit-mode"' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'RESEARCH_COMPILE_CONDITION = "NEMBRA_ES80_TODAY_RESEARCH"' scripts/ci/es80_today_final_go_foundation.py
+          grep -Fq 'foundation = _load("nembra_final_go_foundation", "es80_today_final_go_foundation.py")' scripts/ci/es80_today_final_go_hardened.py
           grep -Fq 'foundation._git(tooling_repo, "rev-parse"' scripts/ci/es80_today_final_go_hardened.py
           grep -Fq 'publication.publish_record_no_replace' scripts/ci/es80_today_final_go_hardened.py
