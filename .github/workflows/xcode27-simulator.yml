@@ -5,6 +5,13 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'NembraApp/**'
+      - 'NembraUITests/**'
+      - 'Packages/**'
+      - 'Nembra.xcodeproj/**'
+      - 'scripts/ci/xcode27_simulator_capture.sh'
+      - 'scripts/validate_pbxproj_references.py'
 
 permissions:
   contents: read
