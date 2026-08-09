@@ -53,6 +53,24 @@ class FinalGoDirectExecutionDisabledTests(unittest.TestCase):
         ):
             foundation.build_final_go_record()
 
+    def test_imported_public_foundation_publisher_is_non_authorizing(self):
+        foundation = load_public_foundation()
+        with self.assertRaisesRegex(
+            foundation.FinalGoError,
+            "public Final GO foundation publisher is non-authorizing",
+        ):
+            foundation.publish_record_no_replace()
+
+    def test_public_foundation_retains_no_private_builder_capability(self):
+        foundation = load_public_foundation()
+        self.assertFalse(hasattr(foundation, "_impl"))
+        self.assertFalse(hasattr(foundation, "_IMPL_PATH"))
+        self.assertFalse(hasattr(foundation, "_git"))
+        self.assertFalse(hasattr(foundation, "_trusted_xcode_subject"))
+        self.assertFalse(hasattr(foundation, "_api_get_json"))
+        self.assertEqual(foundation.RECIPE, "ES80-FINGERPRINT-v1")
+        self.assertEqual(foundation.PROCEDURE, "V14")
+
 
 if __name__ == "__main__":
     unittest.main()
