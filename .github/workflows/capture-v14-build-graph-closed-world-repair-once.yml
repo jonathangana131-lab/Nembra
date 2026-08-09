@@ -1,0 +1,155 @@
+name: Capture V14 build-graph closed-world repair once
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-build-graph-closed-world-gpt56-go
+    paths:
+      - .github/workflows/capture-v14-build-graph-closed-world-repair-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact triggering source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Harden trusted build-graph custody and rotate exact pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/capture-xcode27-trusted-command.yml')
+          source = workflow.read_text(encoding='utf-8')
+          old_blob = '524b011c6147142281c3fed62d3bb402c7f2be63'
+
+          old_python = '/usr/bin/python3 - <<\'PY\''
+          new_python = '/usr/bin/python3 -I - <<\'PY\''
+          if source.count(old_python) != 1:
+              raise SystemExit(f'expected exactly one non-isolated build-graph Python launch, found {source.count(old_python)}')
+          source = source.replace(old_python, new_python, 1)
+
+          anchor = '''          for relative, expected_blob in expected.items():\n'''
+          if source.count(anchor) != 1:
+              raise SystemExit(f'expected one build-graph loop anchor, found {source.count(anchor)}')
+          closed_world = '''          canonical_scheme = "Nembra.xcodeproj/xcshareddata/xcschemes/Nembra.xcscheme"\n          scheme_candidates = sorted(\n              path.relative_to(root).as_posix()\n              for path in (root / "Nembra.xcodeproj").rglob("*.xcscheme")\n              if path.is_file() or path.is_symlink()\n          )\n          if scheme_candidates != [canonical_scheme]:\n              raise SystemExit(\n                  "trusted build graph refuses alternate Xcode schemes: "\n                  + repr(scheme_candidates)\n              )\n\n          for package_relative in ("Packages/NembraCore", "Packages/NembraBluetoothCapture"):\n              package_root = root / package_relative\n              versioned_manifests = sorted(path.name for path in package_root.glob("Package@swift-*.swift"))\n              if versioned_manifests:\n                  raise SystemExit(\n                      f"trusted build graph refuses version-specific SwiftPM manifests in {package_relative}: "\n                      + repr(versioned_manifests)\n                  )\n\n'''
+          source = source.replace(anchor, closed_world + anchor, 1)
+          workflow.write_text(source, encoding='utf-8')
+
+          test_path = Path('scripts/ci/tests/test_capture_trusted_xcode_build_graph_closed_world.py')
+          test_path.write_text(r'''from pathlib import Path
+import os
+import subprocess
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[3]
+WORKFLOW = ROOT / ".github/workflows/capture-xcode27-trusted-command.yml"
+
+class TrustedBuildGraphClosedWorldTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = WORKFLOW.read_text(encoding="utf-8")
+        start = cls.source.index("      - name: Verify trusted build graph custody")
+        end = cls.source.index("      - name: Build, test, and capture Simulator states", start)
+        cls.step = cls.source[start:end]
+
+    def test_checker_uses_isolated_absolute_python(self):
+        self.assertIn("/usr/bin/python3 -I - <<'PY'", self.step)
+        self.assertNotIn("/usr/bin/python3 - <<'PY'", self.step)
+
+    def test_sitecustomize_attack_witness_proves_isolated_mode_matters(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sentinel = root / "sentinel"
+            (root / "sitecustomize.py").write_text(
+                "from pathlib import Path\nPath('sentinel').write_text('executed')\n",
+                encoding="utf-8",
+            )
+            subprocess.run(["/usr/bin/python3", "-c", "pass"], cwd=root, check=True)
+            self.assertTrue(sentinel.exists(), "normal Python should demonstrate candidate cwd startup execution")
+            sentinel.unlink()
+            subprocess.run(["/usr/bin/python3", "-I", "-c", "pass"], cwd=root, check=True)
+            self.assertFalse(sentinel.exists(), "isolated Python must exclude candidate cwd startup code")
+
+    def test_canonical_scheme_is_closed_world(self):
+        self.assertIn('rglob("*.xcscheme")', self.step)
+        self.assertIn('scheme_candidates != [canonical_scheme]', self.step)
+        self.assertIn('trusted build graph refuses alternate Xcode schemes', self.step)
+
+    def test_version_specific_swiftpm_manifests_are_refused(self):
+        self.assertIn('glob("Package@swift-*.swift")', self.step)
+        self.assertIn('trusted build graph refuses version-specific SwiftPM manifests', self.step)
+        self.assertIn('Packages/NembraCore', self.step)
+        self.assertIn('Packages/NembraBluetoothCapture', self.step)
+
+if __name__ == "__main__":
+    unittest.main()
+''', encoding='utf-8')
+
+          qa = Path('.github/workflows/capture-trusted-xcode-build-graph-custody-qa.yml')
+          q = qa.read_text(encoding='utf-8')
+          path_anchor = "      - 'scripts/ci/tests/test_capture_trusted_xcode_build_graph_custody.py'\n"
+          if q.count(path_anchor) != 1:
+              raise SystemExit('unexpected build-graph QA path anchor')
+          q = q.replace(path_anchor, path_anchor + "      - 'scripts/ci/tests/test_capture_trusted_xcode_build_graph_closed_world.py'\n", 1)
+          run_anchor = "          python3 scripts/ci/tests/test_capture_trusted_xcode_build_graph_custody.py -v\n"
+          if q.count(run_anchor) != 1:
+              raise SystemExit('unexpected build-graph QA run anchor')
+          q = q.replace(run_anchor, run_anchor + "          python3 -m py_compile scripts/ci/tests/test_capture_trusted_xcode_build_graph_closed_world.py\n          python3 scripts/ci/tests/test_capture_trusted_xcode_build_graph_closed_world.py -v\n", 1)
+          qa.write_text(q, encoding='utf-8')
+          PY
+
+          actual_old="$(git hash-object .github/workflows/capture-xcode27-trusted-command.yml~ 2>/dev/null || true)"
+          new_blob="$(git hash-object .github/workflows/capture-xcode27-trusted-command.yml)"
+          test "$new_blob" != "524b011c6147142281c3fed62d3bb402c7f2be63"
+          printf 'New trusted workflow blob: %s\n' "$new_blob"
+
+          python3 - "$new_blob" <<'PY'
+          from pathlib import Path
+          import sys
+          new_blob = sys.argv[1]
+          old_blob = '524b011c6147142281c3fed62d3bb402c7f2be63'
+          paths = [
+              Path('.github/workflows/capture-today-final-go-qa.yml'),
+              Path('.github/workflows/capture-today-trusted-default-xcode-subject-qa.yml'),
+              Path('scripts/ci/es80_today_trusted_capture_xcode_subject.py'),
+          ]
+          for path in paths:
+              source = path.read_text(encoding='utf-8')
+              count = source.count(old_blob)
+              if count < 1:
+                  raise SystemExit(f'{path}: expected current trusted workflow pin {old_blob}')
+              path.write_text(source.replace(old_blob, new_blob), encoding='utf-8')
+              print(f'{path}: rotated {count} pin occurrence(s)')
+          PY
+
+          python3 -m py_compile scripts/ci/tests/test_capture_trusted_xcode_build_graph_closed_world.py
+          python3 scripts/ci/tests/test_capture_trusted_xcode_build_graph_closed_world.py -v
+          python3 scripts/ci/tests/test_capture_trusted_xcode_build_graph_custody.py -v
+          git diff --check
+
+      - name: Commit hardened trust subject and self-delete generator
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-v14-closure-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/capture-v14-build-graph-closed-world-repair-once.yml
+          git add .github/workflows/capture-xcode27-trusted-command.yml \
+                  .github/workflows/capture-trusted-xcode-build-graph-custody-qa.yml \
+                  .github/workflows/capture-today-final-go-qa.yml \
+                  .github/workflows/capture-today-trusted-default-xcode-subject-qa.yml \
+                  scripts/ci/es80_today_trusted_capture_xcode_subject.py \
+                  scripts/ci/tests/test_capture_trusted_xcode_build_graph_closed_world.py
+          git diff --cached --check
+          git commit -m "fix(capture): close trusted build-graph alias custody"
+          git push origin HEAD:"$GITHUB_REF_NAME"
