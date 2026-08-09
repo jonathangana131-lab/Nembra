@@ -1,0 +1,85 @@
+name: Capture Trusted Simulator Producer TOCTOU Expected-Red
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - .github/workflows/capture-trusted-simulator-producer-toctou-expected-red.yml
+
+permissions:
+  contents: read
+
+jobs:
+  producer-custody-toctou:
+    name: Reject pathname substitution after producer custody check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXPECTED_PARENT_SHA: fb4c63bfd4b1b14d771b8c191efd0c3873612837
+      WORKFLOW_PATH: .github/workflows/capture-trusted-simulator-producer-toctou-expected-red.yml
+      PRODUCER_PATH: scripts/ci/xcode27_simulator_capture.sh
+      EXPECTED_PRODUCER_BLOB: 4e9ae0cb6728dc68d9b8dd43aac7c50128702ed9
+    steps:
+      - name: Checkout immutable validation head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+
+      - name: Verify one workflow-only commit above hardened Final GO head
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT_SHA"
+          changed="$(git diff --name-only "$EXPECTED_PARENT_SHA" HEAD)"
+          test "$changed" = "$WORKFLOW_PATH"
+
+      - name: Prove Git-object check does not bind later pathname execution
+        run: |
+          set -euo pipefail
+
+          # Reproduce the production trusted-workflow custody check. Because it resolves HEAD:path,
+          # this proves only the committed Git object, not the bytes at the pathname later executed.
+          before="$(
+            env -i \
+              PATH=/usr/bin:/bin \
+              HOME=/tmp \
+              LC_ALL=C \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              /usr/bin/git rev-parse --verify "HEAD:${PRODUCER_PATH}"
+          )"
+          test "$before" = "$EXPECTED_PRODUCER_BLOB"
+
+          # Model any same-user process between the custody step and the later producer step. In the
+          # real workflow, candidate-controlled Swift package tests and other commands run in this
+          # interval. They have write access to the checkout.
+          marker="$RUNNER_TEMP/forged-producer-executed"
+          cat > "$PRODUCER_PATH" <<'SH'
+          #!/bin/sh
+          set -eu
+          : "${NEMBRA_TOCTOU_MARKER:?}"
+          printf 'forged producer executed\n' > "$NEMBRA_TOCTOU_MARKER"
+          SH
+          chmod +x "$PRODUCER_PATH"
+
+          # The production custody assertion still reports the pinned Git blob even though the
+          # working-tree producer that will be executed is now different bytes.
+          after="$(
+            env -i \
+              PATH=/usr/bin:/bin \
+              HOME=/tmp \
+              LC_ALL=C \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              /usr/bin/git rev-parse --verify "HEAD:${PRODUCER_PATH}"
+          )"
+          test "$after" = "$EXPECTED_PRODUCER_BLOB"
+
+          NEMBRA_TOCTOU_MARKER="$marker" "$PRODUCER_PATH"
+          if [[ -f "$marker" ]]; then
+            echo "WORKING-TREE SUBSTITUTION EXECUTED AFTER PINNED GIT-OBJECT CHECK" >&2
+            echo "The trusted workflow must execute immutable verified bytes (for example a descriptor/materialized blob under closed custody), not re-open the candidate pathname." >&2
+            exit 1
+          fi
