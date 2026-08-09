@@ -1,5 +1,8 @@
 #!/bin/bash -p
 set -euo pipefail
+PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+export PATH
+unset BASH_ENV ENV
 
 # TODAY-only private-research wrapper for the first stationary passive ES80 artifact.
 #
@@ -12,6 +15,9 @@ set -euo pipefail
 # Xcode acceptance, independent signed-IPA inspection, intended-device installation, and an exact
 # recipe/runbook GO record before Experiment One may begin.
 
+# Close executable discovery before resolving this wrapper's own directory. Otherwise caller PATH
+# could substitute `dirname` and redirect CANONICAL_PRODUCER before the canonical producer gets a
+# chance to establish its stronger root-custodied process boundary.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 CANONICAL_PRODUCER="$SCRIPT_DIR/xcode27_signed_field_candidate.sh"
 
