@@ -32,7 +32,6 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             "frozen_source_repo": root / "source",
             "tooling_repo": root / "tooling",
             "operator_attestation": root / "attestation.json",
-            "github_get_json": lambda path: (b"{}", {}),
         }
 
     def crosscheck_execution(self):
@@ -109,6 +108,7 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             call = verify.call_args.kwargs
             self.assertEqual(call["source_commit_sha"], self.SOURCE)
             self.assertEqual(call["expected_pr_number"], 833)
+            self.assertIs(call["github_get_json"], hardened.foundation._api_get_json)
 
     def test_trusted_subject_failure_becomes_foundation_final_go_error_and_restores_seam(self):
         with tempfile.TemporaryDirectory() as temporary:
