@@ -141,29 +141,42 @@ struct PassiveBluetoothExperimentOnePrivateResearchAdmissionTests {
         #expect(source.contains("static var hasCompiledTodayResearchCapability: Bool"))
     }
 
-    @Test("TODAY signed-field wrapper carries only the dedicated compile capability through Xcode settings")
-    func todaySignedFieldWrapperOwnsCompileCapabilityInjection() throws {
-        let source = try repositorySourceFile(
+    @Test("TODAY wrapper delegates explicit research mode while canonical producer owns compile capability")
+    func todaySignedFieldWrapperDelegatesCompileCapabilityToCanonicalProducer() throws {
+        let wrapper = try repositorySourceFile(
             "scripts/ci/xcode27_today_research_field_candidate.sh"
+        )
+        let producer = try repositorySourceFile(
+            "scripts/ci/xcode27_signed_field_candidate.sh"
         )
 
         #expect(
-            source.contains(
+            wrapper.contains(
                 "unset SWIFT_ACTIVE_COMPILATION_CONDITIONS OTHER_SWIFT_FLAGS XCODE_XCCONFIG_FILE"
             )
         )
+        #expect(wrapper.contains("exec \"$CANONICAL_PRODUCER\" --nembra-today-research-build \"$@\""))
+        #expect(wrapper.contains("xcode27_signed_field_candidate.sh"))
+        #expect(!wrapper.contains("NEMBRA_ES80_TODAY_RESEARCH"))
+        #expect(!wrapper.contains("export OTHER_SWIFT_FLAGS="))
+        #expect(!wrapper.contains("export SWIFT_ACTIVE_COMPILATION_CONDITIONS="))
+        #expect(!wrapper.contains("INFOPLIST_KEY_NembraCaptureFieldRecipe"))
+
+        #expect(producer.contains("TODAY_RESEARCH_BUILD_MODE=0"))
+        #expect(producer.contains("if [[ \"${1:-}\" == \"--nembra-today-research-build\" ]]; then"))
+        #expect(producer.contains("TODAY_RESEARCH_BUILD_MODE=1"))
         #expect(
-            source.contains(
-                "OTHER_SWIFT_FLAGS = $(inherited) -DNEMBRA_ES80_TODAY_RESEARCH"
+            producer.contains(
+                "unset XCODE_XCCONFIG_FILE OTHER_SWIFT_FLAGS SWIFT_ACTIVE_COMPILATION_CONDITIONS"
             )
         )
-        #expect(source.contains("export XCODE_XCCONFIG_FILE=\"$TODAY_XCCONFIG\""))
-        #expect(!source.contains("export OTHER_SWIFT_FLAGS="))
-        #expect(!source.contains("export SWIFT_ACTIVE_COMPILATION_CONDITIONS="))
-        #expect(source.contains("trap cleanup EXIT"))
-        #expect(source.contains("\"$CANONICAL_PRODUCER\" \"$@\""))
-        #expect(source.contains("xcode27_signed_field_candidate.sh"))
-        #expect(!source.contains("INFOPLIST_KEY_NembraCaptureFieldRecipe"))
+        #expect(producer.contains("run_archive_xcodebuild()"))
+        #expect(
+            producer.contains(
+                "run_xcodebuild \"$@\" 'OTHER_SWIFT_FLAGS=$(inherited) -DNEMBRA_ES80_TODAY_RESEARCH' archive"
+            )
+        )
+        #expect(producer.contains("run_xcodebuild \"$@\" archive"))
     }
 
     @Test("research factory acquires package admission before any CoreBluetooth construction")
