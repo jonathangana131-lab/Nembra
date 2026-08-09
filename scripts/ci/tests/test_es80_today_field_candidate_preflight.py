@@ -211,7 +211,8 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         directory_guard = 'if [[ -L "$PRIVATE_DIR" ]]; then'
         target_guard = 'if [[ -e "$UDID_FILE" || -L "$UDID_FILE" ]]; then'
         read_secret = "IFS= read -r -s INTENDED_UDID"
-        guarded_write = '( set -o noclobber; printf \'%s\' "$INTENDED_UDID" > "$UDID_FILE" )'
+        raw_write = 'printf \'%s\' "$INTENDED_UDID" > "$UDID_FILE"'
+        guarded_write = f"( set -o noclobber; {raw_write} )"
 
         self.assertIn(directory_guard, content)
         self.assertIn(target_guard, content)
@@ -219,6 +220,7 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertLess(content.index(directory_guard), content.index(read_secret))
         self.assertLess(content.index(target_guard), content.index(read_secret))
         self.assertLess(content.index(target_guard), content.index(guarded_write))
+        self.assertEqual(content.count(raw_write), 1)
         self.assertNotIn('printf \'%s\\n\' "$INTENDED_UDID" > "$UDID_FILE"', content)
 
     def test_non_xcode_27_selection_fails_closed(self):
