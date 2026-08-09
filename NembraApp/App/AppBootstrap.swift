@@ -297,8 +297,20 @@ enum AppBootstrap {
         ) {
         case .selected(let scenario):
             return scenario
-        case .disabled, .invalid:
+        case .disabled:
             return nil
+        case .invalid:
+#if DEBUG && targetEnvironment(simulator)
+            // A present-but-malformed Simulator QA request is still an explicit
+            // request to stay on the inert standard-app path. Mapping it to the
+            // unsupported fixture prevents a recipe-bound Debug build from
+            // falling through into physical/private Capture while keeping the
+            // invalid request visibly fail-closed. Release/physical builds never
+            // receive this synthetic fallback.
+            return .unsupportedConfiguration
+#else
+            return nil
+#endif
         }
     }
 
