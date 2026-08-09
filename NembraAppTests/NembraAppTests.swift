@@ -411,6 +411,55 @@ final class NembraAppTests: XCTestCase {
     }
 
     @MainActor
+    func testDistinctLiveSampleMetadataCannotReuseOldInterpolatorTarget() throws {
+        let model = SpeedInstrumentModel()
+        model.configureInterpolationPolicy(.simulatorQA)
+        let first = try speedSample(kilometersPerHour: 10, uptimeNanoseconds: 1_000_000_000)
+        let second = try speedSample(kilometersPerHour: 20, uptimeNanoseconds: 1_200_000_000)
+
+        model.setSpeedEvidenceAvailability(.live(first))
+        model.setSpeedEvidenceAvailability(.live(second))
+        XCTAssertTrue(model.isAnimationActive)
+        XCTAssertEqual(model.latestAcceptedSample, second)
+
+        // This is a distinct accepted sample that deliberately collides with the old
+        // source + monotonic receipt uptime + numeric speed key. Its wall-clock receipt
+        // metadata differs, so whole-sample identity must prevent reuse of the old
+        // interpolation target during the same-render-before-onChange race window.
+        let metadataDistinctSample = try SpeedTelemetrySample(
+            source: second.source,
+            provenance: second.provenance,
+            metersPerSecond: second.metersPerSecond,
+            receivedAtUptimeNanoseconds: second.receivedAtUptimeNanoseconds,
+            receivedAtDate: Date(timeIntervalSince1970: 1)
+        )
+        XCTAssertNotEqual(metadataDistinctSample, second)
+        XCTAssertEqual(metadataDistinctSample.source, second.source)
+        XCTAssertEqual(
+            metadataDistinctSample.receivedAtUptimeNanoseconds,
+            second.receivedAtUptimeNanoseconds
+        )
+        XCTAssertEqual(
+            metadataDistinctSample.kilometersPerHour,
+            second.kilometersPerHour,
+            accuracy: 0.000_1
+        )
+
+        let frame = try XCTUnwrap(model.presentationFrame(
+            for: .live(metadataDistinctSample),
+            atUptimeNanoseconds: 1_280_000_000
+        ))
+        XCTAssertEqual(frame.kilometersPerHour, 20, accuracy: 0.000_1)
+        XCTAssertEqual(frame.origin, .acceptedSourceFallback)
+        XCTAssertNil(frame.latestMeasuredKilometersPerHour)
+
+        // Presentation truth moved to the distinct current sample without mutating
+        // the still-old local display target; lifecycle retarget remains a separate step.
+        XCTAssertEqual(model.latestAcceptedSample, second)
+        XCTAssertTrue(model.isAnimationActive)
+    }
+
+    @MainActor
     func testSpeedEvidenceUnavailableRetiresInterpolationImmediately() throws {
         let model = SpeedInstrumentModel()
         model.configureInterpolationPolicy(.simulatorQA)
@@ -435,6 +484,7 @@ final class NembraAppTests: XCTestCase {
         XCTAssertNil(model.latestMeasuredKilometersPerHour)
         XCTAssertNil(model.latestMeasurementSource)
         XCTAssertNil(model.latestMeasurementUptimeNanoseconds)
+        XCTAssertNil(model.latestAcceptedSample)
         XCTAssertFalse(model.isAnimationActive)
     }
 
@@ -459,6 +509,7 @@ final class NembraAppTests: XCTestCase {
         XCTAssertNil(model.latestMeasuredKilometersPerHour)
         XCTAssertNil(model.latestMeasurementSource)
         XCTAssertNil(model.latestMeasurementUptimeNanoseconds)
+        XCTAssertNil(model.latestAcceptedSample)
         XCTAssertFalse(model.isAnimationActive)
     }
 
