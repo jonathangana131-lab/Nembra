@@ -60,11 +60,11 @@ jobs:
           old_comment = '''          # Candidate-controlled validation may mutate Git index/config/info state. Build a private
           # resolver-bound index and bind every authority-bearing Git operation to the actual
           # GitHub workspace instead of repository-local core.worktree/core.bare authority.
-'''
+          '''
           new_comment = '''          # Establish a resolver-bound private index before any repository-controlled validation
           # can execute in this runner namespace, and bind every authority-bearing Git operation
           # to the actual GitHub workspace instead of repository-local core.worktree/core.bare authority.
-'''
+          '''
           if source.count(old_comment) != 1:
               raise SystemExit('Expected private-index authority comment exactly once')
           source = source.replace(old_comment, new_comment, 1)
@@ -72,11 +72,11 @@ jobs:
           old_comment = '''          # Re-prove the mutable worktree producer file after every earlier candidate-controlled
           # validation. This remains diagnostic defense-in-depth. Authority-producing interpreter
           # input below is independently authenticated from the exact pinned-object bytes returned.
-'''
+          '''
           new_comment = '''          # Re-prove the mutable worktree producer immediately before authority. No repository-
           # controlled validation has executed in this runner namespace yet. Interpreter input
           # below is independently authenticated from the exact pinned-object bytes returned.
-'''
+          '''
           if source.count(old_comment) != 1:
               raise SystemExit('Expected producer re-proof comment exactly once')
           source = source.replace(old_comment, new_comment, 1)
