@@ -34,36 +34,6 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             "github_get_json": lambda path: (b"{}", {}),
         }
 
-    def fake_foundation(self, **kwargs):
-        subject = hardened.foundation._trusted_xcode_subject(
-            source=kwargs["expected_source_sha"],
-            expected_pr_number=kwargs["expected_pr_number"],
-            run_id=kwargs["trusted_xcode_run_id"],
-            job_id=kwargs["trusted_xcode_job_id"],
-            artifact_id=kwargs["trusted_xcode_artifact_id"],
-            artifact_archive_path=kwargs["trusted_xcode_artifact_archive"],
-            github_get_json=kwargs["github_get_json"],
-        )
-        crosscheck = hardened.foundation._crosscheck_subject(
-            kwargs["independent_crosscheck_receipt"],
-            {"sourceCommitSHA": kwargs["expected_source_sha"]},
-            kwargs["frozen_source_repo"],
-            kwargs["tooling_repo"],
-        )
-        return {
-            "acceptedSourceCommitSHA": kwargs["expected_source_sha"],
-            "trustedXcodeAcceptance": subject,
-            "independentRetainedCandidateCrosscheck": crosscheck,
-        }
-
-    def fake_semantic_crosscheck(self, path, candidate, frozen_source_repo, tooling_repo):
-        del path, candidate, frozen_source_repo, tooling_repo
-        return {
-            "authority": "independent-retained-candidate-evidence-crosscheck-not-final-go",
-            "status": "PASS_NOT_FINAL_GO",
-            "physicalExperimentAuthorization": "not-granted",
-        }
-
     def trusted_subject(self):
         return {
             "authority": "default-branch-owner-command-v1",
@@ -79,37 +49,40 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             "physicalExperimentAuthorization": "not-granted",
         }
 
-    def composition_patches(self):
-        return (
-            mock.patch.object(
-                hardened.foundation,
-                "build_final_go_record",
-                side_effect=self.fake_foundation,
-            ),
-            mock.patch.object(
-                hardened.foundation,
-                "_crosscheck_subject",
-                side_effect=self.fake_semantic_crosscheck,
-            ),
-            mock.patch.object(
-                hardened.trusted_xcode,
-                "verify_trusted_capture_xcode_subject",
-                return_value=self.trusted_subject(),
-            ),
-            mock.patch.object(
-                hardened.trusted_crosscheck,
-                "verify_trusted_crosscheck_receipt",
-                return_value=self.trusted_crosscheck_execution(),
-            ),
+    def fake_foundation(self, **kwargs):
+        subject = hardened.foundation._trusted_xcode_subject(
+            source=kwargs["expected_source_sha"],
+            expected_pr_number=kwargs["expected_pr_number"],
+            run_id=kwargs["trusted_xcode_run_id"],
+            job_id=kwargs["trusted_xcode_job_id"],
+            artifact_id=kwargs["trusted_xcode_artifact_id"],
+            artifact_archive_path=kwargs["trusted_xcode_artifact_archive"],
+            github_get_json=kwargs["github_get_json"],
         )
+        return {
+            "acceptedSourceCommitSHA": kwargs["expected_source_sha"],
+            "trustedXcodeAcceptance": subject,
+            "independentRetainedCandidateCrosscheck": {
+                "authority": "independent-retained-candidate-evidence-crosscheck-not-final-go",
+                "status": "PASS_NOT_FINAL_GO",
+                "trustedProducerExecution": self.trusted_crosscheck_execution(),
+            },
+        }
 
-    def test_composition_replaces_both_trust_seams_and_restores_them(self):
+    def test_composition_replaces_only_xcode_seam_and_restores_it(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             original_xcode = hardened.foundation._trusted_xcode_subject
             original_crosscheck = hardened.foundation._crosscheck_subject
-            foundation_patch, crosscheck_patch, xcode_patch, execution_patch = self.composition_patches()
-            with foundation_patch, crosscheck_patch as semantic, xcode_patch as verify, execution_patch as execute:
+            with mock.patch.object(
+                hardened.foundation,
+                "build_final_go_record",
+                side_effect=self.fake_foundation,
+            ), mock.patch.object(
+                hardened.trusted_xcode,
+                "verify_trusted_capture_xcode_subject",
+                return_value=self.trusted_subject(),
+            ) as verify:
                 record = hardened.build_final_go_record(**self.kwargs(root))
 
             self.assertIs(hardened.foundation._trusted_xcode_subject, original_xcode)
@@ -120,67 +93,23 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
                 self.trusted_crosscheck_execution(),
             )
             verify.assert_called_once()
-            execute.assert_called_once_with(
-                candidate_root=root / "candidate",
-                expected_source_sha=self.SOURCE,
-                supplied_receipt_path=root / "crosscheck.json",
-                tooling_repo=root / "tooling",
-            )
-            semantic.assert_called_once()
 
-    def test_trusted_xcode_failure_becomes_foundation_error_and_restores_seams(self):
+    def test_trusted_xcode_failure_becomes_foundation_error_and_restores_seam(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             original_xcode = hardened.foundation._trusted_xcode_subject
-            original_crosscheck = hardened.foundation._crosscheck_subject
             with mock.patch.object(
                 hardened.foundation,
                 "build_final_go_record",
                 side_effect=self.fake_foundation,
-            ), mock.patch.object(
-                hardened.foundation,
-                "_crosscheck_subject",
-                side_effect=self.fake_semantic_crosscheck,
             ), mock.patch.object(
                 hardened.trusted_xcode,
                 "verify_trusted_capture_xcode_subject",
                 side_effect=hardened.trusted_xcode.TrustedCaptureXcodeError("untrusted workflow"),
-            ), mock.patch.object(
-                hardened.trusted_crosscheck,
-                "verify_trusted_crosscheck_receipt",
-                return_value=self.trusted_crosscheck_execution(),
             ):
                 with self.assertRaisesRegex(hardened.FinalGoError, "untrusted workflow"):
                     hardened.build_final_go_record(**self.kwargs(root))
             self.assertIs(hardened.foundation._trusted_xcode_subject, original_xcode)
-            self.assertIs(hardened.foundation._crosscheck_subject, original_crosscheck)
-
-    def test_trusted_crosscheck_failure_becomes_foundation_error_and_restores_seams(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            original_xcode = hardened.foundation._trusted_xcode_subject
-            original_crosscheck = hardened.foundation._crosscheck_subject
-            with mock.patch.object(
-                hardened.foundation,
-                "build_final_go_record",
-                side_effect=self.fake_foundation,
-            ), mock.patch.object(
-                hardened.foundation,
-                "_crosscheck_subject",
-                side_effect=self.fake_semantic_crosscheck,
-            ), mock.patch.object(
-                hardened.trusted_xcode,
-                "verify_trusted_capture_xcode_subject",
-                return_value=self.trusted_subject(),
-            ), mock.patch.object(
-                hardened.trusted_crosscheck,
-                "verify_trusted_crosscheck_receipt",
-                side_effect=hardened.trusted_crosscheck.TrustedCrosscheckError("forged receipt"),
-            ):
-                with self.assertRaisesRegex(hardened.FinalGoError, "forged receipt"):
-                    hardened.build_final_go_record(**self.kwargs(root))
-            self.assertIs(hardened.foundation._trusted_xcode_subject, original_xcode)
-            self.assertIs(hardened.foundation._crosscheck_subject, original_crosscheck)
 
     def test_rejects_subject_that_aliases_workflow_source_to_candidate_source(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -192,17 +121,9 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
                 "build_final_go_record",
                 side_effect=self.fake_foundation,
             ), mock.patch.object(
-                hardened.foundation,
-                "_crosscheck_subject",
-                side_effect=self.fake_semantic_crosscheck,
-            ), mock.patch.object(
                 hardened.trusted_xcode,
                 "verify_trusted_capture_xcode_subject",
                 return_value=aliased,
-            ), mock.patch.object(
-                hardened.trusted_crosscheck,
-                "verify_trusted_crosscheck_receipt",
-                return_value=self.trusted_crosscheck_execution(),
             ):
                 with self.assertRaisesRegex(hardened.FinalGoError, "remain independent"):
                     hardened.build_final_go_record(**self.kwargs(root))
@@ -212,22 +133,20 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             root = Path(temporary)
             widened = self.trusted_crosscheck_execution()
             widened["physicalExperimentAuthorization"] = "granted"
+
+            def widened_foundation(**kwargs):
+                record = self.fake_foundation(**kwargs)
+                record["independentRetainedCandidateCrosscheck"]["trustedProducerExecution"] = widened
+                return record
+
             with mock.patch.object(
                 hardened.foundation,
                 "build_final_go_record",
-                side_effect=self.fake_foundation,
-            ), mock.patch.object(
-                hardened.foundation,
-                "_crosscheck_subject",
-                side_effect=self.fake_semantic_crosscheck,
+                side_effect=widened_foundation,
             ), mock.patch.object(
                 hardened.trusted_xcode,
                 "verify_trusted_capture_xcode_subject",
                 return_value=self.trusted_subject(),
-            ), mock.patch.object(
-                hardened.trusted_crosscheck,
-                "verify_trusted_crosscheck_receipt",
-                return_value=widened,
             ):
                 with self.assertRaisesRegex(hardened.FinalGoError, "widened physical authorization"):
                     hardened.build_final_go_record(**self.kwargs(root))
