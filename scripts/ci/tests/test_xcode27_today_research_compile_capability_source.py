@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -12,18 +13,38 @@ class TodayResearchCompileCapabilitySourceTests(unittest.TestCase):
         self.wrapper = WRAPPER.read_text(encoding="utf-8")
         self.producer = PRODUCER.read_text(encoding="utf-8")
 
+    @staticmethod
+    def _matches_exact_package_compile(line: str) -> bool:
+        module = "NembraBluetoothCapture"
+        condition = "NEMBRA_ES80_TODAY_RESEARCH"
+        module_pattern = re.compile(
+            r"(?:^|\s)-module-name(?:\s+|=)" + re.escape(module) + r"(?:\s|$)"
+        )
+        condition_pattern = re.compile(
+            r"(?:^|\s)-D\s*" + re.escape(condition) + r"(?:\s|$)"
+        )
+        return (
+            module in line
+            and condition in line
+            and "swift" in line.lower()
+            and module_pattern.search(line) is not None
+            and condition_pattern.search(line) is not None
+        )
+
     def test_today_flag_is_not_treated_as_proven_by_environment_injection_alone(self):
         self.assertIn("NEMBRA_ES80_TODAY_RESEARCH", self.wrapper)
         self.assertIn("OTHER_SWIFT_FLAGS", self.wrapper)
         self.assertIn('ARCHIVE_LOG="$QUARANTINED_CANDIDATE/logs/xcodebuild-archive.log"', self.wrapper)
         self.assertIn('module = "NembraBluetoothCapture"', self.wrapper)
         self.assertIn('condition = "NEMBRA_ES80_TODAY_RESEARCH"', self.wrapper)
-        self.assertIn("condition_pattern.search(line)", self.wrapper)
+        self.assertIn("module_pattern.search(line) and condition_pattern.search(line)", self.wrapper)
         self.assertIn("today_research_compile_capability=verified", self.wrapper)
 
     def test_candidate_cannot_report_success_before_compile_capability_proof(self):
         producer_call = self.wrapper.index('"$CANONICAL_PRODUCER" "$@"')
-        archive_proof = self.wrapper.index('condition_pattern.search(line)')
+        archive_proof = self.wrapper.index(
+            'module_pattern.search(line) and condition_pattern.search(line)'
+        )
         receipt = self.wrapper.index('echo "today_research_compile_capability=verified"')
         publication = self.wrapper.index('rename_exclusive(source, destination')
         final_reopen = self.wrapper.index("grep -c '^today_research_compile_capability=verified$'")
@@ -47,18 +68,40 @@ class TodayResearchCompileCapabilitySourceTests(unittest.TestCase):
             self.wrapper.index('"$CANONICAL_PRODUCER" "$@"'),
         )
         self.assertLess(
-            self.wrapper.index('condition_pattern.search(line)'),
+            self.wrapper.index('module_pattern.search(line) and condition_pattern.search(line)'),
             self.wrapper.index('rename_exclusive(source, destination'),
         )
+
+    def test_compile_proof_requires_compiler_module_identity_not_a_name_mention(self):
+        # False-green fixture: the app target carries the global flag and mentions the package only
+        # as a search/import path. This must not prove that the package itself consumed the flag.
+        app_target_line = (
+            "/usr/bin/swiftc -module-name Nembra -I /tmp/Build/Products/Release-iphoneos/"
+            "NembraBluetoothCapture.swiftmodule -D NEMBRA_ES80_TODAY_RESEARCH -c App.swift"
+        )
+        self.assertFalse(self._matches_exact_package_compile(app_target_line))
+
+        package_target_line = (
+            "/usr/bin/swiftc -module-name NembraBluetoothCapture "
+            "-D NEMBRA_ES80_TODAY_RESEARCH -c PassiveBluetoothExperimentOneRun.swift"
+        )
+        self.assertTrue(self._matches_exact_package_compile(package_target_line))
+
+        package_target_joined_define = (
+            "/usr/bin/swiftc -module-name=NembraBluetoothCapture "
+            "-DNEMBRA_ES80_TODAY_RESEARCH -c PassiveBluetoothExperimentOneRun.swift"
+        )
+        self.assertTrue(self._matches_exact_package_compile(package_target_joined_define))
 
     def test_compile_proof_is_bound_to_actual_package_target_and_retained_archive_evidence(self):
         self.assertIn("xcodebuild-archive.log", self.wrapper)
         self.assertIn('module = "NembraBluetoothCapture"', self.wrapper)
         self.assertIn('condition = "NEMBRA_ES80_TODAY_RESEARCH"', self.wrapper)
-        self.assertIn('if module not in line or condition not in line:', self.wrapper)
-        self.assertIn('if "swift" not in line.lower():', self.wrapper)
-        self.assertIn('condition_pattern.search(line)', self.wrapper)
+        self.assertIn("-module-name", self.wrapper)
+        self.assertIn("module_pattern.search(line) and condition_pattern.search(line)", self.wrapper)
         self.assertIn('proof_source=logs/xcodebuild-archive.log', self.wrapper)
+        self.assertIn('proof_source_sha256=$ARCHIVE_LOG_SHA256', self.wrapper)
+        self.assertIn('compiler_module_name=NembraBluetoothCapture', self.wrapper)
         self.assertIn('authority=compile-capability-evidence-not-physical-authorization', self.wrapper)
 
     def test_ordinary_signed_producer_remains_non_authorizing(self):
