@@ -392,14 +392,17 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         app.launch()
 
         let qaDisclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
-        let completeState = app.staticTexts["CAPTURE COMPLETE"]
-        let analysisState = app.staticTexts["Ready for analysis"]
+        let completeState = app.descendants(matching: .any)["es80.capture.complete"]
         let shareCapture = app.buttons["Share Capture"]
         let viewDetails = app.buttons["View Details"]
 
         XCTAssertTrue(qaDisclosure.waitForExistence(timeout: 5))
         XCTAssertTrue(completeState.waitForExistence(timeout: 3))
-        XCTAssertTrue(analysisState.waitForExistence(timeout: 3))
+        XCTAssertEqual(
+            completeState.value as? String,
+            "Ready for analysis",
+            "The combined Capture Complete state must expose analysis readiness without relying on an ambiguous duplicate StaticText query."
+        )
         XCTAssertTrue(shareCapture.waitForExistence(timeout: 3))
         XCTAssertTrue(viewDetails.waitForExistence(timeout: 3))
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
@@ -429,21 +432,6 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         completeAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL — Complete"
         completeAttachment.lifetime = .keepAlways
         add(completeAttachment)
-
-        bringIntoScreenshotViewport(
-            analysisState,
-            in: app,
-            context: "Ready for analysis state at Accessibility XXXL"
-        )
-        assertVisibleInScreenshotViewport(
-            analysisState,
-            windowFrame: app.windows.firstMatch.frame,
-            context: "Ready for analysis state at Accessibility XXXL"
-        )
-        let analysisAttachment = XCTAttachment(screenshot: app.screenshot())
-        analysisAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL — Analysis Ready"
-        analysisAttachment.lifetime = .keepAlways
-        add(analysisAttachment)
 
         bringIntoScreenshotViewport(
             shareCapture,
@@ -856,12 +844,10 @@ final class ES80ResearchCaptureUITests: XCTestCase {
                frame.maxY <= windowFrame.maxY + 1 {
                 return
             }
-            let captureScroll = app.scrollViews["es80.capture.scroll"]
-            if captureScroll.exists {
-                captureScroll.swipeUp()
-            } else {
-                app.swipeUp()
-            }
+            let window = app.windows.firstMatch
+            let start = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.82))
+            let end = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.18))
+            start.press(forDuration: 0.05, thenDragTo: end)
             remaining -= 1
         }
 
