@@ -630,7 +630,12 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                     .accessibilityLabel(buildIdentityAccessibilityLabel)
                     .accessibilityIdentifier("es80.capture.build-identity")
 
-                    if !isAccessibilityLayout {
+                    if isAccessibilityLayout {
+                        Text("Final exact-build checks are still in progress.")
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
                         Text("This build is still finishing its final checks before it can collect real ES80 data.")
                             .font(
                                 verticalSizeClass == .compact
