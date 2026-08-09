@@ -44,6 +44,8 @@ final class VehicleStore {
     let profile: VehicleProfile
     let speedInstrumentInterpolationPolicy: SpeedInstrumentInterpolationPolicy
     private let service: any ScooterService
+    private let retainedBatteryStorage: (any RetainedBatterySnapshotStorage)?
+    private let batteryObservationAuthority: BatteryObservationAuthority?
 
     var state: VehicleState
     var pendingCommands: Set<PendingCommand> = []
@@ -52,6 +54,8 @@ final class VehicleStore {
     var pendingStartMode: StartMode?
     var pendingSpeedLimit: (slot: SpeedLimitSlot, kilometersPerHour: Int)?
     var lastErrorMessage: String?
+    private(set) var retainedBatteryObservedAt: Date?
+    private(set) var retainedBatteryAuthority: BatteryObservationAuthority?
 
     var isVehicleCommandPending: Bool {
         pendingCommands.contains { $0 != .connect }
@@ -65,13 +69,18 @@ final class VehicleStore {
         service: any ScooterService,
         initialState: VehicleState? = nil,
         shouldAutoConnectOnStart: Bool = true,
-        speedInstrumentInterpolationPolicy: SpeedInstrumentInterpolationPolicy = .disabled
+        speedInstrumentInterpolationPolicy: SpeedInstrumentInterpolationPolicy = .disabled,
+        retainedBatteryStorage: (any RetainedBatterySnapshotStorage)? = nil,
+        batteryObservationAuthority: BatteryObservationAuthority? = nil
     ) {
         self.service = service
         self.profile = service.profile
         self.shouldAutoConnectOnStart = shouldAutoConnectOnStart
         self.speedInstrumentInterpolationPolicy = speedInstrumentInterpolationPolicy
-        self.state = initialState ?? VehicleState(
+        self.retainedBatteryStorage = retainedBatteryStorage
+        self.batteryObservationAuthority = batteryObservationAuthority
+
+        var resolvedState = initialState ?? VehicleState(
             connection: .disconnected,
             batteryPercent: nil,
             speedKilometersPerHour: nil,
@@ -86,6 +95,17 @@ final class VehicleStore {
             powerWatts: nil,
             currentAmps: nil
         )
+
+        if resolvedState.connection != .connected,
+           resolvedState.batteryPercent == nil,
+           let snapshot = try? retainedBatteryStorage?.load() {
+            resolvedState.batteryPercent = snapshot.percent
+            resolvedState.lastUpdated = snapshot.observedAt
+            retainedBatteryObservedAt = snapshot.observedAt
+            retainedBatteryAuthority = snapshot.authority
+        }
+
+        self.state = resolvedState
     }
 
     deinit {
@@ -100,7 +120,7 @@ final class VehicleStore {
             let stream = await service.stateUpdates()
             for await state in stream {
                 guard let self, !Task.isCancelled else { break }
-                self.state = state
+                self.apply(state)
             }
         }
 
@@ -166,6 +186,37 @@ final class VehicleStore {
 
     private var canBeginVehicleCommand: Bool {
         !pendingCommands.contains(.connect) && !isVehicleCommandPending
+    }
+
+    private func apply(_ incomingState: VehicleState) {
+        var nextState = incomingState
+
+        if incomingState.connection == .connected,
+           let batteryPercent = incomingState.batteryPercent {
+            retainedBatteryObservedAt = nil
+            retainedBatteryAuthority = nil
+
+            if let authority = batteryObservationAuthority,
+               let snapshot = RetainedBatterySnapshot(
+                   percent: batteryPercent,
+                   authority: authority,
+                   observedAt: incomingState.lastUpdated
+               ) {
+                do {
+                    try retainedBatteryStorage?.save(snapshot)
+                } catch {
+                    // Persistence must never turn confirmed live telemetry into an error state.
+                    // The current session remains authoritative even if local continuity storage fails.
+                }
+            }
+        } else if incomingState.batteryPercent == nil,
+                  let retainedPercent = state.batteryPercent,
+                  state.dataAvailability == .retained {
+            nextState.batteryPercent = retainedPercent
+            nextState.lastUpdated = state.lastUpdated
+        }
+
+        state = nextState
     }
 
     private func perform(_ command: PendingCommand, operation: () async throws -> Void) async {
