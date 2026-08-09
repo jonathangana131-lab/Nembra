@@ -1,0 +1,77 @@
+name: Temporary Capture V14 Final Pin Refresh
+
+on:
+  push:
+    branches:
+      - staging/v14-capture-final-pin-refresh/gpt56-go
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact current-main staging head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Rotate only current-main trusted workflow pin consumers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+
+          old = "fd9859c8dc64ccb6257062e50b37c0f49997ad78"
+          new = "9c1e48c559acb02e8fe2c4fee960940519404d7e"
+          paths = [
+              Path(".github/workflows/capture-today-final-go-qa.yml"),
+              Path(".github/workflows/capture-today-trusted-default-xcode-subject-qa.yml"),
+              Path("scripts/ci/es80_today_trusted_capture_xcode_subject.py"),
+          ]
+          for path in paths:
+              text = path.read_text()
+              if text.count(old) != 1:
+                  raise SystemExit(f"expected exactly one current trusted pin in {path}, found {text.count(old)}")
+              text = text.replace(old, new, 1)
+              path.write_text(text)
+
+          final_qa = paths[0].read_text()
+          default_qa = paths[1].read_text()
+          for source, label in ((final_qa, "final-go"), (default_qa, "default-subject")):
+              for token in (
+                  "name: Verify trusted build graph custody",
+                  'GITHUB_RUN_ID="$\'\'{{ github.run_id }}"',
+                  'GITHUB_RUN_ATTEMPT="$\'\'{{ github.run_attempt }}"',
+              ):
+                  if token not in source:
+                      raise SystemExit(f"{label} lost accepted assertion: {token}")
+
+          endpoint = f"https://api.github.com/repos/{os.environ['REPOSITORY']}/git/blobs"
+          for path in paths:
+              data = path.read_bytes()
+              request = Request(
+                  endpoint,
+                  data=json.dumps({
+                      "content": base64.b64encode(data).decode("ascii"),
+                      "encoding": "base64",
+                  }).encode(),
+                  method="POST",
+                  headers={
+                      "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                      "Accept": "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "Content-Type": "application/json",
+                  },
+              )
+              with urlopen(request, timeout=30) as response:
+                  payload = json.load(response)
+              print(f"FINAL_PIN_BLOB {path} {payload['sha']}")
+          PY
