@@ -1,0 +1,111 @@
+name: Capture TODAY Research xcconfig Package Propagation Probe
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/qa-es80-today-research-xcconfig-package-propagation.yml
+
+permissions:
+  contents: read
+
+jobs:
+  exact-parent-package-propagation:
+    name: Prove TODAY compile capability reaches Capture package
+    runs-on: xcode-27
+    timeout-minutes: 15
+    env:
+      EXPECTED_PRODUCT_PARENT: 55415c1c39e6e211616a2bdc3cd06b996da637e9
+      VALIDATION_WORKFLOW: .github/workflows/qa-es80-today-research-xcconfig-package-propagation.yml
+
+    steps:
+      - name: Checkout immutable validation head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+
+      - name: Prove validation-only exact-parent ancestry
+        run: |
+          set -euo pipefail
+          actual_head="$(git rev-parse --verify HEAD^{commit})"
+          event_head="${{ github.event.pull_request.head.sha }}"
+          parent="$(git rev-parse --verify HEAD^1)"
+          printf 'Validation head: %s\nEvent head: %s\nProduct parent: %s\nExpected product parent: %s\n' \
+            "$actual_head" "$event_head" "$parent" "$EXPECTED_PRODUCT_PARENT"
+          test "$actual_head" = "$event_head"
+          test "$parent" = "$EXPECTED_PRODUCT_PARENT"
+          changed="$(git diff --name-only "$EXPECTED_PRODUCT_PARENT"...HEAD)"
+          test "$changed" = "$VALIDATION_WORKFLOW"
+
+      - name: Prove current TODAY wrapper uses the exact xcconfig capability
+        run: |
+          set -euo pipefail
+          grep -F 'OTHER_SWIFT_FLAGS = $(inherited) -DNEMBRA_ES80_TODAY_RESEARCH' \
+            scripts/ci/xcode27_today_research_field_candidate.sh
+          grep -F 'export XCODE_XCCONFIG_FILE="$TODAY_XCCONFIG"' \
+            scripts/ci/xcode27_today_research_field_candidate.sh
+
+      - name: Build physical-iOS Release with package compile sentinel
+        run: |
+          set -euo pipefail
+          validation_root="${RUNNER_TEMP:-/tmp}/NembraTodayResearchXCConfigProbe-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          probe_source="Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/NembraTodayResearchXCConfigPropagationProbe.swift"
+          xcconfig="$validation_root/NembraES80TodayResearch.xcconfig"
+          derived_data="$validation_root/DerivedData"
+          log="$validation_root/xcodebuild.log"
+
+          cleanup() {
+            rm -f "$probe_source"
+            rm -rf "$validation_root"
+          }
+          trap cleanup EXIT
+
+          rm -rf "$validation_root"
+          mkdir -p "$validation_root"
+          umask 077
+
+          cat > "$probe_source" <<'SWIFT'
+          #if os(iOS) && !targetEnvironment(simulator) && !DEBUG
+          #if !NEMBRA_ES80_TODAY_RESEARCH
+          #error("NEMBRA_ES80_TODAY_RESEARCH did not reach the NembraBluetoothCapture physical-iOS Release target")
+          #endif
+          #endif
+
+          enum NembraTodayResearchXCConfigPropagationProbe {}
+          SWIFT
+
+          cat > "$xcconfig" <<'XCCONFIG'
+          OTHER_SWIFT_FLAGS = $(inherited) -DNEMBRA_ES80_TODAY_RESEARCH
+          XCCONFIG
+          chmod 0400 "$xcconfig"
+          export XCODE_XCCONFIG_FILE="$xcconfig"
+
+          set +e
+          set -o pipefail
+          xcodebuild \
+            -project Nembra.xcodeproj \
+            -scheme Nembra \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$derived_data" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build \
+            | tee "$log"
+          build_status=${PIPESTATUS[0]}
+          set -e
+
+          if [[ "$build_status" -ne 0 ]]; then
+            echo "Physical-iOS Release build failed. If the probe #error appears, XCODE_XCCONFIG_FILE did not propagate the TODAY capability into NembraBluetoothCapture." >&2
+            grep -n -E 'NEMBRA_ES80_TODAY_RESEARCH|NembraTodayResearchXCConfigPropagationProbe' "$log" || true
+            exit "$build_status"
+          fi
+
+          if grep -F 'NEMBRA_ES80_TODAY_RESEARCH did not reach' "$log" >/dev/null; then
+            echo "Build log contains the compile sentinel failure despite xcodebuild success." >&2
+            exit 31
+          fi
+
+          echo "TODAY Research xcconfig package propagation: PASS"
