@@ -118,6 +118,19 @@ struct NembraEnergyRailVisualState: Equatable {
     let peakMarkerFraction: Double?
     let allowsLiveMotion: Bool
 
+    /// The only app-constructible state before the package projection is linked into
+    /// the app target. This lets the real Cockpit surface ship truthfully today while
+    /// keeping all numeric/live construction sealed behind canonical package evidence.
+    static let unavailable = NembraEnergyRailVisualState(
+        currentness: .unavailable,
+        acceptedWatts: nil,
+        displayWatts: nil,
+        railFraction: nil,
+        acceptedTargetFraction: nil,
+        peakMarkerFraction: nil,
+        allowsLiveMotion: false
+    )
+
     /// Intentionally sealed until the canonical Energy Rail package projection is
     /// compiled into the app target. Future wiring should add the canonical adapter
     /// in an extension of this type rather than exposing a general raw constructor.
