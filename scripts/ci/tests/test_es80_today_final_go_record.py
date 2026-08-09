@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import zipfile
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "es80_today_final_go_record.py"
 spec = importlib.util.spec_from_file_location("final_go", MODULE_PATH)
@@ -66,6 +67,7 @@ class FinalGoRecordTests(unittest.TestCase):
             "externalBuildRecordSHA256": external_sha,
             "signedInstallableSHA256": ipa_sha,
             "signedInstallableKind": "ipa",
+            "ipaByteCount": len(ipa),
             "buildIdentifier": self.BUILD,
             "buildInstanceID": self.INSTANCE,
             "sourceCommitSHA": self.SOURCE,
@@ -82,11 +84,25 @@ class FinalGoRecordTests(unittest.TestCase):
             "provisioningProfileUUID": "PROFILE-UUID",
             "provisioningProfileExpirationUTC": "2099-08-09T00:00:00Z",
             "signingAuthorities": ["Apple Development: Nembra"],
+            "codeDirectoryHash": "f" * 40,
         }
         inspection_path = inspection / final_go.INSPECTION_NAME
         inspection_path.write_text(json.dumps(signed), encoding="utf-8")
         xcode_artifact = root / "nembra-xcode27-pr-exact-head.zip"
-        xcode_artifact.write_bytes(b"retained exact-head xcode artifact")
+        xcode_record = {
+            "schemaVersion": 3,
+            "buildIdentifier": self.BUILD,
+            "buildInstanceID": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "sourceCommitSHA": self.SOURCE,
+            "executableSHA256": "1" * 64,
+            "infoPlistSHA256": "2" * 64,
+            "experimentRecipeID": final_go.RECIPE,
+            "procedureVersion": final_go.PROCEDURE,
+        }
+        xcode_record_raw = (json.dumps(xcode_record, sort_keys=True) + "\n").encode()
+        with zipfile.ZipFile(xcode_artifact, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr(final_go.EXTERNAL_RECORD_NAME, xcode_record_raw)
+            archive.writestr("screenshots/preflight.png", b"simulator screenshot")
         return ipa_sha, xcode_artifact, hashlib.sha256(inspection_path.read_bytes()).hexdigest()
 
     def kwargs(self, root: Path, ipa_sha: str, xcode_artifact: Path):
@@ -133,6 +149,12 @@ class FinalGoRecordTests(unittest.TestCase):
                 record["trustedXcodeAcceptanceSubject"]["retainedArtifactSHA256"],
                 hashlib.sha256(xcode_artifact.read_bytes()).hexdigest(),
             )
+            with zipfile.ZipFile(xcode_artifact, "r") as archive:
+                xcode_record_raw = archive.read(final_go.EXTERNAL_RECORD_NAME)
+            self.assertEqual(
+                record["trustedXcodeAcceptanceSubject"]["retainedExternalBuildRecordSHA256"],
+                hashlib.sha256(xcode_record_raw).hexdigest(),
+            )
             self.assertEqual(record["signedArtifactInspectionRecordSHA256"], inspection_sha)
             self.assertEqual(
                 record["retainedIPAInstallHandoff"]["preInstallRetainedIPASHA256"],
@@ -156,6 +178,52 @@ class FinalGoRecordTests(unittest.TestCase):
             values["trusted_xcode_artifact"] = root / "missing-xcode-artifact.zip"
             with self.assertRaisesRegex(final_go.FinalGoError, "trusted Xcode retained artifact"):
                 final_go.build_final_go_record(**values)
+
+    def test_rejects_non_zip_xcode_artifact_subject(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            ipa_sha, xcode_artifact, _ = self.make_candidate(root)
+            xcode_artifact.write_bytes(b"not a zip")
+            with self.assertRaisesRegex(final_go.FinalGoError, "readable ZIP"):
+                final_go.build_final_go_record(**self.kwargs(root, ipa_sha, xcode_artifact))
+
+    def test_rejects_xcode_artifact_for_different_source(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            ipa_sha, xcode_artifact, _ = self.make_candidate(root)
+            with zipfile.ZipFile(xcode_artifact, "r") as archive:
+                record = json.loads(archive.read(final_go.EXTERNAL_RECORD_NAME))
+            record["sourceCommitSHA"] = "9" * 40
+            record["buildIdentifier"] = "Capture Build V14-" + ("9" * 12)
+            replacement = root / "wrong-source.zip"
+            with zipfile.ZipFile(replacement, "w") as archive:
+                archive.writestr(final_go.EXTERNAL_RECORD_NAME, json.dumps(record))
+            values = self.kwargs(root, ipa_sha, replacement)
+            with self.assertRaisesRegex(final_go.FinalGoError, "trusted Xcode accepted source SHA mismatch"):
+                final_go.build_final_go_record(**values)
+
+    def test_rejects_extra_field_in_closed_world_candidate_record(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            ipa_sha, xcode_artifact, _ = self.make_candidate(root)
+            path = root / "inspection" / final_go.EXTERNAL_RECORD_NAME
+            record = json.loads(path.read_text())
+            record["unexpectedAuthority"] = "GO"
+            path.write_text(json.dumps(record), encoding="utf-8")
+            with self.assertRaisesRegex(final_go.FinalGoError, "exact closed-world schema"):
+                final_go.build_final_go_record(**self.kwargs(root, ipa_sha, xcode_artifact))
+
+    def test_rejects_duplicate_json_keys_in_candidate_record(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            ipa_sha, xcode_artifact, _ = self.make_candidate(root)
+            path = root / "inspection" / final_go.EXTERNAL_RECORD_NAME
+            original = json.loads(path.read_text())
+            raw = json.dumps(original)
+            raw = raw[:-1] + ', "schemaVersion": 3}'
+            path.write_text(raw, encoding="utf-8")
+            with self.assertRaisesRegex(final_go.FinalGoError, "duplicate JSON key"):
+                final_go.build_final_go_record(**self.kwargs(root, ipa_sha, xcode_artifact))
 
     def test_rejects_nonpositive_xcode_run_or_job_subject(self):
         with tempfile.TemporaryDirectory() as temporary:
