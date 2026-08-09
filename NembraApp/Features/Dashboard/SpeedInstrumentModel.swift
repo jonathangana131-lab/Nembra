@@ -4,7 +4,7 @@ import Observation
 import SwiftUI
 
 enum SpeedInstrumentDisplayOrigin: Equatable {
-    case confirmedVehicleState
+    case acceptedEvidenceFallback
     case measuredTelemetry
     case visuallyInterpolated
 }
@@ -95,9 +95,38 @@ final class SpeedInstrumentModel {
         )
     }
 
+    /// Projects the current source-owned availability directly into a render frame.
+    ///
+    /// This gate deliberately does not depend on `.onChange` having already cleared
+    /// an older interpolator. SwiftUI may evaluate a body after source currentness
+    /// demotes but before the callback mutates local presentation state. In that
+    /// transaction retained evidence must render exactly as retained accepted
+    /// evidence, and unavailable evidence must render no number at all.
+    func frame(
+        for availability: SpeedEvidenceAvailability,
+        atUptimeNanoseconds uptimeNanoseconds: UInt64,
+        prefersReducedMotion: Bool = false
+    ) -> SpeedInstrumentDisplayFrame? {
+        switch availability {
+        case .unavailable:
+            return nil
+        case let .retained(sample):
+            return acceptedEvidenceFallbackFrame(
+                kilometersPerHour: sample.kilometersPerHour
+            )
+        case let .live(sample):
+            return frame(
+                atUptimeNanoseconds: uptimeNanoseconds,
+                fallbackAcceptedKilometersPerHour: sample.kilometersPerHour,
+                prefersReducedMotion: prefersReducedMotion
+            )
+        }
+    }
+
     /// Returns a render-only frame. The fallback is a caller-owned accepted
-    /// source value. The Dashboard supplies it from `SpeedEvidenceAvailability`,
-    /// never cached aggregate vehicle state.
+    /// source value. It is deliberately named as accepted evidence rather than
+    /// confirmed vehicle state because currentness is supplied separately by the
+    /// field-specific availability projection.
     ///
     /// Reduce Motion changes presentation only: when an interpolation frame is
     /// active, the display snaps to the latest authoritative measurement that
@@ -105,7 +134,7 @@ final class SpeedInstrumentModel {
     /// interpolation state is mutated by this preference.
     func frame(
         atUptimeNanoseconds uptimeNanoseconds: UInt64,
-        fallbackConfirmedKilometersPerHour: Double?,
+        fallbackAcceptedKilometersPerHour: Double?,
         prefersReducedMotion: Bool = false
     ) -> SpeedInstrumentDisplayFrame? {
         _ = measurementRevision
@@ -126,16 +155,23 @@ final class SpeedInstrumentModel {
             )
         }
 
-        guard let fallbackConfirmedKilometersPerHour,
-              fallbackConfirmedKilometersPerHour.isFinite,
-              fallbackConfirmedKilometersPerHour >= 0 else {
+        guard let fallbackAcceptedKilometersPerHour else { return nil }
+        return acceptedEvidenceFallbackFrame(
+            kilometersPerHour: fallbackAcceptedKilometersPerHour
+        )
+    }
+
+    private func acceptedEvidenceFallbackFrame(
+        kilometersPerHour: Double
+    ) -> SpeedInstrumentDisplayFrame? {
+        guard kilometersPerHour.isFinite, kilometersPerHour >= 0 else {
             return nil
         }
 
         return SpeedInstrumentDisplayFrame(
-            kilometersPerHour: fallbackConfirmedKilometersPerHour,
+            kilometersPerHour: kilometersPerHour,
             latestMeasuredKilometersPerHour: nil,
-            origin: .confirmedVehicleState
+            origin: .acceptedEvidenceFallback
         )
     }
 
@@ -206,7 +242,6 @@ struct DashboardSpeedInstrumentView: View {
 
     var body: some View {
         let speedAvailability = vehicle.speedEvidenceAvailability
-        let fallbackAcceptedKilometersPerHour = speedAvailability.lastAcceptedSample?.kilometersPerHour
 
         TimelineView(
             .animation(
@@ -215,8 +250,8 @@ struct DashboardSpeedInstrumentView: View {
             )
         ) { _ in
             let frame = model.frame(
+                for: speedAvailability,
                 atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
-                fallbackConfirmedKilometersPerHour: fallbackAcceptedKilometersPerHour,
                 prefersReducedMotion: reduceMotion
             )
 
