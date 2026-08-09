@@ -10,6 +10,29 @@ public protocol RetainedBatterySnapshotStorage: Sendable {
     func clear() throws
 }
 
+/// Shared replacement rule for every retained-battery storage implementation.
+///
+/// Keeping this decision outside a particular backend prevents previews/tests from
+/// accepting replay or chronology rollback that production storage would reject.
+private func shouldReplaceRetainedBatterySnapshot(
+    _ existing: RetainedBatterySnapshot?,
+    with candidate: RetainedBatterySnapshot
+) -> Bool {
+    guard let existing else { return true }
+
+    // Durable chronology is evidence chronology, not write chronology. A surrounding
+    // aggregate publication may repeat the same cached battery value with a newer
+    // timestamp; that repetition is not a new battery observation.
+    if candidate.percent == existing.percent,
+       candidate.authority == existing.authority {
+        return false
+    }
+
+    // A delayed write cannot roll retained truth back to older (or same-time)
+    // evidence, even when its value or authority differs.
+    return candidate.observedAt > existing.observedAt
+}
+
 /// UserDefaults-backed production storage for the single most recent retained
 /// battery observation.
 ///
@@ -33,22 +56,9 @@ public struct UserDefaultsRetainedBatterySnapshotStorage: RetainedBatterySnapsho
     }
 
     public func save(_ snapshot: RetainedBatterySnapshot) throws {
-        if let existing = try load() {
-            // Durable chronology is evidence chronology, not write chronology.
-            // A surrounding aggregate state publication may carry the same cached
-            // battery value with a newer timestamp. Re-saving that unchanged value
-            // must not manufacture a newer battery observation.
-            if snapshot.percent == existing.percent,
-               snapshot.authority == existing.authority {
-                return
-            }
-
-            // Persistence is monotonic in observation time. A delayed write cannot
-            // roll retained battery truth back to older evidence, even when its value
-            // differs from the current snapshot.
-            if snapshot.observedAt <= existing.observedAt {
-                return
-            }
+        let existing = try load()
+        guard shouldReplaceRetainedBatterySnapshot(existing, with: snapshot) else {
+            return
         }
 
         let data = try RetainedBatterySnapshotCodec.encode(snapshot)
@@ -61,6 +71,7 @@ public struct UserDefaultsRetainedBatterySnapshotStorage: RetainedBatterySnapsho
 }
 
 /// Small in-memory implementation for app/unit tests and deterministic previews.
+/// It deliberately obeys the same chronology/replay contract as production storage.
 public final class InMemoryRetainedBatterySnapshotStorage: RetainedBatterySnapshotStorage, @unchecked Sendable {
     private let lock = NSLock()
     private var snapshot: RetainedBatterySnapshot?
@@ -74,7 +85,12 @@ public final class InMemoryRetainedBatterySnapshotStorage: RetainedBatterySnapsh
     }
 
     public func save(_ snapshot: RetainedBatterySnapshot) throws {
-        lock.withLock { self.snapshot = snapshot }
+        lock.withLock {
+            guard shouldReplaceRetainedBatterySnapshot(self.snapshot, with: snapshot) else {
+                return
+            }
+            self.snapshot = snapshot
+        }
     }
 
     public func clear() throws {

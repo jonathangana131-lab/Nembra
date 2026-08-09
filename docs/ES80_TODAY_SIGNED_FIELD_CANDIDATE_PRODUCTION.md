@@ -21,6 +21,17 @@ For the current TODAY handoff:
 
 The Simulator artifact above is software evidence only. It is **not** the signed field candidate and is not physical authorization.
 
+The current accepted external pre-signing helper is also non-authorizing software tooling:
+
+- helper commit: `9b5bde849e6b8f6b76e2a15abb52d643e3616a7a`
+- helper path: `scripts/ci/es80_today_field_candidate_preflight.py`
+- helper blob: `fcc2243c005c5f6df2d2f5bd8b8c948e785f07d8`
+- exact focused QA run: `31340823325` — terminal success
+- helper authority on every report: `operator-pre-signing-readiness-not-field-authorization`
+- physical authorization on every report: `not-granted`
+
+The helper exists only to prevent known operator-input dead ends before the frozen producer is invoked. The frozen `a0f4…` producer independently revalidates all authoritative signing/private-input conditions.
+
 ## Why an exact detached source checkout is mandatory
 
 `scripts/ci/xcode27_today_research_field_candidate.sh` delegates to the canonical producer, which derives `SOURCE_SHA` from the invocation checkout's current Git `HEAD`. That is correct behavior, but it means running the wrapper from a newer moving `main` would deliberately produce a different-source candidate.
@@ -111,6 +122,59 @@ test -z "$(/usr/bin/git status --porcelain=v1 --untracked-files=all)"
 
 Keep `NEMBRA_ALLOW_PROVISIONING_UPDATES=0` unless the private signing setup actually requires Xcode-managed provisioning updates. If it must be `1`, make that an explicit operator choice; it does not change the frozen source SHA or grant field authorization.
 
+## 3A. Run the accepted non-authorizing pre-signing preflight
+
+Do not run a moving `main` copy of the helper and do not copy the helper into the frozen source checkout. Materialize the exact accepted helper bytes from a separate local Nembra tooling repository that contains commit `9b5bde849e6b8f6b76e2a15abb52d643e3616a7a`, then run those bytes against the exact frozen `FIELD_SOURCE`.
+
+The helper deliberately reads the private signing values from the environment and the intended-device value only from its mode-`0600` file. Its JSON report omits the TeamIdentifier, raw UDID, private input paths, export-options contents, and dirty-checkout text.
+
+```bash
+PREFLIGHT_COMMIT='9b5bde849e6b8f6b76e2a15abb52d643e3616a7a'
+PREFLIGHT_BLOB='fcc2243c005c5f6df2d2f5bd8b8c948e785f07d8'
+TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
+PREFLIGHT_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-preflight.XXXXXX)"
+PREFLIGHT="$PREFLIGHT_DIR/es80_today_field_candidate_preflight.py"
+PREFLIGHT_REPORT="$PREFLIGHT_DIR/preflight.json"
+
+cd "$TOOL_REPO"
+/usr/bin/git cat-file -e "$PREFLIGHT_COMMIT^{commit}"
+test "$(/usr/bin/git rev-parse --verify "$PREFLIGHT_COMMIT:scripts/ci/es80_today_field_candidate_preflight.py")" = "$PREFLIGHT_BLOB"
+/usr/bin/git show "$PREFLIGHT_COMMIT:scripts/ci/es80_today_field_candidate_preflight.py" > "$PREFLIGHT"
+test "$(/usr/bin/git hash-object --no-filters -- "$PREFLIGHT")" = "$PREFLIGHT_BLOB"
+
+NEMBRA_DEVELOPMENT_TEAM="$NEMBRA_DEVELOPMENT_TEAM" \
+NEMBRA_EXPORT_OPTIONS_PLIST="$NEMBRA_EXPORT_OPTIONS_PLIST" \
+NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE="$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" \
+NEMBRA_ALLOW_PROVISIONING_UPDATES="$NEMBRA_ALLOW_PROVISIONING_UPDATES" \
+/usr/bin/python3 -I "$PREFLIGHT" \
+  --source-repo "$FIELD_SOURCE" \
+  --expected-source-sha "$SOURCE_SHA" \
+  > "$PREFLIGHT_REPORT"
+
+/usr/bin/python3 -I - "$PREFLIGHT_REPORT" "$SOURCE_SHA" <<'PY'
+import json
+import pathlib
+import sys
+
+report = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+expected_source = sys.argv[2]
+assert report["status"] == "READY_TO_INVOKE_SIGNED_FIELD_PRODUCER"
+assert report["authority"] == "operator-pre-signing-readiness-not-field-authorization"
+assert report["physicalExperimentAuthorization"] == "not-granted"
+assert report["sourceCommitSHA"] == expected_source
+PY
+
+cd "$FIELD_SOURCE"
+test "$(/usr/bin/git rev-parse --verify HEAD^{commit})" = "$SOURCE_SHA"
+test -z "$(/usr/bin/git status --porcelain=v1 --untracked-files=all)"
+```
+
+If the preflight exits nonzero, reports anything other than `READY_TO_INVOKE_SIGNED_FIELD_PRODUCER`, or the pinned helper blob cannot be materialized exactly, **stop before invoking the signed-field producer**. Correct only the reported local pre-signing blocker and rerun the exact pinned helper.
+
+`READY_TO_INVOKE_SIGNED_FIELD_PRODUCER` means only that these local inputs are coherent enough to invoke the frozen producer. It is not signed-candidate acceptance, intended-device installation evidence, runtime provenance, Final GO, scooter identity, or permission to scan.
+
+Keep the preflight report outside `ARTIFACTS_DIR`; do not mutate the producer's retained candidate shape with auxiliary files.
+
 ## 4. Produce exactly one Research Field Build candidate
 
 Pass the private inputs only to the TODAY wrapper invocation:
@@ -173,11 +237,12 @@ Only an accepted Final GO record for the exact signed/install/runtime evidence c
 Stop and preserve the exact blocker if any of these occurs:
 
 - the outer checkout is not exact clean detached `a0f4a33451f61411d6e0541f2e70edea5438342d`;
+- the pinned external preflight cannot be materialized exactly, exits nonzero, or does not report `READY_TO_INVOKE_SIGNED_FIELD_PRODUCER` for the exact frozen source;
 - the producer reports any source, signing, provisioning, intended-device, export, inspection, or evidence failure;
 - more than one IPA is exported or the retained `NembraField.ipa` is missing;
 - the resulting evidence names a different source SHA, recipe, or build subject;
 - the candidate destination existed before production or appears partially published after a failure;
-- the intended-device verification file is not private mode `0600` regular non-symlink input;
+- the intended-device verification file is not private mode `0600` regular non-symlink input or its path traverses a symlinked ancestor / the Nembra repository;
 - the next step would require rebuilding, re-exporting, substituting another app/IPA, or using Xcode Run;
 - anyone proposes Bluetooth scanning before the hardened Final GO record exists.
 
@@ -185,14 +250,15 @@ Do not improvise around a failed gate. The output of a failure is the exact fail
 
 ## Cleanup after evidence is safely retained
 
-The dedicated outer worktree can be removed after the retained candidate and required private evidence are safely preserved:
+The dedicated outer worktree and temporary preflight material can be removed after the retained candidate and required private evidence are safely preserved:
 
 ```bash
 cd "$NEMBRA_REPO"
 /usr/bin/git worktree remove --force "$FIELD_SOURCE"
 /bin/rmdir "$FIELD_PARENT" 2>/dev/null || true
+/bin/rm -rf "$PREFLIGHT_DIR"
 ```
 
-Removing the source worktree does not authorize or invalidate the retained candidate. The retained candidate's own exact provenance/evidence remains authoritative for the next gate.
+Removing the source worktree or temporary preflight report does not authorize or invalidate the retained candidate. The retained candidate's own exact provenance/evidence remains authoritative for the next gate.
 
 **PHYSICAL EXPERIMENT ONE REMAINS NO-GO UNTIL THE EXACT SIGNED CANDIDATE, CROSS-CHECK, INSTALL/RUNTIME RENDEZVOUS, FRESH PREFLIGHT, AND HARDENED FINAL GO RECORD ARE ALL ACCEPTED.**
