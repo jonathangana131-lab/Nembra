@@ -77,6 +77,12 @@ final class VehicleStore {
 
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
     @ObservationIgnored private var speedEvidenceTask: Task<Void, Never>?
+    @ObservationIgnored private var speedEvidenceProvider: (any SpeedEvidenceProvider)?
+    /// Each connection-state boundary rotates the app-side observation identity.
+    /// A cancelled task carrying an older stream value can therefore never write
+    /// after a disconnect/reconnect transition merely because two independent
+    /// AsyncStreams happened to resume on the MainActor in an unlucky order.
+    @ObservationIgnored private var speedEvidenceObservationID = UUID()
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private let shouldAutoConnectOnStart: Bool
 
@@ -116,36 +122,37 @@ final class VehicleStore {
         guard !didStart else { return }
         didStart = true
 
-        updatesTask = Task { [weak self, service] in
-            let stream = await service.stateUpdates()
-            for await state in stream {
-                guard let self, !Task.isCancelled else { break }
-                self.state = state
-                if state.connection != .connected {
-                    // Connection loss can retire authority immediately on this
-                    // ordered state stream. It never promotes speed when a later
-                    // reconnect arrives; only source-owned evidence may do that.
-                    self.speedEvidenceAvailability = .unavailable
-                }
-            }
-        }
-
-        if let speedEvidenceProvider = service as? any SpeedEvidenceProvider {
-            speedEvidenceTask = Task { [weak self, speedEvidenceProvider] in
-                let stream = await speedEvidenceProvider.speedEvidenceUpdates()
-                for await availability in stream {
-                    guard let self, !Task.isCancelled else { return }
-                    self.speedEvidenceAvailability = availability
-                }
-
-                // An ended acquisition stream cannot leave its last `.live`
-                // sample authorized indefinitely. Cancellation/deinit needs no
-                // state write; any real unexpected/normal end fails closed.
-                guard let self, !Task.isCancelled else { return }
-                self.speedEvidenceAvailability = .unavailable
-            }
+        if let provider = service as? any SpeedEvidenceProvider {
+            speedEvidenceProvider = provider
+            restartSpeedEvidenceObservation()
         } else {
             speedEvidenceAvailability = .unavailable
+        }
+
+        updatesTask = Task { [weak self, service] in
+            let stream = await service.stateUpdates()
+            for await nextState in stream {
+                guard let self, !Task.isCancelled else { break }
+                let previousConnection = self.state.connection
+                self.state = nextState
+
+                guard nextState.connection != previousConnection else {
+                    if nextState.connection != .connected {
+                        self.retireLiveSpeedEvidence()
+                    }
+                    continue
+                }
+
+                // A transport boundary immediately retires positive field
+                // authority and rotates the app-side evidence subscription. The
+                // provider's atomic newest-state replay then establishes what is
+                // current for the *new* connection phase; a value already handed
+                // to the cancelled prior task cannot cross this boundary.
+                if nextState.connection != .connected {
+                    self.retireLiveSpeedEvidence()
+                }
+                self.restartSpeedEvidenceObservation()
+            }
         }
 
         if shouldAutoConnectOnStart {
@@ -153,9 +160,10 @@ final class VehicleStore {
         }
     }
 
-    /// Exposes raw speed evidence independently from `VehicleState` so the
-    /// Dashboard can animate locally without publishing render frames back into
-    /// globally observed vehicle state, ride history, distance, or diagnostics.
+    /// Exposes raw speed evidence independently from `VehicleState` for
+    /// diagnostics and consumers that explicitly need non-replaying packets.
+    /// Dashboard positive currentness is sourced from `speedEvidenceAvailability`
+    /// instead; raw packets never promote field authority by themselves.
     func speedTelemetryUpdates() async -> AsyncStream<SpeedTelemetrySample> {
         await service.speedTelemetryUpdates()
     }
@@ -205,6 +213,67 @@ final class VehicleStore {
         defer { pendingSpeedLimit = nil }
         await perform(.speedLimit) {
             try await service.setSpeedLimit(kilometersPerHour: kilometersPerHour, slot: slot)
+        }
+    }
+
+    private func restartSpeedEvidenceObservation() {
+        guard let speedEvidenceProvider else {
+            retireLiveSpeedEvidence()
+            return
+        }
+
+        speedEvidenceTask?.cancel()
+        let observationID = UUID()
+        speedEvidenceObservationID = observationID
+
+        speedEvidenceTask = Task { [weak self, speedEvidenceProvider] in
+            let stream = await speedEvidenceProvider.speedEvidenceUpdates()
+            for await availability in stream {
+                guard !Task.isCancelled,
+                      let self,
+                      self.speedEvidenceObservationID == observationID else {
+                    return
+                }
+                self.applySpeedEvidenceAvailability(availability)
+            }
+
+            // An ended acquisition stream cannot leave its last `.live` sample
+            // authorized indefinitely. Cancellation/restart is handled above;
+            // any genuine end of the active observation fails closed.
+            guard !Task.isCancelled,
+                  let self,
+                  self.speedEvidenceObservationID == observationID else {
+                return
+            }
+            self.retireLiveSpeedEvidence()
+        }
+    }
+
+    /// Source availability is authoritative only while the app's current
+    /// transport projection is connected. If the provider gets ahead of the
+    /// independent state stream during a connect, retain the sample without
+    /// calling it live; the subsequent connected boundary resubscribes and
+    /// atomically replays the provider's newest state. If the provider lags a
+    /// disconnect, the same rule prevents stale `.live` presentation.
+    private func applySpeedEvidenceAvailability(_ availability: SpeedEvidenceAvailability) {
+        guard state.connection == .connected else {
+            switch availability {
+            case .unavailable:
+                speedEvidenceAvailability = .unavailable
+            case let .retained(sample), let .live(sample):
+                speedEvidenceAvailability = .retained(sample)
+            }
+            return
+        }
+
+        speedEvidenceAvailability = availability
+    }
+
+    private func retireLiveSpeedEvidence() {
+        if let lastAcceptedSample = speedEvidenceAvailability.lastAcceptedSample {
+            speedEvidenceAvailability = .retained(lastAcceptedSample)
+        } else {
+            speedEvidenceAvailability = .unavailable
         }
     }
 
