@@ -107,6 +107,45 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testCaptureStationaryPreflightPreservesSimulatorScenarioIntoShell() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=stationaryPreflight"
+        ]
+        app.launch()
+
+        let preflight = app.descendants(matching: .any)["es80.capture.stationary-preflight"]
+        XCTAssertTrue(preflight.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3))
+
+        let disconnected = app.buttons["es80.capture.preflight.charger-disconnected"]
+        XCTAssertTrue(disconnected.waitForExistence(timeout: 3))
+        disconnected.tap()
+        XCTAssertEqual(disconnected.value as? String, "Selected")
+
+        let continueButton = app.buttons["es80.capture.preflight.continue"]
+        XCTAssertTrue(continueButton.waitForExistence(timeout: 2))
+        XCTAssertTrue(continueButton.isEnabled)
+        continueButton.tap()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5),
+            "Accepted disconnected preflight must enter the Capture shell."
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3),
+            "The exact synthetic QA scenario must remain visibly labeled after preflight handoff."
+        )
+        XCTAssertTrue(
+            app.staticTexts["Confirm setup"].waitForExistence(timeout: 3),
+            "The stationaryPreflight synthetic scenario must survive the preflight -> shell transition."
+        )
+
+        keepScreenshot(named: "Capture Stationary Preflight Handoff")
+    }
+
+    @MainActor
     func testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls() {
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "riding", orientation: .landscapeRight)
