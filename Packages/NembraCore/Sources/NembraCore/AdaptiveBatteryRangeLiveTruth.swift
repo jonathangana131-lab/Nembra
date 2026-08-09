@@ -124,10 +124,11 @@ public struct AcceptedBatterySOCAnchor: Equatable, Sendable {
         } else {
             // A standalone chronology validator cannot become live authority merely because its
             // local value-state says R1 was accepted. Give the package-only projection a detached,
-            // unpublished lease so every live-currentness check fails closed.
+            // unpublished lease so every live-currentness check fails closed. The weak handle
+            // intentionally does not keep `detachedOwner` alive past this scope.
             let detachedOwner = BatteryEvidenceCurrentnessOwner()
             currentnessLease = BatteryEvidenceCurrentnessLease(
-                owner: detachedOwner,
+                ownerHandle: detachedOwner.leaseHandle,
                 generation: detachedOwner.generation()
             )
         }
