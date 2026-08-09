@@ -1,0 +1,237 @@
+name: Capture Final Share Lexical Boundary Authority QA
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - NembraApp/Features/Research/ES80CaptureShellView.swift
+      - .github/workflows/capture-final-share-conditional-authority.yml
+      - .github/workflows/capture-final-share-regex-lexical-authority.yml
+      - .github/workflows/capture-final-share-lexical-boundary-authority.yml
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head-lexical-boundary-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Verify exact PR head
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          printf 'Expected exact PR head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual"
+          test "$actual" = "$EXPECTED_HEAD_SHA"
+
+      - name: Reject fake lexical member boundaries around final Share authority
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          class ContractViolation(Exception):
+              pass
+
+          signature = "private func prepareFinalShareForAnalysisAndSharing()"
+          next_member = "\n    private func restartExperiment()"
+
+          def mask_comments_and_strings(text: str) -> str:
+              """Preserve offsets/newlines while hiding Swift comments and string literals."""
+              chars = list(text)
+              masked = list(text)
+              i = 0
+              state = "code"
+              block_depth = 0
+
+              while i < len(chars):
+                  if state == "code":
+                      if text.startswith("//", i):
+                          masked[i] = masked[i + 1] = " "
+                          i += 2
+                          state = "line-comment"
+                          continue
+                      if text.startswith("/*", i):
+                          masked[i] = masked[i + 1] = " "
+                          i += 2
+                          state = "block-comment"
+                          block_depth = 1
+                          continue
+                      if text.startswith('"""', i):
+                          masked[i:i + 3] = "   "
+                          i += 3
+                          state = "multiline-string"
+                          continue
+                      if chars[i] == '"':
+                          masked[i] = " "
+                          i += 1
+                          state = "string"
+                          continue
+                      i += 1
+                      continue
+
+                  if state == "line-comment":
+                      if chars[i] == "\n":
+                          state = "code"
+                      else:
+                          masked[i] = " "
+                      i += 1
+                      continue
+
+                  if state == "block-comment":
+                      if text.startswith("/*", i):
+                          masked[i] = masked[i + 1] = " "
+                          block_depth += 1
+                          i += 2
+                          continue
+                      if text.startswith("*/", i):
+                          masked[i] = masked[i + 1] = " "
+                          block_depth -= 1
+                          i += 2
+                          if block_depth == 0:
+                              state = "code"
+                          continue
+                      if chars[i] != "\n":
+                          masked[i] = " "
+                      i += 1
+                      continue
+
+                  if state == "string":
+                      if chars[i] == "\\" and i + 1 < len(chars):
+                          masked[i] = masked[i + 1] = " "
+                          i += 2
+                          continue
+                      if chars[i] == '"':
+                          masked[i] = " "
+                          state = "code"
+                      elif chars[i] != "\n":
+                          masked[i] = " "
+                      i += 1
+                      continue
+
+                  if state == "multiline-string":
+                      if text.startswith('"""', i):
+                          masked[i:i + 3] = "   "
+                          i += 3
+                          state = "code"
+                          continue
+                      if chars[i] != "\n":
+                          masked[i] = " "
+                      i += 1
+                      continue
+
+              if state in {"block-comment", "string", "multiline-string"}:
+                  raise ContractViolation("unterminated Swift lexical state: " + state)
+              return "".join(masked)
+
+          def authority_source(source: str) -> tuple[int, int, str]:
+              masked = mask_comments_and_strings(source)
+              starts = [
+                  match.start()
+                  for match in re.finditer(re.escape(signature), masked)
+              ]
+              if len(starts) != 1:
+                  raise ContractViolation(
+                      "expected exactly one lexical final Share authority declaration"
+                  )
+
+              start = starts[0]
+              end = masked.find(next_member, start + len(signature))
+              if end < 0:
+                  raise ContractViolation(
+                      "missing lexical restartExperiment boundary after final Share authority"
+                  )
+              return start, end, source[start:end]
+
+          def validate_source(source: str) -> tuple[int, int]:
+              start, end, function_source = authority_source(source)
+              function_code = mask_comments_and_strings(function_source)
+
+              if "/" in function_code:
+                  raise ContractViolation(
+                      "final Share authority must not contain code slash tokens inside its lexical member boundary"
+                  )
+              return start, end
+
+          source = Path(
+              "NembraApp/Features/Research/ES80CaptureShellView.swift"
+          ).read_text()
+
+          try:
+              start, end = validate_source(source)
+          except ContractViolation as error:
+              raise SystemExit(str(error)) from error
+
+          closing_brace = source.rfind("\n    }", start, end)
+          if closing_brace < 0:
+              raise SystemExit(
+                  "could not locate final Share closing brace for lexical-boundary self-test"
+              )
+
+          harmless_fake_boundary = (
+              source[:closing_brace]
+              + '\n        let lexicalBoundaryDocumentation = """\n'
+              + "    private func restartExperiment()\n"
+              + '        """\n'
+              + "        _ = lexicalBoundaryDocumentation\n"
+              + source[closing_brace:]
+          )
+          try:
+              validate_source(harmless_fake_boundary)
+          except ContractViolation as error:
+              raise SystemExit(
+                  "checker self-test rejected a fake boundary confined to a string"
+              ) from error
+
+          fake_boundary_bypass = (
+              source[:closing_brace]
+              + '\n        let lexicalBoundaryDocumentation = """\n'
+              + "    private func restartExperiment()\n"
+              + '        """\n'
+              + "        _ = lexicalBoundaryDocumentation\n"
+              + "        let lexicalBareBraceProbe = /\\}/\n"
+              + "        _ = lexicalBareBraceProbe\n"
+              + "#if NEVER_ENABLED_IN_RELEASE\n"
+              + "        let hiddenConditionalProbe = true\n"
+              + "        _ = hiddenConditionalProbe\n"
+              + "#endif\n"
+              + source[closing_brace:]
+          )
+          try:
+              validate_source(fake_boundary_bypass)
+          except ContractViolation:
+              pass
+          else:
+              raise SystemExit(
+                  "checker self-test accepted a regex/conditional bypass after a fake string member boundary"
+              )
+
+          comment_boundary_bypass = (
+              source[:closing_brace]
+              + "\n        /*\n"
+              + "    private func restartExperiment()\n"
+              + "        */\n"
+              + "        let lexicalExtendedBraceProbe = #/\\}/#\n"
+              + "        _ = lexicalExtendedBraceProbe\n"
+              + source[closing_brace:]
+          )
+          try:
+              validate_source(comment_boundary_bypass)
+          except ContractViolation:
+              pass
+          else:
+              raise SystemExit(
+                  "checker self-test accepted an extended-regex bypass after a fake comment member boundary"
+              )
+
+          print("final Share lexical member-boundary authority source contract: PASS")
+          PY
