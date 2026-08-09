@@ -1,0 +1,56 @@
+name: V14 Capture XXXL GO2
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-xxxl-viewport/gpt56-go2
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify isolated carrier
+        run: |
+          set -euo pipefail
+          base=019fa4b2d1446d91871b0736a543c12138a6a346
+          git merge-base --is-ancestor "$base" HEAD
+          actual="$(git diff --name-only "$base" HEAD | sort)"
+          expected="$(printf '%s\n' '.github/workflows/v14-capture-xxxl-go2.yml' 'scripts/ci/v14_capture_xxxl_apply.py' | sort)"
+          test "$actual" = "$expected"
+
+      - name: Apply reviewed presentation repair
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/v14_capture_xxxl_apply.py
+          git diff --check
+
+      - name: Verify truth gates untouched
+        run: |
+          set -euo pipefail
+          base=019fa4b2d1446d91871b0736a543c12138a6a346
+          git diff --quiet "$base" -- NembraUITests/ES80ResearchCaptureUITests.swift
+          grep -q 'UICTContentSizeCategoryAccessibilityXXXL' NembraUITests/ES80ResearchCaptureUITests.swift
+          changed="$(git diff --name-only "$base" -- NembraApp Packages NembraUITests | sort)"
+          expected="$(printf '%s\n' 'NembraApp/App/NembraApp.swift' 'NembraApp/Features/Research/ES80CaptureShellView.swift' | sort)"
+          test "$changed" = "$expected"
+          ! grep -q '\.dynamicTypeSize(' NembraApp/App/NembraApp.swift
+          ! grep -q '\.dynamicTypeSize(' NembraApp/Features/Research/ES80CaptureShellView.swift
+
+      - name: Publish clean product head
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/v14-capture-xxxl-go2.yml scripts/ci/v14_capture_xxxl_apply.py
+          git config user.name 'nembra-v14-closure'
+          git config user.email 'nembra-v14-closure@users.noreply.github.com'
+          git add NembraApp/App/NembraApp.swift NembraApp/Features/Research/ES80CaptureShellView.swift
+          git diff --cached --check
+          git commit -m '[Capture V14] Recompose Accessibility XXXL viewport'
+          git push origin HEAD:repair/v14-capture-xxxl-viewport/gpt56-go2
