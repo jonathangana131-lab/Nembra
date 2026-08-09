@@ -1,0 +1,41 @@
+name: V14 Dashboard Energy Rail App Projection NembraCore
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  nembracore:
+    name: Swift 6.2 NembraCore package
+    runs-on: ubuntu-latest
+    container:
+      image: swift:6.2
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v6
+      - name: Verify exact validation subject
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          actual_head="$(git rev-parse --verify HEAD^{commit})"
+          printf 'Expected PR head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual_head"
+          test "$actual_head" = "$EXPECTED_HEAD_SHA"
+      - name: Verify Swift toolchain
+        run: swift --version
+      - name: Run NembraCore tests with warnings as errors
+        shell: bash
+        run: |
+          set -o pipefail
+          swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors 2>&1 | tee /tmp/nembra-core-swift-test.log
+      - name: Retain exact Swift test diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v14-dashboard-energy-rail-app-projection-nembracore-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/nembra-core-swift-test.log
+          if-no-files-found: error
+          retention-days: 7
