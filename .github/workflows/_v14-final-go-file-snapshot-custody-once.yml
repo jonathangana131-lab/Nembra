@@ -1,0 +1,68 @@
+name: V14 Final GO File Snapshot Custody One Shot
+
+on:
+  push:
+    branches:
+      - repair/v14-final-go-file-snapshot-custody/gpt56-go
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: ${{ !contains(github.event.head_commit.message, '[Capture V14] Bind Final GO files to immutable snapshots') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact repair head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Require claimed integration parent
+        run: git merge-base --is-ancestor d218d5a55b827fab1f4998401715e1545e67bb3d HEAD
+
+      - name: Apply descriptor and archive snapshot repair
+        run: python3 scripts/ci/_v14_apply_file_snapshot_custody.py
+
+      - name: Compile repaired authority modules and regressions
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/_es80_today_final_go_foundation_impl.py
+          python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          python3 -m py_compile scripts/ci/tests/test_es80_today_final_go_local_evidence_descriptor_custody.py
+          python3 -m py_compile scripts/ci/tests/test_es80_today_trusted_xcode_download_snapshot_custody.py
+
+      - name: Prove local evidence descriptor custody
+        run: python3 scripts/ci/tests/test_es80_today_final_go_local_evidence_descriptor_custody.py -v
+
+      - name: Prove downloaded trusted Xcode artifact single-snapshot custody
+        run: python3 scripts/ci/tests/test_es80_today_trusted_xcode_download_snapshot_custody.py -v
+
+      - name: Preserve trusted Xcode subject adversarial suite
+        run: python3 scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py -v
+
+      - name: Preserve historical Final GO foundation suite
+        run: python3 scripts/ci/tests/test_es80_today_final_go_foundation.py
+
+      - name: Source and diff guard
+        run: |
+          set -euo pipefail
+          grep -Fq 'os.O_RDONLY | nofollow' scripts/ci/_es80_today_final_go_foundation_impl.py
+          grep -Fq 'before.st_ino' scripts/ci/_es80_today_final_go_foundation_impl.py
+          grep -Fq 'def _read_exact_archive(path: Path) -> bytes:' scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          grep -Fq 'zipfile.ZipFile(io.BytesIO(archive_raw)' scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          grep -Fq 'artifact.get("size_in_bytes") == archive_size' scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          ! grep -Fq 'artifact_archive_path.stat().st_size' scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          git diff --check
+
+      - name: Commit repaired authority bytes
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-v14-go-worker'
+          git config user.email 'actions@users.noreply.github.com'
+          git add scripts/ci/_es80_today_final_go_foundation_impl.py scripts/ci/es80_today_trusted_capture_xcode_subject.py
+          git diff --cached --check
+          git commit -m '[Capture V14] Bind Final GO files to immutable snapshots'
+          git push origin HEAD:repair/v14-final-go-file-snapshot-custody/gpt56-go
