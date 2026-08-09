@@ -1,5 +1,6 @@
 name: Disposable V14 Range Bridge R3 Validation
 
+# Trigger commit intentionally changes only this disposable validation file.
 on:
   push:
     branches:
