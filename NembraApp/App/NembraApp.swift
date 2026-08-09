@@ -246,10 +246,18 @@ private struct NembraNavigationView: View {
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("navigation.recent")
                 }
+                .onDelete(perform: deleteRecentDestinations)
+
+                Button(role: .destructive) {
+                    clearRecentDestinations()
+                } label: {
+                    Label("Clear Recent Destinations", systemImage: "trash")
+                }
+                .accessibilityIdentifier("navigation.recents.clear")
             } header: {
                 Text("Recent destinations")
             } footer: {
-                Text("Recent places are stored on this device. They do not contain scooter telemetry.")
+                Text("Recent places are stored on this device. Swipe a place to remove it, or clear the list. They do not contain scooter telemetry.")
             }
         }
         .listStyle(.insetGrouped)
@@ -381,8 +389,26 @@ private struct NembraNavigationView: View {
         var updated = recentDestinations.filter { $0.id != recent.id }
         updated.insert(recent, at: 0)
         updated = Array(updated.prefix(6))
+        persistRecentDestinations(updated)
+    }
 
-        guard let data = try? JSONEncoder().encode(updated),
+    private func deleteRecentDestinations(at offsets: IndexSet) {
+        var updated = recentDestinations
+        updated.remove(atOffsets: offsets)
+        persistRecentDestinations(updated)
+    }
+
+    private func clearRecentDestinations() {
+        recentDestinationsJSON = ""
+    }
+
+    private func persistRecentDestinations(_ destinations: [NembraRecentDestination]) {
+        guard !destinations.isEmpty else {
+            recentDestinationsJSON = ""
+            return
+        }
+
+        guard let data = try? JSONEncoder().encode(destinations),
               let encoded = String(data: data, encoding: .utf8) else {
             return
         }
