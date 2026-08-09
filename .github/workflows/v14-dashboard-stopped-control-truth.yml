@@ -1,0 +1,38 @@
+name: V14 Dashboard Stopped Control Truth
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - NembraApp/Features/Dashboard/DashboardView.swift
+      - scripts/ci/tests/test_dashboard_stopped_control_truth.py
+      - .github/workflows/v14-dashboard-stopped-control-truth.yml
+
+permissions:
+  contents: read
+
+jobs:
+  stopped-control-truth:
+    name: Dashboard stopped-control truth
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Verify exact validation subject
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          printf 'Expected exact PR head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual"
+          test "$actual" = "$EXPECTED_HEAD_SHA"
+
+      - name: Run Dashboard stopped-control truth regressions
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_dashboard_stopped_control_truth.py
