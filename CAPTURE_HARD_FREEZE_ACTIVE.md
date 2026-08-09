@@ -4,32 +4,28 @@ This file is the active execution lock for the one-time Nembra Capture utility.
 
 ## Frozen candidate
 - PR: #833
-- exact product head: `1810663e0a0793a2ee34b8186fc2471dfe65e24c`
+- exact product head: `856011c543fc73e8f554dc23eecf180c3f11272a`
 - exact-head portable/source Capture guards: **7 / 7 SUCCESS**
-- current PR-local Xcode run: `31291911371`
-- resolver job: `93190441213` — **SUCCESS**, resolved the immutable PR head
-- field-authority tooling job: `93190446883` — **SUCCESS**
-- Mac job: `93190446876` — **QUEUED / NON-EVIDENCE** at this checkpoint
-- ancestor `91fd9438d588d532618dd270777f64bdc74ad40a` PR-local Mac run `31291413734` — **CANCELLED / NON-EVIDENCE** after the legitimate head move
-- ancestor trusted run `31291409838` resolved `91fd9438...` only and cannot accept the current head
+- current PR-local Xcode run: `31292299974`
+- Mac job: `93191438917` — **QUEUED / NON-EVIDENCE** at this checkpoint
+- `Capture Simulator Visual Custody Source QA` run `31292299972` / job `93191430159` — **SUCCESS**, including the exact routing source contract
+- every Xcode result on `1810663e0a0793a2ee34b8186fc2471dfe65e24c` or earlier is ancestor evidence only
 
 The exact Capture product head is frozen while current exact-head runtime acceptance is alive. The deployed trusted default-branch workflow content was last changed at `a1433d683fcf1e15f34c38bedac6a8f591723aff` to use authenticated `github.actor == github.repository_owner` after a demonstrated App-mediated owner-command false-negative. Later `main` movement has been coordination/documentation only unless live GitHub shows otherwise; always inspect the current workflow before a fresh trusted command.
 
-## Why `1810663e...` replaced `91fd9438...`
+## Why `856011c...` replaced `1810663e...`
 
-`91fd9438...` fixed one demonstrated TODAY acceptance false-path: explicit `--es80-passive-capture-simulator-qa` now beats the embedded `ES80-FINGERPRINT-v1` field recipe only under `DEBUG && targetEnvironment(simulator)`.
+`1810663e...` restored valid ordinary Simulator scenario routing ahead of the embedded `ES80-FINGERPRINT-v1` field recipe, but its optional `AppBootstrap.simulationScenario(...)` helper intentionally collapses an explicit invalid Simulator request to `nil`. That created one adjacent fail-closed defect: a present-but-invalid ordinary Simulator request could fall through to private Capture whenever the Debug app also carried the embedded field recipe.
 
-Fresh exact-source review then found the adjacent ordinary-Simulator path was still wrong. The same recipe-bound Debug app is used by Home/Dashboard UI tests and the retained 11-state Simulator screenshot matrix. Those launches use `NEMBRA_SIMULATION_SCENARIO`, not the Capture-QA argument. On `91fd...`, the embedded field recipe could still route those ordinary Simulator launches into private/physical Capture.
+The direct two-commit fast-forward from `1810663e... -> 856011c...` changes only:
+- `scripts/ci/tests/test_xcode27_simulator_capture_recipe_provenance.py` — locks both valid ordinary Simulator routing and the explicit-invalid fail-closed case ahead of field-recipe routing;
+- `NembraApp/App/NembraApp.swift` — under `DEBUG && targetEnvironment(simulator)`, explicit Capture QA wins first; then `ScooterSimulationConfiguration.resolve(...)` sends both `.selected` and `.invalid` ordinary Simulator requests to `.standard`; only `.disabled` falls through to the embedded field recipe. Release/physical builds compile this override out and remain recipe-authoritative.
 
-The direct fast-forward repair from `91fd9438... -> 1810663e...` changes only:
-- `NembraApp/App/NembraApp.swift` — under Debug Simulator, explicit Capture QA wins first, then a valid `AppBootstrap.simulationScenario(...)` returns `.standard`, then the embedded field recipe is evaluated; Release/physical builds compile both Simulator overrides out;
-- `scripts/ci/tests/test_xcode27_simulator_capture_recipe_provenance.py` — binds the ordinary `SIMCTL_CHILD_NEMBRA_SIMULATION_SCENARIO` harness to that precedence.
-
-No BLE/controller/recorder/ResearchAdmission/signed-field producer/command behavior changed. All seven portable/source Capture gates on exact `1810663e...` are terminal green, including the executed Simulator recipe/route regression.
+No BLE/controller/recorder/ResearchAdmission/signed-field producer/command behavior changed. All seven portable/source Capture gates on exact `856011c...` are terminal green.
 
 ## Prime rule
 
-**DO NOT MOVE #833 WHILE CURRENT EXACT-HEAD XCODE RUN `31291911371` / MAC JOB `93190446876` IS QUEUED OR IN PROGRESS, unless a newly demonstrated TODAY blocker requires a bounded repair.**
+**DO NOT MOVE #833 WHILE CURRENT EXACT-HEAD XCODE RUN `31292299974` / MAC JOB `93191438917` IS QUEUED OR IN PROGRESS, unless a newly demonstrated TODAY blocker requires a bounded repair.**
 
 Do not mutate the Capture flagship for speculative hardening, cosmetics, documentation, duplicate validation, test cleanup, branch hygiene, post-capture security work, or a theoretically stronger implementation while this exact run is alive.
 
