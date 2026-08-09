@@ -58,8 +58,34 @@ struct PropulsionEnergyRailPresentationTests {
         #expect(presentation.acceptedWatts == 800)
         #expect(presentation.railFraction != nil)
         #expect((presentation.railFraction ?? 0) < 0.8)
+        #expect(presentation.acceptedTargetFraction == 0.8)
         #expect(presentation.scaleOrigin == .simulator)
         #expect(presentation.allowsLiveMotion)
+    }
+
+    @Test("accepted rail target stays stable while display-clock rail continues moving")
+    func acceptedTargetIsStableAcrossDisplayFrames() throws {
+        let identity = try makeIdentity()
+        var model = try displayModel(identity: identity)
+        let scale = try PropulsionGaugeScale.simulator(identity: identity, ceilingWatts: 1_000)
+
+        try model.accept(sample(identity: identity, watts: 100, receipt: 10, uptime: 1_000_000_000))
+        try model.accept(sample(identity: identity, watts: 800, receipt: 11, uptime: 1_100_000_000))
+
+        let early = model.cockpitSnapshot(
+            atUptimeNanoseconds: 1_200_000_000,
+            scale: scale
+        ).energyRailPresentation
+        let later = model.cockpitSnapshot(
+            atUptimeNanoseconds: 1_500_000_000,
+            scale: scale
+        ).energyRailPresentation
+
+        #expect(early.railFraction != later.railFraction)
+        #expect(early.acceptedTargetFraction == 0.8)
+        #expect(later.acceptedTargetFraction == 0.8)
+        #expect(early.acceptedWatts == 800)
+        #expect(later.acceptedWatts == 800)
     }
 
     @Test("accepted watts above presentation scale remain exact while rail clamps canonically")
@@ -78,6 +104,7 @@ struct PropulsionEnergyRailPresentationTests {
         #expect(presentation.currentness == .live)
         #expect(presentation.acceptedWatts == 1_200)
         #expect(presentation.railFraction == 1)
+        #expect(presentation.acceptedTargetFraction == 1)
         #expect(presentation.acceptedPeakMarkerFraction == 1)
         #expect(presentation.allowsLiveMotion)
     }
@@ -98,6 +125,7 @@ struct PropulsionEnergyRailPresentationTests {
         #expect(presentation.currentness == .retained)
         #expect(presentation.acceptedWatts == 640)
         #expect(presentation.railFraction == nil)
+        #expect(presentation.acceptedTargetFraction == nil)
         #expect(presentation.acceptedPeakMarkerFraction == nil)
         #expect(presentation.scaleOrigin == nil)
         #expect(!presentation.allowsLiveMotion)
@@ -117,6 +145,7 @@ struct PropulsionEnergyRailPresentationTests {
         #expect(presentation.currentness == .unavailable)
         #expect(presentation.acceptedWatts == nil)
         #expect(presentation.railFraction == nil)
+        #expect(presentation.acceptedTargetFraction == nil)
         #expect(presentation.acceptedPeakMarkerFraction == nil)
         #expect(presentation.scaleOrigin == nil)
         #expect(!presentation.allowsLiveMotion)
@@ -138,6 +167,7 @@ struct PropulsionEnergyRailPresentationTests {
         #expect(presentation.currentness == .live)
         #expect(presentation.acceptedWatts == 500)
         #expect(presentation.railFraction == nil)
+        #expect(presentation.acceptedTargetFraction == nil)
         #expect(presentation.acceptedPeakMarkerFraction == nil)
         #expect(presentation.scaleOrigin == nil)
         #expect(!presentation.allowsLiveMotion)
