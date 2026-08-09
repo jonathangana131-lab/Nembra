@@ -1,0 +1,57 @@
+name: Temp ES80 stale UI contract patch
+
+on:
+  push:
+    branches:
+      - tooling/es80-stale-ui-contract-patch-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Patch stale source assertions
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('NembraUITests/ES80ResearchCaptureUITests.swift')
+          s = p.read_text()
+          replacements = {
+              'if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure': '.makeResearchAuthorizedES80ForCurrentApplication()',
+              'The normal research route must still be downstream of the package field gate.': 'The real research route must construct through the current package-owned research-authorized factory.',
+              'PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()': 'ES80ExperimentOneFieldNoGoView()',
+              'The real field route must retain its package-owned attested factory.': 'Failure to obtain package research authority must retain the dedicated physical NO-GO fallback.'
+          }
+          changed = False
+          for old, new in replacements.items():
+              count = s.count(old)
+              if count == 1:
+                  s = s.replace(old, new)
+                  changed = True
+              elif count != 0:
+                  raise SystemExit(f'unexpected count {count} for {old!r}')
+          if not changed:
+              raise SystemExit(0)
+          p.write_text(s)
+          PY
+          git diff --check
+          test "$(git diff --name-only)" = "NembraUITests/ES80ResearchCaptureUITests.swift"
+          grep -F '.makeResearchAuthorizedES80ForCurrentApplication()' NembraUITests/ES80ResearchCaptureUITests.swift
+          grep -F 'ES80ExperimentOneFieldNoGoView()' NembraUITests/ES80ResearchCaptureUITests.swift
+          ! grep -F 'PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()' NembraUITests/ES80ResearchCaptureUITests.swift
+      - name: Commit focused test repair
+        run: |
+          if git diff --quiet; then
+            echo 'No patch needed.'
+            exit 0
+          fi
+          git config user.name 'nembra-go-bot'
+          git config user.email 'nembra-go-bot@users.noreply.github.com'
+          git add NembraUITests/ES80ResearchCaptureUITests.swift
+          git commit -m 'test(capture): refresh research route source contract'
+          git push origin HEAD:tooling/es80-stale-ui-contract-patch-gpt56
