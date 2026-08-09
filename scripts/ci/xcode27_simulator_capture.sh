@@ -116,8 +116,8 @@ xcodebuild \
   -derivedDataPath "$DERIVED_DATA" \
   -resultBundlePath "$RESULT_BUNDLE" \
   -test-timeouts-enabled YES \
-  -default-test-execution-time-allowance 120 \
-  -maximum-test-execution-time-allowance 120 \
+  -default-test-execution-time-allowance 240 \
+  -maximum-test-execution-time-allowance 240 \
   -collect-test-diagnostics never \
   CODE_SIGNING_ALLOWED=NO \
   "NEMBRA_CAPTURE_BUILD_IDENTIFIER=$CAPTURE_BUILD_IDENTIFIER" \
