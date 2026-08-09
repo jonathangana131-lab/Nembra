@@ -8,7 +8,8 @@ non-authorizing for direct execution and ordinary builder imports.
 
 This entrypoint removes the authority defects that must not remain on the executable GO path:
 - trusted Xcode acceptance comes only from the owner-commanded default-branch workflow whose Git
-  blob is pinned independently from the candidate PR head;
+  blob is pinned independently from the candidate PR head and whose live metadata comes only from
+  the repository-owned API client, never an imported caller callback;
 - trusted workflow Git-object lookup reuses the private foundation's producer-owned, closed Git
   custody boundary rather than caller PATH/config/replacement semantics;
 - the independent retained-candidate receipt must be exact fresh stdout from the pinned crosscheck
@@ -132,10 +133,9 @@ def build_final_go_record(
     frozen_source_repo: Path,
     tooling_repo: Path,
     operator_attestation: Path,
-    github_get_json: Callable[[str], tuple[bytes, dict[str, Any]]] = foundation._api_get_json,
     now_utc=None,
 ) -> dict[str, Any]:
-    """Run the private foundation only after fresh pinned-crosscheck and Xcode authority."""
+    """Run the private foundation after repository-owned live authority and fresh evidence checks."""
     try:
         crosscheck_execution = crosscheck_custody.verify_crosscheck_receipt_custody(
             candidate_root=candidate_root,
@@ -159,6 +159,8 @@ def build_final_go_record(
         artifact_archive_path: Path,
         github_get_json: Callable[[str], tuple[bytes, dict[str, Any]]],
     ) -> dict[str, Any]:
+        if github_get_json is not foundation._api_get_json:
+            raise FinalGoError("private Final GO foundation attempted to replace live GitHub authority")
         try:
             return trusted_xcode.verify_trusted_capture_xcode_subject(
                 source_commit_sha=source,
@@ -167,7 +169,7 @@ def build_final_go_record(
                 job_id=job_id,
                 artifact_id=artifact_id,
                 artifact_archive_path=artifact_archive_path,
-                github_get_json=github_get_json,
+                github_get_json=foundation._api_get_json,
                 workflow_blob_sha_at_commit=lambda commit, path: _workflow_blob_sha_at_commit(
                     tooling_repo, commit, path
                 ),
@@ -206,7 +208,7 @@ def build_final_go_record(
             frozen_source_repo=frozen_source_repo,
             tooling_repo=tooling_repo,
             operator_attestation=operator_attestation,
-            github_get_json=github_get_json,
+            github_get_json=foundation._api_get_json,
             now_utc=now_utc,
         )
     finally:
