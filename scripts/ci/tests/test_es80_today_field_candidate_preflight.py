@@ -209,6 +209,21 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertIn("private-intended-device-input-invalid", report["problems"])
         self.assertNotIn(self.PRIVATE_UDID, json.dumps(report))
 
+    def test_production_handoff_refuses_private_path_clobber_before_secret_write(self):
+        handoff = HANDOFF_PATH.read_text(encoding="utf-8")
+        directory_guard = 'if [[ -L "$PRIVATE_DIR" ]]; then'
+        target_guard = 'if [[ -e "$UDID_FILE" || -L "$UDID_FILE" ]]; then'
+        read_secret = "IFS= read -r -s INTENDED_UDID"
+        guarded_write = '( set -o noclobber; printf \'%s\' "$INTENDED_UDID" > "$UDID_FILE" )'
+
+        self.assertIn(directory_guard, handoff)
+        self.assertIn(target_guard, handoff)
+        self.assertIn(guarded_write, handoff)
+        self.assertLess(handoff.index(directory_guard), handoff.index(read_secret))
+        self.assertLess(handoff.index(target_guard), handoff.index(read_secret))
+        self.assertLess(handoff.index(target_guard), handoff.index(guarded_write))
+        self.assertNotIn('printf \'%s\\n\' "$INTENDED_UDID" > "$UDID_FILE"', handoff)
+
     def test_repository_contained_udid_file_is_rejected_to_match_frozen_private_runner(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
