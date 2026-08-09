@@ -17,6 +17,7 @@ spec.loader.exec_module(hardened)
 class HardenedFinalGoCompositionTests(unittest.TestCase):
     SOURCE = "a" * 40
     WORKFLOW_SOURCE = "b" * 40
+    RECEIPT_SHA = "d" * 64
 
     def kwargs(self, root: Path):
         return {
@@ -34,6 +35,14 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             "github_get_json": lambda path: (b"{}", {}),
         }
 
+    def custody_subject(self):
+        return {
+            "executionCustody": hardened.crosscheck_custody.EXECUTION_CUSTODY,
+            "receiptSHA256": self.RECEIPT_SHA,
+            "toolCommit": hardened.foundation.PINNED_CROSSCHECK_COMMIT,
+            "toolGitBlob": hardened.foundation.PINNED_CROSSCHECK_BLOB,
+        }
+
     def fake_foundation(self, **kwargs):
         subject = hardened.foundation._trusted_xcode_subject(
             source=kwargs["expected_source_sha"],
@@ -44,9 +53,15 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             artifact_archive_path=kwargs["trusted_xcode_artifact_archive"],
             github_get_json=kwargs["github_get_json"],
         )
+        custody = self.custody_subject()
         return {
             "acceptedSourceCommitSHA": kwargs["expected_source_sha"],
             "trustedXcodeAcceptance": subject,
+            "independentRetainedCandidateCrosscheck": {
+                "receiptSHA256": custody["receiptSHA256"],
+                "toolCommit": custody["toolCommit"],
+                "toolGitBlob": custody["toolGitBlob"],
+            },
         }
 
     def trusted_subject(self):
@@ -56,11 +71,20 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             "workflowSourceCommitSHA": self.WORKFLOW_SOURCE,
         }
 
-    def test_composition_replaces_foundation_trust_seam_and_restores_it(self):
+    def custody_patch(self, **overrides):
+        value = self.custody_subject()
+        value.update(overrides)
+        return mock.patch.object(
+            hardened.crosscheck_custody,
+            "verify_crosscheck_receipt_custody",
+            return_value=value,
+        )
+
+    def test_composition_requires_fresh_crosscheck_then_replaces_xcode_seam(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             original = hardened.foundation._trusted_xcode_subject
-            with mock.patch.object(
+            with self.custody_patch() as custody, mock.patch.object(
                 hardened.foundation,
                 "build_final_go_record",
                 side_effect=self.fake_foundation,
@@ -73,16 +97,51 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
 
             self.assertIs(hardened.foundation._trusted_xcode_subject, original)
             self.assertEqual(record["trustedXcodeAcceptance"], self.trusted_subject())
+            self.assertEqual(
+                record["independentRetainedCandidateCrosscheck"]["executionCustody"],
+                hardened.crosscheck_custody.EXECUTION_CUSTODY,
+            )
+            custody.assert_called_once()
+            custody_call = custody.call_args.kwargs
+            self.assertEqual(custody_call["candidate_root"], root / "candidate")
+            self.assertEqual(custody_call["receipt_path"], root / "crosscheck.json")
+            self.assertEqual(custody_call["tooling_repo"], root / "tooling")
+            self.assertEqual(custody_call["expected_tool_commit"], hardened.foundation.PINNED_CROSSCHECK_COMMIT)
+            self.assertEqual(custody_call["expected_tool_blob"], hardened.foundation.PINNED_CROSSCHECK_BLOB)
             verify.assert_called_once()
-            call = verify.call_args.kwargs
-            self.assertEqual(call["source_commit_sha"], self.SOURCE)
-            self.assertEqual(call["expected_pr_number"], 833)
+
+    def test_crosscheck_custody_failure_stops_before_foundation_builder(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with mock.patch.object(
+                hardened.crosscheck_custody,
+                "verify_crosscheck_receipt_custody",
+                side_effect=hardened.crosscheck_custody.CrosscheckReceiptCustodyError("forged receipt"),
+            ), mock.patch.object(hardened.foundation, "build_final_go_record") as foundation_builder:
+                with self.assertRaisesRegex(hardened.FinalGoError, "forged receipt"):
+                    hardened.build_final_go_record(**self.kwargs(root))
+            foundation_builder.assert_not_called()
+
+    def test_crosscheck_execution_subject_must_match_foundation_receipt_subject(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with self.custody_patch(receiptSHA256="e" * 64), mock.patch.object(
+                hardened.foundation,
+                "build_final_go_record",
+                side_effect=self.fake_foundation,
+            ), mock.patch.object(
+                hardened.trusted_xcode,
+                "verify_trusted_capture_xcode_subject",
+                return_value=self.trusted_subject(),
+            ):
+                with self.assertRaisesRegex(hardened.FinalGoError, "receiptSHA256"):
+                    hardened.build_final_go_record(**self.kwargs(root))
 
     def test_trusted_subject_failure_becomes_foundation_final_go_error_and_restores_seam(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             original = hardened.foundation._trusted_xcode_subject
-            with mock.patch.object(
+            with self.custody_patch(), mock.patch.object(
                 hardened.foundation,
                 "build_final_go_record",
                 side_effect=self.fake_foundation,
@@ -100,7 +159,7 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             root = Path(temporary)
             aliased = self.trusted_subject()
             aliased["workflowSourceCommitSHA"] = self.SOURCE
-            with mock.patch.object(
+            with self.custody_patch(), mock.patch.object(
                 hardened.foundation,
                 "build_final_go_record",
                 side_effect=self.fake_foundation,
