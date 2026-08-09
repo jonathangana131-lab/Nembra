@@ -94,7 +94,8 @@ def _read_archive_snapshot(path: Path) -> bytes:
 
     Digest, byte-count, and ZIP inspection are all derived from the returned bytes. The pathname
     is never re-opened after this function returns, so a later path replacement cannot mix two
-    downloaded GitHub artifact generations into one Final GO subject.
+    downloaded GitHub artifact generations into one Final GO subject. Descriptor metadata that
+    changes on in-place writes is also bound across the read so same-inode mutation fails closed.
     """
 
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
@@ -114,6 +115,16 @@ def _read_archive_snapshot(path: Path) -> bytes:
             stat.S_ISREG(before.st_mode),
             "trusted Xcode artifact archive must be one regular file",
         )
+        identity_before = (
+            before.st_dev,
+            before.st_ino,
+            before.st_mode,
+            before.st_uid,
+            before.st_gid,
+            before.st_size,
+            before.st_mtime_ns,
+            before.st_ctime_ns,
+        )
 
         chunks: list[bytes] = []
         while True:
@@ -124,10 +135,19 @@ def _read_archive_snapshot(path: Path) -> bytes:
         raw = b"".join(chunks)
 
         after = os.fstat(descriptor)
+        identity_after = (
+            after.st_dev,
+            after.st_ino,
+            after.st_mode,
+            after.st_uid,
+            after.st_gid,
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_ctime_ns,
+        )
         _require(
-            (before.st_dev, before.st_ino, before.st_size)
-            == (after.st_dev, after.st_ino, after.st_size),
-            "trusted Xcode artifact archive identity changed while reading",
+            identity_before == identity_after,
+            "trusted Xcode artifact archive identity or contents changed while reading",
         )
         _require(
             len(raw) == before.st_size,
