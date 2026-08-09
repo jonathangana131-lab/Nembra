@@ -181,11 +181,26 @@ public struct AcceptedBatterySOCStream: Equatable, Sendable {
     public private(set) var validator: BatteryEvidenceStreamValidator
     public private(set) var continuitySegmentStartReceiptIdentity: BatteryEvidenceReceiptIdentity?
 
+    // The validator deliberately retains only a weak lease handle so cached validators/anchors
+    // cannot extend live authority. The real stream lineage is the strong owner. Struct copies
+    // share this reference, which is exactly the intended one-authority copy semantics.
+    private let currentnessOwner: BatteryEvidenceCurrentnessOwner
+
     public init() {
+        let currentnessOwner = BatteryEvidenceCurrentnessOwner()
+        self.currentnessOwner = currentnessOwner
         validator = BatteryEvidenceStreamValidator(
-            currentnessOwner: BatteryEvidenceCurrentnessOwner()
+            currentnessOwner: currentnessOwner
         )
         continuitySegmentStartReceiptIdentity = nil
+    }
+
+    /// Equality remains the same chronology/value comparison that synthesis provided before the
+    /// private lifetime owner was retained explicitly. Authority identity is intentionally not
+    /// reducible to Equatable state; currentness is checked through opaque leases/generations.
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.validator == rhs.validator
+            && lhs.continuitySegmentStartReceiptIdentity == rhs.continuitySegmentStartReceiptIdentity
     }
 
     /// Records an explicit observation gap while preserving the prior segment as retained history.
