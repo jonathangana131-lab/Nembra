@@ -5,6 +5,7 @@ on:
     types: [opened, reopened, synchronize, ready_for_review]
     paths:
       - NembraApp/Features/Research/ES80CaptureShellView.swift
+      - .github/workflows/capture-final-share-retry-authority.yml
       - .github/workflows/capture-final-share-conditional-authority.yml
       - .github/workflows/capture-final-share-regex-lexical-authority.yml
 
@@ -31,7 +32,7 @@ jobs:
           printf 'Expected exact PR head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual"
           test "$actual" = "$EXPECTED_HEAD_SHA"
 
-      - name: Reject regex-literal brace ambiguity in final Share authority
+      - name: Reject slash-token lexical ambiguity in final Share authority
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -43,12 +44,99 @@ jobs:
 
           signature = "private func prepareFinalShareForAnalysisAndSharing()"
           next_member = "\n    private func restartExperiment()"
-          extended_regex_opener = re.compile(r"#+/")
+
+          def mask_noncode(text: str) -> str:
+              """Preserve offsets/newlines while hiding Swift comments and string literals."""
+              chars = list(text)
+              masked = list(text)
+              i = 0
+              state = "code"
+              block_depth = 0
+              while i < len(chars):
+                  if state == "code":
+                      if text.startswith("//", i):
+                          masked[i] = masked[i + 1] = " "
+                          i += 2
+                          state = "line-comment"
+                          continue
+                      if text.startswith("/*", i):
+                          masked[i] = masked[i + 1] = " "
+                          i += 2
+                          state = "block-comment"
+                          block_depth = 1
+                          continue
+                      if text.startswith('"""', i):
+                          masked[i:i + 3] = "   "
+                          i += 3
+                          state = "multiline-string"
+                          continue
+                      if chars[i] == '"':
+                          masked[i] = " "
+                          i += 1
+                          state = "string"
+                          continue
+                      i += 1
+                      continue
+
+                  if state == "line-comment":
+                      if chars[i] == "\n":
+                          state = "code"
+                      else:
+                          masked[i] = " "
+                      i += 1
+                      continue
+
+                  if state == "block-comment":
+                      if text.startswith("/*", i):
+                          masked[i] = masked[i + 1] = " "
+                          block_depth += 1
+                          i += 2
+                          continue
+                      if text.startswith("*/", i):
+                          masked[i] = masked[i + 1] = " "
+                          block_depth -= 1
+                          i += 2
+                          if block_depth == 0:
+                              state = "code"
+                          continue
+                      if chars[i] != "\n":
+                          masked[i] = " "
+                      i += 1
+                      continue
+
+                  if state == "string":
+                      if chars[i] == "\\" and i + 1 < len(chars):
+                          masked[i] = masked[i + 1] = " "
+                          i += 2
+                          continue
+                      if chars[i] == '"':
+                          masked[i] = " "
+                          state = "code"
+                      elif chars[i] != "\n":
+                          masked[i] = " "
+                      i += 1
+                      continue
+
+                  if state == "multiline-string":
+                      if text.startswith('"""', i):
+                          masked[i:i + 3] = "   "
+                          i += 3
+                          state = "code"
+                          continue
+                      if chars[i] != "\n":
+                          masked[i] = " "
+                      i += 1
+                      continue
+
+              if state in {"block-comment", "string", "multiline-string"}:
+                  raise ContractViolation("unterminated Swift lexical state: " + state)
+              return "".join(masked)
 
           def authority_source(source: str) -> tuple[int, int, str]:
+              masked = mask_noncode(source)
               starts = [
                   match.start()
-                  for match in re.finditer(re.escape(signature), source)
+                  for match in re.finditer(re.escape(signature), masked)
               ]
               if len(starts) != 1:
                   raise ContractViolation(
@@ -56,25 +144,25 @@ jobs:
                   )
 
               start = starts[0]
-              end = source.find(next_member, start + len(signature))
+              end = masked.find(next_member, start + len(signature))
               if end < 0:
                   raise ContractViolation(
                       "missing stable restartExperiment boundary after final Share authority"
                   )
-              return start, end, source[start:end]
+              return start, end, masked[start:end]
 
           def validate_source(source: str) -> tuple[int, int]:
-              start, end, function_source = authority_source(source)
+              start, end, function_masked = authority_source(source)
 
-              # The companion conditional-authority checker brace-matches this Swift function.
-              # Extended regex literals are valid Swift syntax and may contain literal `}` bytes
-              # that are not structural braces. Until that checker has a full Swift lexer/parser,
-              # keep this authority-critical function mechanically free of extended regex syntax
-              # so regex payload bytes cannot truncate its apparent brace range and hide a later
-              # conditional-compilation directive.
-              if extended_regex_opener.search(function_source):
+              # Both retained-retry and conditional-authority companions reason about Swift braces.
+              # Swift 6 supports bare /.../ regex literals as well as #/.../# extended literals, and
+              # either spelling can contain brace bytes that are lexical data rather than structure.
+              # This authority-critical function currently needs no division or regex operation, so
+              # fail closed on every code-level slash token. Comments and strings are masked first.
+              # A future legitimate slash use must upgrade the shared lexical contract deliberately.
+              if "/" in function_masked:
                   raise ContractViolation(
-                      "final Share authority must not contain Swift extended regex literals"
+                      "final Share authority must not contain code-level slash tokens while brace-based authority gates are active"
                   )
               return start, end
 
@@ -91,17 +179,43 @@ jobs:
           if closing_brace < 0:
               raise SystemExit("could not locate final Share function closing brace for checker self-test")
 
-          # Self-red-team the exact demonstrated false-green class. Swift 6.2 accepts #/\}/#
-          # without the bare-slash-regex feature flag. The older brace matcher can treat the regex
-          # payload `}` as the function close and then miss a real #if later in the function.
-          regex_only = (
+          # Benign slashes inside comments and strings are lexical data and must remain allowed.
+          benign_noncode = (
               source[:closing_brace]
-              + "\n        let lexicalBraceProbe = #/\\}/#\n"
-              + "        _ = lexicalBraceProbe\n"
+              + "\n        let slashInStringProbe = \"https://nembra.invalid/a/b\"\n"
+              + "        _ = slashInStringProbe // slash/comment/probe\n"
               + source[closing_brace:]
           )
           try:
-              validate_source(regex_only)
+              validate_source(benign_noncode)
+          except ContractViolation as error:
+              raise SystemExit("checker self-test rejected non-code slash data") from error
+
+          # Swift 6 bare regex syntax is a separate bypass from the extended-regex case #1373 fixed.
+          # Either can place a `}` byte before a later real #if and confuse a brace-only parser.
+          bare_regex = (
+              source[:closing_brace]
+              + "\n        let lexicalBareBraceProbe = /\\}/\n"
+              + "        _ = lexicalBareBraceProbe\n"
+              + source[closing_brace:]
+          )
+          try:
+              validate_source(bare_regex)
+          except ContractViolation:
+              pass
+          else:
+              raise SystemExit(
+                  "checker self-test accepted a Swift bare-slash regex literal in final Share authority"
+              )
+
+          extended_regex = (
+              source[:closing_brace]
+              + "\n        let lexicalExtendedBraceProbe = #/\\}/#\n"
+              + "        _ = lexicalExtendedBraceProbe\n"
+              + source[closing_brace:]
+          )
+          try:
+              validate_source(extended_regex)
           except ContractViolation:
               pass
           else:
@@ -109,10 +223,10 @@ jobs:
                   "checker self-test accepted a Swift extended regex literal in final Share authority"
               )
 
-          regex_bypass = (
+          bare_regex_bypass = (
               source[:closing_brace]
-              + "\n        let lexicalBraceProbe = #/\\}/#\n"
-              + "        _ = lexicalBraceProbe\n"
+              + "\n        let lexicalBareBraceProbe = /\\}/\n"
+              + "        _ = lexicalBareBraceProbe\n"
               + "#if NEVER_ENABLED_IN_RELEASE\n"
               + "        let hiddenConditionalProbe = true\n"
               + "        _ = hiddenConditionalProbe\n"
@@ -120,13 +234,13 @@ jobs:
               + source[closing_brace:]
           )
           try:
-              validate_source(regex_bypass)
+              validate_source(bare_regex_bypass)
           except ContractViolation:
               pass
           else:
               raise SystemExit(
-                  "checker self-test accepted a conditional branch hidden after a regex-literal brace"
+                  "checker self-test accepted a conditional branch hidden after a bare-regex brace"
               )
 
-          print("final Share regex lexical authority source contract: PASS")
+          print("final Share slash-token lexical authority source contract: PASS")
           PY
