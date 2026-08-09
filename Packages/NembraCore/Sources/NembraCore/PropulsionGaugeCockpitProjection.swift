@@ -134,8 +134,9 @@ public extension PropulsionGaugeDisplayModel {
         from frame: PropulsionGaugeFrame,
         scale: PropulsionGaugeScale?
     ) -> Double? {
-        guard frame.scaleOrigin != nil,
+        guard let admittedScaleOrigin = frame.scaleOrigin,
               let scale,
+              admittedScaleOrigin == scale.origin,
               scale.identity == frame.identity,
               let acceptedWatts = frame.latestAcceptedWatts else {
             return nil
