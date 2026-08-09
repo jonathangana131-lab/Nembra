@@ -1,0 +1,107 @@
+name: Capture Final GO Convergence Expected-Red
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - .github/workflows/capture-final-go-convergence-expected-red.yml
+
+permissions:
+  contents: read
+
+jobs:
+  final-go-convergence-blockers:
+    name: Prove Final GO convergence blockers are closed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXPECTED_PARENT_SHA: b0f53301c2403fcd5f8e943e85418b683df5c221
+      WORKFLOW_PATH: .github/workflows/capture-final-go-convergence-expected-red.yml
+    steps:
+      - name: Checkout immutable validation head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+
+      - name: Verify one workflow-only commit above exact Final GO convergence
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT_SHA"
+          changed="$(git diff --name-only "$EXPECTED_PARENT_SHA" HEAD)"
+          test "$changed" = "$WORKFLOW_PATH"
+
+      - name: Require accepted Research compile tuple in Final GO receipt authority
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import importlib.util
+          from pathlib import Path
+
+          path = Path('scripts/ci/es80_today_final_go_record.py')
+          spec = importlib.util.spec_from_file_location('final_go', path)
+          module = importlib.util.module_from_spec(spec)
+          assert spec and spec.loader
+          spec.loader.exec_module(module)
+
+          required = {
+              'researchCompileMode',
+              'researchCompileAuthority',
+              'researchCompileCondition',
+              'researchCompileTupleVerified',
+          }
+          missing = sorted(required - set(module.CROSSCHECK_KEYS))
+          expected_pin = 'd827a296048386bda62024ea3278775d5344c47c'
+          problems = []
+          if missing:
+              problems.append(f'Final GO closed-world cross-check schema lacks accepted Research tuple fields: {missing}')
+          if module.PINNED_CROSSCHECK_COMMIT != expected_pin:
+              problems.append(
+                  'Final GO pins pre-Research-tuple cross-check commit '
+                  f'{module.PINNED_CROSSCHECK_COMMIT}; expected accepted tuple verifier {expected_pin}'
+              )
+          if problems:
+              raise SystemExit('\n'.join(problems))
+          PY
+
+      - name: Require failed post-rename publication to retract GO pathname
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import importlib.util
+          import os
+          from pathlib import Path
+          import tempfile
+          from unittest import mock
+
+          path = Path('scripts/ci/es80_today_final_go_record.py')
+          spec = importlib.util.spec_from_file_location('final_go', path)
+          module = importlib.util.module_from_spec(spec)
+          assert spec and spec.loader
+          spec.loader.exec_module(module)
+
+          raw = b'{"decision":"GO","schemaVersion":3}\n'
+          real_fsync = os.fsync
+          calls = 0
+
+          def fail_parent_fsync(fd):
+              global calls
+              calls += 1
+              if calls == 2:
+                  raise OSError('expected-red parent-directory fsync failure after publication')
+              return real_fsync(fd)
+
+          with tempfile.TemporaryDirectory() as temporary:
+              output = Path(temporary) / 'FinalGO.json'
+              try:
+                  with mock.patch.object(module.os, 'fsync', side_effect=fail_parent_fsync):
+                      module.publish_record_no_replace(output, raw, publisher=lambda source, destination: os.rename(source, destination))
+              except OSError:
+                  pass
+              else:
+                  raise SystemExit('expected injected post-rename fsync failure was not observed')
+              if output.exists() or output.is_symlink():
+                  raise SystemExit(
+                      'failed Final GO transaction left authoritative-looking FinalGO.json after post-rename failure'
+                  )
+          PY
