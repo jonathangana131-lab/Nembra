@@ -4,7 +4,9 @@ on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
     paths:
+      - scripts/ci/es80_today_final_go_foundation.py
       - scripts/ci/_es80_today_final_go_foundation_impl.py
+      - scripts/ci/tests/test_es80_today_final_go_direct_execution_disabled.py
       - scripts/ci/tests/test_es80_today_final_go_private_impl_execution_disabled.py
       - scripts/ci/tests/test_es80_today_final_go_local_evidence_descriptor_custody.py
       - scripts/ci/es80_today_trusted_capture_xcode_subject.py
@@ -41,10 +43,12 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
       - name: Compile Final GO hardening modules and tests
         run: |
-          python3 -m py_compile scripts/ci/_es80_today_final_go_foundation_impl.py scripts/ci/tests/test_es80_today_final_go_private_impl_execution_disabled.py scripts/ci/tests/test_es80_today_final_go_local_evidence_descriptor_custody.py
+          python3 -m py_compile scripts/ci/es80_today_final_go_foundation.py scripts/ci/_es80_today_final_go_foundation_impl.py scripts/ci/tests/test_es80_today_final_go_direct_execution_disabled.py scripts/ci/tests/test_es80_today_final_go_private_impl_execution_disabled.py scripts/ci/tests/test_es80_today_final_go_local_evidence_descriptor_custody.py
           python3 -m py_compile scripts/ci/es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_capture_xcode_subject.py scripts/ci/tests/test_es80_today_trusted_xcode_preserves_external_record_contract.py scripts/ci/tests/test_capture_trusted_xcode_producer_execution_custody.py scripts/ci/tests/test_capture_trusted_xcode_bash_environment_custody.py
           python3 -m py_compile scripts/ci/es80_today_final_go_publication.py scripts/ci/tests/test_es80_today_final_go_publication.py
           python3 -m py_compile scripts/ci/es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_hardened.py scripts/ci/tests/test_es80_today_final_go_git_custody.py
+      - name: Reject direct/imported public Final GO execution surfaces
+        run: python3 scripts/ci/tests/test_es80_today_final_go_direct_execution_disabled.py -v
       - name: Reject direct private Final GO implementation execution
         run: python3 scripts/ci/tests/test_es80_today_final_go_private_impl_execution_disabled.py -v
       - name: Preserve descriptor-bound local evidence reads
@@ -80,9 +84,12 @@ jobs:
           grep -Fq '/usr/bin/git cat-file blob "$expected_blob"' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq '| /usr/bin/env -i \' .github/workflows/capture-xcode27-trusted-command.yml
           grep -Fq "/bin/bash -c 'source /dev/stdin' \"\$GITHUB_WORKSPACE/\$producer_path\"" .github/workflows/capture-xcode27-trusted-command.yml
+          grep -Fq 'public Final GO foundation builder is non-authorizing' scripts/ci/es80_today_final_go_foundation.py
           grep -Fq 'private foundation implementation is non-authorizing' scripts/ci/_es80_today_final_go_foundation_impl.py
           grep -Fq 'O_NOFOLLOW' scripts/ci/_es80_today_final_go_foundation_impl.py
           grep -Fq 'os.fstat(fd)' scripts/ci/_es80_today_final_go_foundation_impl.py
+          grep -Fq 'foundation = _load(' scripts/ci/es80_today_final_go_hardened.py
+          grep -Fq '"_es80_today_final_go_foundation_impl.py"' scripts/ci/es80_today_final_go_hardened.py
           grep -Fq 'run.get("event") == "issue_comment"' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'run.get("head_branch") == DEFAULT_BRANCH' scripts/ci/es80_today_trusted_capture_xcode_subject.py
           grep -Fq 'AMBIGUOUS NO-GO' scripts/ci/es80_today_final_go_publication.py
