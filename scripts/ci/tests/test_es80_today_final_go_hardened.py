@@ -18,6 +18,25 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
     SOURCE = "a" * 40
     WORKFLOW_SOURCE = "b" * 40
     CROSSCHECK_RECEIPT_SHA = "c" * 64
+    IPA_SHA = "1" * 64
+    INSPECTION_SHA = "2" * 64
+    EXECUTABLE_SHA = "3" * 64
+    INFO_PLIST_SHA = "4" * 64
+    PROFILE_SHA = "5" * 64
+    CDHASH = "6" * 40
+    TEAM = "ABCDEFGHIJ"
+    PROFILE_UUID = "profile-uuid"
+    PROFILE_EXPIRY = "2030-01-01T00:00:00Z"
+    IPA_BYTES = 123456
+
+    def setUp(self):
+        self.reinspection_patch = mock.patch.object(
+            hardened.signed_candidate_reinspection,
+            "verify_signed_candidate_reinspection",
+            return_value=self.signed_reinspection(),
+        )
+        self.verify_reinspection = self.reinspection_patch.start()
+        self.addCleanup(self.reinspection_patch.stop)
 
     def kwargs(self, root: Path):
         return {
@@ -43,6 +62,40 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             "executionCustody": "pinned-git-object-stdout-v1",
         }
 
+    def signed_reinspection(self):
+        return {
+            "authority": "independent-native-apple-signed-ipa-reinspection-v1",
+            "inspectionRecordSHA256": self.INSPECTION_SHA,
+            "signedInstallableSHA256": self.IPA_SHA,
+            "ipaByteCount": self.IPA_BYTES,
+            "bundleIdentifier": "com.jonathangana131.nembra",
+            "platformName": "iphoneos",
+            "supportedPlatforms": ["iPhoneOS"],
+            "teamIdentifier": self.TEAM,
+            "signingAuthorities": ["Apple Development: Test"],
+            "codeDirectoryHash": self.CDHASH,
+            "provisioningProfileSHA256": self.PROFILE_SHA,
+            "provisioningProfileUUID": self.PROFILE_UUID,
+            "provisioningProfileExpirationUTC": self.PROFILE_EXPIRY,
+            "provisioningApplicationIdentifier": f"{self.TEAM}.com.jonathangana131.nembra",
+            "executableSHA256": self.EXECUTABLE_SHA,
+            "infoPlistSHA256": self.INFO_PLIST_SHA,
+        }
+
+    def accepted_candidate(self):
+        return {
+            "retainedIPASHA256": self.IPA_SHA,
+            "retainedIPAByteCount": self.IPA_BYTES,
+            "signedArtifactInspectionSHA256": self.INSPECTION_SHA,
+            "executableSHA256": self.EXECUTABLE_SHA,
+            "infoPlistSHA256": self.INFO_PLIST_SHA,
+            "teamIdentifier": self.TEAM,
+            "provisioningProfileSHA256": self.PROFILE_SHA,
+            "provisioningProfileUUID": self.PROFILE_UUID,
+            "provisioningProfileExpirationUTC": self.PROFILE_EXPIRY,
+            "codeDirectoryHash": self.CDHASH,
+        }
+
     def fake_foundation(self, **kwargs):
         subject = hardened.foundation._trusted_xcode_subject(
             source=kwargs["expected_source_sha"],
@@ -57,6 +110,7 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
         crosscheck.pop("executionCustody")
         return {
             "acceptedSourceCommitSHA": kwargs["expected_source_sha"],
+            "acceptedSignedFieldCandidate": self.accepted_candidate(),
             "trustedXcodeAcceptance": subject,
             "independentRetainedCandidateCrosscheck": crosscheck,
         }
@@ -94,6 +148,11 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
                 record["independentRetainedCandidateCrosscheck"]["executionCustody"],
                 crosscheck["executionCustody"],
             )
+            self.assertEqual(
+                record["independentSignedCandidateReinspection"],
+                self.signed_reinspection(),
+            )
+            self.verify_reinspection.assert_called_once_with(candidate_root=root / "candidate")
             verify_crosscheck.assert_called_once()
             custody_call = verify_crosscheck.call_args.kwargs
             self.assertEqual(custody_call["expected_source_sha"], self.SOURCE)
@@ -109,6 +168,53 @@ class HardenedFinalGoCompositionTests(unittest.TestCase):
             call = verify.call_args.kwargs
             self.assertEqual(call["source_commit_sha"], self.SOURCE)
             self.assertEqual(call["expected_pr_number"], 833)
+
+    def test_signed_reinspection_failure_becomes_final_go_error_before_foundation(self):
+        self.verify_reinspection.side_effect = (
+            hardened.signed_candidate_reinspection.SignedCandidateReinspectionError(
+                "retained IPA is not independently signed"
+            )
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with mock.patch.object(
+                hardened.crosscheck_custody,
+                "verify_crosscheck_receipt_custody",
+                return_value=self.crosscheck_execution(),
+            ), mock.patch.object(
+                hardened.foundation,
+                "build_final_go_record",
+            ) as foundation_builder:
+                with self.assertRaisesRegex(hardened.FinalGoError, "not independently signed"):
+                    hardened.build_final_go_record(**self.kwargs(root))
+            foundation_builder.assert_not_called()
+
+    def test_rejects_foundation_candidate_that_diverges_from_fresh_ipa_reinspection(self):
+        def diverged_foundation(**kwargs):
+            record = self.fake_foundation(**kwargs)
+            record["acceptedSignedFieldCandidate"]["retainedIPASHA256"] = "f" * 64
+            return record
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with mock.patch.object(
+                hardened.crosscheck_custody,
+                "verify_crosscheck_receipt_custody",
+                return_value=self.crosscheck_execution(),
+            ), mock.patch.object(
+                hardened.foundation,
+                "build_final_go_record",
+                side_effect=diverged_foundation,
+            ), mock.patch.object(
+                hardened.trusted_xcode,
+                "verify_trusted_capture_xcode_subject",
+                return_value=self.trusted_subject(),
+            ):
+                with self.assertRaisesRegex(
+                    hardened.FinalGoError,
+                    "fresh signed IPA reinspection diverged.*retainedIPASHA256",
+                ):
+                    hardened.build_final_go_record(**self.kwargs(root))
 
     def test_trusted_subject_failure_becomes_foundation_final_go_error_and_restores_seam(self):
         with tempfile.TemporaryDirectory() as temporary:
