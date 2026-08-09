@@ -7,6 +7,7 @@ import tempfile
 import unittest
 
 PRODUCER = Path(__file__).resolve().parents[1] / "xcode27_signed_field_candidate.sh"
+TODAY_WRAPPER = Path(__file__).resolve().parents[1] / "xcode27_today_research_field_candidate.sh"
 CLOSED_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
 
 
@@ -81,6 +82,80 @@ class SignedFieldCandidateProcessStartupCustodyTests(unittest.TestCase):
         self.assertTrue(invocations)
         for invocation in invocations:
             self.assertRegex(invocation, re.compile(r'"\$PYTHON3"\s+-I(?:\s|$)'))
+
+
+class TodayResearchFieldCandidateProcessStartupCustodyTests(unittest.TestCase):
+    def setUp(self):
+        self.source = TODAY_WRAPPER.read_text()
+
+    def test_shell_starts_privileged_and_closes_path_before_directory_resolution(self):
+        self.assertEqual(self.source.splitlines()[0], "#!/bin/bash -p")
+        expected = (
+            'set -euo pipefail\n'
+            f'PATH="{CLOSED_PATH}"\n'
+            'export PATH\n'
+            'unset BASH_ENV ENV\n'
+        )
+        self.assertIn(expected, self.source)
+
+        path_index = self.source.index(f'PATH="{CLOSED_PATH}"')
+        script_dir_index = self.source.index('SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"')
+        producer_index = self.source.index('CANONICAL_PRODUCER="$SCRIPT_DIR/xcode27_signed_field_candidate.sh"')
+        self.assertLess(path_index, script_dir_index)
+        self.assertLess(path_index, producer_index)
+
+    def test_hostile_caller_path_cannot_redirect_canonical_producer_resolution(self):
+        with tempfile.TemporaryDirectory(prefix="nembra-today-wrapper-path-custody-") as temporary:
+            directory = Path(temporary)
+            hostile_bin = directory / "bin"
+            hostile_producer_dir = directory / "producer"
+            hostile_bin.mkdir()
+            hostile_producer_dir.mkdir()
+
+            dirname_marker = directory / "hostile-dirname-ran"
+            producer_marker = directory / "hostile-producer-ran"
+            hostile_dirname = hostile_bin / "dirname"
+            hostile_dirname.write_text(
+                "#!/bin/sh\n"
+                f"printf 'hostile dirname executed\\n' > '{dirname_marker}'\n"
+                f"printf '%s\\n' '{hostile_producer_dir}'\n"
+            )
+            hostile_dirname.chmod(0o755)
+
+            hostile_producer = hostile_producer_dir / "xcode27_signed_field_candidate.sh"
+            hostile_producer.write_text(
+                "#!/bin/sh\n"
+                f"printf 'hostile producer executed\\n' > '{producer_marker}'\n"
+                "exit 0\n"
+            )
+            hostile_producer.chmod(0o755)
+
+            environment = os.environ.copy()
+            environment["PATH"] = f"{hostile_bin}:{environment.get('PATH', '')}"
+            completed = subprocess.run(
+                [str(TODAY_WRAPPER)],
+                cwd=TODAY_WRAPPER.parents[2],
+                env=environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+
+            self.assertNotEqual(
+                completed.returncode,
+                0,
+                "The real canonical producer should fail closed in this non-field test environment.",
+            )
+            self.assertFalse(dirname_marker.exists(), "Caller PATH selected a hostile dirname before custody closed.")
+            self.assertFalse(producer_marker.exists(), "Caller PATH redirected the TODAY wrapper to a hostile producer.")
+
+    def test_wrapper_never_restores_caller_path(self):
+        assignments = re.findall(r'(?m)^\s*(?:export\s+)?PATH\s*=', self.source)
+        self.assertEqual(assignments, ["PATH="])
+        self.assertNotRegex(
+            self.source,
+            re.compile(r'(?m)^\s*(?:export\s+)?PATH\s*=.*\$\{?PATH\}?'),
+        )
 
 
 if __name__ == "__main__":
