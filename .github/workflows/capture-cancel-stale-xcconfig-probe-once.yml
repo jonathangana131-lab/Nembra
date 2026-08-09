@@ -49,8 +49,8 @@ jobs:
           for key, value in expected.items():
               if run.get(key) != value:
                   raise SystemExit(f"refusing cancellation: run {key} mismatch {run.get(key)!r} != {value!r}")
-          if pr.get("number") != 198 or pr.get("state") != "closed" or not pr.get("merged"):
-              raise SystemExit("refusing cancellation: PR #198 is not closed and merged")
+          if pr.get("number") != 198 or pr.get("state") != "closed" or not pr.get("merged_at"):
+              raise SystemExit("refusing cancellation: PR #198 is not closed with a recorded merge time")
           if (pr.get("head") or {}).get("sha") != expected["head_sha"]:
               raise SystemExit("refusing cancellation: merged PR head does not bind stale run SHA")
           if (pr.get("head") or {}).get("ref") != expected["head_branch"]:
