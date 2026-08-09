@@ -8,6 +8,8 @@ import unittest
 import zipfile
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "es80_today_trusted_capture_xcode_subject.py"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+TRUSTED_WORKFLOW_SOURCE = REPOSITORY_ROOT / ".github/workflows/capture-xcode27-trusted-command.yml"
 spec = importlib.util.spec_from_file_location("trusted_xcode", MODULE_PATH)
 trusted_xcode = importlib.util.module_from_spec(spec)
 assert spec and spec.loader
@@ -100,15 +102,24 @@ class TrustedCaptureXcodeSubjectTests(unittest.TestCase):
             f"/actions/artifacts/{self.ARTIFACT}": artifact,
         }
 
-    def verify(self, archive: Path, records: dict[str, dict], *, blob: str | None = None):
+    def verify(
+        self,
+        archive: Path,
+        records: dict[str, dict],
+        *,
+        workflow_blob: str | None = None,
+        producer_blob: str | None = None,
+    ):
         def get(path: str):
             value = records[path]
             return json.dumps(value, sort_keys=True).encode(), value
 
         def blob_at(commit: str, path: str) -> str:
-            self.assertEqual(commit, self.WORKFLOW_SOURCE)
-            self.assertEqual(path, trusted_xcode.TRUSTED_WORKFLOW_PATH)
-            return blob or trusted_xcode.TRUSTED_WORKFLOW_BLOB_SHA
+            if commit == self.WORKFLOW_SOURCE and path == trusted_xcode.TRUSTED_WORKFLOW_PATH:
+                return workflow_blob or trusted_xcode.TRUSTED_WORKFLOW_BLOB_SHA
+            if commit == self.SOURCE and path == trusted_xcode.TRUSTED_EVIDENCE_PRODUCER_PATH:
+                return producer_blob or trusted_xcode.TRUSTED_EVIDENCE_PRODUCER_BLOB_SHA
+            self.fail(f"unexpected authority blob lookup: {commit}:{path}")
 
         return trusted_xcode.verify_trusted_capture_xcode_subject(
             source_commit_sha=self.SOURCE,
@@ -130,6 +141,8 @@ class TrustedCaptureXcodeSubjectTests(unittest.TestCase):
         self.assertEqual(subject["candidateSourceCommitSHA"], self.SOURCE)
         self.assertEqual(subject["workflowSourceCommitSHA"], self.WORKFLOW_SOURCE)
         self.assertEqual(subject["workflowBlobSHA"], trusted_xcode.TRUSTED_WORKFLOW_BLOB_SHA)
+        self.assertEqual(subject["evidenceProducerPath"], trusted_xcode.TRUSTED_EVIDENCE_PRODUCER_PATH)
+        self.assertEqual(subject["evidenceProducerBlobSHA"], trusted_xcode.TRUSTED_EVIDENCE_PRODUCER_BLOB_SHA)
         self.assertNotEqual(subject["candidateSourceCommitSHA"], subject["workflowSourceCommitSHA"])
 
     def test_rejects_candidate_pr_controlled_workflow_even_with_exact_candidate_artifact(self):
@@ -163,7 +176,17 @@ class TrustedCaptureXcodeSubjectTests(unittest.TestCase):
                 trusted_xcode.TrustedCaptureXcodeError,
                 "workflow implementation blob",
             ):
-                self.verify(archive, records, blob="f" * 40)
+                self.verify(archive, records, workflow_blob="f" * 40)
+
+    def test_rejects_unpinned_candidate_evidence_producer_blob(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            archive, archive_sha, archive_size = self.make_archive(Path(temporary))
+            records = self.trusted_records(archive_sha, archive_size)
+            with self.assertRaisesRegex(
+                trusted_xcode.TrustedCaptureXcodeError,
+                "evidence-producer blob",
+            ):
+                self.verify(archive, records, producer_blob="f" * 40)
 
     def test_rejects_non_owner_command_actor(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -201,6 +224,36 @@ class TrustedCaptureXcodeSubjectTests(unittest.TestCase):
             ]
             with self.assertRaisesRegex(trusted_xcode.TrustedCaptureXcodeError, "required step"):
                 self.verify(archive, records)
+
+    def test_rejects_missing_evidence_producer_custody_step(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            archive, archive_sha, archive_size = self.make_archive(Path(temporary))
+            records = self.trusted_records(archive_sha, archive_size)
+            job = records[f"/actions/jobs/{self.JOB}"]
+            job["steps"] = [
+                step
+                for step in job["steps"]
+                if step["name"] != "Verify trusted Capture evidence producer blob"
+            ]
+            with self.assertRaisesRegex(trusted_xcode.TrustedCaptureXcodeError, "required step"):
+                self.verify(archive, records)
+
+    def test_trusted_workflow_byte_binds_producer_before_execution(self):
+        workflow = TRUSTED_WORKFLOW_SOURCE.read_text(encoding="utf-8")
+        producer_pin = (
+            "TRUSTED_CAPTURE_EVIDENCE_PRODUCER_BLOB_SHA: "
+            + trusted_xcode.TRUSTED_EVIDENCE_PRODUCER_BLOB_SHA
+        )
+        self.assertIn(
+            "TRUSTED_CAPTURE_EVIDENCE_PRODUCER_PATH: " + trusted_xcode.TRUSTED_EVIDENCE_PRODUCER_PATH,
+            workflow,
+        )
+        self.assertIn(producer_pin, workflow)
+        self.assertIn("- name: Verify trusted Capture evidence producer blob", workflow)
+        self.assertIn('/usr/bin/git rev-parse --verify "HEAD:${producer_path}"', workflow)
+        pin_index = workflow.index("- name: Verify trusted Capture evidence producer blob")
+        execution_index = workflow.index("- name: Build, test, and capture Simulator states")
+        self.assertLess(pin_index, execution_index)
 
 
 if __name__ == "__main__":
