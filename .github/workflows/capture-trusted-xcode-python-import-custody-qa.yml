@@ -1,0 +1,33 @@
+name: Capture Trusted Xcode Python Import Custody QA
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/capture-xcode27-trusted-command.yml'
+      - '.github/workflows/capture-trusted-xcode-python-import-custody-qa.yml'
+      - 'scripts/ci/tests/test_capture_trusted_xcode_python_import_custody.py'
+
+permissions:
+  contents: read
+
+jobs:
+  python-import-custody:
+    name: Reject candidate Python import authority
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify immutable PR head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD_SHA"
+
+      - name: Reject candidate Python import authority
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I -m unittest scripts.ci.tests.test_capture_trusted_xcode_python_import_custody
