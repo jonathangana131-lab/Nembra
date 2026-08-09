@@ -2,11 +2,13 @@
 """Fail-closed cleanup for stale trusted Capture issue-comment Mac runs.
 
 GitHub identifies an issue_comment workflow run with the default-branch SHA, not
-the commented PR SHA. This helper therefore ignores run.head_sha as authority.
-It accepts only the completed successful hosted resolver job's closed-form log:
-`Resolved PR #<number> exact head <40-lowercase-hex>`. Anything ambiguous is
-preserved. A run is cancellable only when current GitHub PR truth proves that
-frozen resolver authority is no longer the open same-repo exact head.
+the commented PR SHA. This helper therefore resolves two independent authorities:
+the completed hosted resolver log freezes the exact PR head, while the run's
+default-branch source commit must resolve the same trusted workflow Git blob that
+is currently deployed on the repository default branch. Anything ambiguous is
+preserved. A run is cancellable only when current GitHub truth proves either that
+its frozen PR authority is stale or that its trusted workflow implementation blob
+has been superseded.
 """
 from __future__ import annotations
 
@@ -27,12 +29,22 @@ WORKFLOW = "capture-xcode27-trusted-command.yml"
 WORKFLOW_PATH = f".github/workflows/{WORKFLOW}"
 RESOLVER_JOB = "Resolve trusted Capture PR head"
 PATTERN = re.compile(rb"Resolved PR #([1-9][0-9]*) exact head ([0-9a-f]{40})(?![0-9a-f])")
+HEX40 = re.compile(r"^[0-9a-f]{40}$")
 STATUSES = ("queued", "in_progress")
+
 
 @dataclass(frozen=True)
 class Authority:
     pr: int
     sha: str
+
+
+@dataclass(frozen=True)
+class StaleCandidate:
+    run_id: int
+    authority: Authority
+    run_source_sha: str
+    reason: str
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -74,6 +86,28 @@ def stale_reason(authority: Authority, pr: dict[str, Any], repository: str) -> s
     if head.get("sha") != authority.sha:
         return "trusted Capture resolver SHA is stale"
     return None
+
+
+def workflow_source_current(
+    run: dict[str, Any],
+    *,
+    run_blob: str,
+    current_blob: str,
+    default_branch: str,
+    repository: str,
+) -> bool | None:
+    """Return True/current, False/superseded, or None when source identity is ambiguous."""
+
+    if run.get("head_branch") != default_branch:
+        return None
+    if (run.get("head_repository") or {}).get("full_name") != repository:
+        return None
+    source_sha = run.get("head_sha")
+    if not isinstance(source_sha, str) or HEX40.fullmatch(source_sha) is None:
+        return None
+    if HEX40.fullmatch(run_blob) is None or HEX40.fullmatch(current_blob) is None:
+        return None
+    return run_blob == current_blob
 
 
 class GH:
@@ -152,7 +186,10 @@ class GH:
         for status in STATUSES:
             for page in range(1, 21):
                 query = urllib.parse.urlencode({"status": status, "per_page": 100, "page": page})
-                payload = self.json("GET", f"/repos/{self.owner}/{self.repo}/actions/workflows/{WORKFLOW}/runs?{query}")
+                payload = self.json(
+                    "GET",
+                    f"/repos/{self.owner}/{self.repo}/actions/workflows/{WORKFLOW}/runs?{query}",
+                )
                 batch = list((payload or {}).get("workflow_runs") or [])
                 for run in batch:
                     run_id = int(run.get("id", -1))
@@ -164,7 +201,10 @@ class GH:
         return result
 
     def authority(self, run_id: int) -> Authority | None:
-        payload = self.json("GET", f"/repos/{self.owner}/{self.repo}/actions/runs/{run_id}/jobs?per_page=100")
+        payload = self.json(
+            "GET",
+            f"/repos/{self.owner}/{self.repo}/actions/runs/{run_id}/jobs?per_page=100",
+        )
         jobs = [
             job for job in list((payload or {}).get("jobs") or [])
             if job.get("name") == RESOLVER_JOB
@@ -181,6 +221,25 @@ class GH:
             raise RuntimeError(f"PR #{number} returned no object")
         return value
 
+    def default_branch(self) -> str:
+        value = self.json("GET", f"/repos/{self.owner}/{self.repo}")
+        branch = value.get("default_branch") if isinstance(value, dict) else None
+        if not isinstance(branch, str) or not branch:
+            raise RuntimeError("repository default branch unavailable")
+        return branch
+
+    def workflow_blob(self, ref: str) -> str:
+        query = urllib.parse.urlencode({"ref": ref})
+        quoted_path = urllib.parse.quote(WORKFLOW_PATH, safe="/")
+        value = self.json(
+            "GET",
+            f"/repos/{self.owner}/{self.repo}/contents/{quoted_path}?{query}",
+        )
+        blob = value.get("sha") if isinstance(value, dict) and value.get("type") == "file" else None
+        if not isinstance(blob, str) or HEX40.fullmatch(blob) is None:
+            raise RuntimeError(f"trusted workflow blob unavailable at {ref}")
+        return blob
+
     def cancel(self, run_id: int) -> None:
         self.json("POST", f"/repos/{self.owner}/{self.repo}/actions/runs/{run_id}/cancel")
 
@@ -192,12 +251,60 @@ def self_test() -> None:
     assert parse_authority(
         b"Resolved PR #833 exact head " + b"a" * 40 + b"\nResolved PR #833 exact head " + b"b" * 40
     ) is None
-    current = {"number": 833, "state": "open", "head": {"sha": "a" * 40, "repo": {"full_name": "owner/repo"}}}
+    current = {
+        "number": 833,
+        "state": "open",
+        "head": {"sha": "a" * 40, "repo": {"full_name": "owner/repo"}},
+    }
     assert stale_reason(authority, current, "owner/repo") is None
     moved = json.loads(json.dumps(current)); moved["head"]["sha"] = "b" * 40
     assert stale_reason(authority, moved, "owner/repo") == "trusted Capture resolver SHA is stale"
     closed = json.loads(json.dumps(current)); closed["state"] = "closed"
     assert stale_reason(authority, closed, "owner/repo") == "trusted Capture PR is no longer open"
+
+    run = {
+        "head_branch": "main",
+        "head_sha": "c" * 40,
+        "head_repository": {"full_name": "owner/repo"},
+    }
+    assert workflow_source_current(
+        run,
+        run_blob="d" * 40,
+        current_blob="d" * 40,
+        default_branch="main",
+        repository="owner/repo",
+    ) is True
+    assert workflow_source_current(
+        run,
+        run_blob="d" * 40,
+        current_blob="e" * 40,
+        default_branch="main",
+        repository="owner/repo",
+    ) is False
+    wrong_branch = dict(run); wrong_branch["head_branch"] = "feature"
+    assert workflow_source_current(
+        wrong_branch,
+        run_blob="d" * 40,
+        current_blob="e" * 40,
+        default_branch="main",
+        repository="owner/repo",
+    ) is None
+    wrong_repo = json.loads(json.dumps(run)); wrong_repo["head_repository"]["full_name"] = "fork/repo"
+    assert workflow_source_current(
+        wrong_repo,
+        run_blob="d" * 40,
+        current_blob="e" * 40,
+        default_branch="main",
+        repository="owner/repo",
+    ) is None
+    malformed = dict(run); malformed["head_sha"] = "not-a-sha"
+    assert workflow_source_current(
+        malformed,
+        run_blob="d" * 40,
+        current_blob="e" * 40,
+        default_branch="main",
+        repository="owner/repo",
+    ) is None
     print("capture_trusted_queue_janitor self-test: PASS")
 
 
@@ -221,7 +328,14 @@ def main() -> int:
 
     gh = GH(args.token, args.repository)
     now = dt.datetime.now(dt.timezone.utc)
-    stale: list[tuple[int, Authority, str]] = []
+    try:
+        default_branch = gh.default_branch()
+        current_workflow_blob = gh.workflow_blob(default_branch)
+    except RuntimeError as exc:
+        print(f"PRESERVE ALL trusted runs: current workflow authority unavailable: {exc}")
+        return 0
+
+    stale: list[StaleCandidate] = []
     preserved = 0
     for run in gh.runs():
         run_id = int(run.get("id", -1))
@@ -241,33 +355,94 @@ def main() -> int:
                 preserved += 1
                 continue
             reason = stale_reason(authority, gh.pull(authority.pr), gh.repository)
+            source_sha = run.get("head_sha")
+            if not isinstance(source_sha, str) or HEX40.fullmatch(source_sha) is None:
+                print(f"PRESERVE run={run_id}: workflow source SHA unavailable/ambiguous")
+                preserved += 1
+                continue
+            if reason is None:
+                run_blob = gh.workflow_blob(source_sha)
+                source_current = workflow_source_current(
+                    run,
+                    run_blob=run_blob,
+                    current_blob=current_workflow_blob,
+                    default_branch=default_branch,
+                    repository=gh.repository,
+                )
+                if source_current is None:
+                    print(f"PRESERVE run={run_id}: workflow source authority unavailable/ambiguous")
+                    preserved += 1
+                    continue
+                if source_current is False:
+                    reason = "trusted workflow source blob is stale"
         except RuntimeError as exc:
             print(f"PRESERVE run={run_id}: evidence lookup failed: {exc}")
             preserved += 1
             continue
+
         if reason is None:
-            print(f"PRESERVE run={run_id}: current PR #{authority.pr}@{authority.sha}")
+            print(
+                f"PRESERVE run={run_id}: current PR #{authority.pr}@{authority.sha} "
+                f"workflow_blob={current_workflow_blob}"
+            )
             preserved += 1
         else:
-            stale.append((run_id, authority, reason))
+            stale.append(StaleCandidate(run_id, authority, source_sha, reason))
 
-    print(f"trusted_candidates={len(stale)} preserved={preserved}")
+    print(
+        f"trusted_candidates={len(stale)} preserved={preserved} "
+        f"current_workflow_blob={current_workflow_blob}"
+    )
     cancelled = 0
-    for run_id, authority, reason in stale[:args.max_cancellations]:
+    for candidate in stale[:args.max_cancellations]:
         action = "CANCEL" if args.apply else "WOULD_CANCEL"
-        print(f"{action} run={run_id} PR=#{authority.pr} sha={authority.sha} reason={reason}")
+        print(
+            f"{action} run={candidate.run_id} PR=#{candidate.authority.pr} "
+            f"sha={candidate.authority.sha} reason={candidate.reason}"
+        )
         if not args.apply:
             continue
         try:
-            gh.cancel(run_id)
+            current_blob_now = gh.workflow_blob(default_branch)
+            if current_blob_now != current_workflow_blob:
+                print(
+                    f"CANCEL_RACE run={candidate.run_id}: default-branch workflow authority moved; preserving",
+                    file=sys.stderr,
+                )
+                continue
+
+            authority_now = gh.authority(candidate.run_id)
+            if authority_now != candidate.authority:
+                print(
+                    f"CANCEL_RACE run={candidate.run_id}: resolver authority changed/unavailable; preserving",
+                    file=sys.stderr,
+                )
+                continue
+            reason_now = stale_reason(
+                candidate.authority,
+                gh.pull(candidate.authority.pr),
+                gh.repository,
+            )
+            if reason_now is None:
+                run_blob_now = gh.workflow_blob(candidate.run_source_sha)
+                if run_blob_now == current_blob_now:
+                    print(
+                        f"CANCEL_RACE run={candidate.run_id}: workflow source is current; preserving",
+                        file=sys.stderr,
+                    )
+                    continue
+                reason_now = "trusted workflow source blob is stale"
+            print(f"CANCEL_CONFIRMED run={candidate.run_id}: {reason_now}")
+            gh.cancel(candidate.run_id)
             cancelled += 1
         except RuntimeError as exc:
-            print(f"CANCEL_RACE run={run_id}: {exc}", file=sys.stderr)
+            print(f"CANCEL_RACE run={candidate.run_id}: {exc}", file=sys.stderr)
     if args.apply:
         print(f"cancelled={cancelled}")
     else:
         print("dry-run only")
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())
