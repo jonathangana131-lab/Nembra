@@ -25,6 +25,10 @@ jobs:
           printf '%s\n' "$XCODE_VERSION"
           swift --version
           [[ "$XCODE_VERSION" == Xcode\ 26.* ]]
+      - name: Test private Tuya app-identity generator
+        run: |
+          set -euo pipefail
+          bash Scripts/test_capture_tuya_identity_provisioning.sh
       - name: Test Tuya SDK account device-membership authority
         run: |
           set -euo pipefail
