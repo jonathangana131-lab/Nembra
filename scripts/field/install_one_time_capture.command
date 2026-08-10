@@ -213,6 +213,7 @@ xcodebuild \
     "NEMBRA_CAPTURE_BUILD_IDENTIFIER=$BUILD_LABEL" \
     "NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$SOURCE_SHA" \
     "NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256" \
+    "INFOPLIST_KEY_NembraCaptureProcedureIdentifier=$PROCEDURE_ID" \
     build
 
 verify_private_tuya_inputs
@@ -225,13 +226,15 @@ APP_INFO_PLIST="$APP/Info.plist"
 BUILT_BUILD_IDENTIFIER="$(/usr/bin/plutil -extract NembraCaptureBuildIdentifier raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"
 BUILT_SOURCE_SHA="$(/usr/bin/plutil -extract NembraCaptureSourceCommitSHA raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"
 BUILT_TUYA_DEPENDENCY_LOCK_SHA256="$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"
+BUILT_PROCEDURE_IDENTIFIER="$(/usr/bin/plutil -extract NembraCaptureProcedureIdentifier raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"
 BUILT_BUNDLE_ID="$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"
 [[ "$BUILT_BUILD_IDENTIFIER" == "$BUILD_LABEL" ]] || die "Built Capture app identifier does not match the exact requested field-build label. Discard this candidate."
 [[ "$BUILT_SOURCE_SHA" == "$SOURCE_SHA" ]] || die "Built Capture app source SHA does not match the exact requested source. Discard this candidate."
 [[ "$BUILT_TUYA_DEPENDENCY_LOCK_SHA256" == "$TUYA_DEPENDENCY_LOCK_SHA256" ]] || die "Built Capture app Tuya dependency-lock fingerprint does not match the exact resolved private workspace. Discard this candidate."
+[[ "$BUILT_PROCEDURE_IDENTIFIER" == "$PROCEDURE_ID" ]] || die "Built Capture app procedure identity does not match the canonical stationary procedure. Discard this candidate."
 [[ "$BUILT_BUNDLE_ID" == "$BUNDLE_ID" ]] || die "Built Capture app bundle identifier does not match the intended standalone field product. Discard this candidate."
-say "Built app provenance matched exact requested source, reviewed Tuya dependency lock, and field product"
-unset BUILT_BUILD_IDENTIFIER BUILT_SOURCE_SHA BUILT_TUYA_DEPENDENCY_LOCK_SHA256 BUILT_BUNDLE_ID APP_INFO_PLIST
+say "Built app provenance matched exact requested source, reviewed Tuya dependency lock, canonical stationary procedure, and field product"
+unset BUILT_BUILD_IDENTIFIER BUILT_SOURCE_SHA BUILT_TUYA_DEPENDENCY_LOCK_SHA256 BUILT_PROCEDURE_IDENTIFIER BUILT_BUNDLE_ID APP_INFO_PLIST
 
 say "Installing SDK-integrated Capture on the intended iPhone"
 open -a Xcode "$ROOT/NembraCapture.xcworkspace" >/dev/null 2>&1 || true
@@ -298,7 +301,7 @@ printf '%s\n' \
     "This launch used no Tuya secret in host argv, environment, Git, or the diagnostic export." \
     "The private intended-device UDID was used only for local correlation and was not placed in devicectl argv." \
     "The exact private Tuya security SDK, resolved lockfile, and generated private app identity matched the bootstrap fingerprint before and after the signed build." \
-    "The exact built device app was read back before installation and matched the requested source SHA, field-build identifier, and standalone bundle identifier." \
+    "The exact built device app was read back before installation and matched the requested source SHA, field-build identifier, canonical stationary procedure, and standalone bundle identifier." \
     "Field procedure: $PROCEDURE_ID. The same identifier is compiled into the immutable accepted export and shown in Capture." \
     "Do NOT repeat the old 17-step ride capture." \
     "Keep the scooter stationary for this first preflight." \
