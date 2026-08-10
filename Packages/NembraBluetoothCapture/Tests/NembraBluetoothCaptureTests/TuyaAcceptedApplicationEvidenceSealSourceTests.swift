@@ -65,22 +65,35 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         #expect(noApplication.lowerBound < terminal.lowerBound)
     }
 
-    @Test("accepted export fails closed onto the frozen prefix instead of the mutable live event log")
-    func acceptedExportUsesFrozenEventPrefix() throws {
+    @Test("accepted export consumes the frozen whole envelope instead of reconstructing from mutable controller state")
+    func acceptedExportUsesFrozenWholeEnvelope() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
         #expect(app.contains("private var sealedAcceptedEventPrefix: [Event]?"))
+        #expect(app.contains("private var sealedAcceptedExport: Export?"))
         #expect(app.contains("private var applicationUpdateAdmissionsInFlight = 0"))
         #expect(app.contains("private var acceptanceCutIsClosed = false"))
 
         let export = try section(in: app, from: "func prepareExport()", to: "private func resetDiscoverySessionOnly")
         let body = String(export)
 
-        #expect(body.contains("if phase == .accepted"))
-        #expect(body.contains("guard let acceptedEventPrefix = self.sealedAcceptedEventPrefix"))
-        #expect(body.contains("sealedAcceptedEventPrefix = acceptedEventPrefix"))
-        #expect(body.contains("events: sealedAcceptedEventPrefix"))
-        #expect(!body.contains("events: events\n"))
+        guard let acceptedBranch = body.range(of: "if phase == .accepted"),
+              let sealedGuard = body.range(of: "guard let sealedAcceptedExport", range: acceptedBranch.upperBound..<body.endIndex),
+              let sealedUse = body.range(of: "envelope = sealedAcceptedExport", range: sealedGuard.upperBound..<body.endIndex),
+              let mutableElse = body.range(of: "} else {", range: sealedUse.upperBound..<body.endIndex),
+              let mutableBuild = body.range(of: "envelope = makeExport(", range: mutableElse.upperBound..<body.endIndex) else {
+            Issue.record("Accepted Prepare must consume the immutable whole accepted envelope; only non-accepted diagnostics may rebuild from mutable controller state.")
+            throw SourceContractError.sectionMissing
+        }
+
+        #expect(acceptedBranch.lowerBound < sealedGuard.lowerBound)
+        #expect(sealedGuard.lowerBound < sealedUse.lowerBound)
+        #expect(sealedUse.lowerBound < mutableElse.lowerBound)
+        #expect(mutableElse.lowerBound < mutableBuild.lowerBound)
+
+        let acceptedSlice = body[acceptedBranch.lowerBound..<mutableElse.lowerBound]
+        #expect(!acceptedSlice.contains("makeExport("))
+        #expect(!acceptedSlice.contains("events: events"))
     }
 
     @Test("starting a fresh correlation life reopens admission and clears the prior accepted export prefix")
@@ -91,7 +104,6 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         #expect(reset.contains("acceptanceCutIsClosed = false"))
         #expect(reset.contains("sealedAcceptedEventPrefix = nil"))
     }
-
 
     @Test("accepted export starts at the current physical attempt boundary")
     func acceptedExportCannotInheritOlderFailedAttemptEvents() throws {
