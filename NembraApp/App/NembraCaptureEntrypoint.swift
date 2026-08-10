@@ -402,6 +402,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
 #endif
     private var membershipRequestID = UUID()
     private var acceptsViewScopedMembershipRequests = false
+    private var foregroundIntegrityLossHandled = false
     private var officialConnectionRequestID = UUID()
 
     init(device: TuyaAccountBridge.LinkedDevice) {
@@ -416,6 +417,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     deinit { watchdog?.cancel() }
 
     func activateMembershipRequestsForView() {
+        foregroundIntegrityLossHandled = false
         acceptsViewScopedMembershipRequests = true
     }
 
@@ -426,6 +428,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Exact scooter membership must be verified again for the current Secure Link view lifetime."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -434,6 +437,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
         officialConnectionRequestID = UUID()
         watchdog?.cancel()
         watchdog = nil
+
+        // Foreground loss already owns terminal retirement for this view lifetime.
+        // Do not race a second exact-generation terminal when onDisappear follows it.
+        if foregroundIntegrityLossHandled { return }
 
         if let token = currentConnectionToken {
             phase = .failed
@@ -467,6 +474,89 @@ private final class SecureLinkController: NSObject, ObservableObject {
         phase = .failed
         message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
         log("target_correlation_abandoned_on_view_exit")
+    }
+
+    func appDidLoseForeground() {
+        // Immutable accepted evidence is already sealed. Backgrounding must not mutate it.
+        guard phase != .accepted else { return }
+        guard !foregroundIntegrityLossHandled else { return }
+        foregroundIntegrityLossHandled = true
+
+        // Foreground-only Capture authority closes synchronously before any radio/session inspection.
+        acceptsViewScopedMembershipRequests = false
+        sdkDeviceMembershipVerified = false
+        membershipAccountUID = nil
+        membershipDeviceID = nil
+        membershipStatus = "Exact scooter membership must be verified again for the current Secure Link view lifetime."
+        membershipRequestID = UUID()
+        membershipBusy = false
+#if canImport(ThingSmartHomeKit)
+        membershipProbe = nil
+#endif
+        officialConnectionRequestID = UUID()
+        watchdog?.cancel()
+        watchdog = nil
+
+        if processCorrelationLease != nil || correlationSession != nil {
+            // Scanner transport retires before the process lease. The generic discovery reset then
+            // clears all target/correlation presentation authority from the interrupted attempt.
+            abandonPackageCorrelation()
+            resetDiscoverySessionOnly()
+            phase = .failed
+            message = "Capture left the foreground during Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; interrupted windows are never reusable evidence."
+            log("foreground_integrity_lost_during_target_correlation")
+            return
+        }
+
+        if phase == .correlated || phase == .selected {
+            resetDiscoverySessionOnly()
+            phase = .failed
+            message = "Capture left the foreground after target correlation. Restart from OFF1; correlated or selected target authority cannot cross a foreground interruption."
+            log("foreground_integrity_lost_after_target_correlation")
+            return
+        }
+
+        guard let token = currentConnectionToken else {
+            if phase == .authenticating {
+                // OfficialTuyaFactory.make() permanently retires package correlation for this process.
+                localBLESettlementToken = nil
+                sdkLocalBLEOnline = false
+                driver = nil
+                phase = .failed
+                message = "Capture left the foreground during authentication. Relaunch Capture before a new stationary read-only attempt; no BLE disconnect is claimed."
+                log("foreground_integrity_lost_before_observation")
+            }
+            return
+        }
+
+        let wasObserving = phase == .observing
+        phase = .failed
+        message = wasObserving
+            ? "Capture left the foreground during authenticated observation. Relaunch Capture before a new stationary read-only attempt; background time is not accepted evidence and no BLE disconnect is claimed."
+            : "Capture left the foreground before authenticated observation. Relaunch Capture before a new stationary read-only attempt; no BLE disconnect is claimed."
+        log(
+            wasObserving ? "foreground_integrity_lost_during_observation" : "foreground_integrity_lost_before_observation",
+            ["generation": String(token.diagnosticGeneration)]
+        )
+
+        // Finite terminal work must outlive SwiftUI StateObject teardown. Exact-token fencing
+        // prevents this foreground episode from touching any later authenticated generation.
+        Task { @MainActor [self] in
+            guard self.currentConnectionToken == token else { return }
+            if wasObserving {
+                await self.invalidateObservationContinuity(
+                    token: token,
+                    message: "App foreground integrity was lost during authenticated observation. Relaunch Capture before a new stationary read-only attempt; background time is not accepted evidence and no BLE disconnect is claimed.",
+                    kind: "foreground_integrity_lost_during_observation"
+                )
+            } else {
+                await self.invalidateInternalLifecycle(
+                    token: token,
+                    message: "App foreground integrity was lost before authenticated observation. Relaunch Capture before a new stationary read-only attempt; no BLE disconnect is claimed.",
+                    kind: "foreground_integrity_lost_before_observation"
+                )
+            }
+        }
     }
 
     var privateConfig: Bool { OfficialTuyaFactory.configured }
@@ -1344,9 +1434,25 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !verifiedAccountUID.isEmpty else {
+                await invalidateSourceAuthority(
+                    token: token,
+                    message: "Verified account-UID custody became unavailable before application evidence could be sealed.",
+                    kind: "sdk_account_uid_custody_unavailable"
+                )
+                return
+            }
+            let exportSafeUpdate = update.mapValues { value in
+                value.replacingOccurrences(
+                    of: verifiedAccountUID,
+                    with: "<redacted-account-uid>",
+                    options: [.caseInsensitive, .literal]
+                )
+            }
+            log("tuya_application_update", exportSafeUpdate.merging([
                 "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -2160,7 +2266,6 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "accounttoken",
         "accesstoken",
         "refreshtoken",
-        "sessionkey",
         "authkey",
         "seckey",
     ]
@@ -2484,6 +2589,7 @@ private struct SecureLinkView: View {
     @StateObject private var sdkAccount = OfficialTuyaAccountAuthorizer()
     @State private var showEngineeringDetails = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.scenePhase) private var scenePhase
 
     private let stageLabels = ["Target", "Secure link", "Observe", "Seal"]
 
@@ -2527,9 +2633,13 @@ private struct SecureLinkView: View {
         .navigationTitle("Capture")
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            test.activateMembershipRequestsForView()
+            if scenePhase == .active {
+                test.activateMembershipRequestsForView()
+            } else {
+                test.appDidLoseForeground()
+            }
             sdkAccount.bootstrap()
-            if sdkAccount.loggedIn { test.verifySDKMembership() }
+            if scenePhase == .active, sdkAccount.loggedIn { test.verifySDKMembership() }
             while !Task.isCancelled {
                 test.consumeCorrelationAsyncInvalidation()
                 try? await Task.sleep(nanoseconds: 250_000_000)
@@ -2537,6 +2647,14 @@ private struct SecureLinkView: View {
         }
         .onDisappear {
             test.abandonCorrelationForViewExit()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                test.activateMembershipRequestsForView()
+                if sdkAccount.loggedIn { test.verifySDKMembership() }
+            } else {
+                test.appDidLoseForeground()
+            }
         }
         .onChange(of: sdkAccount.loggedIn) { _, loggedIn in
             if loggedIn { test.verifySDKMembership() }
