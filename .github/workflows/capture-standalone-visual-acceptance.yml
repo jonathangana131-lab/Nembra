@@ -1,0 +1,99 @@
+name: Capture Standalone Visual Acceptance
+
+on:
+  push:
+    branches:
+      - product/v14-capture-premium-secure-link-current-sol
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  standalone-visual:
+    name: Real standalone Capture presentation
+    runs-on: xcode-27
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify visual-evidence harness source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ci/capture_standalone_visual_evidence.sh
+          /usr/bin/python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+
+      - name: Build exact stamped standalone Capture Simulator app
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_sha="$(printf '%s' "$GITHUB_SHA" | tr '[:upper:]' '[:lower:]')"
+          if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "GitHub source SHA is not canonical lowercase 40-hex." >&2
+            exit 1
+          fi
+          dependency_sha="$(shasum -a 256 Podfile.lock | awk '{print $1}')"
+          if [[ ! "$dependency_sha" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Could not derive Tuya dependency-lock SHA-256." >&2
+            exit 1
+          fi
+          label="capture-v14-${source_sha:0:12}"
+          rm -rf /tmp/NembraCaptureProvenanceDerived
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/NembraCaptureProvenanceDerived \
+            CODE_SIGNING_ALLOWED=NO \
+            NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
+            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$source_sha" \
+            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$dependency_sha" \
+            build
+
+          plist='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
+          test -f "$plist"
+          test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
+          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$source_sha"
+          test "$(plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist")" = "$dependency_sha"
+
+      - name: Launch real standalone app and capture fail-closed presentation
+        shell: bash
+        env:
+          ARTIFACTS_DIR: ${{ runner.temp }}/NembraCaptureStandaloneVisualEvidence
+        run: |
+          set -euo pipefail
+          bash scripts/ci/capture_standalone_visual_evidence.sh
+
+      - name: Verify retained evidence rendezvous
+        shell: bash
+        env:
+          ARTIFACTS_DIR: ${{ runner.temp }}/NembraCaptureStandaloneVisualEvidence
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - "$ARTIFACTS_DIR/NembraCaptureStandaloneVisualEvidence.json" "$GITHUB_SHA" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          record = json.loads(Path(sys.argv[1]).read_text())
+          expected_sha = sys.argv[2].lower()
+          assert record["authority"] == "standalone-capture-simulator-presentation-only"
+          assert record["sourceCommitSHA"] == expected_sha
+          assert record["buildIdentifier"] == f"capture-v14-{expected_sha[:12]}"
+          assert record["physicalAuthorityCreated"] is False
+          assert record["protocolAuthorityCreated"] is False
+          assert record["visualAcceptanceRequiresHumanReview"] is True
+          screenshot = Path(sys.argv[1]).parent / record["screenshot"]["relativePath"]
+          assert screenshot.is_file() and screenshot.stat().st_size > 0
+          PY
+
+      - name: Upload standalone visual evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-capture-standalone-visual-${{ github.sha }}
+          path: ${{ runner.temp }}/NembraCaptureStandaloneVisualEvidence
+          if-no-files-found: error
+          retention-days: 14
