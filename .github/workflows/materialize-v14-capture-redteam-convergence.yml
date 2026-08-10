@@ -75,51 +75,57 @@ jobs:
           if source.count(receiver_marker) != 1:
               raise SystemExit("application update receiver marker drifted")
 
-          helper = '''    private func redactVerifiedAccountUIDFromApplicationEvidence(
-        _ update: [String: String]
-    ) -> [String: String] {
-        let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !accountUID.isEmpty else { return update }
-
-        var redacted: [String: String] = [:]
-        redacted.reserveCapacity(update.count)
-        for (key, value) in update {
-            let redactedKey = key.replacingOccurrences(
-                of: accountUID,
-                with: "<redacted-account-uid>",
-                options: [.literal]
-            )
-            let redactedValue = value.replacingOccurrences(
-                of: accountUID,
-                with: "<redacted-account-uid>",
-                options: [.literal]
-            )
-
-            if redacted[redactedKey] == nil {
-                redacted[redactedKey] = redactedValue
-            } else {
-                var suffix = 2
-                var disambiguatedKey = "\\(redactedKey)#\\(suffix)"
-                while redacted[disambiguatedKey] != nil {
-                    suffix += 1
-                    disambiguatedKey = "\\(redactedKey)#\\(suffix)"
-                }
-                redacted[disambiguatedKey] = redactedValue
-            }
-        }
-        return redacted
-    }
-
-'''
+          helper_lines = [
+              "    private func redactVerifiedAccountUIDFromApplicationEvidence(",
+              "        _ update: [String: String]",
+              "    ) -> [String: String] {",
+              "        let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? \"\"",
+              "        guard !accountUID.isEmpty else { return update }",
+              "",
+              "        var redacted: [String: String] = [:]",
+              "        redacted.reserveCapacity(update.count)",
+              "        for (key, value) in update {",
+              "            let redactedKey = key.replacingOccurrences(",
+              "                of: accountUID,",
+              "                with: \"<redacted-account-uid>\",",
+              "                options: [.literal]",
+              "            )",
+              "            let redactedValue = value.replacingOccurrences(",
+              "                of: accountUID,",
+              "                with: \"<redacted-account-uid>\",",
+              "                options: [.literal]",
+              "            )",
+              "",
+              "            if redacted[redactedKey] == nil {",
+              "                redacted[redactedKey] = redactedValue",
+              "            } else {",
+              "                var suffix = 2",
+              "                var disambiguatedKey = \"\\(redactedKey)#\\(suffix)\"",
+              "                while redacted[disambiguatedKey] != nil {",
+              "                    suffix += 1",
+              "                    disambiguatedKey = \"\\(redactedKey)#\\(suffix)\"",
+              "                }",
+              "                redacted[disambiguatedKey] = redactedValue",
+              "            }",
+              "        }",
+              "        return redacted",
+              "    }",
+              "",
+          ]
+          helper = "\n".join(helper_lines) + "\n"
           source = source.replace(receiver_marker, helper + receiver_marker, 1)
 
-          event_old = '''            log("tuya_application_update", update.merging([
-                "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })'''
-          event_new = '''            let redactedUpdate = redactVerifiedAccountUIDFromApplicationEvidence(update)
-            log("tuya_application_update", redactedUpdate.merging([
-                "generation": String(token.diagnosticGeneration)
-            ]) { _, trusted in trusted })'''
+          event_old = (
+              "            log(\"tuya_application_update\", update.merging([\n"
+              "                \"generation\": String(token.diagnosticGeneration)\n"
+              "            ]) { current, _ in current })"
+          )
+          event_new = (
+              "            let redactedUpdate = redactVerifiedAccountUIDFromApplicationEvidence(update)\n"
+              "            log(\"tuya_application_update\", redactedUpdate.merging([\n"
+              "                \"generation\": String(token.diagnosticGeneration)\n"
+              "            ]) { _, trusted in trusted })"
+          )
           if source.count(event_old) != 1:
               raise SystemExit("application event merge seam drifted")
           source = source.replace(event_old, event_new, 1)
@@ -129,10 +135,11 @@ jobs:
           secret_list = source[list_start:list_end]
           if secret_list.count('"sessionkey"') != 2:
               raise SystemExit("expected exactly two sessionkey secret classifiers before normalization")
-          last = secret_list.rfind('        "sessionkey",\n')
+          duplicate_line = '        "sessionkey",\n'
+          last = secret_list.rfind(duplicate_line)
           if last < 0:
               raise SystemExit("duplicate sessionkey classifier formatting drifted")
-          secret_list = secret_list[:last] + secret_list[last + len('        "sessionkey",\n'):]
+          secret_list = secret_list[:last] + secret_list[last + len(duplicate_line):]
           source = source[:list_start] + secret_list + source[list_end:]
 
           path.write_text(source)
