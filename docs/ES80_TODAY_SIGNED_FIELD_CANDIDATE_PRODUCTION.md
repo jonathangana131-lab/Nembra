@@ -82,15 +82,17 @@ The producer itself will create another fresh detached worktree internally. The 
 
 Choose a private path outside the repository. The producer requires an absolute regular non-symlink mode-`0600` file and independently validates its contents/mode.
 
-Do not acquire the raw identifier through ordinary shell redirection. Even with `noclobber`, a checked parent directory pathname can be renamed and replaced before `> "$UDID_FILE"` re-resolves it. Use the accepted descriptor-bound private-input helper instead. It opens directory components with no-follow descriptors, creates the final file relative to the pinned directory descriptor, rebinds the pathname after creation, verifies directory/file identity and exact readback, and fails closed if the path was retargeted.
+Do not acquire the raw identifier through ordinary shell redirection. Even with `noclobber`, a checked parent directory pathname can be renamed and replaced before `> "$UDID_FILE"` re-resolves it. Use the accepted descriptor-bound private-input helper instead. It opens directory components with no-follow descriptors, refuses an occupied final target before secret acquisition, creates the final file with `O_EXCL` relative to the pinned directory descriptor, rebinds the pathname after creation, verifies directory/file identity and exact readback, and fails closed if the path was retargeted. If acquisition fails after private bytes were written, cleanup scrubs only the exact still-open inode with truncate/fsync proof and never unlinks a mutable pathname replacement.
 
 The accepted helper identity is fixed below. These helper bytes are operator-custody tooling only; they do not alter the frozen `a0f4…` app subject and do not authorize signing acceptance or Bluetooth activity.
 
 Accepted current helper provenance:
-- merged helper commit: `af75ffa6dc4409a21822295428e4eeb922ac3d16`;
-- helper blob: `50b12675a57fd2f570d833cfcdbfd7be59f52ca4`;
-- exact tested predecessor head carrying the same helper blob: `91dda8ac05e937e5615312a487f7d78926b74949`;
-- focused `Capture TODAY Field Candidate Preflight QA`: run `31349898562`, job `93338620824` — terminal success.
+- merged helper commit: `b479d851a54437ef394a4901c69db2d829d280e4`;
+- helper blob: `62b719e8d9afb34da6d35d696e80edf926442696`;
+- exact tested predecessor head carrying the same helper blob: `90d3578a1d39a1d019000583a712306b67786acf`;
+- focused `Capture TODAY Field Candidate Preflight QA`: run `31350148402`, job `93339277106` — terminal success.
+
+Superseded private-input helper provenance is retained only for audit continuity: merged helper commit `af75ffa6dc4409a21822295428e4eeb922ac3d16`, blob `50b12675a57fd2f570d833cfcdbfd7be59f52ca4`, tested head `91dda8ac05e937e5615312a487f7d78926b74949`, run `31349898562`, job `93338620824`. **Do not materialize or invoke that superseded helper for the current handoff.**
 
 ```bash
 umask 077
@@ -100,8 +102,8 @@ PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"
 UDID_FILE="$PRIVATE_DIR/es80-intended-device.udid"
 TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
 
-PRIVATE_INPUT_HELPER_COMMIT='af75ffa6dc4409a21822295428e4eeb922ac3d16'
-PRIVATE_INPUT_HELPER_BLOB='50b12675a57fd2f570d833cfcdbfd7be59f52ca4'
+PRIVATE_INPUT_HELPER_COMMIT='b479d851a54437ef394a4901c69db2d829d280e4'
+PRIVATE_INPUT_HELPER_BLOB='62b719e8d9afb34da6d35d696e80edf926442696'
 PRIVATE_INPUT_HELPER_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-private-input.XXXXXX)"
 PRIVATE_INPUT_HELPER="$PRIVATE_INPUT_HELPER_DIR/es80_today_private_device_input.py"
 
@@ -119,7 +121,7 @@ test -f "$UDID_FILE" && test ! -L "$UDID_FILE"
 test "$(/usr/bin/stat -f '%Lp' "$UDID_FILE")" = '600'
 ```
 
-If the helper reports `NOT_READY`, stop before signing and preserve the exact blocker. Do not fall back to `printf >`, `tee`, `echo`, `noclobber`, or another pathname-based secret write. Keep the resulting file private; do not commit it and do not copy it into the retained candidate directory. If the chosen final path already exists, preserve it and choose a fresh filename/path rather than deleting or overwriting it just to satisfy the helper.
+If the helper reports `NOT_READY`, stop before signing and preserve the exact blocker. Do not fall back to `printf >`, `tee`, `echo`, `noclobber`, pathname deletion, or another pathname-based secret write/cleanup. Keep the resulting file private; do not commit it and do not copy it into the retained candidate directory. If the chosen final path already exists — including a zero-length spent subject left by a failed acquisition — preserve it and choose a fresh filename/path rather than deleting or overwriting it just to satisfy the helper.
 
 ## 3. Set the signing inputs without changing the source subject
 
@@ -265,7 +267,8 @@ Stop and preserve the exact blocker if any of these occurs:
 
 - the outer checkout is not exact clean detached `a0f4a33451f61411d6e0541f2e70edea5438342d`;
 - `DEVELOPER_DIR` is set or reintroduced after Section 3; configure Xcode 27 through the private Mac's `xcode-select` selection instead of carrying a caller override into the frozen producer;
-- the descriptor-bound private-input helper cannot be materialized at exact commit/blob, refuses the parent/input, or cannot create and rebind one fresh exact mode-`0600` single-link file;
+- the descriptor-bound private-input helper cannot be materialized at exact commit/blob, refuses the parent/input, or cannot create, bind, verify, and preserve one fresh exact mode-`0600` single-link file without destructive pathname cleanup;
+- a failed private-input acquisition cannot prove durable zero-length scrub of the exact open inode; preserve the helper's cleanup blocker and do not delete/reuse the occupied private path;
 - the pinned external preflight cannot be materialized exactly, exits nonzero, or does not report `READY_TO_INVOKE_SIGNED_FIELD_PRODUCER` for the exact frozen source;
 - the ExportOptions plist path is not absolute, traverses a symlinked ancestor, names a symlink/non-regular/empty subject, changes identity while parsed, has a mismatched optional `teamID`, or has an invalid optional `method`;
 - the producer reports any source, signing, provisioning, intended-device, export, inspection, or evidence failure;
