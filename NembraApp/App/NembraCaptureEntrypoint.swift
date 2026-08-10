@@ -490,6 +490,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Exact scooter membership authority was revoked when Capture left the foreground; it must be freshly verified before use."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -2610,8 +2611,11 @@ private struct SecureLinkView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             test.activateMembershipRequestsForView()
+            if scenePhase != .active {
+                test.appDidLoseForeground()
+            }
             sdkAccount.bootstrap()
-            if sdkAccount.loggedIn { test.verifySDKMembership() }
+            if scenePhase == .active, sdkAccount.loggedIn { test.verifySDKMembership() }
             while !Task.isCancelled {
                 test.consumeCorrelationAsyncInvalidation()
                 try? await Task.sleep(nanoseconds: 250_000_000)
