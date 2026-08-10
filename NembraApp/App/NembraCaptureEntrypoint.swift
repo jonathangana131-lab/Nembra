@@ -22,6 +22,7 @@ struct NembraCaptureApp: App {
 struct NembraTuyaMetadataTestView: View {
     @StateObject private var tuya = TuyaAccountBridge()
     @State private var credentialSaved = false
+    @State private var credentialStoreError = false
 
     var body: some View {
         NavigationStack {
@@ -163,7 +164,17 @@ struct NembraTuyaMetadataTestView: View {
             } else {
                 ForEach(tuya.devices) { device in
                     Button {
-                        credentialSaved = TuyaCaptureCredentialStore.save(device: device)
+                        switch TuyaCaptureCredentialStore.save(device: device) {
+                        case .saved:
+                            credentialSaved = true
+                            credentialStoreError = false
+                        case .unavailable:
+                            credentialSaved = false
+                            credentialStoreError = false
+                        case .failed:
+                            credentialSaved = false
+                            credentialStoreError = true
+                        }
                         tuya.selectDevice(device)
                     } label: {
                         HStack(spacing: 12) {
@@ -208,8 +219,12 @@ struct NembraTuyaMetadataTestView: View {
                     Label("Private scooter credential saved in this iPhone's Keychain for the next Nembra test", systemImage: "lock.shield.fill")
                         .font(.footnote)
                         .foregroundStyle(.green)
+                } else if credentialStoreError {
+                    Label("Private scooter credential could not be updated safely. Do not run the secure Bluetooth test yet.", systemImage: "exclamationmark.shield.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
                 } else if device.localKey.isEmpty {
-                    Label("Tuya did not provide a private local key for this device; the JSON is still useful", systemImage: "info.circle")
+                    Label("Tuya did not provide a private local key for this device; any previously selected credential was cleared", systemImage: "info.circle")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -260,30 +275,56 @@ struct NembraTuyaMetadataTestView: View {
 }
 
 private enum TuyaCaptureCredentialStore {
+    enum SaveResult {
+        case saved
+        case unavailable
+        case failed
+    }
+
     private static let service = "com.jonathangana131.nembra.capturelearn.tuya"
     private static let account = "selected-scooter"
 
-    static func save(device: TuyaAccountBridge.LinkedDevice) -> Bool {
-        guard !device.localKey.isEmpty else { return false }
+    static func save(device: TuyaAccountBridge.LinkedDevice) -> SaveResult {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+
+        guard !device.localKey.isEmpty else {
+            let status = SecItemDelete(query as CFDictionary)
+            switch status {
+            case errSecSuccess, errSecItemNotFound:
+                return .unavailable
+            default:
+                return .failed
+            }
+        }
+
         let payload: [String: String] = [
             "deviceID": device.id,
             "productID": device.productID,
             "uuid": device.uuid,
             "localKey": device.localKey
         ]
-        guard let data = try? JSONEncoder().encode(payload) else { return false }
+        guard let data = try? JSONEncoder().encode(payload) else { return .failed }
 
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
+        let replacement: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         ]
-        SecItemDelete(query as CFDictionary)
+        let updateStatus = SecItemUpdate(query as CFDictionary, replacement as CFDictionary)
+        if updateStatus == errSecSuccess {
+            return .saved
+        }
+        guard updateStatus == errSecItemNotFound else {
+            return .failed
+        }
 
         var insert = query
         insert[kSecValueData as String] = data
         insert[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        return SecItemAdd(insert as CFDictionary, nil) == errSecSuccess
+        return SecItemAdd(insert as CFDictionary, nil) == errSecSuccess ? .saved : .failed
     }
 }
 
