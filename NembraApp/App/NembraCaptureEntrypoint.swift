@@ -435,17 +435,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var canRestartFromFreshOFF1: Bool { failedAttemptCanRestartFromOFF1 }
 
     func consumeCorrelationAsyncInvalidation() {
-        guard phase == .baseline || phase == .scanning else { return }
-        if OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) {
-            correlationSession?.abandonCurrentWindow()
-            correlationSession = nil
-            failLocally(
-                "Tuya regained local-BLE ownership while package correlation was active. This correlation window is invalid; power the scooter OFF, let Tuya local BLE clear, and restart from OFF1.",
-                "sdk_local_ble_reacquired_during_target_correlation"
-            )
-            return
-        }
-        guard correlationProgress?.isSeriesInvalidated == true else { return }
+        guard (phase == .baseline || phase == .scanning),
+              correlationProgress?.isSeriesInvalidated == true else { return }
         correlationSession = nil
         failLocally(
             "Bluetooth correlation ended before this window could be sealed because package-owned scanner/Bluetooth authority became unavailable. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series.",
@@ -602,15 +593,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
             failLocally("SDK account/device authority changed before the next correlation window.", "sdk_authority_changed_during_target_correlation")
             return
         }
-        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {
-            correlationSession?.abandonCurrentWindow()
-            correlationSession = nil
-            failLocally(
-                "Tuya local-BLE ownership is active before this correlation window. The package scanner will not start; power the scooter OFF, let Tuya local BLE clear, and restart from OFF1.",
-                "sdk_local_ble_ownership_blocks_correlation_window"
-            )
-            return
-        }
         guard let session = correlationSession,
               let progress = session.progress else {
             failLocally("Fresh Bluetooth correlation authority is unavailable. Restart from OFF1.", "target_correlation_authority_unavailable")
@@ -643,16 +625,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
             session.abandonCurrentWindow()
             correlationSession = nil
             failLocally("SDK account/device authority changed during Bluetooth correlation. Restart from OFF1 after re-verifying membership.", "sdk_authority_changed_during_target_correlation")
-            return
-        }
-
-        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {
-            session.abandonCurrentWindow()
-            correlationSession = nil
-            failLocally(
-                "Tuya local-BLE ownership appeared before this correlation window could be sealed. The window is invalid; power the scooter OFF, let Tuya local BLE clear, and restart from OFF1.",
-                "sdk_local_ble_ownership_invalidates_correlation_window"
-            )
             return
         }
 
@@ -2361,10 +2333,6 @@ private struct SecureLinkView: View {
         .task {
             sdkAccount.bootstrap()
             if sdkAccount.loggedIn { test.verifySDKMembership() }
-            while !Task.isCancelled {
-                test.consumeCorrelationAsyncInvalidation()
-                try? await Task.sleep(nanoseconds: 250_000_000)
-            }
         }
         .onChange(of: sdkAccount.loggedIn) { _, loggedIn in
             if loggedIn { test.verifySDKMembership() }
@@ -2569,19 +2537,40 @@ private struct SecureLinkView: View {
     private var correlationPanel: some View {
         panel {
             VStack(alignment: .leading, spacing: 18) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("FIND SCOOTER")
-                            .font(.caption2.bold())
-                            .tracking(1.2)
-                            .foregroundStyle(.cyan)
-                        Text(test.phase == .correlated ? "Scooter signal found" : test.correlationWindowLabel)
-                            .font(.title2.bold())
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("FIND SCOOTER")
+                                .font(.caption2.bold())
+                                .tracking(1.2)
+                                .foregroundStyle(.cyan)
+                            Text(test.phase == .correlated ? "Scooter signal found" : test.correlationWindowLabel)
+                                .font(.title2.bold())
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Text("\(correlationDisplayedWindowOrdinal)/4")
+                            .font(.title3.monospacedDigit().bold())
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Correlation progress")
+                            .accessibilityValue("\(correlationDisplayedWindowOrdinal) of 4 windows")
                     }
-                    Spacer()
-                    Text("\(correlationDisplayedWindowOrdinal)/4")
-                        .font(.title3.monospacedDigit().bold())
-                        .foregroundStyle(.secondary)
+                } else {
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("FIND SCOOTER")
+                                .font(.caption2.bold())
+                                .tracking(1.2)
+                                .foregroundStyle(.cyan)
+                            Text(test.phase == .correlated ? "Scooter signal found" : test.correlationWindowLabel)
+                                .font(.title2.bold())
+                        }
+                        Spacer()
+                        Text("\(correlationDisplayedWindowOrdinal)/4")
+                            .font(.title3.monospacedDigit().bold())
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Correlation progress")
+                            .accessibilityValue("\(correlationDisplayedWindowOrdinal) of 4 windows")
+                    }
                 }
 
                 if test.phase == .correlated {
@@ -2682,14 +2671,25 @@ private struct SecureLinkView: View {
 
                     let age = test.canonicalObservedAgeSeconds ?? 0
                     VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Read-only observation")
-                                .font(.subheadline.weight(.semibold))
-                            Spacer()
-                            Text("\(Int(min(age, 45))) / 45 s")
-                                .font(.subheadline.monospacedDigit().bold())
+                        if dynamicTypeSize.isAccessibilitySize {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Read-only observation")
+                                    .font(.subheadline.weight(.semibold))
+                                Text("\(Int(min(age, 45))) / 45 s")
+                                    .font(.subheadline.monospacedDigit().bold())
+                            }
+                        } else {
+                            HStack {
+                                Text("Read-only observation")
+                                    .font(.subheadline.weight(.semibold))
+                                Spacer()
+                                Text("\(Int(min(age, 45))) / 45 s")
+                                    .font(.subheadline.monospacedDigit().bold())
+                            }
                         }
                         ProgressView(value: min(age / 45, 1))
+                            .accessibilityLabel("Read-only observation progress")
+                            .accessibilityValue("\(Int(min(age, 45))) of 45 seconds")
                         requirementRow("Secure local link", ready: test.sdkLocalBLEOnline)
                         requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)
                     }
