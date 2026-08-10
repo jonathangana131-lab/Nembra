@@ -28,14 +28,27 @@ struct TuyaFieldSDKDependencyProvenanceSourceTests {
     @Test("bootstrap records a non-secret lock fingerprint for field provenance")
     func bootstrapRecordsLockFingerprint() throws {
         let script = try readRepositoryFile("Scripts/bootstrap_capture_tuya_sdk.sh")
+        let helper = try readRepositoryFile("Scripts/capture_tuya_private_input_provenance.py")
 
         #expect(script.contains("shasum -a 256 Podfile.lock"))
         #expect(script.contains("ResolvedTuyaDependencyProvenance.txt"))
-        #expect(script.contains("schema=nembra-capture-tuya-dependencies-v1"))
-        #expect(script.contains("podfile_lock_sha256=$LOCK_SHA256"))
-        #expect(script.contains("chmod 600 \"$DEPENDENCY_PROVENANCE\""))
+        #expect(script.contains("/usr/bin/python3 -I \"$PROVENANCE_HELPER\" snapshot"))
+        #expect(script.contains("--lockfile \"$REPO_ROOT/Podfile.lock\""))
+        #expect(script.contains("--record \"$DEPENDENCY_PROVENANCE\""))
+        #expect(script.contains("stat -f '%Lp' \"$DEPENDENCY_PROVENANCE\""))
+        #expect(script.contains("== \"600\""))
+
+        #expect(helper.contains("SCHEMA = \"nembra-capture-tuya-dependencies-v2\""))
+        #expect(helper.contains("\"podfile_lock_sha256\""))
+        #expect(helper.contains("\"podfile_lock_sha256\": _read_stable_regular_file_sha256(lockfile)[1]"))
+        #expect(helper.contains("os.chmod(temporary_name, 0o600)"))
+        #expect(helper.contains("os.chmod(path, 0o600)"))
+        #expect(helper.contains("if recorded != current:"))
+
         #expect(!script.contains("AppSecret=$"))
         #expect(!script.contains("AppKey=$"))
+        #expect(!helper.contains("AppSecret=$"))
+        #expect(!helper.contains("AppKey=$"))
     }
 
     private func readRepositoryFile(_ relativePath: String) throws -> String {
