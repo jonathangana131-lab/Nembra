@@ -1,0 +1,201 @@
+name: Materialize Capture event custody reentrancy repair
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-event-custody-reentrancy-ba3-sol2
+    paths:
+      - .github/workflows/materialize-capture-event-custody-reentrancy-ba3-sol2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 4
+          persist-credentials: true
+
+      - name: Verify exact red parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_red='97dd67129c2b587855552c88982b4fe2c260280f'
+          expected_source_blob='d3075d4fe7bc96ff11079d9f54982ca4c8d90746'
+          workflow='.github/workflows/materialize-capture-event-custody-reentrancy-ba3-sol2.yml'
+          test "$(git rev-parse HEAD^)" = "$expected_red"
+          test "$(git rev-parse 'HEAD:NembraApp/App/NembraCaptureEntrypoint.swift')" = "$expected_source_blob"
+          test "$(git diff --name-only "$expected_red"..HEAD)" = "$workflow"
+
+      - name: Apply fail-closed pre-await custody repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+
+          anchor = '''        guard !acceptanceCutIsClosed else {
+              log("application_update_after_acceptance_cut_ignored", [
+                  "generation": String(token.diagnosticGeneration)
+              ])
+              return
+          }
+          guard sdkAccountLoggedIn,
+          '''
+          replacement = '''        guard !acceptanceCutIsClosed else {
+              log("application_update_after_acceptance_cut_ignored", [
+                  "generation": String(token.diagnosticGeneration)
+              ])
+              return
+          }
+          guard let custodySafeUpdate = redactedApplicationEventDetails(update) else {
+              await invalidateSourceAuthority(
+                  token: token,
+                  message: "Verified Tuya account-identity lease disappeared before application evidence could enter event custody.",
+                  kind: "sdk_account_uid_lease_missing_during_observation"
+              )
+              return
+          }
+          guard sdkAccountLoggedIn,
+          '''
+          if source.count(anchor) != 1:
+              raise SystemExit(f'expected one pre-authority admission anchor, found {source.count(anchor)}')
+          source = source.replace(anchor, replacement, 1)
+
+          old_event = '''            var eventDetails = redactedApplicationEventDetails(update)
+              eventDetails["generation"] = String(token.diagnosticGeneration)
+              log("tuya_application_update", eventDetails)
+          '''
+          new_event = '''            var eventDetails = custodySafeUpdate
+              eventDetails["generation"] = String(token.diagnosticGeneration)
+              log("tuya_application_update", eventDetails)
+          '''
+          if source.count(old_event) != 1:
+              raise SystemExit(f'expected one post-await redaction seam, found {source.count(old_event)}')
+          source = source.replace(old_event, new_event, 1)
+
+          old_helper = '''    private func redactedApplicationEventDetails(_ update: [String: String]) -> [String: String] {
+              guard let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                    !accountUID.isEmpty else {
+                  return update
+              }
+
+              var redacted: [String: String] = [:]
+              redacted.reserveCapacity(update.count)
+              for (key, value) in update {
+                  let redactedKey = key.replacingOccurrences(
+                      of: accountUID,
+                      with: "<redacted-account-uid>",
+                      options: [.caseInsensitive, .literal]
+                  )
+                  redacted[redactedKey] = value.replacingOccurrences(
+                      of: accountUID,
+                      with: "<redacted-account-uid>",
+                      options: [.caseInsensitive, .literal]
+                  )
+              }
+              return redacted
+          }
+          '''
+          new_helper = '''    private func redactedApplicationEventDetails(_ update: [String: String]) -> [String: String]? {
+              guard let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                    !accountUID.isEmpty else { return nil }
+
+              var redacted: [String: String] = [:]
+              redacted.reserveCapacity(update.count)
+              for key in update.keys.sorted() {
+                  guard let value = update[key] else { continue }
+                  let redactedKey = key.replacingOccurrences(
+                      of: accountUID,
+                      with: "<redacted-account-uid>",
+                      options: [.caseInsensitive, .literal]
+                  )
+                  let safeValue = value.replacingOccurrences(
+                      of: accountUID,
+                      with: "<redacted-account-uid>",
+                      options: [.caseInsensitive, .literal]
+                  )
+
+                  // Redaction may collapse malformed UID-bearing keys. Keep each opaque field
+                  // without reintroducing the account identifier or nondeterministic dictionary order.
+                  var uniqueKey = redactedKey
+                  var collisionSuffix = 2
+                  while redacted[uniqueKey] != nil {
+                      uniqueKey = "\\(redactedKey)#\\(collisionSuffix)"
+                      collisionSuffix += 1
+                  }
+                  redacted[uniqueKey] = safeValue
+              }
+              return redacted
+          }
+          '''
+          if source.count(old_helper) != 1:
+              raise SystemExit(f'expected one existing UID redactor, found {source.count(old_helper)}')
+          source = source.replace(old_helper, new_helper, 1)
+
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Validate source and red-to-green contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          start = s.index('private func receivedApplicationUpdate(')
+          helper_start = s.index('private func redactedApplicationEventDetails(', start)
+          end = s.index('private func startWatchdog', helper_start)
+          receiver = s[start:helper_start]
+          helper = s[helper_start:end]
+
+          custody = receiver.index('guard let custodySafeUpdate = redactedApplicationEventDetails(update)')
+          first_await = receiver.index('await ')
+          ledger = receiver.index('sessionLedger.recordApplicationUpdate')
+          event_log = receiver.index('log("tuya_application_update", eventDetails)')
+          assert custody < first_await
+          assert custody < ledger < event_log
+          assert 'var eventDetails = custodySafeUpdate' in receiver
+          assert 'var eventDetails = redactedApplicationEventDetails(update)' not in receiver
+          assert '-> [String: String]?' in helper
+          assert '!accountUID.isEmpty else { return nil }' in helper
+          assert 'return update' not in helper
+          assert 'for key in update.keys.sorted()' in helper
+          assert 'while redacted[uniqueKey] != nil' in helper
+          assert 'uniqueKey = "\\(redactedKey)#\\(collisionSuffix)"' in helper
+          assert '<redacted-account-uid>' in helper
+          assert 'eventDetails["generation"] = String(token.diagnosticGeneration)' in receiver
+          assert 'sdk_account_uid_lease_missing_during_observation' in receiver
+          for forbidden in ('queryDps', 'publishDps', 'writeValue', 'writeWithoutResponse', 'disconnectBLE', 'endConnection('):
+              assert forbidden not in receiver
+              assert forbidden not in helper
+          print('Capture event custody reentrancy source contract: PASS')
+          PY
+          git diff --check
+          if command -v swiftc >/dev/null 2>&1; then
+            swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+            swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventCustodyReentrancySourceTests.swift
+          fi
+
+      - name: Collapse to clean successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_red='97dd67129c2b587855552c88982b4fe2c260280f'
+          workflow='.github/workflows/materialize-capture-event-custody-reentrancy-ba3-sol2.yml'
+          rm "$workflow"
+          git config user.name 'nembra-go-worker'
+          git config user.email 'actions@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift "$workflow"
+          git diff --cached --check
+          git commit -m 'fix(capture): freeze event custody before actor suspension'
+          changed="$(git diff --name-only "$expected_red"..HEAD)"
+          test "$changed" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          git push origin HEAD:repair/v14-capture-event-custody-reentrancy-ba3-sol2
