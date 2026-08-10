@@ -6,7 +6,6 @@ import importlib.util
 import io
 import os
 from pathlib import Path
-import shutil
 import stat
 import sys
 import tempfile
@@ -48,7 +47,7 @@ class PrivateDeviceInputTests(unittest.TestCase):
             self.assertEqual(output.read_text(encoding="utf-8"), self.SECRET)
             self.assertEqual(stat.S_IMODE(private_dir.lstat().st_mode), 0o700)
 
-    def test_existing_target_is_never_clobbered(self):
+    def test_existing_target_is_rejected_before_secret_provider_runs(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             repo, private_dir = self.make_layout(root)
@@ -56,14 +55,44 @@ class PrivateDeviceInputTests(unittest.TestCase):
             target = private_dir / "es80-intended-device.udid"
             target.write_text("KEEP", encoding="utf-8")
             target.chmod(0o600)
+            secret_requested = False
+
+            def secret_provider() -> str:
+                nonlocal secret_requested
+                secret_requested = True
+                return self.SECRET
+
             with self.assertRaisesRegex(module.PrivateInputError, "already-exists"):
                 module.create_private_input(
                     private_dir,
                     repo,
                     target.name,
-                    secret_provider=lambda: self.SECRET,
+                    secret_provider=secret_provider,
                 )
+
+            self.assertFalse(secret_requested)
             self.assertEqual(target.read_text(encoding="utf-8"), "KEEP")
+
+    def test_target_appearing_after_precheck_is_caught_by_exclusive_create(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+
+            def secret_provider() -> str:
+                target.write_text("RACE", encoding="utf-8")
+                target.chmod(0o600)
+                return self.SECRET
+
+            with self.assertRaisesRegex(module.PrivateInputError, "already-exists"):
+                module.create_private_input(
+                    private_dir,
+                    repo,
+                    target.name,
+                    secret_provider=secret_provider,
+                )
+
+            self.assertEqual(target.read_text(encoding="utf-8"), "RACE")
 
     def test_symlinked_ancestor_is_rejected_before_secret_provider_runs(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -163,8 +192,7 @@ class PrivateDeviceInputTests(unittest.TestCase):
                 nonlocal write_calls
                 write_calls += 1
                 if write_calls == 1:
-                    prefix = payload[:4]
-                    return real_write(descriptor, prefix)
+                    return real_write(descriptor, payload[:4])
                 raise OSError("simulated private-input write failure")
 
             with mock.patch.object(module.os, "write", side_effect=fail_after_prefix):
@@ -210,6 +238,31 @@ class PrivateDeviceInputTests(unittest.TestCase):
             self.assertFalse(
                 target.exists(),
                 "failed private-input fsync retained a secret-bearing file",
+            )
+
+    def test_terminal_abort_after_secret_write_removes_created_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+            real_write_all = module._write_all
+
+            def write_then_interrupt(descriptor: int, payload: bytes) -> None:
+                real_write_all(descriptor, payload)
+                raise KeyboardInterrupt()
+
+            with mock.patch.object(module, "_write_all", side_effect=write_then_interrupt):
+                with self.assertRaises(KeyboardInterrupt):
+                    module.create_private_input(
+                        private_dir,
+                        repo,
+                        target.name,
+                        secret_provider=lambda: self.SECRET,
+                    )
+
+            self.assertFalse(
+                target.exists(),
+                "terminal abort retained a secret-bearing intended-device file",
             )
 
     def test_partial_write_unlink_failure_leaves_only_durably_scrubbed_inode(self):
@@ -402,6 +455,30 @@ class PrivateDeviceInputTests(unittest.TestCase):
             self.assertFalse(target.exists())
             self.assertIn("secure-terminal-input-unavailable", stderr.getvalue())
             self.assertNotIn(self.SECRET, combined)
+
+    def test_cli_eof_fails_closed_without_creating_private_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+
+            with mock.patch.object(module.getpass, "getpass", side_effect=EOFError):
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    status = module.main(
+                        [
+                            "--private-directory",
+                            str(private_dir),
+                            "--source-repo",
+                            str(repo),
+                        ]
+                    )
+
+            self.assertEqual(status, 2)
+            self.assertFalse(target.exists())
+            self.assertIn("secure-terminal-input-unavailable", stderr.getvalue())
+            self.assertNotIn(module.READY_MARKER, stdout.getvalue())
 
 
 if __name__ == "__main__":
