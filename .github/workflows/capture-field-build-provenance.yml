@@ -57,9 +57,9 @@ jobs:
           git add -A
           git diff --cached --check
 
-          changed="$(git diff --cached --name-only)"
-          test "$changed" = "NembraApp/App/NembraCaptureEntrypoint.swift" || {
-            printf 'unexpected effective product paths:\n%s\n' "$changed" >&2
+          effective="$(git diff --name-only c093d9fca66d14980f4c05057dd560409fb529de --)"
+          test "$effective" = "NembraApp/App/NembraCaptureEntrypoint.swift" || {
+            printf 'unexpected final state relative to convergence base:\n%s\n' "$effective" >&2
             exit 1
           }
 
