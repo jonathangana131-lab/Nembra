@@ -1480,34 +1480,34 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func redactAccountUIDFromApplicationDetails(
-    _ details: [String: String],
-    accountUID: String
-) -> [String: String] {
-    let exactAccountUID = accountUID.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !exactAccountUID.isEmpty else { return details }
+        _ details: [String: String],
+        accountUID: String
+    ) -> [String: String] {
+        let exactAccountUID = accountUID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !exactAccountUID.isEmpty else { return details }
 
-    func redacted(_ text: String) -> String {
-        text.replacingOccurrences(
-            of: exactAccountUID,
-            with: "<redacted-account-uid>",
-            options: [.caseInsensitive, .literal]
-        )
-    }
-
-    var sanitized: [String: String] = [:]
-    for key in details.keys.sorted() {
-        guard let value = details[key] else { continue }
-        let baseKey = redacted(key)
-        var admittedKey = baseKey
-        var collisionOrdinal = 2
-        while sanitized[admittedKey] != nil {
-            admittedKey = "\(baseKey)#\(collisionOrdinal)"
-            collisionOrdinal += 1
+        func redacted(_ text: String) -> String {
+            text.replacingOccurrences(
+                of: exactAccountUID,
+                with: "<redacted-account-uid>",
+                options: [.caseInsensitive, .literal]
+            )
         }
-        sanitized[admittedKey] = redacted(value)
+
+        var sanitized: [String: String] = [:]
+        for key in details.keys.sorted() {
+            guard let value = details[key] else { continue }
+            let baseKey = redacted(key)
+            var admittedKey = baseKey
+            var collisionOrdinal = 2
+            while sanitized[admittedKey] != nil {
+                admittedKey = "\(baseKey)#\(collisionOrdinal)"
+                collisionOrdinal += 1
+            }
+            sanitized[admittedKey] = redacted(value)
+        }
+        return sanitized
     }
-    return sanitized
-}
 
     private func startWatchdog(token: TuyaReadOnlyConnectionToken) {
         watchdog?.cancel()
