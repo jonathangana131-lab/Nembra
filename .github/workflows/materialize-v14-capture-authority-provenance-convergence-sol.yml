@@ -1,0 +1,22 @@
+name: Materialize Capture Authority Provenance Convergence
+
+on:
+  push:
+    branches:
+      - integration/v14-capture-authority-provenance-convergence-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/v14-capture-authority-provenance-convergence-sol
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Build clean exact-head Capture convergence
+        run: python3 scripts/ci/materialize_v14_capture_authority_provenance_convergence_sol.py
