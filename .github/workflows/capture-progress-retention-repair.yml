@@ -10,58 +10,40 @@ permissions:
 
 jobs:
   apply-repair:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: Remove strong controller retention across progress sleeps
+      - name: Patch observer ownership
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           s = path.read_text()
-          old = '''        correlationProgressTask = Task { @MainActor [weak self] in
-              while !Task.isCancelled {
-                  guard let self, self.correlationSession === session else { return }
-                  if let progress = session.progress {
-                      self.correlationProgress = progress
-                  }
-                  try? await Task.sleep(for: .milliseconds(100))
-              }
-          }
-'''
-          new = '''        correlationProgressTask = Task { @MainActor [weak self] in
-              while !Task.isCancelled {
-                  guard self?.correlationSession === session else { return }
-                  if let progress = session.progress {
-                      self?.correlationProgress = progress
-                  }
-                  try? await Task.sleep(for: .milliseconds(100))
-              }
-          }
-'''
-          if s.count(old) != 1:
-              raise SystemExit(f'observer anchor count={s.count(old)}, expected 1')
-          s = s.replace(old, new, 1)
-          if 'guard let self, self.correlationSession === session' in s:
-              raise SystemExit('strong self observer remains')
+          old_guard = '                guard let self, self.correlationSession === session else { return }'
+          new_guard = '                guard self?.correlationSession === session else { return }'
+          old_assign = '                    self.correlationProgress = progress'
+          new_assign = '                    self?.correlationProgress = progress'
+          if s.count(old_guard) != 1:
+              raise SystemExit('strong observer guard anchor missing or ambiguous')
+          if s.count(old_assign) != 1:
+              raise SystemExit('strong observer assignment anchor missing or ambiguous')
+          s = s.replace(old_guard, new_guard, 1)
+          s = s.replace(old_assign, new_assign, 1)
           path.write_text(s)
           PY
           git diff --check
-          grep -F 'guard self?.correlationSession === session else { return }' NembraApp/App/NembraCaptureEntrypoint.swift
-          grep -F 'self?.correlationProgress = progress' NembraApp/App/NembraCaptureEntrypoint.swift
+          if grep -Fq 'guard let self, self.correlationSession === session' NembraApp/App/NembraCaptureEntrypoint.swift; then exit 1; fi
 
-      - name: Commit repair and self-retire workflow
+      - name: Commit repair and remove workflow
         shell: bash
         run: |
-          git config user.name 'nembra-v14-integration'
-          git config user.email 'actions@users.noreply.github.com'
-          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationSourceTests.swift
+          git config user.name nembra-v14-integration
+          git config user.email actions@users.noreply.github.com
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
           git rm .github/workflows/capture-progress-retention-repair.yml
           git commit -m 'fix(capture): keep progress observer weak across sleeps'
           git push origin HEAD:recovery/v14-capture-correlation-progress-current-sol
