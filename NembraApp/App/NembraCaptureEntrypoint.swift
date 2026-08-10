@@ -167,6 +167,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let exportedAt: Date
         let buildIdentifier: String
         let sourceCommitSHA: String
+        let tuyaDependencyLockSHA256: String
         let tuyaDeviceID: String
         let tuyaUUID: String
         let productID: String
@@ -1530,11 +1531,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     private func makeExport(exportedAt: Date, phase: Phase, events: [Event]) -> Export {
         Export(
-            schemaVersion: 8,
+            schemaVersion: 9,
             purpose: "Sanitized Tuya authenticated read-only stationary preflight",
             exportedAt: exportedAt,
             buildIdentifier: buildIdentity.buildIdentifier,
             sourceCommitSHA: buildIdentity.sourceCommitSHA,
+            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,
             tuyaDeviceID: deviceID,
             tuyaUUID: tuyaUUID,
             productID: productID,
@@ -1587,7 +1589,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             encoder.dateEncodingStrategy = .iso8601
             exportData = try encoder.encode(envelope)
             exportName = "Nembra-Secure-Link-\(deviceID.prefix(8))-Diagnostics.json"
-            message = "Sanitized diagnostics ready with exact compiled build provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."
+            message = "Sanitized diagnostics ready with exact compiled source + reviewed Tuya dependency-lock provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."
         } catch {
             exportData = nil
             message = "Diagnostic export failed: \(error.localizedDescription)"
