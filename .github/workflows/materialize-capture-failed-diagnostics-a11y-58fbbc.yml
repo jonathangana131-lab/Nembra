@@ -1,0 +1,258 @@
+name: Materialize Capture failed diagnostics and accessibility
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-failed-diagnostics-a11y-58fbbc
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 5
+
+      - name: Verify exact product ancestry and bounded construction scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 58fbbc6221fc3fc3fac3854e028c5fc471e98d90 HEAD
+          test "$(git diff --name-only 58fbbc6221fc3fc3fac3854e028c5fc471e98d90..HEAD | sort)" = "$(printf '%s\n' \
+            '.github/workflows/materialize-capture-failed-diagnostics-a11y-58fbbc.yml' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAccountSwitchAccessibilitySourceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureFailedDiagnosticsProductSourceTests.swift' | sort)"
+
+      - name: Materialize failed-state diagnostics and quiet 44pt account action
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text()
+
+          old_props = "\n".join([
+              "    @Published private(set) var exportData: Data?",
+              "    @Published private(set) var exportName = \"Nembra-Secure-Link-Diagnostics.json\"",
+          ])
+          new_props = "\n".join([
+              "    @Published private(set) var exportData: Data?",
+              "    @Published private(set) var exportName = \"Nembra-Secure-Link-Diagnostics.json\"",
+              "    @Published private(set) var diagnosticExportStatus: String?",
+          ])
+          if source.count(old_props) != 1:
+              raise SystemExit(f'expected one export-state property anchor, found {source.count(old_props)}')
+          source = source.replace(old_props, new_props)
+
+          old_invalidate = "\n".join([
+              "    private func invalidatePreparedMutableExport() {",
+              "        guard phase != .accepted else { return }",
+              "        exportData = nil",
+              "    }",
+          ])
+          new_invalidate = "\n".join([
+              "    private func invalidatePreparedMutableExport() {",
+              "        guard phase != .accepted else { return }",
+              "        exportData = nil",
+              "        diagnosticExportStatus = nil",
+              "    }",
+          ])
+          if source.count(old_invalidate) != 1:
+              raise SystemExit(f'expected one mutable-export invalidation helper, found {source.count(old_invalidate)}')
+          source = source.replace(old_invalidate, new_invalidate)
+
+          old_reset = "\n".join([
+              "        sdkLocalBLEOnline = false",
+              "        exportData = nil",
+              "        // Active authenticated generations must be terminally retired by their",
+          ])
+          new_reset = "\n".join([
+              "        sdkLocalBLEOnline = false",
+              "        exportData = nil",
+              "        diagnosticExportStatus = nil",
+              "        // Active authenticated generations must be terminally retired by their",
+          ])
+          if source.count(old_reset) != 1:
+              raise SystemExit(f'expected one discovery reset export anchor, found {source.count(old_reset)}')
+          source = source.replace(old_reset, new_reset)
+
+          old_encoding = "\n".join([
+              "            exportData = try encoder.encode(envelope)",
+              "            exportName = \"Nembra-Secure-Link-\\(deviceID.prefix(8))-Diagnostics.json\"",
+              "            message = \"Sanitized diagnostics ready with exact compiled source + reviewed Tuya dependency-lock provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported.\"",
+              "        } catch {",
+              "            exportData = nil",
+              "            message = \"Diagnostic export failed: \\(error.localizedDescription)\"",
+              "        }",
+          ])
+          new_encoding = "\n".join([
+              "            exportData = try encoder.encode(envelope)",
+              "            exportName = \"Nembra-Secure-Link-\\(deviceID.prefix(8))-Diagnostics.json\"",
+              "            let readyMessage = \"Sanitized diagnostics ready with exact compiled source + reviewed Tuya dependency-lock provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported.\"",
+              "            if phase == .accepted {",
+              "                message = readyMessage",
+              "            } else {",
+              "                diagnosticExportStatus = \"Sanitized diagnostics ready to share. The stopped attempt remains failed and the original failure reason is preserved above.\"",
+              "            }",
+              "        } catch {",
+              "            exportData = nil",
+              "            let failureMessage = \"Diagnostic export failed: \\(error.localizedDescription)\"",
+              "            if phase == .accepted {",
+              "                message = failureMessage",
+              "            } else {",
+              "                diagnosticExportStatus = failureMessage",
+              "            }",
+              "        }",
+          ])
+          if source.count(old_encoding) != 1:
+              raise SystemExit(f'expected one export encoding/status block, found {source.count(old_encoding)}')
+          source = source.replace(old_encoding, new_encoding)
+
+          old_account = "\n".join([
+              "                        .buttonStyle(.plain)",
+              "                        .font(.subheadline.weight(.semibold))",
+              "                        .foregroundStyle(.cyan)",
+              "                        .disabled(test.membershipBusy || sdkAccount.busy)",
+              "                        .accessibilityHint(\"Signs out of the official Tuya SDK account so you can log in with the account that owns this scooter.\")",
+          ])
+          new_account = "\n".join([
+              "                        .buttonStyle(.plain)",
+              "                        .font(.subheadline.weight(.semibold))",
+              "                        .foregroundStyle(.cyan)",
+              "                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)",
+              "                        .contentShape(Rectangle())",
+              "                        .disabled(test.membershipBusy || sdkAccount.busy)",
+              "                        .accessibilityHint(\"Signs out of the official Tuya SDK account so you can log in with the account that owns this scooter.\")",
+          ])
+          if source.count(old_account) != 1:
+              raise SystemExit(f'expected one quiet account-switch modifier chain, found {source.count(old_account)}')
+          source = source.replace(old_account, new_account)
+
+          recovery_tail = "\n".join([
+              "                Text(\"Restore the missing requirement below. This stopped attempt will not be reused.\")",
+              "                    .font(.footnote)",
+              "                    .foregroundStyle(.secondary)",
+          ])
+          recovery_replacement = recovery_tail + "\n\n                failureDiagnosticsControls"
+          if source.count(recovery_tail) != 1:
+              raise SystemExit(f'expected one recovery failure tail, found {source.count(recovery_tail)}')
+          source = source.replace(recovery_tail, recovery_replacement)
+
+          terminal_tail = "\n".join([
+              "                    Text(\"The previous secure session did not fully close inside the app, so Capture will not start another attempt until you relaunch.\")",
+              "                        .font(.footnote)",
+              "                        .foregroundStyle(.secondary)",
+              "                }",
+              "            }",
+          ])
+          terminal_replacement = "\n".join([
+              "                    Text(\"The previous secure session did not fully close inside the app, so Capture will not start another attempt until you relaunch.\")",
+              "                        .font(.footnote)",
+              "                        .foregroundStyle(.secondary)",
+              "                }",
+              "",
+              "                failureDiagnosticsControls",
+              "            }",
+          ])
+          if source.count(terminal_tail) != 1:
+              raise SystemExit(f'expected one terminal failure tail, found {source.count(terminal_tail)}')
+          source = source.replace(terminal_tail, terminal_replacement)
+
+          completion_anchor = "    private var completionPanel: some View {"
+          diagnostics = "\n".join([
+              "    private var failureDiagnosticsControls: some View {",
+              "        VStack(alignment: .leading, spacing: 10) {",
+              "            Divider().overlay(Color.white.opacity(0.10))",
+              "            Text(\"FAILED ATTEMPT DIAGNOSTICS\")",
+              "                .font(.caption2.bold())",
+              "                .tracking(1.1)",
+              "                .foregroundStyle(.secondary)",
+              "            Text(\"Sanitized JSON can help diagnose this stopped attempt. Sharing it does not mark the attempt accepted or physically verified.\")",
+              "                .font(.footnote)",
+              "                .foregroundStyle(.secondary)",
+              "                .fixedSize(horizontal: false, vertical: true)",
+              "",
+              "            if let status = test.diagnosticExportStatus {",
+              "                Text(status)",
+              "                    .font(.footnote)",
+              "                    .foregroundStyle(.secondary)",
+              "                    .fixedSize(horizontal: false, vertical: true)",
+              "            }",
+              "",
+              "            if let data = test.exportData {",
+              "                ShareLink(item: SecureTransfer(data: data, name: test.exportName), preview: SharePreview(test.exportName)) {",
+              "                    Label(\"Share diagnostics\", systemImage: \"square.and.arrow.up\")",
+              "                        .frame(maxWidth: .infinity)",
+              "                }",
+              "                .buttonStyle(.bordered)",
+              "                .controlSize(.large)",
+              "                .accessibilityHint(\"Shares sanitized JSON from this failed attempt. It is not an accepted Capture artifact.\")",
+              "            } else {",
+              "                Button {",
+              "                    test.prepareExport()",
+              "                } label: {",
+              "                    Label(\"Prepare diagnostics\", systemImage: \"doc.badge.gearshape\")",
+              "                        .frame(maxWidth: .infinity)",
+              "                }",
+              "                .buttonStyle(.bordered)",
+              "                .controlSize(.large)",
+              "                .accessibilityHint(\"Prepares sanitized JSON from this failed attempt without changing its failed status.\")",
+              "            }",
+              "        }",
+              "        .accessibilityElement(children: .contain)",
+              "    }",
+              "",
+          ])
+          if source.count(completion_anchor) != 1:
+              raise SystemExit(f'expected one completion panel anchor, found {source.count(completion_anchor)}')
+          source = source.replace(completion_anchor, diagnostics + completion_anchor)
+          path.write_text(source)
+
+      - name: Validate product source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureFailedDiagnosticsProductSourceTests.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAccountSwitchAccessibilitySourceTests.swift
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaCaptureFailedDiagnosticsProductSourceTests -Xswiftc -warnings-as-errors
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaAccountSwitchAccessibilitySourceTests -Xswiftc -warnings-as-errors
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          recovery = source[source.index('private var failureRecoveryContextPanel: some View'):source.index('private var failurePanel: some View')]
+          terminal = source[source.index('private var failurePanel: some View'):source.index('private var completionPanel: some View')]
+          diagnostics = source[source.index('private var failureDiagnosticsControls: some View'):source.index('private var completionPanel: some View')]
+          for section in (recovery, terminal):
+              if 'failureDiagnosticsControls' not in section:
+                  raise SystemExit('a failed composition lost the shared diagnostics control')
+          for item in ['Prepare diagnostics', 'Share diagnostics', 'test.prepareExport()', 'test.exportData', 'test.diagnosticExportStatus']:
+              if item not in diagnostics:
+                  raise SystemExit(f'missing failed diagnostics product invariant: {item}')
+          account_start = source.index('Button("Use a different Tuya account")')
+          account_end = source.index('if authorityReady', account_start)
+          account = source[account_start:account_end]
+          for item in ['.buttonStyle(.plain)', 'minHeight: 44', '.contentShape(Rectangle())']:
+              if item not in account:
+                  raise SystemExit(f'missing account-switch accessibility invariant: {item}')
+          prepare_start = source.index('func prepareExport()')
+          prepare_end = source.index('private func abandonPackageCorrelation()', prepare_start)
+          prepare = source[prepare_start:prepare_end]
+          if 'sealedAcceptedExport' not in prepare or 'diagnosticExportStatus' not in prepare:
+              raise SystemExit('accepted-vs-failed export authority split is incomplete')
+          PY
+          test "$(git diff --name-only)" = "NembraApp/App/NembraCaptureEntrypoint.swift"
+          git diff --check
+
+      - name: Publish clean product repair and remove materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-failed-diagnostics-a11y-58fbbc.yml
+          git config user.name "nembra-sol-worker"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(capture): expose failed diagnostics accessibly"
+          git push origin HEAD:sol/v14-capture-failed-diagnostics-a11y-58fbbc
