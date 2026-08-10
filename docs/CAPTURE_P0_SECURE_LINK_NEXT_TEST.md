@@ -1,5 +1,7 @@
 # Nembra Capture P0 — secure-link gate
 
+PROCEDURE_ID: `ES80-AUTHENTICATED-STATIONARY-v1`
+
 This is the continuation after physical capture `C7D09A22`. **Do not repeat the completed 17-step ride capture.**
 
 ## What is already proven
@@ -65,7 +67,7 @@ This test is indoors and stationary. It does **not** repeat the old ride sequenc
 
 ### Preflight
 
-1. Connect/unlock the intended iPhone 12, install the exact accepted signed Capture build, and verify the app shows authoritative compiled field-build provenance.
+1. Connect/unlock the intended iPhone 12, install the exact accepted signed Capture build, verify the app shows authoritative compiled field-build provenance, and verify `Procedure` is exactly `ES80-AUTHENTICATED-STATIONARY-v1`.
 2. Keep the scooter stationary and initially **OFF**.
 3. In Capture, log in to the official Tuya SDK account by verification code if needed.
 4. Require the app to freshly verify the exact expected scooter device ID in the current SDK account/home and retain the same-account UID lease.
