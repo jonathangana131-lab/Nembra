@@ -34,10 +34,11 @@ public extension SimulatorPowerEvidenceProvider {
     }
 }
 
-/// App-session currentness for one exact source-issued Simulator power receipt.
-/// This is deliberately distinct from source currentness: transport is allowed to
-/// demote a legitimate LIVE receipt to RETAINED immediately, but the app layer can
-/// never create a receipt or promote retained evidence back to live.
+#if SWIFT_PACKAGE
+/// Package-only legacy consumer projection retained for focused package tests while
+/// the app target uses the stronger stateful receipt-fenced Store projection in
+/// `VehicleStore.swift`. Keeping this under SwiftPM prevents the direct-compiled app
+/// sources from defining two competing `SimulatorPowerStoreProjection` authorities.
 enum SimulatorPowerStoreCurrentness: Equatable, Sendable {
     case unavailable
     case retained
@@ -133,6 +134,12 @@ struct SimulatorPowerEvidenceConsumerAuthority: Sendable {
         projection = .unavailable
     }
 }
+#else
+/// The app target directly compiles this file while also linking NembraCore. Its
+/// Store projection is the stronger stateful authority declared in VehicleStore;
+/// alias the historical app-facing name so Dashboard code has one canonical type.
+typealias SimulatorPowerStoreProjection = SimulatorPowerStoreFencedProjection
+#endif
 
 /// Optional source-owned projection for consumers that require field-specific
 /// current speed truth rather than cached `VehicleState` values.

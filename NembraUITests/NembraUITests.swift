@@ -94,6 +94,12 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(speed.waitForExistence(timeout: 3))
         XCTAssertFalse((speed.value as? String ?? "").isEmpty)
 
+        assertEnergyRailValue(
+            containing: "356 watts",
+            in: app,
+            message: "Simulator riding power must reach the mounted Energy Rail as accepted Simulator-only semantic truth."
+        )
+
         XCTAssertTrue(app.staticTexts["Controls available when stopped"].waitForExistence(timeout: 2))
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
@@ -133,10 +139,47 @@ final class NembraUITests: XCTestCase {
                 .waitForExistence(timeout: 2),
             "A connected speed gap must retire stopped-control authority while preserving retained presentation."
         )
+
+        // Speed currentness is deliberately independent from propulsion currentness.
+        // This fixture gaps only speed, so the accepted connected Simulator power
+        // observation remains a separately current zero-watt measurement.
+        assertEnergyRailValue(
+            containing: "0 watts",
+            in: app,
+            message: "A retained speed sample must not falsely demote independently live Simulator power."
+        )
+
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
 
         keepScreenshot(named: "Dashboard Retained Speed Landscape")
+    }
+
+    @MainActor
+    func testLandscapeDashboardRetainedPowerAfterReconnectIsExplicitLastKnown() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(
+            scenario: "riding",
+            orientation: .landscapeRight,
+            environment: ["NEMBRA_SIMULATION_RETAINED_POWER_AFTER_RECONNECT": "1"]
+        )
+
+        let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
+        XCTAssertTrue(
+            cockpit.waitForExistence(timeout: 4),
+            "The real Cockpit must remain mounted across the retained-power reconnect fixture."
+        )
+
+        // The visual subtree is intentionally replaced by one stable accessibility
+        // representation, so automation asserts the semantic last-known contract
+        // here and the keep-always screenshot is the visual acceptance evidence.
+        assertEnergyRailValue(
+            containing: "356 watts, last known",
+            in: app,
+            message: "Reconnect without a new source power receipt must preserve exact 356 W evidence as retained, never live."
+        )
+
+        keepScreenshot(named: "Dashboard Retained Power Landscape")
     }
 
     @MainActor
@@ -159,6 +202,11 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(
             app.staticTexts["NO LIVE SPEED"].waitForExistence(timeout: 2),
             "Disconnected transport must fail the field-specific speed projection closed."
+        )
+        assertEnergyRailValue(
+            containing: "Unavailable",
+            in: app,
+            message: "Disconnected cached aggregate state must not manufacture source-owned power or a numeric zero."
         )
         XCTAssertFalse(app.staticTexts["READY"].exists)
         XCTAssertFalse(app.staticTexts["RIDING"].exists)
@@ -190,6 +238,12 @@ final class NembraUITests: XCTestCase {
             "The Cockpit must not manufacture a numeric speed before any accepted source evidence exists."
         )
         XCTAssertFalse(app.staticTexts["LAST KNOWN"].exists)
+
+        assertEnergyRailValue(
+            containing: "Unavailable",
+            in: app,
+            message: "No observed propulsion evidence must keep the Energy Rail explicitly unavailable."
+        )
 
         let vehicleStatus = app.descendants(matching: .any)["dashboard.vehicle-status"]
         XCTAssertTrue(vehicleStatus.waitForExistence(timeout: 2))
@@ -306,6 +360,29 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    private func assertEnergyRailValue(
+        containing expectedFragment: String,
+        in app: XCUIApplication,
+        message: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
+        XCTAssertTrue(
+            energyRail.waitForExistence(timeout: 2),
+            "The Energy Rail accessibility surface must be mounted in the real Dashboard cockpit.",
+            file: file,
+            line: line
+        )
+        XCTAssertTrue(
+            waitForValueContaining(expectedFragment, element: energyRail),
+            message,
+            file: file,
+            line: line
+        )
+    }
+
+    @MainActor
     private func assertMinimumTouchTarget(
         _ element: XCUIElement,
         named name: String,
@@ -362,6 +439,17 @@ final class NembraUITests: XCTestCase {
     @MainActor
     private func waitForValue(_ value: String, element: XCUIElement, timeout: TimeInterval = 3) -> Bool {
         let predicate = NSPredicate(format: "value == %@", value)
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func waitForValueContaining(
+        _ fragment: String,
+        element: XCUIElement,
+        timeout: TimeInterval = 3
+    ) -> Bool {
+        let predicate = NSPredicate(format: "value CONTAINS[c] %@", fragment)
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
