@@ -289,14 +289,13 @@ final class SpeedInstrumentModel {
     }
 }
 
-/// Source-owned Simulator inputs admitted by the app-side Energy Rail seam.
-/// Deliberately excludes `VehicleState.lastUpdated`: unrelated state publications
-/// must not mint new propulsion receipts. A new package receipt is considered only
-/// when connection, synthetic watts, or synthetic mode actually changes.
+/// Simulator-only propulsion admission is anchored to a current source-owned
+/// speed observation from the same synthetic fixture, not to aggregate vehicle
+/// connection or `lastUpdated`. The full speed sample remains the wake-up identity;
+/// repeated equal watts are still de-duplicated by the package runtime.
 private struct DashboardEnergyRailSimulatorSourceSnapshot: Equatable {
-    let connected: Bool
-    let watts: Double?
-    let modeKey: String?
+    let watts: Double
+    let sourceSample: SpeedTelemetrySample
 }
 
 /// A deliberately narrow high-frequency subtree for the landscape cockpit.
@@ -365,6 +364,11 @@ struct DashboardSpeedInstrumentView: View {
         .onChange(of: energyRailSimulatorSourceSnapshot) { _, snapshot in
             synchronizeEnergyRailSource(snapshot)
         }
+        .onChange(of: vehicle.state.connection) { _, connection in
+            if connection != .connected {
+                synchronizeEnergyRailSource(nil)
+            }
+        }
         .onDisappear {
             model.stop()
             synchronizeEnergyRailSource(nil)
@@ -372,15 +376,28 @@ struct DashboardSpeedInstrumentView: View {
     }
 
     private var energyRailSimulatorSourceSnapshot: DashboardEnergyRailSimulatorSourceSnapshot? {
+        let sanitizedSpeed = vehicle.speedEvidenceAvailability.dashboardPresentationAvailability(
+            allowsSimulatorQA: true
+        )
+
         guard vehicle.profile == .simulatorQA,
-              vehicle.profile.capabilities.supportsPowerWatts else {
+              vehicle.profile.capabilities.supportsPowerWatts,
+              vehicle.state.connection == .connected,
+              case let .live(sourceSample) = sanitizedSpeed,
+              sourceSample.source == .simulatorQA,
+              sourceSample.provenance == .absoluteMeasurement,
+              let aggregateSpeed = vehicle.state.speedKilometersPerHour,
+              aggregateSpeed.isFinite,
+              aggregateSpeed >= 0,
+              abs(aggregateSpeed - sourceSample.kilometersPerHour) <= 0.000_001,
+              let aggregateWatts = vehicle.state.powerWatts,
+              aggregateWatts >= 0 else {
             return nil
         }
 
         return DashboardEnergyRailSimulatorSourceSnapshot(
-            connected: vehicle.state.connection == .connected,
-            watts: vehicle.state.powerWatts.map { Double($0) },
-            modeKey: vehicle.state.rideMode?.rawValue
+            watts: Double(aggregateWatts),
+            sourceSample: sourceSample
         )
     }
 
@@ -388,21 +405,23 @@ struct DashboardSpeedInstrumentView: View {
         _ snapshot: DashboardEnergyRailSimulatorSourceSnapshot?
     ) {
         guard var runtime = energyRailRuntime else { return }
-        let uptime = DispatchTime.now().uptimeNanoseconds
 
         if let snapshot {
             _ = runtime.observe(
-                connected: snapshot.connected,
+                connected: true,
                 watts: snapshot.watts,
-                modeKey: snapshot.modeKey,
-                receivedAtUptimeNanoseconds: uptime
+                // Synthetic mode changes are not propulsion measurements. Keep the
+                // runtime on a mode-neutral simulator identity until the source
+                // exposes mode-bound propulsion evidence explicitly.
+                modeKey: nil,
+                receivedAtUptimeNanoseconds: snapshot.sourceSample.receivedAtUptimeNanoseconds
             )
         } else {
             _ = runtime.observe(
                 connected: false,
                 watts: nil,
                 modeKey: nil,
-                receivedAtUptimeNanoseconds: uptime
+                receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
             )
         }
 
@@ -413,10 +432,8 @@ struct DashboardSpeedInstrumentView: View {
         _ source: DashboardEnergyRailSimulatorSourceSnapshot?
     ) -> Bool {
         guard let source,
-              source.connected,
-              let watts = source.watts,
-              watts.isFinite,
-              watts >= 0 else {
+              source.watts.isFinite,
+              source.watts >= 0 else {
             return false
         }
         return true
