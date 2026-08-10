@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import os
 from pathlib import Path
 import stat
@@ -193,6 +195,31 @@ class PrivateDeviceInputTests(unittest.TestCase):
             self.assertTrue(target.exists())
             self.assertEqual(target.read_text(encoding="utf-8"), "KEEP")
 
+    def test_terminal_abort_after_secret_write_removes_created_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+            real_write_all = module._write_all
+
+            def write_then_interrupt(descriptor: int, payload: bytes) -> None:
+                real_write_all(descriptor, payload)
+                raise KeyboardInterrupt()
+
+            with mock.patch.object(module, "_write_all", side_effect=write_then_interrupt):
+                with self.assertRaises(KeyboardInterrupt):
+                    module.create_private_input(
+                        private_dir,
+                        repo,
+                        target.name,
+                        secret_provider=lambda: self.SECRET,
+                    )
+
+            self.assertFalse(
+                target.exists(),
+                "terminal abort retained a secret-bearing intended-device file",
+            )
+
     def test_surrounding_whitespace_is_rejected_and_no_file_is_created(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -205,6 +232,42 @@ class PrivateDeviceInputTests(unittest.TestCase):
                     secret_provider=lambda: self.SECRET + "\n",
                 )
             self.assertFalse((private_dir / "es80-intended-device.udid").exists())
+
+    def test_cli_refuses_echoed_getpass_fallback_before_consuming_secret(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+            fallback_consumed = False
+
+            def simulated_echo_fallback(_prompt: str) -> str:
+                nonlocal fallback_consumed
+                module.warnings.warn(
+                    "simulated terminal cannot disable echo",
+                    module.getpass.GetPassWarning,
+                )
+                fallback_consumed = True
+                return self.SECRET
+
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with mock.patch.object(module.getpass, "getpass", side_effect=simulated_echo_fallback):
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    status = module.main(
+                        [
+                            "--private-directory",
+                            str(private_dir),
+                            "--source-repo",
+                            str(repo),
+                        ]
+                    )
+
+            combined = stdout.getvalue() + stderr.getvalue()
+            self.assertEqual(status, 2)
+            self.assertFalse(fallback_consumed)
+            self.assertFalse(target.exists())
+            self.assertIn("secure-terminal-input-unavailable", stderr.getvalue())
+            self.assertNotIn(self.SECRET, combined)
 
 
 if __name__ == "__main__":
