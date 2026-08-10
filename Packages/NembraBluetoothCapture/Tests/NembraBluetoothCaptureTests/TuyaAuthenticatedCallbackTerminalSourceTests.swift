@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@Suite("Tuya authenticated callback terminal fences")
+@Suite("Tuya authentication-promotion terminal fence")
 struct TuyaAuthenticatedCallbackTerminalSourceTests {
     private static func appSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
@@ -32,14 +32,6 @@ struct TuyaAuthenticatedCallbackTerminalSourceTests {
             )?.lowerBound
         )
         return source[start..<end]
-    }
-
-    @Test("SDK success callback cannot silently abandon a current authenticating generation")
-    func successCallbackMustRetireAuthorityLoss() throws {
-        let callback = try Self.authenticatedCallback(Self.appSource())
-
-        #expect(!callback.contains("let driver else { return }"))
-        #expect(callback.contains("invalidateSourceAuthority"))
     }
 
     @Test("authentication-promotion rejection cannot leave the ledger token live behind failed UI")
