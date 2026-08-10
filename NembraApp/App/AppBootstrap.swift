@@ -2,14 +2,15 @@ import Foundation
 import NembraCore
 
 // The app target still directly compiles selected NembraCore vehicle/ride sources while the
-// package migration is incremental. Keep the Battery truth/persistence slice package-owned and
-// expose only the exact missing names needed by the existing app source. This avoids copying or
-// redefining Battery authority semantics inside the app module while leaving overlapping
+// package migration is incremental. Keep package-owned truth/persistence subjects authoritative
+// and expose only the exact missing read-only/package names needed by existing app source. This
+// avoids copying or redefining authority semantics inside the app module while leaving overlapping
 // direct-compiled vehicle/speed declarations unqualified and local.
 typealias RetainedBatterySnapshotStorage = NembraCore.RetainedBatterySnapshotStorage
 typealias UserDefaultsRetainedBatterySnapshotStorage = NembraCore.UserDefaultsRetainedBatterySnapshotStorage
 typealias BatteryObservationAuthority = NembraCore.BatteryObservationAuthority
 typealias AuthoritativeBatteryObservation = NembraCore.AuthoritativeBatteryObservation
+typealias PropulsionGaugeCockpitAcceptedMeasurement = NembraCore.PropulsionGaugeCockpitAcceptedMeasurement
 
 @MainActor
 final class AppRuntime {
