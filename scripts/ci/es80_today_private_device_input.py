@@ -281,7 +281,7 @@ def create_private_input(
 
         os.fsync(directory_descriptor)
         return output_path
-    except Exception:
+    except BaseException:
         if created_object_identity is not None:
             try:
                 current = os.stat(filename, dir_fd=directory_descriptor, follow_symlinks=False)
