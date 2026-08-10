@@ -1,0 +1,70 @@
+name: Capture field-build UI current repair
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-field-build-ui-current-r2-sol
+
+permissions:
+  contents: write
+
+jobs:
+  apply-repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Apply exact field-build presentation repair
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text()
+
+          replacements = [
+              (
+                  '''    var accountIdentityLeaseIsAuthorized: Bool {\n        TuyaSDKAccountIdentityLeaseGate.verdict(for: accountIdentityLeaseSnapshot) == .authorized\n    }\n''',
+                  '''    var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }\n\n    var accountIdentityLeaseIsAuthorized: Bool {\n        TuyaSDKAccountIdentityLeaseGate.verdict(for: accountIdentityLeaseSnapshot) == .authorized\n    }\n'''
+              ),
+              (
+                  '            LabeledContent("Field build", value: test.accountIdentityLeaseIsAuthorized && test.sdkDeviceMembershipVerified ? "Authority checked" : "Not ready")',
+                  '            LabeledContent("Field build", value: test.fieldBuildIsAuthoritative ? "Exact provenance" : "Not authoritative")'
+              ),
+              (
+                  '''            if !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized {\n                Text("NO PHYSICAL BLE TEST YET: the private exact field build, current SDK account identity, and exact scooter membership must all be proven before even the OFF baseline scan can start.")''',
+                  '''            if !test.fieldBuildIsAuthoritative || !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized {\n                Text("NO PHYSICAL BLE TEST YET: exact compiled field-build provenance, private SDK configuration, current SDK account identity, and exact scooter membership must all be proven before OFF1 correlation can start.")'''
+              ),
+              (
+                  '                    .disabled(!test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized || test.membershipBusy)',
+                  '                    .disabled(!test.fieldBuildIsAuthoritative || !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized || test.membershipBusy)'
+              ),
+          ]
+
+          for old, new in replacements:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'exact repair anchor count was {count}, expected 1: {old[:120]!r}')
+              source = source.replace(old, new, 1)
+
+          path.write_text(source)
+          PY
+
+          git diff --check
+          grep -F 'var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -F 'LabeledContent("Field build", value: test.fieldBuildIsAuthoritative ? "Exact provenance" : "Not authoritative")' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -F '.disabled(!test.fieldBuildIsAuthoritative || !test.privateConfig' NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Commit product repair and self-retire tooling
+        shell: bash
+        run: |
+          git config user.name 'nembra-v14-integration'
+          git config user.email 'actions@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git rm .github/workflows/capture-field-build-ui-current-r2.yml
+          git commit -m 'fix(capture): make field-build authority visible before OFF1'
+          git push origin HEAD:repair/v14-capture-field-build-ui-current-r2-sol
