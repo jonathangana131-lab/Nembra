@@ -1,418 +1,198 @@
 import Testing
 @testable import NembraCore
 
-@Suite("Energy Rail Simulator runtime")
+@Suite("Energy Rail Simulator source runtime")
 struct PropulsionEnergyRailSimulatorRuntimeTests {
-    @Test("connected simulator power is sealed as simulator authority")
-    func connectedPowerStaysSimulatorOnly() throws {
-        var runtime = try PropulsionEnergyRailSimulatorRuntime(
-            freshnessNanoseconds: 30_000_000_000
-        )
+    @Test("live source preserves the complete source receipt tuple")
+    func liveSourcePreservesExactReceipt() throws {
+        var runtime = try PropulsionEnergyRailSimulatorRuntime()
 
-        let admitted = runtime.observe(
-            connected: true,
+        #expect(runtime.acceptLiveSource(
             watts: 356,
-            modeKey: "drive",
-            receivedAtUptimeNanoseconds: 1_000
-        )
-        #expect(admitted)
+            receiptSequenceNumber: 7,
+            receivedAtUptimeNanoseconds: 10_000,
+            continuityGeneration: 3
+        ))
 
-        let projection = runtime.projection(atUptimeNanoseconds: 1_000)
+        let projection = runtime.projection(atUptimeNanoseconds: 10_000)
         #expect(projection.currentness == .live)
         #expect(projection.acceptedWatts == 356)
         #expect(projection.acceptedMeasurement?.authority == .simulator)
-        #expect(projection.acceptedMeasurement?.continuityGeneration == 1)
-        #expect(projection.acceptedMeasurement?.receiptSequenceNumber == 1)
+        #expect(projection.acceptedMeasurement?.receiptSequenceNumber == 7)
+        #expect(projection.acceptedMeasurement?.receivedAtUptimeNanoseconds == 10_000)
+        #expect(projection.acceptedMeasurement?.continuityGeneration == 3)
         #expect(projection.scaleOrigin == .simulator)
         #expect(projection.acceptedTargetFraction == 356.0 / 650.0)
     }
 
-    @Test("render polling with unchanged watts does not mint accepted receipts")
-    func unchangedPowerDoesNotBecomeDisplayClockTelemetry() throws {
-        var runtime = try PropulsionEnergyRailSimulatorRuntime()
+    @Test("newer equal-watt source receipt refreshes currentness without fake value change")
+    func newerEqualWattsRefreshCurrentness() throws {
+        var runtime = try PropulsionEnergyRailSimulatorRuntime(freshnessNanoseconds: 1_000)
 
-        let firstAdmission = runtime.observe(
-            connected: true,
-            watts: 356,
-            modeKey: "drive",
-            receivedAtUptimeNanoseconds: 1_000
-        )
-        #expect(firstAdmission)
-        let first = runtime.projection(atUptimeNanoseconds: 1_000)
+        #expect(runtime.acceptLiveSource(watts: 240, receiptSequenceNumber: 10, receivedAtUptimeNanoseconds: 10_000, continuityGeneration: 1))
+        let first = runtime.projection(atUptimeNanoseconds: 10_000)
+        #expect(runtime.acceptLiveSource(watts: 240, receiptSequenceNumber: 11, receivedAtUptimeNanoseconds: 10_900, continuityGeneration: 1))
+        let refreshed = runtime.projection(atUptimeNanoseconds: 11_500)
 
-        let duplicateAdmission = runtime.observe(
-            connected: true,
-            watts: 356,
-            modeKey: "drive",
-            receivedAtUptimeNanoseconds: 2_000
-        )
-        #expect(duplicateAdmission)
-        let second = runtime.projection(atUptimeNanoseconds: 2_000)
-
-        #expect(first.acceptedMeasurement == second.acceptedMeasurement)
-        #expect(first.accessibilityPresentation.acceptedRevision
-            == second.accessibilityPresentation.acceptedRevision)
-        #expect(first.accessibilityPresentation.semanticRevision
-            == second.accessibilityPresentation.semanticRevision)
+        #expect(refreshed.currentness == .live)
+        #expect(refreshed.acceptedWatts == 240)
+        #expect(refreshed.acceptedMeasurement?.receiptSequenceNumber == 11)
+        #expect(refreshed.acceptedMeasurement?.receivedAtUptimeNanoseconds == 10_900)
+        #expect(first.accessibilityPresentation.acceptedRevision != refreshed.accessibilityPresentation.acceptedRevision)
     }
 
-    @Test("disconnect makes legacy projection unavailable without manufacturing zero")
-    func disconnectIsUnavailableNotMeasuredZero() throws {
+    @Test("identical live source replay is idempotent")
+    func identicalLiveReplayDoesNotMintMeasurement() throws {
         var runtime = try PropulsionEnergyRailSimulatorRuntime()
+        #expect(runtime.acceptLiveSource(watts: 180, receiptSequenceNumber: 4, receivedAtUptimeNanoseconds: 4_000, continuityGeneration: 2))
+        let first = runtime.projection(atUptimeNanoseconds: 4_000)
+        #expect(runtime.acceptLiveSource(watts: 180, receiptSequenceNumber: 4, receivedAtUptimeNanoseconds: 4_000, continuityGeneration: 2))
+        let replay = runtime.projection(atUptimeNanoseconds: 4_500)
+        #expect(replay.acceptedMeasurement == first.acceptedMeasurement)
+        #expect(replay.accessibilityPresentation.acceptedRevision == first.accessibilityPresentation.acceptedRevision)
+    }
 
-        let admitted = runtime.observe(
-            connected: true,
-            watts: 356,
-            modeKey: "drive",
-            receivedAtUptimeNanoseconds: 1_000
-        )
-        #expect(admitted)
-        let disconnectedAdmission = runtime.observe(
-            connected: false,
-            watts: 0,
-            modeKey: "drive",
-            receivedAtUptimeNanoseconds: 2_000
-        )
-        #expect(disconnectedAdmission == false)
-
-        let projection = runtime.projection(atUptimeNanoseconds: 2_000)
+    @Test("one source receipt cannot be relabeled")
+    func contradictoryReceiptFailsClosed() throws {
+        var runtime = try PropulsionEnergyRailSimulatorRuntime()
+        #expect(runtime.acceptLiveSource(watts: 200, receiptSequenceNumber: 8, receivedAtUptimeNanoseconds: 8_000, continuityGeneration: 1))
+        #expect(runtime.acceptLiveSource(watts: 201, receiptSequenceNumber: 8, receivedAtUptimeNanoseconds: 8_000, continuityGeneration: 1) == false)
+        let projection = runtime.projection(atUptimeNanoseconds: 8_100)
         #expect(projection.currentness == .unavailable)
         #expect(projection.acceptedWatts == nil)
         #expect(projection.displayWatts == nil)
-        #expect(projection.railFraction == nil)
-        #expect(projection.acceptedPeakMarkerFraction == nil)
-        #expect(projection.allowsLiveMotion == false)
     }
 
-    @Test("static accepted simulator power becomes retained after synthetic QA freshness window")
-    func syntheticFreshnessDemotesToRetainedWithoutChangingWatts() throws {
-        var runtime = try PropulsionEnergyRailSimulatorRuntime(
-            freshnessNanoseconds: 1_000
-        )
-
-        let admitted = runtime.observe(
-            connected: true,
-            watts: 250,
-            modeKey: "eco",
-            receivedAtUptimeNanoseconds: 10_000
-        )
-        #expect(admitted)
-
-        let retained = runtime.projection(atUptimeNanoseconds: 11_001)
-        #expect(retained.currentness == .retained)
-        #expect(retained.acceptedWatts == 250)
-        #expect(retained.displayWatts == 250)
-        #expect(retained.railFraction == nil)
-        #expect(retained.acceptedTargetFraction == nil)
-        #expect(retained.acceptedPeakMarkerFraction == nil)
-        #expect(retained.allowsLiveMotion == false)
-        #expect(retained.acceptedMeasurement?.authority == .simulator)
-    }
-
-    @Test("source retained lowers currentness without changing accepted receipt")
-    func sourceRetainedPreservesExactAcceptedReceiptAndAccessibilityRevision() throws {
+    @Test("newer sequence with non-increasing source uptime fails closed")
+    func sourceUptimeCannotMoveBackwardsWithinGeneration() throws {
         var runtime = try PropulsionEnergyRailSimulatorRuntime()
+        #expect(runtime.acceptLiveSource(watts: 200, receiptSequenceNumber: 1, receivedAtUptimeNanoseconds: 10_000, continuityGeneration: 1))
+        #expect(runtime.acceptLiveSource(watts: 210, receiptSequenceNumber: 2, receivedAtUptimeNanoseconds: 9_999, continuityGeneration: 1) == false)
+        #expect(runtime.projection(atUptimeNanoseconds: 10_000).currentness == .unavailable)
+    }
 
-        #expect(runtime.observe(
-            connected: true,
-            watts: 356,
-            modeKey: nil,
-            sourceObservationRevision: 1,
-            receivedAtUptimeNanoseconds: 1_000
-        ))
-        let live = runtime.projection(atUptimeNanoseconds: 1_000)
-        #expect(live.currentness == .live)
+    @Test("stale source callback cannot erase newer evidence")
+    func staleCallbackIsIgnored() throws {
+        var runtime = try PropulsionEnergyRailSimulatorRuntime()
+        #expect(runtime.acceptLiveSource(watts: 120, receiptSequenceNumber: 20, receivedAtUptimeNanoseconds: 20_000, continuityGeneration: 2))
+        #expect(runtime.acceptLiveSource(watts: 280, receiptSequenceNumber: 22, receivedAtUptimeNanoseconds: 22_000, continuityGeneration: 2))
+        #expect(runtime.acceptLiveSource(watts: 999, receiptSequenceNumber: 21, receivedAtUptimeNanoseconds: 23_000, continuityGeneration: 2) == false)
+        let projection = runtime.projection(atUptimeNanoseconds: 23_000)
+        #expect(projection.currentness == .live)
+        #expect(projection.acceptedWatts == 280)
+        #expect(projection.acceptedMeasurement?.receiptSequenceNumber == 22)
+    }
 
-        #expect(runtime.retain(sourceObservationRevision: 1))
-        let retained = runtime.projection(atUptimeNanoseconds: 1_001)
+    @Test("source live to retained is immediate and preserves exact semantic revision")
+    func liveToRetainedIsImmediateAndStatic() throws {
+        var runtime = try PropulsionEnergyRailSimulatorRuntime(freshnessNanoseconds: 30_000_000_000)
+        #expect(runtime.acceptLiveSource(watts: 356, receiptSequenceNumber: 9, receivedAtUptimeNanoseconds: 9_000, continuityGeneration: 4))
+        let live = runtime.projection(atUptimeNanoseconds: 9_000)
+        #expect(runtime.retainSource(watts: 356, receiptSequenceNumber: 9, receivedAtUptimeNanoseconds: 9_000, continuityGeneration: 4))
+        let retained = runtime.projection(atUptimeNanoseconds: 9_001)
 
         #expect(retained.currentness == .retained)
-        #expect(retained.acceptedWatts == 356)
-        #expect(retained.displayWatts == 356)
         #expect(retained.acceptedMeasurement == live.acceptedMeasurement)
-        #expect(retained.accessibilityPresentation.acceptedRevision
-            == live.accessibilityPresentation.acceptedRevision)
-        #expect(retained.accessibilityPresentation.currentness == .retained)
-        #expect(retained.accessibilityPresentation.semanticRevision
-            != live.accessibilityPresentation.semanticRevision)
+        #expect(retained.accessibilityPresentation.acceptedRevision == live.accessibilityPresentation.acceptedRevision)
+        #expect(retained.accessibilityPresentation.semanticRevision != live.accessibilityPresentation.semanticRevision)
+        #expect(retained.displayWatts == 356)
         #expect(retained.railFraction == nil)
         #expect(retained.acceptedTargetFraction == nil)
         #expect(retained.acceptedPeakMarkerFraction == nil)
         #expect(retained.scaleOrigin == nil)
         #expect(retained.allowsLiveMotion == false)
-        let schedule = runtime.displaySchedule(atUptimeNanoseconds: 1_001)
+        let schedule = runtime.displaySchedule(atUptimeNanoseconds: 9_001)
         #expect(schedule.requiresContinuousFrames == false)
         #expect(schedule.nextTransitionUptimeNanoseconds == nil)
     }
 
-    @Test("exact replay cannot promote a retained source receipt")
-    func exactSourceReplayKeepsRetainedCurrentness() throws {
+    @Test("cold remount reconstructs exact retained source receipt")
+    func coldRemountRetainedPreservesSourceTuple() throws {
         var runtime = try PropulsionEnergyRailSimulatorRuntime()
-
-        #expect(runtime.observe(
-            connected: true,
-            watts: 300,
-            modeKey: nil,
-            sourceObservationRevision: 4,
-            receivedAtUptimeNanoseconds: 10_000
-        ))
-        #expect(runtime.retain(sourceObservationRevision: 4))
-
-        #expect(runtime.observe(
-            connected: true,
-            watts: 300,
-            modeKey: nil,
-            sourceObservationRevision: 4,
-            receivedAtUptimeNanoseconds: 10_000
-        ))
-        #expect(runtime.projection(atUptimeNanoseconds: 20_000).currentness == .retained)
+        #expect(runtime.retainSource(watts: 88, receiptSequenceNumber: 12, receivedAtUptimeNanoseconds: 55_000, continuityGeneration: 6))
+        let retained = runtime.projection(atUptimeNanoseconds: 55_001)
+        #expect(retained.currentness == .retained)
+        #expect(retained.acceptedWatts == 88)
+        #expect(retained.acceptedMeasurement?.authority == .simulator)
+        #expect(retained.acceptedMeasurement?.receiptSequenceNumber == 12)
+        #expect(retained.acceptedMeasurement?.receivedAtUptimeNanoseconds == 55_000)
+        #expect(retained.acceptedMeasurement?.continuityGeneration == 6)
+        #expect(retained.accessibilityPresentation.currentness == .retained)
+        #expect(retained.allowsLiveMotion == false)
+        #expect(runtime.displaySchedule(atUptimeNanoseconds: 55_001).nextTransitionUptimeNanoseconds == nil)
     }
 
-    @Test("wrong source revision cannot retain a newer live measurement")
-    func wrongSourceRevisionCannotDemoteLiveMeasurement() throws {
+    @Test("retained receipt cannot revive live; newer source generation can")
+    func retainedReceiptNeedsNewGenerationToReopenLive() throws {
         var runtime = try PropulsionEnergyRailSimulatorRuntime()
-
-        #expect(runtime.observe(
-            connected: true,
-            watts: 275,
-            modeKey: nil,
-            sourceObservationRevision: 7,
-            receivedAtUptimeNanoseconds: 7_000
-        ))
-        let before = runtime.projection(atUptimeNanoseconds: 7_000)
-
-        #expect(runtime.retain(sourceObservationRevision: 6) == false)
-        let after = runtime.projection(atUptimeNanoseconds: 7_000)
-        #expect(after == before)
-        #expect(after.currentness == .live)
+        #expect(runtime.retainSource(watts: 300, receiptSequenceNumber: 5, receivedAtUptimeNanoseconds: 5_000, continuityGeneration: 2))
+        #expect(runtime.acceptLiveSource(watts: 300, receiptSequenceNumber: 5, receivedAtUptimeNanoseconds: 5_000, continuityGeneration: 2) == false)
+        #expect(runtime.projection(atUptimeNanoseconds: 5_100).currentness == .retained)
+        #expect(runtime.acceptLiveSource(watts: 300, receiptSequenceNumber: 1, receivedAtUptimeNanoseconds: 100, continuityGeneration: 3))
+        let reopened = runtime.projection(atUptimeNanoseconds: 100)
+        #expect(reopened.currentness == .live)
+        #expect(reopened.acceptedMeasurement?.receiptSequenceNumber == 1)
+        #expect(reopened.acceptedMeasurement?.continuityGeneration == 3)
+        #expect(runtime.displaySchedule(atUptimeNanoseconds: 100).requiresContinuousFrames == false)
     }
 
-    @Test("new equal-watt source receipt after retained starts a fresh local generation")
-    func newerEqualWattsAfterRetainedCannotInterpolateAcrossGap() throws {
+    @Test("explicit unavailable is numeric-free and old receipt cannot reopen")
+    func unavailableIsDistinctFromRetained() throws {
         var runtime = try PropulsionEnergyRailSimulatorRuntime()
-
-        #expect(runtime.observe(
-            connected: true,
-            watts: 300,
-            modeKey: nil,
-            sourceObservationRevision: 1,
-            receivedAtUptimeNanoseconds: 1_000
-        ))
-        let first = runtime.projection(atUptimeNanoseconds: 1_000)
-        #expect(runtime.retain(sourceObservationRevision: 1))
-
-        #expect(runtime.observe(
-            connected: true,
-            watts: 300,
-            modeKey: nil,
-            sourceObservationRevision: 2,
-            receivedAtUptimeNanoseconds: 2_000
-        ))
-        let recovered = runtime.projection(atUptimeNanoseconds: 2_000)
-
-        #expect(first.acceptedMeasurement?.continuityGeneration == 1)
-        #expect(recovered.currentness == .live)
-        #expect(recovered.acceptedWatts == 300)
-        #expect(recovered.acceptedMeasurement?.continuityGeneration == 2)
-        #expect(recovered.acceptedMeasurement?.receiptSequenceNumber == 1)
-        #expect(recovered.acceptedMeasurement?.authority == .simulator)
-        #expect(recovered.displayWatts == 300)
-        #expect(runtime.displaySchedule(atUptimeNanoseconds: 2_000).requiresContinuousFrames == false)
+        #expect(runtime.acceptLiveSource(watts: 150, receiptSequenceNumber: 3, receivedAtUptimeNanoseconds: 3_000, continuityGeneration: 1))
+        runtime.markUnavailable()
+        let unavailable = runtime.projection(atUptimeNanoseconds: 3_001)
+        #expect(unavailable.currentness == .unavailable)
+        #expect(unavailable.acceptedWatts == nil)
+        #expect(unavailable.displayWatts == nil)
+        #expect(unavailable.railFraction == nil)
+        #expect(unavailable.allowsLiveMotion == false)
+        #expect(runtime.displaySchedule(atUptimeNanoseconds: 3_001).nextTransitionUptimeNanoseconds == nil)
+        #expect(runtime.acceptLiveSource(watts: 150, receiptSequenceNumber: 3, receivedAtUptimeNanoseconds: 3_000, continuityGeneration: 1) == false)
     }
 
-    @Test("stale pre-gap source receipt cannot revive after a newer source receipt")
-    func staleSourceRevisionCannotEraseNewerRecoveredTruth() throws {
-        var runtime = try PropulsionEnergyRailSimulatorRuntime()
-
-        #expect(runtime.observe(
-            connected: true,
-            watts: 300,
-            modeKey: nil,
-            sourceObservationRevision: 1,
-            receivedAtUptimeNanoseconds: 1_000
-        ))
-        #expect(runtime.retain(sourceObservationRevision: 1))
-        #expect(runtime.observe(
-            connected: true,
-            watts: 320,
-            modeKey: nil,
-            sourceObservationRevision: 2,
-            receivedAtUptimeNanoseconds: 2_000
-        ))
-        let newest = runtime.projection(atUptimeNanoseconds: 2_000)
-
-        #expect(runtime.observe(
-            connected: true,
-            watts: 300,
-            modeKey: nil,
-            sourceObservationRevision: 1,
-            receivedAtUptimeNanoseconds: 1_000
-        ) == false)
-        #expect(runtime.projection(atUptimeNanoseconds: 2_000) == newest)
+    @Test("live source naturally ages to retained without changing receipt")
+    func freshnessDemotesLiveWithoutChangingReceipt() throws {
+        var runtime = try PropulsionEnergyRailSimulatorRuntime(freshnessNanoseconds: 1_000)
+        #expect(runtime.acceptLiveSource(watts: 250, receiptSequenceNumber: 2, receivedAtUptimeNanoseconds: 10_000, continuityGeneration: 1))
+        let retained = runtime.projection(atUptimeNanoseconds: 11_001)
+        #expect(retained.currentness == .retained)
+        #expect(retained.acceptedWatts == 250)
+        #expect(retained.acceptedMeasurement?.receiptSequenceNumber == 2)
+        #expect(retained.acceptedMeasurement?.receivedAtUptimeNanoseconds == 10_000)
+        #expect(retained.acceptedMeasurement?.continuityGeneration == 1)
+        #expect(retained.railFraction == nil)
+        #expect(retained.allowsLiveMotion == false)
+        #expect(runtime.displaySchedule(atUptimeNanoseconds: 11_001).nextTransitionUptimeNanoseconds == nil)
     }
 
-    @Test("legacy no-revision caller cannot bypass an established source chronology")
-    func legacyObservationCannotReviveSourceRetainedTruth() throws {
-        var runtime = try PropulsionEnergyRailSimulatorRuntime()
+    @Test("display scheduler runs only for bounded live presentation work")
+    func displayScheduleIsBounded() throws {
+        var runtime = try PropulsionEnergyRailSimulatorRuntime(freshnessNanoseconds: 30_000_000_000)
+        #expect(runtime.acceptLiveSource(watts: 100, receiptSequenceNumber: 1, receivedAtUptimeNanoseconds: 1_000_000_000, continuityGeneration: 1))
+        let settled = runtime.displaySchedule(atUptimeNanoseconds: 1_000_000_000)
+        #expect(settled.requiresContinuousFrames == false)
+        #expect(settled.nextTransitionUptimeNanoseconds != nil)
 
-        #expect(runtime.observe(
-            connected: true,
-            watts: 300,
-            modeKey: nil,
-            sourceObservationRevision: 1,
-            receivedAtUptimeNanoseconds: 1_000
-        ))
-        #expect(runtime.retain(sourceObservationRevision: 1))
+        #expect(runtime.acceptLiveSource(watts: 500, receiptSequenceNumber: 2, receivedAtUptimeNanoseconds: 1_100_000_000, continuityGeneration: 1))
+        let animating = runtime.displaySchedule(atUptimeNanoseconds: 1_100_000_000)
+        #expect(animating.requiresContinuousFrames)
+        #expect(animating.nextTransitionUptimeNanoseconds != nil)
+        #expect(animating.nextTransitionUptimeNanoseconds! > 1_100_000_000)
 
-        #expect(runtime.observe(
-            connected: true,
-            watts: 300,
-            modeKey: nil,
-            receivedAtUptimeNanoseconds: 2_000
-        ) == false)
-        #expect(runtime.projection(atUptimeNanoseconds: 2_000).currentness == .retained)
+        #expect(runtime.retainSource(watts: 500, receiptSequenceNumber: 2, receivedAtUptimeNanoseconds: 1_100_000_000, continuityGeneration: 1))
+        let retained = runtime.displaySchedule(atUptimeNanoseconds: 1_100_000_001)
+        #expect(retained.requiresContinuousFrames == false)
+        #expect(retained.nextTransitionUptimeNanoseconds == nil)
     }
 
-    @Test("contradictory equal source revision fails closed")
-    func equalSourceRevisionCannotRelabelWatts() throws {
+    @Test("invalid source tuple fails closed")
+    func invalidSourceTupleCannotBecomeAuthority() throws {
         var runtime = try PropulsionEnergyRailSimulatorRuntime()
-
-        #expect(runtime.observe(
-            connected: true,
-            watts: 200,
-            modeKey: nil,
-            sourceObservationRevision: 9,
-            receivedAtUptimeNanoseconds: 9_000
-        ))
-        #expect(runtime.observe(
-            connected: true,
-            watts: 201,
-            modeKey: nil,
-            sourceObservationRevision: 9,
-            receivedAtUptimeNanoseconds: 9_000
-        ) == false)
-        #expect(runtime.projection(atUptimeNanoseconds: 9_000).currentness == .unavailable)
-    }
-
-    @Test("new source sequence with non-increasing source uptime fails closed")
-    func sourceSequenceCannotRedateEvidenceBackwards() throws {
-        var runtime = try PropulsionEnergyRailSimulatorRuntime()
-
-        #expect(runtime.observe(
-            connected: true,
-            watts: 200,
-            modeKey: nil,
-            sourceObservationRevision: 1,
-            receivedAtUptimeNanoseconds: 10_000
-        ))
-        #expect(runtime.observe(
-            connected: true,
-            watts: 210,
-            modeKey: nil,
-            sourceObservationRevision: 2,
-            receivedAtUptimeNanoseconds: 9_999
-        ) == false)
-        #expect(runtime.projection(atUptimeNanoseconds: 10_000).currentness == .unavailable)
-    }
-
-    @Test("reconnect with same watts starts newer generation")
-    func reconnectStartsNewGenerationEvenWhenWattsMatch() throws {
-        var runtime = try PropulsionEnergyRailSimulatorRuntime()
-
-        let firstAdmission = runtime.observe(
-            connected: true,
-            watts: 300,
-            modeKey: "drive",
-            receivedAtUptimeNanoseconds: 100
-        )
-        #expect(firstAdmission)
-        let first = runtime.projection(atUptimeNanoseconds: 100)
-
-        let disconnectAdmission = runtime.observe(
-            connected: false,
-            watts: nil,
-            modeKey: "drive",
-            receivedAtUptimeNanoseconds: 200
-        )
-        #expect(disconnectAdmission == false)
-        let reconnectAdmission = runtime.observe(
-            connected: true,
-            watts: 300,
-            modeKey: "drive",
-            receivedAtUptimeNanoseconds: 50
-        )
-        #expect(reconnectAdmission)
-        let recovered = runtime.projection(atUptimeNanoseconds: 50)
-
-        #expect(first.acceptedMeasurement?.continuityGeneration == 1)
-        #expect(recovered.currentness == .live)
-        #expect(recovered.acceptedWatts == 300)
-        #expect(recovered.acceptedMeasurement?.continuityGeneration == 2)
-        #expect(recovered.acceptedMeasurement?.receiptSequenceNumber == 1)
-        #expect(recovered.acceptedMeasurement?.authority == .simulator)
-    }
-
-    @Test("mode change rebinds identity instead of carrying old normalized geometry")
-    func modeChangeRebuildsIdentityAndScale() throws {
-        var runtime = try PropulsionEnergyRailSimulatorRuntime()
-
-        let ecoAdmission = runtime.observe(
-            connected: true,
-            watts: 200,
-            modeKey: "eco",
-            receivedAtUptimeNanoseconds: 1_000
-        )
-        #expect(ecoAdmission)
-        let eco = runtime.projection(atUptimeNanoseconds: 1_000)
-
-        let sportAdmission = runtime.observe(
-            connected: true,
-            watts: 200,
-            modeKey: "sport",
-            receivedAtUptimeNanoseconds: 500
-        )
-        #expect(sportAdmission)
-        let sport = runtime.projection(atUptimeNanoseconds: 500)
-
-        #expect(eco.identity.modeKey == "eco")
-        #expect(sport.identity.modeKey == "sport")
-        #expect(sport.currentness == .live)
-        #expect(sport.acceptedMeasurement?.receiptSequenceNumber == 1)
-        #expect(sport.acceptedMeasurement?.continuityGeneration == 1)
-        #expect(sport.acceptedMeasurement?.authority == .simulator)
-        #expect(sport.acceptedTargetFraction == 200.0 / 650.0)
-    }
-
-    @Test("invalid connected power fails closed and later valid sample needs new generation")
-    func invalidPowerCannotRemainLive() throws {
-        var runtime = try PropulsionEnergyRailSimulatorRuntime()
-
-        let firstAdmission = runtime.observe(
-            connected: true,
-            watts: 120,
-            modeKey: "walk",
-            receivedAtUptimeNanoseconds: 100
-        )
-        #expect(firstAdmission)
-        let invalidAdmission = runtime.observe(
-            connected: true,
-            watts: -Double.infinity,
-            modeKey: "walk",
-            receivedAtUptimeNanoseconds: 200
-        )
-        #expect(invalidAdmission == false)
-        #expect(runtime.projection(atUptimeNanoseconds: 200).currentness == .unavailable)
-
-        let recoveredAdmission = runtime.observe(
-            connected: true,
-            watts: 120,
-            modeKey: "walk",
-            receivedAtUptimeNanoseconds: 50
-        )
-        #expect(recoveredAdmission)
-        let recovered = runtime.projection(atUptimeNanoseconds: 50)
-        #expect(recovered.currentness == .live)
-        #expect(recovered.acceptedMeasurement?.continuityGeneration == 2)
-        #expect(recovered.acceptedMeasurement?.receiptSequenceNumber == 1)
+        #expect(runtime.acceptLiveSource(watts: -Double.infinity, receiptSequenceNumber: 1, receivedAtUptimeNanoseconds: 1, continuityGeneration: 1) == false)
+        #expect(runtime.retainSource(watts: 10, receiptSequenceNumber: 0, receivedAtUptimeNanoseconds: 1, continuityGeneration: 1) == false)
+        #expect(runtime.retainSource(watts: 10, receiptSequenceNumber: 1, receivedAtUptimeNanoseconds: 0, continuityGeneration: 1) == false)
+        #expect(runtime.retainSource(watts: 10, receiptSequenceNumber: 1, receivedAtUptimeNanoseconds: 1, continuityGeneration: 0) == false)
+        #expect(runtime.projection(atUptimeNanoseconds: 2).currentness == .unavailable)
     }
 }
