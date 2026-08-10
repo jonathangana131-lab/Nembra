@@ -1,0 +1,85 @@
+name: Materialize Capture Account Root Singleflight Current
+
+on:
+  push:
+    branches:
+      - product/v14-capture-account-async-custody-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: product/v14-capture-account-async-custody-sol
+          fetch-depth: 0
+
+      - name: Guard exact current composition
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "aed94ec5e04dc5f91e4f9b2558b8867e11f26d86"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Add approval presentation single-flight without replacing current recovery UI
+        shell: python
+        run: |
+          import re
+          from pathlib import Path
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          text = path.read_text(encoding='utf-8')
+          if '.disabled(tuya.phase == .requestingApproval)' in text:
+              raise SystemExit('single-flight line already exists; current product needs review before replay')
+          pattern = re.compile(
+              r'(?P<indent>^[ \t]*)Button\("Create approval QR"\) \{ tuya\.requestApproval\(\) \}\n'
+              r'(?P=indent)[ \t]+\.buttonStyle\(\.borderedProminent\)\n'
+              r'(?P=indent)[ \t]+\.controlSize\(\.large\)',
+              re.MULTILINE,
+          )
+          def replacement(match: re.Match[str]) -> str:
+              indentation = match.group('indent')
+              return match.group(0) + f'\n{indentation}    .disabled(tuya.phase == .requestingApproval)'
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'expected exactly one approval button, patched {count}')
+          path.write_text(text, encoding='utf-8')
+
+      - name: Validate composed current product
+        shell: bash
+        run: |
+          set -euo pipefail
+          bridge='NembraApp/Features/Research/TuyaAccountBridge.swift'
+          entry='NembraApp/App/NembraCaptureEntrypoint.swift'
+          test_file='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAccountBridgeAsyncCustodySourceTests.swift'
+          grep -Fq 'operationGeneration &+= 1' "$bridge"
+          grep -Fq 'approvalRequestTask = Task' "$bridge"
+          grep -Fq 'manualApprovalTask = Task' "$bridge"
+          grep -Fq 'generation == operationGeneration' "$bridge"
+          grep -Fq 'qrToken == token' "$bridge"
+          grep -Fq 'selectedDeviceID == device.id' "$bridge"
+          grep -Fq '.disabled(tuya.phase == .requestingApproval)' "$entry"
+          grep -Fq 'Return to account' "$entry"
+          swiftc -frontend -parse "$bridge"
+          swiftc -frontend -parse "$entry"
+          swiftc -frontend -parse "$test_file"
+          git diff --check
+
+      - name: Commit final reanchor and retire helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='2bb37639656fb114c5767f6311586042b9ee4ef2'
+          rm -f .github/workflows/materialize-capture-account-root-singleflight-current.yml
+          git config user.name 'nembra-v14-product-worker'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(capture): serialize approval on current recovery product'
+          names="$(git diff --name-only "$base"..HEAD | sort)"
+          expected=$'NembraApp/App/NembraCaptureEntrypoint.swift\nNembraApp/Features/Research/TuyaAccountBridge.swift\nPackages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAccountBridgeAsyncCustodySourceTests.swift'
+          test "$names" = "$expected"
+          git push origin HEAD:product/v14-capture-account-async-custody-sol
