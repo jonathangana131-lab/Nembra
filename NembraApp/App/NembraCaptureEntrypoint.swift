@@ -1431,13 +1431,23 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let custodySafeUpdate = update.mapValues { value in
+            guard let verifiedAccountUID, !verifiedAccountUID.isEmpty else { return value }
+            return value.replacingOccurrences(
+                of: verifiedAccountUID,
+                with: "<redacted-account-uid>",
+                options: [.literal]
+            )
+        }
+
         applicationUpdateAdmissionsInFlight += 1
         defer { applicationUpdateAdmissionsInFlight -= 1 }
 
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            log("tuya_application_update", custodySafeUpdate.merging([
                 "generation": String(token.diagnosticGeneration)
             ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
