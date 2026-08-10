@@ -53,7 +53,11 @@ def _stat_identity(metadata: os.stat_result) -> tuple[int, ...]:
     )
 
 
-def _read_stable_regular_file_sha256(path: Path) -> tuple[os.stat_result, str]:
+def _read_stable_regular_file_sha256(
+    path: Path,
+    *,
+    expected_identity: tuple[int, ...] | None = None,
+) -> tuple[os.stat_result, str]:
     nofollow = getattr(os, "O_NOFOLLOW", None)
     if nofollow is None:
         raise ProvenanceError("private build input admission requires O_NOFOLLOW support")
@@ -68,6 +72,10 @@ def _read_stable_regular_file_sha256(path: Path) -> tuple[os.stat_result, str]:
         if not stat.S_ISREG(before.st_mode):
             raise ProvenanceError(f"required private build input is not a regular file: {path.name}")
 
+        before_identity = _stat_identity(before)
+        if expected_identity is not None and before_identity != expected_identity:
+            raise ProvenanceError("private build tree changed before an admitted file was opened")
+
         digest = hashlib.sha256()
         bytes_read = 0
         while True:
@@ -78,8 +86,11 @@ def _read_stable_regular_file_sha256(path: Path) -> tuple[os.stat_result, str]:
             digest.update(chunk)
 
         after = os.fstat(descriptor)
-        if _stat_identity(before) != _stat_identity(after) or bytes_read != after.st_size:
+        after_identity = _stat_identity(after)
+        if before_identity != after_identity or bytes_read != after.st_size:
             raise ProvenanceError(f"private build input changed while it was fingerprinted: {path.name}")
+        if expected_identity is not None and after_identity != expected_identity:
+            raise ProvenanceError("private build tree changed while an admitted file was fingerprinted")
 
         try:
             current_path = path.lstat()
@@ -97,8 +108,15 @@ def _read_stable_regular_file_sha256(path: Path) -> tuple[os.stat_result, str]:
         os.close(descriptor)
 
 
-def _file_fingerprint(path: Path) -> str:
-    metadata, content_sha256 = _read_stable_regular_file_sha256(path)
+def _file_fingerprint(
+    path: Path,
+    *,
+    expected_identity: tuple[int, ...] | None = None,
+) -> str:
+    metadata, content_sha256 = _read_stable_regular_file_sha256(
+        path,
+        expected_identity=expected_identity,
+    )
     digest = hashlib.sha256()
     _feed(digest, b"nembra-private-file-v1")
     _feed(digest, stat.S_IMODE(metadata.st_mode).to_bytes(4, "big"))
@@ -196,7 +214,7 @@ def _tree_fingerprint(root: Path) -> str:
                 observed_states.append((path, identity, "L"))
                 entries.append(("L", relative, mode, os.fsencode(target)))
             elif stat.S_ISREG(metadata.st_mode):
-                fingerprint = _file_fingerprint(path)
+                fingerprint = _file_fingerprint(path, expected_identity=identity)
                 _assert_unchanged_tree_entry(path, identity, "F")
                 observed_states.append((path, identity, "F"))
                 entries.append(("F", relative, mode, bytes.fromhex(fingerprint)))

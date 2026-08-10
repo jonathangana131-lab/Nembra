@@ -139,9 +139,9 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
         original_fingerprint = provenance._file_fingerprint
         replaced = False
 
-        def fingerprint_then_replace(path: Path) -> str:
+        def fingerprint_then_replace(path: Path, **kwargs: object) -> str:
             nonlocal replaced
-            result = original_fingerprint(path)
+            result = original_fingerprint(path, **kwargs)
             if path == target and not replaced:
                 replaced = True
                 os.replace(replacement, target)
@@ -156,15 +156,47 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
                 provenance._tree_fingerprint(self.security_build)
         self.assertTrue(replaced)
 
+    def test_tree_binds_open_descriptor_to_enumerated_file_identity(self) -> None:
+        target = self.security_build / "ThingSmartCryption.bin"
+        replacement = self.root / "replacement-before-open.bin"
+        replacement.write_bytes(b"attacker-replacement-bytes")
+        original_open = provenance.os.open
+        original_lstat = Path.lstat
+        substituted_open = False
+        post_open_target_lstat_calls = 0
+
+        def open_replacement(path: object, flags: int, *args: object, **kwargs: object) -> int:
+            nonlocal substituted_open
+            if Path(path) == target:
+                substituted_open = True
+                return original_open(replacement, flags, *args, **kwargs)
+            return original_open(path, flags, *args, **kwargs)
+
+        def lstat_aba(path: Path) -> os.stat_result:
+            nonlocal post_open_target_lstat_calls
+            if path == target and substituted_open and post_open_target_lstat_calls == 0:
+                post_open_target_lstat_calls += 1
+                return original_lstat(replacement)
+            return original_lstat(path)
+
+        with mock.patch.object(provenance.os, "open", side_effect=open_replacement), mock.patch.object(
+            Path, "lstat", autospec=True, side_effect=lstat_aba
+        ):
+            with self.assertRaises(provenance.ProvenanceError):
+                provenance._tree_fingerprint(self.security_build)
+
+        self.assertTrue(substituted_open)
+        self.assertEqual(target.read_bytes(), b"security-bytes-v1")
+
     def test_tree_rejects_entry_added_after_directory_enumeration(self) -> None:
         target = self.security_build / "ThingSmartCryption.bin"
         late_entry = self.security_build / "late.bin"
         original_fingerprint = provenance._file_fingerprint
         added = False
 
-        def fingerprint_then_add(path: Path) -> str:
+        def fingerprint_then_add(path: Path, **kwargs: object) -> str:
             nonlocal added
-            result = original_fingerprint(path)
+            result = original_fingerprint(path, **kwargs)
             if path == target and not added:
                 added = True
                 late_entry.write_bytes(b"late")
