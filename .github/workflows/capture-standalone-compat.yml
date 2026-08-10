@@ -8,7 +8,21 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  package-tests:
+    name: Swift 6.2 package truth tests
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show Swift toolchain
+        run: swift --version
+      - name: Test Bluetooth Capture package
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture
+
+  standalone-build:
+    name: Xcode 26-compatible standalone app
     runs-on: macos-15
     timeout-minutes: 20
     steps:
