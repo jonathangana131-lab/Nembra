@@ -1,86 +1,79 @@
-name: Capture Async Correlation Invalidation Patch
+name: Capture Field Build Provenance
 
 on:
   push:
     branches:
-      - repair/v14-capture-correlation-async-invalidation-sol
+      - capture/field-build-provenance-gpt56
+      - capture/one-time-ble-dump-gpt56
+  pull_request:
     paths:
-      - Scripts/apply_capture_correlation_async_invalidation_patch.py
-      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationAsyncInvalidationPresentationSourceTests.swift
+      - NembraApp/App/NembraCaptureBuildIdentity.swift
+      - NembraCapture.xcodeproj/project.pbxproj
+      - scripts/field/install_one_time_capture.command
       - .github/workflows/capture-field-build-provenance.yml
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+  provenance:
+    name: Stamp and verify Capture provenance
+    runs-on: xcode-27
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: repair/v14-capture-correlation-async-invalidation-sol
-          fetch-depth: 0
 
-      - name: Verify exact flagship parent
+      - name: Verify source contract
         shell: bash
         run: |
           set -euo pipefail
-          git merge-base --is-ancestor 915d9c6aed8e78ab3a84e92338a38dcf8f483060 HEAD
-          test -f Scripts/apply_capture_correlation_async_invalidation_patch.py
-          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationAsyncInvalidationPresentationSourceTests.swift
+          identity='NembraApp/App/NembraCaptureBuildIdentity.swift'
+          project='NembraCapture.xcodeproj/project.pbxproj'
+          installer='scripts/field/install_one_time_capture.command'
 
-      - name: Apply bounded lifecycle repair
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 Scripts/apply_capture_correlation_async_invalidation_patch.py
-
-      - name: Verify source contracts without a second polling clock
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
-          required = [
-              'var correlationSeriesIsInvalidated: Bool { correlationProgress?.isSeriesInvalidated == true }',
-              'func consumeCorrelationAsyncInvalidationIfNeeded()',
-              'target_correlation_async_invalidated',
-              '.onChange(of: test.correlationSeriesIsInvalidated, initial: true)',
-              'test.consumeCorrelationAsyncInvalidationIfNeeded()',
-              'TimelineView(.periodic(from: .now, by: 0.5))',
-          ]
-          for needle in required:
-              assert needle in app, needle
-          view = app[app.index('private struct SecureLinkView'):app.index('private struct SecureTransfer')]
-          assert 'correlationProgressTask' not in view
-          assert 'Task.sleep(for: .milliseconds(100))' not in view
-          consumer = app[app.index('func consumeCorrelationAsyncInvalidationIfNeeded()'):app.index('private var accountIdentityLeaseSnapshot')]
-          for forbidden in ['markAuthenticated(for:', 'recordApplicationUpdate', 'endConnection(for:', 'scanForPeripherals', 'connect(', 'Task.sleep']:
-              assert forbidden not in consumer, forbidden
-          PY
-
-      - name: Self-retire staging and publish product commit
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm Scripts/apply_capture_correlation_async_invalidation_patch.py
-          git checkout 915d9c6aed8e78ab3a84e92338a38dcf8f483060 -- .github/workflows/capture-field-build-provenance.yml
-
-          git config user.name nembra-v14-integration
-          git config user.email actions@users.noreply.github.com
-          git add -A
-          git diff --cached --check
-
-          effective="$(git diff --name-only 915d9c6aed8e78ab3a84e92338a38dcf8f483060 --)"
-          expected="$(printf '%s\n%s' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationAsyncInvalidationPresentationSourceTests.swift')"
-          test "$effective" = "$expected" || {
-            printf 'unexpected final state relative to exact flagship parent:\n%s\n' "$effective" >&2
+          bash -n "$installer"
+          grep -Fq 'EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"' "$installer"
+          grep -Fq 'SOURCE_SHA="$(git rev-parse HEAD | tr ' "$installer"
+          grep -Fq '[[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]]' "$installer"
+          grep -Fq 'Current checkout $SOURCE_SHA does not match accepted Capture source $EXPECTED_SOURCE_SHA' "$installer"
+          grep -Fq 'BUILD_LABEL="capture-v14-${SOURCE_SHA:0:12}"' "$installer"
+          grep -Fq 'NEMBRA_CAPTURE_BUILD_IDENTIFIER="$BUILD_LABEL"' "$installer"
+          grep -Fq 'NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$SOURCE_SHA"' "$installer"
+          if grep -Fq 'Switch to capture/one-time-ble-dump-gpt56 first' "$installer"; then
+            echo 'ERROR: field-build authority must bind the accepted source SHA, not a branch name.' >&2
             exit 1
-          }
+          fi
 
-          git commit -m 'fix(capture): consume asynchronous correlation invalidation' \
-            -m 'Use the existing 0.5-second TimelineView presentation clock to consume package-owned correlation terminal invalidation into an explicit fail-closed restart state. Do not add a second polling task or manufacture Bluetooth, authentication, telemetry, or target evidence. Physical status remains NO-GO.'
-          git push origin HEAD:repair/v14-capture-correlation-async-invalidation-sol
+          grep -Fq 'NembraCaptureBuildIdentity.swift in Sources' "$project"
+          grep -Fq 'INFOPLIST_KEY_NembraCaptureBuildIdentifier = "$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)";' "$project"
+          grep -Fq 'INFOPLIST_KEY_NembraCaptureSourceCommitSHA = "$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)";' "$project"
+
+          grep -Fq 'static let buildIdentifierInfoKey = "NembraCaptureBuildIdentifier"' "$identity"
+          grep -Fq 'static let sourceCommitSHAInfoKey = "NembraCaptureSourceCommitSHA"' "$identity"
+          grep -Fq 'sourceCommitSHA.count == 40' "$identity"
+          grep -Fq 'let expectedIdentifier = "capture-v14-\(sourceCommitSHA.prefix(12))"' "$identity"
+
+      - name: Build stamped standalone Simulator app
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha='0123456789abcdef0123456789abcdef01234567'
+          label='capture-v14-0123456789ab'
+          rm -rf /tmp/NembraCaptureProvenanceDerived
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/NembraCaptureProvenanceDerived \
+            CODE_SIGNING_ALLOWED=NO \
+            NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
+            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" \
+            build
+
+          plist='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
+          test -f "$plist"
+          test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
+          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$sha"

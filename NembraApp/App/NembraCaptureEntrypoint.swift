@@ -353,6 +353,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var correlationWindowIsScanning: Bool { correlationProgress?.isScanning == true }
     var correlationObservedCandidateCount: Int { correlationProgress?.currentObservedCandidateCount ?? 0 }
     var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }
+    var correlationSeriesIsInvalidated: Bool { correlationProgress?.isSeriesInvalidated == true }
 
     var correlationWindowLabel: String {
         guard let phase = correlationProgress?.phase else { return "OFF1" }
@@ -369,6 +370,34 @@ private final class SecureLinkController: NSObject, ObservableObject {
         return phase.operatorExpectedPowerOn
             ? "Turn the scooter ON and keep it stationary."
             : "Turn the scooter OFF and keep it stationary."
+    }
+
+    /// Consumes an asynchronous terminal already committed by the package-owned correlation
+    /// session (for example scan-readiness timeout or Bluetooth/scan loss). TimelineView supplies
+    /// the existing bounded presentation clock; this method adds no second polling task and mints
+    /// no Bluetooth, authentication, telemetry, or target-identity evidence.
+    func consumeCorrelationAsyncInvalidationIfNeeded() {
+        guard correlationSeriesIsInvalidated,
+              phase == .baseline || phase == .scanning || phase == .powerOn else { return }
+
+        let invalidatedWindow = correlationWindowLabel
+        let completedWindows = correlationCompletedWindowCount
+        correlationSession = nil
+        correlationProvenance = nil
+        targetCorrelationMethod = nil
+        targetCorrelationWindowCount = nil
+        targetCorrelationOperatorConfirmed = false
+        pendingCorrelatedTargetID = nil
+        selectedID = nil
+        byID.removeAll()
+        candidates.removeAll()
+        phase = .failed
+        message = "Bluetooth correlation ended before this window could be sealed. Restart the complete OFF1→ON1→OFF2→ON2 series; prior windows are not reusable."
+        log("target_correlation_async_invalidated", [
+            "window": invalidatedWindow,
+            "completedWindows": String(completedWindows),
+            "authority": "package-owned-series-terminal"
+        ])
     }
 
     private var accountIdentityLeaseSnapshot: TuyaSDKAccountIdentityLeaseGate.Snapshot {
@@ -1977,6 +2006,11 @@ private struct SecureLinkView: View {
                 .frame(maxWidth: .infinity)
             }
             .background(Color.black.ignoresSafeArea())
+            .onChange(of: test.correlationSeriesIsInvalidated, initial: true) { _, invalidated in
+                if invalidated {
+                    test.consumeCorrelationAsyncInvalidationIfNeeded()
+                }
+            }
         }
         .navigationTitle("Secure Link")
         .task {
