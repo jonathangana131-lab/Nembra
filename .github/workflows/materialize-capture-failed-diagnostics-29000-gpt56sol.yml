@@ -1,0 +1,97 @@
+name: Materialize Capture Failed Diagnostics 29000
+
+on:
+  push:
+    branches:
+      - integration/v14-capture-failed-diagnostics-29000-gpt56sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/v14-capture-failed-diagnostics-29000-gpt56sol
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Guard exact product ancestry and temporary scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT=29000f240d1b5710bbe116de94a22c030d10da8e
+          WORKFLOW=.github/workflows/materialize-capture-failed-diagnostics-29000-gpt56sol.yml
+          test "$(git merge-base "$PRODUCT" HEAD)" = "$PRODUCT"
+          test "$(git diff --name-only "$PRODUCT" HEAD)" = "$WORKFLOW"
+
+      - name: Re-anchor validated two-file donor
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=4a11865c4b16b778aa03634e7ca3bdbc50b0432e
+          DONOR=c0837891ed02d9049434ad1d5162edd66678d84e
+          APP=NembraApp/App/NembraCaptureEntrypoint.swift
+          TEST=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureFailedDiagnosticsProductSourceTests.swift
+          git fetch --no-tags origin "$BASE" "$DONOR"
+          git diff --binary "$BASE" "$DONOR" -- "$APP" "$TEST" > /tmp/failed-diagnostics.patch
+          test -s /tmp/failed-diagnostics.patch
+          git apply --3way --index /tmp/failed-diagnostics.patch
+
+      - name: Verify failed-attempt truth and parser contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=NembraApp/App/NembraCaptureEntrypoint.swift
+          TEST=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureFailedDiagnosticsProductSourceTests.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          recovery=s[s.index('private var failureRecoveryContextPanel'):s.index('private var failurePanel')]
+          failure=s[s.index('private var failurePanel'):s.index('private var failureDiagnosticsControls')]
+          controls=s[s.index('private var failureDiagnosticsControls'):s.index('private var completionPanel')]
+          for block in (recovery, failure):
+              assert 'failureDiagnosticsControls' in block
+          for q in ('test.prepareExport()', 'test.exportData', 'ShareLink', 'Share diagnostics', 'Prepare diagnostics', 'not an accepted Capture artifact'):
+              assert q in controls, q
+          prepare=s[s.index('func prepareExport()'):s.index('private func abandonPackageCorrelation()')]
+          assert 'if phase == .accepted' in prepare
+          assert 'sealedAcceptedExport' in prepare
+          assert 'if phase != .failed' in prepare
+          assert 'phase: phase' in prepare
+          assert 'currentConnectionToken == token' in s
+          assert 'sdk_source_authority_lost_during_auth_promotion' in s
+          assert 'application_update_source_authority_changed_after_ledger_hop' in s
+          test=Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureFailedDiagnosticsProductSourceTests.swift').read_text(encoding='utf-8')
+          assert 'failureDiagnosticsControls' in test
+          assert 'if phase != .failed' in test
+          runbook=Path('docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md').read_text(encoding='utf-8')
+          assert 'On failure, share the sanitized diagnostic JSON if available and stop.' in runbook
+          print('Failed Capture diagnostics exact-current re-anchor: PASS')
+          PY
+          swiftc -frontend -parse "$APP"
+          swiftc -frontend -parse "$TEST"
+          git diff --check
+
+      - name: Collapse into clean exact-current product donor
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT=29000f240d1b5710bbe116de94a22c030d10da8e
+          WORKFLOW=.github/workflows/materialize-capture-failed-diagnostics-29000-gpt56sol.yml
+          APP=NembraApp/App/NembraCaptureEntrypoint.swift
+          TEST=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureFailedDiagnosticsProductSourceTests.swift
+          git rm "$WORKFLOW"
+          git add "$APP" "$TEST"
+          git diff --cached --check
+          git -c user.name='nembra-gpt56-sol' -c user.email='actions@users.noreply.github.com' commit -m 'feat(capture): expose sanitized failed-attempt diagnostics'
+          mapfile -t changed < <(git diff --name-only "$PRODUCT" HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 2
+          test "${changed[0]}" = "$APP"
+          test "${changed[1]}" = "$TEST"
+          git diff --check "$PRODUCT" HEAD
+          git push origin HEAD:integration/v14-capture-failed-diagnostics-29000-gpt56sol
