@@ -429,6 +429,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
     var canRestartFromFreshOFF1: Bool { failedAttemptCanRestartFromOFF1 }
 
+    func retry() {
+        guard phase == .failed, canRestartFromFreshOFF1 else {
+            message = "This failed attempt still retains session authority. Relaunch Capture before another OFF1 attempt."
+            log("in_process_retry_rejected")
+            return
+        }
+        startBaseline()
+    }
+
     func consumeCorrelationAsyncInvalidation() {
         guard (phase == .baseline || phase == .scanning),
               correlationProgress?.isSeriesInvalidated == true else { return }
@@ -2271,7 +2280,24 @@ private struct SecureLinkView: View {
         case .accepted:
             completionPanel
         case .failed:
-            failurePanel
+            if !test.fieldBuildIsAuthoritative || !test.privateConfig {
+                VStack(spacing: 16) {
+                    failureRecoveryContextPanel
+                    preflightPanel
+                }
+            } else if !sdkAccount.loggedIn || !test.sdkAccountLoggedIn {
+                VStack(spacing: 16) {
+                    failureRecoveryContextPanel
+                    sdkAuthorizationPanel
+                }
+            } else if !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized {
+                VStack(spacing: 16) {
+                    failureRecoveryContextPanel
+                    preflightPanel
+                }
+            } else {
+                failurePanel
+            }
         case .baseline, .scanning, .powerOn, .correlated:
             correlationPanel
         case .selected, .authenticating, .observing:
@@ -2339,19 +2365,40 @@ private struct SecureLinkView: View {
     private var correlationPanel: some View {
         panel {
             VStack(alignment: .leading, spacing: 18) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("FIND SCOOTER")
-                            .font(.caption2.bold())
-                            .tracking(1.2)
-                            .foregroundStyle(.cyan)
-                        Text(test.phase == .correlated ? "Scooter signal found" : test.correlationWindowLabel)
-                            .font(.title2.bold())
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("FIND SCOOTER")
+                                .font(.caption2.bold())
+                                .tracking(1.2)
+                                .foregroundStyle(.cyan)
+                            Text(test.phase == .correlated ? "Scooter signal found" : test.correlationWindowLabel)
+                                .font(.title2.bold())
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Text("\(correlationDisplayedWindowOrdinal)/4")
+                            .font(.title3.monospacedDigit().bold())
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Correlation progress")
+                            .accessibilityValue("\(correlationDisplayedWindowOrdinal) of 4 windows")
                     }
-                    Spacer()
-                    Text("\(correlationDisplayedWindowOrdinal)/4")
-                        .font(.title3.monospacedDigit().bold())
-                        .foregroundStyle(.secondary)
+                } else {
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("FIND SCOOTER")
+                                .font(.caption2.bold())
+                                .tracking(1.2)
+                                .foregroundStyle(.cyan)
+                            Text(test.phase == .correlated ? "Scooter signal found" : test.correlationWindowLabel)
+                                .font(.title2.bold())
+                        }
+                        Spacer()
+                        Text("\(correlationDisplayedWindowOrdinal)/4")
+                            .font(.title3.monospacedDigit().bold())
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Correlation progress")
+                            .accessibilityValue("\(correlationDisplayedWindowOrdinal) of 4 windows")
+                    }
                 }
 
                 if test.phase == .correlated {
@@ -2452,18 +2499,45 @@ private struct SecureLinkView: View {
 
                     let age = test.canonicalObservedAgeSeconds ?? 0
                     VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Authenticated observation")
-                                .font(.subheadline.weight(.semibold))
-                            Spacer()
-                            Text("\(Int(min(age, 45))) / 45 s")
-                                .font(.subheadline.monospacedDigit().bold())
+                        if dynamicTypeSize.isAccessibilitySize {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Authenticated observation")
+                                    .font(.subheadline.weight(.semibold))
+                                Text("\(Int(min(age, 45))) / 45 s")
+                                    .font(.subheadline.monospacedDigit().bold())
+                            }
+                        } else {
+                            HStack {
+                                Text("Authenticated observation")
+                                    .font(.subheadline.weight(.semibold))
+                                Spacer()
+                                Text("\(Int(min(age, 45))) / 45 s")
+                                    .font(.subheadline.monospacedDigit().bold())
+                            }
                         }
                         ProgressView(value: min(age / 45, 1))
+                            .accessibilityLabel("Authenticated observation progress")
+                            .accessibilityValue("\(Int(min(age, 45))) of 45 seconds")
                         requirementRow("Secure local link", ready: test.sdkLocalBLEOnline)
                         requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)
                     }
                 }
+            }
+        }
+    }
+
+    private var failureRecoveryContextPanel: some View {
+        panel {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Capture paused", systemImage: "exclamationmark.circle")
+                    .font(.title2.bold())
+                    .foregroundStyle(.orange)
+                Text(test.message)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Restore the missing prerequisite below. The failed attempt is not reused as evidence.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -2483,13 +2557,14 @@ private struct SecureLinkView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Button {
-                        test.startBaseline()
+                        test.retry()
                     } label: {
                         Label("Restart from scooter OFF", systemImage: "arrow.counterclockwise")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
+                    .disabled(!authorityReady || test.membershipBusy)
                 } else {
                     Label("Relaunch Capture before another attempt", systemImage: "arrow.clockwise.circle")
                         .font(.headline)
