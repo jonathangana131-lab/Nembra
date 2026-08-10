@@ -1,0 +1,22 @@
+name: Apply Capture Correlation Progress Truth
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-correlation-progress-truth-sol
+    paths:
+      - .github/workflows/apply-capture-correlation-progress-truth.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-correlation-progress-truth-sol
+          fetch-depth: 0
+      - name: Apply and validate correlation presentation repair
+        run: python3 scripts/ci/apply_capture_correlation_progress_truth.py
