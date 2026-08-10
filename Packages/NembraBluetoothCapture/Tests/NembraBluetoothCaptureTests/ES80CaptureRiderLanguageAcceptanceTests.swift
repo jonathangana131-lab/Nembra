@@ -29,7 +29,7 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
             contentsOf: repositoryRoot()
                 .appendingPathComponent("NembraApp")
                 .appendingPathComponent("App")
-                .appendingPathComponent("NembraCaptureEntrypoint.swift"),
+                .appendingPathComponent("NembraApp.swift"),
             encoding: .utf8
         )
     }
@@ -113,38 +113,30 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         #expect(riderSurface.contains("SEAL"))
     }
 
-    @Test("stationary preflight keeps the internal procedure identifier out of rider copy")
+    @Test("stationary preflight keeps the internal recipe identifier out of rider copy")
     func stationaryPreflightStaysHumanFirst() throws {
         let source = try Self.appSource()
-        let preflightStart = try #require(source.range(of: "private var preflightPanel: some View"))
-        let correlationStart = try #require(
+        let preflightStart = try #require(source.range(of: "private struct ES80ExperimentOneStationaryPreflightView"))
+        let noGoStart = try #require(
             source.range(
-                of: "private var correlationDisplayedWindowOrdinal: Int",
+                of: "private struct ES80ExperimentOneFieldNoGoView",
                 range: preflightStart.lowerBound..<source.endIndex
             )
         )
-        let preflight = source[preflightStart.lowerBound..<correlationStart.lowerBound]
+        let preflight = source[preflightStart.lowerBound..<noGoStart.lowerBound]
 
-        #expect(preflight.contains("PREFLIGHT"))
-        #expect(preflight.contains("Prove the field setup"))
-        #expect(preflight.contains("Ready to find this scooter"))
-        #expect(preflight.contains("Keep the scooter stationary and begin with it powered off."))
-        #expect(preflight.contains("Start with scooter OFF"))
+        #expect(preflight.contains("Stationary preflight"))
+        #expect(preflight.contains("Keep charger unplugged for the whole capture"))
+        #expect(preflight.contains("Unplug charger to continue"))
         #expect(
-            !preflight.contains("ES80-AUTHENTICATED-STATIONARY-v1"),
-            "Primary stationary preflight must not expose the internal procedure identifier."
+            !preflight.contains("ES80-FINGERPRINT-v1"),
+            "Stationary preflight must not expose the internal experiment recipe identifier."
         )
 
-        // Exact procedure truth remains legitimate under the explicit Engineering Details disclosure.
-        let engineeringStart = try #require(source.range(of: "private var engineeringDisclosure: some View"))
-        let requirementStart = try #require(
-            source.range(
-                of: "private func requirementRow(",
-                range: engineeringStart.lowerBound..<source.endIndex
-            )
-        )
-        let engineering = source[engineeringStart.lowerBound..<requirementStart.lowerBound]
-        #expect(engineering.contains("LabeledContent(\"Procedure\", value: test.fieldProcedureIdentifier)"))
+        // The exact recipe remains legitimate engineering truth in the locked Details surface.
+        let noGo = source[noGoStart.lowerBound..<source.endIndex]
+        #expect(noGo.contains("PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue"))
+        #expect(noGo.contains("es80.capture.recipe-id"))
     }
 
     @Test("primary failure copy stays rider-readable and never dumps implementation errors")
