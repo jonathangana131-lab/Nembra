@@ -100,12 +100,14 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
         let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
         let token = try await ledger.beginConnection()
 
-        clock.advance(to: 2_000)
+        let authenticatedAt: UInt64 = 2_000
+        clock.advance(to: authenticatedAt)
         try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
         clock.advance(to: 3_000)
         try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
-        clock.advance(to: 2_000 + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds)
-        try await ledger.observeCurrentConnection(for: token)
+
+        let target = authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds
+        try await advanceContinuously(ledger: ledger, token: token, clock: clock, from: 3_000, through: target)
 
         let snapshot = await ledger.currentPreflightSnapshot()
         #expect(snapshot.authenticationMethod == .smartLifeAppSDK)
@@ -132,7 +134,7 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
         #expect(await ledger.currentPreflightSnapshot() == before)
     }
 
-    @Test("disconnect retires auth provenance and payload authority")
+    @Test("connection end retires auth provenance and payload authority")
     func disconnectRetiresAuthority() async throws {
         let clock = TestUptimeClock(100)
         let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
@@ -145,12 +147,29 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
         try await ledger.endConnection(for: token)
 
         let snapshot = await ledger.currentPreflightSnapshot()
-        #expect(snapshot.authenticationState == .unavailable(reason: "Bluetooth connection ended."))
+        #expect(snapshot.authenticationState == .unavailable(reason: "Connection authority ended."))
         #expect(snapshot.authenticationMethod == nil)
         #expect(snapshot.applicationPayloadCount == 0)
         #expect(snapshot.authenticatedAtUptimeNanoseconds == nil)
         #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == nil)
-        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Bluetooth connection ended."))
+        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Connection authority ended."))
+    }
+
+    private func advanceContinuously(
+        ledger: TuyaAuthenticatedReadOnlySessionLedger,
+        token: TuyaReadOnlyConnectionToken,
+        clock: TestUptimeClock,
+        from start: UInt64,
+        through target: UInt64
+    ) async throws {
+        var next = start + TuyaAuthenticatedReadOnlySessionLedger.maximumContinuousObservationGapNanoseconds
+        while next < target {
+            clock.advance(to: next)
+            try await ledger.observeCurrentConnection(for: token)
+            next += TuyaAuthenticatedReadOnlySessionLedger.maximumContinuousObservationGapNanoseconds
+        }
+        clock.advance(to: target)
+        try await ledger.observeCurrentConnection(for: token)
     }
 }
 
