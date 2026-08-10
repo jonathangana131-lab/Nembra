@@ -1,0 +1,104 @@
+name: Materialize Capture Identity Lease Label 6b77
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-identity-lease-label-6b77-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Repair exact current call-site and prove source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_parent='6b778f2104af34dbe5b80da31ddb3ca422f9667c'
+          test "$(git rev-parse HEAD^)" = "$expected_parent"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+          old = '            sdkIsLoggedIn: sdkAccountLoggedIn,'
+          new = '            isLoggedIn: sdkAccountLoggedIn,'
+          if source.count(old) != 1:
+              raise SystemExit(f'expected exactly one stale identity-lease label, found {source.count(old)}')
+          source = source.replace(old, new, 1)
+          path.write_text(source, encoding='utf-8')
+          PY
+
+          cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAccountIdentityLeaseAppSourceIntegrationTests.swift <<'SWIFT'
+          import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Tuya account identity lease app-source integration")
+          struct TuyaAccountIdentityLeaseAppSourceIntegrationTests {
+              @Test("Secure Link calls the package identity-lease snapshot with the exact public initializer label")
+              func appCallSiteMatchesIdentityLeaseSnapshotInitializer() throws {
+                  let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let gate = try readRepositoryFile("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaSDKAccountIdentityLeaseGate.swift")
+                  let snapshot = String(try section(
+                      in: app,
+                      from: "private var accountIdentityLeaseSnapshot: TuyaSDKAccountIdentityLeaseGate.Snapshot",
+                      to: "var accountIdentityLeaseIsAuthorized: Bool"
+                  ))
+
+                  #expect(gate.contains("public init(\n            isLoggedIn: Bool,"))
+                  #expect(snapshot.contains("isLoggedIn: sdkAccountLoggedIn"))
+                  #expect(!snapshot.contains("sdkIsLoggedIn:"))
+              }
+
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let startRange = source.range(of: start),
+                        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+                      Issue.record("Expected source section missing: \(start) ... \(end)")
+                      throw SourceContractError.sectionMissing
+                  }
+                  return source[startRange.lowerBound..<endRange.lowerBound]
+              }
+
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  let repositoryRoot = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+              }
+
+              private enum SourceContractError: Error {
+                  case sectionMissing
+              }
+          }
+          SWIFT
+
+          grep -Fq '            isLoggedIn: sdkAccountLoggedIn,' NembraApp/App/NembraCaptureEntrypoint.swift
+          test "$(grep -Fc 'sdkIsLoggedIn:' NembraApp/App/NembraCaptureEntrypoint.swift)" = 0
+          git diff --check
+          swift test --package-path Packages/NembraBluetoothCapture
+
+          rm .github/workflows/materialize-capture-identity-lease-label-6b77.yml
+          git diff --check
+          git status --short
+
+      - name: Commit clean two-path repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-sol'
+          git config user.email 'actions@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAccountIdentityLeaseAppSourceIntegrationTests.swift \
+            .github/workflows/materialize-capture-identity-lease-label-6b77.yml
+          git commit -m '[Capture P0] Match identity-lease snapshot initializer label'
+          git push origin HEAD:fix/v14-capture-identity-lease-label-6b77-sol
