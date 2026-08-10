@@ -11,7 +11,15 @@ public struct TuyaAuthenticatedReadOnlyPreflightSnapshot: Equatable, Sendable {
         case failed(reason: String)
     }
 
+    /// Provenance for an authenticated claim. A cloud `local_key` by itself is not authority
+    /// to promote a CoreBluetooth connection to an authenticated Tuya BLE session.
+    public enum AuthenticationAuthority: Equatable, Sendable {
+        case unverified
+        case officialTuyaSDK
+    }
+
     public let authenticationState: AuthenticationState
+    public let authenticationAuthority: AuthenticationAuthority
     public let connectionStartedAtUptimeNanoseconds: UInt64?
     public let authenticatedAtUptimeNanoseconds: UInt64?
     public let latestObservedUptimeNanoseconds: UInt64?
@@ -20,6 +28,7 @@ public struct TuyaAuthenticatedReadOnlyPreflightSnapshot: Equatable, Sendable {
 
     public init(
         authenticationState: AuthenticationState,
+        authenticationAuthority: AuthenticationAuthority = .unverified,
         connectionStartedAtUptimeNanoseconds: UInt64?,
         authenticatedAtUptimeNanoseconds: UInt64?,
         latestObservedUptimeNanoseconds: UInt64?,
@@ -27,6 +36,7 @@ public struct TuyaAuthenticatedReadOnlyPreflightSnapshot: Equatable, Sendable {
         connectionGeneration: UInt64
     ) {
         self.authenticationState = authenticationState
+        self.authenticationAuthority = authenticationAuthority
         self.connectionStartedAtUptimeNanoseconds = connectionStartedAtUptimeNanoseconds
         self.authenticatedAtUptimeNanoseconds = authenticatedAtUptimeNanoseconds
         self.latestObservedUptimeNanoseconds = latestObservedUptimeNanoseconds
@@ -63,6 +73,9 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
             case .authenticated:
                 break
             }
+        }
+        guard snapshot.authenticationAuthority == .officialTuyaSDK else {
+            return .blocked(reason: "Authenticated claim is missing accepted Tuya SDK authority.")
         }
         guard snapshot.applicationPayloadCount > 0 else {
             return .blocked(reason: "Authenticated session has not produced an application payload yet.")
