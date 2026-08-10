@@ -23,7 +23,7 @@ jobs:
           set -euo pipefail
           python3 -m py_compile scripts/ci/apply_v14_capture_exact_provenance_subject.py
           python3 scripts/ci/apply_v14_capture_exact_provenance_subject.py
-          grep -Fq 'ref: ${{ github.event.pull_request.head.sha || github.sha }}' .github/workflows/capture-field-build-provenance.yml
+          grep -Fq 'Bind job to exact checked-out source' .github/workflows/capture-field-build-provenance.yml
           grep -Fq 'CAPTURE_PROVENANCE_SOURCE_SHA=%s' .github/workflows/capture-field-build-provenance.yml
           grep -Fq 'sha="${CAPTURE_PROVENANCE_SOURCE_SHA:?exact source was not established}"' .github/workflows/capture-field-build-provenance.yml
           grep -Fq 'NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER="$procedure"' .github/workflows/capture-field-build-provenance.yml
