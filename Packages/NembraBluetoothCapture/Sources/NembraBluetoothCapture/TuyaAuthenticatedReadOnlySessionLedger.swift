@@ -20,9 +20,15 @@ public struct TuyaReadOnlyConnectionToken: Hashable, Sendable {
 ///
 /// The official Tuya adapter reports lifecycle events here rather than assembling preflight
 /// snapshots itself. The ledger samples monotonic uptime at the mutation boundary, resets
-/// authentication/payload evidence on every new connection, and rejects callbacks attributed to
-/// an older connection token or a different ledger instance. Payload bytes are inspected only for
-/// non-emptiness and are never retained by this type.
+/// authentication/application evidence on every new connection, and rejects callbacks attributed
+/// to an older connection token or a different ledger instance.
+///
+/// The SDK-only ES80 preflight receives application-level `ThingSmartDeviceDelegate` updates, not
+/// byte-exact FD50 transport payloads. `recordApplicationUpdate(for:)` is therefore the canonical
+/// admission API for that path. The compatibility `recordApplicationPayload(_:for:)` overload is
+/// reserved for callers that genuinely possess a non-empty payload buffer; it validates
+/// non-emptiness but never retains those bytes. Neither path assigns DP meaning or creates
+/// raw-transport fidelity.
 public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationSessionProvider {
     public enum MutationError: Error, Equatable, Sendable {
         case noActiveConnection
@@ -129,6 +135,19 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         latestApplicationPayloadUptimeNanoseconds = nil
     }
 
+    /// Admits one genuine application-level update from the current authenticated Tuya SDK
+    /// connection. This is the preferred ES80 SDK-only path because the delegate callback is
+    /// decoded/application evidence, not a raw FD50 byte buffer.
+    public func recordApplicationUpdate(for token: TuyaReadOnlyConnectionToken) throws {
+        try requireCurrent(token)
+        guard case .authenticated = authenticationState else {
+            throw MutationError.authenticationRequired
+        }
+        try recordAuthenticatedApplicationEvidence()
+    }
+
+    /// Compatibility path for a caller that genuinely owns a payload buffer. Bytes are used only
+    /// to prove that the observation is non-empty and are discarded immediately.
     public func recordApplicationPayload(
         _ payload: Data,
         for token: TuyaReadOnlyConnectionToken
@@ -140,22 +159,11 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         guard !payload.isEmpty else {
             throw MutationError.emptyApplicationPayload
         }
-
-        let now = try nextMonotonicObservation()
-        guard let authenticatedAt = authenticatedAtUptimeNanoseconds,
-              now >= authenticatedAt else {
-            throw MutationError.monotonicClockRegressed
-        }
-        guard applicationPayloadCount < Int.max else {
-            throw MutationError.applicationPayloadCountExhausted
-        }
-        applicationPayloadCount += 1
-        latestApplicationPayloadUptimeNanoseconds = now
-        latestObservedUptimeNanoseconds = now
+        try recordAuthenticatedApplicationEvidence()
     }
 
     /// Advances only the non-secret liveness observation for the current connection.
-    /// No telemetry or application payload is manufactured by this call.
+    /// No telemetry or application update is manufactured by this call.
     public func observeCurrentConnection(for token: TuyaReadOnlyConnectionToken) throws {
         try requireCurrent(token)
         latestObservedUptimeNanoseconds = try nextMonotonicObservation()
@@ -185,6 +193,20 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
             latestApplicationPayloadUptimeNanoseconds: latestApplicationPayloadUptimeNanoseconds,
             connectionGeneration: currentToken?.generation ?? generation
         )
+    }
+
+    private func recordAuthenticatedApplicationEvidence() throws {
+        let now = try nextMonotonicObservation()
+        guard let authenticatedAt = authenticatedAtUptimeNanoseconds,
+              now >= authenticatedAt else {
+            throw MutationError.monotonicClockRegressed
+        }
+        guard applicationPayloadCount < Int.max else {
+            throw MutationError.applicationPayloadCountExhausted
+        }
+        applicationPayloadCount += 1
+        latestApplicationPayloadUptimeNanoseconds = now
+        latestObservedUptimeNanoseconds = now
     }
 
     private func requireCurrent(_ token: TuyaReadOnlyConnectionToken) throws {
