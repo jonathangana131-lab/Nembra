@@ -1,0 +1,57 @@
+name: Capture Clean Product Package Acceptance
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/capture-clean-product-package-acceptance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  package-green:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 15
+    env:
+      PRODUCT_SHA: 1af286d7c1dd5205ab36a2ab91fa9e17f2b4be47
+    steps:
+      - name: Checkout validation control-plane head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+      - name: Prove validation-only descendant
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_SHA"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-clean-product-package-acceptance.yml"
+          git diff --check HEAD^ HEAD
+      - name: Checkout exact clean product candidate
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+          clean: true
+      - name: Bind package gate to exact clean product SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$PRODUCT_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Run complete Capture package green gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/capture-clean-product-package.log"
+          (cd Packages/NembraBluetoothCapture && swift test) 2>&1 | tee "$log"
+          grep -F 'Test run with 925 tests in 226 suites passed' "$log"
+      - name: Upload exact clean-product package log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: capture-clean-product-package-1af286d7
+          path: ${{ runner.temp }}/capture-clean-product-package.log
+          retention-days: 7
+          if-no-files-found: error
