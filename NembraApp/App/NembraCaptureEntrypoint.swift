@@ -377,6 +377,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     let tuyaUUID: String
 
     private let buildIdentity = NembraCaptureBuildIdentity.current
+    private let controllerOwnershipID = UUID()
     private var byID: [UUID: Candidate] = [:]
     private var correlationSession: PassiveBluetoothPowerCycleObservationSession?
     private var correlationProvenance: CorrelationProvenance?
@@ -431,11 +432,21 @@ private final class SecureLinkController: NSObject, ObservableObject {
             && localBLESettlementToken == nil
             && driver == nil
             && OfficialTuyaFactory.packageCorrelationMayStart
+            && OfficialTuyaFactory.packageCorrelationOwnerIsClear
     }
     var canRestartFromFreshOFF1: Bool { failedAttemptCanRestartFromOFF1 }
 
     func consumeCorrelationAsyncInvalidation() {
         guard phase == .baseline || phase == .scanning else { return }
+        guard OfficialTuyaFactory.ownsPackageCorrelation(ownerID: controllerOwnershipID) else {
+            correlationSession?.abandonCurrentWindow()
+            correlationSession = nil
+            failLocally(
+                "Process-wide package Bluetooth ownership was lost while target correlation was active. This series is invalid; relaunch Capture before another OFF1 attempt.",
+                "package_correlation_process_ownership_lost"
+            )
+            return
+        }
         if OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) {
             correlationSession?.abandonCurrentWindow()
             correlationSession = nil
@@ -576,6 +587,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
 
         resetDiscoverySessionOnly()
+        guard OfficialTuyaFactory.claimPackageCorrelation(ownerID: controllerOwnershipID) else {
+            failLocally(
+                "Another Capture controller currently owns package Bluetooth correlation. This controller will not create a competing scanner; relaunch Capture before a fresh OFF1 series.",
+                "package_correlation_process_claim_rejected"
+            )
+            return
+        }
         do {
             correlationSession = try PassiveBluetoothPowerCycleObservationSession(minimumWindowDuration: 10)
             log("target_correlation_series_created", [
@@ -600,6 +618,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
             correlationSession?.abandonCurrentWindow()
             correlationSession = nil
             failLocally("SDK account/device authority changed before the next correlation window.", "sdk_authority_changed_during_target_correlation")
+            return
+        }
+        guard OfficialTuyaFactory.ownsPackageCorrelation(ownerID: controllerOwnershipID) else {
+            correlationSession?.abandonCurrentWindow()
+            correlationSession = nil
+            failLocally(
+                "Process-wide package Bluetooth ownership was lost before this correlation window could start. Relaunch Capture before another OFF1 series.",
+                "package_correlation_process_ownership_lost"
+            )
             return
         }
         guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {
@@ -646,6 +673,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        guard OfficialTuyaFactory.ownsPackageCorrelation(ownerID: controllerOwnershipID) else {
+            session.abandonCurrentWindow()
+            correlationSession = nil
+            failLocally(
+                "Process-wide package Bluetooth ownership changed before this correlation window could be sealed. The window is invalid; relaunch Capture before another OFF1 series.",
+                "package_correlation_process_ownership_lost"
+            )
+            return
+        }
         guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {
             session.abandonCurrentWindow()
             correlationSession = nil
@@ -695,6 +731,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         targetCorrelationMethod = correlationProvenance?.method
         targetCorrelationWindowCount = result.windows.count
         targetCorrelationOperatorConfirmed = false
+        OfficialTuyaFactory.releasePackageCorrelation(ownerID: controllerOwnershipID)
         switch result.correlation.disposition {
         case let .singleRepeatableCandidate(id):
             let historicalCaptureID = id == Self.historicalCapturePeripheral
@@ -788,6 +825,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     func invalidateSDKMembership() {
         let token = currentConnectionToken
+        OfficialTuyaFactory.releasePackageCorrelation(ownerID: controllerOwnershipID)
         membershipRequestID = UUID()
         membershipBusy = false
         sdkDeviceMembershipVerified = false
@@ -950,6 +988,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
               sdkAccountLoggedIn,
               accountIdentityLeaseIsAuthorized else {
             failLocally("Confirmed build or Tuya account/device authority changed before connection start.", "sdk_authority_changed")
+            return
+        }
+        guard OfficialTuyaFactory.packageCorrelationOwnerIsClear else {
+            failLocally(
+                "Package-owned Bluetooth correlation is active elsewhere in this app process. Tuya BLE ownership will not start while a package scanner is authoritative. Relaunch Capture and run one path at a time.",
+                "package_correlation_blocks_tuya_ble_ownership"
+            )
             return
         }
         guard let newDriver = OfficialTuyaFactory.make() else {
@@ -1748,6 +1793,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func resetDiscoverySessionOnly() {
+        OfficialTuyaFactory.releasePackageCorrelation(ownerID: controllerOwnershipID)
         acceptanceCutIsClosed = false
         sealedAcceptedEventPrefix = nil
         sealedAcceptedExport = nil
@@ -1774,6 +1820,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func failLocally(_ text: String, _ kind: String) {
+        OfficialTuyaFactory.releasePackageCorrelation(ownerID: controllerOwnershipID)
         if phase == .baseline || phase == .powerOn || phase == .scanning || phase == .correlated {
             correlationSession?.abandonCurrentWindow()
             correlationSession = nil
@@ -1810,9 +1857,30 @@ private protocol OfficialTuyaDriver: AnyObject {
 private enum OfficialTuyaFactory {
     private static var didBootstrap = false
     private static var packageCorrelationRetiredForProcess = false
+    private static var packageCorrelationOwnerID: UUID?
 
     static var packageCorrelationMayStart: Bool {
         !packageCorrelationRetiredForProcess
+    }
+
+    static var packageCorrelationOwnerIsClear: Bool {
+        packageCorrelationOwnerID == nil
+    }
+
+    static func claimPackageCorrelation(ownerID: UUID) -> Bool {
+        guard packageCorrelationMayStart else { return false }
+        guard packageCorrelationOwnerID == nil || packageCorrelationOwnerID == ownerID else { return false }
+        packageCorrelationOwnerID = ownerID
+        return true
+    }
+
+    static func ownsPackageCorrelation(ownerID: UUID) -> Bool {
+        packageCorrelationOwnerID == ownerID
+    }
+
+    static func releasePackageCorrelation(ownerID: UUID) {
+        guard packageCorrelationOwnerID == ownerID else { return }
+        packageCorrelationOwnerID = nil
     }
 
     static var configured: Bool {
@@ -1870,6 +1938,7 @@ private enum OfficialTuyaFactory {
 
     static func make() -> OfficialTuyaDriver? {
 #if canImport(ThingSmartHomeKit) && canImport(NembraTuyaPrivateConfig)
+        guard packageCorrelationOwnerIsClear else { return nil }
         guard bootstrap(), accountLoggedIn, currentAccountUID != nil else { return nil }
         // A process-global Tuya BLE manager may outlive any one controller. Once a
         // supported Tuya driver is handed out, package-owned correlation stays retired
