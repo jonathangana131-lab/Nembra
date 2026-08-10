@@ -318,6 +318,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var targetCorrelationOperatorConfirmed = false
     private var driver: OfficialTuyaDriver?
     private var events: [Event] = []
+    private var sealedAcceptedEventPrefix: [Event]?
     private var watchdog: Task<Void, Never>?
     private let sessionLedger = TuyaAuthenticatedReadOnlySessionLedger()
     private var currentConnectionToken: TuyaReadOnlyConnectionToken?
@@ -348,6 +349,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var currentAccountUID: String? { OfficialTuyaFactory.currentAccountUID }
     var selected: Candidate? { selectedID.flatMap { byID[$0] } }
     var applicationUpdateCount: Int { ledgerSnapshot.applicationPayloadCount }
+    private var acceptedApplicationEventCount: Int {
+        events.lazy.filter { $0.kind == "tuya_application_update" }.count
+    }
     var correlationProgress: PassiveBluetoothPowerCycleObservationProgress? { correlationSession?.progress }
     var correlationWindowIsScanning: Bool { correlationProgress?.isScanning == true }
     var correlationObservedCandidateCount: Int { correlationProgress?.currentObservedCandidateCount ?? 0 }
@@ -1099,10 +1103,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
-            await refreshLedgerSnapshot()
+            // Package admission happens first so rejected callbacks never enter accepted structured
+            // evidence. Once admitted, copy the sanitized values before this task suspends again.
             log("tuya_application_update", update.merging([
                 "generation": String(token.diagnosticGeneration)
             ]) { current, _ in current })
+            await refreshLedgerSnapshot()
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -1212,6 +1218,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
                 switch TuyaAuthenticatedReadOnlyPreflight.verdict(for: self.ledgerSnapshot) {
                 case .readyForStationaryMapping:
+                    // A ledger mutation can finish while its MainActor callback is still suspended.
+                    // Never seal until every package-admitted application receipt has a matching
+                    // structured event in the app-owned evidence prefix.
+                    guard self.acceptedApplicationEventCount == self.applicationUpdateCount else {
+                        self.message = "Synchronizing accepted application evidence before canonical seal…"
+                        break
+                    }
                     guard self.buildIdentity.isAuthoritativeFieldBuild else {
                         await self.invalidateSourceAuthority(
                             token: token,
@@ -1230,6 +1243,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     }
                     do {
                         try await sessionLedger.sealAcceptedObservation(for: token)
+                        // Freeze the app-exportable prefix synchronously after package seal and
+                        // before another suspension can admit post-seal diagnostic callbacks.
+                        self.sealedAcceptedEventPrefix = events
                         self.currentConnectionToken = nil
                         await self.refreshLedgerSnapshot()
                         self.phase = .accepted
@@ -1496,7 +1512,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             dpQueriesSent: false,
             dpCommandsSent: false,
             candidates: candidates,
-            events: events
+            events: sealedAcceptedEventPrefix ?? events
         )
 
         do {
@@ -1512,6 +1528,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func resetDiscoverySessionOnly() {
+        sealedAcceptedEventPrefix = nil
         correlationSession?.abandonCurrentWindow()
         correlationSession = nil
         correlationProvenance = nil
