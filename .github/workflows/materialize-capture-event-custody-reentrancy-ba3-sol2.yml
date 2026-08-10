@@ -17,19 +17,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 4
+          fetch-depth: 8
           persist-credentials: true
 
-      - name: Verify exact red parent
+      - name: Verify exact red ancestry
         shell: bash
         run: |
           set -euo pipefail
           expected_red='97dd67129c2b587855552c88982b4fe2c260280f'
           expected_source_blob='d3075d4fe7bc96ff11079d9f54982ca4c8d90746'
           workflow='.github/workflows/materialize-capture-event-custody-reentrancy-ba3-sol2.yml'
-          test "$(git rev-parse HEAD^)" = "$expected_red"
+          git merge-base --is-ancestor "$expected_red" HEAD
           test "$(git rev-parse 'HEAD:NembraApp/App/NembraCaptureEntrypoint.swift')" = "$expected_source_blob"
-          test "$(git diff --name-only "$expected_red"..HEAD)" = "$workflow"
+          changed="$(git diff --name-only "$expected_red"..HEAD)"
+          test "$changed" = "$workflow"
 
       - name: Apply fail-closed pre-await custody repair
         shell: bash
@@ -41,21 +42,14 @@ jobs:
           path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           source = path.read_text(encoding='utf-8')
 
-          anchor = '''        guard !acceptanceCutIsClosed else {
-              log("application_update_after_acceptance_cut_ignored", [
-                  "generation": String(token.diagnosticGeneration)
-              ])
-              return
-          }
-          guard sdkAccountLoggedIn,
-          '''
-          replacement = '''        guard !acceptanceCutIsClosed else {
-              log("application_update_after_acceptance_cut_ignored", [
-                  "generation": String(token.diagnosticGeneration)
-              ])
-              return
-          }
-          guard let custodySafeUpdate = redactedApplicationEventDetails(update) else {
+          receiver_start = source.index('    private func receivedApplicationUpdate(')
+          helper_start = source.index('    private func redactedApplicationEventDetails(', receiver_start)
+          receiver = source[receiver_start:helper_start]
+
+          authority_marker = '        guard sdkAccountLoggedIn,\n'
+          if receiver.count(authority_marker) != 1:
+              raise SystemExit(f'expected one source-authority guard marker, found {receiver.count(authority_marker)}')
+          custody = '''        guard let custodySafeUpdate = redactedApplicationEventDetails(update) else {
               await invalidateSourceAuthority(
                   token: token,
                   message: "Verified Tuya account-identity lease disappeared before application evidence could enter event custody.",
@@ -63,47 +57,17 @@ jobs:
               )
               return
           }
-          guard sdkAccountLoggedIn,
           '''
-          if source.count(anchor) != 1:
-              raise SystemExit(f'expected one pre-authority admission anchor, found {source.count(anchor)}')
-          source = source.replace(anchor, replacement, 1)
+          receiver = receiver.replace(authority_marker, custody + authority_marker, 1)
 
-          old_event = '''            var eventDetails = redactedApplicationEventDetails(update)
-              eventDetails["generation"] = String(token.diagnosticGeneration)
-              log("tuya_application_update", eventDetails)
-          '''
-          new_event = '''            var eventDetails = custodySafeUpdate
-              eventDetails["generation"] = String(token.diagnosticGeneration)
-              log("tuya_application_update", eventDetails)
-          '''
-          if source.count(old_event) != 1:
-              raise SystemExit(f'expected one post-await redaction seam, found {source.count(old_event)}')
-          source = source.replace(old_event, new_event, 1)
+          old_event = '            var eventDetails = redactedApplicationEventDetails(update)'
+          if receiver.count(old_event) != 1:
+              raise SystemExit(f'expected one post-await redaction seam, found {receiver.count(old_event)}')
+          receiver = receiver.replace(old_event, '            var eventDetails = custodySafeUpdate', 1)
+          source = source[:receiver_start] + receiver + source[helper_start:]
 
-          old_helper = '''    private func redactedApplicationEventDetails(_ update: [String: String]) -> [String: String] {
-              guard let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
-                    !accountUID.isEmpty else {
-                  return update
-              }
-
-              var redacted: [String: String] = [:]
-              redacted.reserveCapacity(update.count)
-              for (key, value) in update {
-                  let redactedKey = key.replacingOccurrences(
-                      of: accountUID,
-                      with: "<redacted-account-uid>",
-                      options: [.caseInsensitive, .literal]
-                  )
-                  redacted[redactedKey] = value.replacingOccurrences(
-                      of: accountUID,
-                      with: "<redacted-account-uid>",
-                      options: [.caseInsensitive, .literal]
-                  )
-              }
-              return redacted
-          }
-          '''
+          helper_start = source.index('    private func redactedApplicationEventDetails(', receiver_start)
+          watchdog_start = source.index('    private func startWatchdog(', helper_start)
           new_helper = '''    private func redactedApplicationEventDetails(_ update: [String: String]) -> [String: String]? {
               guard let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
                     !accountUID.isEmpty else { return nil }
@@ -135,11 +99,9 @@ jobs:
               }
               return redacted
           }
-          '''
-          if source.count(old_helper) != 1:
-              raise SystemExit(f'expected one existing UID redactor, found {source.count(old_helper)}')
-          source = source.replace(old_helper, new_helper, 1)
 
+          '''
+          source = source[:helper_start] + new_helper + source[watchdog_start:]
           path.write_text(source, encoding='utf-8')
           PY
 
