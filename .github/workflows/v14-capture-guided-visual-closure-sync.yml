@@ -1,0 +1,452 @@
+name: V14 Capture Guided Visual Closure Sync
+
+on:
+  push:
+    branches:
+      - integration/v14-capture-guided-visual-closure-sol
+
+permissions:
+  contents: write
+
+jobs:
+  converge:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/v14-capture-guided-visual-closure-sol
+          fetch-depth: 0
+
+      - name: Guard exact product parent
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "bf44f3e5c0b7ce3109bfdd3ecb760cfeafe04440"
+
+      - name: Converge product root and visual gate
+        shell: python
+        run: |
+          from pathlib import Path
+
+          app_path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          app = app_path.read_text()
+          start = app.index("@MainActor\nprivate struct CaptureP0Root: View {")
+          end = app.index("@MainActor\nprivate final class SecureLinkController", start)
+          root = r'''@MainActor
+          private struct CaptureP0Root: View {
+              @StateObject private var tuya = TuyaAccountBridge()
+
+              var body: some View {
+                  NavigationStack {
+                      ScrollView {
+                          VStack(alignment: .leading, spacing: 24) {
+                              header
+                              if tuya.isLinked {
+                                  devicePanel
+                              } else {
+                                  accountPanel
+                              }
+                              safetyDisclosure
+                          }
+                          .frame(maxWidth: 720)
+                          .padding(.horizontal, 20)
+                          .padding(.vertical, 24)
+                          .frame(maxWidth: .infinity)
+                      }
+                      .background(Color.black.ignoresSafeArea())
+                      .foregroundStyle(.white)
+                      .navigationTitle("Capture")
+                      .navigationBarTitleDisplayMode(.inline)
+                  }
+              }
+
+              private var header: some View {
+                  VStack(alignment: .leading, spacing: 10) {
+                      Text("NEMBRA CAPTURE")
+                          .font(.caption.weight(.bold))
+                          .tracking(2.2)
+                          .foregroundStyle(.secondary)
+                      Text(tuya.isLinked ? "Choose your scooter" : "Prepare Capture")
+                          .font(.system(size: 38, weight: .bold, design: .rounded))
+                          .minimumScaleFactor(0.82)
+                      Text(tuya.isLinked
+                           ? "Select the scooter already linked to your account, then Nembra will guide the stationary read-only capture."
+                           : "Authorize the account that already owns this scooter. Nembra stays read-only and will guide every physical step after setup.")
+                          .font(.body)
+                          .foregroundStyle(.secondary)
+                          .fixedSize(horizontal: false, vertical: true)
+                      HStack(spacing: 14) {
+                          Label("STATIONARY", systemImage: "figure.stand")
+                          Label("READ ONLY", systemImage: "shield.checkered")
+                      }
+                      .font(.caption.weight(.bold))
+                      .foregroundStyle(.cyan)
+                      .accessibilityElement(children: .combine)
+                      .accessibilityLabel("Stationary, read-only capture")
+                  }
+                  .frame(maxWidth: .infinity, alignment: .leading)
+              }
+
+              private var accountPanel: some View {
+                  VStack(alignment: .leading, spacing: 16) {
+                      Label("Authorize scooter access", systemImage: "person.badge.key.fill")
+                          .font(.title3.bold())
+                      Text("In Tuya Smart, open Account and Security, copy your User Code, and paste it here. Nembra never asks for your Tuya password.")
+                          .foregroundStyle(.secondary)
+                          .fixedSize(horizontal: false, vertical: true)
+
+                      TextField("Tuya User Code", text: $tuya.userCode)
+                          .textInputAutocapitalization(.never)
+                          .autocorrectionDisabled()
+                          .inputSurface()
+                          .accessibilityHint("Paste the User Code from Tuya Smart Account and Security.")
+
+                      Button {
+                          tuya.requestApproval()
+                      } label: {
+                          HStack(spacing: 10) {
+                              if tuya.phase == .requestingApproval {
+                                  ProgressView().tint(.black)
+                              }
+                              Label(tuya.qrPNGData == nil ? "Create approval QR" : "Create a fresh QR", systemImage: "qrcode")
+                                  .frame(maxWidth: .infinity)
+                          }
+                      }
+                      .buttonStyle(.borderedProminent)
+                      .tint(.white)
+                      .foregroundStyle(.black)
+                      .controlSize(.large)
+                      .disabled(tuya.phase == .requestingApproval)
+
+                      if let data = tuya.qrPNGData,
+                         let image = UIImage(data: data) {
+                          VStack(alignment: .leading, spacing: 12) {
+                              Text("Approve in Tuya Smart")
+                                  .font(.headline)
+                              Image(uiImage: image)
+                                  .interpolation(.none)
+                                  .resizable()
+                                  .scaledToFit()
+                                  .frame(maxWidth: 240)
+                                  .padding(10)
+                                  .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                  .frame(maxWidth: .infinity)
+                                  .accessibilityLabel("Tuya approval QR code")
+                              Text("On this iPhone, save or share the QR, open Tuya Smart's scanner, choose it from Photos, approve, then return to Nembra.")
+                                  .font(.footnote)
+                                  .foregroundStyle(.secondary)
+                                  .fixedSize(horizontal: false, vertical: true)
+                              ShareLink(item: TuyaQRCodeExport(data: data), preview: SharePreview("Tuya approval QR")) {
+                                  Label("Save or share approval QR", systemImage: "square.and.arrow.up")
+                                      .frame(maxWidth: .infinity)
+                              }
+                              .buttonStyle(.bordered)
+                              .controlSize(.large)
+                              Button {
+                                  tuya.checkApprovalNow()
+                              } label: {
+                                  Label("I approved it — check now", systemImage: "checkmark.circle")
+                                      .frame(maxWidth: .infinity)
+                              }
+                              .buttonStyle(.borderedProminent)
+                              .controlSize(.large)
+                          }
+                          .padding(.top, 4)
+                      }
+
+                      if tuya.phase == .failed {
+                          Button("Reset account setup") { tuya.resetLink() }
+                              .buttonStyle(.bordered)
+                      }
+
+                      Text(tuya.statusMessage)
+                          .font(.footnote)
+                          .foregroundStyle(.secondary)
+                          .fixedSize(horizontal: false, vertical: true)
+                  }
+                  .captureRootPanel()
+              }
+
+              private var devicePanel: some View {
+                  VStack(alignment: .leading, spacing: 16) {
+                      HStack(alignment: .firstTextBaseline) {
+                          Label("Scooter", systemImage: "bicycle")
+                              .font(.title3.bold())
+                          Spacer()
+                          Label("Account approved", systemImage: "checkmark.seal.fill")
+                              .font(.caption.weight(.semibold))
+                              .foregroundStyle(.green)
+                      }
+
+                      Text("Choose the scooter you are standing beside. Nembra still requires the repeated OFF/ON Bluetooth correlation before that signal becomes authoritative.")
+                          .foregroundStyle(.secondary)
+                          .fixedSize(horizontal: false, vertical: true)
+
+                      if tuya.devices.isEmpty {
+                          Text("No linked scooters are loaded yet.")
+                              .foregroundStyle(.secondary)
+                          Button("Refresh scooter list") { tuya.refreshDevices() }
+                              .buttonStyle(.borderedProminent)
+                              .controlSize(.large)
+                      }
+
+                      ForEach(tuya.devices) { device in
+                          let selected = tuya.selectedDeviceID == device.id
+                          VStack(alignment: .leading, spacing: 10) {
+                              HStack(alignment: .top, spacing: 12) {
+                                  Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                                      .font(.title3)
+                                      .foregroundStyle(selected ? .cyan : .secondary)
+                                      .accessibilityHidden(true)
+                                  VStack(alignment: .leading, spacing: 3) {
+                                      Text(device.name.isEmpty ? "Unnamed scooter" : device.name)
+                                          .font(.headline)
+                                      let detail = [device.productName, device.category].filter { !$0.isEmpty }.joined(separator: " · ")
+                                      if !detail.isEmpty {
+                                          Text(detail)
+                                              .font(.caption)
+                                              .foregroundStyle(.secondary)
+                                      }
+                                  }
+                                  Spacer()
+                              }
+
+                              Button(selected ? "Refresh scooter identity" : "Use this scooter") {
+                                  tuya.selectDevice(device)
+                              }
+                              .buttonStyle(.bordered)
+
+                              if selected,
+                                 tuya.phase == .ready,
+                                 !device.productID.isEmpty,
+                                 !device.uuid.isEmpty {
+                                  NavigationLink {
+                                      SecureLinkView(device: device)
+                                  } label: {
+                                      Label("Continue to Capture", systemImage: "arrow.right.circle.fill")
+                                          .frame(maxWidth: .infinity)
+                                  }
+                                  .buttonStyle(.borderedProminent)
+                                  .controlSize(.large)
+                                  .accessibilityHint("Opens the guided stationary Bluetooth correlation and secure-link capture.")
+                              }
+                          }
+                          .padding(14)
+                          .background(selected ? Color.cyan.opacity(0.10) : Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                          .overlay {
+                              RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                  .stroke(selected ? Color.cyan.opacity(0.35) : Color.white.opacity(0.07), lineWidth: 1)
+                          }
+                      }
+
+                      Text(tuya.statusMessage)
+                          .font(.footnote)
+                          .foregroundStyle(.secondary)
+                  }
+                  .captureRootPanel()
+              }
+
+              private var safetyDisclosure: some View {
+                  DisclosureGroup {
+                      VStack(alignment: .leading, spacing: 10) {
+                          Text("The next field run is stationary. Nembra uses the official Tuya SDK for authenticated BLE ownership and does not open a competing CoreBluetooth connection after that handoff.")
+                          Text("This surface sends no DP query, publish, unbind, reset, lock, speed, light, mode, throttle, brake, firmware, or other scooter command.")
+                      }
+                      .font(.footnote)
+                      .foregroundStyle(.secondary)
+                      .padding(.top, 8)
+                  } label: {
+                      Label("Safety & technical details", systemImage: "shield")
+                          .font(.subheadline.weight(.semibold))
+                  }
+                  .tint(.secondary)
+              }
+          }
+          '''
+          # Keep top-level declarations at column zero; the raw block is indented only for this script.
+          root = "\n".join(line[10:] if line.startswith("          ") else line for line in root.splitlines())
+          app = app[:start] + root + "\n\n" + app[end:]
+
+          marker = "private extension View {\n    func inputSurface() -> some View {"
+          replacement = '''private extension View {
+              func captureRootPanel() -> some View {
+                  self
+                      .padding(18)
+                      .frame(maxWidth: .infinity, alignment: .leading)
+                      .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                      .overlay {
+                          RoundedRectangle(cornerRadius: 24, style: .continuous)
+                              .stroke(Color.white.opacity(0.09), lineWidth: 1)
+                      }
+              }
+
+              func inputSurface() -> some View {'''
+          replacement = "\n".join(line[14:] if line.startswith("              ") else line for line in replacement.splitlines())
+          if app.count(marker) != 1:
+              raise SystemExit("capture root panel insertion guard failed")
+          app = app.replace(marker, replacement, 1)
+          app_path.write_text(app)
+
+          visual = Path(".github/workflows/capture-standalone-visual-acceptance.yml")
+          text = visual.read_text()
+          old = '''          dependency_sha="$(shasum -a 256 Podfile.lock | awk '{print $1}')"
+          if [[ ! "$dependency_sha" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Could not derive Tuya dependency-lock SHA-256." >&2
+            exit 1
+          fi'''
+          new = '''          # The public standalone project is deliberately unprovisioned and the
+          # private field Podfile.lock is not committed. Stamp a deterministic
+          # visual-only fixture so this presentation build remains self-consistent
+          # without claiming private Tuya dependency provenance.
+          dependency_sha="$(printf '%s' 'nembra-capture-public-unprovisioned-visual-v1' | shasum -a 256 | awk '{print $1}')"
+          if [[ ! "$dependency_sha" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Could not derive deterministic visual-only dependency fixture." >&2
+            exit 1
+          fi'''
+          if text.count(old) != 1:
+              raise SystemExit("visual dependency fixture guard failed")
+          text = text.replace(old, new, 1)
+          plist_guard = '''          test -f "$plist"
+          test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"'''
+          plist_replacement = '''          test -f "$plist"
+          test "$(plutil -extract CFBundleIdentifier raw -o - "$plist")" = 'com.jonathangana131.nembra.capturelearn'
+          test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"'''
+          if text.count(plist_guard) != 1:
+              raise SystemExit("visual bundle-id guard insertion failed")
+          visual.write_text(text.replace(plist_guard, plist_replacement, 1))
+
+          harness = Path("scripts/ci/capture_standalone_visual_evidence.sh")
+          text = harness.read_text()
+          launch_marker = '''# Deliberately launch the real standalone product with no SIMCTL_CHILD_* variables, no
+          # NEMBRA_SIMULATION_* scenario, and no fake Tuya account/device authority. The screenshot is
+          # presentation evidence only; a human reviewer must confirm the fail-closed UI state.'''
+          guard = '''# `simctl launch` forwards host variables prefixed with SIMCTL_CHILD_ into the app. Refuse any
+          # inherited synthetic-authority fixture instead of merely promising that this script does not set one.
+          while IFS= read -r variable_name; do
+            case "$variable_name" in
+              SIMCTL_CHILD_*|NEMBRA_SIMULATION_*)
+                echo "Refusing standalone visual evidence with inherited synthetic authority: $variable_name" >&2
+                exit 18
+                ;;
+            esac
+          done < <(compgen -v)
+
+          '''
+          if "syntheticAuthorityEnvironmentRejected" not in text:
+              if text.count(launch_marker) != 1:
+                  raise SystemExit("simulator inherited-authority insertion guard failed")
+              text = text.replace(launch_marker, guard + launch_marker, 1)
+              old_context = '"launchContext": "real standalone bundle; no SIMCTL_CHILD/NEMBRA_SIMULATION authority injected",'
+              new_context = '"launchContext": "real standalone bundle; inherited SIMCTL_CHILD/NEMBRA_SIMULATION authority rejected before launch",\n    "syntheticAuthorityEnvironmentRejected": True,'
+              if text.count(old_context) != 1:
+                  raise SystemExit("simulator evidence context guard failed")
+              text = text.replace(old_context, new_context, 1)
+          harness.write_text(text)
+
+          harness_test = Path("scripts/ci/tests/test_capture_standalone_visual_evidence.py")
+          text = harness_test.read_text()
+          if 'SIMCTL_CHILD_*|NEMBRA_SIMULATION_*)' not in text:
+              anchor = '''    'EXPECTED_BUILD_IDENTIFIER="capture-v14-${SOURCE_SHA:0:12}"',
+              '    'launch_output="$(xcrun simctl launch "$UDID" "$BUNDLE_ID"','''
+              replacement = '''    'EXPECTED_BUILD_IDENTIFIER="capture-v14-${SOURCE_SHA:0:12}"',
+              '    'SIMCTL_CHILD_*|NEMBRA_SIMULATION_*)',
+              '    'done < <(compgen -v)',
+              '    'launch_output="$(xcrun simctl launch "$UDID" "$BUNDLE_ID"','''
+              # Use simple literal insertions instead of relying on indentation in the source file.
+              needle = '    \'EXPECTED_BUILD_IDENTIFIER="capture-v14-${SOURCE_SHA:0:12}"\',\n'
+              addition = needle + '    \'SIMCTL_CHILD_*|NEMBRA_SIMULATION_*)\',\n    \'done < <(compgen -v)\',\n'
+              if text.count(needle) != 1:
+                  raise SystemExit("harness source-contract authority guard failed")
+              text = text.replace(needle, addition, 1)
+              needle = '    \'"visualAcceptanceRequiresHumanReview": True\',\n'
+              if text.count(needle) != 1:
+                  raise SystemExit("harness manifest contract insertion failed")
+              text = text.replace(needle, '    \'"syntheticAuthorityEnvironmentRejected": True\',\n' + needle, 1)
+              old_check = '''for line in active_lines:
+              if line.startswith("SIMCTL_CHILD_") or line.startswith("NEMBRA_SIMULATION_"):
+                  raise SystemExit(f"standalone visual evidence must not inject synthetic app authority: {line}")'''
+              new_check = '''for line in active_lines:
+              if re.match(r"^(SIMCTL_CHILD_|NEMBRA_SIMULATION_)[A-Za-z0-9_]*=", line):
+                  raise SystemExit(f"standalone visual evidence must not assign synthetic app authority: {line}")'''
+              # Preserve whatever indentation the source already uses by replacing its exact unindented text.
+              old_check = old_check.replace("              ", "    ", 2)
+              new_check = new_check.replace("              ", "    ", 2)
+              if text.count(old_check) != 1:
+                  raise SystemExit("harness assignment contract guard failed")
+              text = text.replace(old_check, new_check, 1)
+          harness_test.write_text(text)
+
+          product_test = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductSurfaceSourceTests.swift")
+          text = product_test.read_text()
+          old_expectation = '        #expect(body.contains("if accepted && test.exportData == nil { test.prepareExport() }"))\n'
+          new_expectations = '''        #expect(body.contains("if let data = test.exportData"))
+                  #expect(body.contains("CAPTURE SEALED"))
+                  #expect(body.contains("Retry sealed export"))
+                  #expect(!body.contains("if accepted && test.exportData == nil { test.prepareExport() }"))
+          '''
+          new_expectations = "\n".join(line[10:] if line.startswith("          ") else line for line in new_expectations.splitlines())
+          if text.count(old_expectation) != 1:
+              raise SystemExit("accepted product source-contract truth guard failed")
+          text = text.replace(old_expectation, new_expectations + "\n", 1)
+          insert_before = '    @Test("truth gates remain visible in the guided product surface")\n'
+          root_test = r'''    @Test("root setup is product-facing and compile-safe")
+              func rootSetupIsCaptureProductNotEngineeringConsole() throws {
+                  let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let surface = try section(in: app, from: "private struct CaptureP0Root: View", to: "private final class SecureLinkController")
+                  let body = String(surface)
+
+                  #expect(body.contains("NEMBRA CAPTURE"))
+                  #expect(body.contains("Prepare Capture"))
+                  #expect(body.contains("Authorize scooter access"))
+                  #expect(body.contains("Safety & technical details"))
+                  #expect(body.contains("Continue to Capture"))
+                  #expect(!body.contains("P0 · TUYA AUTHENTICATION"))
+                  #expect(!body.contains("Prove the secure scooter link first."))
+                  #expect(!body.contains(".card()"))
+                  #expect(app.contains("func captureRootPanel() -> some View"))
+              }
+
+          '''
+          root_test = "\n".join(line[4:] if line.startswith("    ") else line for line in root_test.splitlines())
+          if text.count(insert_before) != 1:
+              raise SystemExit("root product test insertion guard failed")
+          text = text.replace(insert_before, root_test + insert_before, 1)
+          product_test.write_text(text)
+
+      - name: Verify converged source contracts
+        run: |
+          set -euo pipefail
+          git diff --check
+          bash -n scripts/ci/capture_standalone_visual_evidence.sh
+          /usr/bin/python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          root = app[app.index('private struct CaptureP0Root: View'):app.index('private final class SecureLinkController')]
+          assert '.card()' not in root
+          assert 'func captureRootPanel() -> some View' in app
+          assert 'P0 · TUYA AUTHENTICATION' not in root
+          assert 'Continue to Capture' in root
+          workflow = Path('.github/workflows/capture-standalone-visual-acceptance.yml').read_text()
+          assert 'shasum -a 256 Podfile.lock' not in workflow
+          assert 'nembra-capture-public-unprovisioned-visual-v1' in workflow
+          assert 'CFBundleIdentifier raw' in workflow
+          harness = Path('scripts/ci/capture_standalone_visual_evidence.sh').read_text()
+          assert 'SIMCTL_CHILD_*|NEMBRA_SIMULATION_*)' in harness
+          assert '"syntheticAuthorityEnvironmentRejected": True' in harness
+          product_test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductSurfaceSourceTests.swift').read_text()
+          assert 'CAPTURE SEALED' in product_test
+          assert 'root setup is product-facing and compile-safe' in product_test
+          print('guided Capture visual closure source convergence: PASS')
+          PY
+
+      - name: Commit clean convergence
+        run: |
+          set -euo pipefail
+          rm .github/workflows/v14-capture-guided-visual-closure-sync.yml
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(capture): close guided visual gate blockers"
+          git push origin HEAD:integration/v14-capture-guided-visual-closure-sol
