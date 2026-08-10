@@ -7,11 +7,11 @@ struct TuyaAlreadyTerminalObservationContinuitySourceTests {
     @Test("package continuity error retires token before it throws")
     func packageContinuityErrorIsAlreadyTerminal() throws {
         let ledger = try readRepositoryFile("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift")
-        let continuity = try section(
-            in: ledger,
-            from: "private func requireContinuousAuthenticatedObservation(at now: UInt64) throws",
-            to: "}"
-        )
+        guard let functionStart = ledger.range(of: "private func requireContinuousAuthenticatedObservation(at now: UInt64) throws") else {
+            Issue.record("Expected package continuity guard was not found")
+            throw SourceContractError.sectionMissing
+        }
+        let continuity = ledger[functionStart.lowerBound...]
 
         guard let clear = continuity.range(of: "currentToken = nil"),
               let thrown = continuity.range(of: "throw MutationError.observationContinuityInvalidated") else {
