@@ -12,8 +12,11 @@ struct TuyaSingleOfficialDriverHandoffSourceTests {
             from: "private enum OfficialTuyaFactory",
             to: "#if canImport(ThingSmartHomeKit)\n@MainActor\nprivate final class OfficialTuyaMembershipProbe"
         ))
-        let makeStart = try #require(factory.range(of: "static func make() -> OfficialTuyaDriver?"))
-        let make = factory[makeStart.lowerBound...]
+        let make = String(try section(
+            in: factory,
+            from: "static func make() -> OfficialTuyaDriver?",
+            to: "}\n}\n\n#if canImport(ThingSmartHomeKit)"
+        ))
 
         guard let retirementGuard = make.range(of: "guard !packageCorrelationRetiredForProcess,"),
               let packageOwnerGuard = make.range(of: "activePackageCorrelationOwner == nil,"),
