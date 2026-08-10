@@ -51,6 +51,11 @@ final class VehicleStore {
     /// Source-owned currentness for speed. Cached `VehicleState` speed never
     /// promotes this value by itself.
     private(set) var speedEvidenceAvailability: SpeedEvidenceAvailability = .unavailable
+    /// Source-owned Simulator propulsion currentness. This is deliberately
+    /// independent from aggregate `VehicleState.powerWatts`, connection callbacks,
+    /// speed evidence, and render time. The provider's immutable receipt remains
+    /// the only positive authority for live/retained Simulator Energy Rail data.
+    private(set) var simulatorPowerEvidenceAvailability: SimulatorPowerEvidenceAvailability = .unavailable
     var pendingCommands: Set<PendingCommand> = []
     var pendingRideMode: RideMode?
     var pendingCruiseValue: Bool?
@@ -124,6 +129,7 @@ final class VehicleStore {
 
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
     @ObservationIgnored private var speedEvidenceTask: Task<Void, Never>?
+    @ObservationIgnored private var simulatorPowerEvidenceTask: Task<Void, Never>?
     @ObservationIgnored private var speedEvidenceConsumerAuthority = SpeedEvidenceConsumerAuthority()
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private let shouldAutoConnectOnStart: Bool
@@ -216,6 +222,7 @@ final class VehicleStore {
     deinit {
         updatesTask?.cancel()
         speedEvidenceTask?.cancel()
+        simulatorPowerEvidenceTask?.cancel()
     }
 
     func start() async {
@@ -223,6 +230,9 @@ final class VehicleStore {
         didStart = true
 
         let speedEvidenceProvider = service as? any SpeedEvidenceProvider
+        let simulatorPowerEvidenceProvider: (any SimulatorPowerEvidenceProvider)? = profile == .simulatorQA
+            ? service as? any SimulatorPowerEvidenceProvider
+            : nil
 
         updatesTask = Task { [weak self, service, speedEvidenceProvider] in
             let stream = await service.stateUpdates()
@@ -268,6 +278,27 @@ final class VehicleStore {
             }
         } else {
             speedEvidenceAvailability = .unavailable
+        }
+
+        if let simulatorPowerEvidenceProvider {
+            simulatorPowerEvidenceTask = Task { [weak self, simulatorPowerEvidenceProvider] in
+                // The provider contract makes this stream an atomic current-state
+                // projection with newest-only buffering. Preserve its exact immutable
+                // receipt/currentness rather than joining it to aggregate connection,
+                // speed, or view lifecycle state inside the app.
+                let stream = await simulatorPowerEvidenceProvider.simulatorPowerEvidenceUpdates()
+                for await availability in stream {
+                    guard let self, !Task.isCancelled else { return }
+                    self.simulatorPowerEvidenceAvailability = availability
+                }
+
+                // Unexpected provider termination cannot leave stale synthetic
+                // authority live for the remainder of the app session.
+                guard let self, !Task.isCancelled else { return }
+                self.simulatorPowerEvidenceAvailability = .unavailable
+            }
+        } else {
+            simulatorPowerEvidenceAvailability = .unavailable
         }
 
         if shouldAutoConnectOnStart {
