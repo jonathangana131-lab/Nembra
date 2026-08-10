@@ -1,14 +1,21 @@
 name: Recover Capture final evidence custody 8069
+
 on:
   push:
-    branches: [repair/v14-capture-final-evidence-custody-8069-sol]
-permissions: {contents: write}
+    branches:
+      - repair/v14-capture-final-evidence-custody-8069-sol
+
+permissions:
+  contents: write
+
 jobs:
   repair:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-        with: {fetch-depth: 8}
+        with:
+          fetch-depth: 8
+
       - name: Apply exact UID and provenance repair
         shell: bash
         run: |
@@ -16,45 +23,53 @@ jobs:
           PRODUCT=8069c0ffec496cacbe263016d8a7f4ca15ddc64e
           TEST=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventExportCustodySourceTests.swift
           WORKFLOW=.github/workflows/recover-capture-final-evidence-custody-8069-sol.yml
-          actual="$(git diff --name-only "$PRODUCT" HEAD | sort)"; expected="$(printf '%s\n%s\n' "$TEST" "$WORKFLOW" | sort)"; test "$actual" = "$expected"
+          actual="$(git diff --name-only "$PRODUCT" HEAD | sort)"
+          expected="$(printf '%s\n%s\n' "$TEST" "$WORKFLOW" | sort)"
+          test "$actual" = "$expected"
           python3 <<'PY'
           from pathlib import Path
-          p=Path('NembraApp/App/NembraCaptureEntrypoint.swift'); s=p.read_text()
-          a=s.index('    private func receivedApplicationUpdate('); b=s.index('    private func startWatchdog',a); r=s[a:b]
-          old_guard='''        guard sdkAccountLoggedIn,
+          p=Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          s=p.read_text()
+          a=s.index("    private func receivedApplicationUpdate(")
+          b=s.index("    private func startWatchdog",a)
+          r=s[a:b]
+          old_guard="""        guard sdkAccountLoggedIn,
               sdkDeviceMembershipVerified,
               accountIdentityLeaseIsAuthorized,
               let driver else {
-'''
-          new_guard='''        guard sdkAccountLoggedIn,
+"""
+          new_guard="""        guard sdkAccountLoggedIn,
               sdkDeviceMembershipVerified,
               accountIdentityLeaseIsAuthorized,
               let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
               !verifiedAccountUID.isEmpty,
               let driver else {
-'''
-          if r.count(old_guard)!=1: raise SystemExit(f'expected one application authority guard, found {r.count(old_guard)}')
+"""
+          if r.count(old_guard) != 1:
+              raise SystemExit(f"expected one application authority guard, found {r.count(old_guard)}")
           r=r.replace(old_guard,new_guard,1)
-          old_log='''            log("tuya_application_update", update.merging([
-                "generation": String(token.diagnosticGeneration)
+          old_log="""            log(\"tuya_application_update\", update.merging([
+                \"generation\": String(token.diagnosticGeneration)
             ]) { current, _ in current })
-'''
-          new_log='''            let accountUIDRedactedUpdate = Self.redactVerifiedAccountUID(
+"""
+          new_log="""            let accountUIDRedactedUpdate = Self.redactVerifiedAccountUID(
                 verifiedAccountUID,
                 from: update
             )
-            log("tuya_application_update", accountUIDRedactedUpdate.merging([
-                "generation": String(token.diagnosticGeneration)
+            log(\"tuya_application_update\", accountUIDRedactedUpdate.merging([
+                \"generation\": String(token.diagnosticGeneration)
             ]) { _, trusted in trusted })
-'''
-          if r.count(old_log)!=1: raise SystemExit(f'expected one raw event custody seam, found {r.count(old_log)}')
+"""
+          if r.count(old_log) != 1:
+              raise SystemExit(f"expected one raw event custody seam, found {r.count(old_log)}")
           r=r.replace(old_log,new_log,1)
-          helper='''
+          s=s[:a]+r+s[b:]
+          helper="""
     private static func redactVerifiedAccountUID(
         _ verifiedAccountUID: String,
         from update: [String: String]
     ) -> [String: String] {
-        let marker = "<redacted-account-uid>"
+        let marker = \"<redacted-account-uid>\"
         var sanitized: [String: String] = [:]
         sanitized.reserveCapacity(update.count)
         for (sourceKey, sourceValue) in update.sorted(by: { $0.key < $1.key }) {
@@ -63,7 +78,7 @@ jobs:
             var redactedKey = redactedKeyBase
             var collisionIndex = 2
             while sanitized[redactedKey] != nil {
-                redactedKey = "\(redactedKeyBase)#\(collisionIndex)"
+                redactedKey = \"\\(redactedKeyBase)#\\(collisionIndex)\"
                 collisionIndex += 1
             }
             sanitized[redactedKey] = redactedValue
@@ -71,20 +86,28 @@ jobs:
         return sanitized
     }
 
-'''
-          s=s[:a]+r+s[b:]
-          anchor='    private func startWatchdog(token: TuyaReadOnlyConnectionToken) {\n'
-          if s.count(anchor)!=1 or '<redacted-account-uid>' in s: raise SystemExit('unexpected watchdog/helper seam')
-          s=s.replace(anchor,helper+anchor,1); p.write_text(s)
+"""
+          anchor="    private func startWatchdog(token: TuyaReadOnlyConnectionToken) {\n"
+          if s.count(anchor) != 1 or "<redacted-account-uid>" in s:
+              raise SystemExit("unexpected watchdog/helper seam")
+          s=s.replace(anchor,helper+anchor,1)
+          p.write_text(s)
           PY
-          swiftc -parse "$TEST"; git diff --check
+          swiftc -parse "$TEST"
+          git diff --check
           python3 <<'PY'
           from pathlib import Path
-          s=Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(); a=s.index('    private func receivedApplicationUpdate('); b=s.index('    private func startWatchdog',a); r=s[a:b]
-          for x in ('verifiedAccountUID = membershipAccountUID','accountUIDRedactedUpdate','<redacted-account-uid>',') { _, trusted in trusted })'):
-              if x not in r: raise SystemExit(f'missing custody invariant: {x}')
-          if ') { current, _ in current })' in r or 'log("tuya_application_update", update.merging' in r: raise SystemExit('unsafe event custody remains')
+          s=Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          a=s.index("    private func receivedApplicationUpdate(")
+          b=s.index("    private func startWatchdog",a)
+          r=s[a:b]
+          for x in ("verifiedAccountUID = membershipAccountUID","accountUIDRedactedUpdate","<redacted-account-uid>",") { _, trusted in trusted })"):
+              if x not in r:
+                  raise SystemExit(f"missing custody invariant: {x}")
+          if ") { current, _ in current })" in r or "log(\"tuya_application_update\", update.merging" in r:
+              raise SystemExit("unsafe event custody remains")
           PY
+
       - name: Commit exact repair and remove helper
         shell: bash
         run: |
@@ -94,5 +117,12 @@ jobs:
           TEST=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventExportCustodySourceTests.swift
           WORKFLOW=.github/workflows/recover-capture-final-evidence-custody-8069-sol.yml
           rm "$WORKFLOW"
-          actual="$(git diff --name-only "$PRODUCT" | sort)"; expected="$(printf '%s\n%s\n' "$APP" "$TEST" | sort)"; test "$actual" = "$expected"
-          git diff --check; git add "$APP" "$WORKFLOW"; git config user.name nembra-recovery-bot; git config user.email actions@users.noreply.github.com; git commit -m 'fix(capture): close application event evidence custody'; git push origin "HEAD:${GITHUB_REF_NAME}"
+          actual="$(git diff --name-only "$PRODUCT" | sort)"
+          expected="$(printf '%s\n%s\n' "$APP" "$TEST" | sort)"
+          test "$actual" = "$expected"
+          git diff --check
+          git add "$APP" "$WORKFLOW"
+          git config user.name nembra-recovery-bot
+          git config user.email actions@users.noreply.github.com
+          git commit -m "fix(capture): close application event evidence custody"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
