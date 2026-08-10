@@ -14,12 +14,16 @@ struct TuyaFieldAppPreflightIntegrationSourceTests {
         #expect(source.contains("rawFD50BytesCaptured: false"))
     }
 
-    @Test("name RSSI and accumulated score never authorize the target")
-    func targetAuthorityIsDeterministic() throws {
+    @Test("only fresh repeated correlation authorizes the current Bluetooth target")
+    func targetAuthorityIsFreshAndDeterministic() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
-        #expect(source.contains("var likely: Bool { knownID || (fd50 && tuyaCompany) }"))
+        #expect(source.contains("var likely: Bool { freshlyCorrelated }"))
+        #expect(!source.contains("var likely: Bool { knownID"))
+        #expect(!source.contains("knownID || (fd50 && tuyaCompany)"))
+        #expect(!source.contains("fd50 && tuyaCompany ?"))
         #expect(!source.contains("score >= 600"))
+        #expect(source.contains("Historical capture UUID match (descriptive only)"))
     }
 
     @Test("official Tuya connect failure uses documented no-error handler")
@@ -36,9 +40,10 @@ struct TuyaFieldAppPreflightIntegrationSourceTests {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
         #expect(source.contains("maximumObservationPollGapNanoseconds"))
-        #expect(source.contains("observation_continuity_gap"))
-        guard let gapFailure = source.range(of: "observation_continuity_gap"),
-              let observationAdvance = source.range(of: "sessionLedger.observeCurrentConnection(for: token)") else {
+        #expect(source.contains("observation_poll_gap_exceeded"))
+        guard let watchdog = source.range(of: "private func startWatchdog(token:"),
+              let gapFailure = source.range(of: "observation_poll_gap_exceeded", range: watchdog.upperBound..<source.endIndex),
+              let observationAdvance = source.range(of: "sessionLedger.observeCurrentConnection(for: token)", range: watchdog.upperBound..<source.endIndex) else {
             Issue.record("Field source must reject a long monotonic observation gap before advancing ledger liveness.")
             return
         }
