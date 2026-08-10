@@ -58,9 +58,6 @@ jobs:
         run: |
           set -euo pipefail
           parent=4b41c9ad783f568d0d353acc9f7016a9bd0b64c2
-          # The new regression is intentionally untracked until the final clean
-          # checkpoint. Intent-to-add makes it visible to the exact scope proof
-          # without staging product bytes early.
           git add -N scripts/ci/tests/test_capture_tuya_reviewed_provenance_admission.py
           mapfile -t semantic < <(git diff --name-only "$parent" -- \
             ':(exclude).github/workflows/materialize-capture-reviewed-tuya-provenance-admission.yml' \
@@ -79,18 +76,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          parent=4b41c9ad783f568d0d353acc9f7016a9bd0b64c2
           rm .github/workflows/materialize-capture-reviewed-tuya-provenance-admission.yml
           rm scripts/ci/materialize_capture_reviewed_tuya_provenance_admission.py
           git add -A
           git diff --cached --check
-          mapfile -t final < <(git diff --cached --name-only | sort)
+          mapfile -t final < <(git diff --cached --name-only "$parent" | sort)
           expected=(
             Scripts/bootstrap_capture_tuya_sdk.sh
             scripts/ci/tests/test_capture_tuya_reviewed_provenance_admission.py
             scripts/field/install_one_time_capture.command
           )
           [[ "${final[*]}" == "${expected[*]}" ]] || {
-            printf 'Unexpected final checkpoint scope:\n%s\n' "${final[*]}" >&2
+            printf 'Unexpected effective checkpoint scope from exact product parent:\n%s\n' "${final[*]}" >&2
             exit 1
           }
           git config user.name "github-actions[bot]"
