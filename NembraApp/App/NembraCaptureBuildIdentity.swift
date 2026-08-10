@@ -5,7 +5,7 @@ struct NembraCaptureBuildIdentity: Codable, Equatable, Sendable {
     static let sourceCommitSHAInfoKey = "NembraCaptureSourceCommitSHA"
     static let tuyaDependencyLockSHA256InfoKey = "NembraCaptureTuyaDependencyLockSHA256"
     static let procedureIdentifierInfoKey = "NembraCaptureProcedureIdentifier"
-    static let fieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"
+    static let requiredProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"
 
     let buildIdentifier: String
     let sourceCommitSHA: String
@@ -14,6 +14,12 @@ struct NembraCaptureBuildIdentity: Codable, Equatable, Sendable {
 
     static var current: Self {
         from(infoDictionary: Bundle.main.infoDictionary ?? [:])
+    }
+
+    /// The app-visible/exported procedure value is the value compiled into the
+    /// built app's Info.plist, not a second presentation-only constant.
+    static var fieldProcedureIdentifier: String {
+        current.procedureIdentifier
     }
 
     static func from(infoDictionary: [String: Any]) -> Self {
@@ -26,7 +32,7 @@ struct NembraCaptureBuildIdentity: Codable, Equatable, Sendable {
     }
 
     var isAuthoritativeFieldBuild: Bool {
-        guard procedureIdentifier == Self.fieldProcedureIdentifier,
+        guard procedureIdentifier == Self.requiredProcedureIdentifier,
               sourceCommitSHA.count == 40,
               sourceCommitSHA.utf8.allSatisfy({ byte in
                   (byte >= 48 && byte <= 57) || (byte >= 97 && byte <= 102)
