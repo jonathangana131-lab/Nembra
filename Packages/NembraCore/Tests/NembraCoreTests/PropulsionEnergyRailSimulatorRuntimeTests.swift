@@ -9,12 +9,13 @@ struct PropulsionEnergyRailSimulatorRuntimeTests {
             freshnessNanoseconds: 30_000_000_000
         )
 
-        #expect(runtime.observe(
+        let admitted = runtime.observe(
             connected: true,
             watts: 356,
             modeKey: "drive",
             receivedAtUptimeNanoseconds: 1_000
-        ))
+        )
+        #expect(admitted)
 
         let projection = runtime.projection(atUptimeNanoseconds: 1_000)
         #expect(projection.currentness == .live)
@@ -30,20 +31,22 @@ struct PropulsionEnergyRailSimulatorRuntimeTests {
     func unchangedPowerDoesNotBecomeDisplayClockTelemetry() throws {
         var runtime = try PropulsionEnergyRailSimulatorRuntime()
 
-        #expect(runtime.observe(
+        let firstAdmission = runtime.observe(
             connected: true,
             watts: 356,
             modeKey: "drive",
             receivedAtUptimeNanoseconds: 1_000
-        ))
+        )
+        #expect(firstAdmission)
         let first = runtime.projection(atUptimeNanoseconds: 1_000)
 
-        #expect(runtime.observe(
+        let duplicateAdmission = runtime.observe(
             connected: true,
             watts: 356,
             modeKey: "drive",
             receivedAtUptimeNanoseconds: 2_000
-        ))
+        )
+        #expect(duplicateAdmission)
         let second = runtime.projection(atUptimeNanoseconds: 2_000)
 
         #expect(first.acceptedMeasurement == second.acceptedMeasurement)
@@ -57,18 +60,20 @@ struct PropulsionEnergyRailSimulatorRuntimeTests {
     func disconnectIsUnavailableNotMeasuredZero() throws {
         var runtime = try PropulsionEnergyRailSimulatorRuntime()
 
-        #expect(runtime.observe(
+        let admitted = runtime.observe(
             connected: true,
             watts: 356,
             modeKey: "drive",
             receivedAtUptimeNanoseconds: 1_000
-        ))
-        #expect(runtime.observe(
+        )
+        #expect(admitted)
+        let disconnectedAdmission = runtime.observe(
             connected: false,
             watts: 0,
             modeKey: "drive",
             receivedAtUptimeNanoseconds: 2_000
-        ) == false)
+        )
+        #expect(disconnectedAdmission == false)
 
         let projection = runtime.projection(atUptimeNanoseconds: 2_000)
         #expect(projection.currentness == .unavailable)
@@ -85,12 +90,13 @@ struct PropulsionEnergyRailSimulatorRuntimeTests {
             freshnessNanoseconds: 1_000
         )
 
-        #expect(runtime.observe(
+        let admitted = runtime.observe(
             connected: true,
             watts: 250,
             modeKey: "eco",
             receivedAtUptimeNanoseconds: 10_000
-        ))
+        )
+        #expect(admitted)
 
         let retained = runtime.projection(atUptimeNanoseconds: 11_001)
         #expect(retained.currentness == .retained)
@@ -107,26 +113,29 @@ struct PropulsionEnergyRailSimulatorRuntimeTests {
     func reconnectStartsNewGenerationEvenWhenWattsMatch() throws {
         var runtime = try PropulsionEnergyRailSimulatorRuntime()
 
-        #expect(runtime.observe(
+        let firstAdmission = runtime.observe(
             connected: true,
             watts: 300,
             modeKey: "drive",
             receivedAtUptimeNanoseconds: 100
-        ))
+        )
+        #expect(firstAdmission)
         let first = runtime.projection(atUptimeNanoseconds: 100)
 
-        #expect(runtime.observe(
+        let disconnectAdmission = runtime.observe(
             connected: false,
             watts: nil,
             modeKey: "drive",
             receivedAtUptimeNanoseconds: 200
-        ) == false)
-        #expect(runtime.observe(
+        )
+        #expect(disconnectAdmission == false)
+        let reconnectAdmission = runtime.observe(
             connected: true,
             watts: 300,
             modeKey: "drive",
             receivedAtUptimeNanoseconds: 50
-        ))
+        )
+        #expect(reconnectAdmission)
         let recovered = runtime.projection(atUptimeNanoseconds: 50)
 
         #expect(first.acceptedMeasurement?.continuityGeneration == 1)
@@ -141,20 +150,22 @@ struct PropulsionEnergyRailSimulatorRuntimeTests {
     func modeChangeRebuildsIdentityAndScale() throws {
         var runtime = try PropulsionEnergyRailSimulatorRuntime()
 
-        #expect(runtime.observe(
+        let ecoAdmission = runtime.observe(
             connected: true,
             watts: 200,
             modeKey: "eco",
             receivedAtUptimeNanoseconds: 1_000
-        ))
+        )
+        #expect(ecoAdmission)
         let eco = runtime.projection(atUptimeNanoseconds: 1_000)
 
-        #expect(runtime.observe(
+        let sportAdmission = runtime.observe(
             connected: true,
             watts: 200,
             modeKey: "sport",
             receivedAtUptimeNanoseconds: 500
-        ))
+        )
+        #expect(sportAdmission)
         let sport = runtime.projection(atUptimeNanoseconds: 500)
 
         #expect(eco.identity.modeKey == "eco")
@@ -170,26 +181,29 @@ struct PropulsionEnergyRailSimulatorRuntimeTests {
     func invalidPowerCannotRemainLive() throws {
         var runtime = try PropulsionEnergyRailSimulatorRuntime()
 
-        #expect(runtime.observe(
+        let firstAdmission = runtime.observe(
             connected: true,
             watts: 120,
             modeKey: "walk",
             receivedAtUptimeNanoseconds: 100
-        ))
-        #expect(runtime.observe(
+        )
+        #expect(firstAdmission)
+        let invalidAdmission = runtime.observe(
             connected: true,
             watts: -Double.infinity,
             modeKey: "walk",
             receivedAtUptimeNanoseconds: 200
-        ) == false)
+        )
+        #expect(invalidAdmission == false)
         #expect(runtime.projection(atUptimeNanoseconds: 200).currentness == .unavailable)
 
-        #expect(runtime.observe(
+        let recoveredAdmission = runtime.observe(
             connected: true,
             watts: 120,
             modeKey: "walk",
             receivedAtUptimeNanoseconds: 50
-        ))
+        )
+        #expect(recoveredAdmission)
         let recovered = runtime.projection(atUptimeNanoseconds: 50)
         #expect(recovered.currentness == .live)
         #expect(recovered.acceptedMeasurement?.continuityGeneration == 2)
