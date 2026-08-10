@@ -4,26 +4,34 @@ import Testing
 
 @Suite("Tuya application update secret sanitizer")
 struct TuyaApplicationUpdateSecretSanitizerTests {
-    @Test("top-level credential-shaped keys are redacted after normalization")
+    @Test("top-level export-promised secret keys are redacted after normalization")
     func redactsTopLevelCredentialKeys() {
         let update: [AnyHashable: Any] = [
             "local_key": "local-secret",
+            "session-key": "session-secret",
+            "app_key": "app-key-secret",
+            "appSecret": "app-secret",
+            "password": "password-secret",
+            "account_token": "account-token-secret",
             "ACCESS-TOKEN": "access-secret",
             "refresh.token": "refresh-secret",
             "authKey": "auth-secret",
             "sec_key": "sec-secret",
-            "session_key": "session-secret",
             "speed": 17,
         ]
 
         let sanitized = TuyaApplicationUpdateSecretSanitizer.sanitize(update)
 
         #expect(sanitized["local_key"] == "<redacted>")
+        #expect(sanitized["session-key"] == "<redacted>")
+        #expect(sanitized["app_key"] == "<redacted>")
+        #expect(sanitized["appSecret"] == "<redacted>")
+        #expect(sanitized["password"] == "<redacted>")
+        #expect(sanitized["account_token"] == "<redacted>")
         #expect(sanitized["ACCESS-TOKEN"] == "<redacted>")
         #expect(sanitized["refresh.token"] == "<redacted>")
         #expect(sanitized["authKey"] == "<redacted>")
         #expect(sanitized["sec_key"] == "<redacted>")
-        #expect(sanitized["session_key"] == "<redacted>")
         #expect(sanitized["speed"] == "17")
     }
 
@@ -36,6 +44,8 @@ struct TuyaApplicationUpdateSecretSanitizerTests {
                     ["local-key": "nested-secret", "value": 1],
                     ["wrapper": ["refresh_token": "refresh-secret"]],
                     ["security": ["session_key": "session-secret"]],
+                    ["credentials": ["appSecret": "app-secret", "password": "password-secret"]],
+                    ["account": ["account-token": "account-token-secret"]],
                 ],
             ] as [String: Any],
         ]
@@ -47,19 +57,22 @@ struct TuyaApplicationUpdateSecretSanitizerTests {
         #expect(!payload.contains("nested-secret"))
         #expect(!payload.contains("refresh-secret"))
         #expect(!payload.contains("session-secret"))
+        #expect(!payload.contains("app-secret"))
+        #expect(!payload.contains("password-secret"))
+        #expect(!payload.contains("account-token-secret"))
         #expect(payload.contains("73"))
     }
 
     @Test("credential-looking values under ordinary keys are preserved")
     func doesNotRedactByValueContent() {
         let update: [AnyHashable: Any] = [
-            "note": "literal local_key text is evidence, not a credential key",
+            "note": "literal local_key and appSecret text is evidence, not a credential key",
             "battery": 73,
         ]
 
         let sanitized = TuyaApplicationUpdateSecretSanitizer.sanitize(update)
 
-        #expect(sanitized["note"] == "literal local_key text is evidence, not a credential key")
+        #expect(sanitized["note"] == "literal local_key and appSecret text is evidence, not a credential key")
         #expect(sanitized["battery"] == "73")
     }
 
@@ -67,13 +80,16 @@ struct TuyaApplicationUpdateSecretSanitizerTests {
     func preservesNonEmptyUpdateWhenEveryValueIsSecretShaped() {
         let update: [AnyHashable: Any] = [
             "localKey": "one",
-            "access_token": "two",
-            "session-key": "three",
+            "session_key": "two",
+            "app-key": "three",
+            "app_secret": "four",
+            "password": "five",
+            "accountToken": "six",
         ]
 
         let sanitized = TuyaApplicationUpdateSecretSanitizer.sanitize(update)
 
-        #expect(sanitized.count == 3)
+        #expect(sanitized.count == 6)
         #expect(sanitized.values.allSatisfy { $0 == "<redacted>" })
     }
 
