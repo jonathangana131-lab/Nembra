@@ -1,0 +1,53 @@
+name: Reanchor Capture failed diagnostic error on 6c
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-failed-diagnostic-error-separation-6c-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply reviewed two-path diagnostic repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          current='6c515e8373524e12cc3202e99a7d9b4f60ec99b2'
+          donor_base='202666ed57be990978d874da4d7f086d11652eab'
+          donor='4d0d595983d6d110b19334470c28edfe0b37ab38'
+          workflow='.github/workflows/materialize-capture-failed-diagnostic-error-6c.yml'
+          source='NembraApp/App/NembraCaptureEntrypoint.swift'
+          testfile='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureFailedDiagnosticPreparationErrorSourceTests.swift'
+
+          test "$(git rev-parse HEAD^)" = "$current"
+          test "$(git diff --name-only HEAD^ HEAD)" = "$workflow"
+          git diff --binary "$donor_base" "$donor" -- "$source" "$testfile" > /tmp/diagnostic.patch
+          test -s /tmp/diagnostic.patch
+          git apply --check /tmp/diagnostic.patch
+          git apply /tmp/diagnostic.patch
+          git diff --check
+          swiftc -parse "$source"
+          swiftc -parse "$testfile"
+          grep -Fq '@Published private(set) var diagnosticExportError: String?' "$source"
+          grep -Fq 'if phase == .failed {' "$source"
+          grep -Fq 'diagnosticExportError = exportError' "$source"
+          grep -Fq 'if let diagnosticExportError = test.diagnosticExportError' "$source"
+          ! grep -Fq 'message = "Diagnostic export failed:' "$source"
+
+          rm "$workflow"
+          actual="$(git status --short | awk '{print $2}' | sort)"
+          expected="$(printf '%s\n%s\n%s\n' "$workflow" "$source" "$testfile" | sort)"
+          test "$actual" = "$expected"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(capture): keep diagnostic export errors secondary'
+          git push origin HEAD:fix/v14-capture-failed-diagnostic-error-separation-6c-sol
