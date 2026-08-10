@@ -1,94 +1,65 @@
 name: Harden Capture Offscreen Auth Retirement
-
 on:
   push:
-    branches:
-      - agent/capture-offscreen-auth-current-fd6f
-
+    branches: [agent/capture-offscreen-auth-current-fd6f]
 permissions:
   contents: write
-
 jobs:
   harden:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
           ref: agent/capture-offscreen-auth-current-fd6f
           fetch-depth: 0
-
-      - name: Guard reviewed donor and harden lifetime custody
+      - name: Apply and validate lifetime custody
         shell: bash
         run: |
           set -euo pipefail
-          reviewed='f05c4601c0aecc53899d371f0443c68062faa7fe'
-          git merge-base --is-ancestor "$reviewed" HEAD
+          git merge-base --is-ancestor f05c4601c0aecc53899d371f0443c68062faa7fe HEAD
           python3 - <<'PY'
           from pathlib import Path
-
-          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
-          source = app.read_text(encoding='utf-8')
-          old = '''            Task { @MainActor [weak self] in
+          app=Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s=app.read_text()
+          old='''            Task { @MainActor [weak self] in
                 guard let self else { return }
                 await self.invalidateInternalLifecycle(
 '''
-          new = '''            Task { @MainActor [self] in
+          new='''            Task { @MainActor [self] in
                 await self.invalidateInternalLifecycle(
 '''
-          if source.count(old) != 1:
-              raise SystemExit(f'expected one weak view-exit retirement task, found {source.count(old)}')
-          source = source.replace(old, new, 1)
-          app.write_text(source, encoding='utf-8')
-
-          test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift')
-          text = test.read_text(encoding='utf-8')
-          anchor = '        #expect(cleanup.contains("invalidateInternalLifecycle("))\n'
-          addition = '''        #expect(cleanup.contains("Task { @MainActor [self] in"))
+          assert s.count(old)==1, s.count(old)
+          app.write_text(s.replace(old,new,1))
+          test=Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift')
+          t=test.read_text()
+          anchor='        #expect(cleanup.contains("invalidateInternalLifecycle("))\n'
+          addition='''        #expect(cleanup.contains("Task { @MainActor [self] in"))
         #expect(!cleanup.contains("Task { @MainActor [weak self] in"))
 '''
-          if text.count(anchor) != 1:
-              raise SystemExit('expected one active-generation retirement assertion anchor')
-          if 'Task { @MainActor [self] in' in text:
-              raise SystemExit('strong-lifetime regression already present')
-          test.write_text(text.replace(anchor, anchor + addition, 1), encoding='utf-8')
+          assert t.count(anchor)==1
+          test.write_text(t.replace(anchor,anchor+addition,1))
           PY
-
-      - name: Verify lifetime and source contracts
-        shell: bash
-        run: |
-          set -euo pipefail
-          app='NembraApp/App/NembraCaptureEntrypoint.swift'
-          test_file='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift'
-          swiftc -parse "$app"
-          swiftc -parse "$test_file"
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift
           python3 - <<'PY'
           from pathlib import Path
-          s=Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
-          a=s.index('func abandonCorrelationForViewExit()')
-          b=s.index('var privateConfig: Bool', a)
-          cleanup=s[a:b]
-          assert 'Task { @MainActor [self] in' in cleanup
-          assert 'Task { @MainActor [weak self] in' not in cleanup
-          assert 'await self.invalidateInternalLifecycle(' in cleanup
-          assert cleanup.index('officialConnectionRequestID = UUID()') < cleanup.index('if let token = currentConnectionToken')
-          assert 'disconnectBLE' not in cleanup
-          t=Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift').read_text(encoding='utf-8')
-          assert '#expect(cleanup.contains("Task { @MainActor [self] in"))' in t
-          assert '#expect(!cleanup.contains("Task { @MainActor [weak self] in"))' in t
-          print('offscreen auth retirement lifetime custody: PASS')
+          s=Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          a=s.index('func abandonCorrelationForViewExit()'); b=s.index('var privateConfig: Bool',a); c=s[a:b]
+          assert 'Task { @MainActor [self] in' in c
+          assert 'Task { @MainActor [weak self] in' not in c
+          assert 'await self.invalidateInternalLifecycle(' in c
+          assert c.index('officialConnectionRequestID = UUID()') < c.index('if let token = currentConnectionToken')
+          assert 'disconnectBLE' not in c
           PY
           git diff --check
-
-      - name: Publish clean two-path hardened donor
+      - name: Publish clean donor
         shell: bash
         run: |
           set -euo pipefail
           rm .github/workflows/harden-capture-offscreen-auth-retirement.yml
           git add -A
           git diff --cached --check
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git commit -m 'fix(capture): retain controller through exit retirement'
           git push origin HEAD:agent/capture-offscreen-auth-current-fd6f
