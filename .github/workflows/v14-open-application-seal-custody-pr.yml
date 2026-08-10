@@ -1,0 +1,77 @@
+name: V14 open application seal custody PR
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-application-seal-custody-current-sol
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  open:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 3
+      - name: Verify product-only parent
+        run: test "$(git rev-parse HEAD^)" = "125749217e690d6e5887197e8880e499dffd742c"
+      - name: Retire opener then create PR from clean head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: repair/v14-capture-application-seal-custody-current-sol
+          BASE: integration/v14-capture-final-stationary-convergence-sol
+        run: |
+          set -euo pipefail
+          rm .github/workflows/v14-open-application-seal-custody-pr.yml
+          git config user.name "nembra-v14-integration"
+          git config user.email "actions@users.noreply.github.com"
+          git add .github/workflows/v14-open-application-seal-custody-pr.yml
+          git commit -m "chore(capture): retire seal custody PR opener"
+          git push origin "HEAD:$BRANCH"
+          clean_head="$(git rev-parse HEAD)"
+          live_base="$(git ls-remote origin "refs/heads/$BASE" | awk '{print $1}')"
+          cat > /tmp/body.md <<EOF
+          PROTOCOL_VERSION: 14
+          FEATURE: Nembra Capture / ES80 authenticated stationary physical truth
+          ROLE: accepted structured-application chronology + app-event custody hardening
+          EXACT AUTHORING PARENT: \`integration/v14-capture-final-stationary-convergence-sol@cbde7710b6b8f49f6f501b9f9bcf643047c9e804\`
+          LIVE BASE AT PROMOTION: \`integration/v14-capture-final-stationary-convergence-sol@$live_base\`
+          EXACT CLEAN HEAD: \`$clean_head\`
+          STATUS: PRODUCT REPAIR + ADVERSARIAL SOURCE CONTRACT / FINAL EXACT-HEAD XCODE REQUIRED / PHYSICAL NO-GO
+
+          ## Defects closed
+          The app already freezes an accepted export prefix, but four chronology/custody gaps remained:
+          1. \`recordApplicationUpdate\` could advance package chronology before admitted structured \`dpsUpdate\` values were copied into the app event log.
+          2. A count check alone is insufficient once the watchdog suspends into the package actor; new application admission must be closed before canonical sealing starts.
+          3. Freezing live \`events\` only after the package-seal suspension can accidentally include diagnostics delivered during that suspension.
+          4. The diagnostic log survives retries, so accepted export needs an explicit current-attempt boundary rather than inheriting older failed-attempt events.
+
+          ## Repair
+          - only package-admitted structured values enter accepted app evidence, and they are copied before the callback's next suspension;
+          - current-generation structured application events are counted explicitly;
+          - an in-flight admission counter blocks canonical seal until every submitted handler is settled;
+          - current-generation structured-event count must match the package-owned application count;
+          - a MainActor \`acceptanceSealInProgress\` latch closes new application admission synchronously before the package seal await;
+          - a new attempt event boundary is established before fresh Tuya membership/correlation evidence begins;
+          - the current-attempt event prefix is snapshotted at the seal barrier before package suspension;
+          - only after package seal succeeds is that exact pre-suspension snapshot published as the immutable accepted export prefix;
+          - fresh correlation reset reopens the latch; existing async-correlation invalidation recovery remains composed.
+
+          ## Validation
+          Current-head one-shot materializer completed SUCCESS and removed itself. It verified exact ancestry, \`git diff --check\`, Swift parser validity, admitted-value ordering, in-flight/parity fencing, latch-before-seal ordering, current-attempt boundary, pre-suspension snapshot custody, and preservation of the async-correlation invalidation consumer.
+
+          Product delta is exactly two Capture paths: \`NembraApp/App/NembraCaptureEntrypoint.swift\` and \`Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedApplicationSealCustodySourceTests.swift\`.
+
+          ## Safety / truth boundary
+          No BLE write, DP query/command, target-authority weakening, authentication shortcut, raw-FD50 fabrication, telemetry semantic, credential, scooter control, or new physical fact is introduced. Structured Tuya SDK values remain application-level evidence, not byte-exact FD50 transport.
+
+          Require fresh exact-head package/Xcode/app/runtime acceptance on the final composed flagship. **PHYSICAL STATUS: NO-GO / DO NOT SCAN / DO NOT RUN.**
+          EOF
+          gh pr create --repo "$REPO" --base "$BASE" --head "$BRANCH" --title "[Capture P0] Close accepted application seal custody" --body-file /tmp/body.md
