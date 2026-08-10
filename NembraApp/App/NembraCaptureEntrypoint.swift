@@ -234,6 +234,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var watchdog: Task<Void, Never>?
     private let sessionLedger = TuyaAuthenticatedReadOnlySessionLedger()
     private var currentConnectionToken: TuyaReadOnlyConnectionToken?
+    private var localBLESettlementToken: TuyaReadOnlyConnectionToken?
     private var membershipAccountUID: String?
     private var membershipDeviceID: String?
 #if canImport(ThingSmartHomeKit)
@@ -566,6 +567,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         watchdog?.cancel()
         watchdog = nil
         sdkLocalBLEOnline = false
+        localBLESettlementToken = nil
         phase = .authenticating
         message = "Tuya's SDK is establishing the supported secure BLE session. Nembra sends no DP query or command."
 
@@ -606,12 +608,51 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func authenticated(token: TuyaReadOnlyConnectionToken) async {
-        guard phase == .authenticating,
-              currentConnectionToken == token,
-              sdkAccountLoggedIn,
+        guard currentConnectionToken == token else {
+            log("stale_connect_success_ignored", ["generation": String(token.diagnosticGeneration)])
+            return
+        }
+        if phase == .observing {
+            log("duplicate_connect_success_ignored", ["generation": String(token.diagnosticGeneration)])
+            return
+        }
+        guard phase == .authenticating else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "Tuya transport success arrived outside the active authentication phase. The generation was retired instead of being left hidden.",
+                kind: "sdk_transport_success_outside_authentication"
+            )
+            return
+        }
+        guard localBLESettlementToken != token else {
+            log("duplicate_connect_success_settlement_ignored", ["generation": String(token.diagnosticGeneration)])
+            return
+        }
+        guard sdkAccountLoggedIn,
               sdkDeviceMembershipVerified,
-              accountIdentityLeaseIsAuthorized,
-              let driver else { return }
+              accountIdentityLeaseIsAuthorized else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "Tuya account/device source authority changed before transport success could enter local-BLE settlement.",
+                kind: "sdk_source_authority_lost_before_local_ble_settlement"
+            )
+            return
+        }
+        guard let driver else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "Official Tuya driver authority disappeared before local-BLE settlement.",
+                kind: "sdk_driver_authority_lost_before_local_ble_settlement"
+            )
+            return
+        }
+
+        localBLESettlementToken = token
+        defer {
+            if localBLESettlementToken == token {
+                localBLESettlementToken = nil
+            }
+        }
 
         let acquisitionStarted = DispatchTime.now().uptimeNanoseconds
         while currentConnectionToken == token, phase == .authenticating {
@@ -645,7 +686,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     ])
                     startWatchdog(token: token)
                 } catch {
-                    failLocally("Authenticated-session chronology rejected the SDK success callback: \(error.localizedDescription)", "session_auth_callback_rejected")
+                    await invalidateSourceAuthority(
+                        token: token,
+                        message: "Authenticated-session chronology rejected the SDK success callback: \(error.localizedDescription)",
+                        kind: "session_auth_callback_rejected"
+                    )
                 }
                 return
 
@@ -678,6 +723,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
         try? await sessionLedger.markAuthenticationFailed(for: token)
         currentConnectionToken = nil
+        localBLESettlementToken = nil
         sdkLocalBLEOnline = false
         driver = nil
         await refreshLedgerSnapshot()
@@ -872,6 +918,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         guard currentConnectionToken == token else { return }
         try? await sessionLedger.endConnection(for: token)
         currentConnectionToken = nil
+        localBLESettlementToken = nil
         sdkLocalBLEOnline = false
         driver = nil
         await refreshLedgerSnapshot()
@@ -888,6 +935,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         guard currentConnectionToken == token else { return }
         try? await sessionLedger.markSourceAuthorityInvalidated(for: token)
         currentConnectionToken = nil
+        localBLESettlementToken = nil
         sdkLocalBLEOnline = false
         driver = nil
         await refreshLedgerSnapshot()
@@ -904,6 +952,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         guard currentConnectionToken == token else { return }
         try? await sessionLedger.markObservationContinuityInvalidated(for: token)
         currentConnectionToken = nil
+        localBLESettlementToken = nil
         sdkLocalBLEOnline = false
         driver = nil
         await refreshLedgerSnapshot()
@@ -964,6 +1013,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         watchdog?.cancel()
         watchdog = nil
         driver = nil
+        localBLESettlementToken = nil
         byID.removeAll()
         candidates.removeAll()
         baseline.removeAll()
