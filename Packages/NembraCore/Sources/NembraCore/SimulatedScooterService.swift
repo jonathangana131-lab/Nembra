@@ -50,13 +50,51 @@ public struct SimulatorPowerObservation: Equatable, Sendable {
     }
 }
 
-/// Source-owned currentness for Simulator propulsion power. A disconnect can
-/// retain the last legitimate observation for explicit last-known presentation,
-/// but reconnect alone never promotes that retained value back to `.live`.
-public enum SimulatorPowerEvidenceAvailability: Equatable, Sendable {
-    case unavailable
-    case retained(SimulatorPowerObservation)
-    case live(SimulatorPowerObservation)
+/// Source-owned currentness for Simulator propulsion power. The positive states
+/// are source-file sealed just like the receipt itself: neighboring app-module code
+/// may inspect currentness and receipt identity, but cannot relabel retained evidence
+/// as live. The public unavailable value is intentionally constructible because it
+/// can only remove authority.
+public struct SimulatorPowerEvidenceAvailability: Equatable, Sendable {
+    public enum Currentness: Equatable, Sendable {
+        case unavailable
+        case retained
+        case live
+    }
+
+    public let currentness: Currentness
+    public let observation: SimulatorPowerObservation?
+
+    public static let unavailable = SimulatorPowerEvidenceAvailability(
+        currentness: .unavailable,
+        observation: nil
+    )
+
+    private init(
+        currentness: Currentness,
+        observation: SimulatorPowerObservation?
+    ) {
+        self.currentness = currentness
+        self.observation = observation
+    }
+
+    fileprivate static func retained(
+        _ observation: SimulatorPowerObservation
+    ) -> SimulatorPowerEvidenceAvailability {
+        SimulatorPowerEvidenceAvailability(
+            currentness: .retained,
+            observation: observation
+        )
+    }
+
+    fileprivate static func live(
+        _ observation: SimulatorPowerObservation
+    ) -> SimulatorPowerEvidenceAvailability {
+        SimulatorPowerEvidenceAvailability(
+            currentness: .live,
+            observation: observation
+        )
+    }
 }
 
 public enum ScooterSimulationScenario: String, CaseIterable, Sendable {
