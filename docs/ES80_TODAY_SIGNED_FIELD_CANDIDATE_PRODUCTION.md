@@ -87,10 +87,12 @@ Do not acquire the raw identifier through ordinary shell redirection. Even with 
 The accepted helper identity is fixed below. These helper bytes are operator-custody tooling only; they do not alter the frozen `a0f4…` app subject and do not authorize signing acceptance or Bluetooth activity.
 
 Accepted current helper provenance:
-- merged helper commit: `af75ffa6dc4409a21822295428e4eeb922ac3d16`;
-- helper blob: `50b12675a57fd2f570d833cfcdbfd7be59f52ca4`;
-- exact tested predecessor head carrying the same helper blob: `91dda8ac05e937e5615312a487f7d78926b74949`;
-- focused `Capture TODAY Field Candidate Preflight QA`: run `31349898562`, job `93338620824` — terminal success.
+- merged helper commit: `b479d851a54437ef394a4901c69db2d829d280e4`;
+- helper blob: `62b719e8d9afb34da6d35d696e80edf926442696`;
+- exact tested predecessor head carrying the same helper blob: `90d3578a1d39a1d019000583a712306b67786acf`;
+- focused `Capture TODAY Field Candidate Preflight QA`: run `31350094260`, job `93339137927` — terminal success.
+
+The current helper keeps failure cleanup bound to the exact still-open inode. If a post-create failure occurs after private bytes may have been written, it truncates that inode to zero, fsyncs it, and proves zero length; it does **not** unlink a mutable pathname entry. A zero-length mode-`0600` spent subject may therefore remain after a failed attempt. Treat that pathname as occupied and choose a fresh filename/path for any retry.
 
 ```bash
 umask 077
@@ -100,8 +102,8 @@ PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"
 UDID_FILE="$PRIVATE_DIR/es80-intended-device.udid"
 TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
 
-PRIVATE_INPUT_HELPER_COMMIT='af75ffa6dc4409a21822295428e4eeb922ac3d16'
-PRIVATE_INPUT_HELPER_BLOB='50b12675a57fd2f570d833cfcdbfd7be59f52ca4'
+PRIVATE_INPUT_HELPER_COMMIT='b479d851a54437ef394a4901c69db2d829d280e4'
+PRIVATE_INPUT_HELPER_BLOB='62b719e8d9afb34da6d35d696e80edf926442696'
 PRIVATE_INPUT_HELPER_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-private-input.XXXXXX)"
 PRIVATE_INPUT_HELPER="$PRIVATE_INPUT_HELPER_DIR/es80_today_private_device_input.py"
 
@@ -119,7 +121,7 @@ test -f "$UDID_FILE" && test ! -L "$UDID_FILE"
 test "$(/usr/bin/stat -f '%Lp' "$UDID_FILE")" = '600'
 ```
 
-If the helper reports `NOT_READY`, stop before signing and preserve the exact blocker. Do not fall back to `printf >`, `tee`, `echo`, `noclobber`, or another pathname-based secret write. Keep the resulting file private; do not commit it and do not copy it into the retained candidate directory. If the chosen final path already exists, preserve it and choose a fresh filename/path rather than deleting or overwriting it just to satisfy the helper.
+If the helper reports `NOT_READY`, stop before signing and preserve the exact blocker. Do not fall back to `printf >`, `tee`, `echo`, `noclobber`, or another pathname-based secret write. Keep the resulting file private; do not commit it and do not copy it into the retained candidate directory. If the chosen final path already exists—including a zero-length spent subject from an earlier failed attempt—preserve it and choose a fresh filename/path rather than deleting or overwriting it just to satisfy the helper.
 
 ## 3. Set the signing inputs without changing the source subject
 
