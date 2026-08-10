@@ -1,0 +1,63 @@
+name: Diagnose Capture package f0
+
+on:
+  push:
+    branches:
+      - diagnostic/v14-capture-package-f0-sol
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: f0fb83da5f57f9e92d29cf6ab444dc856e74c3a4
+      - name: Run Capture package and surface exact failures
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/nembra-capture-package.log"
+          set +e
+          swift test --package-path Packages/NembraBluetoothCapture >"$log" 2>&1
+          status=$?
+          set -e
+          if [[ $status -eq 0 ]]; then
+            echo 'Capture package is green at exact f0.'
+            exit 0
+          fi
+          python3 - "$log" "$status" <<'PY'
+          import pathlib, re, sys
+          path = pathlib.Path(sys.argv[1])
+          status = int(sys.argv[2])
+          lines = path.read_text(errors='replace').splitlines()
+          patterns = [
+              r'\berror:', r'Expectation failed', r'Issue recorded', r'failed after',
+              r'\bfailed\b', r'✘', r'\bTest .* failed', r'\bSuite .* failed'
+          ]
+          selected = []
+          for idx, line in enumerate(lines):
+              if any(re.search(p, line, re.I) for p in patterns):
+                  start = max(0, idx - 2)
+                  end = min(len(lines), idx + 3)
+                  selected.append(' | '.join(x.strip() for x in lines[start:end] if x.strip()))
+          seen = set()
+          emitted = 0
+          for item in selected:
+              if not item or item in seen:
+                  continue
+              seen.add(item)
+              safe = item.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::error title=Capture package failure::{safe[:3000]}')
+              emitted += 1
+              if emitted >= 30:
+                  break
+          if emitted == 0:
+              tail = ' | '.join(x.strip() for x in lines[-100:] if x.strip())
+              safe = tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::error title=Capture package failure tail::{safe[:3000]}')
+          raise SystemExit(status)
+          PY
