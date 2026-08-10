@@ -32,6 +32,8 @@ struct TuyaApplicationSecretValueCustodySourceTests {
                 || sanitizer.contains("secretValues")
         )
         #expect(!callback.contains("String(describing: Self.redactApplicationSecrets(value))"))
+        #expect(sanitizer.contains("if $0.count != $1.count { return $0.count > $1.count }"))
+        #expect(sanitizer.contains("return $0 < $1"))
     }
 
     @Test("credential-shaped keys remain redacted in addition to exact-value custody")

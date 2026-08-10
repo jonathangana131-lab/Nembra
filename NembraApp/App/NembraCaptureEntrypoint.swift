@@ -2388,6 +2388,10 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
 #if canImport(NembraTuyaPrivateConfig)
         [NembraTuyaPrivateIdentity.appKey, NembraTuyaPrivateIdentity.appSecret]
             .filter { !$0.isEmpty }
+            .sorted {
+                if $0.count != $1.count { return $0.count > $1.count }
+                return $0 < $1
+            }
 #else
         []
 #endif
