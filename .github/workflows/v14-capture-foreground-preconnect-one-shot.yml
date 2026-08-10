@@ -1,0 +1,81 @@
+name: V14 Capture Foreground Preconnect One Shot
+
+on:
+  push:
+    branches:
+      - integration/v14-capture-foreground-preconnect-sol
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    container: swift:6.2
+    steps:
+      - name: Install Git and patch helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y git python3
+
+      - uses: actions/checkout@v6
+        with:
+          ref: integration/v14-capture-foreground-preconnect-sol
+          fetch-depth: 0
+
+      - name: Apply guarded repair
+        shell: bash
+        run: |
+          set +e
+          python3 Scripts/v14_capture_foreground_preconnect_patch.py >/tmp/nembra-patch.log 2>&1
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            msg="$(tail -n 20 /tmp/nembra-patch.log | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g')"
+            echo "::error file=Scripts/v14_capture_foreground_preconnect_patch.py,title=Foreground pre-connect patch failed::$msg"
+            cat /tmp/nembra-patch.log >&2
+            exit "$status"
+          fi
+
+      - name: Check repaired diff hygiene
+        shell: bash
+        run: git diff --check
+
+      - name: Parse repaired app source
+        shell: bash
+        run: |
+          set +e
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift >/tmp/nembra-parse.log 2>&1
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            msg="$(tail -n 30 /tmp/nembra-parse.log | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g')"
+            echo "::error file=NembraApp/App/NembraCaptureEntrypoint.swift,title=Repaired app parse failed::$msg"
+            cat /tmp/nembra-parse.log >&2
+            exit "$status"
+          fi
+
+      - name: Run Capture package tests warnings-as-errors
+        shell: bash
+        run: |
+          set +e
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors >/tmp/nembra-tests.log 2>&1
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            msg="$(tail -n 40 /tmp/nembra-tests.log | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g')"
+            echo "::error file=Packages/NembraBluetoothCapture,title=Capture package validation failed::$msg"
+            cat /tmp/nembra-tests.log >&2
+            exit "$status"
+          fi
+
+      - name: Retire helper and checkpoint product repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/v14-capture-foreground-preconnect-one-shot.yml
+          rm Scripts/v14_capture_foreground_preconnect_patch.py
+          git config user.name 'nembra-v14-bot'
+          git config user.email 'nembra-v14-bot@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaForegroundAndPreconnectAuthoritySourceTests.swift .github/workflows/v14-capture-foreground-preconnect-one-shot.yml Scripts/v14_capture_foreground_preconnect_patch.py
+          git commit -m 'fix(capture): seal foreground and pre-connect authority'
+          git push origin HEAD:integration/v14-capture-foreground-preconnect-sol
