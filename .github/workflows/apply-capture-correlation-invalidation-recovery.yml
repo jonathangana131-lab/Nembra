@@ -1,0 +1,127 @@
+name: Apply Capture async invalidation recovery
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'fix/v14-capture-correlation-async-invalidation-recovery-sol'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Apply fail-closed lifecycle consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = app.read_text(encoding='utf-8')
+
+          old = '''    var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }\n\n    var correlationWindowLabel: String {'''
+          new = '''    var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }\n\n    func consumeCorrelationInvalidationIfNeeded() {\n        guard let packageProgress = correlationSession?.progress,\n              packageProgress.isSeriesInvalidated else { return }\n\n        failLocally(\n            "Bluetooth correlation scan authority ended asynchronously. Restart the complete OFF1→ON1→OFF2→ON2 series from OFF1; prior windows cannot be reused.",\n            "target_correlation_async_invalidated"\n        )\n    }\n\n    var correlationWindowLabel: String {'''
+          if source.count(old) != 1:
+              raise SystemExit(f'controller insertion match count={source.count(old)}')
+          source = source.replace(old, new, 1)
+
+          old = '''            .background(Color.black.ignoresSafeArea())\n        }\n        .navigationTitle("Secure Link")'''
+          new = '''            .background(Color.black.ignoresSafeArea())\n            .onChange(of: test.correlationProgress?.isSeriesInvalidated) { _, isInvalidated in\n                guard isInvalidated == true else { return }\n                test.consumeCorrelationInvalidationIfNeeded()\n            }\n        }\n        .navigationTitle("Secure Link")'''
+          if source.count(old) != 1:
+              raise SystemExit(f'view insertion match count={source.count(old)}')
+          source = source.replace(old, new, 1)
+          app.write_text(source, encoding='utf-8')
+
+          test = Path('NembraApp/Tests/NembraCaptureCorrelationInvalidationSourceTests.swift')
+          test.write_text(r'''import Foundation
+import Testing
+@testable import NembraBluetoothCapture
+
+@Suite("Capture correlation asynchronous invalidation presentation")
+struct TuyaCorrelationAsyncInvalidationPresentationSourceTests {
+    @Test("asynchronous package invalidation cannot leave the field flow trapped in a scan phase")
+    func invalidatedCorrelationSeriesHasAnAppRecoveryConsumer() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let controller = try section(
+            in: app,
+            from: "private final class SecureLinkController",
+            to: "private protocol OfficialTuyaDriver"
+        )
+
+        #expect(controller.contains("func consumeCorrelationInvalidationIfNeeded()"))
+        #expect(controller.contains("packageProgress.isSeriesInvalidated"))
+        #expect(controller.contains("target_correlation_async_invalidated"))
+        #expect(controller.contains("failLocally("))
+        #expect(controller.contains("Restart the complete OFF1→ON1→OFF2→ON2 series from OFF1"))
+    }
+
+    @Test("existing periodic presentation surfaces the terminal without a second polling authority")
+    func timelineRefreshDrivesTerminalStateTransition() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let view = try section(in: app, from: "private struct SecureLinkView", to: "private struct SecureTransfer")
+
+        #expect(view.contains("TimelineView(.periodic"))
+        #expect(view.contains("onChange(of: test.correlationProgress?.isSeriesInvalidated)"))
+        #expect(view.contains("test.consumeCorrelationInvalidationIfNeeded()"))
+        #expect(!view.contains("Task.sleep"))
+        #expect(!view.contains("Timer.publish"))
+    }
+
+    @Test("failed phase exposes a clean OFF1 restart action")
+    func failedPhaseReturnsOperatorToFreshSeriesStart() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let discovery = try section(in: app, from: "private var discoveryCard", to: "private func authenticationCard")
+
+        #expect(discovery.contains("case .idle, .failed:"))
+        #expect(discovery.contains("Button(\"Start OFF1 correlation\") { test.startBaseline() }"))
+    }
+
+    private func section(in source: String, from start: String, to end: String) throws -> Substring {
+        guard let startRange = source.range(of: start),
+              let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+            Issue.record("Expected source section missing: \(start) ... \(end)")
+            throw SourceContractError.sectionMissing
+        }
+        return source[startRange.lowerBound..<endRange.lowerBound]
+    }
+
+    private func readRepositoryFile(_ relativePath: String) throws -> String {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+    }
+
+    private enum SourceContractError: Error {
+        case sectionMissing
+    }
+}
+''', encoding='utf-8')
+
+          repaired = app.read_text(encoding='utf-8')
+          assert repaired.count('target_correlation_async_invalidated') == 1
+          assert repaired.count('onChange(of: test.correlationProgress?.isSeriesInvalidated)') == 1
+          assert 'sealedAcceptedEventPrefix' in repaired
+          PY
+
+          rm -- .github/workflows/apply-capture-correlation-invalidation-recovery.yml
+          git diff --check
+          git config user.name 'nembra-go-bot'
+          git config user.email 'nembra-go-bot@users.noreply.github.com'
+          git add -A
+          git diff --cached --exit-code && { echo 'No repair delta'; exit 1; }
+          git commit -m 'fix(capture): recover async correlation invalidation'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
