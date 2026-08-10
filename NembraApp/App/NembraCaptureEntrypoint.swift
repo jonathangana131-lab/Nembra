@@ -377,6 +377,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     let tuyaUUID: String
 
     private let buildIdentity = NembraCaptureBuildIdentity.current
+    private let controllerOwnershipID = UUID()
     private var byID: [UUID: Candidate] = [:]
     private var correlationSession: PassiveBluetoothPowerCycleObservationSession?
     private var correlationProvenance: CorrelationProvenance?
@@ -427,6 +428,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }
     var failedAttemptCanRestartFromOFF1: Bool {
         phase == .failed && currentConnectionToken == nil && localBLESettlementToken == nil && driver == nil
+            && !OfficialTuyaFactory.packageCorrelationRequiresRelaunch
     }
     var canRestartFromFreshOFF1: Bool { failedAttemptCanRestartFromOFF1 }
 
@@ -535,6 +537,20 @@ private final class SecureLinkController: NSObject, ObservableObject {
             failLocally("SDK account/device authority changed before Bluetooth correlation began.", "sdk_authority_changed_before_scan")
             return
         }
+        guard !OfficialTuyaFactory.packageCorrelationRequiresRelaunch else {
+            failLocally(
+                "Tuya BLE ownership was already attempted in this app process. Relaunch Capture before starting a new OFF1→ON1→OFF2→ON2 correlation series.",
+                "package_correlation_requires_relaunch"
+            )
+            return
+        }
+        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {
+            failLocally(
+                "Tuya still reports a current local-BLE session for this scooter. Power the scooter OFF and relaunch Capture before package-owned correlation.",
+                "existing_sdk_local_ble_ownership_blocks_scan"
+            )
+            return
+        }
         guard currentConnectionToken == nil else {
             if let token = currentConnectionToken {
                 Task { @MainActor [weak self] in
@@ -549,6 +565,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
 
         resetDiscoverySessionOnly()
+        guard OfficialTuyaFactory.claimPackageCorrelation(ownerID: controllerOwnershipID) else {
+            failLocally(
+                "Another Capture controller currently owns package Bluetooth correlation, or Tuya BLE ownership already began in this process. Relaunch Capture before retrying OFF1.",
+                "package_correlation_process_claim_rejected"
+            )
+            return
+        }
         do {
             correlationSession = try PassiveBluetoothPowerCycleObservationSession(minimumWindowDuration: 10)
             log("target_correlation_series_created", [
@@ -567,6 +590,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func startCurrentCorrelationWindow() {
+        guard OfficialTuyaFactory.ownsPackageCorrelation(ownerID: controllerOwnershipID) else {
+            correlationSession?.abandonCurrentWindow()
+            correlationSession = nil
+            failLocally(
+                "Process-wide Bluetooth correlation ownership was lost. Relaunch Capture before another OFF1 series.",
+                "package_correlation_process_ownership_lost"
+            )
+            return
+        }
         guard sdkAccountLoggedIn,
               sdkDeviceMembershipVerified,
               accountIdentityLeaseIsAuthorized else {
@@ -601,6 +633,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
     func finishCorrelationWindow() {
         guard phase == .baseline || phase == .scanning,
               let session = correlationSession else { return }
+        guard OfficialTuyaFactory.ownsPackageCorrelation(ownerID: controllerOwnershipID) else {
+            session.abandonCurrentWindow()
+            correlationSession = nil
+            failLocally(
+                "Process-wide Bluetooth correlation ownership changed before this window could be sealed. Relaunch Capture before another OFF1 series.",
+                "package_correlation_process_ownership_lost"
+            )
+            return
+        }
         guard sdkAccountLoggedIn,
               sdkDeviceMembershipVerified,
               accountIdentityLeaseIsAuthorized else {
@@ -649,6 +690,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         targetCorrelationMethod = correlationProvenance?.method
         targetCorrelationWindowCount = result.windows.count
         targetCorrelationOperatorConfirmed = false
+        OfficialTuyaFactory.releasePackageCorrelation(ownerID: controllerOwnershipID)
         switch result.correlation.disposition {
         case let .singleRepeatableCandidate(id):
             let historicalCaptureID = id == Self.historicalCapturePeripheral
@@ -742,6 +784,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     func invalidateSDKMembership() {
         let token = currentConnectionToken
+        OfficialTuyaFactory.releasePackageCorrelation(ownerID: controllerOwnershipID)
         membershipRequestID = UUID()
         membershipBusy = false
         sdkDeviceMembershipVerified = false
@@ -904,6 +947,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
               sdkAccountLoggedIn,
               accountIdentityLeaseIsAuthorized else {
             failLocally("Confirmed build or Tuya account/device authority changed before connection start.", "sdk_authority_changed")
+            return
+        }
+        guard OfficialTuyaFactory.beginLocalBLEOwnershipAttempt() else {
+            failLocally(
+                "Package-owned Bluetooth correlation is active elsewhere in this app process. Tuya BLE ownership will not start. Relaunch Capture and run one correlation/authentication path at a time.",
+                "package_correlation_blocks_tuya_ble_ownership"
+            )
             return
         }
         guard let newDriver = OfficialTuyaFactory.make() else {
@@ -1702,6 +1752,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func resetDiscoverySessionOnly() {
+        OfficialTuyaFactory.releasePackageCorrelation(ownerID: controllerOwnershipID)
         acceptanceCutIsClosed = false
         sealedAcceptedEventPrefix = nil
         sealedAcceptedExport = nil
@@ -1728,6 +1779,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func failLocally(_ text: String, _ kind: String) {
+        OfficialTuyaFactory.releasePackageCorrelation(ownerID: controllerOwnershipID)
         if phase == .baseline || phase == .powerOn || phase == .scanning || phase == .correlated {
             correlationSession?.abandonCurrentWindow()
             correlationSession = nil
@@ -1763,6 +1815,41 @@ private protocol OfficialTuyaDriver: AnyObject {
 @MainActor
 private enum OfficialTuyaFactory {
     private static var didBootstrap = false
+    private static var packageCorrelationOwnerID: UUID?
+    private static var didAttemptLocalBLEOwnership = false
+
+    static var packageCorrelationRequiresRelaunch: Bool { didAttemptLocalBLEOwnership }
+
+    static func claimPackageCorrelation(ownerID: UUID) -> Bool {
+        guard !didAttemptLocalBLEOwnership else { return false }
+        guard packageCorrelationOwnerID == nil || packageCorrelationOwnerID == ownerID else { return false }
+        packageCorrelationOwnerID = ownerID
+        return true
+    }
+
+    static func ownsPackageCorrelation(ownerID: UUID) -> Bool {
+        packageCorrelationOwnerID == ownerID
+    }
+
+    static func releasePackageCorrelation(ownerID: UUID) {
+        guard packageCorrelationOwnerID == ownerID else { return }
+        packageCorrelationOwnerID = nil
+    }
+
+    static func beginLocalBLEOwnershipAttempt() -> Bool {
+        guard packageCorrelationOwnerID == nil else { return false }
+        didAttemptLocalBLEOwnership = true
+        return true
+    }
+
+    static func isLocallyConnected(uuid: String) -> Bool {
+#if canImport(ThingSmartHomeKit) && canImport(NembraTuyaPrivateConfig)
+        guard bootstrap(), !uuid.isEmpty else { return false }
+        return ThingSmartBLEManager.sharedInstance().deviceStatue(withUUID: uuid)
+#else
+        return false
+#endif
+    }
 
     static var configured: Bool {
 #if canImport(ThingSmartHomeKit) && canImport(NembraTuyaPrivateConfig)
