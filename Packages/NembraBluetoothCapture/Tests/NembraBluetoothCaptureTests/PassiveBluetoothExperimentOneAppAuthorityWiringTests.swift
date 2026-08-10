@@ -53,10 +53,42 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
 
         #expect(!source.contains("makeResearchAuthorizedES80ForCurrentApplication()"))
         #expect(!source.contains("PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()"))
+        #expect(!source.contains("verifiedAdmission:"))
         #expect(!source.contains("ES80ExperimentOneFieldNoGoView"))
         #expect(!source.contains("disconnectedDeclarationAccepted"))
         #expect(!source.contains("selectedChargerState"))
         #expect(!source.contains("UserDefaults"))
+    }
+
+    @Test("package correlation retires before official Tuya BLE ownership and failed restart stays fenced")
+    func processOwnershipAndRestartRemainFailClosed() throws {
+        let source = try Self.repositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+
+        let lease = try #require(source.range(of: "OfficialTuyaFactory.acquirePackageCorrelationLease()"))
+        let correlation = try #require(
+            source.range(of: "PassiveBluetoothPowerCycleObservationSession(minimumWindowDuration: 10)")
+        )
+        let officialSDKOwnership = try #require(source.range(of: "OfficialTuyaFactory.make()"))
+        #expect(lease.lowerBound < correlation.lowerBound)
+        #expect(correlation.lowerBound < officialSDKOwnership.lowerBound)
+
+        #expect(source.contains("private var processCorrelationLease: UUID?"))
+        #expect(source.contains("private var currentConnectionToken: TuyaReadOnlyConnectionToken?"))
+        #expect(source.contains("private var localBLESettlementToken: TuyaReadOnlyConnectionToken?"))
+        #expect(source.contains("func abandonCorrelationForViewExit()"))
+        #expect(source.contains("private func releasePackageCorrelationLease()"))
+        #expect(source.contains("OfficialTuyaFactory.releasePackageCorrelationLease(processCorrelationLease)"))
+
+        let restart = String(try Self.section(
+            in: source,
+            from: "    var failedAttemptCanRestartFromOFF1: Bool {",
+            to: "    var canRestartFromFreshOFF1: Bool"
+        ))
+        #expect(restart.contains("phase == .failed"))
+        #expect(restart.contains("currentConnectionToken == nil"))
+        #expect(restart.contains("localBLESettlementToken == nil"))
+        #expect(restart.contains("driver == nil"))
+        #expect(restart.contains("OfficialTuyaFactory.packageCorrelationMayStart"))
     }
 
     @Test("field build identity is recipe and exact-source bound without runtime hashing authority")
