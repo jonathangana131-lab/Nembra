@@ -22,7 +22,7 @@ public enum ScooterSimulationScenario: String, CaseIterable, Sendable {
     }
 }
 
-public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
+public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider, SimulatorPowerEvidenceProvider {
     public nonisolated let profile: VehicleProfile
 
     /// Synthetic QA values that exercise all three limiter slots without
@@ -190,13 +190,18 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
     private var continuations: [UUID: AsyncStream<VehicleState>.Continuation] = [:]
     private var speedTelemetryContinuations: [UUID: AsyncStream<SpeedTelemetrySample>.Continuation] = [:]
     private var speedEvidenceContinuations: [UUID: AsyncStream<SpeedEvidenceAvailability>.Continuation] = [:]
+    private var simulatorPowerEvidenceContinuations: [UUID: AsyncStream<SimulatorPowerEvidenceAvailability>.Continuation] = [:]
     private var speedEvidenceTruth: SpeedEvidenceLiveTruth
+    private var simulatorPowerEvidenceAvailability: SimulatorPowerEvidenceAvailability
+    private var lastSimulatorPowerObservation: SimulatorPowerObservation?
 
     /// Tracks the last raw packet-arrival timestamp only to guarantee strict
     /// monotonic ordering if two simulated packets are emitted in the same tick.
     /// Ride `elapsedSeconds` is distance/time evidence and must not be used as a
     /// fake packet-arrival clock.
     private var lastTelemetryUptimeNanoseconds: UInt64
+    private var lastSimulatorPowerUptimeNanoseconds: UInt64
+    private var simulatorPowerReceiptSequenceNumber: UInt64
     private var commandInFlight = false
     private var connectionGeneration: UInt64
     private let commandLatencyNanoseconds: UInt64
@@ -209,14 +214,23 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
     ) {
         let resolvedState = initialState ?? Self.defaultInitialState()
         let initialEvidence = Self.initialSpeedEvidence(for: resolvedState)
+        let initialPowerEvidence = Self.initialSimulatorPowerEvidence(
+            for: resolvedState,
+            profile: profile,
+            continuityGeneration: initialEvidence.connectionGeneration
+        )
 
         self.profile = profile
         self.commandLatencyNanoseconds = commandLatencyNanoseconds
         self.commandAcknowledgementGate = nil
         self.state = resolvedState
         self.speedEvidenceTruth = initialEvidence.truth
+        self.simulatorPowerEvidenceAvailability = initialPowerEvidence.availability
+        self.lastSimulatorPowerObservation = initialPowerEvidence.lastObservation
         self.connectionGeneration = initialEvidence.connectionGeneration
         self.lastTelemetryUptimeNanoseconds = initialEvidence.lastTelemetryUptimeNanoseconds
+        self.lastSimulatorPowerUptimeNanoseconds = initialPowerEvidence.lastUptimeNanoseconds
+        self.simulatorPowerReceiptSequenceNumber = initialPowerEvidence.receiptSequenceNumber
     }
 
     /// Test-only timing injection used to prove command ordering without relying
@@ -229,14 +243,23 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
     ) {
         let resolvedState = initialState ?? Self.defaultInitialState()
         let initialEvidence = Self.initialSpeedEvidence(for: resolvedState)
+        let initialPowerEvidence = Self.initialSimulatorPowerEvidence(
+            for: resolvedState,
+            profile: profile,
+            continuityGeneration: initialEvidence.connectionGeneration
+        )
 
         self.profile = profile
         self.commandLatencyNanoseconds = 0
         self.commandAcknowledgementGate = commandAcknowledgementGate
         self.state = resolvedState
         self.speedEvidenceTruth = initialEvidence.truth
+        self.simulatorPowerEvidenceAvailability = initialPowerEvidence.availability
+        self.lastSimulatorPowerObservation = initialPowerEvidence.lastObservation
         self.connectionGeneration = initialEvidence.connectionGeneration
         self.lastTelemetryUptimeNanoseconds = initialEvidence.lastTelemetryUptimeNanoseconds
+        self.lastSimulatorPowerUptimeNanoseconds = initialPowerEvidence.lastUptimeNanoseconds
+        self.simulatorPowerReceiptSequenceNumber = initialPowerEvidence.receiptSequenceNumber
     }
 
     private static func defaultInitialState() -> VehicleState {
@@ -299,6 +322,37 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
         return (truth, 1, lastUptime)
     }
 
+    private static func initialSimulatorPowerEvidence(
+        for state: VehicleState,
+        profile: VehicleProfile,
+        continuityGeneration: UInt64
+    ) -> (
+        availability: SimulatorPowerEvidenceAvailability,
+        lastObservation: SimulatorPowerObservation?,
+        receiptSequenceNumber: UInt64,
+        lastUptimeNanoseconds: UInt64
+    ) {
+        guard profile == .simulatorQA,
+              state.connection == .connected,
+              let watts = state.powerWatts,
+              watts >= 0 else {
+            return (.unavailable, nil, 0, 0)
+        }
+
+        let uptime = DispatchTime.now().uptimeNanoseconds
+        let generation = max(UInt64(1), continuityGeneration)
+        guard let observation = try? SimulatorPowerObservation(
+            watts: Double(watts),
+            receiptSequenceNumber: 1,
+            receivedAtUptimeNanoseconds: uptime,
+            continuityGeneration: generation
+        ) else {
+            return (.unavailable, nil, 0, 0)
+        }
+
+        return (.live(observation), observation, 1, uptime)
+    }
+
     public func stateUpdates() -> AsyncStream<VehicleState> {
         let id = UUID()
         let current = state
@@ -341,6 +395,26 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
         }
     }
 
+    /// Simulator propulsion availability follows the same state-stream rules as
+    /// speed currentness, but it owns independent receipt identity. A genuine
+    /// equal-valued `simulateRide` observation therefore advances this stream;
+    /// unrelated vehicle publications do not.
+    public func simulatorPowerEvidenceUpdates() -> AsyncStream<SimulatorPowerEvidenceAvailability> {
+        let id = UUID()
+        let current = simulatorPowerEvidenceAvailability
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            simulatorPowerEvidenceContinuations[id] = continuation
+            continuation.yield(current)
+            continuation.onTermination = { [weak self] _ in
+                Task { await self?.removeSimulatorPowerEvidenceContinuation(id) }
+            }
+        }
+    }
+
+    public func simulatorPowerEvidenceSnapshot() -> SimulatorPowerEvidenceAvailability {
+        simulatorPowerEvidenceAvailability
+    }
+
     public func snapshot() -> VehicleState { state }
 
     public func connect() async {
@@ -349,6 +423,7 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
             publish()
             return
         }
+        demoteSimulatorPowerEvidenceForConnectionLoss()
         connectionGeneration &+= 1
         let attemptGeneration = connectionGeneration
         state.connectionIssue = nil
@@ -371,12 +446,16 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
         if let speed = state.speedKilometersPerHour {
             recordSyntheticSpeedObservation(speed, publishRawTelemetry: true)
         }
+        // Connection establishment and fixture hydration are transport/app state,
+        // not a propulsion-power observation. Cached watts remain retained or
+        // unavailable until `simulateRide` produces a source-owned observation.
         state.lastUpdated = .now
         publish()
     }
 
     public func disconnect() async {
         demoteSpeedEvidenceForConnectionLoss()
+        demoteSimulatorPowerEvidenceForConnectionLoss()
         connectionGeneration &+= 1
         state.connectionIssue = nil
         state.connection = .disconnected
@@ -424,6 +503,8 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
         defer { finishCommand() }
         try await acknowledgeLatency(expectedConnectionGeneration: generation)
         state.rideMode = mode
+        // A mode command changes aggregate state only. It cannot mint a new
+        // propulsion receipt from cached watts.
         publish()
     }
 
@@ -473,6 +554,10 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
             state.batteryPercent = max(0, battery - drain)
         }
 
+        // Power receipt is minted at the synthetic source computation boundary,
+        // before aggregate publication. Equal watts still produce a distinct
+        // observation because the source actually recomputed/published them.
+        recordSyntheticPowerObservation()
         recordSyntheticSpeedObservation(speed, publishRawTelemetry: true)
         state.lastUpdated = .now
         publish()
@@ -489,6 +574,7 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
 
     public func simulateConnectionIssue(_ issue: VehicleConnectionIssue?) {
         demoteSpeedEvidenceForConnectionLoss()
+        demoteSimulatorPowerEvidenceForConnectionLoss()
         connectionGeneration &+= 1
         state.connectionIssue = issue
         state.connection = .disconnected
@@ -499,6 +585,7 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
 
     public func simulateConnectionDrop() {
         demoteSpeedEvidenceForConnectionLoss()
+        demoteSimulatorPowerEvidenceForConnectionLoss()
         connectionGeneration &+= 1
         state.connection = .reconnecting
         state.lastUpdated = .now
@@ -507,10 +594,13 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
 
     public func simulateReconnected() {
         demoteSpeedEvidenceForConnectionLoss()
+        demoteSimulatorPowerEvidenceForConnectionLoss()
         connectionGeneration &+= 1
         state.connectionIssue = nil
         state.connection = .connected
         beginSpeedEvidenceForConnectedGeneration(connectionGeneration)
+        // Transport reconnection does not create a power observation. Retained
+        // power remains retained until the next source-owned ride update.
         state.lastUpdated = .now
         publish()
     }
@@ -536,6 +626,7 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
     private func cancelConnectionAttemptIfCurrent(_ attemptGeneration: UInt64) {
         guard connectionGeneration == attemptGeneration, state.connection == .connecting else { return }
         demoteSpeedEvidenceForConnectionLoss()
+        demoteSimulatorPowerEvidenceForConnectionLoss()
         connectionGeneration &+= 1
         state.connection = .disconnected
         publish()
@@ -594,6 +685,55 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
         guard let generation = speedEvidenceTruth.activeConnectionGeneration else { return }
         _ = speedEvidenceTruth.endConnectedGeneration(generation)
         publishSpeedEvidenceAvailability()
+    }
+
+    private func recordSyntheticPowerObservation() {
+        guard profile == .simulatorQA,
+              state.connection == .connected,
+              let watts = state.powerWatts,
+              watts >= 0,
+              simulatorPowerReceiptSequenceNumber < UInt64.max else {
+            return
+        }
+
+        let currentUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
+        let sampleUptimeNanoseconds: UInt64
+        if currentUptimeNanoseconds > lastSimulatorPowerUptimeNanoseconds {
+            sampleUptimeNanoseconds = currentUptimeNanoseconds
+        } else if lastSimulatorPowerUptimeNanoseconds < UInt64.max {
+            sampleUptimeNanoseconds = lastSimulatorPowerUptimeNanoseconds + 1
+        } else {
+            return
+        }
+
+        let nextSequence = simulatorPowerReceiptSequenceNumber + 1
+        let generation = max(UInt64(1), connectionGeneration)
+        guard let observation = try? SimulatorPowerObservation(
+            watts: Double(watts),
+            receiptSequenceNumber: nextSequence,
+            receivedAtUptimeNanoseconds: sampleUptimeNanoseconds,
+            continuityGeneration: generation
+        ) else {
+            return
+        }
+
+        simulatorPowerReceiptSequenceNumber = nextSequence
+        lastSimulatorPowerUptimeNanoseconds = sampleUptimeNanoseconds
+        lastSimulatorPowerObservation = observation
+        simulatorPowerEvidenceAvailability = .live(observation)
+        publishSimulatorPowerEvidenceAvailability()
+    }
+
+    private func demoteSimulatorPowerEvidenceForConnectionLoss() {
+        let nextAvailability: SimulatorPowerEvidenceAvailability
+        if let lastSimulatorPowerObservation {
+            nextAvailability = .retained(lastSimulatorPowerObservation)
+        } else {
+            nextAvailability = .unavailable
+        }
+        guard simulatorPowerEvidenceAvailability != nextAvailability else { return }
+        simulatorPowerEvidenceAvailability = nextAvailability
+        publishSimulatorPowerEvidenceAvailability()
     }
 
     private func recordSyntheticSpeedObservation(
@@ -660,6 +800,13 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
         }
     }
 
+    private func publishSimulatorPowerEvidenceAvailability() {
+        let availability = simulatorPowerEvidenceAvailability
+        for continuation in simulatorPowerEvidenceContinuations.values {
+            continuation.yield(availability)
+        }
+    }
+
     private func removeContinuation(_ id: UUID) {
         continuations[id] = nil
     }
@@ -670,5 +817,9 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
 
     private func removeSpeedEvidenceContinuation(_ id: UUID) {
         speedEvidenceContinuations[id] = nil
+    }
+
+    private func removeSimulatorPowerEvidenceContinuation(_ id: UUID) {
+        simulatorPowerEvidenceContinuations[id] = nil
     }
 }
