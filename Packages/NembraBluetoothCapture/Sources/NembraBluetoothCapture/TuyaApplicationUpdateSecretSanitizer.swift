@@ -65,20 +65,31 @@ public enum TuyaApplicationUpdateSecretSanitizer: Sendable {
     }
 
     /// Removes one exact, already-authorized sensitive value from projected application evidence.
-    /// Generic `uid` keys are deliberately not treated as account identity.
+    /// Generic `uid` keys are deliberately not treated as account identity. Exact occurrences are
+    /// removed from both keys and values so an accepted export cannot retain the sensitive value
+    /// merely because the SDK supplied it as a field name.
     public static func redactingExactSensitiveValue(
         in updates: [String: String],
         sensitiveValue: String,
         replacement: String
     ) -> [String: String] {
         guard !sensitiveValue.isEmpty else { return updates }
-        return updates.mapValues { value in
-            value.replacingOccurrences(
+        var redacted: [String: String] = [:]
+        redacted.reserveCapacity(updates.count)
+        for (key, value) in updates {
+            let safeKey = key.replacingOccurrences(
                 of: sensitiveValue,
                 with: replacement,
                 options: [.literal]
             )
+            let safeValue = value.replacingOccurrences(
+                of: sensitiveValue,
+                with: replacement,
+                options: [.literal]
+            )
+            redacted[safeKey] = safeValue
         }
+        return redacted
     }
 
     public static func redactingAccountUID(
