@@ -26,6 +26,29 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         #expect(!body.contains("self.sealedAcceptedEventPrefix = self.events"))
     }
 
+
+    @Test("the full accepted envelope is frozen before package seal suspension and published only after seal succeeds")
+    func fullAcceptedEnvelopeSharesTheImmutableSealCut() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let watchdog = try section(in: app, from: "private func startWatchdog", to: "private func recordObservedTransportLoss")
+        let body = String(watchdog)
+
+        guard let eventCut = body.range(of: "let acceptedEventPrefixAtCut = Array(self.events.dropFirst(self.captureAttemptEventStartIndex))"),
+              let envelopeCut = body.range(of: "let acceptedExportAtCut = self.makeExport(", range: eventCut.upperBound..<body.endIndex),
+              let acceptedPhase = body.range(of: "phase: .accepted", range: envelopeCut.upperBound..<body.endIndex),
+              let packageSeal = body.range(of: "try await sessionLedger.sealAcceptedObservation(for: token)", range: acceptedPhase.upperBound..<body.endIndex),
+              let publish = body.range(of: "self.sealedAcceptedExport = acceptedExportAtCut", range: packageSeal.upperBound..<body.endIndex) else {
+            Issue.record("Canonical acceptance must freeze the whole accepted envelope at the pre-await cut and publish it only after package seal succeeds.")
+            throw SourceContractError.sectionMissing
+        }
+
+        #expect(eventCut.lowerBound < envelopeCut.lowerBound)
+        #expect(envelopeCut.lowerBound < acceptedPhase.lowerBound)
+        #expect(acceptedPhase.lowerBound < packageSeal.lowerBound)
+        #expect(packageSeal.lowerBound < publish.lowerBound)
+    }
+
+
     @Test("application callbacks cannot cross the acceptance cut and in-flight admissions remain owned until async ledger work finishes")
     func applicationAdmissionIsQuiescedBeforeSeal() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
@@ -65,11 +88,12 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         #expect(noApplication.lowerBound < terminal.lowerBound)
     }
 
-    @Test("accepted export fails closed onto the frozen prefix instead of the mutable live event log")
-    func acceptedExportUsesFrozenEventPrefix() throws {
+    @Test("accepted export uses the fully frozen envelope instead of rebuilding from mutable live state")
+    func acceptedExportUsesFrozenEnvelope() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
         #expect(app.contains("private var sealedAcceptedEventPrefix: [Event]?"))
+        #expect(app.contains("private var sealedAcceptedExport: Export?"))
         #expect(app.contains("private var applicationUpdateAdmissionsInFlight = 0"))
         #expect(app.contains("private var acceptanceCutIsClosed = false"))
 
@@ -77,10 +101,10 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         let body = String(export)
 
         #expect(body.contains("if phase == .accepted"))
-        #expect(body.contains("guard let acceptedEventPrefix = self.sealedAcceptedEventPrefix"))
-        #expect(body.contains("sealedAcceptedEventPrefix = acceptedEventPrefix"))
-        #expect(body.contains("events: sealedAcceptedEventPrefix"))
-        #expect(!body.contains("events: events\n"))
+        #expect(body.contains("guard let acceptedEnvelope = self.sealedAcceptedExport"))
+        #expect(body.contains("envelope = acceptedEnvelope"))
+        #expect(body.contains("envelope = makeExport(events: events, phase: phase, exportedAt: Date())"))
+        #expect(!body.contains("guard let acceptedEventPrefix = self.sealedAcceptedEventPrefix"))
     }
 
     @Test("starting a fresh correlation life reopens admission and clears the prior accepted export prefix")
@@ -90,6 +114,7 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
 
         #expect(reset.contains("acceptanceCutIsClosed = false"))
         #expect(reset.contains("sealedAcceptedEventPrefix = nil"))
+        #expect(reset.contains("sealedAcceptedExport = nil"))
     }
 
 
