@@ -37,19 +37,29 @@ public struct PropulsionEnergyRailDisplaySchedule: Equatable, Sendable {
 /// uses `.simulator`, and the runtime is named explicitly so app integration cannot
 /// mistake its values for ES80 hardware evidence.
 ///
-/// The runtime owns synthetic chronology at the **measurement clock**. Repeated calls
-/// carrying the same connected watt value do not mint new accepted receipts merely
-/// because a renderer asked for another frame. Display interpolation and scheduling
-/// remain presentation-only inside `PropulsionGaugeSourceSession` / this adapter.
+/// The runtime supports two mutually exclusive chronology modes:
+/// - the legacy value-change adapter used by isolated package fixtures; and
+/// - exact source-owned receipt admission used by the real app Simulator bridge.
+///
+/// Once exact source-owned chronology is admitted, legacy observation calls fail
+/// closed so presentation code cannot mix a second synthetic receipt namespace into
+/// the accepted source sequence.
 public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
     /// Synthetic visual ceiling chosen only because `SimulatedScooterService`
     /// currently caps generated QA power at 620 W. This is not a rated motor,
     /// controller maximum, observed physical ceiling, or ES80 claim.
     public static let defaultPresentationCeilingWatts: Double = 650
 
-    /// Synthetic currentness window for deterministic Simulator UI sessions.
+    /// Synthetic currentness window for deterministic legacy Simulator UI sessions.
     /// This is not a claim about any physical BLE publication cadence.
     public static let defaultFreshnessNanoseconds: UInt64 = 30_000_000_000
+
+    /// Exact source-owned app sessions do not infer currentness from an arbitrary
+    /// package timeout. Their `.live/.retained/.unavailable` state comes from the
+    /// accepted Simulator source owner. `UInt64.max` makes the package timeout
+    /// unreachable in ordinary monotonic runtime and source currentness can only
+    /// demote the sealed projection through `constrained(toSourceCurrentness:)`.
+    public static let sourceOwnedFreshnessNanoseconds: UInt64 = .max
 
     private let vehicleID: String
     private let presentationCeilingWatts: Double
@@ -59,11 +69,22 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
     private var session: PropulsionGaugeSourceSession
     private var scale: PropulsionGaugeScale
     private var activeModeKey: String?
+
+    // Legacy isolated-fixture chronology. This namespace is never used after an
+    // exact source-owned receipt has been accepted.
     private var continuityGeneration: UInt64 = 1
     private var nextReceiptSequenceNumber: UInt64 = 1
+    private var requiresNewGeneration = false
+
     private var lastAcceptedWatts: Double?
     private var lastAcceptedUptimeNanoseconds: UInt64?
-    private var requiresNewGeneration = false
+
+    // Exact source-owned chronology markers. The canonical session remains the
+    // chronology enforcer; these mirrors are used only for presentation continuity
+    // and to prevent the legacy adapter from becoming a second receipt minter.
+    private var sourceOwnedChronologyActive = false
+    private var lastAcceptedSourceContinuityGeneration: UInt64?
+    private var lastAcceptedSourceReceiptSequenceNumber: UInt64?
 
     // These mirrors schedule presentation-only wake-ups. They are deliberately
     // downstream of successfully accepted package measurements and never feed
@@ -106,12 +127,23 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
         self.activeModeKey = nil
     }
 
-    /// Admits one source-owned Simulator state change.
-    ///
-    /// Call this when the synthetic source changes, not on every render frame.
-    /// `connected == false`, missing/invalid power, or any chronology failure makes
-    /// the active generation unavailable without manufacturing a zero-watt sample.
-    /// A later valid observation starts a strictly newer synthetic generation.
+    /// Preferred runtime for app integration with `SimulatorPowerEvidenceProvider`.
+    /// Source lifecycle owns currentness, so package freshness is intentionally not
+    /// guessed from Simulator cadence.
+    public static func sourceOwned(
+        vehicleID: String = "nembra-simulator",
+        presentationCeilingWatts: Double = PropulsionEnergyRailSimulatorRuntime.defaultPresentationCeilingWatts
+    ) throws -> PropulsionEnergyRailSimulatorRuntime {
+        try PropulsionEnergyRailSimulatorRuntime(
+            vehicleID: vehicleID,
+            presentationCeilingWatts: presentationCeilingWatts,
+            freshnessNanoseconds: sourceOwnedFreshnessNanoseconds
+        )
+    }
+
+    /// Legacy isolated-fixture adapter. The real app must use
+    /// `observeSourceOwned(...)` so equal-watt genuine receipts retain their exact
+    /// source chronology instead of being de-duplicated by semantic value.
     @discardableResult
     public mutating func observe(
         connected: Bool,
@@ -119,6 +151,8 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
         modeKey: String?,
         receivedAtUptimeNanoseconds: UInt64
     ) -> Bool {
+        guard !sourceOwnedChronologyActive else { return false }
+
         guard connected,
               let watts,
               watts.isFinite,
@@ -147,8 +181,8 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
         }
 
         // A render tick or unrelated Simulator state publication must not become a
-        // new accepted power observation when the source's semantic watt value did
-        // not change inside the same continuity generation.
+        // new accepted power observation when the legacy source's semantic watt
+        // value did not change inside the same continuity generation.
         guard lastAcceptedWatts != watts else {
             return true
         }
@@ -196,6 +230,70 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
         return true
     }
 
+    /// Admits one immutable Simulator source receipt exactly as issued by the
+    /// source owner. Receipt sequence, source uptime, and continuity generation are
+    /// copied into the package-sealed accepted measurement; SwiftUI contributes none
+    /// of them. Equal-watt newer receipts therefore remain distinct real source
+    /// observations and refresh currentness without fabricating a value change.
+    ///
+    /// Stale/duplicate/malformed receipts fail closed without retiring the newest
+    /// already-accepted measurement. Source lifecycle currentness is applied later
+    /// as a one-way projection constraint.
+    @discardableResult
+    public mutating func observeSourceOwned(
+        watts: Double,
+        receiptSequenceNumber: UInt64,
+        receivedAtUptimeNanoseconds: UInt64,
+        continuityGeneration: UInt64
+    ) -> Bool {
+        guard watts.isFinite,
+              watts >= 0,
+              receiptSequenceNumber > 0,
+              continuityGeneration > 0,
+              activeModeKey == nil else {
+            return false
+        }
+
+        let sharesPresentationContinuity: Bool
+        if let previousUptime = lastAcceptedUptimeNanoseconds,
+           let previousGeneration = lastAcceptedSourceContinuityGeneration,
+           continuityGeneration == previousGeneration,
+           receivedAtUptimeNanoseconds >= previousUptime {
+            let gap = receivedAtUptimeNanoseconds - previousUptime
+            sharesPresentationContinuity = gap <= freshnessPolicy.staleAfterNanoseconds
+        } else {
+            sharesPresentationContinuity = false
+        }
+
+        do {
+            let sample = try PropulsionPowerSample.simulator(
+                identity: session.identity,
+                watts: watts,
+                receiptSequenceNumber: receiptSequenceNumber,
+                receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
+                continuityGeneration: continuityGeneration
+            )
+            try session.accept(sample)
+        } catch {
+            return false
+        }
+
+        sourceOwnedChronologyActive = true
+        lastAcceptedSourceContinuityGeneration = continuityGeneration
+        lastAcceptedSourceReceiptSequenceNumber = receiptSequenceNumber
+
+        updatePresentationScheduleAfterAcceptedSample(
+            watts: watts,
+            receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
+            sharesContinuity: sharesPresentationContinuity
+        )
+
+        lastAcceptedWatts = watts == 0 ? 0 : watts
+        lastAcceptedUptimeNanoseconds = receivedAtUptimeNanoseconds
+        requiresNewGeneration = false
+        return true
+    }
+
     /// Canonical sealed app projection at the display clock.
     /// Intermediate values remain render-only inside the returned projection.
     public func projection(
@@ -207,6 +305,16 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
         )
     }
 
+    /// Source-owned app projection. Source currentness can only constrain the
+    /// package projection; it cannot mint or upgrade accepted measurement truth.
+    public func projection(
+        atUptimeNanoseconds now: UInt64,
+        sourceCurrentness: PropulsionEnergyRailCurrentness
+    ) -> PropulsionEnergyRailAppProjection {
+        projection(atUptimeNanoseconds: now)
+            .constrained(toSourceCurrentness: sourceCurrentness)
+    }
+
     /// Presentation-only scheduler for the app's localized display clock.
     ///
     /// The package projection remains the visual source of truth. This method only
@@ -214,7 +322,7 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
     /// - continuous frames while the canonical frame is actually interpolating;
     /// - one wake at interpolation settlement;
     /// - one wake at accepted-peak marker expiry;
-    /// - one wake when live currentness becomes retained.
+    /// - one wake when legacy timeout currentness becomes retained.
     ///
     /// Calling this method never mutates the runtime or accepted chronology.
     public func displaySchedule(
@@ -270,6 +378,18 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
             requiresContinuousFrames: requiresContinuousFrames,
             nextTransitionUptimeNanoseconds: nextTransition
         )
+    }
+
+    /// Source-owned currentness disables all render scheduling once evidence is
+    /// retained or unavailable. A live source may still request interpolation or
+    /// accepted-peak wake-ups, but source-owned sessions use an unreachable package
+    /// freshness timeout so no guessed cadence transition is scheduled.
+    public func displaySchedule(
+        atUptimeNanoseconds now: UInt64,
+        sourceCurrentness: PropulsionEnergyRailCurrentness
+    ) -> PropulsionEnergyRailDisplaySchedule {
+        guard sourceCurrentness == .live else { return .inactive }
+        return displaySchedule(atUptimeNanoseconds: now)
     }
 
     private mutating func updatePresentationScheduleAfterAcceptedSample(
@@ -352,6 +472,9 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
             nextReceiptSequenceNumber = 1
             lastAcceptedWatts = nil
             lastAcceptedUptimeNanoseconds = nil
+            lastAcceptedSourceContinuityGeneration = nil
+            lastAcceptedSourceReceiptSequenceNumber = nil
+            sourceOwnedChronologyActive = false
             resetPresentationSchedule()
             requiresNewGeneration = false
             return true
