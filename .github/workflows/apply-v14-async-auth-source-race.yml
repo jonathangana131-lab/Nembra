@@ -1,0 +1,47 @@
+name: Apply V14 async authentication authority repair
+
+on:
+  push:
+    branches: [repair/v14-capture-async-auth-source-race-sol]
+    paths:
+      - '.github/workflows/apply-v14-async-auth-source-race.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Assert exact convergence app
+        run: |
+          set -euo pipefail
+          test "$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)" = "48ccba544525ba13f9593c922298e9dac17fb9b0"
+          python3 -m py_compile .ci-patches/apply-v14-async-auth-source-race.py
+
+      - name: Apply authority repair
+        run: |
+          set -euo pipefail
+          python3 .ci-patches/apply-v14-async-auth-source-race.py
+          git diff --check
+          grep -Fq 'self.phase == .selected' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'self.targetCorrelationOperatorConfirmed' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'guard phase == .selected else { return }' NembraApp/App/NembraCaptureEntrypoint.swift
+          ! grep -Fq 'phase == .selected || phase == .failed' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'sdk_source_authority_lost_before_auth_failure' NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Commit product and retire patch machinery
+        run: |
+          set -euo pipefail
+          rm .ci-patches/apply-v14-async-auth-source-race.py
+          rm .github/workflows/apply-v14-async-auth-source-race.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(capture): fence async auth source authority"
+          git push origin HEAD:repair/v14-capture-async-auth-source-race-sol
