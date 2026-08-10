@@ -113,7 +113,7 @@ It proves at minimum:
 10. `getpass` echo-fallback warning and EOF input fail closed without yielding a usable private identifier;
 11. surrounding whitespace/newline is rejected and no successful final file is created.
 
-The exact accepted helper blob is `62b719e8d9afb34da6d35d696e80edf926442696`; the exact accepted regression blob on `b479d851a54437ef394a4901c69db2d829d280e4` is `e87f0da164c24af03f7d6dcc9eb8a57e4d2f0cab`.
+The exact accepted helper blob is `62b719e8d9afb34da6d35d696e80edf926442696`; the exact accepted regression blob on `b479d851a54437ef394a4901c69db2d829d280e4` is `e87c15948f7a6c934b600e4fc3bb525653847f5d`.
 
 ## Truth boundary
 
