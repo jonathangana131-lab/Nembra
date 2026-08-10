@@ -593,6 +593,24 @@ private final class SecureLinkController: NSObject, ObservableObject {
             failLocally("SDK account/device authority changed before the next correlation window.", "sdk_authority_changed_during_target_correlation")
             return
         }
+        guard OfficialTuyaFactory.packageCorrelationMayStart else {
+            correlationSession?.abandonCurrentWindow()
+            correlationSession = nil
+            failLocally(
+                "Tuya BLE ownership was handed to the official SDK while target correlation was in progress. Relaunch Capture with the scooter OFF before a fresh OFF1→ON1→OFF2→ON2 series.",
+                "process_tuya_ble_ownership_changed_during_target_correlation"
+            )
+            return
+        }
+        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {
+            correlationSession?.abandonCurrentWindow()
+            correlationSession = nil
+            failLocally(
+                "Tuya acquired current local-BLE ownership while target correlation was in progress. Wait for that session to clear or relaunch Capture, then restart from OFF1. Package-owned correlation will not start another scanner window while Tuya owns local BLE.",
+                "sdk_local_ble_ownership_changed_during_target_correlation"
+            )
+            return
+        }
         guard let session = correlationSession,
               let progress = session.progress else {
             failLocally("Fresh Bluetooth correlation authority is unavailable. Restart from OFF1.", "target_correlation_authority_unavailable")
