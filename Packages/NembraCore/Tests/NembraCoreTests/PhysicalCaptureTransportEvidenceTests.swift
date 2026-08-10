@@ -17,18 +17,22 @@ struct PhysicalCaptureTransportEvidenceTests {
         #expect(evidence.completedScenarioCount == 17)
         #expect(evidence.peripheralInitiatedDisconnectCount == 15)
         #expect(abs(evidence.meanConnectedIntervalSeconds - 29.930) < 0.001)
+        #expect(evidence.transportFamily == .tuyaFD50)
+        #expect(evidence.transportFamilyCertainty == .verifiedPhysicalTransport)
     }
 
-    @Test("transport-only capture cannot mint telemetry semantics")
-    func transportOnlyCaptureCannotMintTelemetry() {
+    @Test("transport-family certainty does not mint telemetry semantics")
+    func verifiedTransportFamilyCannotMintTelemetry() {
         let evidence = PhysicalCaptureTransportEvidence.c7d09a22
 
         #expect(evidence.characteristicValueEventCount == 0)
+        #expect(evidence.transportFamily == .tuyaFD50)
+        #expect(evidence.transportFamilyCertainty == .verifiedPhysicalTransport)
         #expect(evidence.authorizesTelemetrySemantics == false)
         #expect(evidence.isStablePhysicalDeviceIdentity == false)
     }
 
-    @Test("opaque application payload receipt still cannot mint telemetry semantics")
+    @Test("opaque application payload receipt remains unclassified unless separately proven")
     func opaqueApplicationPayloadStillCannotMintTelemetry() {
         let evidence = PhysicalCaptureTransportEvidence(
             captureID: "future-opaque-capture",
@@ -44,6 +48,8 @@ struct PhysicalCaptureTransportEvidenceTests {
         )
 
         #expect(evidence.characteristicValueEventCount == 1)
+        #expect(evidence.transportFamily == .unknown)
+        #expect(evidence.transportFamilyCertainty == .unclassified)
         #expect(evidence.authorizesTelemetrySemantics == false)
         #expect(evidence.isStablePhysicalDeviceIdentity == false)
     }
