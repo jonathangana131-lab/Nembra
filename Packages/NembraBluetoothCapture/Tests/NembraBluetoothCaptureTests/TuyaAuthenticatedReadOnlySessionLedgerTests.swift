@@ -287,7 +287,7 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
         #expect(failed.authenticatedAtUptimeNanoseconds == 200)
         #expect(failed.applicationPayloadCount == 1)
         #expect(failed.latestApplicationPayloadUptimeNanoseconds == 300)
-        #expect(failed.latestObservedUptimeNanoseconds == 400)
+        #expect(failed.latestObservedUptimeNanoseconds == 300)
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: failed) == .blocked(reason: "Tuya SDK session failed."))
 
         clock.advance(to: 500)

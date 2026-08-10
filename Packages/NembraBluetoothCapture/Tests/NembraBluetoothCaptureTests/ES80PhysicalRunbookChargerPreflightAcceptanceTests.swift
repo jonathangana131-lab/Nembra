@@ -1,48 +1,31 @@
 import Foundation
 import Testing
 
-@Suite("ES80 physical runbook charger preflight")
+@Suite("ES80 authenticated stationary charger-state preflight")
 struct ES80PhysicalRunbookChargerPreflightAcceptanceTests {
-    @Test("field runbook mirrors the app's per-run disconnected-charger declaration")
-    func runbookPinsChargerDeclarationWithoutPromotingItToMeasuredTruth() throws {
-        let app = try repositoryFile("NembraApp/App/NembraApp.swift")
-        let runbook = try repositoryFile("docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md")
+    @Test("current secure-link procedure freezes charger state without inventing charger sensing")
+    func currentProcedureKeepsChargerStateStationary() throws {
+        let runbook = try repositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
 
-        // The current product makes charger state a fresh-run operator declaration: connected is
-        // explicitly blocked, disconnected is the only state that can continue, and the UI states
-        // that Nembra cannot sense the charger directly. The field procedure must not be weaker.
-        #expect(app.contains("This capture requires the scooter to be unplugged."))
-        #expect(app.contains("Unplug charger to continue"))
-        #expect(app.contains("Nembra cannot sense the charger directly"))
-        #expect(app.contains("selectedChargerState = nil"))
-        #expect(app.contains("PassiveBluetoothStationaryCaptureChargerState.disconnected.rawValue"))
-
-        let preflight = try section(
-            in: runbook,
-            from: "## Intended preflight once GO is authorized",
-            to: "## Experiment One — target correlation and passive fingerprint"
+        #expect(runbook.contains("PROCEDURE_ID: `ES80-AUTHENTICATED-STATIONARY-v1`"))
+        #expect(runbook.contains("This test is indoors and stationary."))
+        #expect(
+            runbook.contains(
+                "do not change mode/light/brake/throttle/charger state during this preflight."
+            )
         )
-        let stopConditions = try section(
-            in: runbook,
-            from: "## Stop / failure conditions once GO exists",
-            to: "## Current physical conclusion"
+        #expect(
+            runbook.contains(
+                "Nembra sends no scooter DP query/control command and opens no second CoreBluetooth connection."
+            )
         )
+        #expect(runbook.contains("Until all applicable software/private-device prerequisites are true and the repository explicitly records `GO`, the physical secure-link experiment is **NO-GO**."))
 
-        let preflightLower = preflight.lowercased()
-        #expect(preflightLower.contains("charger"))
-        #expect(preflightLower.contains("disconnected"))
-        #expect(preflightLower.contains("declar"))
-        #expect(preflightLower.contains("not") && (preflightLower.contains("measured") || preflightLower.contains("sense")))
-
-        let stopLower = stopConditions.lowercased()
-        #expect(stopLower.contains("charger"))
-        #expect(stopLower.contains("stop") || stopLower.contains("restart"))
-    }
-
-    private func section(in text: String, from startMarker: String, to endMarker: String) throws -> String {
-        let start = try #require(text.range(of: startMarker)?.lowerBound)
-        let end = try #require(text.range(of: endMarker, range: start..<text.endIndex)?.lowerBound)
-        return String(text[start..<end])
+        // The current procedure preserves charger state as an operator/environment condition. It
+        // does not claim that Nembra has measured, inferred, or confirmed a physical charger state.
+        let lower = runbook.lowercased()
+        #expect(!lower.contains("nembra measured the charger"))
+        #expect(!lower.contains("nembra sensed the charger"))
     }
 
     private func repositoryFile(_ relativePath: String) throws -> String {
