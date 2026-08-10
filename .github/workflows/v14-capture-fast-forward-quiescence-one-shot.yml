@@ -1,0 +1,47 @@
+name: V14 Capture Fast Forward Quiescence One Shot
+
+on:
+  push:
+    branches:
+      - integration/v14-capture-application-evidence-quiescence-current2-sol
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: integration/v14-capture-application-evidence-quiescence-current2-sol
+          fetch-depth: 0
+
+      - name: Verify exact flagship base and fast-forward product commit
+        run: |
+          set -euo pipefail
+          EXPECTED_BASE='749a85e18ca4ce0c9b46929b11c633e155960015'
+          PRODUCT_SHA='797af064bef12eb9ce9160f32d6b9ac7033b0f27'
+          FLAGSHIP='integration/v14-capture-final-stationary-convergence-sol'
+
+          git fetch origin "$FLAGSHIP"
+          LIVE="$(git rev-parse FETCH_HEAD)"
+          printf 'Expected live flagship: %s\nObserved live flagship: %s\nProduct commit: %s\n' "$EXPECTED_BASE" "$LIVE" "$PRODUCT_SHA"
+          test "$LIVE" = "$EXPECTED_BASE"
+          git cat-file -e "$PRODUCT_SHA^{commit}"
+          git merge-base --is-ancestor "$EXPECTED_BASE" "$PRODUCT_SHA"
+
+          # Non-force only. If the flagship changes after the exact check, this push
+          # is rejected rather than overwriting concurrent swarm work.
+          git push origin "$PRODUCT_SHA:refs/heads/$FLAGSHIP"
+
+      - name: Retire integration helper from donor branch
+        if: success()
+        run: |
+          set -euo pipefail
+          rm .github/workflows/v14-capture-fast-forward-quiescence-one-shot.yml
+          git config user.name 'nembra-v14-bot'
+          git config user.email 'nembra-v14-bot@users.noreply.github.com'
+          git add .github/workflows/v14-capture-fast-forward-quiescence-one-shot.yml
+          git commit -m 'chore(capture): retire quiescence fast-forward helper'
+          git push origin HEAD:integration/v14-capture-application-evidence-quiescence-current2-sol
