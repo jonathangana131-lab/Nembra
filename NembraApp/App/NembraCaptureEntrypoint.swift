@@ -1426,6 +1426,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
         guard sdkAccountLoggedIn,
               sdkDeviceMembershipVerified,
               accountIdentityLeaseIsAuthorized,
+              let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !verifiedAccountUID.isEmpty,
               let driver else {
             await invalidateSourceAuthority(
                 token: token,
@@ -1439,13 +1441,19 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        // Bind redaction to the same account lease that admitted this callback before any await
+        // can permit a MainActor account transition to clear or replace that lease.
+        let custodySafeUpdate = Self.redactedApplicationEventDetails(
+            update,
+            accountUID: verifiedAccountUID
+        )
         applicationUpdateAdmissionsInFlight += 1
         defer { applicationUpdateAdmissionsInFlight -= 1 }
 
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            var eventDetails = redactedApplicationEventDetails(update)
+            var eventDetails = custodySafeUpdate
             eventDetails["generation"] = String(token.diagnosticGeneration)
             log("tuya_application_update", eventDetails)
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
@@ -1474,21 +1482,27 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
     }
 
-    private func redactedApplicationEventDetails(_ update: [String: String]) -> [String: String] {
-        guard let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !accountUID.isEmpty else {
-            return update
-        }
+    private static func redactedApplicationEventDetails(
+        _ update: [String: String],
+        accountUID: String
+    ) -> [String: String] {
+        guard !accountUID.isEmpty else { return update }
 
         var redacted: [String: String] = [:]
         redacted.reserveCapacity(update.count)
-        for (key, value) in update {
+        for (key, value) in update.sorted(by: { $0.key < $1.key }) {
             let redactedKey = key.replacingOccurrences(
                 of: accountUID,
                 with: "<redacted-account-uid>",
                 options: [.caseInsensitive, .literal]
             )
-            redacted[redactedKey] = value.replacingOccurrences(
+            var custodyKey = redactedKey
+            var collisionIndex = 2
+            while redacted[custodyKey] != nil {
+                custodyKey = "\(redactedKey)#\(collisionIndex)"
+                collisionIndex += 1
+            }
+            redacted[custodyKey] = value.replacingOccurrences(
                 of: accountUID,
                 with: "<redacted-account-uid>",
                 options: [.caseInsensitive, .literal]
