@@ -1483,16 +1483,27 @@ private final class SecureLinkController: NSObject, ObservableObject {
         var redacted: [String: String] = [:]
         redacted.reserveCapacity(update.count)
         for (key, value) in update {
-            let redactedKey = key.replacingOccurrences(
+            var redactedKey = key.replacingOccurrences(
                 of: accountUID,
                 with: "<redacted-account-uid>",
                 options: [.caseInsensitive, .literal]
             )
-            redacted[redactedKey] = value.replacingOccurrences(
+            let redactedValue = value.replacingOccurrences(
                 of: accountUID,
                 with: "<redacted-account-uid>",
                 options: [.caseInsensitive, .literal]
             )
+
+            // Redacting identity-bearing key substrings can make two distinct source keys equal.
+            // Preserve both opaque evidence fields instead of silently overwriting one.
+            if redacted[redactedKey] != nil {
+                var suffix = 2
+                while redacted["\(redactedKey)#\(suffix)"] != nil {
+                    suffix += 1
+                }
+                redactedKey = "\(redactedKey)#\(suffix)"
+            }
+            redacted[redactedKey] = redactedValue
         }
         return redacted
     }
