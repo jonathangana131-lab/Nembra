@@ -33,10 +33,28 @@ jobs:
           installer='scripts/field/install_one_time_capture.command'
 
           bash -n "$installer"
-          grep -Fq 'SOURCE_SHA="$(git rev-parse HEAD)' "$installer"
+          grep -Fq 'EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"' "$installer"
+          grep -Fq '[[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9A-Fa-f]{40}$ ]]' "$installer"
+          grep -Fq 'EXPECTED_SOURCE_SHA="$(printf '\''%s'\'' "$EXPECTED_SOURCE_SHA" | tr '\''[:upper:]'\'' '\''[:lower:]'\'')"' "$installer"
+          grep -Fq 'SOURCE_SHA="$(git rev-parse HEAD | tr '\''[:upper:]'\'' '\''[:lower:]'\'')"' "$installer"
+          grep -Fq '[[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]]' "$installer"
           grep -Fq 'BUILD_LABEL="capture-v14-${SOURCE_SHA:0:12}"' "$installer"
           grep -Fq 'NEMBRA_CAPTURE_BUILD_IDENTIFIER="$BUILD_LABEL"' "$installer"
           grep -Fq 'NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$SOURCE_SHA"' "$installer"
+
+          /usr/bin/python3 - "$installer" <<'PY'
+          from pathlib import Path
+          import sys
+
+          source = Path(sys.argv[1]).read_text()
+          source_match = '[[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]]'
+          bootstrap = '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"'
+          build = 'xcodebuild \\\n'
+          if source_match not in source or bootstrap not in source or build not in source:
+              raise SystemExit("Capture field installer source-order anchors are missing")
+          if not source.index(source_match) < source.index(bootstrap) < source.index(build):
+              raise SystemExit("Exact accepted source SHA must be proven before workspace bootstrap/build")
+          PY
 
           grep -Fq 'NembraCaptureBuildIdentity.swift in Sources' "$project"
           grep -Fq 'INFOPLIST_KEY_NembraCaptureBuildIdentifier = "$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)";' "$project"
