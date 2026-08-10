@@ -71,6 +71,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          trap 'rc=$?; printf "::error title=Capture provenance source contract::shell line %s failed: %q (exit %s)\n" "$LINENO" "$BASH_COMMAND" "$rc"; exit "$rc"' ERR
           identity='NembraApp/App/NembraCaptureBuildIdentity.swift'
           entrypoint='NembraApp/App/NembraCaptureEntrypoint.swift'
           project='NembraCapture.xcodeproj/project.pbxproj'
