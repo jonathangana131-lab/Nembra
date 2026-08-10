@@ -295,8 +295,8 @@ final class SpeedInstrumentModel {
 /// ride detection, persistence, distance, and safety continue to consume the
 /// accepted domain/source state rather than the rendered interpolation frame.
 /// The Energy Rail shares this localized display clock, but its package runtime is
-/// mutated only by explicit Simulator power-source lifecycle changes below. Render
-/// ticks and unrelated ride-mode mutations can never mint propulsion observations.
+/// mutated only by explicit Simulator source-state changes below. Render ticks can
+/// project presentation frames; they can never mint propulsion observations.
 @MainActor
 struct DashboardSpeedInstrumentView: View {
     @Environment(VehicleStore.self) private var vehicle
@@ -541,11 +541,20 @@ struct DashboardSpeedInstrumentView: View {
             return .unavailable
         }
 
-        return NembraEnergyRailVisualState(
+        guard let sourcePower = vehicle.state.powerWatts,
+              sourcePower >= 0 else {
+            return .unavailable
+        }
+
+        let state = NembraEnergyRailVisualState(
             projection: energyRailRuntime.projection(
                 atUptimeNanoseconds: uptimeNanoseconds
             )
         )
+        guard state.semanticWatts == Double(sourcePower) else {
+            return .unavailable
+        }
+        return state
     }
 
     private func displayedValue(kilometersPerHour: Double?) -> Double? {
