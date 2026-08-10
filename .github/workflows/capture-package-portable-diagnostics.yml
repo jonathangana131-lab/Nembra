@@ -1,0 +1,37 @@
+name: Capture Package Portable Diagnostics
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-gate-diagnostics-417dca
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Diagnose Capture package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run Capture package with retained failure tail
+        shell: bash
+        run: |
+          set +e
+          swift --version
+          swift test --package-path Packages/NembraBluetoothCapture > /tmp/nembra-capture-package.log 2>&1
+          rc=$?
+          set -e
+          if [[ "$rc" -ne 0 ]]; then
+            printf '%s\n' '--- Capture package failure tail ---'
+            tail -n 80 /tmp/nembra-capture-package.log
+            last="$(tail -n 24 /tmp/nembra-capture-package.log | tr '\n' ' ')"
+            last="${last//'%'/'%25'}"
+            last="${last//$'\r'/'%0D'}"
+            last="${last//$'\n'/'%0A'}"
+            printf '::error file=Packages/NembraBluetoothCapture,title=Capture package portable failure::%s\n' "$last"
+            exit "$rc"
+          fi
+          cat /tmp/nembra-capture-package.log
