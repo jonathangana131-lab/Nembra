@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   materialize:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -27,8 +26,10 @@ jobs:
           PRODUCT=ba3a1eeae36caca6dd84beaabd0f15f4f0b57925
           WORKFLOW=.github/workflows/materialize-capture-correlation-evidence-retention-ba3-gpt56sol.yml
           TEST=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundCorrelationEvidenceRetentionSourceTests.swift
-          test "$(git rev-parse HEAD^)" = "$PRODUCT"
-          test "$(git diff --name-only "$PRODUCT" HEAD)" = "$WORKFLOW"
+          test "$(git rev-parse HEAD~2)" = "$PRODUCT"
+          mapfile -t changed < <(git diff --name-only "$PRODUCT" HEAD | sort)
+          test "${#changed[@]}" = 1
+          test "${changed[0]}" = "$WORKFLOW"
           git fetch --no-tags origin 659ab020d0964e656928444529448dee566c4943
           git show 659ab020d0964e656928444529448dee566c4943:"$TEST" > "$TEST"
 
@@ -47,9 +48,6 @@ jobs:
               b = text.index(end, a + len(start))
               return a, b
 
-          # View exit already revokes membership authority, but a completed correlated/selected
-          # target has no live scanner/lease and currently bypasses the transport guard. Revoke only
-          # actionable reuse authority; retain completed receipts/provenance for failed diagnostics.
           a, b = section_bounds(s, '    func abandonCorrelationForViewExit() {', '    func appDidLoseForeground() {')
           view = s[a:b]
           anchor = '        guard processCorrelationLease != nil || correlationSession != nil else { return }'
@@ -69,9 +67,6 @@ jobs:
           view = view.replace(anchor, insert + anchor, 1)
           s = s[:a] + view + s[b:]
 
-          # Foreground loss currently uses the full discovery reset after correlation has already
-          # sealed and retired its scanner. That destroys legitimate failed-attempt evidence. Keep
-          # the evidence, but revoke every current target-selection authority bit synchronously.
           a, b = section_bounds(s, '    func appDidLoseForeground() {', '    var privateConfig: Bool')
           fg = s[a:b]
           old = '''        if phase == .correlated || phase == .selected {
@@ -103,7 +98,6 @@ jobs:
           s = s[:a] + fg + s[b:]
           app.write_text(s, encoding='utf-8')
 
-          # Extend the reviewed red contract to the symmetric view-lifetime boundary.
           test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundCorrelationEvidenceRetentionSourceTests.swift')
           t = test.read_text(encoding='utf-8')
           marker = '    @Test("failed diagnostic export still carries completed correlation provenance")\n'
