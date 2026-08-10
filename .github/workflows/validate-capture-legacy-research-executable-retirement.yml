@@ -32,26 +32,38 @@ jobs:
               return sorted(p for p in out.splitlines() if p)
           semantic = 'c156bbadad5da2797d44497bf4726de95dd0f6ec'
           base = '6b778f2104af34dbe5b80da31ddb3ca422f9667c'
-          helper = paths(semantic, 'HEAD')
-          assert helper == ['.github/workflows/validate-capture-legacy-research-executable-retirement.yml'], helper
-          effective = paths(base, semantic)
-          expected = [
+          assert paths(semantic, 'HEAD') == ['.github/workflows/validate-capture-legacy-research-executable-retirement.yml']
+          assert paths(base, semantic) == [
               'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayExecutableAuthorityRetirementSourceTests.swift',
               'scripts/ci/xcode27_signed_field_candidate.sh',
               'scripts/ci/xcode27_today_research_field_candidate.sh',
           ]
-          assert effective == expected, effective
-          print('exact semantic checkpoint: PASS')
           PY
 
       - name: Run focused package regression with warnings as errors
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          swift --version || true
+          xcodebuild -version || true
+          output="$(mktemp)"
+          set +e
           swift test \
             --package-path Packages/NembraBluetoothCapture \
             --filter TuyaLegacyTodayExecutableAuthorityRetirementSourceTests \
-            -Xswiftc -warnings-as-errors
+            -Xswiftc -warnings-as-errors >"$output" 2>&1
+          status=$?
+          set -e
+          cat "$output"
+          if [[ "$status" != 0 ]]; then
+            while IFS= read -r line; do
+              safe="${line//'%'/'%25'}"
+              safe="${safe//$'\r'/'%0D'}"
+              safe="${safe//$'\n'/'%0A'}"
+              echo "::error title=macOS SwiftPM retirement regression::$safe"
+            done < <(grep -E 'error:|requires|failed|unsupported|tools version|swift-tools-version|Expectation failed|Issue recorded' "$output" | tail -n 40 || true)
+            exit "$status"
+          fi
 
       - name: Re-run executable fail-closed behavior
         shell: bash
@@ -83,12 +95,10 @@ jobs:
           base = '6b778f2104af34dbe5b80da31ddb3ca422f9667c'
           out = subprocess.check_output(['git', 'diff', '--name-only', f'{base}...HEAD'], text=True)
           effective = sorted(p for p in out.splitlines() if p)
-          expected = [
+          assert effective == [
               'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayExecutableAuthorityRetirementSourceTests.swift',
               'scripts/ci/xcode27_signed_field_candidate.sh',
               'scripts/ci/xcode27_today_research_field_candidate.sh',
-          ]
-          assert effective == expected, effective
-          print('clean effective scope: PASS')
+          ], effective
           PY
           git push origin HEAD:sol/v14-capture-retire-legacy-research-executables-6b778
