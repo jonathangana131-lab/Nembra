@@ -137,6 +137,11 @@ private struct NembraNavigationView: View {
             }
         }
         .searchable(text: $query, prompt: "Search destinations")
+        .onChange(of: query) { _, _ in
+            guard selectedItem != nil else { return }
+            selectedItem = nil
+            cameraPosition = .automatic
+        }
         .task(id: query) {
             await searchDestinations()
         }
