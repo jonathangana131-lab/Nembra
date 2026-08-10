@@ -10,10 +10,20 @@ jobs:
   build:
     runs-on: macos-15
     timeout-minutes: 20
+    env:
+      # macos-15 still defaults to Xcode 16.4 even though Xcode 26.x is installed.
+      # Capture's authority package declares swift-tools-version 6.2 and the
+      # standalone project is an Xcode 26 field product, so using the default
+      # toolchain makes package resolution fail as soon as the app links it.
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
-      - name: Show Xcode
-        run: xcodebuild -version
+      - name: Verify Xcode 26 / Swift toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+          xcodebuild -version | grep -Eq '^Xcode 26\.'
       - name: Test Tuya SDK account device-membership authority
         run: |
           set -euo pipefail
