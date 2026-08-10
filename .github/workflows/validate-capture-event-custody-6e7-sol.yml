@@ -1,0 +1,53 @@
+name: Validate Capture Event Custody 6e7 Sol
+
+on:
+  push:
+    branches:
+      - review/v14-capture-event-custody-6e7-sol
+
+permissions:
+  contents: write
+
+jobs:
+  portable-acceptance:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind validation to exact candidate bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate='6e7a86ab91452a91a2b14c3f56122e519dca8bf4'
+          test "$(git merge-base HEAD "$candidate")" = "$candidate"
+          git diff --quiet "$candidate" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+          git diff --quiet "$candidate" HEAD -- Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventCustodyConvergenceSourceTests.swift
+          git diff --check "$candidate" HEAD
+
+      - name: Run focused event-custody contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors --filter TuyaApplicationEventCustodyConvergenceSourceTests
+
+      - name: Run full Bluetooth Capture package
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+
+      - name: Restore clean candidate tree after validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate='6e7a86ab91452a91a2b14c3f56122e519dca8bf4'
+          rm .github/workflows/validate-capture-event-custody-6e7-sol.yml
+          git add -u .github/workflows/validate-capture-event-custody-6e7-sol.yml
+          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' commit -m 'ci(capture): record portable event-custody acceptance'
+          test -z "$(git diff --name-only "$candidate" HEAD)"
+          git push origin HEAD:review/v14-capture-event-custody-6e7-sol
