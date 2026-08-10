@@ -1,0 +1,203 @@
+name: Materialize Capture Current Truth Convergence
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-current-truth-convergence-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-current-truth-convergence-sol
+          fetch-depth: 0
+
+      - name: Verify exact construction parent and source blob
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=8069c0ffec496cacbe263016d8a7f4ca15ddc64e
+          source=NembraApp/App/NembraCaptureEntrypoint.swift
+          expected_blob=66c1e0294787ac3110139a17cee20f746782e96f
+          git merge-base --is-ancestor "$base" HEAD
+          test "$(git rev-parse "$base:$source")" = "$expected_blob"
+          test "$(git rev-parse "HEAD:$source")" = "$expected_blob"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize residual truth repairs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text()
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one source match, found {count}")
+              source = source.replace(old, new, 1)
+
+          replace_once(
+          '''        guard sdkAccountLoggedIn,
+                    sdkDeviceMembershipVerified,
+                    accountIdentityLeaseIsAuthorized,
+                    let driver else {''',
+          '''        guard sdkAccountLoggedIn,
+                    sdkDeviceMembershipVerified,
+                    accountIdentityLeaseIsAuthorized,
+                    let verifiedAccountUID = currentAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                    !verifiedAccountUID.isEmpty,
+                    let driver else {''',
+          "bind exact verified account UID before application-event custody",
+          )
+
+          replace_once(
+          '''        applicationUpdateAdmissionsInFlight += 1
+          defer { applicationUpdateAdmissionsInFlight -= 1 }''',
+          '''        let accountUIDRedactedUpdate = redactVerifiedAccountUID(
+              in: update,
+              accountUID: verifiedAccountUID
+          )
+
+          applicationUpdateAdmissionsInFlight += 1
+          defer { applicationUpdateAdmissionsInFlight -= 1 }''',
+          "scrub verified account UID before application admission custody",
+          )
+
+          replace_once(
+          '''            log("tuya_application_update", update.merging([
+                  "generation": String(token.diagnosticGeneration)
+              ]) { current, _ in current })''',
+          '''            log("tuya_application_update", accountUIDRedactedUpdate.merging([
+                  "generation": String(token.diagnosticGeneration)
+              ]) { _, trusted in trusted })''',
+          "make Nembra generation metadata authoritative",
+          )
+
+          replace_once(
+          '''    private func startWatchdog(token: TuyaReadOnlyConnectionToken) {''',
+          '''    private func redactVerifiedAccountUID(
+              in update: [String: String],
+              accountUID: String
+          ) -> [String: String] {
+              var redacted: [String: String] = [:]
+              let marker = "<redacted-account-uid>"
+
+              // Account UID custody is value-bound: ordinary device keys named `uid` remain
+              // legitimate application evidence, while the exact verified account identifier is
+              // removed wherever it appears in either an application key or projected value.
+              for (key, value) in update.sorted(by: { $0.key < $1.key }) {
+                  let redactedKey = key.replacingOccurrences(
+                      of: accountUID,
+                      with: marker,
+                      options: [.literal]
+                  )
+                  let redactedValue = value.replacingOccurrences(
+                      of: accountUID,
+                      with: marker,
+                      options: [.literal]
+                  )
+
+                  // Redacting an identifier embedded in a malformed key can collapse two distinct
+                  // source keys. Preserve both opaque observations without restoring the secret.
+                  var uniqueKey = redactedKey
+                  var suffix = 2
+                  while redacted[uniqueKey] != nil {
+                      uniqueKey = "\(redactedKey)#\(suffix)"
+                      suffix += 1
+                  }
+                  redacted[uniqueKey] = redactedValue
+              }
+              return redacted
+          }
+
+          private func startWatchdog(token: TuyaReadOnlyConnectionToken) {''',
+          "add exact account UID key/value scrubber",
+          )
+
+          replace_once(
+          '''        "accounttoken",
+              "accesstoken",
+              "refreshtoken",
+              "sessionkey",
+              "authkey",''',
+          '''        "accounttoken",
+              "accesstoken",
+              "refreshtoken",
+              "authkey",''',
+          "remove duplicate sessionkey classifier",
+          )
+
+          path.write_text(source)
+          PY
+
+      - name: Validate source contracts and effective scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          source=NembraApp/App/NembraCaptureEntrypoint.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          start = s.index("    private func receivedApplicationUpdate(")
+          end = s.index("    private func startWatchdog", start)
+          receiver = s[start:end]
+          assert 'let verifiedAccountUID = currentAccountUID?.trimmingCharacters' in receiver
+          assert 'redactVerifiedAccountUID' in receiver
+          assert '<redacted-account-uid>' in receiver
+          assert 'key.replacingOccurrences(' in receiver
+          assert 'value.replacingOccurrences(' in receiver
+          assert 'accountUIDRedactedUpdate.merging([' in receiver
+          assert ']) { _, trusted in trusted })' in receiver
+          assert ']) { current, _ in current })' not in receiver
+          driver_start = s.index("private final class SmartLifeDriver")
+          driver_end = s.index("#endif\n\nprivate enum AppleAccountAuthorizationError", driver_start)
+          driver = s[driver_start:driver_end]
+          fragments_start = driver.index("private static let secretKeyFragments")
+          fragments_end = driver.index("]", fragments_start)
+          fragments = driver[fragments_start:fragments_end]
+          assert fragments.count('"sessionkey"') == 1
+          assert '"uid",' not in fragments
+          PY
+          git diff --check
+          if command -v swiftc >/dev/null 2>&1; then
+            swiftc -parse "$source"
+          fi
+
+          base=8069c0ffec496cacbe263016d8a7f4ca15ddc64e
+          actual="$(git diff --name-only "$base" | sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/materialize-capture-current-truth-convergence.yml' \
+            'NembraApp/App/NembraCaptureEntrypoint.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift' | sort)"
+          test "$actual" = "$expected"
+
+      - name: Publish clean self-removing checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=8069c0ffec496cacbe263016d8a7f4ca15ddc64e
+          rm .github/workflows/materialize-capture-current-truth-convergence.yml
+          actual="$(git diff --name-only "$base" | sort)"
+          expected="$(printf '%s\n' \
+            'NembraApp/App/NembraCaptureEntrypoint.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift' | sort)"
+          test "$actual" = "$expected"
+          git diff --check
+          git config user.name "nembra-v14-sol"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          test "$(git diff --cached --name-only "$base" | sort)" = "$expected"
+          git commit -m "Capture: seal app event provenance and UID custody"
+          git push origin HEAD:repair/v14-capture-current-truth-convergence-sol
