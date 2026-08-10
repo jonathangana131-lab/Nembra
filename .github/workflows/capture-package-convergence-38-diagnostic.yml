@@ -1,0 +1,78 @@
+name: Capture Package Convergence 38 Diagnostic
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/capture-package-convergence-38-diagnostic.yml'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureFieldRuntimeRendezvousTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureLockedSurfaceVisualAcceptanceTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCrossControllerBLEOwnershipLeaseSourceTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaProcessLifetimeBLEOwnershipFenceSourceTests.swift'
+
+permissions:
+  contents: read
+
+jobs:
+  convergence-diagnostic:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify exact head and clean tree
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          test -z "$(git status --porcelain)"
+      - name: Execute complete Capture package and require exact 51 to 38 differential
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/capture-package-convergence-38.log"
+          set +e
+          (cd Packages/NembraBluetoothCapture && swift test) 2>&1 | tee "$log"
+          package_status="${PIPESTATUS[0]}"
+          set -e
+          echo "PACKAGE_EXIT_STATUS=$package_status"
+          test "$package_status" -ne 0
+          /usr/bin/python3 -I - "$log" <<'PY'
+          import re, sys
+          from collections import Counter
+          from pathlib import Path
+          lines = Path(sys.argv[1]).read_text(errors='replace').splitlines()
+          files = Counter()
+          for line in lines:
+              match = re.search(r'at ([A-Za-z0-9_]+\.swift):\d+:\d+:', line)
+              if match and ('recorded an issue' in line or 'Caught error' in line):
+                  files[match.group(1)] += 1
+          total = sum(files.values())
+          print(f'PACKAGE_TOTAL_ISSUES {total}')
+          for name, count in files.most_common():
+              print(f'PACKAGE_ISSUES {count:3d} {name}')
+          expected_total = 38
+          cleared = {
+              'ES80CaptureFieldRuntimeRendezvousTests.swift',
+              'ES80CaptureLockedSurfaceVisualAcceptanceTests.swift',
+              'TuyaCrossControllerBLEOwnershipLeaseSourceTests.swift',
+              'TuyaProcessLifetimeBLEOwnershipFenceSourceTests.swift',
+          }
+          uncleared = {name: files[name] for name in cleared if files[name]}
+          if total != expected_total or uncleared:
+              print(f'::error::Expected exact 51->38 residual matrix and all newly composed files at zero; total={total}, uncleared={uncleared}')
+              raise SystemExit(1)
+          print('CONVERGENCE_DIFFERENTIAL_PASS 51->38')
+          PY
+      - name: Upload exact convergence log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: capture-package-convergence-38-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/capture-package-convergence-38.log
+          retention-days: 7
+          if-no-files-found: error
+      - name: Preserve package truth
+        run: echo 'Exact differential accepted only; Capture package remains RED with 38 residual issues and physical status remains NO-GO.'
