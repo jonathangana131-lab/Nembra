@@ -13,9 +13,9 @@ struct TuyaFailedPrerequisiteRecoverySourceTests {
         #expect(body.contains("case .failed:"))
         #expect(body.contains("!test.fieldBuildIsAuthoritative || !test.privateConfig"))
         #expect(body.contains("failureRecoveryContextPanel"))
-        #expect(body.contains("!sdkAccount.loggedIn || !test.sdkAccountLoggedIn"))
+        #expect(body.contains("test.canRestartFromFreshOFF1 && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn)"))
         #expect(body.contains("sdkAuthorizationPanel"))
-        #expect(body.contains("!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized"))
+        #expect(body.contains("test.canRestartFromFreshOFF1 && test.sdkAccountLoggedIn && (!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized)"))
         #expect(body.contains("preflightPanel"))
     }
 
