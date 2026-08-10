@@ -124,6 +124,26 @@ class ExportOptionsCoherenceTests(unittest.TestCase):
         self.assertIn("ExportOptions path/coherence/custody checks fail", handoff)
         self.assertIn("PHYSICAL EXPERIMENT ONE REMAINS NO-GO", handoff)
 
+    def test_canonical_handoff_pins_current_private_input_helper(self):
+        handoff = HANDOFF.read_text(encoding="utf-8")
+        self.assertIn(
+            "PRIVATE_INPUT_HELPER_COMMIT='b479d851a54437ef394a4901c69db2d829d280e4'",
+            handoff,
+        )
+        self.assertIn(
+            "PRIVATE_INPUT_HELPER_BLOB='62b719e8d9afb34da6d35d696e80edf926442696'",
+            handoff,
+        )
+        self.assertIn("31350148402", handoff)
+        self.assertIn("93339277106", handoff)
+        self.assertIn("already-occupied final path is refused before", handoff)
+        self.assertIn("secure terminal input fails closed on echoed-fallback warning or EOF", handoff)
+        self.assertIn("durably truncates and fsyncs only the exact still-open created inode", handoff)
+        self.assertIn("cleanup never unlinks a mutable pathname", handoff)
+        self.assertIn("zero-length spent subject", handoff)
+        self.assertIn("O_EXCL|O_NOFOLLOW", handoff)
+        self.assertIn("PHYSICAL EXPERIMENT ONE REMAINS NO-GO", handoff)
+
 
 if __name__ == "__main__":
     unittest.main()
