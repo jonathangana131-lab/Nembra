@@ -72,14 +72,24 @@ jobs:
           if s.count(start_marker) != 1:
               raise SystemExit(f'redactedError start: expected 1 occurrence, found {s.count(start_marker)}')
           start = s.index(start_marker)
-          end_marker = '\n    }\n}'
-          end = s.find(end_marker, start)
-          if end == -1:
-              raise SystemExit('redactedError end marker missing')
-          end += len('\n    }')
+          open_brace = s.index('{', start)
+          depth = 0
+          end = None
+          for index in range(open_brace, len(s)):
+              character = s[index]
+              if character == '{':
+                  depth += 1
+              elif character == '}':
+                  depth -= 1
+                  if depth == 0:
+                      end = index + 1
+                      break
+          if end is None:
+              raise SystemExit('redactedError closing brace missing')
           old_function = s[start:end]
-          if 'with: "<redacted-account>"' not in old_function:
-              raise SystemExit('refusing to replace unexpected redactedError implementation')
+          for required in ('localizedDescription', 'submittedIdentity', '<redacted-account>'):
+              if required not in old_function:
+                  raise SystemExit(f'refusing unexpected redactedError implementation; missing {required}')
 
           new_function = '''    private static func redactedError(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) -> String {
               let raw = error?.localizedDescription ?? "unknown error"
