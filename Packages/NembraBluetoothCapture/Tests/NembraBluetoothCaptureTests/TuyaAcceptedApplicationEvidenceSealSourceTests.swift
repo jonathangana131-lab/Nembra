@@ -4,31 +4,54 @@ import Testing
 
 @Suite("Capture accepted application evidence export seal")
 struct TuyaAcceptedApplicationEvidenceSealSourceTests {
-    @Test("successful package seal freezes app-exportable accepted evidence before another suspension point")
-    func acceptanceSealFreezesExportPrefixSynchronously() throws {
+    @Test("acceptance closes application admission and freezes a quiescent event prefix before the package sealing await")
+    func acceptanceSealFreezesQuiescentExportPrefixBeforeAwait() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let watchdog = try section(
             in: app,
             from: "private func startWatchdog",
             to: "private func recordObservedTransportLoss"
         )
-        let seal = try section(
-            in: String(watchdog),
-            from: "try await sessionLedger.sealAcceptedObservation(for: token)",
-            to: "} catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed"
-        )
-        let body = String(seal)
+        let body = String(watchdog)
 
-        guard let packageSeal = body.range(of: "try await sessionLedger.sealAcceptedObservation(for: token)"),
-              let frozenPrefix = body.range(of: "sealedAcceptedEventPrefix =", range: packageSeal.upperBound..<body.endIndex) else {
-            Issue.record("Successful package seal must synchronously snapshot the exportable accepted event prefix.")
+        guard let noInflight = body.range(of: "guard self.applicationUpdateAdmissionsInFlight == 0"),
+              let closeCut = body.range(of: "self.acceptanceCutIsClosed = true", range: noInflight.upperBound..<body.endIndex),
+              let frozenPrefix = body.range(of: "let acceptedEventPrefixAtCut = self.events", range: closeCut.upperBound..<body.endIndex),
+              let packageSeal = body.range(of: "try await sessionLedger.sealAcceptedObservation(for: token)", range: frozenPrefix.upperBound..<body.endIndex),
+              let publishPrefix = body.range(of: "self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut", range: packageSeal.upperBound..<body.endIndex) else {
+            Issue.record("Canonical acceptance must close admission, freeze the quiescent app prefix before the sealing await, then publish that exact prefix after package seal succeeds.")
             throw SourceContractError.sectionMissing
         }
 
-        #expect(body[frozenPrefix.upperBound...].contains("events"))
-        if let nextAwait = body.range(of: "await ", range: packageSeal.upperBound..<body.endIndex) {
-            #expect(frozenPrefix.lowerBound < nextAwait.lowerBound)
+        #expect(noInflight.lowerBound < closeCut.lowerBound)
+        #expect(closeCut.lowerBound < frozenPrefix.lowerBound)
+        #expect(frozenPrefix.lowerBound < packageSeal.lowerBound)
+        #expect(packageSeal.lowerBound < publishPrefix.lowerBound)
+        #expect(!body.contains("self.sealedAcceptedEventPrefix = self.events"))
+    }
+
+    @Test("application callbacks cannot cross the acceptance cut and in-flight admissions remain owned until async ledger work finishes")
+    func applicationAdmissionIsQuiescedBeforeSeal() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let receive = try section(
+            in: app,
+            from: "private func receivedApplicationUpdate",
+            to: "private func startWatchdog"
+        )
+        let body = String(receive)
+
+        guard let cutGuard = body.range(of: "guard !acceptanceCutIsClosed"),
+              let increment = body.range(of: "applicationUpdateAdmissionsInFlight += 1", range: cutGuard.upperBound..<body.endIndex),
+              let decrement = body.range(of: "defer { applicationUpdateAdmissionsInFlight -= 1 }", range: increment.upperBound..<body.endIndex),
+              let mutation = body.range(of: "try await sessionLedger.recordApplicationUpdate", range: decrement.upperBound..<body.endIndex) else {
+            Issue.record("Application evidence admission must be cut-gated and tracked across its async package mutation.")
+            throw SourceContractError.sectionMissing
         }
+
+        #expect(cutGuard.lowerBound < increment.lowerBound)
+        #expect(increment.lowerBound < decrement.lowerBound)
+        #expect(decrement.lowerBound < mutation.lowerBound)
+        #expect(body.contains("application_update_after_acceptance_cut_ignored"))
     }
 
     @Test("accepted export fails closed onto the frozen prefix instead of the mutable live event log")
@@ -36,6 +59,8 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
         #expect(app.contains("private var sealedAcceptedEventPrefix: [Event]?"))
+        #expect(app.contains("private var applicationUpdateAdmissionsInFlight = 0"))
+        #expect(app.contains("private var acceptanceCutIsClosed = false"))
 
         let export = try section(
             in: app,
@@ -51,7 +76,7 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         #expect(!body.contains("events: events\n"))
     }
 
-    @Test("starting a fresh correlation life clears the prior accepted export prefix")
+    @Test("starting a fresh correlation life reopens admission and clears the prior accepted export prefix")
     func freshCorrelationClearsPriorAcceptedPrefix() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let reset = try section(
@@ -60,6 +85,7 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
             to: "private func failLocally"
         )
 
+        #expect(reset.contains("acceptanceCutIsClosed = false"))
         #expect(reset.contains("sealedAcceptedEventPrefix = nil"))
     }
 
