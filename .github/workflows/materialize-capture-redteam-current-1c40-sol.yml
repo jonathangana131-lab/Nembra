@@ -20,12 +20,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Verify exact parent and import accepted red contracts
+      - name: Verify exact lineage and import red contracts
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "1c40853f6991b4d09206df1d25ecff021458b7eb"
-          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/materialize-capture-redteam-current-1c40-sol.yml"
+          git merge-base --is-ancestor 1c40853f6991b4d09206df1d25ecff021458b7eb HEAD
+          test "$(git diff --name-only 1c40853f6991b4d09206df1d25ecff021458b7eb HEAD)" = ".github/workflows/materialize-capture-redteam-current-1c40-sol.yml"
 
           for sha in \
             a8eb9b93eea7e5de1a9c80468cadf378989b5edd \
@@ -55,8 +55,8 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          entrypoint_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
-          source = entrypoint_path.read_text(encoding='utf-8')
+          def lines(*items: str) -> str:
+              return "\n".join(items)
 
           def replace_once(text: str, old: str, new: str, label: str) -> str:
               count = text.count(old)
@@ -64,173 +64,207 @@ jobs:
                   raise SystemExit(f'{label}: expected exactly one anchor, found {count}')
               return text.replace(old, new, 1)
 
-          source = replace_once(
+          def replace_in_section(text: str, start: str, end: str, old: str, new: str, label: str) -> str:
+              a = text.find(start)
+              if a < 0:
+                  raise SystemExit(f'{label}: start marker missing')
+              b = text.find(end, a + len(start))
+              if b < 0:
+                  raise SystemExit(f'{label}: end marker missing')
+              section = text[a:b]
+              count = section.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one section anchor, found {count}')
+              section = section.replace(old, new, 1)
+              return text[:a] + section + text[b:]
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+
+          status_old = lines(
+              '        sdkDeviceMembershipVerified = false',
+              '        membershipAccountUID = nil',
+              '        membershipDeviceID = nil',
+              '        membershipRequestID = UUID()'
+          )
+          status_view = lines(
+              '        sdkDeviceMembershipVerified = false',
+              '        membershipAccountUID = nil',
+              '        membershipDeviceID = nil',
+              '        membershipStatus = "Scooter membership authority was revoked. Verify this scooter again for the current Secure Link session."',
+              '        membershipRequestID = UUID()'
+          )
+          source = replace_in_section(
               source,
-              '''    func abandonCorrelationForViewExit() {
-                  // Close the screen-lifetime admission boundary before revoking every already-issued grant.
-                  // A later SwiftUI/account callback must not mint a replacement membership probe off-screen.
-                  acceptsViewScopedMembershipRequests = false
-                  sdkDeviceMembershipVerified = false
-                  membershipAccountUID = nil
-                  membershipDeviceID = nil
-                  membershipRequestID = UUID()
-          ''',
-              '''    func abandonCorrelationForViewExit() {
-                  // Close the screen-lifetime admission boundary before revoking every already-issued grant.
-                  // A later SwiftUI/account callback must not mint a replacement membership probe off-screen.
-                  acceptsViewScopedMembershipRequests = false
-                  sdkDeviceMembershipVerified = false
-                  membershipAccountUID = nil
-                  membershipDeviceID = nil
-                  membershipStatus = "Scooter membership authority was revoked. Verify this scooter again for the current Secure Link session."
-                  membershipRequestID = UUID()
-          ''',
+              '    func abandonCorrelationForViewExit() {',
+              '    func appDidLoseForeground() {',
+              status_old,
+              status_view,
               'view-exit membership status revocation'
           )
 
-          source = replace_once(
+          source = replace_in_section(
               source,
-              '''    func appDidLoseForeground() {
-                  guard !foregroundIntegrityLossHandled else { return }
-                  foregroundIntegrityLossHandled = true
-          ''',
-              '''    func appDidLoseForeground() {
-                  // Sealed accepted artifacts remain immutable/shareable across scene transitions.
-                  guard phase != .accepted else { return }
-                  guard !foregroundIntegrityLossHandled else { return }
-                  foregroundIntegrityLossHandled = true
-          ''',
+              '    func appDidLoseForeground() {',
+              '    var privateConfig: Bool',
+              lines(
+                  '    func appDidLoseForeground() {',
+                  '        guard !foregroundIntegrityLossHandled else { return }',
+                  '        foregroundIntegrityLossHandled = true'
+              ),
+              lines(
+                  '    func appDidLoseForeground() {',
+                  '        // Sealed accepted artifacts remain immutable/shareable across scene transitions.',
+                  '        guard phase != .accepted else { return }',
+                  '        guard !foregroundIntegrityLossHandled else { return }',
+                  '        foregroundIntegrityLossHandled = true'
+              ),
               'accepted-artifact foreground guard'
           )
 
-          source = replace_once(
+          status_foreground = lines(
+              '        sdkDeviceMembershipVerified = false',
+              '        membershipAccountUID = nil',
+              '        membershipDeviceID = nil',
+              '        membershipStatus = "Scooter membership authority was revoked by foreground loss. Verify this scooter again before a fresh OFF1 correlation."',
+              '        membershipRequestID = UUID()'
+          )
+          source = replace_in_section(
               source,
-              '''        acceptsViewScopedMembershipRequests = false
-                  sdkDeviceMembershipVerified = false
-                  membershipAccountUID = nil
-                  membershipDeviceID = nil
-                  membershipRequestID = UUID()
-                  membershipBusy = false
-          ''',
-              '''        acceptsViewScopedMembershipRequests = false
-                  sdkDeviceMembershipVerified = false
-                  membershipAccountUID = nil
-                  membershipDeviceID = nil
-                  membershipStatus = "Scooter membership authority was revoked by foreground loss. Verify this scooter again before a fresh OFF1 correlation."
-                  membershipRequestID = UUID()
-                  membershipBusy = false
-          ''',
+              '    func appDidLoseForeground() {',
+              '    var privateConfig: Bool',
+              status_old,
+              status_foreground,
               'foreground membership status revocation'
           )
 
-          source = replace_once(
+          token_guard = '        guard let token = currentConnectionToken else {'
+          correlated_reset = lines(
+              '        if phase == .correlated || phase == .selected {',
+              '            // A completed/confirmed target is still mutable current-attempt authority. It may',
+              '            // not cross an app foreground interruption even after the live scanner/lease ended.',
+              '            resetDiscoverySessionOnly()',
+              '            phase = .failed',
+              '            message = "Capture left the foreground after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the pre-background target cannot be reused."',
+              '            log("foreground_integrity_lost_after_target_correlation")',
+              '            return',
+              '        }',
+              '',
+              token_guard
+          )
+          source = replace_in_section(
               source,
-              '''        guard let token = currentConnectionToken else {
-                  if phase == .authenticating {
-          ''',
-              '''        if phase == .correlated || phase == .selected {
-                  // A completed/confirmed target is still mutable current-attempt authority. It may
-                  // not cross an app foreground interruption even after the live scanner/lease ended.
-                  resetDiscoverySessionOnly()
-                  phase = .failed
-                  message = "Capture left the foreground after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the pre-background target cannot be reused."
-                  log("foreground_integrity_lost_after_target_correlation")
-                  return
-              }
-
-              guard let token = currentConnectionToken else {
-                  if phase == .authenticating {
-          ''',
+              '    func appDidLoseForeground() {',
+              '    var privateConfig: Bool',
+              token_guard,
+              correlated_reset,
               'post-correlation foreground invalidation'
           )
 
-          source = replace_once(
+          event_guard_old = lines(
+              '        guard sdkAccountLoggedIn,',
+              '              sdkDeviceMembershipVerified,',
+              '              accountIdentityLeaseIsAuthorized,',
+              '              let driver else {'
+          )
+          event_guard_new = lines(
+              '        guard sdkAccountLoggedIn,',
+              '              sdkDeviceMembershipVerified,',
+              '              accountIdentityLeaseIsAuthorized,',
+              '              let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),',
+              '              !verifiedAccountUID.isEmpty,',
+              '              let driver else {'
+          )
+          source = replace_in_section(
               source,
-              '''        guard sdkAccountLoggedIn,
-                  sdkDeviceMembershipVerified,
-                  accountIdentityLeaseIsAuthorized,
-                  let driver else {
-          ''',
-              '''        guard sdkAccountLoggedIn,
-                  sdkDeviceMembershipVerified,
-                  accountIdentityLeaseIsAuthorized,
-                  let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !verifiedAccountUID.isEmpty,
-                  let driver else {
-          ''',
+              '    private func receivedApplicationUpdate(',
+              '    private func startWatchdog(',
+              event_guard_old,
+              event_guard_new,
               'verified account UID event-custody lease'
           )
 
-          source = replace_once(
+          event_log_old = lines(
+              '            log("tuya_application_update", update.merging([',
+              '                "generation": String(token.diagnosticGeneration)',
+              '            ]) { current, _ in current })'
+          )
+          event_log_new = lines(
+              '            let eventDetails = redactVerifiedAccountUID(',
+              '                from: update,',
+              '                verifiedAccountUID: verifiedAccountUID',
+              '            )',
+              '            log("tuya_application_update", eventDetails.merging([',
+              '                "generation": String(token.diagnosticGeneration)',
+              '            ]) { _, trusted in trusted })'
+          )
+          source = replace_in_section(
               source,
-              '''            log("tuya_application_update", update.merging([
-                  "generation": String(token.diagnosticGeneration)
-              ]) { current, _ in current })
-          ''',
-              '''            let eventDetails = redactVerifiedAccountUID(
-                  from: update,
-                  verifiedAccountUID: verifiedAccountUID
-              )
-              log("tuya_application_update", eventDetails.merging([
-                  "generation": String(token.diagnosticGeneration)
-              ]) { _, trusted in trusted })
-          ''',
+              '    private func receivedApplicationUpdate(',
+              '    private func startWatchdog(',
+              event_log_old,
+              event_log_new,
               'trusted event provenance and account UID custody'
           )
 
-          helper_anchor = '''    private func startWatchdog(token: TuyaReadOnlyConnectionToken) {
-          '''
-          helper = '''    private func redactVerifiedAccountUID(
-              from update: [String: String],
-              verifiedAccountUID: String
-          ) -> [String: String] {
-              var redacted: [String: String] = [:]
-              for (key, value) in update {
-                  let redactedKey = key.replacingOccurrences(
-                      of: verifiedAccountUID,
-                      with: "<redacted-account-uid>"
-                  )
-                  let redactedValue = value.replacingOccurrences(
-                      of: verifiedAccountUID,
-                      with: "<redacted-account-uid>"
-                  )
-
-                  // Redacting a credential-shaped key must not silently drop a second application
-                  // field that maps to the same safe key. Preserve both under deterministic suffixes.
-                  var uniqueKey = redactedKey
-                  var suffix = 2
-                  while redacted[uniqueKey] != nil {
-                      uniqueKey = "\(redactedKey)#\(suffix)"
-                      suffix += 1
-                  }
-                  redacted[uniqueKey] = redactedValue
-              }
-              return redacted
-          }
-
-          '''
+          watchdog_anchor = '    private func startWatchdog(token: TuyaReadOnlyConnectionToken) {'
+          account_uid_helper = lines(
+              '    private func redactVerifiedAccountUID(',
+              '        from update: [String: String],',
+              '        verifiedAccountUID: String',
+              '    ) -> [String: String] {',
+              '        var redacted: [String: String] = [:]',
+              '        for (key, value) in update {',
+              '            let redactedKey = key.replacingOccurrences(',
+              '                of: verifiedAccountUID,',
+              '                with: "<redacted-account-uid>"',
+              '            )',
+              '            let redactedValue = value.replacingOccurrences(',
+              '                of: verifiedAccountUID,',
+              '                with: "<redacted-account-uid>"',
+              '            )',
+              '',
+              '            // Redaction must not silently drop a second field that maps to the same safe key.',
+              '            var uniqueKey = redactedKey',
+              '            var suffix = 2',
+              '            while redacted[uniqueKey] != nil {',
+              '                uniqueKey = "\\(redactedKey)#\\(suffix)"',
+              '                suffix += 1',
+              '            }',
+              '            redacted[uniqueKey] = redactedValue',
+              '        }',
+              '        return redacted',
+              '    }',
+              '',
+              watchdog_anchor
+          )
           source = replace_once(
               source,
-              helper_anchor,
-              helper + helper_anchor,
-              'account UID redaction helper insertion'
+              watchdog_anchor,
+              account_uid_helper,
+              'account UID helper insertion'
           )
 
-          source = replace_once(
+          duplicate_session = lines(
+              '        "accesstoken",',
+              '        "refreshtoken",',
+              '        "sessionkey",',
+              '        "authkey",'
+          )
+          simplified_session = lines(
+              '        "accesstoken",',
+              '        "refreshtoken",',
+              '        "authkey",'
+          )
+          source = replace_in_section(
               source,
-              '''        "accesstoken",
-                  "refreshtoken",
-                  "sessionkey",
-                  "authkey",
-          ''',
-              '''        "accesstoken",
-                  "refreshtoken",
-                  "authkey",
-          ''',
+              'private final class SmartLifeDriver',
+              '#endif\n\nprivate enum AppleAccountAuthorizationError',
+              duplicate_session,
+              simplified_session,
               'duplicate sessionkey simplification'
           )
-
-          entrypoint_path.write_text(source, encoding='utf-8')
+          path.write_text(source, encoding='utf-8')
 
           bridge_path = Path('NembraApp/Features/Research/TuyaAccountBridge.swift')
           bridge = bridge_path.read_text(encoding='utf-8')
@@ -251,9 +285,8 @@ jobs:
           from pathlib import Path
 
           source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
-          bridge = Path('NembraApp/Features/Research/TuyaAccountBridge.swift').read_text(encoding='utf-8')
-
-          required_source = [
+          bridge = Path('NembraApp/Features/Research/TuyaAccountBridge.swift').read_text(encoding='utf-8').lower()
+          for token in [
               'guard phase != .accepted else { return }',
               'phase == .correlated || phase == .selected',
               'resetDiscoverySessionOnly()',
@@ -264,39 +297,33 @@ jobs:
               'redactVerifiedAccountUID(',
               'eventDetails.merging([',
               ']) { _, trusted in trusted })',
-          ]
-          for token in required_source:
+          ]:
               if token not in source:
                   raise SystemExit(f'missing current red-team source contract: {token}')
-
-          forbidden_source = [
+          for token in [
               'log("tuya_application_update", update.merging([',
               ']) { current, _ in current })',
-          ]
-          for token in forbidden_source:
+          ]:
               if token in source:
                   raise SystemExit(f'forbidden stale event-custody source remains: {token}')
 
-          smartlife = source[source.index('private final class SmartLifeDriver'):]
-          if smartlife.split('private static func redactApplicationSecrets', 1)[0].count('"sessionkey"') != 1:
+          smartlife = source[source.index('private final class SmartLifeDriver'):source.index('#endif\n\nprivate enum AppleAccountAuthorizationError')]
+          if smartlife.count('"sessionkey"') != 1:
               raise SystemExit('SmartLifeDriver secret classifier must contain exactly one sessionkey entry')
-
           for token in ['localkey','sessionkey','appkey','appsecret','password','accounttoken','accesstoken','refreshtoken','authkey','seckey']:
-              if token not in bridge.lower():
+              if token not in bridge:
                   raise SystemExit(f'metadata bridge missing promised secret class: {token}')
 
-          test_paths = [
+          root = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests')
+          for name in [
               'TuyaApplicationEventMetadataPrecedenceSourceTests.swift',
               'TuyaApplicationAccountUIDExportCustodySourceTests.swift',
               'TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift',
               'TuyaCaptureForegroundIntegrityCurrentSourceTests.swift',
               'TuyaMetadataSecretRedactionSourceTests.swift',
-          ]
-          test_root = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests')
-          for name in test_paths:
-              if not (test_root / name).is_file():
+          ]:
+              if not (root / name).is_file():
                   raise SystemExit(f'missing absorbed red-team regression: {name}')
-
           print('Capture current red-team closure source contract: PASS')
           PY
           git diff --check
