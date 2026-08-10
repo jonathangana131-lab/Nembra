@@ -164,13 +164,10 @@ struct DashboardView: View {
                     .lineLimit(1)
             }
 
-            HStack(spacing: 14) {
-                compactAccessibilityMetric(
-                    title: "Battery",
-                    value: batteryText,
-                    warning: batteryInstrumentWarning,
-                    retained: isRetainedBatteryData
-                )
+            HStack(alignment: .top, spacing: 14) {
+                batteryRangeInstrument
+                    .frame(maxWidth: 196, alignment: .leading)
+
                 compactAccessibilityMetric(
                     title: "Trip",
                     value: tripText,
@@ -289,6 +286,11 @@ struct DashboardView: View {
                     Text("NOT CALIBRATED")
                         .font(.caption2.weight(.bold))
                         .tracking(0.8)
+                        .foregroundStyle(.secondary)
+                } else if batteryPercent == nil {
+                    Text("BATTERY UNAVAILABLE")
+                        .font(.caption2.weight(.bold))
+                        .tracking(0.6)
                         .foregroundStyle(.secondary)
                 } else {
                     Text("TAP FOR LEARNED RANGE")
