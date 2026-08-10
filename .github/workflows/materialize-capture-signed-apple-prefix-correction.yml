@@ -30,7 +30,34 @@ jobs:
         run: python3 scripts/ci/materialize_capture_signed_apple_prefix_correction.py apply
 
       - name: Verify corrected authority contract
-        run: python3 scripts/ci/materialize_capture_signed_apple_prefix_correction.py verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          installer='scripts/field/install_one_time_capture.command'
+          test_file='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSignedAppleAppIdentityCustodySourceTests.swift'
+          ! grep -Fq 'EXPECTED_APPLICATION_IDENTIFIER="${TEAM_ID}.${BUNDLE_ID}"' "$installer"
+          grep -Fq '[[ "$BUILT_APPLICATION_IDENTIFIER" == *".$BUNDLE_ID" ]]' "$installer"
+          grep -Fq '[[ "$PROFILE_APPLICATION_IDENTIFIER" == "$BUILT_APPLICATION_IDENTIFIER" ]]' "$installer"
+          grep -Fq '[[ "$BUILT_TEAM_IDENTIFIER" == "$TEAM_ID" ]]' "$installer"
+          grep -Fq '[[ "$PROFILE_TEAM_IDENTIFIER" == "$TEAM_ID" ]]' "$installer"
+          grep -Fq '[[ "$PROFILE_ROOT_TEAM_IDENTIFIER" == "$TEAM_ID" ]]' "$installer"
+          grep -Fq 'TeamIdentifier' "$installer"
+          grep -Fq 'PROFILE_ROOT_TEAM_IDENTIFIER' "$test_file"
+          grep -Fq '#expect(!installer.contains("EXPECTED_APPLICATION_IDENTIFIER=' "$test_file"
+          install_line="$(grep -nF 'say "Installing SDK-integrated Capture on the intended iPhone"' "$installer" | cut -d: -f1)"
+          for check in \
+            '[[ "$BUILT_APPLICATION_IDENTIFIER" == *".$BUNDLE_ID" ]]' \
+            '[[ "$PROFILE_APPLICATION_IDENTIFIER" == "$BUILT_APPLICATION_IDENTIFIER" ]]' \
+            '[[ "$BUILT_TEAM_IDENTIFIER" == "$TEAM_ID" ]]' \
+            '[[ "$PROFILE_TEAM_IDENTIFIER" == "$TEAM_ID" ]]' \
+            '[[ "$PROFILE_ROOT_TEAM_IDENTIFIER" == "$TEAM_ID" ]]'; do
+            line="$(grep -nF "$check" "$installer" | head -1 | cut -d: -f1)"
+            test -n "$line" && test "$line" -lt "$install_line"
+          done
+          custody="$(sed -n '/BUILT_APPLICATION_IDENTIFIER/,/say "Installing SDK-integrated Capture on the intended iPhone"/p' "$installer")"
+          for forbidden in connectBLE publishDps writeValue scanForPeripherals NEMBRA_SIMULATION_; do
+            ! grep -Fq "$forbidden" <<< "$custody"
+          done
 
       - name: Parse materializer
         run: python3 -m py_compile scripts/ci/materialize_capture_signed_apple_prefix_correction.py
