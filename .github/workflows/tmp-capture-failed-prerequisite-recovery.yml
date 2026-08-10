@@ -18,114 +18,83 @@ jobs:
           ref: product/v14-capture-premium-secure-link-current-sol
           fetch-depth: 2
 
-      - name: Guard exact reviewed product parent
+      - name: Guard exact reviewed helper parent
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "9a25002e58d351d9db952caa7cc5f4961c03a4fb"
+          test "$(git rev-parse HEAD^)" = "73dc29d83f0c537d2f9fbbecc4c5416addac077a"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/tmp-capture-failed-prerequisite-recovery.yml"
+          test "$(git rev-parse HEAD^^)" = "9a25002e58d351d9db952caa7cc5f4961c03a4fb"
 
       - name: Restore actionable failed prerequisites
         shell: python
         run: |
           from pathlib import Path
-
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           text = path.read_text()
-
-          old = """        case .failed:
-            failurePanel"""
-          new = """        case .failed:
-            if test.privateConfig && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn) {
-                VStack(spacing: 16) {
-                    failureRecoveryContextPanel
-                    sdkAuthorizationPanel
-                }
-            } else if test.sdkAccountLoggedIn && (!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized) {
-                VStack(spacing: 16) {
-                    failureRecoveryContextPanel
-                    preflightPanel
-                }
-            } else {
-                failurePanel
-            }"""
+          old = "        case .failed:\n            failurePanel"
+          new = "        case .failed:\n            if test.privateConfig && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn) {\n                VStack(spacing: 16) {\n                    failureRecoveryContextPanel\n                    sdkAuthorizationPanel\n                }\n            } else if test.sdkAccountLoggedIn && (!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized) {\n                VStack(spacing: 16) {\n                    failureRecoveryContextPanel\n                    preflightPanel\n                }\n            } else {\n                failurePanel\n            }"
           if text.count(old) != 1:
               raise SystemExit(f"failed-state routing anchor count: {text.count(old)}")
           text = text.replace(old, new, 1)
-
-          anchor = """    private var failurePanel: some View {
-"""
-          context = """    private var failureRecoveryContextPanel: some View {
-        panel {
-            VStack(alignment: .leading, spacing: 10) {
-                Label("Capture paused", systemImage: "exclamationmark.circle")
-                    .font(.title2.bold())
-                    .foregroundStyle(.orange)
-                Text(test.message)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("Restore the missing prerequisite below. Capture does not reuse the failed attempt as evidence.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-"""
+          anchor = "    private var failurePanel: some View {\n"
+          context = "    private var failureRecoveryContextPanel: some View {\n        panel {\n            VStack(alignment: .leading, spacing: 10) {\n                Label(\"Capture paused\", systemImage: \"exclamationmark.circle\")\n                    .font(.title2.bold())\n                    .foregroundStyle(.orange)\n                Text(test.message)\n                    .foregroundStyle(.secondary)\n                    .fixedSize(horizontal: false, vertical: true)\n                Text(\"Restore the missing prerequisite below. Capture does not reuse the failed attempt as evidence.\")\n                    .font(.footnote)\n                    .foregroundStyle(.secondary)\n            }\n        }\n    }\n\n"
           if text.count(anchor) != 1:
               raise SystemExit(f"failure panel anchor count: {text.count(anchor)}")
-          text = text.replace(anchor, context + anchor, 1)
-          path.write_text(text)
+          path.write_text(text.replace(anchor, context + anchor, 1))
 
-          test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteRecoverySourceTests.swift")
-          test_path.write_text(r'''import Foundation
-import Testing
-@testable import NembraBluetoothCapture
+      - name: Add failed-prerequisite recovery regression
+        shell: bash
+        run: |
+          cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteRecoverySourceTests.swift <<'SWIFT'
+          import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
 
-@Suite("Capture failed-prerequisite product recovery")
-struct TuyaFailedPrerequisiteRecoverySourceTests {
-    @Test("failed state exposes the control that can restore missing account or membership authority")
-    func failedStateRoutesToRestorablePrerequisite() throws {
-        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let surface = try section(in: app, from: "private var primarySurface: some View", to: "private var preflightPanel: some View")
-        let body = String(surface)
-        #expect(body.contains("case .failed:"))
-        #expect(body.contains("!sdkAccount.loggedIn || !test.sdkAccountLoggedIn"))
-        #expect(body.contains("sdkAuthorizationPanel"))
-        #expect(body.contains("!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized"))
-        #expect(body.contains("preflightPanel"))
-        #expect(body.contains("failureRecoveryContextPanel"))
-    }
+          @Suite("Capture failed-prerequisite product recovery")
+          struct TuyaFailedPrerequisiteRecoverySourceTests {
+              @Test("failed state exposes the control that can restore missing account or membership authority")
+              func failedStateRoutesToRestorablePrerequisite() throws {
+                  let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let surface = try section(in: app, from: "private var primarySurface: some View", to: "private var preflightPanel: some View")
+                  let body = String(surface)
+                  #expect(body.contains("case .failed:"))
+                  #expect(body.contains("!sdkAccount.loggedIn || !test.sdkAccountLoggedIn"))
+                  #expect(body.contains("sdkAuthorizationPanel"))
+                  #expect(body.contains("!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized"))
+                  #expect(body.contains("preflightPanel"))
+                  #expect(body.contains("failureRecoveryContextPanel"))
+              }
 
-    @Test("recovery context preserves the exact blocker and failed-attempt boundary")
-    func recoveryContextPreservesFailureReason() throws {
-        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let context = try section(in: app, from: "private var failureRecoveryContextPanel: some View", to: "private var failurePanel: some View")
-        #expect(context.contains("Text(test.message)"))
-        #expect(context.contains("Capture does not reuse the failed attempt as evidence."))
-    }
+              @Test("recovery context preserves the exact blocker and failed-attempt boundary")
+              func recoveryContextPreservesFailureReason() throws {
+                  let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let context = try section(in: app, from: "private var failureRecoveryContextPanel: some View", to: "private var failurePanel: some View")
+                  #expect(context.contains("Text(test.message)"))
+                  #expect(context.contains("Capture does not reuse the failed attempt as evidence."))
+              }
 
-    private func section(in source: String, from start: String, to end: String) throws -> Substring {
-        guard let startRange = source.range(of: start),
-              let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
-            throw SourceContractError.sectionMissing
-        }
-        return source[startRange.lowerBound..<endRange.lowerBound]
-    }
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let startRange = source.range(of: start),
+                        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+                      throw SourceContractError.sectionMissing
+                  }
+                  return source[startRange.lowerBound..<endRange.lowerBound]
+              }
 
-    private func readRepositoryFile(_ relativePath: String) throws -> String {
-        let repositoryRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
-    }
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  let repositoryRoot = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+              }
 
-    private enum SourceContractError: Error { case sectionMissing }
-}
-''')
+              private enum SourceContractError: Error { case sectionMissing }
+          }
+          SWIFT
 
       - name: Verify recovery without weakening authority
         shell: bash
