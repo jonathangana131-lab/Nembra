@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: f0fb83da5f57f9e92d29cf6ab444dc856e74c3a4
-      - name: Apply already-proven compile fixes in workspace
+      - name: Apply already-proven compile fixes and explicit plist in workspace
         shell: bash
         run: |
           set -euo pipefail
@@ -38,6 +38,43 @@ jobs:
               raise SystemExit(f'expected one optional membership device boundary, found {entry_text.count(old_boundary)}')
           entry.write_text(entry_text.replace(old_boundary, new_boundary, 1))
           PY
+
+          cat > NembraCapture-Diagnostic-Info.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleDevelopmentRegion</key><string>$(DEVELOPMENT_LANGUAGE)</string>
+            <key>CFBundleDisplayName</key><string>Nembra Capture</string>
+            <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
+            <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+            <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+            <key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
+            <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
+            <key>LSRequiresIPhoneOS</key><true/>
+            <key>NembraCaptureBuildIdentifier</key><string>$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)</string>
+            <key>NembraCaptureSourceCommitSHA</key><string>$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)</string>
+            <key>NembraCaptureTuyaDependencyLockSHA256</key><string>$(NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256)</string>
+            <key>NembraCaptureProcedureIdentifier</key><string>$(INFOPLIST_KEY_NembraCaptureProcedureIdentifier)</string>
+            <key>NSBluetoothAlwaysUsageDescription</key><string>Nembra Capture uses Bluetooth to learn this scooter's advertised and GATT data during a guided calibration.</string>
+            <key>NSBluetoothPeripheralUsageDescription</key><string>Nembra Capture uses Bluetooth to learn this scooter's advertised and GATT data during a guided calibration.</string>
+            <key>NSLocationWhenInUseUsageDescription</key><string>Nembra Capture can use iPhone location speed as a reference while learning which Bluetooth values represent scooter speed.</string>
+            <key>UIApplicationSceneManifest</key>
+            <dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>
+            <key>UILaunchScreen</key><dict/>
+            <key>UISupportedInterfaceOrientations</key>
+            <array>
+              <string>UIInterfaceOrientationPortrait</string>
+              <string>UIInterfaceOrientationLandscapeLeft</string>
+              <string>UIInterfaceOrientationLandscapeRight</string>
+            </array>
+          </dict>
+          </plist>
+          PLIST
+          plutil -lint NembraCapture-Diagnostic-Info.plist
+
       - name: Reproduce stamped Simulator build with surfaced diagnostics
         shell: bash
         run: |
@@ -57,6 +94,8 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath /tmp/NembraCaptureProvenanceDerived \
             CODE_SIGNING_ALLOWED=NO \
+            GENERATE_INFOPLIST_FILE=NO \
+            INFOPLIST_FILE=NembraCapture-Diagnostic-Info.plist \
             NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
             NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" \
             NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$dependency_sha" \
