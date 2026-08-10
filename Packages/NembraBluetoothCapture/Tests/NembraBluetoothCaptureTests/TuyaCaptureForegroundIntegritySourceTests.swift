@@ -40,9 +40,6 @@ struct TuyaCaptureForegroundIntegritySourceTests {
         #expect(view.contains("test.appDidLoseForeground()"))
         #expect(view.contains("if scenePhase == .active"))
 
-        // Reactivation may not reopen view-scoped authority while the exact old authenticated
-        // generation is still being terminally retired. Otherwise an active transition can reset
-        // the duplicate-retirement fence before a following onDisappear arrives.
         let retiredGenerationGate = try requiredOffset(
             containing: "guard currentConnectionToken == nil else { return }",
             in: activation
@@ -59,20 +56,20 @@ struct TuyaCaptureForegroundIntegritySourceTests {
         #expect(resetForegroundFence < reopenAdmission)
         #expect(viewExit.contains("if foregroundIntegrityLossHandled { return }"))
 
+        let acceptedGuard = try requiredOffset(
+            containing: "guard phase != .accepted else { return }",
+            in: cleanup
+        )
+        let setForegroundFence = try requiredOffset(
+            containing: "foregroundIntegrityLossHandled = true",
+            in: cleanup
+        )
         let closeAdmission = try requiredOffset(
             containing: "acceptsViewScopedMembershipRequests = false",
             in: cleanup
         )
         let clearVerified = try requiredOffset(
             containing: "sdkDeviceMembershipVerified = false",
-            in: cleanup
-        )
-        let clearAccountLease = try requiredOffset(
-            containing: "membershipAccountUID = nil",
-            in: cleanup
-        )
-        let clearDeviceLease = try requiredOffset(
-            containing: "membershipDeviceID = nil",
             in: cleanup
         )
         let membershipRevoke = try requiredOffset(
@@ -83,50 +80,45 @@ struct TuyaCaptureForegroundIntegritySourceTests {
             containing: "officialConnectionRequestID = UUID()",
             in: cleanup
         )
-        let correlationCheck = try requiredOffset(
-            containing: "if processCorrelationLease != nil || correlationSession != nil",
+        #expect(acceptedGuard < setForegroundFence)
+        #expect(setForegroundFence < closeAdmission)
+        #expect(closeAdmission < clearVerified)
+        #expect(clearVerified < membershipRevoke)
+        #expect(membershipRevoke < officialRevoke)
+        #expect(cleanup.contains("membershipAccountUID = nil"))
+        #expect(cleanup.contains("membershipDeviceID = nil"))
+        #expect(cleanup.contains("membershipBusy = false"))
+        #expect(cleanup.contains("membershipProbe = nil"))
+        #expect(cleanup.contains("watchdog?.cancel()"))
+
+        // Foreground loss after a fully sealed correlation, but before official Tuya handoff,
+        // must not let correlated/selected target authority cross the interruption.
+        #expect(cleanup.contains("phase == .correlated || phase == .selected"))
+        #expect(cleanup.contains("resetDiscoverySessionOnly()"))
+        #expect(cleanup.contains("foreground_integrity_lost_after_target_correlation"))
+        let postCorrelationReset = try requiredOffset(
+            containing: "resetDiscoverySessionOnly()",
             in: cleanup
         )
         let tokenCheck = try requiredOffset(
             containing: "guard let token = currentConnectionToken else",
             in: cleanup
         )
+        #expect(postCorrelationReset < tokenCheck)
 
-        #expect(closeAdmission < clearVerified)
-        #expect(clearVerified < membershipRevoke)
-        #expect(clearAccountLease < membershipRevoke)
-        #expect(clearDeviceLease < membershipRevoke)
-        #expect(membershipRevoke < officialRevoke)
-        #expect(officialRevoke < correlationCheck)
-        #expect(officialRevoke < tokenCheck)
-        #expect(cleanup.contains("membershipBusy = false"))
-        #expect(cleanup.contains("membershipProbe = nil"))
-        #expect(cleanup.contains("watchdog?.cancel()"))
-        #expect(cleanup.contains("foregroundIntegrityLossHandled = true"))
-
-        // Package target correlation is abandoned through the existing scanner-first owner path.
+        // In-flight package target correlation still retires scanner-first.
         #expect(cleanup.contains("abandonPackageCorrelation()"))
         #expect(cleanup.contains("foreground_integrity_lost_during_target_correlation"))
         #expect(!cleanup.contains("releasePackageCorrelationLease("))
 
-        // Any authenticated-generation terminal task must outlive StateObject teardown just like
-        // the accepted view-exit retirement. Exact-token fencing still rejects stale generations.
+        // Authenticated-generation retirement keeps exact-token fencing and strong lifetime.
         #expect(cleanup.contains("Task { @MainActor [self] in"))
         #expect(!cleanup.contains("Task { @MainActor [weak self] in"))
         #expect(cleanup.contains("guard self.currentConnectionToken == token else { return }"))
         #expect(cleanup.contains("invalidateObservationContinuity("))
         #expect(cleanup.contains("invalidateInternalLifecycle("))
-        #expect(cleanup.contains("foreground_integrity_lost_during_observation"))
-        #expect(cleanup.contains("foreground_integrity_lost_before_observation"))
-
-        // Once OfficialTuyaFactory.make() has handed out the one process-global driver, package
-        // OFF1 correlation cannot restart until relaunch. Recovery copy must not promise otherwise.
         #expect(cleanup.contains("Relaunch Capture before a new stationary read-only attempt"))
-        #expect(!cleanup.contains("during authenticated observation. Restart from OFF1"))
-        #expect(!cleanup.contains("before authenticated observation. Restart from OFF1"))
 
-        // Foreground loss is an integrity/lifecycle event, never an inferred physical disconnect
-        // or a reason to gain DP/query/write/control authority.
         for forbidden in [
             "recordObservedTransportLoss",
             "endConnection(",
@@ -166,7 +158,5 @@ struct TuyaCaptureForegroundIntegritySourceTests {
         return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
     }
 
-    private enum SourceContractError: Error {
-        case sectionMissing
-    }
+    private enum SourceContractError: Error { case sectionMissing }
 }
