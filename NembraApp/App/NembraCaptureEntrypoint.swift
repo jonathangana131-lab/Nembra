@@ -1383,6 +1383,26 @@ private final class SecureLinkController: NSObject, ObservableObject {
         log(kind, ["generation": String(token.diagnosticGeneration)])
     }
 
+    private func exportSafeApplicationUpdate(
+        _ update: [String: String]
+    ) -> [String: String]? {
+        guard accountIdentityLeaseIsAuthorized,
+              let verifiedAccountUID = membershipAccountUID,
+              !verifiedAccountUID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+
+        let redactionMarker = "<redacted-account-uid>"
+        var sanitized: [String: String] = [:]
+        for (key, value) in update {
+            let redactedKey = key.replacingOccurrences(of: verifiedAccountUID, with: redactionMarker)
+            let redactedValue = value.replacingOccurrences(of: verifiedAccountUID, with: redactionMarker)
+            guard sanitized[redactedKey] == nil else { return nil }
+            sanitized[redactedKey] = redactedValue
+        }
+        return sanitized
+    }
+
     private func receivedApplicationUpdate(
         _ update: [String: String],
         token: TuyaReadOnlyConnectionToken
@@ -1421,13 +1441,22 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        guard let exportSafeUpdate = exportSafeApplicationUpdate(update) else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "Authenticated application evidence could not be sanitized against the verified account UID without ambiguity.",
+                kind: "application_account_uid_redaction_failed"
+            )
+            return
+        }
+
         applicationUpdateAdmissionsInFlight += 1
         defer { applicationUpdateAdmissionsInFlight -= 1 }
 
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            log("tuya_application_update", exportSafeUpdate.merging([
                 "generation": String(token.diagnosticGeneration)
             ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
