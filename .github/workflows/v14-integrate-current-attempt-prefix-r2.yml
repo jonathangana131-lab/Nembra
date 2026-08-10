@@ -1,0 +1,79 @@
+name: V14 integrate current-attempt prefix retry
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-current-attempt-accepted-prefix-sol
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Compose reviewed custody repair onto exact flagship
+        env:
+          BASE_BRANCH: integration/v14-capture-final-stationary-convergence-sol
+          DONOR_BRANCH: repair/v14-capture-current-attempt-accepted-prefix-sol
+          EXPECTED_BASE: 06d75943dc6b9ba5248a697423b5bd5db10b2ecb
+          EXPECTED_DONOR_PARENT: 0eb723082cf637d22e8610359046b8c74d6b150b
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_DONOR_PARENT"
+
+          rm .github/workflows/v14-integrate-current-attempt-prefix-r2.yml
+          git config user.name "nembra-v14-integration"
+          git config user.email "actions@users.noreply.github.com"
+          git add .github/workflows/v14-integrate-current-attempt-prefix-r2.yml
+          git commit -m "chore(capture): retire current-attempt integration retry"
+          donor_head="$(git rev-parse HEAD)"
+          test "$(git ls-remote origin "refs/heads/$DONOR_BRANCH" | awk '{print $1}')" = "$EVENT_SHA"
+          git push origin "HEAD:$DONOR_BRANCH"
+
+          git fetch origin "$BASE_BRANCH"
+          remote_base="$(git rev-parse FETCH_HEAD)"
+          test "$remote_base" = "$EXPECTED_BASE"
+          git switch --detach "$remote_base"
+
+          git checkout "$donor_head" -- \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedApplicationEvidenceSealSourceTests.swift
+          git diff --check
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedApplicationEvidenceSealSourceTests.swift
+
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          tests = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedApplicationEvidenceSealSourceTests.swift").read_text()
+          start = app[app.index("func startBaseline()"):app.index("private func beginCorrelationSeries")]
+          watchdog = app[app.index("private func startWatchdog"):app.index("private func recordObservedTransportLoss")]
+          assert "private var captureAttemptEventStartIndex = 0" in app
+          assert start.index("captureAttemptEventStartIndex = events.count") < start.index("verifySDKMembership")
+          cut = watchdog.index("self.acceptanceCutIsClosed = true")
+          freeze = watchdog.index("let acceptedEventPrefixAtCut = Array(self.events.dropFirst(self.captureAttemptEventStartIndex))", cut)
+          seal = watchdog.index("try await sessionLedger.sealAcceptedObservation(for: token)", freeze)
+          assert cut < freeze < seal
+          assert "guard self.applicationUpdateAdmissionsInFlight == 0" in watchdog
+          assert "guard !acceptanceCutIsClosed" in app
+          assert "func consumeCorrelationAsyncInvalidation()" in app
+          assert "acceptedExportCannotInheritOlderFailedAttemptEvents" in tests
+          assert Path("scripts/field/install_one_time_capture.command").exists()
+          assert Path(".github/workflows/capture-field-build-provenance.yml").exists()
+          PY
+
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedApplicationEvidenceSealSourceTests.swift
+          git commit -m "fix(capture): isolate accepted evidence to current attempt"
+          integrated_head="$(git rev-parse HEAD)"
+
+          test "$(git ls-remote origin "refs/heads/$BASE_BRANCH" | awk '{print $1}')" = "$EXPECTED_BASE"
+          git push origin "HEAD:$BASE_BRANCH"
+          echo "Integrated exact head: $integrated_head"
