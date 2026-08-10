@@ -239,22 +239,31 @@ say "Built app provenance matched exact requested source, reviewed Tuya dependen
 
 # Apple-backed Smart Life account entry is now part of field preflight. A source entitlement file
 # is not enough: prove the final signed executable and the exact embedded provisioning profile both
-# authorize Sign in with Apple before this build can be installed as the field candidate.
-SIGNED_ENTITLEMENTS_XML="$(/usr/bin/codesign -d --entitlements :- --xml "$APP" 2>/dev/null)" ||     die "Could not read effective entitlements from the final signed Capture app. Discard this candidate."
-BUILT_APPLE_SIGNIN_ENTITLEMENT="$(printf '%s' "$SIGNED_ENTITLEMENTS_XML" | /usr/bin/python3 -I -c '
+# authorize Sign in with Apple before this build can be installed as the field candidate. Run the
+# Apple verifiers with a closed startup environment and parse an XML plist from either display stream.
+SIGNED_ENTITLEMENTS_OUTPUT="$(/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/codesign -d --entitlements :- --xml "$APP" 2>&1)" || \
+    die "Could not read effective entitlements from the final signed Capture app. Discard this candidate."
+BUILT_APPLE_SIGNIN_ENTITLEMENT="$(printf '%s' "$SIGNED_ENTITLEMENTS_OUTPUT" | /usr/bin/python3 -I -c '
 import plistlib, sys
+payload = sys.stdin.buffer.read()
+start = payload.find(b"<?xml")
+end = payload.rfind(b"</plist>")
+if start < 0 or end < start:
+    raise SystemExit(2)
 try:
-    value = plistlib.loads(sys.stdin.buffer.read()).get("com.apple.developer.applesignin")
+    value = plistlib.loads(payload[start:end + len(b"</plist>")]).get("com.apple.developer.applesignin")
 except Exception:
     raise SystemExit(2)
 if value == ["Default"]:
     sys.stdout.write("Default")
 ' || true)"
-[[ "$BUILT_APPLE_SIGNIN_ENTITLEMENT" == "Default" ]] ||     die "Final signed Capture app does not carry the required Sign in with Apple entitlement. Enable the capability for this App ID/team and rebuild; do not install this candidate."
+[[ "$BUILT_APPLE_SIGNIN_ENTITLEMENT" == "Default" ]] || \
+    die "Final signed Capture app does not carry the required Sign in with Apple entitlement. Enable the capability for this App ID/team and rebuild; do not install this candidate."
 
 BUILT_PROFILE="$APP/embedded.mobileprovision"
 [[ -f "$BUILT_PROFILE" ]] || die "Final signed Capture app is missing embedded.mobileprovision. Discard this candidate."
-PROFILE_PLIST_XML="$(/usr/bin/security cms -D -i "$BUILT_PROFILE" 2>/dev/null)" ||     die "Could not decode the exact provisioning profile embedded in the final signed Capture app. Discard this candidate."
+PROFILE_PLIST_XML="$(/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/security cms -D -i "$BUILT_PROFILE" 2>/dev/null)" || \
+    die "Could not decode the exact provisioning profile embedded in the final signed Capture app. Discard this candidate."
 PROFILE_APPLE_SIGNIN_ENTITLEMENT="$(printf '%s' "$PROFILE_PLIST_XML" | /usr/bin/python3 -I -c '
 import plistlib, sys
 try:
@@ -265,9 +274,10 @@ except Exception:
 if value == ["Default"]:
     sys.stdout.write("Default")
 ' || true)"
-[[ "$PROFILE_APPLE_SIGNIN_ENTITLEMENT" == "Default" ]] ||     die "Embedded provisioning profile does not authorize Sign in with Apple for the final Capture app. Enable the capability for this App ID/team and rebuild; do not install this candidate."
+[[ "$PROFILE_APPLE_SIGNIN_ENTITLEMENT" == "Default" ]] || \
+    die "Embedded provisioning profile does not authorize Sign in with Apple for the final Capture app. Enable the capability for this App ID/team and rebuild; do not install this candidate."
 say "Final signed app and embedded provisioning profile both authorize Sign in with Apple"
-unset SIGNED_ENTITLEMENTS_XML BUILT_APPLE_SIGNIN_ENTITLEMENT PROFILE_PLIST_XML PROFILE_APPLE_SIGNIN_ENTITLEMENT BUILT_PROFILE
+unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_APPLE_SIGNIN_ENTITLEMENT PROFILE_PLIST_XML PROFILE_APPLE_SIGNIN_ENTITLEMENT BUILT_PROFILE
 unset BUILT_BUILD_IDENTIFIER BUILT_SOURCE_SHA BUILT_TUYA_DEPENDENCY_LOCK_SHA256 BUILT_PROCEDURE_IDENTIFIER BUILT_BUNDLE_ID APP_INFO_PLIST
 
 say "Installing SDK-integrated Capture on the intended iPhone"

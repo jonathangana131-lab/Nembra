@@ -9,11 +9,13 @@ ENTITLEMENTS = (ROOT / "NembraCapture.entitlements").read_text(encoding="utf-8")
 required_installer = [
     '[[ -x /usr/bin/codesign ]] || die "System codesign is required for effective signed-entitlement verification."',
     '[[ -x /usr/bin/security ]] || die "System security is required for embedded provisioning-profile verification."',
-    '/usr/bin/codesign -d --entitlements :- --xml "$APP"',
+    '/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/codesign -d --entitlements :- --xml "$APP" 2>&1',
+    'payload.find(b"<?xml")',
+    'payload.rfind(b"</plist>")',
     'com.apple.developer.applesignin',
     '[[ "$BUILT_APPLE_SIGNIN_ENTITLEMENT" == "Default" ]]',
     'BUILT_PROFILE="$APP/embedded.mobileprovision"',
-    '/usr/bin/security cms -D -i "$BUILT_PROFILE"',
+    '/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/security cms -D -i "$BUILT_PROFILE"',
     'root.get("Entitlements", {}).get("com.apple.developer.applesignin")',
     '[[ "$PROFILE_APPLE_SIGNIN_ENTITLEMENT" == "Default" ]]',
     'Final signed app and embedded provisioning profile both authorize Sign in with Apple',
@@ -22,9 +24,9 @@ for needle in required_installer:
     if needle not in INSTALLER:
         raise SystemExit(f"missing signed Apple entitlement custody contract: {needle}")
 
-if INSTALLER.index('/usr/bin/codesign -d --entitlements :- --xml "$APP"') > INSTALLER.index('say "Installing SDK-integrated Capture on the intended iPhone"'):
+if INSTALLER.index('/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/codesign -d --entitlements :- --xml "$APP" 2>&1') > INSTALLER.index('say "Installing SDK-integrated Capture on the intended iPhone"'):
     raise SystemExit("effective entitlement verification must finish before installation begins")
-if INSTALLER.index('/usr/bin/security cms -D -i "$BUILT_PROFILE"') > INSTALLER.index('say "Installing SDK-integrated Capture on the intended iPhone"'):
+if INSTALLER.index('/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/security cms -D -i "$BUILT_PROFILE"') > INSTALLER.index('say "Installing SDK-integrated Capture on the intended iPhone"'):
     raise SystemExit("provisioning entitlement verification must finish before installation begins")
 
 if "CODE_SIGN_ENTITLEMENTS = NembraCapture.entitlements;" not in PROJECT:
@@ -43,3 +45,9 @@ for forbidden in (
         raise SystemExit(f"Apple entitlement custody must not introduce protocol/physical authority: {forbidden}")
 
 print("capture Apple Sign-In signed-entitlement custody source contract: PASS")
+
+
+# Apple verification processes must not inherit caller-controlled startup/configuration state.
+for poisoned in ("DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "PYTHONPATH", "CODESIGN_ALLOCATE"):
+    if poisoned in INSTALLER[INSTALLER.index("SIGNED_ENTITLEMENTS_OUTPUT="):INSTALLER.index('say "Installing SDK-integrated Capture on the intended iPhone"')]:
+        raise SystemExit(f"caller-controlled Apple verifier state leaked into custody block: {poisoned}")
