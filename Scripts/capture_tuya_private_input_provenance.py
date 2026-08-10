@@ -223,6 +223,79 @@ def _tree_fingerprint(root: Path) -> str:
     return digest.hexdigest()
 
 
+
+def _generation_identity(path: Path, *, expected_kind: str) -> tuple[int, ...]:
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise ProvenanceError("private build input changed during whole-record admission") from error
+    if expected_kind == "F":
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+            raise ProvenanceError("private build input changed during whole-record admission")
+    elif expected_kind == "D":
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+            raise ProvenanceError("private build input changed during whole-record admission")
+    else:
+        raise ProvenanceError("unsupported private build input generation kind")
+    return _stat_identity(metadata)
+
+
+def _tree_generation_snapshot(root: Path) -> tuple[tuple[str, str, tuple[int, ...], str | None], ...]:
+    root_resolved = root.resolve(strict=True)
+    snapshot: list[tuple[str, str, tuple[int, ...], str | None]] = [
+        (".", "D", _generation_identity(root, expected_kind="D"), None)
+    ]
+    for current_text, directory_names, file_names in os.walk(root, topdown=True, followlinks=False):
+        current = Path(current_text)
+        kept_directories: list[str] = []
+        for name in sorted(directory_names, key=os.fsencode):
+            child = current / name
+            relative = child.relative_to(root).as_posix()
+            metadata = child.lstat()
+            identity = _stat_identity(metadata)
+            if stat.S_ISLNK(metadata.st_mode):
+                target = _assert_internal_symlink(child, root_resolved)
+                snapshot.append((relative, "L", identity, target))
+            elif stat.S_ISDIR(metadata.st_mode):
+                snapshot.append((relative, "D", identity, None))
+                kept_directories.append(name)
+            else:
+                raise ProvenanceError("private build tree contains an unsupported directory entry")
+        directory_names[:] = kept_directories
+        for name in sorted(file_names, key=os.fsencode):
+            child = current / name
+            relative = child.relative_to(root).as_posix()
+            metadata = child.lstat()
+            identity = _stat_identity(metadata)
+            if stat.S_ISLNK(metadata.st_mode):
+                target = _assert_internal_symlink(child, root_resolved)
+                snapshot.append((relative, "L", identity, target))
+            elif stat.S_ISREG(metadata.st_mode):
+                snapshot.append((relative, "F", identity, None))
+            else:
+                raise ProvenanceError("private build tree contains an unsupported file entry")
+    return tuple(sorted(snapshot, key=lambda item: os.fsencode(item[0])))
+
+
+def _record_generation_snapshot(
+    *,
+    lockfile: Path,
+    security_podspec: Path,
+    security_build: Path,
+    identity_podspec: Path,
+    identity_sources: Path,
+) -> tuple[object, ...]:
+    # This witness is deliberately metadata/identity based, not digest-only.  A
+    # mutate-and-restore race can restore final bytes while ctime/mtime changes;
+    # the whole-record fence must still reject that mixed-generation record.
+    return (
+        ("lockfile", _generation_identity(lockfile, expected_kind="F")),
+        ("security_podspec", _generation_identity(security_podspec, expected_kind="F")),
+        ("security_build", _tree_generation_snapshot(security_build)),
+        ("identity_podspec", _generation_identity(identity_podspec, expected_kind="F")),
+        ("identity_sources", _tree_generation_snapshot(identity_sources)),
+    )
+
 def build_record(
     *,
     lockfile: Path,
@@ -231,7 +304,15 @@ def build_record(
     identity_podspec: Path,
     identity_sources: Path,
 ) -> dict[str, str]:
-    return {
+    paths = {
+        "lockfile": lockfile,
+        "security_podspec": security_podspec,
+        "security_build": security_build,
+        "identity_podspec": identity_podspec,
+        "identity_sources": identity_sources,
+    }
+    record_snapshot_before = _record_generation_snapshot(**paths)
+    record = {
         "schema": SCHEMA,
         "podfile_lock_sha256": _read_stable_regular_file_sha256(lockfile)[1],
         "thing_smart_home_kit": THING_SMART_HOME_KIT_VERSION,
@@ -241,7 +322,12 @@ def build_record(
         "private_identity_podspec_sha256": _file_fingerprint(identity_podspec),
         "private_identity_sources_tree_sha256": _tree_fingerprint(identity_sources),
     }
-
+    record_snapshot_after = _record_generation_snapshot(**paths)
+    if record_snapshot_before != record_snapshot_after:
+        raise ProvenanceError(
+            "private Tuya build inputs changed while the whole provenance record was constructed"
+        )
+    return record
 
 def _record_text(record: dict[str, str]) -> str:
     if set(record) != set(_RECORD_KEYS):
