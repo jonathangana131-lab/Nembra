@@ -21,13 +21,10 @@ struct TuyaProcessLifetimeBLEOwnershipFenceSourceTests {
         #expect(body.components(separatedBy: "packageCorrelationRetiredForProcess = false").count - 1 == 1)
         #expect(body.components(separatedBy: "packageCorrelationRetiredForProcess = true").count - 1 == 1)
 
-        let make = try section(
-            in: body,
-            from: "static func make() -> OfficialTuyaDriver?",
-            to: "}\n}\n\n#if canImport(ThingSmartHomeKit)"
-        )
-        let retirement = make.range(of: "packageCorrelationRetiredForProcess = true")
-        let returnDriver = make.range(of: "return SmartLifeDriver()")
+        let makeStart = try #require(body.range(of: "static func make() -> OfficialTuyaDriver?"))
+        let makeBody = body[makeStart.lowerBound...]
+        let retirement = makeBody.range(of: "packageCorrelationRetiredForProcess = true")
+        let returnDriver = makeBody.range(of: "return SmartLifeDriver()")
         #expect(retirement != nil)
         #expect(returnDriver != nil)
         if let retirement, let returnDriver {
@@ -61,7 +58,7 @@ struct TuyaProcessLifetimeBLEOwnershipFenceSourceTests {
             #expect(liveStatus.lowerBound < reset.lowerBound)
         }
         #expect(correlation.contains("process_tuya_ble_ownership_blocks_scan"))
-        #expect(correlation.contains("Relaunch Capture"))
+        #expect(correlation.contains("relaunch with the scooter OFF before a fresh OFF1"))
     }
 
     @Test("process fence cannot be cleared by controller recovery")

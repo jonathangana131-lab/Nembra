@@ -39,15 +39,15 @@ struct TuyaExplicitCorrelatedTargetConfirmationSourceTests {
     @Test("primary UI exposes explicit confirmation before authentication")
     func primaryUIRequiresConfirmation() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let discoveryCard = try section(
+        let correlationPanel = try section(
             in: app,
-            from: "private var discoveryCard: some View",
-            to: "private func authenticationCard"
+            from: "private var correlationPanel: some View",
+            to: "private var secureObservationPanel: some View"
         )
 
-        #expect(discoveryCard.contains("confirmCorrelatedTarget"))
-        #expect(discoveryCard.localizedCaseInsensitiveContains("confirm"))
-        #expect(discoveryCard.localizedCaseInsensitiveContains("correlat"))
+        #expect(correlationPanel.contains("confirmCorrelatedTarget"))
+        #expect(correlationPanel.localizedCaseInsensitiveContains("confirm"))
+        #expect(correlationPanel.localizedCaseInsensitiveContains("correlat"))
     }
 
     @Test("authentication still requires the explicitly selected current-session candidate")

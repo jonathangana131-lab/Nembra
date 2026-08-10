@@ -39,13 +39,15 @@ struct TuyaSecureLinkViewMembershipAdmissionSourceTests {
         let view = String(try section(in: source, from: "private struct SecureLinkView: View", to: "private var hero: some View"))
         let task = String(try section(in: view, from: ".task {", to: ".onDisappear {"))
         let disappear = String(try section(in: view, from: ".onDisappear {", to: ".onChange(of: sdkAccount.loggedIn)"))
-        let accountChange = String(try section(in: view, from: ".onChange(of: sdkAccount.loggedIn)", to: "    }\n\n    private var hero"))
+        let accountChangeStart = try requiredOffset(containing: ".onChange(of: sdkAccount.loggedIn)", in: view)
+        let accountChange = String(view[accountChangeStart...])
 
         let open = try requiredOffset(containing: "test.activateMembershipRequestsForView()", in: task)
         let bootstrap = try requiredOffset(containing: "sdkAccount.bootstrap()", in: task)
         #expect(open < bootstrap)
         #expect(disappear.contains("test.abandonCorrelationForViewExit()"))
-        #expect(accountChange.contains("test.verifySDKMembership()"))
+        #expect(accountChange.contains("if loggedIn { test.verifySDKMembership() }"))
+        #expect(accountChange.contains("else { test.invalidateSDKMembership() }"))
     }
 
     @Test("screen-lifetime fence adds no transport or physical authority")

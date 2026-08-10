@@ -131,7 +131,7 @@ struct TuyaAuthenticatedTerminalHorizonTests {
         #expect(terminal.applicationPayloadCount == beforeGap.applicationPayloadCount)
     }
 
-    @Test("late SDK failure revokes authority without erasing earned diagnostic chronology")
+    @Test("late SDK failure revokes authority without manufacturing liveness")
     func lateSDKFailureRetiresToken() async throws {
         let clock = TerminalClock(100)
         let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
@@ -151,7 +151,7 @@ struct TuyaAuthenticatedTerminalHorizonTests {
         #expect(failed.authenticatedAtUptimeNanoseconds == 200)
         #expect(failed.applicationPayloadCount == 1)
         #expect(failed.latestApplicationPayloadUptimeNanoseconds == 300)
-        #expect(failed.latestObservedUptimeNanoseconds == 400)
+        #expect(failed.latestObservedUptimeNanoseconds == 300)
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: failed) == .blocked(reason: "Tuya SDK session failed."))
 
         clock.advance(to: 500)

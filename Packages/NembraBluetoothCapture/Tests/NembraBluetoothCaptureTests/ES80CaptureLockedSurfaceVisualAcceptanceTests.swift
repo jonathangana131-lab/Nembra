@@ -3,7 +3,7 @@ import Testing
 
 @Suite("ES80 Capture locked-surface visual acceptance")
 struct ES80CaptureLockedSurfaceVisualAcceptanceTests {
-    private static func appSource() throws -> String {
+    private static func captureShellSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let repositoryRoot = testFile
             .deletingLastPathComponent()
@@ -15,93 +15,85 @@ struct ES80CaptureLockedSurfaceVisualAcceptanceTests {
         return try String(
             contentsOf: repositoryRoot
                 .appendingPathComponent("NembraApp")
-                .appendingPathComponent("App")
-                .appendingPathComponent("NembraApp.swift"),
+                .appendingPathComponent("Features")
+                .appendingPathComponent("Research")
+                .appendingPathComponent("ES80CaptureShellView.swift"),
             encoding: .utf8
         )
     }
 
-    private static func engineeringDetailsControl(in source: String) throws -> Substring {
-        let label = try #require(source.range(of: "Text(\"Engineering details\")"))
-        let identifier = try #require(
-            source.range(
-                of: ".accessibilityIdentifier(\"es80.capture.engineering-details\")",
-                range: label.lowerBound..<source.endIndex
-            )
-        )
-        return source[label.lowerBound..<identifier.upperBound]
-    }
-
-    private static func physicalLockAccessibilityLabel(in source: String) throws -> Substring {
-        let start = try #require(
-            source.range(of: "private var physicalLockAccessibilityLabel: String")
-        )
+    private static func lockedStateBranch(in source: String) throws -> Substring {
+        let start = try #require(source.range(of: "case .physicalProcedureLocked:"))
         let end = try #require(
             source.range(
-                of: "private var buildIdentityAccessibilityLabel: String",
-                range: start.lowerBound..<source.endIndex
+                of: "case let .bluetoothUnavailable(message):",
+                range: start.upperBound..<source.endIndex
             )
         )
         return source[start.lowerBound..<end.lowerBound]
     }
 
-    @Test("locked rider surface keeps exact engineering truth subordinate to the primary lock")
+    @Test("locked rider surface stays human-first and truth-subordinate")
     func riderHierarchyRemainsHumanFirst() throws {
-        let source = try Self.appSource()
-        let lockedSurfaceStart = try #require(
-            source.range(of: "private struct ES80ExperimentOneFieldNoGoView: View")
-        )
-        let lockedSurface = source[lockedSurfaceStart.lowerBound..<source.endIndex]
-        let lockAccessibilityLabel = try Self.physicalLockAccessibilityLabel(in: source)
-        let lockTitle = try #require(lockedSurface.range(of: "Text(\"Capture locked\")"))
-        let defaultRiderMessage = try #require(
-            lockedSurface.range(of: "\"This build is still finishing its final checks before it can collect real ES80 data.\"")
-        )
-        let physicalBoundary = try #require(
-            lockedSurface.range(of: ".accessibilityIdentifier(\"es80.capture.physical-run-locked\")")
-        )
-        let details = try #require(lockedSurface.range(of: "Text(\"Engineering details\")"))
-        let rawRecipe = try #require(lockedSurface.range(of: "Text(recipeID)"))
+        let source = try Self.captureShellSource()
+        let lockedState = try Self.lockedStateBranch(in: source)
 
-        #expect(lockAccessibilityLabel.contains("Capture locked on this build."))
-        #expect(lockAccessibilityLabel.contains("Final exact-build checks are still in progress."))
-        #expect(lockAccessibilityLabel.contains("No scooter action is needed yet."))
-        #expect(lockedSurface.contains("Text(isAccessibilityLayout ? \"PHYSICAL CAPTURE · NO-GO\" : \"Not ready for scooter capture yet\")"))
-        #expect(lockedSurface.contains("if !isAccessibilityLayout"))
-
-        #expect(lockTitle.lowerBound < defaultRiderMessage.lowerBound)
-        #expect(defaultRiderMessage.lowerBound < physicalBoundary.lowerBound)
-        #expect(physicalBoundary.lowerBound < details.lowerBound)
-        #expect(details.lowerBound < rawRecipe.lowerBound)
-        #expect(lockedSurface.contains("if engineeringDetailsExpanded"))
-        #expect(lockedSurface.contains("Software evidence only. This does not verify a physical ES80 or unlock scooter controls."))
-    }
-
-    @Test("Engineering Details disclosure has a full-width explicit 44-point minimum hit target")
-    func engineeringDetailsMeetsMinimumHitTarget() throws {
-        let source = try Self.appSource()
-        let control = try Self.engineeringDetailsControl(in: source)
-
-        #expect(control.contains(".frame(maxWidth: .infinity, alignment: .leading)"))
-        #expect(control.contains(".contentShape(Rectangle())"))
+        #expect(lockedState.contains("eyebrow: \"CAPTURE LOCKED\""))
+        #expect(lockedState.contains("title: \"This build is not ready for a field capture\""))
         #expect(
-            control.contains(".frame(minHeight: 44)")
-                || control.contains(".frame(minHeight: 50)")
-                || control.contains(".frame(minHeight: 56)"),
-            "The only interactive control on the locked rider surface must explicitly preserve at least a 44pt tap target, including at large Dynamic Type sizes."
+            lockedState.contains(
+                "Field capture is locked for this build. OFF / ON checks, connection, capture, and sealing stay unavailable until this exact build is authorized."
+            )
         )
-        #expect(control.contains(".accessibilityValue(engineeringDetailsExpanded ? \"Expanded\" : \"Collapsed\")"))
-        #expect(control.contains(".accessibilityHint("))
+        #expect(lockedState.contains("symbol: \"lock.shield.fill\""))
+
+        let detailsStart = try #require(source.range(of: "private var captureDetailsSheet: some View"))
+        let details = source[detailsStart.lowerBound..<source.endIndex]
+        #expect(details.contains("Text(\"Truth boundary\")"))
+        #expect(details.contains("This artifact is passive software evidence."))
+        #expect(details.contains("it does not authenticate the physical ES80"))
+        #expect(details.contains("This screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics."))
     }
 
-    @Test("locked surface preserves wrapping and off-main build identity measurement")
-    func lockCopyAndBuildIdentityStayLegibleAndResponsive() throws {
-        let source = try Self.appSource()
+    @Test("physical lock exposes no actionable capture control before authority")
+    func physicalLockHasNoInteractiveBypass() throws {
+        let source = try Self.captureShellSource()
+        let lockedState = try Self.lockedStateBranch(in: source)
 
+        #expect(!lockedState.contains("primaryButton("))
+        #expect(!lockedState.contains("secondaryButton("))
+        #expect(!lockedState.contains("NavigationLink("))
+        #expect(!lockedState.contains("ShareLink("))
+
+        let gate = try #require(source.range(of: "guard status.physicalProcedurePermitted else {"))
+        let lockedReturn = try #require(
+            source.range(
+                of: "return .physicalProcedureLocked",
+                range: gate.lowerBound..<source.endIndex
+            )
+        )
+        let foregroundCheck = try #require(
+            source.range(
+                of: "if status.foregroundIntegrityLost",
+                range: lockedReturn.upperBound..<source.endIndex
+            )
+        )
+        #expect(gate.lowerBound < lockedReturn.lowerBound)
+        #expect(lockedReturn.lowerBound < foregroundCheck.lowerBound)
+    }
+
+    @Test("locked shell preserves accessible wrapping and explicit product identity")
+    func lockCopyAndAccessibilityStayLegible() throws {
+        let source = try Self.captureShellSource()
+
+        #expect(source.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"))
+        #expect(source.contains("@Environment(\\.accessibilityReduceMotion) private var accessibilityReduceMotion"))
+        #expect(source.contains("@Environment(\\.accessibilityReduceTransparency) private var accessibilityReduceTransparency"))
+        #expect(source.contains("@Environment(\\.accessibilityDifferentiateWithoutColor) private var accessibilityDifferentiateWithoutColor"))
+        #expect(source.contains("if dynamicTypeSize.isAccessibilitySize"))
         #expect(source.contains(".fixedSize(horizontal: false, vertical: true)"))
-        #expect(source.contains("Task.detached(priority: .utility)"))
-        #expect(source.contains("guard !Task.isCancelled else { return }"))
-        #expect(source.contains(".accessibilityIdentifier(\"es80.capture.build-identity\")"))
-        #expect(source.contains(".accessibilityIdentifier(\"es80.capture.field-no-go\")"))
+        #expect(source.contains(".accessibilityIdentifier(\"es80.capture-shell\")"))
+        #expect(source.contains(".navigationTitle(\"Nembra Capture\")"))
+        #expect(source.contains(".sheet(isPresented: $showingDetails)"))
     }
 }
