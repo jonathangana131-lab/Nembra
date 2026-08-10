@@ -40,7 +40,7 @@ struct TuyaAppChronologyIntegrityTerminalSourceTests {
         #expect(begin.contains("markChronologyIntegrityInvalidated(for: token)"))
     }
 
-    @Test("authentication promotion clock regression uses chronology integrity instead of source authority")
+    @Test("authentication promotion clock regression uses only chronology integrity")
     func authenticationPromotionRegressionUsesNoClockTerminal() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let authenticated = try section(
@@ -57,6 +57,11 @@ struct TuyaAppChronologyIntegrityTerminalSourceTests {
         #expect(observedOnline.contains("sessionLedger.markAuthenticated(for: token"))
         #expect(observedOnline.contains("MutationError.monotonicClockRegressed"))
         #expect(observedOnline.contains("invalidateChronologyIntegrity"))
+        #expect(!observedOnline.contains("invalidateSourceAuthority"))
+        #expect(!observedOnline.contains("authenticationAcquisitionFailed"))
+        #expect(!observedOnline.contains("markAuthenticationFailed"))
+        #expect(!observedOnline.contains("invalidateObservationContinuity"))
+        #expect(!observedOnline.contains("endConnection"))
     }
 
     @Test("application receipt clock regression cannot be relabeled as an observation gap")
