@@ -101,6 +101,8 @@ struct TuyaNavigationBLELeaseRetirementSourceTests {
         #expect(requestRevoke < tokenRetirement)
         #expect(cleanup.contains("watchdog?.cancel()"))
         #expect(cleanup.contains("invalidateInternalLifecycle("))
+        #expect(cleanup.contains("Task { @MainActor [self] in"))
+        #expect(!cleanup.contains("Task { @MainActor [weak self] in"))
         #expect(cleanup.contains("if phase == .authenticating"))
         #expect(cleanup.contains("authentication_start_abandoned_on_view_exit"))
         #expect(!cleanup.contains("disconnectBLE"))

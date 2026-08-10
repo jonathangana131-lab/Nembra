@@ -430,8 +430,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             phase = .failed
             message = "Authenticated observation stopped because Capture left Secure Link. Relaunch before another authenticated attempt; no BLE disconnect is claimed."
             log("authenticated_session_abandoned_on_view_exit", ["generation": String(token.diagnosticGeneration)])
-            Task { @MainActor [weak self] in
-                guard let self else { return }
+            Task { @MainActor [self] in
                 await self.invalidateInternalLifecycle(
                     token: token,
                     message: "Authenticated observation stopped because Capture left Secure Link. Relaunch before another authenticated attempt; no BLE disconnect is claimed.",
