@@ -1,0 +1,205 @@
+name: Materialize Capture Event Custody Convergence 8069
+
+on:
+  push:
+    branches:
+      - "repair/v14-capture-event-provenance-account-uid-8069-sol"
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact current-product parent and test-only staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='8069c0ffec496cacbe263016d8a7f4ca15ddc64e'
+          git merge-base --is-ancestor "$parent" HEAD
+          git diff --quiet "$parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+          mapfile -t changed < <(git diff --name-only "$parent"...HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 3
+          test "${changed[0]}" = '.github/workflows/materialize-capture-event-provenance-account-uid-8069-sol.yml'
+          test "${changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift'
+          test "${changed[2]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift'
+
+      - name: Materialize trusted event provenance and account UID custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+
+          receiver_marker = '    private func receivedApplicationUpdate(\n'
+          if source.count(receiver_marker) != 1:
+              raise SystemExit('receivedApplicationUpdate marker is ambiguous')
+          if '<redacted-account-uid>' in source or 'applicationUpdateForEventCustody(' in source:
+              raise SystemExit('account-UID custody repair already present or ambiguous')
+
+          helper = '\n'.join([
+              '    private func applicationUpdateForEventCustody(_ update: [String: String]) -> [String: String] {',
+              '        guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),',
+              '              !verifiedAccountUID.isEmpty else { return update }',
+              '',
+              '        var redacted: [String: String] = [:]',
+              '        for (key, value) in update {',
+              '            let safeKey = key.replacingOccurrences(',
+              '                of: verifiedAccountUID,',
+              '                with: "<redacted-account-uid>",',
+              '                options: [.caseInsensitive, .literal]',
+              '            )',
+              '            let safeValue = value.replacingOccurrences(',
+              '                of: verifiedAccountUID,',
+              '                with: "<redacted-account-uid>",',
+              '                options: [.caseInsensitive, .literal]',
+              '            )',
+              '',
+              '            // Exact UID redaction may collapse malformed keys. Preserve both opaque fields',
+              '            // without ever retaining the account identifier itself.',
+              '            var uniqueKey = safeKey',
+              '            var collisionSuffix = 2',
+              '            while redacted[uniqueKey] != nil {',
+              '                uniqueKey = "\\(safeKey)#\\(collisionSuffix)"',
+              '                collisionSuffix += 1',
+              '            }',
+              '            redacted[uniqueKey] = safeValue',
+              '        }',
+              '        return redacted',
+              '    }',
+              '',
+          ]) + '\n'
+          source = source.replace(receiver_marker, helper + receiver_marker, 1)
+
+          receiver_start = source.index('private func receivedApplicationUpdate(')
+          receiver_end = source.index('private func startWatchdog', receiver_start)
+          receiver = source[receiver_start:receiver_end]
+          old_log = '\n'.join([
+              '            log("tuya_application_update", update.merging([',
+              '                "generation": String(token.diagnosticGeneration)',
+              '            ]) { current, _ in current })',
+          ])
+          if receiver.count(old_log) != 1:
+              raise SystemExit('expected untrusted application-event custody shape not found exactly once')
+          new_log = '\n'.join([
+              '            let custodySafeUpdate = applicationUpdateForEventCustody(update)',
+              '            log("tuya_application_update", custodySafeUpdate.merging([',
+              '                "generation": String(token.diagnosticGeneration)',
+              '            ]) { _, trusted in trusted })',
+          ])
+          receiver = receiver.replace(old_log, new_log, 1)
+          source = source[:receiver_start] + receiver + source[receiver_end:]
+
+          duplicate = '\n'.join([
+              '        "refreshtoken",',
+              '        "sessionkey",',
+              '        "authkey",',
+          ])
+          if source.count(duplicate) != 1:
+              raise SystemExit('expected duplicated sessionkey tail shape not found exactly once')
+          source = source.replace(duplicate, '\n'.join([
+              '        "refreshtoken",',
+              '        "authkey",',
+          ]), 1)
+
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Verify custody invariants and preserve 8069 foreground truth
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          helper_start = s.index('private func applicationUpdateForEventCustody(')
+          receiver_start = s.index('private func receivedApplicationUpdate(', helper_start)
+          receiver_end = s.index('private func startWatchdog', receiver_start)
+          helper = s[helper_start:receiver_start]
+          receiver = s[receiver_start:receiver_end]
+
+          assert 'membershipAccountUID?.trimmingCharacters' in helper
+          assert '<redacted-account-uid>' in helper
+          assert 'key.replacingOccurrences(' in helper
+          assert 'value.replacingOccurrences(' in helper
+          assert 'while redacted[uniqueKey] != nil' in helper
+          assert 'let custodySafeUpdate = applicationUpdateForEventCustody(update)' in receiver
+          assert 'log("tuya_application_update", custodySafeUpdate.merging([' in receiver
+          assert 'log("tuya_application_update", update.merging([' not in receiver
+          assert ']) { _, trusted in trusted })' in receiver
+          assert ']) { current, _ in current })' not in receiver
+          assert 'recordApplicationUpdate' in receiver
+          assert 'currentConnectionToken == token' in receiver
+
+          driver_start = s.index('@MainActor\nprivate final class SmartLifeDriver')
+          driver_end = s.index('#endif\n\nprivate enum AppleAccountAuthorizationError', driver_start)
+          driver = s[driver_start:driver_end]
+          fragments_start = driver.index('private static let secretKeyFragments')
+          fragments_end = driver.index('private static func redactApplicationSecrets', fragments_start)
+          fragments = driver[fragments_start:fragments_end]
+          assert fragments.count('"sessionkey"') == 1
+          assert '"uid",' not in fragments
+          assert '"uid"\n' not in fragments
+
+          # Preserve exact 8069 lifecycle/correlation closure rather than replaying our superseded donor.
+          activation_start = s.index('func activateMembershipRequestsForView()')
+          view_exit_start = s.index('func abandonCorrelationForViewExit()', activation_start)
+          foreground_start = s.index('func appDidLoseForeground()', view_exit_start)
+          private_config = s.index('var privateConfig: Bool', foreground_start)
+          activation = s[activation_start:view_exit_start]
+          view_exit = s[view_exit_start:foreground_start]
+          foreground = s[foreground_start:private_config]
+          current_status = 'membershipStatus = "Exact scooter membership must be verified again after Capture leaves Secure Link authority."'
+          assert 'OfficialTuyaFactory.packageCorrelationMayStart else { return }' in activation
+          assert current_status in view_exit
+          assert current_status in foreground
+          assert 'guard phase != .accepted else { return }' in foreground
+          assert foreground.count('resetDiscoverySessionOnly()') == 2
+          assert 'if phase == .correlated || phase == .selected' in foreground
+          assert 'foreground_integrity_lost_after_target_correlation' in foreground
+          assert '@Environment(\\.scenePhase) private var scenePhase' in s
+
+          for block in (helper, receiver):
+              for forbidden in (
+                  'queryDps', 'publishDps', 'writeValue', 'writeWithoutResponse',
+                  'disconnectBLE', 'endConnection('
+              ):
+                  assert forbidden not in block, forbidden
+
+          print('Capture 8069 event custody convergence contract: PASS')
+          PY
+          git diff --check
+
+      - name: Collapse helper into clean three-path current repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='8069c0ffec496cacbe263016d8a7f4ca15ddc64e'
+          rm .github/workflows/materialize-capture-event-provenance-account-uid-8069-sol.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
+          git add -u .github/workflows/materialize-capture-event-provenance-account-uid-8069-sol.yml
+          git diff --cached --check
+          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' \
+            commit -m 'fix(capture): protect application event custody provenance'
+          mapfile -t changed < <(git diff --name-only "$parent" HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 3
+          test "${changed[0]}" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          test "${changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift'
+          test "${changed[2]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift'
+          git diff --check "$parent" HEAD
+          git push origin HEAD:repair/v14-capture-event-provenance-account-uid-8069-sol
