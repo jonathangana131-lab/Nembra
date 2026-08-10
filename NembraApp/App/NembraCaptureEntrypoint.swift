@@ -116,7 +116,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var sdkAccountAuthorized: Bool { OfficialTuyaFactory.accountReady }
     var selected: Candidate? { selectedID.flatMap { byID[$0] } }
     var age: Double? { guard let a = authUptime else { return nil }; let n = DispatchTime.now().uptimeNanoseconds; return n >= a ? Double(n-a)/1e9 : nil }
-    var passed: Bool { secure && packetCount > 0 && (age ?? 0) > 45 }
+    var passed: Bool { secure && (phase == .observing || phase == .accepted) && packetCount > 0 && (age ?? 0) > 45 }
     func startBaseline() {
         guard central.state == .poweredOn else { fail("Bluetooth is not ready.", "bluetooth_unavailable"); return }
         resetDiscovery(); phase = .baseline; message = "Keep the scooter OFF for a few seconds."; log("baseline_started"); central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey:true])
@@ -149,7 +149,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do { let e=JSONEncoder(); e.outputFormatting=[.prettyPrinted,.sortedKeys,.withoutEscapingSlashes]; e.dateEncodingStrategy = .iso8601; exportData=try e.encode(x); exportName="Nembra-Secure-Link-\(deviceID.prefix(8))-Diagnostics.json"; message="Sanitized diagnostics ready; passwords, tokens, local_key and AppSecret are excluded." } catch { message="Diagnostic export failed: \(error.localizedDescription)" }
     }
     private func resetDiscovery() { central.stopScan(); watchdog?.cancel(); watchdog=nil; peripherals.removeAll(); byID.removeAll(); candidates.removeAll(); baseline.removeAll(); selectedID=nil; selectedPeripheral=nil; secure=false; acceptRaw=false; authUptime=nil; packetCount=0; exportData=nil }
-    private func fail(_ m:String,_ kind:String) { watchdog?.cancel(); watchdog=nil; phase = .failed; message=m; log(kind,["message":sanitize(m)]) }
+    private func fail(_ m:String,_ kind:String) { watchdog?.cancel(); watchdog=nil; acceptRaw=false; phase = .failed; message=m; log(kind,["message":sanitize(m)]) }
     private func log(_ kind:String,_ details:[String:String]=[:],raw:Data?=nil) { events.append(Event(at:Date(),kind:kind,details:details.mapValues(sanitize),hex:raw.map{ $0.map{String(format:"%02X",$0)}.joined() },base64:raw?.base64EncodedString())) }
     private func sanitize(_ s:String)->String { var r=s; for k in ["NEMBRA_TUYA_APP_KEY","NEMBRA_TUYA_APP_SECRET"] { if let v=ProcessInfo.processInfo.environment[k],!v.isEmpty { r=r.replacingOccurrences(of:v,with:"<redacted>") } }; return r }
     private static func tuyaCompany(_ d:Data?)->Bool { guard let d,d.count>=2 else{return false}; return (UInt16(d[d.startIndex]) | UInt16(d[d.index(after:d.startIndex)])<<8) == 0x07D0 }
