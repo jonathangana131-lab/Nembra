@@ -1268,6 +1268,29 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     let acceptedEventPrefixAtCut = Array(self.events.dropFirst(self.captureAttemptEventStartIndex))
                     do {
                         try await sessionLedger.sealAcceptedObservation(for: token)
+                        guard let driver = self.driver else {
+                            self.currentConnectionToken = nil
+                            self.localBLESettlementToken = nil
+                            self.sdkLocalBLEOnline = false
+                            self.phase = .failed
+                            self.message = "Tuya local-BLE authority became unavailable while canonical acceptance was sealing. Restart from OFF1; the sealed package chronology is diagnostic only."
+                            self.log("local_ble_authority_unavailable_during_acceptance_seal", [
+                                "generation": String(token.diagnosticGeneration)
+                            ])
+                            return
+                        }
+                        self.sdkLocalBLEOnline = driver.isLocallyConnected(uuid: self.tuyaUUID)
+                        guard self.sdkLocalBLEOnline else {
+                            self.currentConnectionToken = nil
+                            self.localBLESettlementToken = nil
+                            self.driver = nil
+                            self.phase = .failed
+                            self.message = "Tuya local BLE went offline while canonical acceptance was sealing. Restart from OFF1; no disconnect timestamp or second package terminal is claimed."
+                            self.log("local_ble_offline_during_acceptance_seal", [
+                                "generation": String(token.diagnosticGeneration)
+                            ])
+                            return
+                        }
                         guard self.buildIdentity.isAuthoritativeFieldBuild,
                               self.accountIdentityLeaseIsAuthorized else {
                             self.currentConnectionToken = nil
