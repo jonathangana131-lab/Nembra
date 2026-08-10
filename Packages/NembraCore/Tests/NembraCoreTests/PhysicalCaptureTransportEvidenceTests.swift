@@ -27,4 +27,24 @@ struct PhysicalCaptureTransportEvidenceTests {
         #expect(evidence.authorizesTelemetrySemantics == false)
         #expect(evidence.isStablePhysicalDeviceIdentity == false)
     }
+
+    @Test("opaque application payload receipt still cannot mint telemetry semantics")
+    func opaqueApplicationPayloadStillCannotMintTelemetry() {
+        let evidence = PhysicalCaptureTransportEvidence(
+            captureID: "future-opaque-capture",
+            observedPeripheralID: "capture-local-peripheral",
+            advertisedLocalName: "demo",
+            serviceUUID: "FD50",
+            writeCharacteristicUUID: "00000001-0000-1001-8001-00805F9B07D0",
+            notifyCharacteristicUUID: "00000002-0000-1001-8001-00805F9B07D0",
+            completedScenarioCount: 1,
+            characteristicValueEventCount: 1,
+            peripheralInitiatedDisconnectCount: 0,
+            meanConnectedIntervalSeconds: 45
+        )
+
+        #expect(evidence.characteristicValueEventCount == 1)
+        #expect(evidence.authorizesTelemetrySemantics == false)
+        #expect(evidence.isStablePhysicalDeviceIdentity == false)
+    }
 }

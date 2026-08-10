@@ -50,9 +50,12 @@ public struct PhysicalCaptureTransportEvidence: Codable, Equatable, Sendable {
     /// A CoreBluetooth peripheral UUID is capture-local evidence, not a durable scooter identity.
     public var isStablePhysicalDeviceIdentity: Bool { false }
 
-    /// No application characteristic payloads were received in C7D09A22, so this evidence
-    /// cannot authorize any ES80 data-point meaning.
-    public var authorizesTelemetrySemantics: Bool { characteristicValueEventCount > 0 }
+    /// Transport evidence never authorizes vehicle telemetry semantics by itself.
+    ///
+    /// Even a real non-empty application payload proves only that application-layer bytes were
+    /// observed. Speed, battery, voltage, current, power, mode, odometer, command acknowledgement,
+    /// or any other field meaning requires a separately accepted decoding/correlation contract.
+    public var authorizesTelemetrySemantics: Bool { false }
 }
 
 public extension PhysicalCaptureTransportEvidence {
