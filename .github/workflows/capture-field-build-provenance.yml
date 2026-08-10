@@ -45,14 +45,29 @@ jobs:
       - name: Run focused accepted-prefix regression
         shell: bash
         run: |
-          set -euo pipefail
-          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaAcceptedApplicationEvidenceSealSourceTests
+          set -uo pipefail
+          log=/tmp/capture-prefix-test.log
+          if swift test --package-path Packages/NembraBluetoothCapture --filter TuyaAcceptedApplicationEvidenceSealSourceTests >"$log" 2>&1; then
+            cat "$log"
+            exit 0
+          fi
+
+          cat "$log"
+          mkdir -p docs/debug
+          cp "$log" docs/debug/CAPTURE_PREFIX_FOCUSED_TEST_FAILURE.txt
+          git config user.name nembra-v14-debug
+          git config user.email actions@users.noreply.github.com
+          git add docs/debug/CAPTURE_PREFIX_FOCUSED_TEST_FAILURE.txt
+          git commit -m 'debug(capture): persist focused prefix test failure'
+          git push origin HEAD:repair/v14-capture-sealed-application-prefix-sol
+          exit 1
 
       - name: Self-retire staging and publish product commit
         shell: bash
         run: |
           set -euo pipefail
           rm Scripts/apply_capture_sealed_application_prefix_patch.py
+          rm -f docs/debug/CAPTURE_PREFIX_FOCUSED_TEST_FAILURE.txt
           git checkout 0b3ab8c58ebfb1332cbb46d9f1f145fdfca8b17f -- .github/workflows/capture-field-build-provenance.yml
 
           git config user.name nembra-v14-integration
