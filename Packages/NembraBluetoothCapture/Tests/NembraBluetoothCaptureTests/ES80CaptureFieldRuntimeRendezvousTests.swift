@@ -3,7 +3,7 @@ import Testing
 
 @Suite("ES80 Capture field runtime rendezvous")
 struct ES80CaptureFieldRuntimeRendezvousTests {
-    private static func appSource() throws -> String {
+    private static func fieldEntrypointSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let repositoryRoot = testFile
             .deletingLastPathComponent()
@@ -16,76 +16,51 @@ struct ES80CaptureFieldRuntimeRendezvousTests {
             contentsOf: repositoryRoot
                 .appendingPathComponent("NembraApp")
                 .appendingPathComponent("App")
-                .appendingPathComponent("NembraApp.swift"),
+                .appendingPathComponent("NembraCaptureEntrypoint.swift"),
             encoding: .utf8
         )
     }
 
-    private static func preflightSource(_ source: String) throws -> Substring {
-        let start = try #require(
-            source.range(of: "private struct ES80ExperimentOneStationaryPreflightView: View")?.lowerBound
-        )
-        let end = try #require(
-            source.range(
-                of: "private struct ES80ExperimentOneFieldNoGoView: View",
-                range: start..<source.endIndex
-            )?.lowerBound
-        )
-        return source[start..<end]
+    @Test("authenticated stationary preflight exposes exact field-build provenance before OFF1")
+    func authenticatedStationaryPreflightShowsExactFieldBuildTuple() throws {
+        let source = try Self.fieldEntrypointSource()
+
+        #expect(source.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
+        #expect(source.contains("var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }"))
+        #expect(source.contains("var fieldBuildIdentifier: String { buildIdentity.buildIdentifier }"))
+        #expect(source.contains("var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }"))
+        #expect(source.contains("var fieldProcedureIdentifier: String { NembraCaptureBuildIdentity.fieldProcedureIdentifier }"))
+
+        #expect(source.contains("test.fieldBuildIsAuthoritative ? \"Field build\" : \"Build blocked\""))
+        #expect(source.contains("LabeledContent(\"Build\", value: test.fieldBuildIdentifier)"))
+        #expect(source.contains("LabeledContent(\"Source commit\", value: test.fieldBuildSourceCommitSHA)"))
+        #expect(source.contains("LabeledContent(\"Procedure\", value: test.fieldProcedureIdentifier)"))
+        #expect(source.contains("Label(\"Start with scooter OFF\", systemImage: \"power\")"))
     }
 
-    @Test("authorized preflight exposes the package-owned runtime rendezvous before OFF 1")
-    func authorizedPreflightShowsExactResearchTuple() throws {
-        let preflight = try Self.preflightSource(Self.appSource())
+    @Test("OFF1 admission consumes composed current authority instead of minting a permissive app flag")
+    func off1ConsumesCurrentComposedAuthority() throws {
+        let source = try Self.fieldEntrypointSource()
 
-        #expect(preflight.contains("coordinator.status"))
-        #expect(preflight.contains("guard status.physicalProcedurePermitted else"))
-        #expect(preflight.contains("status.fieldExecutionStatus"))
-        #expect(preflight.contains("case let .goPrivateResearchBuild(build)"))
-        #expect(preflight.contains("PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue"))
-        #expect(preflight.contains("build.buildIdentifier"))
-        #expect(preflight.contains("build.sourceCommitSHA"))
-        #expect(preflight.contains("build.buildInstanceID"))
-        #expect(preflight.contains("es80.capture.preflight.field-rendezvous"))
-        #expect(preflight.contains("es80.capture.preflight.field-build-identifier"))
-        #expect(preflight.contains("es80.capture.preflight.field-source-sha"))
-        #expect(preflight.contains("es80.capture.preflight.field-build-instance"))
-        #expect(preflight.contains("es80.capture.preflight.field-recipe"))
-        #expect(preflight.contains("Final GO is still required"))
+        #expect(source.contains("private var authorityReady: Bool {"))
+        #expect(source.contains("test.fieldBuildIsAuthoritative\n            && test.privateConfig\n            && test.sdkAccountLoggedIn\n            && test.sdkDeviceMembershipVerified\n            && test.accountIdentityLeaseIsAuthorized"))
+        #expect(source.contains("if authorityReady {\n                    Button {\n                        test.startBaseline()"))
+        #expect(source.contains("requirementRow(\"Capture build\", ready: test.fieldBuildIsAuthoritative)"))
+        #expect(!source.contains("fieldBuildIsAuthoritative = true"))
+        #expect(!source.contains("permitsPhysicalProcedure = true"))
+        #expect(!source.contains("PassiveBluetoothExperimentOneFieldExecutionGate.ResearchBuild("))
+        #expect(!source.contains("PassiveBluetoothCaptureRuntimeBuildIdentityReader"))
     }
 
-    @Test("preflight rendezvous does not mint or reread authority in the app")
-    func preflightConsumesCoordinatorAuthorityOnly() throws {
-        let preflight = try Self.preflightSource(Self.appSource())
-        let researchBuildConstructorPattern = #"\bResearchBuild\("#
+    @Test("authenticated stationary field entrypoint has no Simulator-only authority bypass")
+    func authenticatedStationaryEntrypointHasNoSimulatorAuthorityBypass() throws {
+        let source = try Self.fieldEntrypointSource()
 
-        #expect(!preflight.contains("PassiveBluetoothCaptureRuntimeBuildIdentityReader"))
-        #expect(
-            "PassiveBluetoothExperimentOneFieldExecutionGate.ResearchBuild("
-                .range(of: researchBuildConstructorPattern, options: .regularExpression) != nil
-        )
-        #expect(
-            ".goPrivateResearchBuild(build)"
-                .range(of: researchBuildConstructorPattern, options: .regularExpression) == nil
-        )
-        #expect(
-            preflight.range(
-                of: researchBuildConstructorPattern,
-                options: .regularExpression
-            ) == nil
-        )
-        #expect(!preflight.contains("permitsPhysicalProcedure = true"))
-        #expect(preflight.contains("hasAcceptedPreflightAuthority"))
-        #expect(preflight.contains("selectedChargerState?.rawValue"))
-    }
-
-    @Test("synthetic Simulator preflight remains non-authorizing")
-    func simulatorFixtureDoesNotPretendToBeResearchAdmission() throws {
-        let preflight = try Self.preflightSource(Self.appSource())
-
-        #expect(preflight.contains("if simulatorQASnapshot != nil"))
-        #expect(preflight.contains("return true"))
-        #expect(preflight.contains("case .noGo:"))
-        #expect(preflight.contains("return nil"))
+        #expect(!source.contains("#if DEBUG && targetEnvironment(simulator)"))
+        #expect(!source.contains("simulatorQASnapshot"))
+        #expect(!source.contains("SYNTHETIC SOFTWARE STATE"))
+        #expect(source.contains("Capture stays locked until this Capture build, your Tuya account, and this scooter in that account are all confirmed."))
+        #expect(source.contains("Confirm this Capture build and the Tuya account that owns the scooter before Bluetooth starts."))
+        #expect(source.contains(".disabled(!authorityReady || test.membershipBusy)"))
     }
 }
