@@ -25,10 +25,17 @@ jobs:
       - name: Show Xcode
         run: xcodebuild -version
 
-      - name: Validate plist and installer
+      - name: Validate plist, installers, and Tuya SDK contract
         run: |
+          set -euo pipefail
           plutil -lint NembraApp/Info.plist
           bash -n scripts/field/install_one_time_capture.command
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          ruby -c Podfile
+          grep -Fq "pod 'ThingSmartCryption', :path => './LocalSecrets/TuyaSDK'" Podfile
+          grep -Fq "pod 'ThingSmartHomeKit', '~> 7.8.0'" Podfile
+          grep -Fq "pod 'ThingSmartBusinessExtensionKit', '~> 7.8.0'" Podfile
+          grep -Fq 'LocalSecrets/' .gitignore
 
       - name: Enforce no application characteristic writes
         shell: bash
