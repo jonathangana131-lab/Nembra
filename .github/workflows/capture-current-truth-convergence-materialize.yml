@@ -1,0 +1,354 @@
+name: Capture current-truth convergence materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-current-truth-convergence-1c408-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard exact current product and pre-mutation scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=1c40853f6991b4d09206df1d25ecff021458b7eb
+          git merge-base --is-ancestor "$base" HEAD
+          mapfile -t changed < <(git diff --name-only "$base"...HEAD | sort)
+          expected=(
+            ".github/workflows/capture-current-truth-convergence-materialize.yml"
+            "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift"
+            "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift"
+            "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegritySourceTests.swift"
+            "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift"
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          test "${changed[*]}" = "${expected_sorted[*]}"
+          git diff --quiet "$base"...HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Materialize fail-closed app truth convergence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text()
+
+          def section(source: str, start_marker: str, end_marker: str):
+              start = source.index(start_marker)
+              end = source.index(end_marker, start)
+              return start, end, source[start:end]
+
+          # 1) Membership status must be revoked synchronously with the view-scoped proof.
+          for start_marker, end_marker in [
+              ("    func abandonCorrelationForViewExit() {", "    func appDidLoseForeground() {"),
+              ("    func appDidLoseForeground() {", "    var privateConfig: Bool"),
+          ]:
+              start, end, body = section(text, start_marker, end_marker)
+              old = '''        sdkDeviceMembershipVerified = false
+                  membershipAccountUID = nil
+                  membershipDeviceID = nil
+                  membershipRequestID = UUID()
+          '''
+              new = '''        sdkDeviceMembershipVerified = false
+                  membershipAccountUID = nil
+                  membershipDeviceID = nil
+                  membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."
+                  membershipRequestID = UUID()
+          '''
+              if body.count(old) != 1:
+                  raise SystemExit(f"expected one membership revocation block in {start_marker}, found {body.count(old)}")
+              body = body.replace(old, new, 1)
+              text = text[:start] + body + text[end:]
+
+          # 2) Completed correlation/selection has no live scanner lease but is still foreground/view scoped.
+          start, end, view_exit = section(text, "    func abandonCorrelationForViewExit() {", "    func appDidLoseForeground() {")
+          view_anchor = '''        if phase == .authenticating {
+                  // Driver handoff happened, but no package generation exists yet. The request-id fence
+                  // below forces the pending ledger task to retire its generation before SDK connect.
+                  localBLESettlementToken = nil
+                  sdkLocalBLEOnline = false
+                  driver = nil
+                  phase = .failed
+                  message = "Authentication start stopped because Capture left Secure Link. Relaunch before another authenticated attempt; no BLE disconnect is claimed."
+                  log("authentication_start_abandoned_on_view_exit")
+                  return
+              }
+
+              guard processCorrelationLease != nil || correlationSession != nil else { return }
+          '''
+          view_replacement = '''        if phase == .authenticating {
+                  // Driver handoff happened, but no package generation exists yet. The request-id fence
+                  // below forces the pending ledger task to retire its generation before SDK connect.
+                  localBLESettlementToken = nil
+                  sdkLocalBLEOnline = false
+                  driver = nil
+                  phase = .failed
+                  message = "Authentication start stopped because Capture left Secure Link. Relaunch before another authenticated attempt; no BLE disconnect is claimed."
+                  log("authentication_start_abandoned_on_view_exit")
+                  return
+              }
+
+              if phase == .correlated || phase == .selected {
+                  resetDiscoverySessionOnly()
+                  phase = .failed
+                  message = "Bluetooth target correlation was abandoned when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
+                  log("target_correlation_abandoned_on_view_exit")
+                  return
+              }
+
+              guard processCorrelationLease != nil || correlationSession != nil else { return }
+          '''
+          if view_exit.count(view_anchor) != 1:
+              raise SystemExit(f"expected one view-exit auth/correlation anchor, found {view_exit.count(view_anchor)}")
+          view_exit = view_exit.replace(view_anchor, view_replacement, 1)
+          text = text[:start] + view_exit + text[end:]
+
+          start, end, foreground = section(text, "    func appDidLoseForeground() {", "    var privateConfig: Bool")
+          fg_anchor = '''        if processCorrelationLease != nil || correlationSession != nil {
+                  // Existing helper stops package transport before releasing this controller's lease.
+                  abandonPackageCorrelation()
+                  phase = .failed
+                  message = "Capture left the foreground during Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; interrupted windows are never reusable evidence."
+                  log("foreground_integrity_lost_during_target_correlation")
+                  return
+              }
+
+              guard let token = currentConnectionToken else {
+          '''
+          fg_replacement = '''        if processCorrelationLease != nil || correlationSession != nil {
+                  // Existing helper stops package transport before releasing this controller's lease.
+                  abandonPackageCorrelation()
+                  phase = .failed
+                  message = "Capture left the foreground during Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; interrupted windows are never reusable evidence."
+                  log("foreground_integrity_lost_during_target_correlation")
+                  return
+              }
+
+              if phase == .correlated || phase == .selected {
+                  // The four-window scanner has already retired here, but its derived target and
+                  // operator confirmation are still foreground-scoped authority and cannot survive.
+                  resetDiscoverySessionOnly()
+                  phase = .failed
+                  message = "Capture left the foreground after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; pre-background target authority is never reused."
+                  log("foreground_integrity_lost_after_target_correlation")
+                  return
+              }
+
+              guard let token = currentConnectionToken else {
+          '''
+          if foreground.count(fg_anchor) != 1:
+              raise SystemExit(f"expected one foreground correlation/token anchor, found {foreground.count(fg_anchor)}")
+          foreground = foreground.replace(fg_anchor, fg_replacement, 1)
+          text = text[:start] + foreground + text[end:]
+
+          # 3) UID custody is bound to the exact membership lease, and event provenance remains Nembra-owned.
+          start, end, receiver = section(text, "    private func receivedApplicationUpdate(", "    private func startWatchdog")
+          old_log = '''            try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
+                  await refreshLedgerSnapshot()
+                  log("tuya_application_update", update.merging([
+                      "generation": String(token.diagnosticGeneration)
+                  ]) { current, _ in current })
+                  message = "Receiving same-generation scooter application data · \\(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
+          '''
+          new_log = '''            try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
+                  await refreshLedgerSnapshot()
+                  guard accountIdentityLeaseIsAuthorized,
+                        let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                        !accountUID.isEmpty else {
+                      await invalidateSourceAuthority(
+                          token: token,
+                          message: "SDK account identity lease changed before application event custody could be sealed.",
+                          kind: "sdk_account_identity_lease_changed_before_application_event_custody"
+                      )
+                      return
+                  }
+                  let redactedUpdate = Self.redactVerifiedAccountUID(in: update, accountUID: accountUID)
+                  log("tuya_application_update", redactedUpdate.merging([
+                      "generation": String(token.diagnosticGeneration)
+                  ]) { _, trusted in trusted })
+                  message = "Receiving same-generation scooter application data · \\(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
+          '''
+          if receiver.count(old_log) != 1:
+              raise SystemExit(f"expected one raw application event custody block, found {receiver.count(old_log)}")
+          receiver = receiver.replace(old_log, new_log, 1)
+          text = text[:start] + receiver + text[end:]
+
+          helper_anchor = "    private func receivedApplicationUpdate(\n"
+          helper = '''    private static func redactVerifiedAccountUID(
+              in update: [String: String],
+              accountUID: String
+          ) -> [String: String] {
+              let uid = accountUID.trimmingCharacters(in: .whitespacesAndNewlines)
+              guard !uid.isEmpty else { return update }
+
+              var sanitized: [String: String] = [:]
+              for (originalKey, originalValue) in update.sorted(by: { $0.key < $1.key }) {
+                  let baseKey = originalKey.replacingOccurrences(
+                      of: uid,
+                      with: "<redacted-account-uid>",
+                      options: [.literal]
+                  )
+                  let redactedValue = originalValue.replacingOccurrences(
+                      of: uid,
+                      with: "<redacted-account-uid>",
+                      options: [.literal]
+                  )
+
+                  var key = baseKey
+                  var collisionIndex = 2
+                  while sanitized[key] != nil {
+                      key = "\\(baseKey)#\\(collisionIndex)"
+                      collisionIndex += 1
+                  }
+                  sanitized[key] = redactedValue
+              }
+              return sanitized
+          }
+
+          '''
+          if text.count(helper_anchor) != 1:
+              raise SystemExit(f"expected one application receiver anchor, found {text.count(helper_anchor)}")
+          text = text.replace(helper_anchor, helper + helper_anchor, 1)
+
+          # 4) Remove duplicate secret classifier entry while preserving the supported classes.
+          duplicate = '''        "accesstoken",
+                  "refreshtoken",
+                  "sessionkey",
+                  "authkey",
+          '''
+          simplified = '''        "accesstoken",
+                  "refreshtoken",
+                  "authkey",
+          '''
+          if text.count(duplicate) != 1:
+              raise SystemExit(f"expected one duplicated sessionkey tail, found {text.count(duplicate)}")
+          text = text.replace(duplicate, simplified, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Verify convergence invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+
+          def section(start_marker, end_marker):
+              start = source.index(start_marker)
+              end = source.index(end_marker, start)
+              return source[start:end]
+
+          view_exit = section("    func abandonCorrelationForViewExit() {", "    func appDidLoseForeground() {")
+          foreground = section("    func appDidLoseForeground() {", "    var privateConfig: Bool")
+          receiver = section("    private func receivedApplicationUpdate(", "    private func startWatchdog")
+          driver = section("@MainActor\nprivate final class SmartLifeDriver", "#endif\n\nprivate enum AppleAccountAuthorizationError")
+
+          status = 'membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."'
+          for name, body in [("view exit", view_exit), ("foreground loss", foreground)]:
+              clear = body.index("sdkDeviceMembershipVerified = false")
+              reset = body.index(status)
+              rotate = body.index("membershipRequestID = UUID()")
+              if not (clear < reset < rotate):
+                  raise SystemExit(f"{name} membership status revocation ordering invalid")
+
+          required_foreground = [
+              "if phase == .correlated || phase == .selected",
+              "resetDiscoverySessionOnly()",
+              "foreground_integrity_lost_after_target_correlation",
+              "guard let token = currentConnectionToken else",
+          ]
+          for item in required_foreground:
+              if item not in foreground:
+                  raise SystemExit(f"foreground completed-correlation retirement missing: {item}")
+          if foreground.index("resetDiscoverySessionOnly()") > foreground.index("guard let token = currentConnectionToken else"):
+              raise SystemExit("completed correlation is reset too late, after token inspection")
+
+          for item in [
+              "if phase == .correlated || phase == .selected",
+              "resetDiscoverySessionOnly()",
+              "target_correlation_abandoned_on_view_exit",
+          ]:
+              if item not in view_exit:
+                  raise SystemExit(f"view-exit completed-correlation retirement missing: {item}")
+
+          required_receiver = [
+              "accountIdentityLeaseIsAuthorized",
+              "membershipAccountUID",
+              "redactVerifiedAccountUID(in: update, accountUID: accountUID)",
+              '"generation": String(token.diagnosticGeneration)',
+              ") { _, trusted in trusted })",
+              '"<redacted-account-uid>"',
+          ]
+          for item in required_receiver:
+              if item not in receiver and item != '"<redacted-account-uid>"':
+                  raise SystemExit(f"application custody missing: {item}")
+          if '"<redacted-account-uid>"' not in source:
+              raise SystemExit("account UID redaction marker missing")
+          if 'log("tuya_application_update", update.merging([' in receiver:
+              raise SystemExit("raw application dictionary still enters event custody")
+          if ") { current, _ in current })" in receiver:
+              raise SystemExit("untrusted application metadata can still override provenance")
+
+          # Generic device UID keys remain application evidence; only the exact leased account UID value is scrubbed.
+          if '"uid",' in driver or '"uid"\n' in driver:
+              raise SystemExit("blanket generic uid key classifier introduced")
+          if driver.count('"sessionkey"') != 1:
+              raise SystemExit("sessionkey classifier should appear exactly once after simplification")
+
+          for body_name, body in [("foreground", foreground), ("view exit", view_exit), ("receiver", receiver)]:
+              for forbidden in ["queryDps", "publishDps", "publishDpsWithSuccess", "writeValue"]:
+                  if forbidden in body:
+                      raise SystemExit(f"{body_name} repair introduced forbidden authority: {forbidden}")
+          for forbidden in ["recordObservedTransportLoss", "endConnection(", "disconnectBLE"]:
+              if forbidden in foreground:
+                  raise SystemExit(f"foreground loss invented transport authority: {forbidden}")
+          PY
+          git diff --check
+          if command -v swiftc >/dev/null 2>&1; then
+            swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+            swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegritySourceTests.swift
+            swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift
+            swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
+            swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+          fi
+
+      - name: Retire one-shot materializer and checkpoint clean convergence
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=1c40853f6991b4d09206df1d25ecff021458b7eb
+          rm .github/workflows/capture-current-truth-convergence-materialize.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegritySourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift \
+            .github/workflows/capture-current-truth-convergence-materialize.yml
+          mapfile -t effective < <(git diff --cached --name-only "$base" | sort)
+          expected=(
+            "NembraApp/App/NembraCaptureEntrypoint.swift"
+            "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift"
+            "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift"
+            "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegritySourceTests.swift"
+            "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift"
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          test "${effective[*]}" = "${expected_sorted[*]}"
+          git config user.name "nembra-v14-materializer"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "fix(capture): close current Secure Link truth gaps"
+          git push origin HEAD:repair/v14-capture-current-truth-convergence-1c408-sol
