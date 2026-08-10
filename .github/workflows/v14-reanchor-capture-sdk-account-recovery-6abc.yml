@@ -1,4 +1,4 @@
-name: Reanchor Capture SDK Account Recovery 6abc
+name: Reanchor Capture SDK Account Recovery Current
 
 on:
   push:
@@ -18,33 +18,46 @@ jobs:
           fetch-depth: 0
           ref: fix/v14-capture-sdk-account-recovery-39b-sol
 
-      - name: Merge exact current product ancestry
+      - name: Merge non-overlapping live product ancestry
         shell: bash
         run: |
           set -euo pipefail
-          expected_product='6abc08900b7257eebc5111a6272a4c4748b06a4c'
+          minimum_product='6abc08900b7257eebc5111a6272a4c4748b06a4c'
           workflow='.github/workflows/v14-reanchor-capture-sdk-account-recovery-6abc.yml'
+          app='NembraApp/App/NembraCaptureEntrypoint.swift'
+          regression='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkAccountRecoverySourceTests.swift'
+
           git config user.name 'nembra-v14-bot'
           git config user.email 'nembra-v14-bot@users.noreply.github.com'
           git fetch origin 'refs/heads/product/v14-capture-guided-truth-current-sol:refs/remotes/origin/product/v14-capture-guided-truth-current-sol'
-          test "$(git rev-parse refs/remotes/origin/product/v14-capture-guided-truth-current-sol)" = "$expected_product"
-          git merge --no-edit "$expected_product"
+          product="$(git rev-parse refs/remotes/origin/product/v14-capture-guided-truth-current-sol)"
+          git merge-base --is-ancestor "$minimum_product" "$product"
+
+          overlap="$(git diff --name-only "$minimum_product..$product" -- "$app" "$regression")"
+          if [[ -n "$overlap" ]]; then
+            printf 'ERROR: live product changed account-recovery-owned paths after %s:\n%s\n' "$minimum_product" "$overlap" >&2
+            exit 1
+          fi
+
+          printf 'Reanchoring account recovery onto live non-overlapping product %s\n' "$product"
+          git merge --no-edit "$product"
           test -z "$(git diff --name-only --diff-filter=U)"
 
-          grep -Fq 'One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins.' NembraApp/App/NembraCaptureEntrypoint.swift
-          grep -Fq 'func signOut()' NembraApp/App/NembraCaptureEntrypoint.swift
-          grep -Fq 'Use a different Tuya account' NembraApp/App/NembraCaptureEntrypoint.swift
-          grep -Fq 'test.membershipStatus' NembraApp/App/NembraCaptureEntrypoint.swift
-          grep -Fq 'private var correlationDisplayedWindowOrdinal: Int' NembraApp/App/NembraCaptureEntrypoint.swift
-          grep -Fq 'failureRecoveryContextPanel' NembraApp/App/NembraCaptureEntrypoint.swift
-          grep -Fq 'func retry()' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins.' "$app"
+          grep -Fq 'func signOut()' "$app"
+          grep -Fq 'Use a different Tuya account' "$app"
+          grep -Fq 'test.membershipStatus' "$app"
+          grep -Fq 'private var correlationDisplayedWindowOrdinal: Int' "$app"
+          grep -Fq 'failureRecoveryContextPanel' "$app"
+          grep -Fq 'func retry()' "$app"
           grep -Fq 'static let fieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"' NembraApp/App/NembraCaptureBuildIdentity.swift
-          grep -Fq 'logout state change revokes membership and any current attempt authority' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkAccountRecoverySourceTests.swift
+          grep -Fq 'procedureIdentifier == Self.fieldProcedureIdentifier' NembraApp/App/NembraCaptureBuildIdentity.swift
+          grep -Fq 'logout state change revokes membership and any current attempt authority' "$regression"
 
-          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
-          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkAccountRecoverySourceTests.swift
+          swiftc -frontend -parse "$app"
+          swiftc -frontend -parse "$regression"
           git diff --check
 
           git rm "$workflow"
-          git commit -m 'chore(capture): remove one-shot account recovery reanchor'
+          git commit -m "chore(capture): remove one-shot account recovery reanchor" -m "Composed against product $product after overlap guards and parser/truth checks."
           git push origin HEAD:fix/v14-capture-sdk-account-recovery-39b-sol
