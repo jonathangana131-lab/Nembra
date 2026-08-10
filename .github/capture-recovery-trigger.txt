@@ -1,0 +1,1 @@
+Temporary one-shot trigger for the Capture async invalidation recovery workflow. Delete after the repair commit lands.
