@@ -13,12 +13,13 @@ command -v xcrun >/dev/null || die "xcrun is not available."
 command -v security >/dev/null || die "macOS security tool is not available."
 command -v pod >/dev/null || die "CocoaPods is required for the official Tuya SDK field build."
 
-CURRENT_BRANCH="$(git branch --show-current)"
-case "$CURRENT_BRANCH" in
-    capture/one-time-ble-dump-gpt56|integration/v14-capture-final-stationary-convergence-sol) ;;
-    *) die "Switch to the current accepted Capture field lineage first. Current branch: ${CURRENT_BRANCH:-detached}" ;;
-esac
+EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"
+[[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9A-Fa-f]{40}$ ]] || die "Pass the exact software-accepted Capture source SHA as the first argument (40 hex characters)."
+EXPECTED_SOURCE_SHA="$(printf '%s' "$EXPECTED_SOURCE_SHA" | tr '[:upper:]' '[:lower:]')"
+SOURCE_SHA="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+[[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]] || die "Current checkout $SOURCE_SHA does not match accepted Capture source $EXPECTED_SOURCE_SHA. Checkout the exact accepted SHA before building."
 [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Working tree has local changes. Commit/stash them first."
+say "Exact accepted Capture source: $SOURCE_SHA"
 
 # The physical authentication candidate is the standalone Capture product with
 # Tuya's app-specific security SDK and private app identity integrated through
@@ -94,7 +95,6 @@ fi
 DERIVED="${TMPDIR:-/tmp}/NembraAuthenticatedCaptureDerived"
 rm -rf "$DERIVED"
 BUNDLE_ID="com.jonathangana131.nembra.capturelearn"
-SOURCE_SHA="$(git rev-parse HEAD)"
 BUILD_LABEL="capture-v14-${SOURCE_SHA:0:12}"
 
 say "Building SDK-integrated Nembra Capture for iPhone"
