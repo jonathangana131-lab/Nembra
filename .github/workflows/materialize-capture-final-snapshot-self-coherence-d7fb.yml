@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 5
+          fetch-depth: 0
 
       - name: Verify exact product ancestry and construction scope
         shell: bash
@@ -74,6 +74,9 @@ jobs:
               raise SystemExit(f'missing final-snapshot self-coherence invariants: {missing}')
           for preserved in [
               '_stat_identity(current_path) != _stat_identity(after)',
+              'expected_identity: tuple[int, ...] | None = None',
+              'private build input descriptor does not match enumerated identity',
+              '_file_fingerprint(path, expected_identity=identity)',
               'record_snapshot_confirmed = _record_identity_snapshot',
               'private Tuya build inputs changed while the complete provenance record was constructed',
           ]:
