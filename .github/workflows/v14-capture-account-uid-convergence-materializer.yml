@@ -1,0 +1,112 @@
+name: V14 Capture Account UID Convergence Materializer
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-truth-convergence-1c408-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind application event values to verified account UID custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_PARENT="d678b3c2749d8b0ee1c47e42bd31faf25a4ce350"
+          [[ "$(git rev-parse HEAD^)" == "$EXPECTED_PARENT" ]] || { echo "branch moved before materialization"; exit 2; }
+          mapfile -t CUT_FILES < <(git diff --name-only "$EXPECTED_PARENT" HEAD)
+          [[ "${#CUT_FILES[@]}" -eq 1 && "${CUT_FILES[0]}" == ".github/workflows/v14-capture-account-uid-convergence-materializer.yml" ]] || exit 2
+
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text()
+
+          old = '''        applicationUpdateAdmissionsInFlight += 1
+          defer { applicationUpdateAdmissionsInFlight -= 1 }
+
+          do {
+          '''
+          new = '''        let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines)
+          let custodySafeUpdate = update.mapValues { value in
+              guard let verifiedAccountUID, !verifiedAccountUID.isEmpty else { return value }
+              return value.replacingOccurrences(
+                  of: verifiedAccountUID,
+                  with: "<redacted-account-uid>",
+                  options: [.literal]
+              )
+          }
+
+          applicationUpdateAdmissionsInFlight += 1
+          defer { applicationUpdateAdmissionsInFlight -= 1 }
+
+          do {
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f"application custody insertion anchor drifted: {text.count(old)}")
+          text = text.replace(old, new, 1)
+
+          old = '''            log("tuya_application_update", update.merging([
+                  "generation": String(token.diagnosticGeneration)
+              ]) { _, trusted in trusted })
+          '''
+          new = '''            log("tuya_application_update", custodySafeUpdate.merging([
+                  "generation": String(token.diagnosticGeneration)
+              ]) { _, trusted in trusted })
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f"application log custody anchor drifted: {text.count(old)}")
+          text = text.replace(old, new, 1)
+
+          duplicate = '''        "accounttoken",
+              "accesstoken",
+              "refreshtoken",
+              "sessionkey",
+              "authkey",
+          '''
+          deduped = '''        "accounttoken",
+              "accesstoken",
+              "refreshtoken",
+              "authkey",
+          '''
+          if text.count(duplicate) != 1:
+              raise SystemExit(f"duplicate sessionkey anchor drifted: {text.count(duplicate)}")
+          path.write_text(text.replace(duplicate, deduped, 1))
+          PY
+
+          git show 8010d108a043fbe2ff03fa3bb0d1518aa7047c08:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+          git diff --check
+
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          start = source.index("private func receivedApplicationUpdate(")
+          end = source.index("private func startWatchdog", start)
+          admission = source[start:end]
+          for token in ["verifiedAccountUID", "custodySafeUpdate", "<redacted-account-uid>", "replacingOccurrences(", 'log("tuya_application_update", custodySafeUpdate.merging([']:
+              assert token in admission, token
+          assert 'log("tuya_application_update", update.merging([' not in admission
+          driver_start = source.index("private final class SmartLifeDriver")
+          driver_end = source.index("private enum AppleAccountAuthorizationError", driver_start)
+          driver = source[driver_start:driver_end]
+          assert driver.count('"sessionkey",') == 1
+          assert '"uid",' not in driver
+          PY
+
+          git config user.name "Nembra V14 Materializer"
+          git config user.email "actions@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+          git commit -m "fix(capture): bind account UID value custody"
+          git push origin HEAD:agent/v14-capture-truth-convergence-1c408-sol
