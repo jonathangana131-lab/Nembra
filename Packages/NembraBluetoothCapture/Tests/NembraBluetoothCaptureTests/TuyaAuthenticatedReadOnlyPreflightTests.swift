@@ -25,6 +25,7 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
             authenticatedAtUptimeNanoseconds: authenticatedAt,
             latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds,
             applicationPayloadCount: 1,
+            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + 1,
             connectionGeneration: 1
         )
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Authenticated state has no accepted Tuya authentication provenance."))
@@ -44,15 +45,47 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Authenticated session has not produced an application payload yet."))
     }
 
-    @Test("authenticated payload still requires more than old disconnect window")
+    @Test("stale payload from before current authentication fails closed")
+    func stalePayloadChronologyBlocks() {
+        let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
+            authenticationState: .authenticated,
+            authenticationMethod: .smartLifeAppSDK,
+            connectionStartedAtUptimeNanoseconds: 10_000,
+            authenticatedAtUptimeNanoseconds: 20_000,
+            latestObservedUptimeNanoseconds: 45_000_020_000,
+            applicationPayloadCount: 1,
+            latestApplicationPayloadUptimeNanoseconds: 19_999,
+            connectionGeneration: 2
+        )
+        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Authenticated connection chronology is unavailable or invalid."))
+    }
+
+    @Test("authentication timestamp before current connection fails closed")
+    func authenticationBeforeConnectionBlocks() {
+        let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
+            authenticationState: .authenticated,
+            authenticationMethod: .smartLifeAppSDK,
+            connectionStartedAtUptimeNanoseconds: 20_000,
+            authenticatedAtUptimeNanoseconds: 19_999,
+            latestObservedUptimeNanoseconds: 45_000_020_000,
+            applicationPayloadCount: 1,
+            latestApplicationPayloadUptimeNanoseconds: 20_001,
+            connectionGeneration: 2
+        )
+        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Authenticated connection chronology is unavailable or invalid."))
+    }
+
+    @Test("authenticated payload still requires full physical stability window")
     func durationRequired() {
+        let authenticatedAt: UInt64 = 10
         let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
             authenticationState: .authenticated,
             authenticationMethod: .smartLifeAppSDK,
             connectionStartedAtUptimeNanoseconds: 1,
-            authenticatedAtUptimeNanoseconds: 10,
-            latestObservedUptimeNanoseconds: 44_999_999_999,
+            authenticatedAtUptimeNanoseconds: authenticatedAt,
+            latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds - 1,
             applicationPayloadCount: 1,
+            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + 1,
             connectionGeneration: 1
         )
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Authenticated connection has not survived the physical stability window yet."))
@@ -68,6 +101,7 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
             authenticatedAtUptimeNanoseconds: authenticatedAt,
             latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds,
             applicationPayloadCount: 1,
+            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + 1,
             connectionGeneration: 2
         )
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .readyForStationaryMapping)
@@ -83,6 +117,7 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
             authenticatedAtUptimeNanoseconds: authenticatedAt,
             latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds,
             applicationPayloadCount: 2,
+            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + 2,
             connectionGeneration: 3
         )
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .readyForStationaryMapping)
