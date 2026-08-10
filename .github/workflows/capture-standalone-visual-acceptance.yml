@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - product/v14-capture-premium-secure-link-current-sol
+      - fix/v14-capture-visual-sim-provenance-sol
   workflow_dispatch:
 
 permissions:
@@ -33,11 +34,12 @@ jobs:
             echo "GitHub source SHA is not canonical lowercase 40-hex." >&2
             exit 1
           fi
-          dependency_sha="$(shasum -a 256 Podfile.lock | awk '{print $1}')"
-          if [[ ! "$dependency_sha" =~ ^[0-9a-f]{64}$ ]]; then
-            echo "Could not derive Tuya dependency-lock SHA-256." >&2
-            exit 1
-          fi
+
+          # The public visual job does not possess the reviewed private Tuya workspace or its
+          # generated Podfile.lock. Use a deterministic shape-valid placeholder solely so the
+          # standalone app can exercise the fail-closed presentation. The retained manifest marks
+          # this value as presentation-only and explicitly not private dependency authority.
+          dependency_sha='abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'
           label="capture-v14-${source_sha:0:12}"
           rm -rf /tmp/NembraCaptureProvenanceDerived
           xcodebuild \
@@ -80,9 +82,13 @@ jobs:
 
           record = json.loads(Path(sys.argv[1]).read_text())
           expected_sha = sys.argv[2].lower()
+          expected_dependency = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
           assert record["authority"] == "standalone-capture-simulator-presentation-only"
           assert record["sourceCommitSHA"] == expected_sha
           assert record["buildIdentifier"] == f"capture-v14-{expected_sha[:12]}"
+          assert record["tuyaDependencyLockSHA256"] == expected_dependency
+          assert record["tuyaDependencyEvidenceAuthority"] == "simulator-placeholder-not-private-provenance"
+          assert record["syntheticAuthorityEnvironmentRejected"] is True
           assert record["physicalAuthorityCreated"] is False
           assert record["protocolAuthorityCreated"] is False
           assert record["visualAcceptanceRequiresHumanReview"] is True
