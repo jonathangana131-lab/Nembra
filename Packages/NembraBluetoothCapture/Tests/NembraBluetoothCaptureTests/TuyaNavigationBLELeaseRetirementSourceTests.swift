@@ -32,6 +32,9 @@ struct TuyaNavigationBLELeaseRetirementSourceTests {
         )
         let abandon = try requiredOffset(containing: "abandonPackageCorrelation()", in: cleanup)
 
+        // A membership result may still be in flight before OFF1 exists or during the final
+        // membership recheck before official Tuya ownership. Revoke that callback generation
+        // before the no-scanner/no-lease early return, then retire active package transport.
         #expect(revoke < noActiveCorrelationReturn)
         #expect(busyClear < noActiveCorrelationReturn)
         #expect(probeClear < noActiveCorrelationReturn)
@@ -82,9 +85,9 @@ struct TuyaNavigationBLELeaseRetirementSourceTests {
             from: "private func abandonPackageCorrelation()",
             to: "private func releasePackageCorrelationLease()"
         ))
-        let abandonOffset = try requiredOffset(containing: "correlationSession?.abandonCurrentWindow()", in: abandon)
-        let releaseOffset = try requiredOffset(containing: "releasePackageCorrelationLease()", in: abandon)
-        #expect(abandonOffset < releaseOffset)
+        let abandonLine = try requiredOffset(containing: "correlationSession?.abandonCurrentWindow()", in: abandon)
+        let releaseLine = try requiredOffset(containing: "releasePackageCorrelationLease()", in: abandon)
+        #expect(abandonLine < releaseLine)
     }
 
     private func requiredOffset(containing token: String, in source: String) throws -> String.Index {
