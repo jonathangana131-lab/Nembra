@@ -26,11 +26,10 @@ say "Validating official Tuya SDK provisioning"
 [[ -d "$ROOT/NembraCapture.xcworkspace" ]] || die "NembraCapture.xcworkspace was not generated. Do not use NembraCapture.xcodeproj for the authenticated field build."
 
 # IMPORTANT: AppKey/AppSecret are intentionally NOT accepted by this installer.
-# The previous launcher serialized those values into a literal devicectl
+# The rejected launcher serialized those values into a literal devicectl
 # --environment-variables argument, exposing private material through the host
-# process argument vector during launch. Until a separately reviewed private
-# runtime-provisioning boundary exists, this helper may build/install the exact
-# SDK-integrated app but must not claim to launch an authenticated field subject.
+# process argument vector during launch. The accepted handoff below keeps those
+# values out of this script, Git, shell history, and devicectl argv.
 unset NEMBRA_TUYA_APP_KEY NEMBRA_TUYA_APP_SECRET || true
 
 say "Finding connected iPhone"
@@ -137,15 +136,19 @@ if [[ "$INSTALLED" != "1" ]]; then
     die "The app built successfully, but the iPhone never became ready for installation. Keep it unlocked and connected, wait for Xcode to finish Preparing/Connecting, then run this installer again."
 fi
 
-say "SDK-INTEGRATED CAPTURE INSTALLED — PHYSICAL NO-GO"
+say "PRIVATE XCODE RUN HANDOFF READY — PHYSICAL NO-GO"
 printf '%s\n' \
-    "The exact SDK-integrated app is installed, but this helper deliberately did NOT launch it with Tuya AppKey/AppSecret." \
-    "The former devicectl launch path exposed those private values through host process arguments and is not an accepted field-provisioning boundary." \
-    "Do NOT repeat the old 17-step ride capture." \
-    "Do NOT treat a manual Home Screen launch as the authenticated test; without accepted private runtime provisioning the app must remain fail-closed." \
-    "Next engineering gate: provide the Tuya app identity through a separately reviewed private runtime/build channel that puts no secret value in Git, logs, host argv, or the diagnostic export." \
-    "After that exact field build is accepted, the first physical action remains one stationary secure-link test only."
+    "The exact SDK-integrated source/workspace and intended iPhone are ready. This helper deliberately did NOT receive or launch with Tuya AppKey/AppSecret." \
+    "In Xcode, keep NembraCapture.xcworkspace open and select the intended iPhone." \
+    "Product > Scheme > Manage Schemes: duplicate 'Nembra Capture' as 'Nembra Capture Private Field', then make that duplicate PERSONAL / NOT SHARED." \
+    "Edit Scheme > Run > Arguments > Environment Variables and add enabled NEMBRA_TUYA_APP_KEY and NEMBRA_TUYA_APP_SECRET there. Enter the values only in Xcode; do not paste them into Terminal, Git, this helper, or Capture diagnostics." \
+    "Run that personal scheme from Xcode on the intended iPhone. Xcode exports Run-scheme environment variables to the launched app; they are not app command-line arguments." \
+    "Immediately after the stationary test, disable/remove those two environment entries and delete the personal field scheme so the local secret-bearing scheme does not persist longer than necessary." \
+    "The personal scheme is local operator state, not Git authority. Its existence alone does NOT authorize the scooter test." \
+    "Before touching Start scooter-OFF baseline, the app must itself show the current official SDK account + exact device-membership/preflight gates satisfied. If any gate is unavailable or stale, stop." \
+    "Do NOT repeat the old 17-step ride capture. The first physical action remains one stationary secure-link test only after the exact composed field build is software-accepted."
 
-# Nonzero is intentional: installation is a useful software checkpoint, but
-# this script no longer reaches a field-authorizing launch state.
+# Nonzero is intentional. Build/install plus an Xcode handoff is useful progress,
+# but this helper cannot see the private personal-scheme values or the app's
+# runtime authority gates and therefore cannot grant physical GO.
 exit 3
