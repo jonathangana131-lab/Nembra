@@ -1,0 +1,28 @@
+name: Capture Current-Spine Continuity Fence
+on:
+  push:
+    branches: [capture/current-spine-continuity-fence-gpt56sol]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select installed Xcode 26
+        shell: bash
+        run: |
+          set -euo pipefail
+          selected=''
+          for app in /Applications/Xcode_26*.app /Applications/Xcode-26*.app /Applications/Xcode.app; do
+            [[ -d "$app/Contents/Developer" ]] || continue
+            version="$(DEVELOPER_DIR="$app/Contents/Developer" xcodebuild -version | head -n 1)"
+            if [[ "$version" =~ ^Xcode\ 26\. ]]; then selected="$app/Contents/Developer"; break; fi
+          done
+          [[ -n "$selected" ]] || exit 1
+          echo "DEVELOPER_DIR=$selected" >> "$GITHUB_ENV"
+      - run: xcodebuild -version
+      - name: Run Tuya session ledger suites
+        run: swift test --package-path Packages/NembraBluetoothCapture --filter TuyaAuthenticatedReadOnlySession
