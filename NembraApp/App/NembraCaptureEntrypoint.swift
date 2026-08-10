@@ -1459,6 +1459,25 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
+
+            // The ledger hops above may interleave account/view lifecycle changes. Revalidate
+            // the exact generation and account lease immediately before immutable event custody.
+            guard currentConnectionToken == token,
+                  phase == .observing,
+                  !acceptanceCutIsClosed,
+                  sdkAccountLoggedIn,
+                  sdkDeviceMembershipVerified,
+                  accountIdentityLeaseIsAuthorized,
+                  membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) == leasedAccountUID else {
+                if currentConnectionToken == token {
+                    await invalidateSourceAuthority(
+                        token: token,
+                        message: "SDK account/device authority changed before application evidence could enter event custody.",
+                        kind: "sdk_source_authority_changed_before_application_event_custody"
+                    )
+                }
+                return
+            }
             var eventDetails = custodySafeUpdate
             eventDetails["generation"] = String(token.diagnosticGeneration)
             log("tuya_application_update", eventDetails)
