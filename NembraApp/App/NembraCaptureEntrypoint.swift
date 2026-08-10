@@ -416,6 +416,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
     deinit { watchdog?.cancel() }
 
     func activateMembershipRequestsForView() {
+        // A foreground-integrity failure requires leaving Secure Link before membership admission can reopen.
+        guard phase != .failed else { return }
         acceptsViewScopedMembershipRequests = true
     }
 
@@ -464,6 +466,67 @@ private final class SecureLinkController: NSObject, ObservableObject {
         phase = .failed
         message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
         log("target_correlation_abandoned_on_view_exit")
+    }
+
+    func appDidLoseForeground() {
+        // Capture evidence is foreground-only. Close view-scoped admission before revoking every
+        // already-issued asynchronous grant so no account callback can mint fresh off-screen work.
+        acceptsViewScopedMembershipRequests = false
+        membershipRequestID = UUID()
+        membershipBusy = false
+#if canImport(ThingSmartHomeKit)
+        membershipProbe = nil
+#endif
+        officialConnectionRequestID = UUID()
+        watchdog?.cancel()
+        watchdog = nil
+
+        if processCorrelationLease != nil || correlationSession != nil {
+            abandonPackageCorrelation()
+            phase = .failed
+            message = "Capture left the foreground during Bluetooth target correlation. Relaunch Capture and start a fresh OFF1→ON1→OFF2→ON2 series; interrupted windows are never reusable evidence."
+            log("foreground_integrity_lost_during_target_correlation")
+            return
+        }
+
+        guard let token = currentConnectionToken else {
+            if phase == .authenticating {
+                localBLESettlementToken = nil
+                sdkLocalBLEOnline = false
+                driver = nil
+                phase = .failed
+                message = "Capture left the foreground during authentication. Relaunch Capture before another authenticated attempt; no BLE disconnect is claimed."
+                log("foreground_integrity_lost_before_observation")
+            }
+            return
+        }
+
+        let wasObserving = phase == .observing
+        phase = .failed
+        message = wasObserving
+            ? "Capture left the foreground during authenticated observation. Relaunch Capture before another authenticated attempt; background time is not accepted evidence and no BLE disconnect is claimed."
+            : "Capture left the foreground before authenticated observation. Relaunch Capture before another authenticated attempt; no BLE disconnect is claimed."
+        log(
+            wasObserving ? "foreground_integrity_lost_during_observation" : "foreground_integrity_lost_before_observation",
+            ["generation": String(token.diagnosticGeneration)]
+        )
+
+        Task { @MainActor [self] in
+            guard self.currentConnectionToken == token else { return }
+            if wasObserving {
+                await self.invalidateObservationContinuity(
+                    token: token,
+                    message: "App foreground integrity was lost during authenticated observation. Relaunch Capture before another authenticated attempt; background time is not accepted evidence and no BLE disconnect is claimed.",
+                    kind: "foreground_integrity_lost_during_observation"
+                )
+            } else {
+                await self.invalidateInternalLifecycle(
+                    token: token,
+                    message: "App foreground integrity was lost before authenticated observation. Relaunch Capture before another authenticated attempt; no BLE disconnect is claimed.",
+                    kind: "foreground_integrity_lost_before_observation"
+                )
+            }
+        }
     }
 
     var privateConfig: Bool { OfficialTuyaFactory.configured }
@@ -1485,7 +1548,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                             self.sdkLocalBLEOnline = false
                             self.driver = nil
                             self.phase = .failed
-                            self.message = "Source authority changed while canonical acceptance was sealing. Restart from OFF1; the sealed package chronology is diagnostic only."
+                            self.message = "Source authority changed while canonical acceptance was sealing. Relaunch Capture before a new stationary read-only attempt; the sealed package chronology is diagnostic only."
                             self.log("source_authority_changed_during_acceptance_seal", [
                                 "generation": String(token.diagnosticGeneration)
                             ])
@@ -1496,7 +1559,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                             self.localBLESettlementToken = nil
                             self.sdkLocalBLEOnline = false
                             self.phase = .failed
-                            self.message = "Tuya local-BLE authority became unavailable after canonical acceptance sealed. Restart from OFF1; no disconnect time is inferred."
+                            self.message = "Tuya local-BLE authority became unavailable after canonical acceptance sealed. Relaunch Capture before a new stationary read-only attempt; no disconnect time is inferred."
                             self.log("sdk_local_ble_authority_missing_after_acceptance_seal", [
                                 "generation": String(token.diagnosticGeneration)
                             ])
@@ -1509,7 +1572,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                             self.localBLESettlementToken = nil
                             self.driver = nil
                             self.phase = .failed
-                            self.message = "Tuya local-BLE authority was no longer current after canonical acceptance sealed. Restart from OFF1; no disconnect time is inferred."
+                            self.message = "Tuya local-BLE authority was no longer current after canonical acceptance sealed. Relaunch Capture before a new stationary read-only attempt; no disconnect time is inferred."
                             self.log("sdk_local_ble_not_current_after_acceptance_seal", [
                                 "generation": String(token.diagnosticGeneration)
                             ])
@@ -1583,7 +1646,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     self.driver = nil
                     await self.refreshLedgerSnapshot()
                     self.phase = .failed
-                    self.message = "Authenticated session produced no application update before the observation deadline. Export diagnostics; do not repeat the ride capture."
+                    self.message = "Authenticated session produced no application update before the observation deadline. Export diagnostics; relaunch Capture before any new stationary read-only attempt."
                     self.log("authenticated_application_timeout", ["generation": String(token.diagnosticGeneration)])
                     return
                 }
@@ -1622,7 +1685,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         driver = nil
         await refreshLedgerSnapshot()
         phase = .failed
-        message = "Tuya's current local-BLE session ended before acceptance. Export diagnostics; do not repeat the outdoor ride capture."
+        message = "Tuya's current local-BLE session ended before acceptance. Export diagnostics; relaunch Capture before any new stationary read-only attempt."
         log("sdk_local_ble_dropped", ["generation": String(token.diagnosticGeneration)])
     }
 
@@ -1806,7 +1869,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         if phase == .accepted {
             guard let sealedAcceptedExport else {
                 exportData = nil
-                message = "Accepted diagnostics cannot be exported because the immutable accepted artifact is unavailable. Restart from OFF1 rather than rebuilding accepted evidence from mutable post-seal state."
+                message = "Accepted diagnostics cannot be exported because the immutable accepted artifact is unavailable. Relaunch Capture before a new stationary read-only attempt; do not rebuild accepted evidence from mutable post-seal state."
                 return
             }
             envelope = sealedAcceptedExport
@@ -2133,11 +2196,53 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         ThingSmartBLEManager.sharedInstance().deviceStatue(withUUID: uuid)
     }
 
+    private static let secretKeyFragments = ["localkey", "accesstoken", "refreshtoken", "seckey", "authkey"]
+
+    private static func normalizedApplicationKey(_ key: String) -> String {
+        key.lowercased().filter { $0.isLetter || $0.isNumber }
+    }
+
+    private static func redactApplicationSecrets(_ object: Any) -> Any {
+        if let dictionary = object as? [String: Any] {
+            var output: [String: Any] = [:]
+            for (key, value) in dictionary {
+                let normalized = normalizedApplicationKey(key)
+                if secretKeyFragments.contains(where: normalized.contains) {
+                    output[key] = "<redacted>"
+                } else {
+                    output[key] = redactApplicationSecrets(value)
+                }
+            }
+            return output
+        }
+        if let dictionary = object as? [AnyHashable: Any] {
+            var output: [String: Any] = [:]
+            for (key, value) in dictionary {
+                let keyString = String(describing: key)
+                let normalized = normalizedApplicationKey(keyString)
+                if secretKeyFragments.contains(where: normalized.contains) {
+                    output[keyString] = "<redacted>"
+                } else {
+                    output[keyString] = redactApplicationSecrets(value)
+                }
+            }
+            return output
+        }
+        if let array = object as? [Any] { return array.map(redactApplicationSecrets) }
+        return object
+    }
+
     func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {
         guard let dps, !dps.isEmpty else { return }
         var sanitized: [String: String] = [:]
         for (key, value) in dps {
-            sanitized[String(describing: key)] = String(describing: value)
+            let keyString = String(describing: key)
+            let normalized = keyString.lowercased().filter { $0.isLetter || $0.isNumber }
+            if Self.secretKeyFragments.contains(where: normalized.contains) {
+                sanitized[keyString] = "<redacted>"
+            } else {
+                sanitized[keyString] = String(describing: Self.redactApplicationSecrets(value))
+            }
         }
         onApplicationUpdate?(sanitized)
     }
@@ -2431,6 +2536,7 @@ private struct SecureLinkView: View {
     @StateObject private var sdkAccount = OfficialTuyaAccountAuthorizer()
     @State private var showEngineeringDetails = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.scenePhase) private var scenePhase
 
     private let stageLabels = ["Target", "Secure link", "Observe", "Seal"]
 
@@ -2484,6 +2590,14 @@ private struct SecureLinkView: View {
         }
         .onDisappear {
             test.abandonCorrelationForViewExit()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase != .active {
+                test.appDidLoseForeground()
+            } else {
+                test.activateMembershipRequestsForView()
+                if sdkAccount.loggedIn { test.verifySDKMembership() }
+            }
         }
         .onChange(of: sdkAccount.loggedIn) { _, loggedIn in
             if loggedIn { test.verifySDKMembership() }
