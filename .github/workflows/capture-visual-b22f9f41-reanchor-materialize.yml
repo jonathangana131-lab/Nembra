@@ -1,0 +1,55 @@
+name: Materialize Capture Visual Reanchor b22f9f41
+
+on:
+  push:
+    branches:
+      - qa/v14-capture-visual-b22f9f41-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: qa/v14-capture-visual-b22f9f41-sol
+          fetch-depth: 0
+
+      - name: Guard exact product parent and copy reviewed harness blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          product_parent='b22f9f412974cc5a3b3c257175900a2e78b21588'
+          donor='c6d5fef355858af74ef3eea4813af5d1a812b283'
+          git merge-base --is-ancestor "$product_parent" HEAD
+          for path in \
+            .github/workflows/capture-standalone-visual-evidence.yml \
+            scripts/ci/capture_standalone_visual_evidence.sh \
+            scripts/ci/tests/test_capture_standalone_visual_evidence.py; do
+            test ! -e "$path"
+            mkdir -p "$(dirname "$path")"
+            git show "$donor:$path" > "$path"
+          done
+          test "$(git hash-object .github/workflows/capture-standalone-visual-evidence.yml)" = "02c2ab53d778c7a1dd4fa1bc19c711016fe0d949"
+          test "$(git hash-object scripts/ci/capture_standalone_visual_evidence.sh)" = "1670230d4a0fdb2fd723206981d97ebed9bef9bb"
+          test "$(git hash-object scripts/ci/tests/test_capture_standalone_visual_evidence.py)" = "643bacbf2725fd5bf58408bcfa1dfff970140984"
+          bash -n scripts/ci/capture_standalone_visual_evidence.sh
+          python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          git diff --check
+
+      - name: Publish clean QA-only reanchor
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-visual-b22f9f41-reanchor-materialize.yml
+          git add -A
+          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" = 3
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "qa(capture): reanchor exact iPhone 12 visual evidence"
+          git push origin HEAD:qa/v14-capture-visual-b22f9f41-sol
