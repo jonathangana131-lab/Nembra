@@ -108,6 +108,7 @@ private struct NembraNavigationView: View {
     @State private var query = ""
     @State private var results: [MKMapItem] = []
     @State private var selectedItem: MKMapItem?
+    @State private var selectedAddress: String?
     @State private var cameraPosition: MapCameraPosition = .automatic
     @State private var isSearching = false
     @State private var searchError: String?
@@ -140,6 +141,7 @@ private struct NembraNavigationView: View {
         .onChange(of: query) { _, _ in
             guard selectedItem != nil else { return }
             selectedItem = nil
+            selectedAddress = nil
             cameraPosition = .automatic
         }
         .task(id: query) {
@@ -173,7 +175,7 @@ private struct NembraNavigationView: View {
                         .font(.headline)
                         .lineLimit(1)
 
-                    if let subtitle = selectedItem.placemark.title,
+                    if let subtitle = selectedAddress ?? selectedItem.placemark.title,
                        subtitle != selectedItem.name {
                         Text(subtitle)
                             .font(.caption)
@@ -293,7 +295,7 @@ private struct NembraNavigationView: View {
                     Text(item.name ?? "Destination")
                         .font(.title2.weight(.semibold))
 
-                    if let address = item.placemark.title {
+                    if let address = selectedAddress ?? item.placemark.title {
                         Text(address)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
@@ -313,6 +315,7 @@ private struct NembraNavigationView: View {
 
                 Button("Choose another destination") {
                     selectedItem = nil
+                    selectedAddress = nil
                     cameraPosition = .automatic
                 }
                 .frame(maxWidth: .infinity)
@@ -337,6 +340,7 @@ private struct NembraNavigationView: View {
         guard !trimmed.isEmpty else {
             results = []
             selectedItem = nil
+            selectedAddress = nil
             searchError = nil
             isSearching = false
             return
@@ -369,6 +373,7 @@ private struct NembraNavigationView: View {
 
     private func select(_ item: MKMapItem) {
         selectedItem = item
+        selectedAddress = item.placemark.title?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
         remember(item)
         cameraPosition = .region(
             MKCoordinateRegion(
@@ -380,6 +385,7 @@ private struct NembraNavigationView: View {
 
     private func selectRecent(_ destination: NembraRecentDestination) {
         selectedItem = destination.mapItem
+        selectedAddress = destination.address
         remember(destination.mapItem)
         cameraPosition = .region(
             MKCoordinateRegion(
