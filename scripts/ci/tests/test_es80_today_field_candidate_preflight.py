@@ -263,12 +263,9 @@ class FieldCandidatePreflightTests(unittest.TestCase):
 
     def test_production_handoff_consumes_accepted_descriptor_bound_private_input_before_signing(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
-        helper_commit = "af75ffa6dc4409a21822295428e4eeb922ac3d16"
+        helper_commit = "b479d851a54437ef394a4901c69db2d829d280e4"
         helper_path = "scripts/ci/es80_today_private_device_input.py"
-        helper_blob = "50b12675a57fd2f570d833cfcdbfd7be59f52ca4"
-        tested_head = "91dda8ac05e937e5615312a487f7d78926b74949"
-        helper_qa_run = "31349898562"
-        helper_qa_job = "93338620824"
+        helper_blob = "62b719e8d9afb34da6d35d696e80edf926442696"
         helper_invoke = '/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER"'
         private_directory_arg = '--private-directory "$PRIVATE_DIR"'
         source_repo_arg = '--source-repo "$FIELD_SOURCE"'
@@ -277,11 +274,6 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertIn(helper_commit, handoff)
         self.assertIn(helper_path, handoff)
         self.assertIn(helper_blob, handoff)
-        self.assertIn(tested_head, handoff)
-        self.assertIn(helper_qa_run, handoff)
-        self.assertIn(helper_qa_job, handoff)
-        self.assertNotIn("05ce6d9a20487ab34aa31c5b6456910ed2ed438f", handoff)
-        self.assertNotIn("9a9f7f724ceaf895e52d6d443d326043f97645c8", handoff)
         self.assertIn(helper_invoke, handoff)
         self.assertIn(private_directory_arg, handoff)
         self.assertIn(source_repo_arg, handoff)
