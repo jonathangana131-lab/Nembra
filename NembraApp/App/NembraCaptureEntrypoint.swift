@@ -168,6 +168,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let buildIdentifier: String
         let sourceCommitSHA: String
         let tuyaDependencyLockSHA256: String
+        let procedureIdentifier: String
         let tuyaDeviceID: String
         let tuyaUUID: String
         let productID: String
@@ -350,6 +351,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }
     var fieldBuildIdentifier: String { buildIdentity.buildIdentifier }
     var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }
+    var fieldProcedureIdentifier: String { NembraCaptureBuildIdentity.fieldProcedureIdentifier }
     var sdkAccountLoggedIn: Bool { OfficialTuyaFactory.accountLoggedIn }
     var currentAccountUID: String? { OfficialTuyaFactory.currentAccountUID }
     var selected: Candidate? { selectedID.flatMap { byID[$0] } }
@@ -1555,12 +1557,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     private func makeExport(exportedAt: Date, phase: Phase, events: [Event]) -> Export {
         Export(
-            schemaVersion: 9,
+            schemaVersion: 10,
             purpose: "Sanitized Tuya authenticated read-only stationary preflight",
             exportedAt: exportedAt,
             buildIdentifier: buildIdentity.buildIdentifier,
             sourceCommitSHA: buildIdentity.sourceCommitSHA,
             tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,
+            procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier,
             tuyaDeviceID: deviceID,
             tuyaUUID: tuyaUUID,
             productID: productID,
@@ -2122,6 +2125,7 @@ private struct SecureLinkView: View {
                     : "Not authoritative"
             )
             LabeledContent("Source commit", value: test.fieldBuildSourceCommitSHA)
+            LabeledContent("Procedure", value: test.fieldProcedureIdentifier)
             LabeledContent("Private SDK config", value: test.privateConfig ? "Present" : "Missing")
             LabeledContent("SDK account logged in", value: test.sdkAccountLoggedIn ? "Yes" : "No")
             LabeledContent("Exact scooter membership", value: test.sdkDeviceMembershipVerified && test.accountIdentityLeaseIsAuthorized ? "Verified for current account" : test.membershipBusy ? "Checking…" : "Not verified")
