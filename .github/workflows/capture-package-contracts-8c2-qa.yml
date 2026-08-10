@@ -25,7 +25,6 @@ jobs:
           product='8c2e4baefb36d304662e84c9dcf78ef04e48437e'
           git merge-base --is-ancestor "$product" HEAD
           changed="$(git diff --name-only "$product" HEAD)"
-          printf '%s\n' "$changed"
           expected="$(cat <<'EOF'
           .github/workflows/capture-package-contracts-8c2-qa.yml
           Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
@@ -40,7 +39,8 @@ jobs:
       - name: Run repaired source-contract suites
         shell: bash
         run: |
-          set -euo pipefail
+          set -u
+          failed=0
           for suite in \
             TuyaCrossControllerBLEOwnershipLeaseSourceTests \
             TuyaSecureLinkProductSurfaceSourceTests \
@@ -49,8 +49,24 @@ jobs:
             TuyaTransportSuccessAuthoritySourceTests \
             TuyaSessionTerminalRetirementSourceTests
           do
-            swift test --package-path Packages/NembraBluetoothCapture --filter "$suite"
+            log="/tmp/${suite}.log"
+            set +e
+            swift test --package-path Packages/NembraBluetoothCapture --filter "$suite" > "$log" 2>&1
+            rc=$?
+            set -e
+            printf '%s\n' "--- $suite (rc=$rc) ---"
+            tail -n 50 "$log"
+            if [[ "$rc" -ne 0 ]]; then
+              failed=1
+              summary="$(grep -E 'recorded an issue|Caught error:|Expectation failed:|Test .* failed after|Suite .* failed after' "$log" | tail -n 12 | tr '\n' ' ')"
+              [[ -n "$summary" ]] || summary="$(tail -n 20 "$log" | tr '\n' ' ')"
+              summary="${summary//'%'/'%25'}"
+              summary="${summary//$'\r'/'%0D'}"
+              summary="${summary//$'\n'/'%0A'}"
+              printf '::error file=Packages/NembraBluetoothCapture,title=%s::%s\n' "$suite" "$summary"
+            fi
           done
+          exit "$failed"
       - name: Run exact Capture package
         shell: bash
         run: |
