@@ -1,0 +1,89 @@
+name: QA Capture cross-controller BLE 1c2825
+
+on:
+  push:
+    branches:
+      - qa/v14-capture-cross-controller-ble-1c2825-gpt56sol
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qa-capture-cross-controller-ble-1c2825
+  cancel-in-progress: true
+
+jobs:
+  xcode27:
+    name: Xcode 27 exact product SHA validation
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact product repair SHA
+        uses: actions/checkout@v4
+        with:
+          ref: 1c2825c5d91fa374e04e8cfc5c3dc41ef6464836
+          fetch-depth: 0
+
+      - name: Prove exact checkout and clean delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '1c2825c5d91fa374e04e8cfc5c3dc41ef6464836'
+          git diff --check e7af19bf1d9b21c2b184c2a8c403d0d86dbc06c7...HEAD
+          changed="$(git diff --name-only e7af19bf1d9b21c2b184c2a8c403d0d86dbc06c7...HEAD)"
+          printf '%s\n' "$changed"
+          test "$changed" = $'NembraApp/App/NembraCaptureEntrypoint.swift\nPackages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCrossControllerBLEOwnershipSourceTests.swift'
+
+      - name: Show Xcode
+        run: xcodebuild -version
+
+      - name: Run focused Apple source regression
+        run: |
+          set -euo pipefail
+          swift test \
+            --package-path Packages/NembraBluetoothCapture \
+            --filter TuyaCrossControllerBLEOwnershipSourceTests
+
+      - name: Build standalone Capture Simulator
+        run: |
+          set -o pipefail
+          rm -rf /tmp/NembraCrossControllerSimulatorDerived
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/NembraCrossControllerSimulatorDerived \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tee /tmp/nembra-cross-controller-simulator-build.log
+
+      - name: Verify standalone Simulator product exists
+        run: test -d '/tmp/NembraCrossControllerSimulatorDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app'
+
+      - name: Build standalone Capture iPhone unsigned
+        run: |
+          set -o pipefail
+          rm -rf /tmp/NembraCrossControllerDeviceDerived
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath /tmp/NembraCrossControllerDeviceDerived \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tee /tmp/nembra-cross-controller-device-build.log
+
+      - name: Verify standalone iPhone product exists
+        run: test -d '/tmp/NembraCrossControllerDeviceDerived/Build/Products/Debug-iphoneos/Nembra Capture.app'
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-cross-controller-ble-1c2825-build-logs
+          path: |
+            /tmp/nembra-cross-controller-simulator-build.log
+            /tmp/nembra-cross-controller-device-build.log
+          if-no-files-found: ignore
