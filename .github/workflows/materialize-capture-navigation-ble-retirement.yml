@@ -1,0 +1,86 @@
+name: Materialize Capture Navigation BLE Retirement
+
+on:
+  push:
+    branches:
+      - agent/capture-navigation-ble-retirement
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: agent/capture-navigation-ble-retirement
+
+      - name: Apply deterministic lifecycle repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_product='194197ed62ccd4f7880e314ff70e5e0229cddc30'
+          expected_parent='5a681ad62d0c26f7901ef4fd4cac6c95c7c6ea80'
+          test "$(git rev-parse HEAD^)" = "$expected_parent"
+          test "$(git merge-base HEAD "$expected_product")" = "$expected_product"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+          if 'func abandonCorrelationForViewExit()' in source:
+              raise SystemExit('view-exit correlation retirement already exists')
+
+          helper_anchor = '''    private func abandonPackageCorrelation() {\n        // Radio transport first, process lease second. The owner token prevents an old controller\n'''
+          if source.count(helper_anchor) != 1:
+              raise SystemExit('abandonPackageCorrelation anchor drifted')
+          helper = '''    func abandonCorrelationForViewExit() {\n        // A SwiftUI navigation exit must not rely on controller/session deinit to retire radio\n        // ownership. Stop the package scanner first, then release only this controller's opaque\n        // process lease through the existing ordered cleanup path. If the same view instance is\n        // ever presented again, expose a recoverable failed state rather than a dead correlation UI.\n        guard processCorrelationLease != nil || correlationSession != nil else { return }\n        abandonPackageCorrelation()\n        pendingCorrelatedTargetID = nil\n        watchdog?.cancel()\n        watchdog = nil\n        phase = .failed\n        message = "Bluetooth correlation stopped because Capture left Secure Link. Return with the scooter OFF and restart from OFF1."\n        log("target_correlation_abandoned_on_view_exit")\n    }\n\n'''
+          source = source.replace(helper_anchor, helper + helper_anchor, 1)
+
+          view_anchor = '''        .onChange(of: sdkAccount.loggedIn) { _, loggedIn in\n            if loggedIn { test.verifySDKMembership() }\n            else { test.invalidateSDKMembership() }\n        }\n    }\n\n    private var hero: some View {\n'''
+          if source.count(view_anchor) != 1:
+              raise SystemExit('SecureLinkView lifecycle anchor drifted')
+          replacement = '''        .onChange(of: sdkAccount.loggedIn) { _, loggedIn in\n            if loggedIn { test.verifySDKMembership() }\n            else { test.invalidateSDKMembership() }\n        }\n        .onDisappear {\n            test.abandonCorrelationForViewExit()\n        }\n    }\n\n    private var hero: some View {\n'''
+          source = source.replace(view_anchor, replacement, 1)
+
+          # Refuse any accidental authority expansion in this narrow lifecycle patch.
+          required = [
+              'func abandonCorrelationForViewExit()',
+              'guard processCorrelationLease != nil || correlationSession != nil else { return }',
+              'abandonPackageCorrelation()',
+              '.onDisappear {',
+              'test.abandonCorrelationForViewExit()',
+          ]
+          for token in required:
+              if token not in source:
+                  raise SystemExit(f'missing lifecycle invariant: {token}')
+          path.write_text(source, encoding='utf-8')
+          PY
+
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          start = source.index('    func abandonCorrelationForViewExit()')
+          end = source.index('    private func abandonPackageCorrelation()', start)
+          body = source[start:end]
+          if body.index('abandonPackageCorrelation()') > body.index('log("target_correlation_abandoned_on_view_exit")'):
+              raise SystemExit('scanner/lease cleanup must precede terminal presentation/logging')
+          forbidden = ('disconnectBLE', 'publishDps', 'writeValue', 'resetFactory', 'removeDevice')
+          for token in forbidden:
+              if token in body:
+                  raise SystemExit(f'forbidden side effect in view-exit cleanup: {token}')
+          print('Secure Link navigation BLE retirement source contract: PASS')
+          PY
+
+          git diff --check
+          rm .github/workflows/materialize-capture-navigation-ble-retirement.yml
+          git config user.name 'nembra-v14-bot'
+          git config user.email 'nembra-v14-bot@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+                  .github/workflows/materialize-capture-navigation-ble-retirement.yml
+          git diff --cached --check
+          git commit -m 'fix(capture): retire BLE lease on Secure Link exit'
+          git push origin HEAD:agent/capture-navigation-ble-retirement
