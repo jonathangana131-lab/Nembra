@@ -1,72 +1,68 @@
-name: Capture Field Build Provenance
+name: Capture App Lifecycle Patch
 
 on:
   push:
     branches:
-      - capture/field-build-provenance-gpt56
-      - capture/one-time-ble-dump-gpt56
-  pull_request:
+      - recovery/v14-capture-app-lifecycle-consumption-sol
     paths:
-      - NembraApp/App/NembraCaptureBuildIdentity.swift
-      - NembraCapture.xcodeproj/project.pbxproj
-      - scripts/field/install_one_time_capture.command
+      - Scripts/apply_capture_app_lifecycle_patch.py
       - .github/workflows/capture-field-build-provenance.yml
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  provenance:
-    name: Stamp and verify Capture provenance
-    runs-on: xcode-27
-    timeout-minutes: 20
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: recovery/v14-capture-app-lifecycle-consumption-sol
+          fetch-depth: 0
 
-      - name: Verify source contract
+      - name: Verify exact convergence ancestry
         shell: bash
         run: |
           set -euo pipefail
-          identity='NembraApp/App/NembraCaptureBuildIdentity.swift'
-          project='NembraCapture.xcodeproj/project.pbxproj'
-          installer='scripts/field/install_one_time_capture.command'
+          git merge-base --is-ancestor c093d9fca66d14980f4c05057dd560409fb529de HEAD
+          test -f Scripts/apply_capture_app_lifecycle_patch.py
+          test -f .github/workflows/capture-app-lifecycle-patch-gpt56.yml
 
-          bash -n "$installer"
-          grep -Fq 'SOURCE_SHA="$(git rev-parse HEAD)' "$installer"
-          grep -Fq 'BUILD_LABEL="capture-v14-${SOURCE_SHA:0:12}"' "$installer"
-          grep -Fq 'NEMBRA_CAPTURE_BUILD_IDENTIFIER="$BUILD_LABEL"' "$installer"
-          grep -Fq 'NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$SOURCE_SHA"' "$installer"
-
-          grep -Fq 'NembraCaptureBuildIdentity.swift in Sources' "$project"
-          grep -Fq 'INFOPLIST_KEY_NembraCaptureBuildIdentifier = "$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)";' "$project"
-          grep -Fq 'INFOPLIST_KEY_NembraCaptureSourceCommitSHA = "$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)";' "$project"
-
-          grep -Fq 'static let buildIdentifierInfoKey = "NembraCaptureBuildIdentifier"' "$identity"
-          grep -Fq 'static let sourceCommitSHAInfoKey = "NembraCaptureSourceCommitSHA"' "$identity"
-          grep -Fq 'sourceCommitSHA.count == 40' "$identity"
-          grep -Fq 'let expectedIdentifier = "capture-v14-\(sourceCommitSHA.prefix(12))"' "$identity"
-
-      - name: Build stamped standalone Simulator app
+      - name: Apply bounded lifecycle repair
         shell: bash
         run: |
           set -euo pipefail
-          sha='0123456789abcdef0123456789abcdef01234567'
-          label='capture-v14-0123456789ab'
-          rm -rf /tmp/NembraCaptureProvenanceDerived
-          xcodebuild \
-            -project NembraCapture.xcodeproj \
-            -scheme 'Nembra Capture' \
-            -configuration Debug \
-            -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath /tmp/NembraCaptureProvenanceDerived \
-            CODE_SIGNING_ALLOWED=NO \
-            NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
-            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" \
-            build
+          python3 Scripts/apply_capture_app_lifecycle_patch.py
 
-          plist='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
-          test -f "$plist"
-          test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
-          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$sha"
+          file=NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }' "$file"
+          grep -Fq 'private func invalidateInternalLifecycle' "$file"
+          grep -Fq 'sessionLedger.markInternalLifecycleFailure(for: token)' "$file"
+          grep -Fq 'sdk_source_authority_lost_before_failure_callback' "$file"
+          grep -Fq 'targetCorrelationOperatorConfirmed = true' "$file"
+          grep -Fq '.disabled(!test.fieldBuildIsAuthoritative || !test.privateConfig' "$file"
+
+      - name: Self-retire staging files and restore canonical workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm Scripts/apply_capture_app_lifecycle_patch.py
+          rm .github/workflows/capture-app-lifecycle-patch-gpt56.yml
+          git checkout c093d9fca66d14980f4c05057dd560409fb529de -- .github/workflows/capture-field-build-provenance.yml
+
+          git config user.name nembra-v14-integration
+          git config user.email actions@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+
+          changed="$(git diff --cached --name-only)"
+          test "$changed" = "NembraApp/App/NembraCaptureEntrypoint.swift" || {
+            printf 'unexpected effective product paths:\n%s\n' "$changed" >&2
+            exit 1
+          }
+
+          git commit -m 'fix(capture): retire app lifecycle authority fail-closed' \
+            -m 'Consume the package no-clock internal-lifecycle terminal across authentication, observation and sampled terminal cleanup; preserve source-drift truth against late SDK failure; retire impossible active generations without hiding package ownership; and make compiled field-build provenance app-visible before OFF1. No DP query/command or telemetry semantics are added. Physical status remains NO-GO.'
+          git push origin HEAD:recovery/v14-capture-app-lifecycle-consumption-sol
