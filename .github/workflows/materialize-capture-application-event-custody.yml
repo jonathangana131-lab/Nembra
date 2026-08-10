@@ -37,18 +37,18 @@ jobs:
           receiver_start = source.index("    private func receivedApplicationUpdate(")
           receiver_end = source.index("    private func startWatchdog", receiver_start)
           receiver = source[receiver_start:receiver_end]
-          old_log = '''            log("tuya_application_update", update.merging([
-                  "generation": String(token.diagnosticGeneration)
-              ]) { current, _ in current })
-          '''
-          new_log = '''            let exportSafeUpdate = redactVerifiedAccountUID(in: update)
-              log("tuya_application_update", exportSafeUpdate.merging([
-                  "generation": String(token.diagnosticGeneration)
-              ]) { _, trusted in trusted })
-          '''
-          if receiver.count(old_log) != 1:
-              raise SystemExit(f"Expected one untrusted-first application event merge; found {receiver.count(old_log)}")
-          receiver = receiver.replace(old_log, new_log, 1)
+          untrusted_merge = 'log("tuya_application_update", update.merging(['
+          if receiver.count(untrusted_merge) != 1:
+              raise SystemExit(f"Expected one raw application event merge; found {receiver.count(untrusted_merge)}")
+          receiver = receiver.replace(
+              untrusted_merge,
+              'log("tuya_application_update", redactVerifiedAccountUID(in: update).merging([',
+              1,
+          )
+          old_policy = ']) { current, _ in current })'
+          if receiver.count(old_policy) != 1:
+              raise SystemExit(f"Expected one untrusted-precedence collision policy; found {receiver.count(old_policy)}")
+          receiver = receiver.replace(old_policy, ']) { _, trusted in trusted })', 1)
           source = source[:receiver_start] + receiver + source[receiver_end:]
 
           helper_marker = "    private func receivedApplicationUpdate("
@@ -95,7 +95,7 @@ jobs:
           start = source.index("    private func receivedApplicationUpdate(")
           end = source.index("    private func startWatchdog", start)
           receiver = source[start:end]
-          assert "let exportSafeUpdate = redactVerifiedAccountUID(in: update)" in receiver
+          assert "redactVerifiedAccountUID(in: update).merging([" in receiver
           assert '"generation": String(token.diagnosticGeneration)' in receiver
           assert ") { _, trusted in trusted })" in receiver
           assert ") { current, _ in current })" not in receiver
