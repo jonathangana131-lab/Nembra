@@ -26,6 +26,12 @@ struct TuyaSDKAccountIdentityLeaseGateTests {
         #expect(verdict(isLoggedIn: true, currentUID: "account-a", membershipUID: nil, membershipDeviceID: expectedDeviceID) == .blocked(reason: "Exact scooter membership is not bound to a Tuya SDK account identity."))
     }
 
+    @Test("missing membership device identity fails closed")
+    func missingMembershipDeviceFailsClosed() {
+        #expect(verdict(isLoggedIn: true, currentUID: "account-a", membershipUID: "account-a", membershipDeviceID: nil) == .blocked(reason: "The account-bound membership proof has no scooter device ID."))
+        #expect(verdict(isLoggedIn: true, currentUID: "account-a", membershipUID: "account-a", membershipDeviceID: "   ") == .blocked(reason: "The account-bound membership proof has no scooter device ID."))
+    }
+
     @Test("identity equality is exact after whitespace normalization")
     func exactIdentityEquality() {
         #expect(verdict(isLoggedIn: true, currentUID: "  account-a  ", membershipUID: "account-a", membershipDeviceID: expectedDeviceID) == .authorized)
@@ -54,7 +60,7 @@ struct TuyaSDKAccountIdentityLeaseGateTests {
         isLoggedIn: Bool,
         currentUID: String?,
         membershipUID: String?,
-        membershipDeviceID: String
+        membershipDeviceID: String?
     ) -> TuyaSDKAccountIdentityLeaseGate.Verdict {
         TuyaSDKAccountIdentityLeaseGate.verdict(for: .init(
             isLoggedIn: isLoggedIn,
