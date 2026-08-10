@@ -2345,7 +2345,7 @@ private struct SecureLinkView: View {
                             .font(.title2.bold())
                     }
                     Spacer()
-                    Text("\(min(test.correlationCompletedWindowCount + 1, 4))/4")
+                    Text("\(correlationDisplayedWindowOrdinal)/4")
                         .font(.title3.monospacedDigit().bold())
                         .foregroundStyle(.secondary)
                 }
@@ -2699,6 +2699,10 @@ private struct SecureLinkView: View {
                 RoundedRectangle(cornerRadius: 26, style: .continuous)
                     .stroke(Color.white.opacity(0.10), lineWidth: 1)
             }
+    }
+
+    private var correlationDisplayedWindowOrdinal: Int {
+        test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)
     }
 
     private var authorityReady: Bool {
