@@ -6,10 +6,14 @@ script = (root / "scripts/ci/capture_standalone_visual_evidence.sh").read_text(e
 
 required = [
     'EXPECTED_BUNDLE_ID="com.jonathangana131.nembra.capturelearn"',
+    'EXPECTED_DEVICE_NAME="iPhone 12"',
+    'EXPECTED_DEVICE_TYPE="com.apple.CoreSimulator.SimDeviceType.iPhone-12"',
     'EVIDENCE_PROFILE="${EVIDENCE_PROFILE:-provenance-stamped}"',
     'EXPECTED_SOURCE_SHA="${EXPECTED_SOURCE_SHA:-}"',
     'startswith("com.apple.CoreSimulator.SimRuntime.iOS-27")',
-    'preferred=["iPhone 12", "iPhone 17", "iPhone 17 Pro", "iPhone 16"]',
+    'item.get("name") == "iPhone 12"',
+    'refusing newer-device fallback',
+    '[[ "$DEVICE_TYPE" != "$EXPECTED_DEVICE_TYPE" ]]',
     'EXPECTED_BUILD_IDENTIFIER="capture-v14-${SOURCE_SHA:0:12}"',
     '"$SOURCE_SHA" != "$EXPECTED_SOURCE_SHA"',
     'public-unprovisioned)',
@@ -21,6 +25,8 @@ required = [
     'launch_output="$(xcrun simctl launch "$UDID" "$BUNDLE_ID"',
     'xcrun simctl io "$UDID" screenshot "$SCREENSHOT"',
     '"schemaVersion": 2',
+    '"baselineDevice": "iPhone 12"',
+    '"baselineOS": "iOS 27"',
     '"syntheticAuthorityEnvironmentRejected": True',
     '"visualAcceptanceRequiresHumanReview": True',
     '"physicalAuthorityCreated": False',
@@ -31,6 +37,12 @@ required = [
 for needle in required:
     if needle not in script:
         raise SystemExit(f"missing standalone visual-evidence contract: {needle}")
+
+for forbidden_device in ("iPhone 17", "iPhone 17 Pro", "iPhone 16"):
+    if forbidden_device in script:
+        raise SystemExit(
+            f"V14 baseline evidence must fail closed instead of falling back to {forbidden_device}"
+        )
 
 active_lines = [
     line.strip()
