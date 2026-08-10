@@ -1,4 +1,4 @@
-name: Normalize Capture Current Truth Formatting
+name: Finalize Capture Current Truth Convergence
 
 on:
   push:
@@ -9,21 +9,26 @@ permissions:
   contents: write
 
 jobs:
-  normalize:
+  finalize:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
           ref: agent/capture-current-truth-convergence-1c40
-      - name: Normalize reviewed cleanup blocks
+          fetch-depth: 0
+
+      - name: Finalize reviewed source
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+
           p = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           s = p.read_text(encoding='utf-8')
+
           bad_view = (
               '        if phase == .correlated || phase == .selected {\n'
               '    resetDiscoverySessionOnly()\n'
@@ -64,24 +69,164 @@ jobs:
               if s.count(old) != 1:
                   raise SystemExit('reviewed cleanup formatting shape changed')
               s = s.replace(old, new, 1)
+
+          admission_old = (
+              '            await refreshLedgerSnapshot()\n'
+              '            log("tuya_application_update", update.merging([\n'
+              '                "generation": String(token.diagnosticGeneration)\n'
+              '            ]) { _, trusted in trusted })\n'
+          )
+          admission_new = (
+              '            await refreshLedgerSnapshot()\n'
+              '            let eventUpdate = Self.redactingAccountUID(\n'
+              '                in: update,\n'
+              '                accountUID: membershipAccountUID\n'
+              '            )\n'
+              '            log("tuya_application_update", eventUpdate.merging([\n'
+              '                "generation": String(token.diagnosticGeneration)\n'
+              '            ]) { _, trusted in trusted })\n'
+          )
+          if s.count(admission_old) != 1:
+              raise SystemExit('application event admission shape changed')
+          s = s.replace(admission_old, admission_new, 1)
+
+          log_marker = '    private func log(_ kind: String, _ details: [String: String] = [:]) {\n'
+          if s.count(log_marker) != 1:
+              raise SystemExit('controller log marker changed')
+          uid_helper = (
+              '    private static func redactingAccountUID(\n'
+              '        in update: [String: String],\n'
+              '        accountUID: String?\n'
+              '    ) -> [String: String] {\n'
+              '        guard let accountUID = accountUID?.trimmingCharacters(in: .whitespacesAndNewlines),\n'
+              '              !accountUID.isEmpty else { return update }\n'
+              '\n'
+              '        func scrub(_ value: String) -> String {\n'
+              '            value.replacingOccurrences(\n'
+              '                of: accountUID,\n'
+              '                with: "<redacted-account-uid>",\n'
+              '                options: [.caseInsensitive, .literal]\n'
+              '            )\n'
+              '        }\n'
+              '\n'
+              '        var redacted: [String: String] = [:]\n'
+              '        for key in update.keys.sorted() {\n'
+              '            let redactedKey = scrub(key)\n'
+              '            var uniqueKey = redactedKey\n'
+              '            var collisionIndex = 2\n'
+              '            while redacted[uniqueKey] != nil {\n'
+              '                uniqueKey = "\\(redactedKey)#redacted-\\(collisionIndex)"\n'
+              '                collisionIndex += 1\n'
+              '            }\n'
+              '            redacted[uniqueKey] = scrub(update[key] ?? "")\n'
+              '        }\n'
+              '        return redacted\n'
+              '    }\n'
+              '\n'
+          )
+          s = s.replace(log_marker, uid_helper + log_marker, 1)
           p.write_text(s, encoding='utf-8')
+
+          test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift')
+          if test.exists():
+              raise SystemExit('account UID custody regression already exists; refuse duplicate')
+          test.write_text('''import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Tuya application account-UID export custody")
+          struct TuyaApplicationAccountUIDExportCustodySourceTests {
+              @Test("accepted application evidence redacts the verified account UID before event custody")
+              func applicationEvidenceCannotExportVerifiedAccountUID() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let updateAdmission = String(try section(
+                      in: source,
+                      from: "private func receivedApplicationUpdate(",
+                      to: "private func startWatchdog"
+                  ))
+                  let prepareExport = String(try section(
+                      in: source,
+                      from: "func prepareExport()",
+                      to: "private func abandonPackageCorrelation()"
+                  ))
+
+                  #expect(prepareExport.contains("No account UID"))
+                  #expect(source.contains("<redacted-account-uid>"))
+                  #expect(updateAdmission.contains("let eventUpdate = Self.redactingAccountUID("))
+                  #expect(!updateAdmission.contains("log(\\\"tuya_application_update\\\", update.merging(["))
+              }
+
+              @Test("exact account UID is scrubbed from both malformed keys and values without banning generic uid keys")
+              func accountUIDCustodyIsExactValueBound() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let helper = String(try section(
+                      in: source,
+                      from: "private static func redactingAccountUID(",
+                      to: "private func log("
+                  ))
+                  let driver = String(try section(
+                      in: source,
+                      from: "@MainActor\\nprivate final class SmartLifeDriver",
+                      to: "#endif\\n\\nprivate enum AppleAccountAuthorizationError"
+                  ))
+
+                  #expect(helper.contains("let redactedKey = scrub(key)"))
+                  #expect(helper.contains("redacted[uniqueKey] = scrub(update[key] ?? \\\"\\\")"))
+                  #expect(helper.contains("for key in update.keys.sorted()"))
+                  #expect(!driver.contains("\\\"uid\\\","))
+                  #expect(!driver.contains("\\\"uid\\\"\\n"))
+              }
+
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let startRange = source.range(of: start),
+                        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+                      Issue.record("Expected source section missing: \\(start) ... \\(end)")
+                      throw SourceContractError.sectionMissing
+                  }
+                  return source[startRange.lowerBound..<endRange.lowerBound]
+              }
+
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  let repositoryRoot = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+              }
+
+              private enum SourceContractError: Error {
+                  case sectionMissing
+              }
+          }
+          ''', encoding='utf-8')
+
           Path('.github/workflows/capture-current-truth-format-materialize.yml').unlink()
           PY
           git diff --check
-      - name: Verify effective scope
+
+      - name: Verify exact effective scope and invariants
         shell: bash
         run: |
           set -euo pipefail
           base='1c40853f6991b4d09206df1d25ecff021458b7eb'
           changed="$(git diff --name-only "$base" | sort)"
-          wanted="$(printf '%s\n' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegrityCurrentSourceTests.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift' | sort)"
+          wanted="$(printf '%s\n' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegrityCurrentSourceTests.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift' | sort)"
           test "$changed" = "$wanted"
-      - name: Commit formatting correction
+          grep -Fq 'guard phase != .accepted else { return }' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'foreground_integrity_lost_after_target_correlation' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'target_correlation_authority_revoked_on_view_exit' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq ']) { _, trusted in trusted })' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq '<redacted-account-uid>' NembraApp/App/NembraCaptureEntrypoint.swift
+          ! grep -Fq 'log("tuya_application_update", update.merging([' NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Commit final convergence
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git commit -m 'style(capture): normalize lifecycle cleanup formatting'
+          git commit -m 'fix(capture): converge foreground and event custody truth'
           git push origin HEAD:agent/capture-current-truth-convergence-1c40
