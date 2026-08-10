@@ -1,0 +1,60 @@
+name: Capture Redaction Key Collision Materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-redaction-key-collision-ba3a-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: repair/v14-capture-redaction-key-collision-ba3a-sol
+
+      - name: Verify exact product ancestry and untouched app source
+        run: |
+          set -euo pipefail
+          product=ba3a1eeae36caca6dd84beaabd0f15f4f0b57925
+          test "$(git merge-base "$product" HEAD)" = "$product"
+          git diff --exit-code "$product" -- NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Materialize collision-safe redaction
+        run: python3 scripts/materialize_capture_redaction_key_collision.py
+
+      - name: Validate custody invariant
+        run: |
+          set -euo pipefail
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          h = s[s.index('private func redactedApplicationEventDetails('):s.index('private func startWatchdog')]
+          assert 'for key in update.keys.sorted()' in h
+          assert 'var admittedKey = redactedKey' in h
+          assert 'while redacted[admittedKey] != nil' in h
+          assert 'redacted[admittedKey] = redactedValue' in h
+          assert 'redacted[redactedKey] = value.replacingOccurrences' not in h
+          assert '<redacted-account-uid>' in h
+          PY
+
+      - name: Publish clean two-path repair
+        run: |
+          set -euo pipefail
+          product=ba3a1eeae36caca6dd84beaabd0f15f4f0b57925
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git rm scripts/materialize_capture_redaction_key_collision.py .github/workflows/capture-redaction-key-collision-materialize.yml
+          git commit -m 'Capture: preserve redacted application event collisions'
+          expected=$(printf '%s\n' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventRedactionCollisionSourceTests.swift' | sort)
+          actual=$(git diff --name-only "$product" HEAD | sort)
+          test "$actual" = "$expected"
+          git diff --check "$product" HEAD
+          git push origin HEAD:repair/v14-capture-redaction-key-collision-ba3a-sol
