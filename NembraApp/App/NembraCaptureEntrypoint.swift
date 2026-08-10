@@ -1376,6 +1376,27 @@ private final class SecureLinkController: NSObject, ObservableObject {
         log(kind, ["generation": String(token.diagnosticGeneration)])
     }
 
+    private func redactVerifiedAccountUIDFromApplicationEvent(
+        _ update: [String: String],
+        verifiedAccountUID: String
+    ) -> [String: String] {
+        let accountUID = verifiedAccountUID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !accountUID.isEmpty else { return [:] }
+        func redact(_ value: String) -> String {
+            value.replacingOccurrences(
+                of: accountUID,
+                with: "<redacted-account-uid>",
+                options: [.caseInsensitive, .literal]
+            )
+        }
+        var redacted: [String: String] = [:]
+        redacted.reserveCapacity(update.count)
+        for (key, value) in update {
+            redacted[redact(key)] = redact(value)
+        }
+        return redacted
+    }
+
     private func receivedApplicationUpdate(
         _ update: [String: String],
         token: TuyaReadOnlyConnectionToken
@@ -1413,6 +1434,19 @@ private final class SecureLinkController: NSObject, ObservableObject {
             await recordObservedTransportLoss(token: token)
             return
         }
+        guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !verifiedAccountUID.isEmpty else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "Verified Tuya account identity became unavailable before application evidence custody.",
+                kind: "sdk_account_uid_authority_missing_during_observation"
+            )
+            return
+        }
+        let redactedUpdate = redactVerifiedAccountUIDFromApplicationEvent(
+            update,
+            verifiedAccountUID: verifiedAccountUID
+        )
 
         applicationUpdateAdmissionsInFlight += 1
         defer { applicationUpdateAdmissionsInFlight -= 1 }
@@ -1420,7 +1454,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            log("tuya_application_update", redactedUpdate.merging([
                 "generation": String(token.diagnosticGeneration)
             ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
