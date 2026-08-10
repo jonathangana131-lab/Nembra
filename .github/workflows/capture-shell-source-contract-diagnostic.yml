@@ -7,6 +7,8 @@ on:
       - '.github/workflows/capture-shell-source-contract-diagnostic.yml'
       - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureStageRailAcceptedAccessibilitySourceTests.swift'
       - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductSurfaceSourceTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductRecoveryTruthSourceTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkAccountRecoverySourceTests.swift'
 
 permissions:
   contents: read
@@ -35,3 +37,11 @@ jobs:
         run: |
           cd Packages/NembraBluetoothCapture
           swift test --filter TuyaSecureLinkProductSurfaceSourceTests
+      - name: Run product-recovery source contract
+        run: |
+          cd Packages/NembraBluetoothCapture
+          swift test --filter TuyaSecureLinkProductRecoveryTruthSourceTests
+      - name: Run account-recovery source contract
+        run: |
+          cd Packages/NembraBluetoothCapture
+          swift test --filter TuyaSecureLinkAccountRecoverySourceTests
