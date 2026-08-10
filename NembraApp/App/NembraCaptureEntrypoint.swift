@@ -3051,6 +3051,8 @@ private struct SecureLinkView: View {
                             sdkAccount.signOut()
                         }
                         .buttonStyle(.plain)
+                        .frame(minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.cyan)
                         .disabled(test.membershipBusy || sdkAccount.busy)
