@@ -1,0 +1,40 @@
+name: V14 Capture Cross-Tree Revalidation RED 4C1B
+
+on:
+  push:
+    branches:
+      - red/v14-capture-cross-tree-revalidation-4c1b-sol
+
+jobs:
+  expected-red:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          ref: red/v14-capture-cross-tree-revalidation-4c1b-sol
+      - name: Assert exact repair parent and test-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD~2)" = '4c1b90bb1b3ffd850a6ebd8ee8498a0037d388f1'
+          git diff --name-only 4c1b90bb1b3ffd850a6ebd8ee8498a0037d388f1 HEAD | sort > /tmp/actual
+          cat > /tmp/expected <<'EOF'
+          .github/workflows/v14-capture-cross-tree-revalidation-red-4c1b.yml
+          scripts/ci/tests/test_capture_tuya_private_input_cross_tree_revalidation_red.py
+          EOF
+          sort -o /tmp/expected /tmp/expected
+          diff -u /tmp/expected /tmp/actual
+      - name: Prove candidate still misses late earlier-tree change
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/tests/test_capture_tuya_private_input_cross_tree_revalidation_red.py
+          set +e
+          python3 scripts/ci/tests/test_capture_tuya_private_input_cross_tree_revalidation_red.py > /tmp/red.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/red.log
+          test "$status" -ne 0
+          grep -Eq 'FAILED|AssertionError' /tmp/red.log
+          echo 'EXPECTED RED: earlier tree can change after its revalidation during the later tree pass.'
