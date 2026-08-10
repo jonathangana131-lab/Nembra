@@ -222,6 +222,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var byID: [UUID: Candidate] = [:]
     private var baseline = Set<UUID>()
     private var driver: OfficialTuyaDriver?
+    // Once the official Tuya SDK begins BLE ownership, package-owned CoreBluetooth
+    // discovery stays closed for the rest of this app process. Relaunch is the only
+    // supported way to return to discovery; reset/unbind/disconnect commands are not used.
+    private var officialTuyaOwnershipStarted = false
     private var events: [Event] = []
     private var watchdog: Task<Void, Never>?
     private let sessionLedger = TuyaAuthenticatedReadOnlySessionLedger()
@@ -277,6 +281,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func startBaseline() {
+        guard !officialTuyaOwnershipStarted else {
+            fail(
+                "Tuya's official BLE ownership already started in this app process. Relaunch Nembra Capture before package discovery; Nembra will not reopen CoreBluetooth discovery.",
+                "package_discovery_blocked_after_tuya_ownership"
+            )
+            return
+        }
         guard central.state == .poweredOn else {
             fail("Bluetooth is not ready.", "bluetooth_unavailable")
             return
@@ -298,6 +309,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func scanAfterPowerOn() {
+        guard !officialTuyaOwnershipStarted else {
+            fail(
+                "Tuya's official BLE ownership already started in this app process. Relaunch Nembra Capture before package discovery; Nembra will not reopen CoreBluetooth discovery.",
+                "package_discovery_blocked_after_tuya_ownership"
+            )
+            return
+        }
         guard central.state == .poweredOn else {
             fail("Bluetooth is not ready.", "bluetooth_unavailable")
             return
@@ -447,6 +465,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        // Latch before any supported Tuya connection work can begin. From this
+        // point onward Nembra must never start package-owned CoreBluetooth discovery
+        // again in this process, even if authentication later fails.
+        officialTuyaOwnershipStarted = true
         central.stopScan()
         driver = newDriver
         watchdog?.cancel()
@@ -665,6 +687,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func resetDiscovery() {
+        guard !officialTuyaOwnershipStarted else {
+            central.stopScan()
+            log("discovery_reset_blocked_after_tuya_ownership")
+            return
+        }
         central.stopScan()
         watchdog?.cancel()
         watchdog = nil
