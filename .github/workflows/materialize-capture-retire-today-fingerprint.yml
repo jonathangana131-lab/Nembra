@@ -1,0 +1,141 @@
+name: Materialize Capture Legacy TODAY Field Retirement
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-retire-today-fingerprint-3f269
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact current-product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='3f26906d68c6d886fa5c19a3349f7c538e5392a6'
+          test "$(git rev-parse HEAD^)" = "$parent"
+          mapfile -t changed < <(git diff --name-only "$parent"...HEAD | sort)
+          test "${#changed[@]}" = 1
+          test "${changed[0]}" = '.github/workflows/materialize-capture-retire-today-fingerprint.yml'
+          grep -Fq 'ACTIVE TODAY OVERRIDE' CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md
+          grep -Fq 'exec "$CANONICAL_PRODUCER" --nembra-today-research-build "$@"' scripts/ci/xcode27_today_research_field_candidate.sh
+          grep -Fq 'TODAY_RESEARCH_BUILD_MODE=1' scripts/ci/xcode27_signed_field_candidate.sh
+          grep -Fq 'PROCEDURE_ID="ES80-AUTHENTICATED-STATIONARY-v1"' scripts/field/install_one_time_capture.command
+          grep -Fq 'static let requiredFieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"' NembraApp/App/NembraCaptureBuildIdentity.swift
+
+      - name: Retire legacy TODAY authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' 'IyBDQVBUVVJFIFRPREFZIEZJRUxELVJFQURZIERJUkVDVElWRSDigJQgVjE0CgpTdGF0dXM6ICoqU1VQRVJTRURFRCAvIE5PIEZJRUxEIEFVVEhPUklUWSAvIFBIWVNJQ0FMIE5PLUdPLioqCgpGZWF0dXJlOiAqKk5lbWJyYSBDYXB0dXJlIC8gYXV0aGVudGljYXRlZCBzdGF0aW9uYXJ5IEVTODAgZXZpZGVuY2UqKgoKVGhpcyBmaWxlIGlzIHJldGFpbmVkIG9ubHkgYXMgYSB0b21ic3RvbmUgZm9yIHRoZSBoaXN0b3JpY2FsIHByaXZhdGUgUmVzZWFyY2ggcGF0aCB0aGF0IHRhcmdldGVkIGBFUzgwLUZJTkdFUlBSSU5ULXYxYC4KClRoZSBvbGQgVE9EQVkgb3ZlcnJpZGUgaXMgcmV0aXJlZC4gSXQgbXVzdCBub3QgYXV0aG9yaXplIGEgc2Nhbiwgc2lnbmVkIGNhbmRpZGF0ZSwgaW5zdGFsbCwgcnVudGltZSByZW5kZXp2b3VzLCBleHBlcmltZW50LCBvciBwaHlzaWNhbCBjbGFpbS4gVGhlIGN1cnJlbnQgQ2FwdHVyZSBwcm9kdWN0IHJlcXVpcmVzIHRoZSBjYW5vbmljYWwgcHJvY2VkdXJlOgoKYEVTODAtQVVUSEVOVElDQVRFRC1TVEFUSU9OQVJZLXYxYAoKQ3VycmVudCBleGVjdXRhYmxlIGZpZWxkIGF1dGhvcml0eSBpcyBpbnRlbnRpb25hbGx5IG5hcnJvdyBhbmQgbXVzdCBhZ3JlZSBlbmQtdG8tZW5kOgoKLSBgc2NyaXB0cy9maWVsZC9pbnN0YWxsX29uZV90aW1lX2NhcHR1cmUuY29tbWFuZGAgYnVpbGRzIGFuZCBpbnN0YWxscyB0aGUgYXV0aGVudGljYXRlZCBzdGFuZGFsb25lIENhcHR1cmUgcHJvZHVjdCBmcm9tIGFuIGV4YWN0IHNvZnR3YXJlLWFjY2VwdGVkIHNvdXJjZSBTSEEuCi0gYE5lbWJyYUFwcC9BcHAvTmVtYnJhQ2FwdHVyZUJ1aWxkSWRlbnRpdHkuc3dpZnRgIHJlcXVpcmVzIHRoZSBzYW1lIGNhbm9uaWNhbCBwcm9jZWR1cmUgaW4gdGhlIHJ1bm5pbmcgYXBwIHByb3ZlbmFuY2UuCi0gYC5naXRodWIvd29ya2Zsb3dzL2NhcHR1cmUtZmllbGQtYnVpbGQtcHJvdmVuYW5jZS55bWxgIGNoZWNrcyB0aGUgaW5zdGFsbGVyLCBidWlsdCBhcHAsIHByaXZhdGUgVHV5YSBkZXBlbmRlbmN5IHByb3ZlbmFuY2UsIGludGVuZGVkIGlQaG9uZSAxMiAvIGlPUyAyNyBhZG1pc3Npb24sIGFuZCBwcm9jZWR1cmUgcmVuZGV6dm91cy4KClRoZSBoaXN0b3JpY2FsIGBORU1CUkFfRVM4MF9UT0RBWV9SRVNFQVJDSGAgLyBgRVM4MC1GSU5HRVJQUklOVC12MWAgcHJvZHVjZXIgcGF0aCBpcyBub3QgYSBmYWxsYmFjayBhbmQgbXVzdCBub3QgYmUgdXNlZCB0byBieXBhc3MgY3VycmVudCBhdXRoZW50aWNhdGVkIHByb2NlZHVyZSBnYXRlcy4gSGlzdG9yaWNhbCBhcnRpZmFjdHMgcHJvZHVjZWQgdW5kZXIgdGhhdCBvbGRlciBwYXRoIHJlbWFpbiBoaXN0b3JpY2FsIGV2aWRlbmNlIG9ubHk7IHRoaXMgcmV0aXJlbWVudCBkb2VzIG5vdCByZXdyaXRlIG9yIHByb21vdGUgdGhlbS4KCkEgZnV0dXJlIHBoeXNpY2FsIEdPIHJlcXVpcmVzIG9uZSBmaW5hbCBjb21wb3NlZCBleGFjdCBDYXB0dXJlIHByb2R1Y3QgaGVhZCB0byBlYXJuIGFsbCByZXF1aXJlZCBzb2Z0d2FyZSwgcHJvdmVuYW5jZSwgdmlzdWFsL2FjY2Vzc2liaWxpdHksIHNpZ25pbmcsIGludGVuZGVkLWRldmljZSwgb2ZmaWNpYWwtYWNjb3VudC9tZW1iZXJzaGlwL1VJRC1sZWFzZSwgYW5kIHJ1bnRpbWUgcmVuZGV6dm91cyBnYXRlcyBmb3IgYEVTODAtQVVUSEVOVElDQVRFRC1TVEFUSU9OQVJZLXYxYC4KClVudGlsIHRoYXQgZXhhY3QgY3VycmVudCBjaGFpbiBpcyBjb21wbGV0ZToKCioqUEhZU0lDQUwgU1RBVFVTOiBOTy1HTyAvIERPIE5PVCBTQ0FOIC8gRE8gTk9UIFJVTiAvIERPIE5PVCBSRVBFQVQgVEhFIE9MRCBSSURFLioqCg==' | base64 -d > CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md
+          printf '%s' 'IyEvYmluL2Jhc2ggLXAKc2V0IC1ldW8gcGlwZWZhaWwKUEFUSD0iL3Vzci9iaW46L2JpbjovdXNyL3NiaW46L3NiaW4iCmV4cG9ydCBQQVRICnVuc2V0IEJBU0hfRU5WIEVOVgoKZWNobyAiU1VQRVJTRURFRDogdGhlIHByaXZhdGUgVE9EQVkgRVM4MC1GSU5HRVJQUklOVC12MSBSZXNlYXJjaCBjYW5kaWRhdGUgcGF0aCBpcyByZXRpcmVkLiIgPiYyCmVjaG8gIkN1cnJlbnQgQ2FwdHVyZSBmaWVsZCBwcm9jZWR1cmUgaXMgRVM4MC1BVVRIRU5USUNBVEVELVNUQVRJT05BUlktdjEuIiA+JjIKZWNobyAiVXNlIHNjcmlwdHMvZmllbGQvaW5zdGFsbF9vbmVfdGltZV9jYXB0dXJlLmNvbW1hbmQgb25seSBmcm9tIHRoZSBmaW5hbCBleGFjdCBzb2Z0d2FyZS1hY2NlcHRlZCBDYXB0dXJlIHNvdXJjZSBhbmQgb25seSBhZnRlciBpdHMgY3VycmVudCBmaWVsZCBnYXRlcyBhcmUgc2F0aXNmaWVkLiIgPiYyCmVjaG8gIlBIWVNJQ0FMIE5PLUdPOiB0aGlzIGxlZ2FjeSB3cmFwcGVyIGNhbm5vdCBhdXRob3JpemUgc2Nhbm5pbmcgb3IgYW4gRVM4MCBleHBlcmltZW50LiIgPiYyCmV4aXQgNjQK' | base64 -d > scripts/ci/xcode27_today_research_field_candidate.sh
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/ci/xcode27_signed_field_candidate.sh')
+          source = path.read_text(encoding='utf-8')
+          old = '''TODAY_RESEARCH_BUILD_MODE=0
+if [[ "${1:-}" == "--nembra-today-research-build" ]]; then
+  TODAY_RESEARCH_BUILD_MODE=1
+  shift
+fi
+unset XCODE_XCCONFIG_FILE OTHER_SWIFT_FLAGS SWIFT_ACTIVE_COMPILATION_CONDITIONS
+if [[ "$TODAY_RESEARCH_BUILD_MODE" == "1" ]]; then
+  RESEARCH_COMPILE_MODE="private-today-v1"
+  RESEARCH_COMPILE_AUTHORITY="canonical-producer-explicit-mode"
+  RESEARCH_COMPILE_CONDITION="NEMBRA_ES80_TODAY_RESEARCH"
+else
+  RESEARCH_COMPILE_MODE="standard"
+  RESEARCH_COMPILE_AUTHORITY="none"
+  RESEARCH_COMPILE_CONDITION="none"
+fi'''
+          new = '''if [[ "${1:-}" == "--nembra-today-research-build" ]]; then
+  echo "SUPERSEDED: --nembra-today-research-build cannot authorize the current Capture procedure." >&2
+  echo "Use scripts/field/install_one_time_capture.command for ES80-AUTHENTICATED-STATIONARY-v1 after exact current-product acceptance." >&2
+  exit 64
+fi
+TODAY_RESEARCH_BUILD_MODE=0
+unset XCODE_XCCONFIG_FILE OTHER_SWIFT_FLAGS SWIFT_ACTIVE_COMPILATION_CONDITIONS
+RESEARCH_COMPILE_MODE="standard"
+RESEARCH_COMPILE_AUTHORITY="none"
+RESEARCH_COMPILE_CONDITION="none"'''
+          if source.count(old) != 1:
+              raise SystemExit('legacy Research mode block did not match exactly once')
+          path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          PY
+          printf '%s' 'aW1wb3J0IEZvdW5kYXRpb24KaW1wb3J0IFRlc3RpbmcKQHRlc3RhYmxlIGltcG9ydCBOZW1icmFCbHVldG9vdGhDYXB0dXJlCgpAU3VpdGUoIkxlZ2FjeSBUT0RBWSBmaWVsZCBhdXRob3JpdHkgcmV0aXJlbWVudCIpCnN0cnVjdCBUdXlhTGVnYWN5VG9kYXlGaWVsZEF1dGhvcml0eVJldGlyZW1lbnRTb3VyY2VUZXN0cyB7CiAgICBwcml2YXRlIGxldCBjdXJyZW50UHJvY2VkdXJlID0gIkVTODAtQVVUSEVOVElDQVRFRC1TVEFUSU9OQVJZLXYxIgoKICAgIEBUZXN0KCJoaXN0b3JpY2FsIFRPREFZIGRpcmVjdGl2ZSBpcyBhbiBleHBsaWNpdCBuby1hdXRob3JpdHkgdG9tYnN0b25lIikKICAgIGZ1bmMgaGlzdG9yaWNhbERpcmVjdGl2ZUNhbm5vdEF1dGhvcml6ZUN1cnJlbnRGaWVsZFdvcmsoKSB0aHJvd3MgewogICAgICAgIGxldCBkaXJlY3RpdmUgPSB0cnkgcmVhZFJlcG9zaXRvcnlGaWxlKCJDQVBUVVJFX1RPREFZX0ZJRUxEX1JFQURZX0RJUkVDVElWRS5tZCIpCgogICAgICAgICNleHBlY3QoZGlyZWN0aXZlLmNvbnRhaW5zKCJTdGF0dXM6ICoqU1VQRVJTRURFRCAvIE5PIEZJRUxEIEFVVEhPUklUWSAvIFBIWVNJQ0FMIE5PLUdPLioqIikpCiAgICAgICAgI2V4cGVjdCghZGlyZWN0aXZlLmNvbnRhaW5zKCJBQ1RJVkUgVE9EQVkgT1ZFUlJJREUiKSkKICAgICAgICAjZXhwZWN0KGRpcmVjdGl2ZS5jb250YWlucyhjdXJyZW50UHJvY2VkdXJlKSkKICAgICAgICAjZXhwZWN0KGRpcmVjdGl2ZS5jb250YWlucygic2NyaXB0cy9maWVsZC9pbnN0YWxsX29uZV90aW1lX2NhcHR1cmUuY29tbWFuZCIpKQogICAgICAgICNleHBlY3QoZGlyZWN0aXZlLmNvbnRhaW5zKCJFUzgwLUZJTkdFUlBSSU5ULXYxIikpCiAgICAgICAgI2V4cGVjdChkaXJlY3RpdmUuY29udGFpbnMoIm11c3Qgbm90IGF1dGhvcml6ZSIpKQogICAgfQoKICAgIEBUZXN0KCJsZWdhY3kgVE9EQVkgd3JhcHBlciBmYWlscyBjbG9zZWQgaW5zdGVhZCBvZiBkZWxlZ2F0aW5nIHRvIHRoZSBmaW5nZXJwcmludCBwcm9kdWNlciIpCiAgICBmdW5jIGhpc3RvcmljYWxXcmFwcGVyQ2Fubm90RGVsZWdhdGUoKSB0aHJvd3MgewogICAgICAgIGxldCB3cmFwcGVyID0gdHJ5IHJlYWRSZXBvc2l0b3J5RmlsZSgic2NyaXB0cy9jaS94Y29kZTI3X3RvZGF5X3Jlc2VhcmNoX2ZpZWxkX2NhbmRpZGF0ZS5zaCIpCgogICAgICAgICNleHBlY3Qod3JhcHBlci5jb250YWlucygiU1VQRVJTRURFRDoiKSkKICAgICAgICAjZXhwZWN0KHdyYXBwZXIuY29udGFpbnMoY3VycmVudFByb2NlZHVyZSkpCiAgICAgICAgI2V4cGVjdCh3cmFwcGVyLmNvbnRhaW5zKCJzY3JpcHRzL2ZpZWxkL2luc3RhbGxfb25lX3RpbWVfY2FwdHVyZS5jb21tYW5kIikpCiAgICAgICAgI2V4cGVjdCh3cmFwcGVyLmNvbnRhaW5zKCJleGl0IDY0IikpCiAgICAgICAgI2V4cGVjdCghd3JhcHBlci5jb250YWlucygiZXhlYyBcIiRDQU5PTklDQUxfUFJPRFVDRVJcIiIpKQogICAgICAgICNleHBlY3QoIXdyYXBwZXIuY29udGFpbnMoIkNBTk9OSUNBTF9QUk9EVUNFUj0iKSkKICAgIH0KCiAgICBAVGVzdCgiZ2VuZXJpYyBzaWduZWQgcHJvZHVjZXIgcmVqZWN0cyB0aGUgcmV0aXJlZCBSZXNlYXJjaCBtb2RlIikKICAgIGZ1bmMgZ2VuZXJpY1Byb2R1Y2VyUmVqZWN0c1JldGlyZWRSZXNlYXJjaE1vZGUoKSB0aHJvd3MgewogICAgICAgIGxldCBwcm9kdWNlciA9IHRyeSByZWFkUmVwb3NpdG9yeUZpbGUoInNjcmlwdHMvY2kveGNvZGUyN19zaWduZWRfZmllbGRfY2FuZGlkYXRlLnNoIikKCiAgICAgICAgI2V4cGVjdChwcm9kdWNlci5jb250YWlucygiaWYgW1sgXCIkezE6LX1cIiA9PSBcIi0tbmVtYnJhLXRvZGF5LXJlc2VhcmNoLWJ1aWxkXCIgXV07IHRoZW4iKSkKICAgICAgICAjZXhwZWN0KHByb2R1Y2VyLmNvbnRhaW5zKCJTVVBFUlNFREVEOiAtLW5lbWJyYS10b2RheS1yZXNlYXJjaC1idWlsZCIpKQogICAgICAgICNleHBlY3QocHJvZHVjZXIuY29udGFpbnMoImV4aXQgNjQiKSkKICAgICAgICAjZXhwZWN0KCFwcm9kdWNlci5jb250YWlucygiVE9EQVlfUkVTRUFSQ0hfQlVJTERfTU9ERT0xIikpCiAgICAgICAgI2V4cGVjdCghcHJvZHVjZXIuY29udGFpbnMoIlJFU0VBUkNIX0NPTVBJTEVfQVVUSE9SSVRZPVwiY2Fub25pY2FsLXByb2R1Y2VyLWV4cGxpY2l0LW1vZGVcIiIpKQogICAgfQoKICAgIEBUZXN0KCJjdXJyZW50IGluc3RhbGxlciwgcnVudGltZSBpZGVudGl0eSwgYW5kIHByb3ZlbmFuY2UgZ2F0ZSBhZ3JlZSBvbiBhdXRoZW50aWNhdGVkIHN0YXRpb25hcnkgcHJvY2VkdXJlIikKICAgIGZ1bmMgY3VycmVudEZpZWxkQXV0aG9yaXR5QWdyZWVzT25PbmVQcm9jZWR1cmUoKSB0aHJvd3MgewogICAgICAgIGxldCBpbnN0YWxsZXIgPSB0cnkgcmVhZFJlcG9zaXRvcnlGaWxlKCJzY3JpcHRzL2ZpZWxkL2luc3RhbGxfb25lX3RpbWVfY2FwdHVyZS5jb21tYW5kIikKICAgICAgICBsZXQgaWRlbnRpdHkgPSB0cnkgcmVhZFJlcG9zaXRvcnlGaWxlKCJOZW1icmFBcHAvQXBwL05lbWJyYUNhcHR1cmVCdWlsZElkZW50aXR5LnN3aWZ0IikKICAgICAgICBsZXQgcHJvdmVuYW5jZSA9IHRyeSByZWFkUmVwb3NpdG9yeUZpbGUoIi5naXRodWIvd29ya2Zsb3dzL2NhcHR1cmUtZmllbGQtYnVpbGQtcHJvdmVuYW5jZS55bWwiKQoKICAgICAgICAjZXhwZWN0KGluc3RhbGxlci5jb250YWlucygiUFJPQ0VEVVJFX0lEPVwiXChjdXJyZW50UHJvY2VkdXJlKVwiIikpCiAgICAgICAgI2V4cGVjdChpZGVudGl0eS5jb250YWlucygic3RhdGljIGxldCByZXF1aXJlZEZpZWxkUHJvY2VkdXJlSWRlbnRpZmllciA9IFwiXChjdXJyZW50UHJvY2VkdXJlKVwiIikpCiAgICAgICAgI2V4cGVjdChwcm92ZW5hbmNlLmNvbnRhaW5zKCJwcm9jZWR1cmU9J1woY3VycmVudFByb2NlZHVyZSknIikpCiAgICAgICAgI2V4cGVjdChwcm92ZW5hbmNlLmNvbnRhaW5zKCJJTkZPUExJU1RfS0VZX05lbWJyYUNhcHR1cmVQcm9jZWR1cmVJZGVudGlmaWVyPSRQUk9DRURVUkVfSUQiKSkKICAgIH0KCiAgICBwcml2YXRlIGZ1bmMgcmVhZFJlcG9zaXRvcnlGaWxlKF8gcmVsYXRpdmVQYXRoOiBTdHJpbmcpIHRocm93cyAtPiBTdHJpbmcgewogICAgICAgIGxldCByZXBvc2l0b3J5Um9vdCA9IFVSTChmaWxlVVJMV2l0aFBhdGg6ICNmaWxlUGF0aCkKICAgICAgICAgICAgLmRlbGV0aW5nTGFzdFBhdGhDb21wb25lbnQoKQogICAgICAgICAgICAuZGVsZXRpbmdMYXN0UGF0aENvbXBvbmVudCgpCiAgICAgICAgICAgIC5kZWxldGluZ0xhc3RQYXRoQ29tcG9uZW50KCkKICAgICAgICAgICAgLmRlbGV0aW5nTGFzdFBhdGhDb21wb25lbnQoKQogICAgICAgICAgICAuZGVsZXRpbmdMYXN0UGF0aENvbXBvbmVudCgpCiAgICAgICAgcmV0dXJuIHRyeSBTdHJpbmcoY29udGVudHNPZjogcmVwb3NpdG9yeVJvb3QuYXBwZW5kaW5nUGF0aENvbXBvbmVudChyZWxhdGl2ZVBhdGgpLCBlbmNvZGluZzogLnV0ZjgpCiAgICB9Cn0K' | base64 -d > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayFieldAuthorityRetirementSourceTests.swift
+          git diff --check
+
+      - name: Validate fail-closed retirement
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ci/xcode27_today_research_field_candidate.sh
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          set +e
+          legacy_output="$(scripts/ci/xcode27_today_research_field_candidate.sh 2>&1)"
+          legacy_status=$?
+          producer_output="$(scripts/ci/xcode27_signed_field_candidate.sh --nembra-today-research-build 2>&1)"
+          producer_status=$?
+          set -e
+          test "$legacy_status" = 64
+          test "$producer_status" = 64
+          grep -Fq 'SUPERSEDED:' <<< "$legacy_output"
+          grep -Fq 'ES80-AUTHENTICATED-STATIONARY-v1' <<< "$legacy_output"
+          grep -Fq 'SUPERSEDED: --nembra-today-research-build' <<< "$producer_output"
+          python3 - <<'PY'
+          from pathlib import Path
+          directive = Path('CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md').read_text()
+          wrapper = Path('scripts/ci/xcode27_today_research_field_candidate.sh').read_text()
+          producer = Path('scripts/ci/xcode27_signed_field_candidate.sh').read_text()
+          installer = Path('scripts/field/install_one_time_capture.command').read_text()
+          identity = Path('NembraApp/App/NembraCaptureBuildIdentity.swift').read_text()
+          provenance = Path('.github/workflows/capture-field-build-provenance.yml').read_text()
+          procedure = 'ES80-AUTHENTICATED-STATIONARY-v1'
+          assert 'ACTIVE TODAY OVERRIDE' not in directive
+          assert 'SUPERSEDED / NO FIELD AUTHORITY / PHYSICAL NO-GO' in directive
+          assert procedure in directive
+          assert 'CANONICAL_PRODUCER=' not in wrapper
+          assert 'exec "$CANONICAL_PRODUCER"' not in wrapper
+          assert 'exit 64' in wrapper
+          assert 'TODAY_RESEARCH_BUILD_MODE=1' not in producer
+          assert 'canonical-producer-explicit-mode' not in producer
+          assert 'SUPERSEDED: --nembra-today-research-build' in producer
+          assert f'PROCEDURE_ID="{procedure}"' in installer
+          assert f'requiredFieldProcedureIdentifier = "{procedure}"' in identity
+          assert f"procedure='{procedure}'" in provenance
+          print('legacy TODAY authority retirement contract: PASS')
+          PY
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayFieldAuthorityRetirementSourceTests.swift
+
+      - name: Collapse helper and publish clean donor
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='3f26906d68c6d886fa5c19a3349f7c538e5392a6'
+          rm .github/workflows/materialize-capture-retire-today-fingerprint.yml
+          git add CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md \
+            scripts/ci/xcode27_today_research_field_candidate.sh \
+            scripts/ci/xcode27_signed_field_candidate.sh \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayFieldAuthorityRetirementSourceTests.swift
+          git add -u .github/workflows/materialize-capture-retire-today-fingerprint.yml
+          git diff --cached --check
+          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' commit -m 'fix(capture): retire legacy TODAY fingerprint authority'
+          mapfile -t changed < <(git diff --name-only "$parent" HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 4
+          test "${changed[0]}" = 'CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md'
+          test "${changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayFieldAuthorityRetirementSourceTests.swift'
+          test "${changed[2]}" = 'scripts/ci/xcode27_signed_field_candidate.sh'
+          test "${changed[3]}" = 'scripts/ci/xcode27_today_research_field_candidate.sh'
+          git diff --check "$parent" HEAD
+          git push origin HEAD:sol/v14-capture-retire-today-fingerprint-3f269
