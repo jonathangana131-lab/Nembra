@@ -39,11 +39,11 @@ struct TuyaCrossControllerBLEOwnershipLeaseSourceTests {
     @Test("OFF1 acquires after reset and every release is owner-token bound")
     func correlationAcquiresAndReleasesTokenBoundLease() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let controller = try section(
+        let controller = String(try section(
             in: source,
             from: "private final class SecureLinkController",
             to: "@MainActor\nprivate protocol OfficialTuyaDriver"
-        )
+        ))
         #expect(controller.contains("private var processCorrelationLease: UUID?"))
 
         let begin = try section(
