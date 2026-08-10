@@ -124,6 +124,23 @@ class ExportOptionsCoherenceTests(unittest.TestCase):
         self.assertIn("ExportOptions path/coherence/custody checks fail", handoff)
         self.assertIn("PHYSICAL EXPERIMENT ONE REMAINS NO-GO", handoff)
 
+    def test_canonical_handoff_pins_current_private_input_helper(self):
+        handoff = HANDOFF.read_text(encoding="utf-8")
+        self.assertIn(
+            "PRIVATE_INPUT_HELPER_COMMIT='c8c706e3d67d2aeab37341035468437dc2af0491'",
+            handoff,
+        )
+        self.assertIn(
+            "PRIVATE_INPUT_HELPER_BLOB='38eb695792fb759428a98686081b883e39c3b118'",
+            handoff,
+        )
+        self.assertIn("31349522672", handoff)
+        self.assertIn("93337607527", handoff)
+        self.assertIn("require secure no-echo terminal input", handoff)
+        self.assertIn("clean only the exact created inode", handoff)
+        self.assertIn("terminal-abort failure", handoff)
+        self.assertIn("PHYSICAL EXPERIMENT ONE REMAINS NO-GO", handoff)
+
 
 if __name__ == "__main__":
     unittest.main()
