@@ -36,6 +36,7 @@ struct TuyaApplicationUpdateSecretSanitizerTests {
                 "uid": "device-uid-123",
                 "status": "owner=account-uid-7A91; mode=eco",
                 "account": "account-uid-7A91",
+                "field-account-uid-7A91": "present",
             ],
             verifiedAccountUID: verifiedUID
         )
@@ -43,7 +44,9 @@ struct TuyaApplicationUpdateSecretSanitizerTests {
         #expect(redacted["uid"] == "device-uid-123")
         #expect(redacted["status"] == "owner=<redacted-account-uid>; mode=eco")
         #expect(redacted["account"] == "<redacted-account-uid>")
+        #expect(redacted["field-<redacted-account-uid>"] == "present")
         #expect(redacted.values.allSatisfy { !$0.contains(verifiedUID) })
+        #expect(redacted.keys.allSatisfy { !$0.contains(verifiedUID) })
         #expect(!TuyaApplicationUpdateSecretSanitizer.isSecretKey("uid"))
     }
 
