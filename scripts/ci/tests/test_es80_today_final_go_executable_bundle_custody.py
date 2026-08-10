@@ -16,7 +16,7 @@ ACCEPTED_JOBS = ("93242924865", "93242924588")
 BUNDLE = {
     "scripts/ci/es80_today_final_go_hardened.py": "1b9560bad5a8a1ceb2934f91621be231f20a8a17",
     "scripts/ci/_es80_today_final_go_foundation_impl.py": "11a571b4439829f2c3bfe94b46e0598600238d89",
-    "scripts/ci/es80_today_trusted_capture_xcode_subject.py": "94d19c37d632f4d25a06cd031ff4a8c65ff1edb5",
+    "scripts/ci/es80_today_trusted_capture_xcode_subject.py": "94d19c0c0456860ead9a2003511c66c21d41c31a",
     "scripts/ci/es80_today_final_go_publication.py": "1593f00e5950935ed8c1b0514ae11f69be3a6f50",
     "scripts/ci/es80_today_crosscheck_receipt_custody.py": "3bea883a17c9a34e8d9dd5b258824d29257886f2",
     "scripts/ci/es80_today_trusted_signed_candidate_reinspection.py": "179cb50cb1f32595722cd2a53df47111a2ca6a45",
