@@ -22,11 +22,8 @@ struct CaptureStageRailAcceptedAccessibilitySourceTests {
     @Test("Standard accepted rail marks every accepted stage complete while preserving pre-acceptance semantics")
     func standardAcceptedSealIsComplete() throws {
         let stageRail = try stageRailSource()
-        let standardBranch = String(try section(
-            in: stageRail,
-            from: "} else {",
-            to: "    }\n\n    @ViewBuilder\n    private var primarySurface"
-        ))
+        let standardStart = try #require(stageRail.range(of: "} else {"))
+        let standardBranch = String(stageRail[standardStart.lowerBound...])
 
         guard let accessibilityLine = standardBranch
             .split(separator: "\n")
