@@ -65,17 +65,15 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
         guard snapshot.connectionGeneration > 0 else {
             return .blocked(reason: "No current Bluetooth connection generation.")
         }
-        guard case .authenticated = snapshot.authenticationState else {
-            switch snapshot.authenticationState {
-            case let .unavailable(reason), let .failed(reason):
-                return .blocked(reason: reason)
-            case .waitingForAuthentication:
-                return .blocked(reason: "Tuya authentication required.")
-            case .authenticating:
-                return .blocked(reason: "Tuya authentication is still in progress.")
-            case .authenticated:
-                break
-            }
+        switch snapshot.authenticationState {
+        case .authenticated:
+            break
+        case let .unavailable(reason), let .failed(reason):
+            return .blocked(reason: reason)
+        case .waitingForAuthentication:
+            return .blocked(reason: "Tuya authentication required.")
+        case .authenticating:
+            return .blocked(reason: "Tuya authentication is still in progress.")
         }
         guard snapshot.authenticationMethod != nil else {
             return .blocked(reason: "Authenticated state has no accepted Tuya authentication provenance.")
