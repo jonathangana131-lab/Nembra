@@ -318,6 +318,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var targetCorrelationOperatorConfirmed = false
     private var driver: OfficialTuyaDriver?
     private var events: [Event] = []
+    private var sealedAcceptedEventPrefix: [Event]?
     private var watchdog: Task<Void, Never>?
     private let sessionLedger = TuyaAuthenticatedReadOnlySessionLedger()
     private var currentConnectionToken: TuyaReadOnlyConnectionToken?
@@ -1230,6 +1231,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     }
                     do {
                         try await sessionLedger.sealAcceptedObservation(for: token)
+                        self.sealedAcceptedEventPrefix = events
                         self.currentConnectionToken = nil
                         await self.refreshLedgerSnapshot()
                         self.phase = .accepted
@@ -1496,7 +1498,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             dpQueriesSent: false,
             dpCommandsSent: false,
             candidates: candidates,
-            events: events
+            events: sealedAcceptedEventPrefix ?? (phase == .accepted ? [] : events)
         )
 
         do {
@@ -1528,6 +1530,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         pendingCorrelatedTargetID = nil
         sdkLocalBLEOnline = false
         exportData = nil
+        sealedAcceptedEventPrefix = nil
         // Active authenticated generations must be terminally retired by their
         // owning outcome path before a new discovery attempt. Generic reset never
         // manufactures a transport-disconnect terminal.
