@@ -190,6 +190,52 @@ def _same_inode(left: os.stat_result, right: os.stat_result) -> bool:
     return (left.st_dev, left.st_ino) == (right.st_dev, right.st_ino)
 
 
+def _erase_failed_private_input(
+    file_descriptor: int,
+    directory_descriptor: int,
+    filename: str,
+) -> None:
+    """Make secret erasure durable before returning a failed acquisition.
+
+    The open descriptor is the strongest remaining authority after a pathname retarget. Scrub that
+    exact inode first so an added hard link cannot preserve secret bytes. Descriptor-relative unlink
+    is a second route when the original pathname still names the same single-link inode. At least one
+    erasure route must be proven durable; otherwise surface a secret-free cleanup blocker instead of
+    silently claiming failure atomicity.
+    """
+    try:
+        opened_before = os.fstat(file_descriptor)
+    except OSError as error:
+        raise PrivateInputError("private-intended-device-cleanup-failed") from error
+
+    durable_scrub = False
+    try:
+        os.ftruncate(file_descriptor, 0)
+        os.fsync(file_descriptor)
+        durable_scrub = os.fstat(file_descriptor).st_size == 0
+    except OSError:
+        durable_scrub = False
+
+    durable_unlink = False
+    try:
+        current = os.stat(filename, dir_fd=directory_descriptor, follow_symlinks=False)
+        opened_after = os.fstat(file_descriptor)
+        if _same_inode(current, opened_after):
+            os.unlink(filename, dir_fd=directory_descriptor)
+            os.fsync(directory_descriptor)
+            durable_unlink = True
+    except OSError:
+        durable_unlink = False
+
+    # A durable descriptor scrub erases the exact inode even if the pathname was retargeted or an
+    # extra hard link appeared. A durable unlink is sufficient only when the fresh subject still had
+    # exactly its original single link before cleanup.
+    if durable_scrub or (opened_before.st_nlink == 1 and durable_unlink):
+        return
+
+    raise PrivateInputError("private-intended-device-cleanup-failed")
+
+
 def create_private_input(
     private_directory: Path,
     repository_root: Path,
@@ -278,16 +324,12 @@ def create_private_input(
 
         os.fsync(directory_descriptor)
         return output_path
-    except BaseException:
+    except BaseException as acquisition_error:
         if file_descriptor is not None:
             try:
-                current = os.stat(filename, dir_fd=directory_descriptor, follow_symlinks=False)
-                opened = os.fstat(file_descriptor)
-                if _same_inode(current, opened):
-                    os.unlink(filename, dir_fd=directory_descriptor)
-                    os.fsync(directory_descriptor)
-            except OSError:
-                pass
+                _erase_failed_private_input(file_descriptor, directory_descriptor, filename)
+            except PrivateInputError as cleanup_error:
+                raise cleanup_error from acquisition_error
         raise
     finally:
         if file_descriptor is not None:
