@@ -1,0 +1,74 @@
+name: Temporary Capture Export Envelope Patch
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-sealed-export-envelope-current-sol
+
+permissions:
+  contents: write
+
+concurrency:
+  group: v14-capture-export-envelope-patch
+  cancel-in-progress: false
+
+jobs:
+  apply-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact repair branch
+        uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-sealed-export-envelope-current-sol
+          fetch-depth: 0
+
+      - name: Apply strict source patch
+        run: python3 scripts/ci/tmp_patch_capture_export_envelope.py
+
+      - name: Verify source shape and whitespace
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedExportEnvelopeSealSourceTests.swift').read_text()
+          required = [
+              'private var sealedAcceptedExportSnapshot: Export?',
+              'sealedAcceptedExportSnapshot = self.makeExportSnapshot(',
+              'guard var acceptedSnapshot = self.sealedAcceptedExportSnapshot',
+              'acceptedSnapshot.exportedAt = Date()',
+              'sealedAcceptedExportSnapshot = nil',
+          ]
+          for token in required:
+              assert token in app, token
+          assert 'acceptanceSealFreezesExportEnvelopeSynchronously' in test
+          assert 'acceptedArtifactDoesNotDependOnLiveMembershipAfterSeal' in test
+          PY
+
+      - name: Parser check when Swift is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v swiftc >/dev/null 2>&1; then
+            swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+            swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedExportEnvelopeSealSourceTests.swift
+          else
+            echo 'swiftc unavailable on this runner; structural gate remains authoritative for this patch runner.'
+          fi
+
+      - name: Commit only durable product and regression files
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm scripts/ci/tmp_patch_capture_export_envelope.py
+          rm .github/workflows/tmp_v14_capture_export_envelope_patch.yml
+          git add -A
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): seal full accepted export envelope'
+          git push origin HEAD:repair/v14-capture-sealed-export-envelope-current-sol
