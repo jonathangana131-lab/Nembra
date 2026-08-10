@@ -1,0 +1,234 @@
+name: Recover V14 Capture guided final polish
+
+on:
+  push:
+    branches:
+      - recovery/v14-capture-guided-final-polish-sol
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Apply reviewed product polish and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_ACTOR" = "github-actions[bot]" ]; then
+            exit 0
+          fi
+          EXPECTED_PARENT='f0bdb63d716368c341b903cfd741c51924042c75'
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test "$(git ls-remote origin refs/heads/recovery/v14-capture-guided-final-polish-sol | cut -f1)" = "$GITHUB_SHA"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text()
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one match, found {count}")
+              text = text.replace(old, new, 1)
+
+          stage = '    private let stageLabels = ["Target", "Secure link", "Observe", "Seal"]\n'
+          ordinal = "\n".join([
+              '    private var correlationDisplayedWindowOrdinal: Int {',
+              '        test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)',
+              '    }',
+              '',
+          ])
+          replace_once(stage, stage + "\n" + ordinal, 'correlation ordinal helper')
+
+          failed_route = "\n".join([
+              '        case .failed:',
+              '            if !test.fieldBuildIsAuthoritative || !test.privateConfig {',
+              '                VStack(spacing: 16) {',
+              '                    failureRecoveryContextPanel',
+              '                    preflightPanel',
+              '                }',
+              '            } else if !sdkAccount.loggedIn || !test.sdkAccountLoggedIn {',
+              '                VStack(spacing: 16) {',
+              '                    failureRecoveryContextPanel',
+              '                    sdkAuthorizationPanel',
+              '                }',
+              '            } else if !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized {',
+              '                VStack(spacing: 16) {',
+              '                    failureRecoveryContextPanel',
+              '                    preflightPanel',
+              '                }',
+              '            } else {',
+              '                failurePanel',
+              '            }',
+              '',
+          ])
+          replace_once('        case .failed:\n            failurePanel\n', failed_route, 'failed prerequisite routing')
+          replace_once(
+              '                    Text("\\(min(test.correlationCompletedWindowCount + 1, 4))/4")\n',
+              '                    Text("\\(correlationDisplayedWindowOrdinal)/4")\n',
+              'visible correlation ordinal',
+          )
+
+          marker = '    private var failurePanel: some View {\n'
+          recovery = "\n".join([
+              '    private var failureRecoveryContextPanel: some View {',
+              '        panel {',
+              '            VStack(alignment: .leading, spacing: 10) {',
+              '                Label("Capture paused", systemImage: "exclamationmark.circle")',
+              '                    .font(.title2.bold())',
+              '                    .foregroundStyle(.orange)',
+              '                Text(test.message)',
+              '                    .foregroundStyle(.secondary)',
+              '                    .fixedSize(horizontal: false, vertical: true)',
+              '                Text("Restore the missing prerequisite below. The failed attempt is not reused as evidence.")',
+              '                    .font(.footnote)',
+              '                    .foregroundStyle(.secondary)',
+              '            }',
+              '        }',
+              '    }',
+              '',
+              '',
+          ])
+          if text.count(marker) != 1:
+              raise SystemExit('failurePanel marker is not unique')
+          text = text.replace(marker, recovery + marker, 1)
+
+          start = text.index('    private var failurePanel: some View {')
+          end = text.index('    private var completionPanel: some View {', start)
+          failure = text[start:end]
+          old_action = "\n".join([
+              '                    Button {',
+              '                        test.startBaseline()',
+              '                    } label: {',
+          ])
+          new_action = "\n".join([
+              '                    Button {',
+              '                        test.retry()',
+              '                    } label: {',
+          ])
+          if old_action not in failure:
+              raise SystemExit('failure restart action not found')
+          failure = failure.replace(old_action, new_action, 1)
+          needle = '                    .controlSize(.large)\n'
+          if needle not in failure:
+              raise SystemExit('failure restart controlSize not found')
+          failure = failure.replace(needle, needle + '                    .disabled(!authorityReady || test.membershipBusy)\n', 1)
+          text = text[:start] + failure + text[end:]
+
+          controller_marker = '    func consumeCorrelationAsyncInvalidation() {\n'
+          retry = "\n".join([
+              '    func retry() {',
+              '        guard phase == .failed, canRestartFromFreshOFF1 else {',
+              '            message = "This failed attempt still retains session authority. Relaunch Capture before another OFF1 attempt."',
+              '            log("in_process_retry_rejected")',
+              '            return',
+              '        }',
+              '        startBaseline()',
+              '    }',
+              '',
+              '',
+          ])
+          if text.count(controller_marker) != 1:
+              raise SystemExit('controller retry insertion point not unique')
+          text = text.replace(controller_marker, retry + controller_marker, 1)
+          path.write_text(text)
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteRecoverySourceTests.swift')
+          test_path.write_text("\n".join([
+              'import Foundation',
+              'import Testing',
+              '@testable import NembraBluetoothCapture',
+              '',
+              '@Suite("Capture failed-prerequisite recovery")',
+              'struct TuyaFailedPrerequisiteRecoverySourceTests {',
+              '    @Test("failed product state exposes the missing prerequisite recovery surface")',
+              '    func failedStateRoutesToRecovery() throws {',
+              '        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")',
+              '        let surface = try section(in: app, from: "private var primarySurface: some View", to: "private var preflightPanel: some View")',
+              '        let body = String(surface)',
+              '        #expect(body.contains("case .failed:"))',
+              '        #expect(body.contains("!test.fieldBuildIsAuthoritative || !test.privateConfig"))',
+              '        #expect(body.contains("!sdkAccount.loggedIn || !test.sdkAccountLoggedIn"))',
+              '        #expect(body.contains("sdkAuthorizationPanel"))',
+              '        #expect(body.contains("!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized"))',
+              '        #expect(body.contains("preflightPanel"))',
+              '        #expect(body.contains("failureRecoveryContextPanel"))',
+              '    }',
+              '',
+              '    @Test("in-process retry is controller gated by retired package and driver ownership")',
+              '    func retryConsumesControllerAuthority() throws {',
+              '        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")',
+              '        #expect(app.contains("var canRestartFromFreshOFF1: Bool { failedAttemptCanRestartFromOFF1 }"))',
+              '        #expect(app.contains("currentConnectionToken == nil && localBLESettlementToken == nil && driver == nil"))',
+              '        #expect(app.contains("func retry()"))',
+              '        #expect(app.contains("guard phase == .failed, canRestartFromFreshOFF1 else"))',
+              '        let failure = try section(in: app, from: "private var failurePanel: some View", to: "private var completionPanel: some View")',
+              '        #expect(failure.contains("test.retry()"))',
+              '        #expect(failure.contains(".disabled(!authorityReady || test.membershipBusy)"))',
+              '    }',
+              '',
+              '    private func section(in source: String, from start: String, to end: String) throws -> Substring {',
+              '        guard let startRange = source.range(of: start),',
+              '              let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {',
+              '            throw SourceContractError.sectionMissing',
+              '        }',
+              '        return source[startRange.lowerBound..<endRange.lowerBound]',
+              '    }',
+              '',
+              '    private func readRepositoryFile(_ relativePath: String) throws -> String {',
+              '        let repositoryRoot = URL(fileURLWithPath: #filePath)',
+              '            .deletingLastPathComponent()',
+              '            .deletingLastPathComponent()',
+              '            .deletingLastPathComponent()',
+              '            .deletingLastPathComponent()',
+              '            .deletingLastPathComponent()',
+              '        return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)',
+              '    }',
+              '',
+              '    private enum SourceContractError: Error { case sectionMissing }',
+              '}',
+              '',
+          ]))
+          PY
+
+          git show 6508c5d8e2902589164d6cef34b30c5326c86599:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationTruthSourceTests.swift > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationTruthSourceTests.swift
+
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          required = [
+              'test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)',
+              'Text("\\(correlationDisplayedWindowOrdinal)/4")',
+              'func retry()',
+              'guard phase == .failed, canRestartFromFreshOFF1 else',
+              'test.retry()',
+              'failureRecoveryContextPanel',
+              'sdkAuthorizationPanel',
+              '.disabled(!authorityReady || test.membershipBusy)',
+          ]
+          missing = [item for item in required if item not in app]
+          if missing:
+              raise SystemExit(f'missing product truth contracts: {missing}')
+          if 'Text("\\(min(test.correlationCompletedWindowCount + 1, 4))/4")' in app:
+              raise SystemExit('false completed correlation ordinal remains')
+          PY
+
+          rm .github/workflows/v14-capture-guided-final-polish.yml
+          rm .github/workflows/recover-v14-capture-guided-final-polish.yml
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(capture): recover guided correlation and prerequisite truth'
+          git push origin HEAD:recovery/v14-capture-guided-final-polish-sol
