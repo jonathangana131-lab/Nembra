@@ -8,9 +8,17 @@ struct TuyaCaptureCredential: Codable, Equatable, Sendable {
     let productID: String
     let uuid: String
     let localKey: String
+    let secKey: String?
 
     var isUsable: Bool {
         !deviceID.isEmpty && !uuid.isEmpty && !localKey.isEmpty
+    }
+
+    /// TuyaOpen's current bound BLE path uses a 16-byte login/local key plus a separate
+    /// 16-byte activation secret. This is only a material-completeness check; it does not
+    /// establish that this scooter uses that exact protocol generation.
+    var hasCandidateBoundSessionMaterial: Bool {
+        localKey.utf8.count == 16 && secKey?.utf8.count == 16
     }
 }
 
@@ -20,14 +28,22 @@ struct TuyaCaptureCredential: Codable, Equatable, Sendable {
 enum TuyaCaptureCredentialStore {
     private static let service = "com.jonathangana131.nembra.capturelearn.tuya"
     private static let account = "selected-scooter"
+    private static let secKeyNames = ["secKey", "seckey", "sec_key"]
 
     @discardableResult
-    static func save(device: TuyaAccountBridge.LinkedDevice) -> Bool {
+    static func save(
+        device: TuyaAccountBridge.LinkedDevice,
+        detailMetadata: [String: Any]? = nil
+    ) -> Bool {
+        let existing = load()
+        let returnedSecKey = secretValue(in: detailMetadata) ?? secretValue(in: device.raw)
+        let preservedSecKey = existing?.deviceID == device.id ? existing?.secKey : nil
         let credential = TuyaCaptureCredential(
             deviceID: device.id,
             productID: device.productID,
             uuid: device.uuid,
-            localKey: device.localKey
+            localKey: device.localKey,
+            secKey: returnedSecKey ?? preservedSecKey
         )
         guard credential.isUsable,
               let data = try? JSONEncoder().encode(credential) else {
@@ -68,6 +84,25 @@ enum TuyaCaptureCredentialStore {
             return nil
         }
         return credential
+    }
+
+    private static func secretValue(in metadata: [String: Any]?) -> String? {
+        guard let metadata else { return nil }
+        for name in secKeyNames {
+            if let value = metadata[name] as? String, !value.isEmpty {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private static func secretValue(in raw: [String: AnyHashable]) -> String? {
+        for name in secKeyNames {
+            if let value = raw[name] as? String, !value.isEmpty {
+                return value
+            }
+        }
+        return nil
     }
 
     private static var baseQuery: [String: Any] {
