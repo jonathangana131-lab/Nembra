@@ -1,0 +1,157 @@
+diff --git a/NembraApp/App/NembraCaptureEntrypoint.swift b/NembraApp/App/NembraCaptureEntrypoint.swift
+--- a/NembraApp/App/NembraCaptureEntrypoint.swift
++++ b/NembraApp/App/NembraCaptureEntrypoint.swift
+@@ -174,7 +174,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
+     }
+ 
+     enum Phase: String, Codable {
+-        case idle, baseline, powerOn, scanning, selected, authenticating, observing, accepted, failed
++        case idle, baseline, powerOn, scanning, correlated, selected, authenticating, observing, accepted, failed
+     }
+@@ -222,6 +222,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
+     @Published private(set) var message = "Log in the official SDK account and verify the exact scooter before Bluetooth discovery."
+     @Published private(set) var candidates: [Candidate] = []
+     @Published private(set) var selectedID: UUID?
++    @Published private(set) var correlatedTargetID: UUID?
+     @Published private(set) var sdkLocalBLEOnline = false
+@@ -275,6 +276,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
+     var sdkAccountLoggedIn: Bool { OfficialTuyaFactory.accountLoggedIn }
+     var currentAccountUID: String? { OfficialTuyaFactory.currentAccountUID }
+     var selected: Candidate? { selectedID.flatMap { byID[$0] } }
++    var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }
+     var applicationUpdateCount: Int { ledgerSnapshot.applicationPayloadCount }
+@@ -442,6 +444,34 @@ private final class SecureLinkController: NSObject, ObservableObject {
+         }
+     }
+ 
++    func confirmCorrelatedTarget() {
++        guard phase == .correlated,
++              let id = correlatedTargetID,
++              let candidate = byID[id],
++              candidate.freshlyCorrelated else {
++            failLocally("A fresh correlation candidate is not available for explicit confirmation. Restart from OFF1.", "correlated_target_confirmation_unavailable")
++            return
++        }
++        guard fieldBuildIsAuthoritative,
++              privateConfig,
++              sdkAccountLoggedIn,
++              sdkDeviceMembershipVerified,
++              accountIdentityLeaseIsAuthorized else {
++            failLocally("Build or Tuya account/device authority changed before correlated-target confirmation. Restart only after authority is restored.", "correlated_target_confirmation_authority_changed")
++            return
++        }
++
++        selectedID = id
++        correlatedTargetID = nil
++        phase = .selected
++        message = "Fresh repeated Bluetooth correlation explicitly confirmed for this attempt. Tuya authentication may now consume this selected current-session target; it is not permanent scooter identity."
++        log("candidate_selected", [
++            "id": id.uuidString,
++            "authority": "operator-confirmed-fresh-correlation",
++            "correlation": "fresh-repeated-off-on-full-corebluetooth-id"
++        ])
++    }
++
+     private func finishCorrelationSeries(_ result: PassiveBluetoothPowerCycleObservationResult) {
+         switch result.correlation.disposition {
+@@ -468,16 +498,17 @@ private final class SecureLinkController: NSObject, ObservableObject {
+             )
+             byID = [id: candidate]
+             candidates = [candidate]
+-            selectedID = id
++            selectedID = nil
++            correlatedTargetID = id
+             correlationSession = nil
+-            phase = .selected
+-            message = "Fresh repeated power-cycle correlation found one full CoreBluetooth target. This is current-session correlation evidence, not permanent scooter identity. Discovery is retired before Tuya's SDK takes BLE ownership."
+-            log("candidate_selected", [
++            phase = .correlated
++            message = "Fresh repeated power-cycle correlation found one full CoreBluetooth target. Explicitly confirm this correlated current-session candidate before Tuya authentication; it is not permanent scooter identity."
++            log("candidate_correlated", [
+                 "id": id.uuidString,
+                 "authority": "fresh-repeated-off-on-full-corebluetooth-id",
+                 "historicalCaptureUUIDMatch": String(historicalCaptureID),
+@@ -501,6 +532,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
+         membershipBusy = false
+         sdkDeviceMembershipVerified = false
++        correlatedTargetID = nil
+         membershipAccountUID = nil
+@@ -515,7 +547,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
+ #endif
+         central.stopScan()
+-        if [.baseline, .powerOn, .scanning, .selected].contains(phase) {
++        if [.baseline, .powerOn, .scanning, .correlated, .selected].contains(phase) {
+             phase = .failed
+@@ -1063,6 +1095,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
+         candidates.removeAll()
+         baseline.removeAll()
+         selectedID = nil
++        correlatedTargetID = nil
+         sdkLocalBLEOnline = false
+@@ -1077,6 +1110,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
+             correlationSession?.abandonCurrentWindow()
+             correlationSession = nil
+         }
++        if phase == .correlated {
++            correlatedTargetID = nil
++        }
+         watchdog?.cancel()
+@@ -1649,7 +1685,7 @@ private struct SecureLinkView: View {
+         VStack(alignment: .leading, spacing: 7) {
+             Label("Official Tuya authority", systemImage: "checkmark.shield").font(.headline)
+-            LabeledContent("Field build", value: test.accountIdentityLeaseIsAuthorized && test.sdkDeviceMembershipVerified ? "Authority checked" : "Not ready")
++            LabeledContent("Field build", value: test.fieldBuildIsAuthoritative ? "Exact provenance" : "Not authoritative")
+             LabeledContent("Private SDK config", value: test.privateConfig ? "Present" : "Missing")
+@@ -1665,8 +1701,8 @@ private struct SecureLinkView: View {
+                     .buttonStyle(.bordered)
+                     .disabled(test.membershipBusy)
+             }
+-            if !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized {
+-                Text("NO PHYSICAL BLE TEST YET: the private exact field build, current SDK account identity, and exact scooter membership must all be proven before even the OFF baseline scan can start.")
++            if !test.fieldBuildIsAuthoritative || !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized {
++                Text("NO PHYSICAL BLE TEST YET: exact compiled field-build provenance, the current SDK account identity, and exact scooter membership must all be proven before OFF1 correlation can start.")
+                     .font(.footnote.bold())
+@@ -1684,7 +1720,7 @@ private struct SecureLinkView: View {
+             case .idle, .failed:
+                 Button("Start OFF1 correlation") { test.startBaseline() }
+                     .buttonStyle(.borderedProminent)
+-                    .disabled(!test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized || test.membershipBusy)
++                    .disabled(!test.fieldBuildIsAuthoritative || !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized || test.membershipBusy)
+@@ -1704,6 +1740,13 @@ private struct SecureLinkView: View {
+                 Button("Start \(test.correlationWindowLabel) window") { test.startNextCorrelationWindow() }
+                     .buttonStyle(.borderedProminent)
+ 
++            case .correlated:
++                Text("Fresh correlation found exactly one repeatable full Bluetooth target. Confirm this correlated current-session candidate before authentication.")
++                    .font(.footnote)
++                    .foregroundStyle(.secondary)
++                Button("Confirm correlated target") { test.confirmCorrelatedTarget() }
++                    .buttonStyle(.borderedProminent)
++                    .disabled(!test.fieldBuildIsAuthoritative || !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized || test.membershipBusy)
++
+             default:
+                 EmptyView()
+@@ -1739,6 +1782,7 @@ private struct SecureLinkView: View {
+                 .buttonStyle(.borderedProminent)
+                 .disabled(
+                     !candidate.likely
++                        || !test.fieldBuildIsAuthoritative
+                         || !test.privateConfig
+                         || !test.sdkAccountLoggedIn
+diff --git a/Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldBuildPresentationAuthoritySourceTests.swift b/Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldBuildPresentationAuthoritySourceTests.swift
+--- a/Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldBuildPresentationAuthoritySourceTests.swift
++++ b/Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldBuildPresentationAuthoritySourceTests.swift
+@@ -39,7 +39,7 @@ struct TuyaFieldBuildPresentationAuthoritySourceTests {
+             from: "private var discoveryCard: some View",
+             to: "private func authenticationCard"
+         )
+-        #expect(discoveryCard.contains("Button(\"Start scooter-OFF baseline\")"))
++        #expect(discoveryCard.contains("Button(\"Start OFF1 correlation\")"))
+         #expect(discoveryCard.contains("!test.fieldBuildIsAuthoritative"))
+@@ -51,7 +51,7 @@ struct TuyaFieldBuildPresentationAuthoritySourceTests {
+         let startBaseline = try section(
+             in: app,
+             from: "func startBaseline()",
+-            to: "private func beginBaselineScan"
++            to: "private func beginCorrelationSeries"
+         )
