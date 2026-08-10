@@ -1,0 +1,55 @@
+name: Materialize Capture foreground integrity 4b41
+
+on:
+  push:
+    branches:
+      - recovery/v14-capture-foreground-integrity-4b41-sol
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-foreground-integrity-4b41-sol
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: recovery/v14-capture-foreground-integrity-4b41-sol
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Guard exact parent and bounded construction scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='4b41c9ad783f568d0d353acc9f7016a9bd0b64c2'
+          git merge-base --is-ancestor "$parent" HEAD
+          test "$(git rev-parse "$parent:NembraApp/App/NembraCaptureEntrypoint.swift")" = "$(git rev-parse HEAD:NembraApp/App/NembraCaptureEntrypoint.swift)"
+          unexpected="$(git diff --name-only "$parent"...HEAD | grep -Ev '^(.github/workflows/materialize-capture-foreground-integrity-4b41-sol.yml|scripts/ci/materialize_capture_foreground_integrity_recovery.py|Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegritySourceTests.swift)$' || true)"
+          test -z "$unexpected"
+
+      - name: Materialize foreground-integrity closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/materialize_capture_foreground_integrity_recovery.py apply
+          python3 scripts/ci/materialize_capture_foreground_integrity_recovery.py verify
+          python3 -m py_compile scripts/ci/materialize_capture_foreground_integrity_recovery.py
+          git diff --check
+
+      - name: Publish clean two-path donor and retire construction tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegritySourceTests.swift
+          git commit -m "fix(capture): fence foreground integrity"
+          git rm scripts/ci/materialize_capture_foreground_integrity_recovery.py .github/workflows/materialize-capture-foreground-integrity-4b41-sol.yml
+          git commit -m "chore(capture): retire foreground recovery tooling"
+          git push origin HEAD:recovery/v14-capture-foreground-integrity-4b41-sol
