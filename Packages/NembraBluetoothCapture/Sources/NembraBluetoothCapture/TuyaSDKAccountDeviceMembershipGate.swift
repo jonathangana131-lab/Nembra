@@ -27,10 +27,12 @@ public enum TuyaSDKAccountDeviceMembershipGate {
         ) {
             self.isLoggedIn = isLoggedIn
             self.homeEnumerationCompleted = homeEnumerationCompleted
-            self.loadedHomeCount = max(0, loadedHomeCount)
+            // Preserve malformed negative values instead of normalizing them into
+            // authoritative-looking evidence. The verdict below rejects them.
+            self.loadedHomeCount = loadedHomeCount
             self.ownedDeviceIDs = ownedDeviceIDs
             self.sharedDeviceIDs = sharedDeviceIDs
-            self.homeLoadFailureCount = max(0, homeLoadFailureCount)
+            self.homeLoadFailureCount = homeLoadFailureCount
         }
     }
 
