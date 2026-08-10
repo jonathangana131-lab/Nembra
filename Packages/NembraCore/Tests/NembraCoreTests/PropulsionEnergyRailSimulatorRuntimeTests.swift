@@ -53,6 +53,105 @@ struct PropulsionEnergyRailSimulatorRuntimeTests {
             == second.accessibilityPresentation.semanticRevision)
     }
 
+    @Test("strictly newer source observation refreshes unchanged watts")
+    func newerSourceRevisionRefreshesEqualPower() throws {
+        var runtime = try PropulsionEnergyRailSimulatorRuntime(
+            freshnessNanoseconds: 1_000
+        )
+
+        #expect(runtime.observe(
+            connected: true,
+            watts: 240,
+            modeKey: nil,
+            sourceObservationRevision: 10,
+            receivedAtUptimeNanoseconds: 10_000
+        ))
+        let first = runtime.projection(atUptimeNanoseconds: 10_000)
+
+        #expect(runtime.observe(
+            connected: true,
+            watts: 240,
+            modeKey: nil,
+            sourceObservationRevision: 11,
+            receivedAtUptimeNanoseconds: 10_900
+        ))
+        let refreshed = runtime.projection(atUptimeNanoseconds: 11_500)
+
+        #expect(first.acceptedMeasurement?.receiptSequenceNumber == 1)
+        #expect(refreshed.currentness == .live)
+        #expect(refreshed.acceptedWatts == 240)
+        #expect(refreshed.acceptedMeasurement?.receiptSequenceNumber == 2)
+        #expect(refreshed.acceptedMeasurement?.receivedAtUptimeNanoseconds == 10_900)
+        #expect(first.accessibilityPresentation.acceptedRevision
+            != refreshed.accessibilityPresentation.acceptedRevision)
+    }
+
+    @Test("older source revision cannot erase newer accepted power")
+    func staleSourceRevisionIsIgnoredWithoutDemotion() throws {
+        var runtime = try PropulsionEnergyRailSimulatorRuntime()
+
+        #expect(runtime.observe(
+            connected: true,
+            watts: 120,
+            modeKey: nil,
+            sourceObservationRevision: 20,
+            receivedAtUptimeNanoseconds: 1_000
+        ))
+        #expect(runtime.observe(
+            connected: true,
+            watts: 280,
+            modeKey: nil,
+            sourceObservationRevision: 22,
+            receivedAtUptimeNanoseconds: 2_000
+        ))
+
+        #expect(runtime.observe(
+            connected: true,
+            watts: 999,
+            modeKey: nil,
+            sourceObservationRevision: 21,
+            receivedAtUptimeNanoseconds: 3_000
+        ) == false)
+
+        let projection = runtime.projection(atUptimeNanoseconds: 3_000)
+        #expect(projection.currentness == .live)
+        #expect(projection.acceptedWatts == 280)
+        #expect(projection.acceptedMeasurement?.receiptSequenceNumber == 2)
+    }
+
+    @Test("one source revision cannot be relabeled with a different mode")
+    func sourceRevisionModeContradictionFailsClosed() throws {
+        var runtime = try PropulsionEnergyRailSimulatorRuntime()
+
+        #expect(runtime.observe(
+            connected: true,
+            watts: 200,
+            modeKey: "drive",
+            sourceObservationRevision: 30,
+            receivedAtUptimeNanoseconds: 1_000
+        ))
+        #expect(runtime.observe(
+            connected: true,
+            watts: 200,
+            modeKey: "sport",
+            sourceObservationRevision: 30,
+            receivedAtUptimeNanoseconds: 1_100
+        ) == false)
+        #expect(runtime.projection(atUptimeNanoseconds: 1_100).currentness == .unavailable)
+
+        #expect(runtime.observe(
+            connected: true,
+            watts: 210,
+            modeKey: "sport",
+            sourceObservationRevision: 31,
+            receivedAtUptimeNanoseconds: 1_200
+        ))
+        let recovered = runtime.projection(atUptimeNanoseconds: 1_200)
+        #expect(recovered.currentness == .live)
+        #expect(recovered.identity.modeKey == "sport")
+        #expect(recovered.acceptedWatts == 210)
+    }
+
     @Test("disconnect makes projection unavailable without manufacturing zero")
     func disconnectIsUnavailableNotMeasuredZero() throws {
         var runtime = try PropulsionEnergyRailSimulatorRuntime()
@@ -77,6 +176,46 @@ struct PropulsionEnergyRailSimulatorRuntimeTests {
         #expect(projection.railFraction == nil)
         #expect(projection.acceptedPeakMarkerFraction == nil)
         #expect(projection.allowsLiveMotion == false)
+    }
+
+    @Test("disconnect fences the old source revision across reconnect")
+    func reconnectCannotReplayPreGapSourceRevision() throws {
+        var runtime = try PropulsionEnergyRailSimulatorRuntime()
+
+        #expect(runtime.observe(
+            connected: true,
+            watts: 300,
+            modeKey: nil,
+            sourceObservationRevision: 40,
+            receivedAtUptimeNanoseconds: 4_000
+        ))
+        #expect(runtime.observe(
+            connected: false,
+            watts: nil,
+            modeKey: nil,
+            receivedAtUptimeNanoseconds: 4_100
+        ) == false)
+
+        #expect(runtime.observe(
+            connected: true,
+            watts: 300,
+            modeKey: nil,
+            sourceObservationRevision: 40,
+            receivedAtUptimeNanoseconds: 4_200
+        ) == false)
+        #expect(runtime.projection(atUptimeNanoseconds: 4_200).currentness == .unavailable)
+
+        #expect(runtime.observe(
+            connected: true,
+            watts: 300,
+            modeKey: nil,
+            sourceObservationRevision: 41,
+            receivedAtUptimeNanoseconds: 4_300
+        ))
+        let recovered = runtime.projection(atUptimeNanoseconds: 4_300)
+        #expect(recovered.currentness == .live)
+        #expect(recovered.acceptedWatts == 300)
+        #expect(recovered.acceptedMeasurement?.continuityGeneration == 2)
     }
 
     @Test("static accepted simulator power becomes retained after synthetic QA freshness window")
