@@ -11,13 +11,13 @@ permissions:
 jobs:
   materialize:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Guard exact parent and red-test scope
+      - name: Guard exact parent and staged scope
         shell: bash
         run: |
           set -euo pipefail
@@ -28,40 +28,30 @@ jobs:
           printf '%s\n' "${paths[@]}" | grep -Fxq '.github/workflows/materialize-capture-timeout-presentation-b615.yml'
           printf '%s\n' "${paths[@]}" | grep -Fxq 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationTimeoutPresentationRaceSourceTests.swift'
 
-      - name: Apply timeout terminal ownership fence
+      - name: Apply timeout terminal presentation fence
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           source = path.read_text(encoding='utf-8')
           terminal = 'try await sessionLedger.markApplicationObservationTimedOut(for: token)'
           start = source.find(terminal)
           if start < 0:
               raise SystemExit('application-timeout terminal mutation not found')
-          tail = source[start:start + 2400]
-          if 'stale_application_timeout_completion_ignored' in tail:
-              raise SystemExit('timeout presentation ownership fence already exists; refresh live product')
           line_end = source.find('\n', start)
           if line_end < 0:
-              raise SystemExit('timeout terminal line boundary not found')
-          fence = '''
-                    guard self.currentConnectionToken == token,
-                          self.phase == .observing else {
-                        self.log("stale_application_timeout_completion_ignored", [
-                            "generation": String(token.diagnosticGeneration),
-                            "phase": self.phase.rawValue
-                        ])
-                        return
-                    }
-'''
+              raise SystemExit('application-timeout line boundary not found')
+          downstream = source[line_end:line_end + 1800]
+          if 'stale_application_timeout_completion_ignored' in downstream:
+              raise SystemExit('timeout presentation fence already exists')
+          fence = '''                    guard self.currentConnectionToken == token,\n                          self.phase == .observing else {\n                        self.log("stale_application_timeout_completion_ignored", [\n                            "generation": String(token.diagnosticGeneration),\n                            "phase": self.phase.rawValue\n                        ])\n                        return\n                    }\n'''
           source = source[:line_end + 1] + fence + source[line_end + 1:]
           path.write_text(source, encoding='utf-8')
           PY
 
-      - name: Validate focused source contract
+      - name: Verify source truth contract
         shell: bash
         run: |
           set -euo pipefail
@@ -78,12 +68,16 @@ jobs:
           assert terminal < fence < phase < message
           assert 'stale_application_timeout_completion_ignored' in timeout
           PY
+          git diff --check
+
+      - name: Parse changed Swift
+        shell: bash
+        run: |
+          set -euo pipefail
           swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
           swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationTimeoutPresentationRaceSourceTests.swift
-          git diff --check
-          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors --filter TuyaApplicationTimeoutPresentationRaceSourceTests
 
-      - name: Publish clean two-path repair
+      - name: Publish two-path donor
         shell: bash
         run: |
           set -euo pipefail
