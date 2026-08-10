@@ -33,6 +33,35 @@ struct TuyaFieldFinalAuthoritySourceTests {
         #expect(source.contains("Authenticated session produced no application update"))
     }
 
+    @Test("ledger-owned automatic continuity invalidation is synchronized back into product state")
+    func automaticContinuityFailureCannotLeaveStaleAuthenticatedUI() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let errorName = "TuyaAuthenticatedReadOnlySessionLedger.MutationError.observationContinuityInvalidated"
+
+        #expect(
+            source.contains("catch \(errorName)"),
+            "A queued SDK callback can be first to detect a >5 s ledger gap. The app must catch that terminal explicitly instead of routing it through a generic second mutation."
+        )
+        #expect(
+            source.contains("handleAutomaticContinuityInvalidation(token:"),
+            "The field controller needs one terminal synchronization path that refreshes the ledger snapshot after the ledger has already retired the token."
+        )
+
+        guard let handler = source.range(of: "func handleAutomaticContinuityInvalidation("),
+              let handlerEnd = source.range(of: "\n    }", range: handler.upperBound..<source.endIndex) else {
+            Issue.record("Missing automatic-continuity terminal synchronization helper.")
+            return
+        }
+        let body = source[handler.lowerBound..<handlerEnd.upperBound]
+        #expect(body.contains("await refreshLedgerSnapshot()"))
+        #expect(body.contains("currentConnectionToken = nil"))
+        #expect(body.contains("failLocally("))
+        #expect(
+            !body.contains("endConnection(for:"),
+            "An observation gap is not proof of physical BLE disconnect and must not be rewritten as transport loss."
+        )
+    }
+
     @Test("pre-scan authority and suspension fence remain product requirements")
     func physicalGateCannotRegressWhileTerminalAPIsLand() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
