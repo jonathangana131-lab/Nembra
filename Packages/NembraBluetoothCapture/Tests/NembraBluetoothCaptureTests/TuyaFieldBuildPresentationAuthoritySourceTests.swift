@@ -4,52 +4,64 @@ import Testing
 
 @Suite("Capture field-build presentation authority")
 struct TuyaFieldBuildPresentationAuthoritySourceTests {
-    @Test("field-build row is backed by compiled build provenance, not Tuya account authority")
-    func fieldBuildRowUsesBuildIdentityAuthority() throws {
+    @Test("field-build authority is derived from compiled build provenance")
+    func fieldBuildAuthorityUsesBuildIdentity() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-
-        #expect(app.contains("var fieldBuildIsAuthoritative: Bool"))
-        #expect(app.contains("buildIdentity.isAuthoritativeFieldBuild"))
-
-        let authorityCard = try section(
+        let controllerAuthority = try section(
             in: app,
-            from: "private var authorityCard: some View",
-            to: "private var discoveryCard: some View"
+            from: "var privateConfig: Bool",
+            to: "func consumeCorrelationAsyncInvalidation()"
         )
 
-        #expect(authorityCard.contains("LabeledContent(\"Field build\""))
-        #expect(authorityCard.contains("test.fieldBuildIsAuthoritative"))
-
-        guard let fieldRow = authorityCard.range(of: "LabeledContent(\"Field build\"") else {
-            Issue.record("Field-build row is missing from the primary authority card.")
-            return
-        }
-        let rowTail = String(authorityCard[fieldRow.lowerBound...].prefix(420))
-        #expect(!rowTail.contains("accountIdentityLeaseIsAuthorized && test.sdkDeviceMembershipVerified"))
-        #expect(!rowTail.contains("sdkDeviceMembershipVerified && test.accountIdentityLeaseIsAuthorized"))
+        #expect(controllerAuthority.contains("var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }"))
+        #expect(!controllerAuthority.contains("fieldBuildIsAuthoritative: Bool { accountIdentityLeaseIsAuthorized"))
+        #expect(!controllerAuthority.contains("fieldBuildIsAuthoritative: Bool { sdkDeviceMembershipVerified"))
     }
 
-    @Test("OFF1 correlation affordance and NO-GO banner fail closed on non-authoritative build provenance")
-    func physicalAffordancesConsumeBuildAuthority() throws {
+    @Test("shipping preflight exposes build provenance separately and blocks OFF1 until it is authoritative")
+    func secureLinkPresentationConsumesBuildAuthority() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
-        let authorityCard = try section(
+        let hero = try section(
             in: app,
-            from: "private var authorityCard: some View",
-            to: "private var discoveryCard: some View"
+            from: "private var hero: some View",
+            to: "@ViewBuilder\n    private var stageRail"
         )
-        #expect(authorityCard.contains("!test.fieldBuildIsAuthoritative"))
+        #expect(hero.contains("test.fieldBuildIsAuthoritative ? \"Field build\" : \"Build blocked\""))
+        #expect(hero.contains("test.fieldBuildIsAuthoritative ? \"checkmark.shield.fill\" : \"exclamationmark.shield\""))
 
-        let discoveryCard = try section(
+        let primarySurface = try section(
             in: app,
-            from: "private var discoveryCard: some View",
-            to: "private func authenticationCard"
+            from: "private var primarySurface: some View",
+            to: "private var preflightPanel: some View"
         )
-        #expect(discoveryCard.contains("Button(\"Start OFF1 correlation\")"))
-        #expect(discoveryCard.contains("!test.fieldBuildIsAuthoritative"))
+        #expect(primarySurface.contains("if !test.fieldBuildIsAuthoritative || !test.privateConfig"))
+        #expect(primarySurface.contains("preflightPanel"))
+
+        let preflight = try section(
+            in: app,
+            from: "private var preflightPanel: some View",
+            to: "private var correlationDisplayedWindowOrdinal"
+        )
+        #expect(preflight.contains("requirementRow(\"Capture build\", ready: test.fieldBuildIsAuthoritative)"))
+        #expect(preflight.contains("if authorityReady"))
+        #expect(preflight.contains("test.startBaseline()"))
+        #expect(preflight.contains("Label(\"Start with scooter OFF\", systemImage: \"power\")"))
+
+        let authorityReady = try section(
+            in: app,
+            from: "private var authorityReady: Bool",
+            to: "private var currentStageIndex: Int"
+        )
+        #expect(authorityReady.contains("test.fieldBuildIsAuthoritative"))
+        #expect(authorityReady.contains("&& test.privateConfig"))
+        #expect(authorityReady.contains("&& test.sdkAccountLoggedIn"))
+        #expect(authorityReady.contains("&& test.sdkDeviceMembershipVerified"))
+        #expect(authorityReady.contains("&& test.accountIdentityLeaseIsAuthorized"))
+        #expect(!authorityReady.contains("|| test.fieldBuildIsAuthoritative"))
     }
 
-    @Test("runtime correlation guard remains defense in depth")
+    @Test("runtime OFF1 admission independently rechecks exact field-build provenance")
     func runtimeGuardIsPreserved() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let startBaseline = try section(
@@ -58,8 +70,10 @@ struct TuyaFieldBuildPresentationAuthoritySourceTests {
             to: "private func beginCorrelationSeries"
         )
 
-        #expect(startBaseline.contains("buildIdentity.isAuthoritativeFieldBuild"))
+        #expect(startBaseline.contains("guard buildIdentity.isAuthoritativeFieldBuild else"))
         #expect(startBaseline.contains("field_build_identity_unavailable"))
+        #expect(startBaseline.contains("return"))
+        #expect(startBaseline.contains("verifySDKMembership"))
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
