@@ -1,0 +1,129 @@
+name: V14 Capture Compose Entrypoint Races One Shot
+
+on:
+  push:
+    branches:
+      - integration/v14-capture-entrypoint-race-recovery-current-sol
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: integration/v14-capture-entrypoint-race-recovery-current-sol
+          fetch-depth: 0
+
+      - name: Compose quiescent evidence cut and async correlation recovery
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s = path.read_text()
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global s
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one exact anchor, found {count}')
+              s = s.replace(old, new, 1)
+
+          replace_once(
+              '    private var driver: OfficialTuyaDriver?\n    private var events: [Event] = []\n    private var sealedAcceptedEventPrefix: [Event]?\n    private var watchdog: Task<Void, Never>?\n',
+              '    private var driver: OfficialTuyaDriver?\n    private var events: [Event] = []\n    private var applicationUpdateAdmissionsInFlight = 0\n    private var acceptanceCutIsClosed = false\n    private var sealedAcceptedEventPrefix: [Event]?\n    private var watchdog: Task<Void, Never>?\n',
+              'acceptance-cut state'
+          )
+
+          replace_once(
+              '    var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }\n\n    var correlationWindowLabel: String {\n',
+              '    var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }\n\n    func consumeCorrelationAsyncInvalidation() {\n        guard phase == .baseline || phase == .scanning,\n              correlationProgress?.isSeriesInvalidated == true else { return }\n\n        correlationSession?.abandonCurrentWindow()\n        correlationSession = nil\n        failLocally(\n            "Bluetooth correlation scan authority ended asynchronously. Restart from OFF1 and repeat the complete OFF1→ON1→OFF2→ON2 series; prior windows cannot be reused.",\n            "target_correlation_async_invalidated"\n        )\n    }\n\n    var correlationWindowLabel: String {\n',
+              'correlation terminal consumer'
+          )
+
+          receive_start = s.index('    private func receivedApplicationUpdate')
+          receive_end = s.index('    private func startWatchdog', receive_start)
+          receive = s[receive_start:receive_end]
+          old = '        guard sdkAccountLoggedIn,\n'
+          new = '        guard !acceptanceCutIsClosed else {\n            log("application_update_after_acceptance_cut_ignored", [\n                "generation": String(token.diagnosticGeneration)\n            ])\n            return\n        }\n        guard sdkAccountLoggedIn,\n'
+          if receive.count(old) != 1:
+              raise SystemExit(f'post-cut admission guard: expected one scoped anchor, found {receive.count(old)}')
+          receive = receive.replace(old, new, 1)
+          s = s[:receive_start] + receive + s[receive_end:]
+
+          replace_once(
+              '        do {\n            try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)\n',
+              '        applicationUpdateAdmissionsInFlight += 1\n        defer { applicationUpdateAdmissionsInFlight -= 1 }\n\n        do {\n            try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)\n',
+              'in-flight application admission custody'
+          )
+
+          replace_once(
+              '                    do {\n                        try await sessionLedger.sealAcceptedObservation(for: token)\n                        self.sealedAcceptedEventPrefix = self.events\n',
+              '                    guard self.applicationUpdateAdmissionsInFlight == 0 else {\n                        break\n                    }\n                    self.acceptanceCutIsClosed = true\n                    let acceptedEventPrefixAtCut = self.events\n                    do {\n                        try await sessionLedger.sealAcceptedObservation(for: token)\n                        self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut\n',
+              'quiescent pre-await acceptance cut'
+          )
+
+          replace_once(
+              '                if (self.canonicalObservedAgeSeconds ?? 0) > 60,\n                   self.applicationUpdateCount == 0 {\n',
+              '                if self.applicationUpdateAdmissionsInFlight == 0,\n                   (self.canonicalObservedAgeSeconds ?? 0) > 60,\n                   self.applicationUpdateCount == 0 {\n',
+              'timeout quiescence gate'
+          )
+
+          replace_once(
+              '    private func resetDiscoverySessionOnly() {\n        sealedAcceptedEventPrefix = nil\n',
+              '    private func resetDiscoverySessionOnly() {\n        acceptanceCutIsClosed = false\n        sealedAcceptedEventPrefix = nil\n',
+              'fresh-life cut reset'
+          )
+
+          replace_once(
+              '            .background(Color.black.ignoresSafeArea())\n        }\n        .navigationTitle("Secure Link")\n',
+              '            .background(Color.black.ignoresSafeArea())\n            .onChange(of: test.correlationProgress?.isSeriesInvalidated) { _, isInvalidated in\n                guard isInvalidated == true else { return }\n                test.consumeCorrelationAsyncInvalidation()\n            }\n        }\n        .navigationTitle("Secure Link")\n',
+              'existing TimelineView lifecycle consumer'
+          )
+
+          path.write_text(s)
+          PY
+
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          required = [
+              'private var applicationUpdateAdmissionsInFlight = 0',
+              'private var acceptanceCutIsClosed = false',
+              'func consumeCorrelationAsyncInvalidation()',
+              'correlationProgress?.isSeriesInvalidated == true',
+              '"target_correlation_async_invalidated"',
+              'onChange(of: test.correlationProgress?.isSeriesInvalidated)',
+              'test.consumeCorrelationAsyncInvalidation()',
+              'guard !acceptanceCutIsClosed else',
+              'applicationUpdateAdmissionsInFlight += 1',
+              'defer { applicationUpdateAdmissionsInFlight -= 1 }',
+              'guard self.applicationUpdateAdmissionsInFlight == 0',
+              'self.acceptanceCutIsClosed = true',
+              'let acceptedEventPrefixAtCut = self.events',
+              'self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut',
+              'if self.applicationUpdateAdmissionsInFlight == 0,',
+              'acceptanceCutIsClosed = false',
+          ]
+          missing = [item for item in required if item not in app]
+          if missing:
+              raise SystemExit(f'missing composed anchors: {missing}')
+          if 'self.sealedAcceptedEventPrefix = self.events' in app:
+              raise SystemExit('post-await live event snapshot survived')
+          if 'correlationProgressTask' in app or 'milliseconds(100)' in app:
+              raise SystemExit('redundant scanner observer/polling task reintroduced')
+          PY
+          git diff --check
+
+      - name: Retire helper and checkpoint composed repair
+        run: |
+          set -euo pipefail
+          rm .github/workflows/v14-capture-compose-entrypoint-races-one-shot.yml
+          git config user.name 'nembra-v14-bot'
+          git config user.email 'nembra-v14-bot@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift .github/workflows/v14-capture-compose-entrypoint-races-one-shot.yml
+          git commit -m 'fix(capture): close entrypoint evidence races'
+          git push origin HEAD:integration/v14-capture-entrypoint-race-recovery-current-sol
