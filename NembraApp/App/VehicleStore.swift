@@ -56,10 +56,27 @@ final class VehicleStore {
     /// Source-owned currentness for speed. Cached `VehicleState` speed never
     /// promotes this value by itself.
     private(set) var speedEvidenceAvailability: SpeedEvidenceAvailability = .unavailable
-    /// Source-owned Simulator propulsion currentness. The immutable observation
-    /// receipt survives SwiftUI view lifetime changes; aggregate `state.powerWatts`
-    /// and view/render clocks never promote this value.
-    private(set) var simulatorPowerEvidenceAvailability: SimulatorPowerEvidenceAvailability = .unavailable
+
+    /// The sealed source availability is intentionally private. No app surface may
+    /// bypass the transport join and interpret a source-live receipt as app-live
+    /// after aggregate connection changed.
+    private var simulatorPowerSourceAvailability: SimulatorPowerEvidenceAvailability = .unavailable
+
+    /// The only Store-facing Simulator power authority. It atomically joins the
+    /// newest sealed source value with the current aggregate connection every time
+    /// it is read. Therefore independent source/state tasks have no ordering window:
+    /// source LIVE + connected -> LIVE; source LIVE + non-connected -> RETAINED;
+    /// source RETAINED stays RETAINED even after reconnect; only a fresh source LIVE
+    /// receipt can restore app-live currentness.
+    var simulatorPowerStoreProjection: SimulatorPowerStoreProjection {
+        var authority = SimulatorPowerEvidenceConsumerAuthority()
+        authority.applySource(
+            simulatorPowerSourceAvailability,
+            connectionIsConnected: state.connection == .connected
+        )
+        return authority.projection
+    }
+
     var pendingCommands: Set<PendingCommand> = []
     var pendingRideMode: RideMode?
     var pendingCruiseValue: Bool?
@@ -135,7 +152,6 @@ final class VehicleStore {
     @ObservationIgnored private var speedEvidenceTask: Task<Void, Never>?
     @ObservationIgnored private var simulatorPowerEvidenceTask: Task<Void, Never>?
     @ObservationIgnored private var speedEvidenceConsumerAuthority = SpeedEvidenceConsumerAuthority()
-    @ObservationIgnored private var simulatorPowerEvidenceConsumerAuthority = SimulatorPowerEvidenceConsumerAuthority()
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private let shouldAutoConnectOnStart: Bool
 
@@ -250,16 +266,6 @@ final class VehicleStore {
             for await incomingState in stream {
                 guard let self, !Task.isCancelled else { break }
                 let previousConnection = self.state.connection
-
-                // Connection is a negative veto only. Revoke any locally projected
-                // live power before the disconnected/reconnecting aggregate state is
-                // published so SwiftUI can never observe OFFLINE + LIVE POWER. Do not
-                // synthesize retained here: only the sealed provider may supply it.
-                if incomingState.connection != .connected {
-                    self.simulatorPowerEvidenceConsumerAuthority.revokeLiveForNonConnectedTransport()
-                    self.simulatorPowerEvidenceAvailability = self.simulatorPowerEvidenceConsumerAuthority.availability
-                }
-
                 self.apply(incomingState)
 
                 if let speedEvidenceProvider {
@@ -304,26 +310,19 @@ final class VehicleStore {
                 for await _ in stream {
                     guard let self, !Task.isCancelled else { return }
 
-                    // Events are wake-ups only. Re-read newest source state, then let
-                    // the tested consumer authority join it with current aggregate
-                    // connection. The consumer can preserve source truth or remove
-                    // authority; it cannot mint live/retained itself.
+                    // Stream values are wake-ups only. The private raw source state is
+                    // refreshed from the provider's newest snapshot; all Store-facing
+                    // reads then join that exact sealed value with current connection.
                     let current = await simulatorPowerEvidenceProvider.simulatorPowerEvidenceSnapshot()
                     guard !Task.isCancelled else { return }
-                    _ = self.simulatorPowerEvidenceConsumerAuthority.commit(
-                        current,
-                        connectionIsConnected: self.state.connection == .connected
-                    )
-                    self.simulatorPowerEvidenceAvailability = self.simulatorPowerEvidenceConsumerAuthority.availability
+                    self.simulatorPowerSourceAvailability = current
                 }
 
                 guard let self, !Task.isCancelled else { return }
-                self.simulatorPowerEvidenceConsumerAuthority.invalidate()
-                self.simulatorPowerEvidenceAvailability = self.simulatorPowerEvidenceConsumerAuthority.availability
+                self.simulatorPowerSourceAvailability = .unavailable
             }
         } else {
-            simulatorPowerEvidenceConsumerAuthority.invalidate()
-            simulatorPowerEvidenceAvailability = simulatorPowerEvidenceConsumerAuthority.availability
+            simulatorPowerSourceAvailability = .unavailable
         }
 
         if shouldAutoConnectOnStart {
