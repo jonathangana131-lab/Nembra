@@ -1,0 +1,462 @@
+name: Materialize Capture Guided Visual Matrix Seam
+
+on:
+  push:
+    branches:
+      - qa/v14-capture-guided-visual-matrix-8e4d-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: qa/v14-capture-guided-visual-matrix-8e4d-sol
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact product ancestry and QA-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='8e4d28c9bd1c3ba6dd3a9c9292bd9f1ff27a40ac'
+          git merge-base --is-ancestor "$parent" HEAD
+          git diff --quiet "$parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize compile-time Simulator presentation seam
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path=Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          text=path.read_text(encoding='utf-8')
+
+          def replace_once(old,new,label):
+              global text
+              count=text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one anchor, found {count}')
+              text=text.replace(old,new,1)
+
+          import_anchor='''#if canImport(NembraTuyaPrivateConfig)
+          import NembraTuyaPrivateConfig
+          #endif
+
+
+          @main @MainActor
+          '''
+          import_new='''#if canImport(NembraTuyaPrivateConfig)
+          import NembraTuyaPrivateConfig
+          #endif
+
+          #if targetEnvironment(simulator)
+          private enum CaptureGuidedVisualState: String, CaseIterable {
+              case correlationOFF1 = "correlation-off1"
+              case correlatedConfirm = "correlated-confirm"
+              case secureLink = "secure-link"
+              case authenticating = "authenticating"
+              case observing = "observing"
+              case failedRecovery = "failed-recovery"
+              case accepted = "accepted"
+
+              static var requested: Self? {
+                  ProcessInfo.processInfo.environment["NEMBRA_CAPTURE_GUIDED_VISUAL_STATE"]
+                      .flatMap(Self.init(rawValue:))
+              }
+          }
+          #endif
+
+          @main @MainActor
+          '''
+          import_anchor='\n'.join(line[10:] if line.startswith('          ') else line for line in import_anchor.splitlines())+'\n'
+          import_new='\n'.join(line[10:] if line.startswith('          ') else line for line in import_new.splitlines())+'\n'
+          replace_once(import_anchor,import_new,'simulator enum')
+
+          app_old='''struct NembraCaptureApp: App {
+              var body: some Scene {
+                  WindowGroup { CaptureP0Root().preferredColorScheme(.dark) }
+              }
+          }
+          '''
+          app_new='''struct NembraCaptureApp: App {
+              var body: some Scene {
+                  WindowGroup {
+          #if targetEnvironment(simulator)
+                      if let guidedVisualState = CaptureGuidedVisualState.requested {
+                          NavigationStack {
+                              SecureLinkView(guidedVisualState: guidedVisualState)
+                          }
+                          .preferredColorScheme(.dark)
+                      } else {
+                          CaptureP0Root().preferredColorScheme(.dark)
+                      }
+          #else
+                      CaptureP0Root().preferredColorScheme(.dark)
+          #endif
+                  }
+              }
+          }
+          '''
+          app_old='\n'.join(line[10:] if line.startswith('          ') else line for line in app_old.splitlines())+'\n'
+          app_new='\n'.join(line[10:] if line.startswith('          ') else line for line in app_new.splitlines())+'\n'
+          replace_once(app_old,app_new,'app visual route')
+
+          member_old='''    private var membershipRequestID = UUID()
+              private var officialConnectionRequestID = UUID()
+
+              init(device: TuyaAccountBridge.LinkedDevice) {
+                  deviceID = device.id
+                  deviceName = device.name
+                  productID = device.productID
+                  tuyaUUID = device.uuid
+                  super.init()
+                  log("controller_created")
+              }
+          '''
+          member_new='''    private var membershipRequestID = UUID()
+              private var officialConnectionRequestID = UUID()
+          #if targetEnvironment(simulator)
+              private var guidedVisualState: CaptureGuidedVisualState?
+          #endif
+
+              init(device: TuyaAccountBridge.LinkedDevice) {
+                  deviceID = device.id
+                  deviceName = device.name
+                  productID = device.productID
+                  tuyaUUID = device.uuid
+          #if targetEnvironment(simulator)
+                  guidedVisualState = nil
+          #endif
+                  super.init()
+                  log("controller_created")
+              }
+
+          #if targetEnvironment(simulator)
+              init(guidedVisualState: CaptureGuidedVisualState) {
+                  deviceID = "presentation-only-device"
+                  deviceName = "AOVOPRO ES80"
+                  productID = "presentation-only-product"
+                  tuyaUUID = "presentation-only-uuid"
+                  self.guidedVisualState = guidedVisualState
+                  super.init()
+                  applyGuidedVisualState(guidedVisualState)
+              }
+
+              private func applyGuidedVisualState(_ state: CaptureGuidedVisualState) {
+                  sdkDeviceMembershipVerified = true
+                  membershipStatus = "Presentation-only Simulator fixture. No account, Bluetooth, protocol, or physical authority was created."
+                  membershipBusy = false
+                  membershipAccountUID = "presentation-only-account"
+                  membershipDeviceID = deviceID
+                  sdkLocalBLEOnline = false
+                  exportData = nil
+                  candidates = []
+                  selectedID = nil
+                  pendingCorrelatedTargetID = nil
+
+                  let visualCandidate = Candidate(
+                      id: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
+                      name: "Correlated Bluetooth target",
+                      rssi: nil,
+                      advertisements: 3,
+                      newAfterPowerOn: true,
+                      fd50: false,
+                      tuyaCompany: false,
+                      historicalCaptureID: false,
+                      freshlyCorrelated: true,
+                      expectedName: false,
+                      score: 0,
+                      evidence: ["presentation-only repeated OFF1→ON1→OFF2→ON2 evidence"]
+                  )
+
+                  switch state {
+                  case .correlationOFF1:
+                      phase = .baseline
+                      message = "OFF1 is listening for nearby signals while the scooter remains off and stationary."
+                  case .correlatedConfirm:
+                      byID = [visualCandidate.id: visualCandidate]
+                      candidates = [visualCandidate]
+                      pendingCorrelatedTargetID = visualCandidate.id
+                      phase = .correlated
+                      message = "One signal repeated through the full current-attempt power pattern and is awaiting operator confirmation."
+                  case .secureLink:
+                      byID = [visualCandidate.id: visualCandidate]
+                      candidates = [visualCandidate]
+                      selectedID = visualCandidate.id
+                      phase = .selected
+                      message = "The current-attempt scooter signal is confirmed. Secure read-only link is ready to begin."
+                  case .authenticating:
+                      byID = [visualCandidate.id: visualCandidate]
+                      candidates = [visualCandidate]
+                      selectedID = visualCandidate.id
+                      phase = .authenticating
+                      message = "Establishing the presentation-only secure-link state."
+                  case .observing:
+                      byID = [visualCandidate.id: visualCandidate]
+                      candidates = [visualCandidate]
+                      selectedID = visualCandidate.id
+                      sdkLocalBLEOnline = true
+                      phase = .observing
+                      message = "Read-only observation is in progress."
+                  case .failedRecovery:
+                      phase = .failed
+                      message = "Bluetooth correlation stopped before this window could be sealed. Nothing from the stopped attempt will carry forward."
+                  case .accepted:
+                      phase = .accepted
+                      message = "The immutable accepted artifact is encoded and ready to share for analysis."
+                      exportData = Data("{\\"presentationOnly\\":true}".utf8)
+                      exportName = "Nembra-Presentation-Only-Capture.json"
+                  }
+              }
+          #endif
+          '''
+          member_old='\n'.join(line[10:] if line.startswith('          ') else line for line in member_old.splitlines())+'\n'
+          member_new='\n'.join(line[10:] if line.startswith('          ') else line for line in member_new.splitlines())+'\n'
+          replace_once(member_old,member_new,'controller fixture state')
+
+          props_old='''    var privateConfig: Bool { OfficialTuyaFactory.configured }
+              var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }
+              var fieldBuildIdentifier: String { buildIdentity.buildIdentifier }
+              var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }
+              var fieldProcedureIdentifier: String { NembraCaptureBuildIdentity.fieldProcedureIdentifier }
+              var sdkAccountLoggedIn: Bool { OfficialTuyaFactory.accountLoggedIn }
+              var currentAccountUID: String? { OfficialTuyaFactory.currentAccountUID }
+              var selected: Candidate? { selectedID.flatMap { byID[$0] } }
+              var applicationUpdateCount: Int { ledgerSnapshot.applicationPayloadCount }
+              var correlationProgress: PassiveBluetoothPowerCycleObservationProgress? { correlationSession?.progress }
+              var correlationWindowIsScanning: Bool { correlationProgress?.isScanning == true }
+              var correlationObservedCandidateCount: Int { correlationProgress?.currentObservedCandidateCount ?? 0 }
+              var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }
+          '''
+          props_new='''    var isGuidedVisualFixture: Bool {
+          #if targetEnvironment(simulator)
+                  guidedVisualState != nil
+          #else
+                  false
+          #endif
+              }
+              var privateConfig: Bool {
+          #if targetEnvironment(simulator)
+                  if guidedVisualState != nil { return true }
+          #endif
+                  return OfficialTuyaFactory.configured
+              }
+              var fieldBuildIsAuthoritative: Bool {
+          #if targetEnvironment(simulator)
+                  if guidedVisualState != nil { return true }
+          #endif
+                  return buildIdentity.isAuthoritativeFieldBuild
+              }
+              var fieldBuildIdentifier: String { buildIdentity.buildIdentifier }
+              var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }
+              var fieldProcedureIdentifier: String { NembraCaptureBuildIdentity.fieldProcedureIdentifier }
+              var sdkAccountLoggedIn: Bool {
+          #if targetEnvironment(simulator)
+                  if guidedVisualState != nil { return true }
+          #endif
+                  return OfficialTuyaFactory.accountLoggedIn
+              }
+              var currentAccountUID: String? {
+          #if targetEnvironment(simulator)
+                  if guidedVisualState != nil { return "presentation-only-account" }
+          #endif
+                  return OfficialTuyaFactory.currentAccountUID
+              }
+              var selected: Candidate? { selectedID.flatMap { byID[$0] } }
+              var applicationUpdateCount: Int {
+          #if targetEnvironment(simulator)
+                  if guidedVisualState == .observing || guidedVisualState == .accepted { return 3 }
+          #endif
+                  return ledgerSnapshot.applicationPayloadCount
+              }
+              var correlationProgress: PassiveBluetoothPowerCycleObservationProgress? { correlationSession?.progress }
+              var correlationWindowIsScanning: Bool {
+          #if targetEnvironment(simulator)
+                  if guidedVisualState == .correlationOFF1 { return true }
+          #endif
+                  return correlationProgress?.isScanning == true
+              }
+              var correlationObservedCandidateCount: Int {
+          #if targetEnvironment(simulator)
+                  if guidedVisualState == .correlationOFF1 { return 3 }
+          #endif
+                  return correlationProgress?.currentObservedCandidateCount ?? 0
+              }
+              var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }
+          '''
+          props_old='\n'.join(line[10:] if line.startswith('          ') else line for line in props_old.splitlines())+'\n'
+          props_new='\n'.join(line[10:] if line.startswith('          ') else line for line in props_new.splitlines())+'\n'
+          replace_once(props_old,props_new,'presentation computed properties')
+
+          restart_old='''    var canRestartFromFreshOFF1: Bool { failedAttemptCanRestartFromOFF1 }
+          '''
+          restart_new='''    var canRestartFromFreshOFF1: Bool {
+          #if targetEnvironment(simulator)
+                  if guidedVisualState == .failedRecovery { return true }
+          #endif
+                  return failedAttemptCanRestartFromOFF1
+              }
+          '''
+          restart_old='\n'.join(line[10:] if line.startswith('          ') else line for line in restart_old.splitlines())+'\n'
+          restart_new='\n'.join(line[10:] if line.startswith('          ') else line for line in restart_new.splitlines())+'\n'
+          replace_once(restart_old,restart_new,'recoverable fixture')
+
+          age_old='''    var canonicalObservedAgeSeconds: Double? {
+                  guard let start = ledgerSnapshot.authenticatedAtUptimeNanoseconds,
+          '''
+          age_new='''    var canonicalObservedAgeSeconds: Double? {
+          #if targetEnvironment(simulator)
+                  if guidedVisualState == .observing { return 31 }
+                  if guidedVisualState == .accepted { return 45 }
+          #endif
+                  guard let start = ledgerSnapshot.authenticatedAtUptimeNanoseconds,
+          '''
+          age_old='\n'.join(line[10:] if line.startswith('          ') else line for line in age_old.splitlines())+'\n'
+          age_new='\n'.join(line[10:] if line.startswith('          ') else line for line in age_new.splitlines())+'\n'
+          replace_once(age_old,age_new,'observed age fixture')
+
+          view_init_old='''    init(device: TuyaAccountBridge.LinkedDevice) {
+                  _test = StateObject(wrappedValue: SecureLinkController(device: device))
+              }
+
+              var body: some View {
+          '''
+          view_init_new='''    init(device: TuyaAccountBridge.LinkedDevice) {
+                  _test = StateObject(wrappedValue: SecureLinkController(device: device))
+              }
+
+          #if targetEnvironment(simulator)
+              init(guidedVisualState: CaptureGuidedVisualState) {
+                  _test = StateObject(wrappedValue: SecureLinkController(guidedVisualState: guidedVisualState))
+              }
+          #endif
+
+              var body: some View {
+          '''
+          view_init_old='\n'.join(line[10:] if line.startswith('          ') else line for line in view_init_old.splitlines())+'\n'
+          view_init_new='\n'.join(line[10:] if line.startswith('          ') else line for line in view_init_new.splitlines())+'\n'
+          replace_once(view_init_old,view_init_new,'view fixture init')
+
+          invalid_old='''            .onChange(of: test.correlationProgress?.isSeriesInvalidated == true) { _, invalidated in
+                          if invalidated {
+                              test.consumeCorrelationAsyncInvalidation()
+                          }
+                      }
+                  }
+                  .navigationTitle("Capture")
+          '''
+          invalid_new='''            .onChange(of: test.correlationProgress?.isSeriesInvalidated == true) { _, invalidated in
+                          guard !test.isGuidedVisualFixture else { return }
+                          if invalidated {
+                              test.consumeCorrelationAsyncInvalidation()
+                          }
+                      }
+                  }
+                  .allowsHitTesting(!test.isGuidedVisualFixture)
+                  .navigationTitle("Capture")
+          '''
+          invalid_old='\n'.join(line[10:] if line.startswith('          ') else line for line in invalid_old.splitlines())+'\n'
+          invalid_new='\n'.join(line[10:] if line.startswith('          ') else line for line in invalid_new.splitlines())+'\n'
+          replace_once(invalid_old,invalid_new,'fixture interaction fence')
+
+          lifecycle_old='''        .task {
+                      sdkAccount.bootstrap()
+                      if sdkAccount.loggedIn { test.verifySDKMembership() }
+                      while !Task.isCancelled {
+                          test.consumeCorrelationAsyncInvalidation()
+                          try? await Task.sleep(nanoseconds: 250_000_000)
+                      }
+                  }
+                  .onDisappear {
+                      test.abandonCorrelationForViewExit()
+                  }
+                  .onChange(of: sdkAccount.loggedIn) { _, loggedIn in
+                      if loggedIn { test.verifySDKMembership() }
+                      else { test.invalidateSDKMembership() }
+                  }
+          '''
+          lifecycle_new='''        .task {
+                      guard !test.isGuidedVisualFixture else { return }
+                      sdkAccount.bootstrap()
+                      if sdkAccount.loggedIn { test.verifySDKMembership() }
+                      while !Task.isCancelled {
+                          test.consumeCorrelationAsyncInvalidation()
+                          try? await Task.sleep(nanoseconds: 250_000_000)
+                      }
+                  }
+                  .onDisappear {
+                      guard !test.isGuidedVisualFixture else { return }
+                      test.abandonCorrelationForViewExit()
+                  }
+                  .onChange(of: sdkAccount.loggedIn) { _, loggedIn in
+                      guard !test.isGuidedVisualFixture else { return }
+                      if loggedIn { test.verifySDKMembership() }
+                      else { test.invalidateSDKMembership() }
+                  }
+          '''
+          lifecycle_old='\n'.join(line[10:] if line.startswith('          ') else line for line in lifecycle_old.splitlines())+'\n'
+          lifecycle_new='\n'.join(line[10:] if line.startswith('          ') else line for line in lifecycle_new.splitlines())+'\n'
+          replace_once(lifecycle_old,lifecycle_new,'fixture lifecycle fence')
+
+          routing_old='''        case .failed:
+                      if !test.fieldBuildIsAuthoritative || !test.privateConfig {
+                          VStack(spacing: 16) {
+                              failureRecoveryContextPanel
+                              preflightPanel
+                          }
+                      } else if test.canRestartFromFreshOFF1 && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn) {
+          '''
+          routing_new='''        case .failed:
+                      if !test.fieldBuildIsAuthoritative || !test.privateConfig {
+                          VStack(spacing: 16) {
+                              failureRecoveryContextPanel
+                              preflightPanel
+                          }
+                      } else if test.canRestartFromFreshOFF1 && (!effectiveSDKAccountLoggedIn || !test.sdkAccountLoggedIn) {
+          '''
+          routing_old='\n'.join(line[10:] if line.startswith('          ') else line for line in routing_old.splitlines())+'\n'
+          routing_new='\n'.join(line[10:] if line.startswith('          ') else line for line in routing_new.splitlines())+'\n'
+          replace_once(routing_old,routing_new,'failure routing')
+          text=text.replace('if test.privateConfig && !sdkAccount.loggedIn {\n                sdkAuthorizationPanel','if test.privateConfig && !effectiveSDKAccountLoggedIn {\n                sdkAuthorizationPanel',1)
+
+          authority_anchor='''    private var authorityReady: Bool {
+          '''
+          authority_insert='''    private var effectiveSDKAccountLoggedIn: Bool {
+                  test.isGuidedVisualFixture ? test.sdkAccountLoggedIn : sdkAccount.loggedIn
+              }
+
+              private var authorityReady: Bool {
+          '''
+          authority_anchor='\n'.join(line[10:] if line.startswith('          ') else line for line in authority_anchor.splitlines())+'\n'
+          authority_insert='\n'.join(line[10:] if line.startswith('          ') else line for line in authority_insert.splitlines())+'\n'
+          replace_once(authority_anchor,authority_insert,'effective account presentation')
+
+          path.write_text(text,encoding='utf-8')
+          PY
+
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_guided_visual_matrix.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_guided_visual_matrix.py
+          bash -n scripts/ci/capture_guided_visual_matrix.sh
+          git diff --check
+
+      - name: Publish clean QA checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='8e4d28c9bd1c3ba6dd3a9c9292bd9f1ff27a40ac'
+          rm .github/workflows/materialize-capture-guided-visual-matrix.yml
+          git diff --check
+          git config user.name 'Nembra V14 Visual QA'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -m 'qa(capture): expose simulator-only guided visual matrix'
+          changed="$(git diff --name-only "$parent" HEAD | sort)"
+          expected="$(printf '%s\n' '.github/workflows/capture-guided-visual-matrix.yml' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'scripts/ci/capture_guided_visual_matrix.sh' 'scripts/ci/tests/test_capture_guided_visual_matrix.py' | sort)"
+          test "$changed" = "$expected"
+          git push origin HEAD:qa/v14-capture-guided-visual-matrix-8e4d-sol
