@@ -2285,12 +2285,12 @@ private struct SecureLinkView: View {
                     failureRecoveryContextPanel
                     preflightPanel
                 }
-            } else if !sdkAccount.loggedIn || !test.sdkAccountLoggedIn {
+            } else if test.canRestartFromFreshOFF1 && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn) {
                 VStack(spacing: 16) {
                     failureRecoveryContextPanel
                     sdkAuthorizationPanel
                 }
-            } else if !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized {
+            } else if test.canRestartFromFreshOFF1 && test.sdkAccountLoggedIn && (!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized) {
                 VStack(spacing: 16) {
                     failureRecoveryContextPanel
                     preflightPanel
