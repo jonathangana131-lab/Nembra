@@ -29,11 +29,20 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let surface = try section(in: app, from: "private struct SecureLinkView: View", to: "private struct SecureTransfer: Transferable")
         let body = String(surface)
+        let seal = String(try section(
+            in: app,
+            from: "self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut",
+            to: "self.log(\"acceptance_sealed\""
+        ))
 
         #expect(body.contains("CAPTURE COMPLETE"))
         #expect(body.contains("Ready for analysis"))
         #expect(body.contains("Label(\"Share Capture\""))
-        #expect(body.contains("if accepted && test.exportData == nil { test.prepareExport() }"))
+        #expect(seal.contains("self.sealedAcceptedExport = self.makeExport("))
+        #expect(seal.contains("phase: .accepted"))
+        #expect(seal.contains("self.exportData = nil"))
+        #expect(seal.contains("self.phase = .accepted"))
+        #expect(seal.contains("self.prepareExport()"))
         #expect(body.contains("Button(showEngineeringDetails ? \"Hide details\" : \"View details\")"))
         #expect(body.contains("accepted artifact is sealed"))
     }
@@ -51,7 +60,9 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         #expect(body.contains("test.authenticate()"))
         #expect(body.contains("test.sdkLocalBLEOnline"))
         #expect(body.contains("test.applicationUpdateCount > 0"))
-        #expect(body.contains("Historical UUID, name, RSSI, FD50, and Tuya hints never authorize the target."))
+        #expect(body.contains("Text(test.message)"))
+        #expect(app.contains("Correlation is current-session evidence, not permanent scooter identity."))
+        #expect(app.contains("Do not guess from name, RSSI, FD50, or Tuya hints; restart from OFF1 after reducing nearby-device ambiguity."))
         #expect(body.contains("No DP query or scooter command is authorized by this surface."))
     }
 
