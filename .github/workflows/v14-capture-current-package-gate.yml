@@ -1,0 +1,31 @@
+name: V14 Capture Current Package Gate
+
+on:
+  push:
+    branches:
+      - integration/v14-capture-quiescent-application-evidence-current-sol
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: integration/v14-capture-quiescent-application-evidence-current-sol
+          fetch-depth: 0
+      - name: Prove checkout identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "GITHUB_SHA=${GITHUB_SHA}"
+          echo "CHECKED_OUT=$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - name: Full Capture package
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift --version
+          swift test --package-path Packages/NembraBluetoothCapture
