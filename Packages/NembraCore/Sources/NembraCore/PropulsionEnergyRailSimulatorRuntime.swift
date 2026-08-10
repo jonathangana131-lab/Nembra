@@ -199,6 +199,12 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
                     retireCurrentGenerationAsUnavailable()
                     return false
                 }
+            } else if let localUptime = lastAcceptedUptimeNanoseconds,
+                      receivedAtUptimeNanoseconds <= localUptime {
+                // Transitioning from the legacy isolated path to source-owned
+                // chronology cannot move the accepted measurement clock backwards.
+                retireCurrentGenerationAsUnavailable()
+                return false
             }
         }
 
@@ -246,7 +252,8 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
         }
 
         let sharesPresentationContinuity: Bool
-        if let previousUptime = lastAcceptedUptimeNanoseconds {
+        if let previousUptime = lastAcceptedUptimeNanoseconds,
+           admittedUptime > previousUptime {
             let gap = admittedUptime - previousUptime
             sharesPresentationContinuity = gap <= freshnessPolicy.staleAfterNanoseconds
         } else {
@@ -321,8 +328,6 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
               accepted.acceptedWatts == lastAcceptedWatts,
               accepted.acceptedMeasurement?.authority == .simulator,
               accepted.acceptedMeasurement?.continuityGeneration == continuityGeneration,
-              accepted.acceptedMeasurement?.receiptSequenceNumber
-                == nextReceiptSequenceNumber - 1,
               accepted.acceptedMeasurement?.receivedAtUptimeNanoseconds
                 == lastAcceptedUptimeNanoseconds else {
             return false
