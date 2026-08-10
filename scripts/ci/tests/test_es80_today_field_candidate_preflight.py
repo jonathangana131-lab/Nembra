@@ -15,6 +15,7 @@ import unittest
 MODULE_PATH = Path(__file__).resolve().parents[1] / "es80_today_field_candidate_preflight.py"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 HANDOFF_PATH = REPOSITORY_ROOT / "docs" / "ES80_TODAY_SIGNED_FIELD_CANDIDATE_PRODUCTION.md"
+CUSTODY_PATH = REPOSITORY_ROOT / "docs" / "ES80_TODAY_PRIVATE_DEVICE_INPUT_CUSTODY.md"
 spec = importlib.util.spec_from_file_location("field_candidate_preflight", MODULE_PATH)
 preflight = importlib.util.module_from_spec(spec)
 assert spec and spec.loader
@@ -263,9 +264,11 @@ class FieldCandidatePreflightTests(unittest.TestCase):
 
     def test_production_handoff_consumes_accepted_descriptor_bound_private_input_before_signing(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
-        helper_commit = "05ce6d9a20487ab34aa31c5b6456910ed2ed438f"
+        helper_commit = "91dda8ac05e937e5615312a487f7d78926b74949"
         helper_path = "scripts/ci/es80_today_private_device_input.py"
-        helper_blob = "9a9f7f724ceaf895e52d6d443d326043f97645c8"
+        helper_blob = "50b12675a57fd2f570d833cfcdbfd7be59f52ca4"
+        helper_run = "31349898562"
+        helper_job = "93338620824"
         helper_invoke = '/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER"'
         private_directory_arg = '--private-directory "$PRIVATE_DIR"'
         source_repo_arg = '--source-repo "$FIELD_SOURCE"'
@@ -274,6 +277,8 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertIn(helper_commit, handoff)
         self.assertIn(helper_path, handoff)
         self.assertIn(helper_blob, handoff)
+        self.assertIn(helper_run, handoff)
+        self.assertIn(helper_job, handoff)
         self.assertIn(helper_invoke, handoff)
         self.assertIn(private_directory_arg, handoff)
         self.assertIn(source_repo_arg, handoff)
@@ -282,6 +287,26 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertNotIn("set -o noclobber", handoff)
         self.assertNotIn('printf \'%s\' "$INTENDED_UDID" > "$UDID_FILE"', handoff)
         self.assertNotIn('printf \'%s\\n\' "$INTENDED_UDID" > "$UDID_FILE"', handoff)
+
+    def test_production_handoff_rejects_superseded_private_input_helper(self):
+        handoff = HANDOFF_PATH.read_text(encoding="utf-8")
+        current_section = handoff.split("## 2. Create the private intended-device verification file", 1)[1].split("## 3. Set the signing inputs", 1)[0]
+        self.assertNotIn("PRIVATE_INPUT_HELPER_COMMIT='05ce6d9a20487ab34aa31c5b6456910ed2ed438f'", current_section)
+        self.assertNotIn("PRIVATE_INPUT_HELPER_BLOB='9a9f7f724ceaf895e52d6d443d326043f97645c8'", current_section)
+
+    def test_private_input_custody_doc_pins_same_accepted_helper(self):
+        custody = CUSTODY_PATH.read_text(encoding="utf-8")
+        for marker in (
+            "91dda8ac05e937e5615312a487f7d78926b74949",
+            "50b12675a57fd2f570d833cfcdbfd7be59f52ca4",
+            "31349898562",
+            "93338620824",
+        ):
+            self.assertIn(marker, custody)
+
+        active_materialization = custody.split("## Operator materialization and use", 1)[1].split("## Acceptance / regression contract", 1)[0]
+        self.assertNotIn("PRIVATE_INPUT_HELPER_COMMIT='05ce6d9a20487ab34aa31c5b6456910ed2ed438f'", active_materialization)
+        self.assertNotIn("PRIVATE_INPUT_HELPER_BLOB='9a9f7f724ceaf895e52d6d443d326043f97645c8'", active_materialization)
 
     def test_production_handoff_resolves_physical_home_before_private_path_and_helper(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")

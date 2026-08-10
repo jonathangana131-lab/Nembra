@@ -33,6 +33,19 @@ The current accepted external pre-signing helper is also non-authorizing softwar
 
 The helper exists only to prevent known operator-input dead ends before the frozen producer is invoked. It now binds ExportOptions coherence to one exact descriptor-opened regular-file subject, rejecting relative paths, symlinked ancestors/final subjects, special files, and identity mutation while preserving the accepted TeamIdentifier/method checks. The frozen `a0f4…` producer independently revalidates all authoritative signing/private-input conditions.
 
+The current accepted private intended-device input helper is separately pinned and remains non-authorizing operator tooling:
+
+- helper commit: `91dda8ac05e937e5615312a487f7d78926b74949`
+- helper path: `scripts/ci/es80_today_private_device_input.py`
+- helper blob: `50b12675a57fd2f570d833cfcdbfd7be59f52ca4`
+- exact focused QA run: `31349898562` — terminal success
+- exact focused QA job: `93338620824` — terminal success
+- accepted main lineage carrying the same helper bytes: `af75ffa6dc4409a21822295428e4eeb922ac3d16`
+
+That exact helper lineage combines the durable secret-erasure model with occupied-target rejection before secret acquisition, exclusive post-precheck creation, and EOF/secure-terminal fail-closed behavior. It never grants signing acceptance or physical authorization.
+
+Superseded private-input helper provenance, retained only to keep the handoff auditable: commit `05ce6d9a20487ab34aa31c5b6456910ed2ed438f`, blob `9a9f7f724ceaf895e52d6d443d326043f97645c8`. **Do not materialize or invoke that superseded helper for the current handoff.**
+
 Superseded preflight provenance, retained only to make the handoff history auditable: commit `9b5bde849e6b8f6b76e2a15abb52d643e3616a7a`, blob `fcc2243c005c5f6df2d2f5bd8b8c948e785f07d8`, run `31340823325`. **Do not materialize or invoke that superseded helper for the current handoff.**
 
 ## Why an exact detached source checkout is mandatory
@@ -82,7 +95,7 @@ The producer itself will create another fresh detached worktree internally. The 
 
 Choose a private path outside the repository. The producer requires an absolute regular non-symlink mode-`0600` file and independently validates its contents/mode.
 
-Do not acquire the raw identifier through ordinary shell redirection. Even with `noclobber`, a checked parent directory pathname can be renamed and replaced before `> "$UDID_FILE"` re-resolves it. Use the accepted descriptor-bound private-input helper instead. It opens directory components with no-follow descriptors, creates the final file relative to the pinned directory descriptor, rebinds the pathname after creation, verifies directory/file identity and exact readback, and fails closed if the path was retargeted.
+Do not acquire the raw identifier through ordinary shell redirection. Even with `noclobber`, a checked parent directory pathname can be renamed and replaced before `> "$UDID_FILE"` re-resolves it. Use the accepted descriptor-bound private-input helper instead. It opens directory components with no-follow descriptors, rejects occupied targets before asking for the secret, creates the final file relative to the pinned directory descriptor, rebinds the pathname after creation, verifies directory/file identity and exact readback, durably erases partial secret bytes on failure when it can prove that erasure, and fails closed if custody cannot be proven.
 
 The accepted helper identity is fixed below. These helper bytes are operator-custody tooling only; they do not alter the frozen `a0f4…` app subject and do not authorize signing acceptance or Bluetooth activity.
 
@@ -94,8 +107,8 @@ PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"
 UDID_FILE="$PRIVATE_DIR/es80-intended-device.udid"
 TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
 
-PRIVATE_INPUT_HELPER_COMMIT='05ce6d9a20487ab34aa31c5b6456910ed2ed438f'
-PRIVATE_INPUT_HELPER_BLOB='9a9f7f724ceaf895e52d6d443d326043f97645c8'
+PRIVATE_INPUT_HELPER_COMMIT='91dda8ac05e937e5615312a487f7d78926b74949'
+PRIVATE_INPUT_HELPER_BLOB='50b12675a57fd2f570d833cfcdbfd7be59f52ca4'
 PRIVATE_INPUT_HELPER_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-private-input.XXXXXX)"
 PRIVATE_INPUT_HELPER="$PRIVATE_INPUT_HELPER_DIR/es80_today_private_device_input.py"
 
@@ -113,7 +126,7 @@ test -f "$UDID_FILE" && test ! -L "$UDID_FILE"
 test "$(/usr/bin/stat -f '%Lp' "$UDID_FILE")" = '600'
 ```
 
-If the helper reports `NOT_READY`, stop before signing and preserve the exact blocker. Do not fall back to `printf >`, `tee`, `echo`, `noclobber`, or another pathname-based secret write. Keep the resulting file private; do not commit it and do not copy it into the retained candidate directory. If the chosen final path already exists, preserve it and choose a fresh filename/path rather than deleting or overwriting it just to satisfy the helper.
+If the helper reports `NOT_READY`, `secure-terminal-input-unavailable`, `private-intended-device-cleanup-failed`, or another nonzero blocker, stop before signing and preserve the exact blocker. Do not fall back to `printf >`, `tee`, `echo`, `noclobber`, echoing stdin, or another pathname-based secret write. Keep the resulting file private; do not commit it and do not copy it into the retained candidate directory. If the chosen final path already exists, the accepted helper refuses before secret acquisition; preserve it and choose a fresh filename/path rather than deleting or overwriting it just to satisfy the helper.
 
 ## 3. Set the signing inputs without changing the source subject
 
@@ -259,7 +272,7 @@ Stop and preserve the exact blocker if any of these occurs:
 
 - the outer checkout is not exact clean detached `a0f4a33451f61411d6e0541f2e70edea5438342d`;
 - `DEVELOPER_DIR` is set or reintroduced after Section 3; configure Xcode 27 through the private Mac's `xcode-select` selection instead of carrying a caller override into the frozen producer;
-- the descriptor-bound private-input helper cannot be materialized at exact commit/blob, refuses the parent/input, or cannot create and rebind one fresh exact mode-`0600` single-link file;
+- the descriptor-bound private-input helper cannot be materialized at exact commit/blob, refuses the parent/input, cannot acquire the secret through a secure terminal, cannot durably clean a failed partial acquisition, or cannot create and rebind one fresh exact mode-`0600` single-link file;
 - the pinned external preflight cannot be materialized exactly, exits nonzero, or does not report `READY_TO_INVOKE_SIGNED_FIELD_PRODUCER` for the exact frozen source;
 - the ExportOptions plist path is not absolute, traverses a symlinked ancestor, names a symlink/non-regular/empty subject, changes identity while parsed, has a mismatched optional `teamID`, or has an invalid optional `method`;
 - the producer reports any source, signing, provisioning, intended-device, export, inspection, or evidence failure;
