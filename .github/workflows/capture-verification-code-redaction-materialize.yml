@@ -41,67 +41,54 @@ jobs:
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           text = path.read_text()
 
+          auth_start = text.index("@MainActor\nprivate final class OfficialTuyaAccountAuthorizer")
+          auth_end = text.index("@MainActor\nprivate struct SecureLinkView: View", auth_start)
+          authorizer = text[auth_start:auth_end]
+
           old_call = "finishLoginFailure(error, submittedIdentity: identity)"
           new_call = "finishLoginFailure(error, submittedIdentity: identity, submittedVerificationCode: code)"
-          if text.count(old_call) != 2:
-              raise SystemExit(f"expected exactly two email/phone login failure calls, found {text.count(old_call)}")
-          text = text.replace(old_call, new_call)
+          if authorizer.count(old_call) != 2:
+              raise SystemExit(f"expected exactly two email/phone login failure calls, found {authorizer.count(old_call)}")
+          authorizer = authorizer.replace(old_call, new_call)
 
-          old_failure = '''    private func finishLoginFailure(_ error: Error?, submittedIdentity: String) {
-              busy = false
-              verificationCode = ""
-              loggedIn = OfficialTuyaFactory.accountLoggedIn
-              status = "Tuya SDK login failed: \\(Self.redactedError(error, submittedIdentity: submittedIdentity))"
-          }
-          '''
-          new_failure = '''    private func finishLoginFailure(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) {
-              busy = false
-              verificationCode = ""
-              loggedIn = OfficialTuyaFactory.accountLoggedIn
-              status = "Tuya SDK login failed: \\(Self.redactedError(error, submittedIdentity: submittedIdentity, submittedVerificationCode: submittedVerificationCode))"
-          }
-          '''
-          if text.count(old_failure) != 1:
-              raise SystemExit(f"expected exactly one login failure helper, found {text.count(old_failure)}")
-          text = text.replace(old_failure, new_failure, 1)
+          old_signature = "private func finishLoginFailure(_ error: Error?, submittedIdentity: String)"
+          new_signature = "private func finishLoginFailure(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String)"
+          if authorizer.count(old_signature) != 1:
+              raise SystemExit(f"expected exactly one login failure signature, found {authorizer.count(old_signature)}")
+          authorizer = authorizer.replace(old_signature, new_signature, 1)
 
-          old_scrubber = '''    private static func redactedError(_ error: Error?, submittedIdentity: String) -> String {
-              let raw = error?.localizedDescription ?? "unknown error"
-              let identity = submittedIdentity.trimmingCharacters(in: .whitespacesAndNewlines)
-              guard !identity.isEmpty else { return raw }
-              return raw.replacingOccurrences(
-                  of: identity,
-                  with: "<redacted-account>",
-                  options: [.caseInsensitive, .literal]
-              )
-          }
-          '''
-          new_scrubber = '''    private static func redactedError(_ error: Error?, submittedIdentity: String) -> String {
-              let raw = error?.localizedDescription ?? "unknown error"
-              let identity = submittedIdentity.trimmingCharacters(in: .whitespacesAndNewlines)
-              guard !identity.isEmpty else { return raw }
-              return raw.replacingOccurrences(
-                  of: identity,
-                  with: "<redacted-account>",
-                  options: [.caseInsensitive, .literal]
-              )
-          }
+          failure_start = authorizer.index("    private func finishLoginFailure(")
+          failure_end = authorizer.index("    private func finishAppleLoginFailure", failure_start)
+          failure = authorizer[failure_start:failure_end]
+          old_scrub_call = "Self.redactedError(error, submittedIdentity: submittedIdentity)"
+          new_scrub_call = "Self.redactedError(error, submittedIdentity: submittedIdentity, submittedVerificationCode: submittedVerificationCode)"
+          if failure.count(old_scrub_call) != 1:
+              raise SystemExit(f"expected exactly one login failure scrub call, found {failure.count(old_scrub_call)}")
+          failure = failure.replace(old_scrub_call, new_scrub_call, 1)
+          authorizer = authorizer[:failure_start] + failure + authorizer[failure_end:]
 
-          private static func redactedError(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) -> String {
-              let verificationCode = submittedVerificationCode.trimmingCharacters(in: .whitespacesAndNewlines)
-              var redacted = redactedError(error, submittedIdentity: submittedIdentity)
-              guard !verificationCode.isEmpty else { return redacted }
-              redacted = redacted.replacingOccurrences(
-                  of: verificationCode,
-                  with: "<redacted-verification-code>",
-                  options: [.literal]
-              )
-              return redacted
-          }
+          code_scrubber_signature = "private static func redactedError(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) -> String"
+          if code_scrubber_signature in authorizer:
+              raise SystemExit("code-aware scrubber already exists before materialization")
+          class_close = authorizer.rfind("\n}\n")
+          if class_close < 0:
+              raise SystemExit("OfficialTuyaAccountAuthorizer class close not found")
+          code_scrubber = '''
+
+              private static func redactedError(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) -> String {
+                  let verificationCode = submittedVerificationCode.trimmingCharacters(in: .whitespacesAndNewlines)
+                  var redacted = redactedError(error, submittedIdentity: submittedIdentity)
+                  guard !verificationCode.isEmpty else { return redacted }
+                  redacted = redacted.replacingOccurrences(
+                      of: verificationCode,
+                      with: "<redacted-verification-code>",
+                      options: [.literal]
+                  )
+                  return redacted
+              }
           '''
-          if text.count(old_scrubber) != 1:
-              raise SystemExit(f"expected exactly one account-only scrubber, found {text.count(old_scrubber)}")
-          text = text.replace(old_scrubber, new_scrubber, 1)
+          authorizer = authorizer[:class_close] + code_scrubber + authorizer[class_close:]
+          text = text[:auth_start] + authorizer + text[auth_end:]
           path.write_text(text)
           PY
 
