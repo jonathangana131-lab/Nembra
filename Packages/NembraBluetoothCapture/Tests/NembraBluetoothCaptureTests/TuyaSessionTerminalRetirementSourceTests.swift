@@ -44,8 +44,8 @@ struct TuyaSessionTerminalRetirementSourceTests {
         #expect(!branch.contains("invalidateSourceAuthority"))
     }
 
-    @Test("authentication chronology rejection cannot masquerade as source drift")
-    func authenticationPromotionRejectionUsesInternalLifecycleTerminal() throws {
+    @Test("authentication promotion separates chronology failure from renewed source-authority loss")
+    func authenticationPromotionRejectionUsesCorrectTerminalAuthority() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
         guard let observedOnline = app.range(of: "case .observedOnline:"),
@@ -56,8 +56,21 @@ struct TuyaSessionTerminalRetirementSourceTests {
 
         let branch = String(app[observedOnline.lowerBound..<keepWaiting.lowerBound])
         #expect(branch.contains("sessionLedger.markAuthenticated(for: token"))
-        #expect(branch.contains("invalidateInternalLifecycle"))
-        #expect(!branch.contains("invalidateSourceAuthority"))
+
+        // Actor hops during markAuthenticated()/snapshot refresh may outlive account/device or
+        // official-driver authority. Those are genuine source-authority failures and must not be
+        // mislabeled as chronology faults merely because they occur during authentication promotion.
+        #expect(branch.contains("sdkAccountLoggedIn"))
+        #expect(branch.contains("sdkDeviceMembershipVerified"))
+        #expect(branch.contains("accountIdentityLeaseIsAuthorized"))
+        #expect(branch.contains("invalidateSourceAuthority("))
+        #expect(branch.contains("sdk_source_authority_lost_during_auth_promotion"))
+        #expect(branch.contains("sdk_driver_authority_lost_during_auth_promotion"))
+
+        // The ledger's own monotonic/lifecycle rejection remains an internal-lifecycle terminal.
+        #expect(branch.contains("invalidateInternalLifecycle("))
+        #expect(branch.contains("session_auth_promotion_clock_regressed"))
+        #expect(branch.contains("session_auth_promotion_invalid_lifecycle"))
     }
 
     @Test("watchdog monotonic regression cannot silently drop app ownership")
