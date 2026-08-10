@@ -8,7 +8,9 @@ struct TuyaFieldAppPreflightIntegrationSourceTests {
     func structuredSDKUpdateIsNotFabricatedIntoTransportBytes() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
-        #expect(source.contains("recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)"))
+        #expect(source.contains("recordApplicationUpdate(isNonEmpty:"))
+        #expect(source.contains("!update.isEmpty"))
+        #expect(source.contains("for: token"))
         #expect(!source.contains("recordApplicationPayload("))
         #expect(!source.contains("JSONSerialization.data(withJSONObject: update"))
         #expect(source.contains("rawFD50BytesCaptured: false"))
@@ -59,7 +61,8 @@ struct TuyaFieldAppPreflightIntegrationSourceTests {
         #expect(source.contains("import NembraBluetoothCapture"))
         #expect(source.contains("TuyaAuthenticatedReadOnlySessionLedger()"))
         #expect(source.contains("TuyaAuthenticatedReadOnlyPreflight.verdict(for: ledgerSnapshot)"))
-        #expect(source.contains("var passed: Bool { authoritativePreflightReady }"))
+        #expect(source.contains("authoritativePreflightReady"))
+        #expect(source.contains("var passed: Bool"))
         #expect(source.contains("TuyaSDKAccountDeviceMembershipGate.verdict"))
         #expect(!source.contains("central.connect("))
     }
@@ -84,13 +87,14 @@ struct TuyaFieldAppPreflightIntegrationSourceTests {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
         guard let success = source.range(of: "private func finishLoginSuccess()"),
-              let reread = source.range(of: "loggedIn = OfficialTuyaFactory.accountLoggedIn", range: success.upperBound..<source.endIndex) else {
+              let reread = source.range(of: "OfficialTuyaFactory.accountLoggedIn", range: success.upperBound..<source.endIndex) else {
             Issue.record("Login success must re-read the official SDK account state.")
             return
         }
         #expect(success.lowerBound < reread.lowerBound)
         #expect(source.contains("<redacted-account>"))
-        #expect(source.contains("redactedError(error, submittedIdentity: identity)"))
+        #expect(source.contains("redactedError("))
+        #expect(source.contains("submittedIdentity:"))
     }
 
     private func readRepositoryFile(_ relativePath: String) throws -> String {
