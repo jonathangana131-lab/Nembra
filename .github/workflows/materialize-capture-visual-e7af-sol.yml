@@ -1,0 +1,42 @@
+name: Materialize Capture visual e7af sol
+
+on:
+  push:
+    branches:
+      - validation/v14-capture-guided-visual-e7af-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: validation/v14-capture-guided-visual-e7af-sol
+          fetch-depth: 0
+      - name: Import reviewed three-file visual donor
+        shell: bash
+        run: |
+          set -euo pipefail
+          product='e7af19bf1d9b21c2b184c2a8c403d0d86dbc06c7'
+          donor='0bb3bd20404c60ef941f96187a201bfc64a2bdd1'
+          helper='.github/workflows/materialize-capture-visual-e7af-sol.yml'
+          test "$(git rev-parse HEAD^)" = "$product"
+          test "$(git diff --name-only HEAD^ HEAD)" = "$helper"
+          git fetch origin 'refs/heads/qa/v14-capture-standalone-visual-current-sol:refs/remotes/origin/qa/v14-capture-standalone-visual-current-sol'
+          test "$(git rev-parse refs/remotes/origin/qa/v14-capture-standalone-visual-current-sol)" = "$donor"
+          git checkout "$donor" -- \
+            .github/workflows/capture-standalone-visual-evidence.yml \
+            scripts/ci/capture_standalone_visual_evidence.sh \
+            scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          bash -n scripts/ci/capture_standalone_visual_evidence.sh
+          python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          git diff --check
+          git config user.name 'nembra-go-bot'
+          git config user.email 'nembra-go-bot@users.noreply.github.com'
+          git add .github/workflows/capture-standalone-visual-evidence.yml scripts/ci/capture_standalone_visual_evidence.sh scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          git commit -m 'test(capture): reanchor exact iPhone 12 visual evidence'
+          git push origin HEAD:validation/v14-capture-guided-visual-e7af-sol
