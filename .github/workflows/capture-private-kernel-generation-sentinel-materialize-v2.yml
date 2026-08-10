@@ -1,0 +1,128 @@
+name: Capture private kernel generation sentinel materializer v2
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-private-kernel-generation-sentinel-sol
+    paths:
+      - .github/workflows/capture-private-kernel-generation-sentinel-materialize-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/v14-capture-private-kernel-generation-sentinel-sol
+          fetch-depth: 0
+
+      - name: Bind exact construction parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='25e789ea04c523b6d7e2507013b6c415006642d4'
+          git merge-base --is-ancestor "$base" HEAD
+          git diff --name-only "$base" HEAD | sort > /tmp/preexisting
+          cat > /tmp/allowed <<'EOF'
+          .github/workflows/capture-private-kernel-generation-sentinel-diagnose.yml
+          .github/workflows/capture-private-kernel-generation-sentinel-materialize-v2.yml
+          .github/workflows/capture-private-kernel-generation-sentinel-materialize.yml
+          scripts/ci/tests/test_capture_tuya_private_input_final_snapshot_coherence.py
+          EOF
+          sort -o /tmp/allowed /tmp/allowed
+          diff -u /tmp/allowed /tmp/preexisting
+
+      - name: Reuse reviewed source transformation and remove stale test-path assumption
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('.github/workflows/capture-private-kernel-generation-sentinel-materialize.yml').read_text()
+          step = text.index('      - name: Add kernel mutation sentinel around whole record custody')
+          run = text.index('        run: |\n', step) + len('        run: |\n')
+          end = text.index('\n      - name: Run all private provenance adversarial suites on Linux backend', run)
+          lines = text[run:end].splitlines()
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines) + '\n'
+          Path('/tmp/materialize-source.sh').write_text(script)
+          PY
+          bash /tmp/materialize-source.sh
+          python3 - <<'PY'
+          from pathlib import Path
+          workflow = Path('.github/workflows/capture-field-build-provenance.yml')
+          source = workflow.read_text()
+          stale = '          /usr/bin/python3 scripts/ci/tests/test_capture_tuya_private_input_record_snapshot_coherence.py\n'
+          if source.count(stale) != 1:
+              raise SystemExit(f'unexpected stale record-test path count: {source.count(stale)}')
+          workflow.write_text(source.replace(stale, '', 1))
+          PY
+          git diff --check
+
+      - name: Run live provenance suite and kernel-tail adversary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
+          python3 -m py_compile scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          python3 -m py_compile scripts/ci/tests/test_capture_tuya_private_input_final_snapshot_coherence.py
+          python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          python3 scripts/ci/tests/test_capture_tuya_private_input_final_snapshot_coherence.py
+
+      - name: Verify kernel-guarded product contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('Scripts/capture_tuya_private_input_provenance.py').read_text()
+          w = Path('.github/workflows/capture-field-build-provenance.yml').read_text()
+          snapshot_start = s.index('def _private_input_record_generation_snapshot(')
+          snapshot_end = s.index('\ndef build_record', snapshot_start)
+          snapshot = s[snapshot_start:snapshot_end]
+          build_start = s.index('def build_record(')
+          build_end = s.index('\ndef _record_text', build_start)
+          build = s[build_start:build_end]
+          for token in (
+              'class _PrivateInputMutationSentinel',
+              'inotify_init1',
+              'select.kqueue',
+              'mutation_guard.assert_unchanged',
+              '_stat_identity(current_path) != _stat_identity(after)',
+              'expected_identity=identity',
+          ):
+              assert token in s, token
+          assert '    return (\n' not in snapshot
+          assert 'mutation_guard.assert_unchanged' in snapshot
+          assert 'with _PrivateInputMutationSentinel' in build
+          assert build.count('mutation_guard.assert_unchanged') >= 2
+          assert 'test_capture_tuya_private_input_final_snapshot_coherence.py' in w
+          assert 'test_capture_tuya_private_input_record_snapshot_coherence.py' not in w
+          PY
+
+      - name: Collapse to durable product paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='25e789ea04c523b6d7e2507013b6c415006642d4'
+          rm -f \
+            .github/workflows/capture-private-kernel-generation-sentinel-materialize.yml \
+            .github/workflows/capture-private-kernel-generation-sentinel-diagnose.yml \
+            .github/workflows/capture-private-kernel-generation-sentinel-materialize-v2.yml
+          git add -A
+          git diff --cached --check "$base"
+          git diff --cached --name-only "$base" | sort > /tmp/actual
+          cat > /tmp/expected <<'EOF'
+          .github/workflows/capture-field-build-provenance.yml
+          Scripts/capture_tuya_private_input_provenance.py
+          scripts/ci/tests/test_capture_tuya_private_input_final_snapshot_coherence.py
+          EOF
+          sort -o /tmp/expected /tmp/expected
+          diff -u /tmp/expected /tmp/actual
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): guard private record generation with kernel mutation sentinel'
+          git push origin HEAD:agent/v14-capture-private-kernel-generation-sentinel-sol
