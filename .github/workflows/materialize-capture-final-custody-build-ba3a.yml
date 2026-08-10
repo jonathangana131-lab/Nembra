@@ -1,0 +1,243 @@
+name: Materialize Capture Final Custody Build ba3a
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-final-custody-build-ba3a-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard exact product lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='ba3a1eeae36caca6dd84beaabd0f15f4f0b57925'
+          test "$(git merge-base "$base" HEAD)" = "$base"
+          test "$(git diff --name-only "$base"...HEAD)" = '.github/workflows/materialize-capture-final-custody-build-ba3a.yml'
+
+      - name: Materialize repair and regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          app = app_path.read_text(encoding='utf-8')
+
+          stale_label = '            sdkIsLoggedIn: sdkAccountLoggedIn,'
+          fixed_label = '            isLoggedIn: sdkAccountLoggedIn,'
+          if app.count(stale_label) != 1:
+              raise SystemExit(f'expected one stale identity-lease initializer label, found {app.count(stale_label)}')
+          app = app.replace(stale_label, fixed_label, 1)
+
+          old_receiver = '''        applicationUpdateAdmissionsInFlight += 1
+          defer { applicationUpdateAdmissionsInFlight -= 1 }
+
+          do {
+              try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
+              await refreshLedgerSnapshot()
+              var eventDetails = redactedApplicationEventDetails(update)
+              eventDetails["generation"] = String(token.diagnosticGeneration)
+              log("tuya_application_update", eventDetails)
+'''
+          new_receiver = '''        guard let admittedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                !admittedAccountUID.isEmpty else {
+              await invalidateSourceAuthority(
+                  token: token,
+                  message: "The account-bound membership identity disappeared before application evidence could enter event custody.",
+                  kind: "sdk_membership_uid_unavailable_before_application_custody"
+              )
+              return
+          }
+          var eventDetails = redactedApplicationEventDetails(update, accountUID: admittedAccountUID)
+          eventDetails["generation"] = String(token.diagnosticGeneration)
+
+          applicationUpdateAdmissionsInFlight += 1
+          defer { applicationUpdateAdmissionsInFlight -= 1 }
+
+          do {
+              try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
+              await refreshLedgerSnapshot()
+              log("tuya_application_update", eventDetails)
+'''
+          if app.count(old_receiver) != 1:
+              raise SystemExit(f'expected one post-await application custody block, found {app.count(old_receiver)}')
+          app = app.replace(old_receiver, new_receiver, 1)
+
+          old_helper = '''    private func redactedApplicationEventDetails(_ update: [String: String]) -> [String: String] {
+              guard let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                    !accountUID.isEmpty else {
+                  return update
+              }
+
+              var redacted: [String: String] = [:]
+              redacted.reserveCapacity(update.count)
+              for (key, value) in update {
+                  let redactedKey = key.replacingOccurrences(
+                      of: accountUID,
+                      with: "<redacted-account-uid>",
+                      options: [.caseInsensitive, .literal]
+                  )
+                  redacted[redactedKey] = value.replacingOccurrences(
+                      of: accountUID,
+                      with: "<redacted-account-uid>",
+                      options: [.caseInsensitive, .literal]
+                  )
+              }
+              return redacted
+          }
+'''
+          new_helper = '''    private func redactedApplicationEventDetails(
+              _ update: [String: String],
+              accountUID rawAccountUID: String
+          ) -> [String: String] {
+              let accountUID = rawAccountUID.trimmingCharacters(in: .whitespacesAndNewlines)
+              guard !accountUID.isEmpty else { return [:] }
+
+              var redacted: [String: String] = [:]
+              redacted.reserveCapacity(update.count)
+              for (key, value) in update {
+                  var redactedKey = key.replacingOccurrences(
+                      of: accountUID,
+                      with: "<redacted-account-uid>",
+                      options: [.caseInsensitive, .literal]
+                  )
+                  let redactedValue = value.replacingOccurrences(
+                      of: accountUID,
+                      with: "<redacted-account-uid>",
+                      options: [.caseInsensitive, .literal]
+                  )
+                  if redacted[redactedKey] != nil {
+                      var suffix = 2
+                      while redacted["\\(redactedKey)#\\(suffix)"] != nil {
+                          suffix += 1
+                      }
+                      redactedKey = "\\(redactedKey)#\\(suffix)"
+                  }
+                  redacted[redactedKey] = redactedValue
+              }
+              return redacted
+          }
+'''
+          if app.count(old_helper) != 1:
+              raise SystemExit(f'expected one mutable-membership event redactor, found {app.count(old_helper)}')
+          app = app.replace(old_helper, new_helper, 1)
+          app_path.write_text(app, encoding='utf-8')
+          PY
+
+          cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDAdmissionSnapshotSourceTests.swift <<'SWIFT'
+          import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Tuya application account-UID admission snapshot")
+          struct TuyaApplicationAccountUIDAdmissionSnapshotSourceTests {
+              @Test("leased account UID and export-safe details are frozen before actor suspension")
+              func accountUIDCustodyPrecedesLedgerAwait() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let receiver = String(try section(in: source, from: "private func receivedApplicationUpdate(", to: "private func startWatchdog"))
+                  let snapshot = try requiredOffset(containing: "let admittedAccountUID = membershipAccountUID?", in: receiver)
+                  let custody = try requiredOffset(containing: "redactedApplicationEventDetails(update, accountUID: admittedAccountUID)", in: receiver)
+                  let generation = try requiredOffset(containing: "eventDetails[\"generation\"] = String(token.diagnosticGeneration)", in: receiver)
+                  let firstAwait = try requiredOffset(containing: "try await sessionLedger.recordApplicationUpdate", in: receiver)
+                  let log = try requiredOffset(containing: "log(\"tuya_application_update\", eventDetails)", in: receiver)
+                  #expect(snapshot < custody)
+                  #expect(custody < generation)
+                  #expect(generation < firstAwait)
+                  #expect(firstAwait < log)
+                  let tail = receiver[firstAwait...]
+                  #expect(!tail.contains("membershipAccountUID"))
+                  #expect(!tail.contains("redactedApplicationEventDetails(update"))
+              }
+
+              @Test("redactor consumes explicit admitted UID and fails closed for an empty identity")
+              func redactorDoesNotReachBackIntoMembershipState() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let helper = String(try section(in: source, from: "private func redactedApplicationEventDetails(", to: "private func startWatchdog"))
+                  #expect(helper.contains("accountUID rawAccountUID: String"))
+                  #expect(!helper.contains("membershipAccountUID"))
+                  #expect(helper.contains("guard !accountUID.isEmpty else { return [:] }"))
+                  #expect(helper.contains("while redacted[\"\\(redactedKey)#\\(suffix)\"] != nil"))
+              }
+
+              private func requiredOffset(containing token: String, in source: String) throws -> String.Index {
+                  guard let range = source.range(of: token) else { throw SourceContractError.sectionMissing }
+                  return range.lowerBound
+              }
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let a = source.range(of: start), let b = source.range(of: end, range: a.upperBound..<source.endIndex) else { throw SourceContractError.sectionMissing }
+                  return source[a.lowerBound..<b.lowerBound]
+              }
+              private func readRepositoryFile(_ path: String) throws -> String {
+                  let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+                  return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+              }
+              private enum SourceContractError: Error { case sectionMissing }
+          }
+          SWIFT
+
+          cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAccountIdentityLeaseAppSourceIntegrationTests.swift <<'SWIFT'
+          import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Tuya account identity lease app-source integration")
+          struct TuyaAccountIdentityLeaseAppSourceIntegrationTests {
+              @Test("Secure Link uses the package identity-lease public initializer label")
+              func appCallSiteMatchesPackageInitializer() throws {
+                  let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let gate = try readRepositoryFile("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaSDKAccountIdentityLeaseGate.swift")
+                  #expect(gate.contains("public init(\n            isLoggedIn: Bool,"))
+                  #expect(app.contains("isLoggedIn: sdkAccountLoggedIn"))
+                  #expect(!app.contains("sdkIsLoggedIn: sdkAccountLoggedIn"))
+              }
+              private func readRepositoryFile(_ path: String) throws -> String {
+                  let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+                  return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+              }
+          }
+          SWIFT
+
+      - name: Validate source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDAdmissionSnapshotSourceTests.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAccountIdentityLeaseAppSourceIntegrationTests.swift
+          grep -Fq '            isLoggedIn: sdkAccountLoggedIn,' NembraApp/App/NembraCaptureEntrypoint.swift
+          ! grep -Fq '            sdkIsLoggedIn: sdkAccountLoggedIn,' NembraApp/App/NembraCaptureEntrypoint.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          a = source.index('private func receivedApplicationUpdate(')
+          b = source.index('private func startWatchdog', a)
+          receiver = source[a:b]
+          assert receiver.index('let admittedAccountUID = membershipAccountUID?') < receiver.index('try await sessionLedger.recordApplicationUpdate')
+          assert receiver.index('redactedApplicationEventDetails(update, accountUID: admittedAccountUID)') < receiver.index('try await sessionLedger.recordApplicationUpdate')
+          assert 'membershipAccountUID' not in receiver[receiver.index('try await sessionLedger.recordApplicationUpdate'):]
+          PY
+          git diff --check
+
+      - name: Publish clean repair checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-final-custody-build-ba3a.yml
+          git add -A
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): freeze account UID custody before suspension'
+          git push origin HEAD:fix/v14-capture-final-custody-build-ba3a-sol
