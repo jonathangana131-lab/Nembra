@@ -1,0 +1,132 @@
+name: Materialize Capture Membership Status Revocation
+
+on:
+  push:
+    branches:
+      - "repair/v14-capture-event-provenance-membership-status-convergence-sol"
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact convergence parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='ec844477c196bed24b3770f57cee9d600d4eb6cf'
+          git merge-base --is-ancestor "$parent" HEAD
+          git diff --quiet "$parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+          mapfile -t changed < <(git diff --name-only "$parent"...HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 2
+          test "${changed[0]}" = '.github/workflows/materialize-capture-membership-status-revocation-convergence-sol.yml'
+          test "${changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift'
+
+      - name: Revoke stale verified membership copy with the view proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+          start = source.index('func abandonCorrelationForViewExit()')
+          end = source.index('var privateConfig: Bool', start)
+          cleanup = source[start:end]
+
+          verified = 'sdkDeviceMembershipVerified = false'
+          device = 'membershipDeviceID = nil'
+          request = 'membershipRequestID = UUID()'
+          if cleanup.count(verified) != 1 or cleanup.count(device) != 1 or cleanup.count(request) != 1:
+              raise SystemExit('view-exit membership proof shape is ambiguous')
+          if not (cleanup.index(verified) < cleanup.index(device) < cleanup.index(request)):
+              raise SystemExit('view-exit membership proof ordering changed')
+          if 'membershipStatus =' in cleanup:
+              raise SystemExit('membership status revocation already present or ambiguous')
+
+          request_offset = cleanup.index(request)
+          line_start = cleanup.rfind('\n', 0, request_offset) + 1
+          indentation = cleanup[line_start:request_offset]
+          if indentation.strip():
+              raise SystemExit('could not derive membership-request indentation safely')
+          status = indentation + 'membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."\n'
+          cleanup = cleanup[:line_start] + status + cleanup[line_start:]
+          source = source[:start] + cleanup + source[end:]
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Verify app-state truth ordering and narrow scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          start = s.index('func abandonCorrelationForViewExit()')
+          end = s.index('var privateConfig: Bool', start)
+          cleanup = s[start:end]
+
+          clear_verified = cleanup.index('sdkDeviceMembershipVerified = false')
+          clear_account = cleanup.index('membershipAccountUID = nil')
+          clear_device = cleanup.index('membershipDeviceID = nil')
+          reset_status = cleanup.index('membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."')
+          revoke_membership = cleanup.index('membershipRequestID = UUID()')
+          revoke_official = cleanup.index('officialConnectionRequestID = UUID()')
+
+          assert clear_verified < reset_status < revoke_membership
+          assert clear_account < reset_status
+          assert clear_device < reset_status
+          assert reset_status < revoke_membership < revoke_official
+          assert 'membership verified and leased' not in cleanup.lower()
+          assert 'acceptsViewScopedMembershipRequests = false' in cleanup
+          assert 'sdkDeviceMembershipVerified = false' in cleanup
+          assert 'membershipAccountUID = nil' in cleanup
+          assert 'membershipDeviceID = nil' in cleanup
+
+          for forbidden in (
+              'queryDps', 'publishDps', 'writeValue', 'writeWithoutResponse',
+              'endConnection', 'disconnectBLE'
+          ):
+              assert forbidden not in cleanup, forbidden
+
+          # Preserve the already-composed trusted application-event provenance repair.
+          receiver_start = s.index('private func receivedApplicationUpdate(')
+          receiver_end = s.index('private func startWatchdog', receiver_start)
+          receiver = s[receiver_start:receiver_end]
+          assert ']) { _, trusted in trusted })' in receiver
+          assert ']) { current, _ in current })' not in receiver
+
+          print('Capture membership status revocation convergence contract: PASS')
+          PY
+          git diff --check
+
+      - name: Collapse helper into clean two-path child
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='ec844477c196bed24b3770f57cee9d600d4eb6cf'
+          rm .github/workflows/materialize-capture-membership-status-revocation-convergence-sol.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift
+          git add -u .github/workflows/materialize-capture-membership-status-revocation-convergence-sol.yml
+          git diff --cached --check
+          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' \
+            commit -m 'fix(capture): revoke membership status with view proof'
+          mapfile -t changed < <(git diff --name-only "$parent" HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 2
+          test "${changed[0]}" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          test "${changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift'
+          git diff --check "$parent" HEAD
+          git push origin HEAD:repair/v14-capture-event-provenance-membership-status-convergence-sol
