@@ -20,7 +20,7 @@ struct NembraCaptureApp: App {
 /// prepares a redacted JSON, and then stops. It does not launch the old 17-step ride capture.
 struct NembraTuyaMetadataTestView: View {
     @StateObject private var tuya = TuyaAccountBridge()
-    @State private var savedCredentialDeviceID = TuyaCaptureCredentialStore.load()?.deviceID
+    @State private var savedCredential = TuyaCaptureCredentialStore.load()
 
     var body: some View {
         NavigationStack {
@@ -39,6 +39,14 @@ struct NembraTuyaMetadataTestView: View {
             .foregroundStyle(.white)
             .navigationTitle("Nembra Capture")
             .navigationBarTitleDisplayMode(.inline)
+        }
+        .onChange(of: tuya.phase) { _, phase in
+            guard phase == .ready, let device = tuya.selectedDevice else { return }
+            _ = TuyaCaptureCredentialStore.save(
+                device: device,
+                detailMetadata: tuya.selectedDeviceMetadata
+            )
+            savedCredential = TuyaCaptureCredentialStore.load()
         }
     }
 
@@ -85,7 +93,7 @@ struct NembraTuyaMetadataTestView: View {
                     .foregroundStyle(.secondary)
 
                 TextField("Paste User Code", text: $tuya.userCode)
-                    .textInputAutocapitalization(.never)
+                    .textInputAutitalizationNever()
                     .autocorrectionDisabled()
                     .padding(12)
                     .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
@@ -162,11 +170,8 @@ struct NembraTuyaMetadataTestView: View {
             } else {
                 ForEach(tuya.devices) { device in
                     Button {
-                        if TuyaCaptureCredentialStore.save(device: device) {
-                            savedCredentialDeviceID = device.id
-                        } else {
-                            savedCredentialDeviceID = TuyaCaptureCredentialStore.load()?.deviceID
-                        }
+                        _ = TuyaCaptureCredentialStore.save(device: device)
+                        savedCredential = TuyaCaptureCredentialStore.load()
                         tuya.selectDevice(device)
                     } label: {
                         HStack(spacing: 12) {
@@ -204,13 +209,22 @@ struct NembraTuyaMetadataTestView: View {
             if let device = tuya.selectedDevice {
                 Label(device.name, systemImage: "scooter")
                     .font(.headline)
-                Text("Nembra reads the device identity, current Tuya status, DP specifications, and local strategy. Secret account tokens and local_key are excluded from the file you share.")
+                Text("Nembra reads the device identity, current Tuya status, DP specifications, and local strategy. Secret account tokens, local_key, and secKey are excluded from the file you share.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                if savedCredentialDeviceID == device.id {
+                if savedCredential?.deviceID == device.id {
                     Label("Private scooter credential saved in this iPhone's Keychain for the next Nembra test", systemImage: "lock.shield.fill")
                         .font(.footnote)
                         .foregroundStyle(.green)
+                    if savedCredential?.hasCandidateBoundSessionMaterial == true {
+                        Label("Tuya returned both private bound-session key inputs", systemImage: "checkmark.shield.fill")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.green)
+                    } else {
+                        Label("Local key retained; this authorized route did not return the separate Tuya secKey yet", systemImage: "info.circle")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 } else if device.localKey.isEmpty {
                     Label("Tuya did not provide a private local key for this device; the JSON is still useful", systemImage: "info.circle")
                         .font(.footnote)
@@ -272,6 +286,10 @@ private extension View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(.white.opacity(0.08)))
+    }
+
+    func textInputAutitalizationNever() -> some View {
+        textInputAutocapitalization(.never)
     }
 }
 
