@@ -1,0 +1,71 @@
+name: Materialize Capture Private Tree Descriptor Identity 2f2a
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-private-tree-descriptor-2f2a
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact product ancestry and helper-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='2f2a2e8268830259a6dc6ac0e9dae38905ef5021'
+          git merge-base --is-ancestor "$parent" HEAD
+          mapfile -t changed < <(git diff --name-only "$parent"...HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 2
+          test "${changed[0]}" = '.github/scripts/materialize-capture-private-tree-descriptor-2f2a.py'
+          test "${changed[1]}" = '.github/workflows/materialize-capture-private-tree-descriptor-2f2a.yml'
+          test "$(git rev-parse "$parent:Scripts/capture_tuya_private_input_provenance.py")" = '38cfead4a1f2f7e6db7d3c5251150d2d905ed073'
+          test "$(git rev-parse "$parent:scripts/ci/tests/test_capture_tuya_private_input_provenance.py")" = 'd31dc2e7acb62df8fac6d645867c619157ed6ec5'
+
+      - name: Apply admitted-inode descriptor binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/materialize-capture-private-tree-descriptor-2f2a.py
+          python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
+          python3 -m py_compile scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          git diff --check
+
+      - name: Run focused full provenance suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          python3 scripts/ci/tests/test_capture_tuya_private_input_record_snapshot_coherence.py
+
+      - name: Collapse helpers and publish clean repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='2f2a2e8268830259a6dc6ac0e9dae38905ef5021'
+          rm .github/workflows/materialize-capture-private-tree-descriptor-2f2a.yml
+          rm .github/scripts/materialize-capture-private-tree-descriptor-2f2a.py
+          git add Scripts/capture_tuya_private_input_provenance.py \
+            scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          git add -u .github/workflows/materialize-capture-private-tree-descriptor-2f2a.yml \
+            .github/scripts/materialize-capture-private-tree-descriptor-2f2a.py
+          git diff --cached --check
+          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' \
+            commit -m 'fix(capture): bind private tree reads to admitted inode'
+          mapfile -t effective < <(git diff --name-only "$parent"...HEAD | sort)
+          printf '%s\n' "${effective[@]}"
+          test "${#effective[@]}" = 2
+          test "${effective[0]}" = 'Scripts/capture_tuya_private_input_provenance.py'
+          test "${effective[1]}" = 'scripts/ci/tests/test_capture_tuya_private_input_provenance.py'
+          git diff --check "$parent" HEAD
+          git push origin HEAD:sol/v14-capture-private-tree-descriptor-2f2a
