@@ -153,8 +153,9 @@ APP="$DERIVED/Build/Products/Debug-iphoneos/Nembra Capture.app"
 
 say "Installing SDK-integrated Capture on the intended iPhone"
 open -a Xcode "$ROOT/NembraCapture.xcworkspace" >/dev/null 2>&1 || true
-INSTALL_LOG="${TMPDIR:-/tmp}/nembra-authenticated-capture-install.log"
-rm -f "$INSTALL_LOG"
+INSTALL_LOG="$(mktemp "${TMPDIR:-/tmp}/nembra-authenticated-capture-install.XXXXXX")"
+chmod 600 "$INSTALL_LOG"
+trap 'rm -f -- "$INSTALL_LOG"' EXIT
 INSTALLED=0
 for ATTEMPT in $(seq 1 60); do
     if xcrun devicectl device install app --device "$DEVICE_UDID" "$APP" >"$INSTALL_LOG" 2>&1; then
@@ -168,9 +169,21 @@ for ATTEMPT in $(seq 1 60); do
 done
 
 if [[ "$INSTALLED" != "1" ]]; then
-    if [[ -f "$INSTALL_LOG" ]]; then
-        INSTALL_DIAGNOSTIC="$(<"$INSTALL_LOG")"
-        INSTALL_DIAGNOSTIC="${INSTALL_DIAGNOSTIC//$DEVICE_UDID/<redacted-device>}"
+    if [[ -s "$INSTALL_LOG" ]]; then
+        INSTALL_DIAGNOSTIC="$(
+            printf '%s' "$DEVICE_UDID" | /usr/bin/python3 -I -c '
+import re
+import sys
+from pathlib import Path
+secret = sys.stdin.read()
+text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+variants = sorted({secret, secret.replace("-", "")}, key=len, reverse=True)
+for variant in variants:
+    if variant:
+        text = re.sub(re.escape(variant), "<redacted-device>", text, flags=re.IGNORECASE)
+sys.stdout.write(text)
+' "$INSTALL_LOG"
+        )"
         printf '%s\n' "$INSTALL_DIAGNOSTIC" >&2
         unset INSTALL_DIAGNOSTIC
     fi
@@ -185,7 +198,8 @@ if ! xcrun devicectl device process launch \
     die "Capture installed, but devicectl could not launch it on the intended iPhone. Do not promote the physical test; relaunch through this installer after the device is ready."
 fi
 unset DEVICE_UDID
-rm -f "$INSTALL_LOG"
+rm -f -- "$INSTALL_LOG"
+trap - EXIT
 
 say "SDK-INTEGRATED CAPTURE LAUNCHED"
 printf '%s\n' \
