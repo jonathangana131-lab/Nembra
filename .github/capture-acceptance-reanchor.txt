@@ -1,0 +1,1 @@
+Temporary acceptance re-anchor. This file is removed by the immediately following commit; it exists only so GitHub records a normal repository-authored synchronize event after the fail-closed materializer restored the accepted Capture shell.
