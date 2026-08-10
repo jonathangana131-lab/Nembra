@@ -1401,6 +1401,37 @@ private final class SecureLinkController: NSObject, ObservableObject {
         log(kind, ["generation": String(token.diagnosticGeneration)])
     }
 
+    private func redactVerifiedAccountUID(
+        from update: [String: String],
+        verifiedAccountUID: String
+    ) -> [String: String] {
+        let marker = "<redacted-account-uid>"
+        var sanitized: [String: String] = [:]
+
+        // Deterministic ordering makes key-collision handling stable without retaining the UID.
+        for (key, value) in update.sorted(by: { $0.key < $1.key }) {
+            let redactedKey = key.replacingOccurrences(
+                of: verifiedAccountUID,
+                with: marker,
+                options: [.caseInsensitive, .literal]
+            )
+            let redactedValue = value.replacingOccurrences(
+                of: verifiedAccountUID,
+                with: marker,
+                options: [.caseInsensitive, .literal]
+            )
+
+            var admittedKey = redactedKey
+            var collisionOrdinal = 2
+            while sanitized[admittedKey] != nil {
+                admittedKey = "\(redactedKey)#\(collisionOrdinal)"
+                collisionOrdinal += 1
+            }
+            sanitized[admittedKey] = redactedValue
+        }
+        return sanitized
+    }
+
     private func receivedApplicationUpdate(
         _ update: [String: String],
         token: TuyaReadOnlyConnectionToken
@@ -1434,6 +1465,19 @@ private final class SecureLinkController: NSObject, ObservableObject {
             )
             return
         }
+        guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !verifiedAccountUID.isEmpty else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "Verified Tuya account identity was unavailable before application evidence custody.",
+                kind: "sdk_account_uid_authority_missing_during_observation"
+            )
+            return
+        }
+        let accountUIDRedactedUpdate = redactVerifiedAccountUID(
+            from: update,
+            verifiedAccountUID: verifiedAccountUID
+        )
         guard driver.isLocallyConnected(uuid: tuyaUUID) else {
             await recordObservedTransportLoss(token: token)
             return
@@ -1445,9 +1489,28 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+
+            // Actor hops above may allow account/session authority to change. Never let a callback
+            // admitted under an old lease enter immutable event custody after that lease is gone.
+            guard currentConnectionToken == token,
+                  phase == .observing,
+                  sdkAccountLoggedIn,
+                  sdkDeviceMembershipVerified,
+                  accountIdentityLeaseIsAuthorized,
+                  membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) == verifiedAccountUID else {
+                if currentConnectionToken == token {
+                    await invalidateSourceAuthority(
+                        token: token,
+                        message: "SDK account/device authority changed before application evidence could enter event custody.",
+                        kind: "sdk_source_authority_changed_before_application_event_custody"
+                    )
+                }
+                return
+            }
+
+            log("tuya_application_update", accountUIDRedactedUpdate.merging([
                 "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -2261,7 +2324,6 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "accounttoken",
         "accesstoken",
         "refreshtoken",
-        "sessionkey",
         "authkey",
         "seckey",
     ]
