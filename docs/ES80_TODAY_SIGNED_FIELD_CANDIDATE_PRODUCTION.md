@@ -79,9 +79,9 @@ The producer itself will create another fresh detached worktree internally. The 
 
 Choose a private path outside the repository. The producer requires an absolute regular non-symlink mode-`0600` file and independently validates its contents/mode.
 
-Do not acquire the raw identifier through ordinary shell redirection. Even with `noclobber`, a checked parent directory pathname can be renamed and replaced before `> "$UDID_FILE"` re-resolves it. Instead, materialize the exact descriptor-bound helper below. It opens every parent component with no-follow directory descriptors and creates the final file relative to the retained parent descriptor with `O_EXCL | O_NOFOLLOW`, so a later pathname retarget cannot redirect the secret write.
+Do not acquire the raw identifier through ordinary shell redirection. Even with `noclobber`, a checked parent directory pathname can be renamed and replaced before `> "$UDID_FILE"` re-resolves it. Use the accepted descriptor-bound private-input helper instead. It opens directory components with no-follow descriptors, creates the final file relative to the pinned directory descriptor, rebinds the pathname after creation, verifies directory/file identity and exact readback, and fails closed if the path was retargeted.
 
-The helper reads the UDID with hidden terminal input, never places it in command arguments, never prints it, writes the exact identifier bytes with no trailing newline, and requires the final parent directory to be owned by the current user and inaccessible to group/world.
+The accepted helper identity is fixed below. These helper bytes are operator-custody tooling only; they do not alter the frozen `a0f4…` app subject and do not authorize signing acceptance or Bluetooth activity.
 
 ```bash
 umask 077
@@ -91,38 +91,26 @@ PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"
 UDID_FILE="$PRIVATE_DIR/es80-intended-device.udid"
 TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
 
-if [[ -L "$PRIVATE_DIR" ]]; then
-  printf 'Refusing symlink private directory. Choose a real private directory.\n' >&2
-  exit 1
-fi
-/bin/mkdir -p "$PRIVATE_DIR"
-test -d "$PRIVATE_DIR" && test ! -L "$PRIVATE_DIR"
-/bin/chmod 700 "$PRIVATE_DIR"
-
-if [[ -e "$UDID_FILE" || -L "$UDID_FILE" ]]; then
-  printf 'Refusing existing intended-device input path. Choose a fresh private path.\n' >&2
-  exit 1
-fi
-
-PRIVATE_INPUT_HELPER_COMMIT='0f9c68edb0f1e43b484ad0051902e19d28149822'
-PRIVATE_INPUT_HELPER_BLOB='7de2eb55c138f578cf3c0a53d0f12db823fa276d'
-PRIVATE_INPUT_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-private-input.XXXXXX)"
-PRIVATE_INPUT_HELPER="$PRIVATE_INPUT_DIR/es80_private_intended_device_input.py"
+PRIVATE_INPUT_HELPER_COMMIT='05ce6d9a20487ab34aa31c5b6456910ed2ed438f'
+PRIVATE_INPUT_HELPER_BLOB='9a9f7f724ceaf895e52d6d443d326043f97645c8'
+PRIVATE_INPUT_HELPER_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-private-input.XXXXXX)"
+PRIVATE_INPUT_HELPER="$PRIVATE_INPUT_HELPER_DIR/es80_today_private_device_input.py"
 
 cd "$TOOL_REPO"
 /usr/bin/git cat-file -e "$PRIVATE_INPUT_HELPER_COMMIT^{commit}"
-test "$(/usr/bin/git rev-parse --verify "$PRIVATE_INPUT_HELPER_COMMIT:scripts/ci/es80_private_intended_device_input.py")" = "$PRIVATE_INPUT_HELPER_BLOB"
-/usr/bin/git show "$PRIVATE_INPUT_HELPER_COMMIT:scripts/ci/es80_private_intended_device_input.py" > "$PRIVATE_INPUT_HELPER"
+test "$(/usr/bin/git rev-parse --verify "$PRIVATE_INPUT_HELPER_COMMIT:scripts/ci/es80_today_private_device_input.py")" = "$PRIVATE_INPUT_HELPER_BLOB"
+/usr/bin/git show "$PRIVATE_INPUT_HELPER_COMMIT:scripts/ci/es80_today_private_device_input.py" > "$PRIVATE_INPUT_HELPER"
 test "$(/usr/bin/git hash-object --no-filters -- "$PRIVATE_INPUT_HELPER")" = "$PRIVATE_INPUT_HELPER_BLOB"
 
-/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER" --output-path "$UDID_FILE"
+/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER" \
+  --private-directory "$PRIVATE_DIR" \
+  --source-repo "$FIELD_SOURCE"
 
-test -s "$UDID_FILE"
 test -f "$UDID_FILE" && test ! -L "$UDID_FILE"
 test "$(/usr/bin/stat -f '%Lp' "$UDID_FILE")" = '600'
 ```
 
-If the helper reports `PRIVATE_INPUT_NOT_CREATED`, stop before signing and preserve the exact blocker. Do not fall back to `printf >`, `tee`, `echo`, `noclobber`, or another pathname-based secret write. Keep the resulting file private; do not commit it and do not copy it into the retained candidate directory. If the chosen final path already exists, preserve it and choose a fresh private path rather than overwriting or following it.
+If the helper reports `NOT_READY`, stop before signing and preserve the exact blocker. Do not fall back to `printf >`, `tee`, `echo`, `noclobber`, or another pathname-based secret write. Keep the resulting file private; do not commit it and do not copy it into the retained candidate directory. If the chosen final path already exists, preserve it and choose a fresh filename/path rather than deleting or overwriting it just to satisfy the helper.
 
 ## 3. Set the signing inputs without changing the source subject
 
@@ -268,14 +256,14 @@ Stop and preserve the exact blocker if any of these occurs:
 
 - the outer checkout is not exact clean detached `a0f4a33451f61411d6e0541f2e70edea5438342d`;
 - `DEVELOPER_DIR` is set or reintroduced after Section 3; configure Xcode 27 through the private Mac's `xcode-select` selection instead of carrying a caller override into the frozen producer;
-- the descriptor-bound private-input helper cannot be materialized at exact commit/blob, refuses the parent/input, or cannot create one fresh exact mode-`0600` single-link file;
+- the descriptor-bound private-input helper cannot be materialized at exact commit/blob, refuses the parent/input, or cannot create and rebind one fresh exact mode-`0600` single-link file;
 - the pinned external preflight cannot be materialized exactly, exits nonzero, or does not report `READY_TO_INVOKE_SIGNED_FIELD_PRODUCER` for the exact frozen source;
 - the producer reports any source, signing, provisioning, intended-device, export, inspection, or evidence failure;
 - more than one IPA is exported or the retained `NembraField.ipa` is missing;
 - the resulting evidence names a different source SHA, recipe, or build subject;
 - the candidate destination existed before production or appears partially published after a failure;
 - the private base path cannot be resolved to a physical absolute home path before secret acquisition;
-- the intended-device verification directory is a symlink, the final private path already exists, the retained verification file is not mode-`0600` regular non-symlink single-link input, or its path traverses a symlinked ancestor / the Nembra repository;
+- the intended-device input path traverses the frozen source repository, any private-directory component is symlinked/unsafe, the final private path already exists, or the retained verification file is not exact mode-`0600` regular single-link input;
 - the intended-device verification value contains leading/trailing whitespace/newline or control characters;
 - the next step would require rebuilding, re-exporting, substituting another app/IPA, or using Xcode Run;
 - anyone proposes Bluetooth scanning before the hardened Final GO record exists.
@@ -290,7 +278,7 @@ The dedicated outer worktree and temporary helper/preflight material can be remo
 cd "$NEMBRA_REPO"
 /usr/bin/git worktree remove --force "$FIELD_SOURCE"
 /bin/rmdir "$FIELD_PARENT" 2>/dev/null || true
-/bin/rm -rf "$PRIVATE_INPUT_DIR" "$PREFLIGHT_DIR"
+/bin/rm -rf "$PRIVATE_INPUT_HELPER_DIR" "$PREFLIGHT_DIR"
 ```
 
 Removing the source worktree or temporary helper/preflight reports does not authorize or invalidate the retained candidate. The retained candidate's own exact provenance/evidence remains authoritative for the next gate.
