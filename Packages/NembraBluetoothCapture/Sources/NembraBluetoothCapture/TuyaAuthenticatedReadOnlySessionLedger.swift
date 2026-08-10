@@ -49,6 +49,8 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         "Tuya SDK source authority was invalidated."
     private static let chronologyIntegrityFailureReason =
         "Read-only session chronology integrity was invalidated."
+    private static let internalLifecycleFailureReason =
+        "Session authority was retired after an internal lifecycle or chronology failure."
 
     private let ledgerID: UUID
     private let nowUptimeNanoseconds: @Sendable () -> UInt64
@@ -172,6 +174,27 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         }
 
         authenticationState = .failed(reason: Self.chronologyIntegrityFailureReason)
+        currentToken = nil
+    }
+
+    /// Clock-independent fail-closed retirement for the exact current generation when an
+    /// internal lifecycle mutation cannot be trusted to take another monotonic receipt.
+    /// This is not source drift, disconnect, observation-gap evidence, or SDK failure.
+    public func markInternalLifecycleFailure(for token: TuyaReadOnlyConnectionToken) throws {
+        try requireCurrent(token)
+        switch authenticationState {
+        case .waitingForAuthentication, .authenticating:
+            authenticationMethod = nil
+            authenticatedAtUptimeNanoseconds = nil
+            applicationPayloadCount = 0
+            latestApplicationPayloadUptimeNanoseconds = nil
+        case .authenticated:
+            break
+        case .unavailable, .failed:
+            throw MutationError.invalidAuthenticationTransition
+        }
+
+        authenticationState = .failed(reason: Self.internalLifecycleFailureReason)
         currentToken = nil
     }
 

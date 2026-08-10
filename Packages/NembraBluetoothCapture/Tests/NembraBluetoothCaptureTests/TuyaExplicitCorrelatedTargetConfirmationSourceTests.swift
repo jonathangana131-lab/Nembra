@@ -10,7 +10,7 @@ struct TuyaExplicitCorrelatedTargetConfirmationSourceTests {
         let finish = try section(
             in: app,
             from: "private func finishCorrelationSeries",
-            to: "func invalidateSDKMembership"
+            to: "func confirmCorrelatedTarget"
         )
 
         #expect(finish.contains("singleRepeatableCandidate"))
