@@ -57,6 +57,11 @@ struct TuyaSecureLinkAccountRecoverySourceTests {
             from: "func invalidateSDKMembership()",
             to: "func verifySDKMembership"
         )
+        let correlationRetirement = try section(
+            in: app,
+            from: "private func abandonPackageCorrelation()",
+            to: "private func releasePackageCorrelationLease()"
+        )
 
         #expect(secureLink.contains(".onChange(of: sdkAccount.loggedIn)"))
         #expect(secureLink.contains("else { test.invalidateSDKMembership() }"))
@@ -65,9 +70,17 @@ struct TuyaSecureLinkAccountRecoverySourceTests {
         #expect(invalidation.contains("membershipAccountUID = nil"))
         #expect(invalidation.contains("membershipDeviceID = nil"))
         #expect(invalidation.contains("pendingCorrelatedTargetID = nil"))
-        #expect(invalidation.contains("correlationSession?.abandonCurrentWindow()"))
+        #expect(invalidation.contains("abandonPackageCorrelation()"))
         #expect(invalidation.contains("phase = .failed"))
         #expect(invalidation.contains("invalidateSourceAuthority("))
+
+        #expect(correlationRetirement.contains("correlationSession?.abandonCurrentWindow()"))
+        #expect(correlationRetirement.contains("correlationSession = nil"))
+        #expect(correlationRetirement.contains("releasePackageCorrelationLease()"))
+        #expect(
+            correlationRetirement.range(of: "correlationSession?.abandonCurrentWindow()")!.lowerBound
+                < correlationRetirement.range(of: "releasePackageCorrelationLease()")!.lowerBound
+        )
     }
 
     @Test("account recovery preserves the accepted correlation presentation repair")
