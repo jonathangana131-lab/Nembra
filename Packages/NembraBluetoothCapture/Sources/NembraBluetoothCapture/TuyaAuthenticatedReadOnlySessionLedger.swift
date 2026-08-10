@@ -18,16 +18,16 @@ public struct TuyaReadOnlyConnectionToken: Hashable, Sendable {
 ///
 /// The official Tuya adapter reports lifecycle events here rather than assembling preflight
 /// snapshots itself. The ledger samples monotonic uptime at the mutation boundary, resets
-/// authentication/payload evidence on every new connection, and rejects callbacks attributed to
-/// an older connection token. Payload bytes are inspected only for non-emptiness and are never
-/// retained by this type.
+/// authentication/application evidence on every new connection, and rejects callbacks attributed
+/// to an older connection token. Structured SDK values and raw transport bytes do not cross this
+/// boundary; callers report only whether an application update was non-empty.
 public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationSessionProvider {
     public enum MutationError: Error, Equatable, Sendable {
         case noActiveConnection
         case staleConnection
         case invalidAuthenticationTransition
         case authenticationRequired
-        case emptyApplicationPayload
+        case emptyApplicationUpdate
         case applicationPayloadCountExhausted
         case monotonicClockRegressed
         case connectionGenerationExhausted
@@ -124,16 +124,21 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         latestApplicationPayloadUptimeNanoseconds = nil
     }
 
-    public func recordApplicationPayload(
-        _ payload: Data,
+    /// Records only the presence and receipt time of a non-empty application-level update.
+    ///
+    /// This deliberately accepts no `Data`: the current SmartLife SDK surface provides a
+    /// structured `dpsUpdate` dictionary, not byte-exact FD50 transport. Callers must not invent
+    /// serialized bytes merely to satisfy this chronology gate.
+    public func recordApplicationUpdate(
+        isNonEmpty: Bool,
         for token: TuyaReadOnlyConnectionToken
     ) throws {
         try requireCurrent(token)
         guard case .authenticated = authenticationState else {
             throw MutationError.authenticationRequired
         }
-        guard !payload.isEmpty else {
-            throw MutationError.emptyApplicationPayload
+        guard isNonEmpty else {
+            throw MutationError.emptyApplicationUpdate
         }
 
         let now = try nextMonotonicObservation()
