@@ -111,20 +111,17 @@ jobs:
           }
 
           '''
-          source = replace_once(
-              source,
-              controller_marker,
-              method + controller_marker,
-              'controller insertion'
-          )
+          source = replace_once(source, controller_marker, method + controller_marker, 'controller insertion')
 
-          env_marker = r'    @Environment(\.dynamicTypeSize) private var dynamicTypeSize'
-          source = replace_once(
-              source,
-              env_marker,
-              env_marker + '\n' + r'    @Environment(\.scenePhase) private var scenePhase',
-              'scene environment'
-          )
+          env_lines = [
+              line for line in source.splitlines(keepends=True)
+              if '@Environment' in line and 'dynamicTypeSize' in line
+          ]
+          if len(env_lines) != 1:
+              raise SystemExit(f'scene environment marker count={len(env_lines)}')
+          env_line = env_lines[0]
+          scene_line = env_line.replace('.dynamicTypeSize', '.scenePhase').replace('dynamicTypeSize', 'scenePhase')
+          source = replace_once(source, env_line, env_line + scene_line, 'scene environment')
 
           view_exit = '''        .onDisappear {
               test.abandonCorrelationForViewExit()
@@ -171,7 +168,7 @@ jobs:
           assert cleanup.index('membershipRequestID = UUID()') < cleanup.index('if processCorrelationLease')
           for forbidden in ('releasePackageCorrelationLease()', 'recordObservedTransportLoss', 'endConnection', 'disconnectBLE', 'publishDps', 'queryDps', 'writeValue'):
               assert forbidden not in cleanup, forbidden
-          assert '@Environment(\\.scenePhase) private var scenePhase' in s
+          assert '@Environment' in s and 'private var scenePhase' in s
           assert '.onChange(of: scenePhase)' in s
           assert 'if newPhase != .active' in s
           assert 'test.appDidLoseForeground()' in s
