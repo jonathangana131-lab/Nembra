@@ -22,11 +22,11 @@ struct CaptureStageRailAcceptedAccessibilitySourceTests {
     @Test("Standard accepted rail marks every accepted stage complete while preserving pre-acceptance semantics")
     func standardAcceptedSealIsComplete() throws {
         let stageRail = try stageRailSource()
-        let standardBranch = String(try section(
-            in: stageRail,
-            from: "} else {",
-            to: "    }\n\n    @ViewBuilder\n    private var primarySurface"
-        ))
+        guard let standardStart = stageRail.range(of: "} else {") else {
+            Issue.record("Standard stage branch is missing")
+            throw SourceContractError.sectionMissing
+        }
+        let standardBranch = String(stageRail[standardStart.lowerBound...])
 
         guard let accessibilityLine = standardBranch
             .split(separator: "\n")
