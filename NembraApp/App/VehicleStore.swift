@@ -28,6 +28,270 @@ struct SpeedInstrumentInterpolationPolicy: Equatable, Sendable {
     }
 }
 
+/// App-session currentness after Store-owned negative lifecycle vetoes.
+/// Positive authority still originates only in the source-file-sealed
+/// `SimulatorPowerEvidenceAvailability`; this type cannot mint a source receipt.
+enum SimulatorPowerStoreFencedCurrentness: Equatable, Sendable {
+    case unavailable
+    case retained
+    case live
+}
+
+/// Read-only Store projection consumed by Dashboard presentation.
+/// The exact immutable source observation is preserved rather than reconstructed.
+struct SimulatorPowerStoreFencedProjection: Equatable, Sendable {
+    let currentness: SimulatorPowerStoreFencedCurrentness
+    let observation: SimulatorPowerObservation?
+
+    static let unavailable = SimulatorPowerStoreFencedProjection(
+        currentness: .unavailable,
+        observation: nil
+    )
+
+    fileprivate static func retained(
+        _ observation: SimulatorPowerObservation
+    ) -> SimulatorPowerStoreFencedProjection {
+        SimulatorPowerStoreFencedProjection(
+            currentness: .retained,
+            observation: observation
+        )
+    }
+
+    fileprivate static func live(
+        _ observation: SimulatorPowerObservation
+    ) -> SimulatorPowerStoreFencedProjection {
+        SimulatorPowerStoreFencedProjection(
+            currentness: .live,
+            observation: observation
+        )
+    }
+
+    private init(
+        currentness: SimulatorPowerStoreFencedCurrentness,
+        observation: SimulatorPowerObservation?
+    ) {
+        self.currentness = currentness
+        self.observation = observation
+    }
+}
+
+/// Stateful custody for the Store-facing Simulator propulsion projection.
+///
+/// Transport loss and source-retained/unavailable transitions fence the exact source
+/// receipt that lost LIVE authority. Aggregate reconnect never clears that fence.
+/// A replay of the same or an older authentic source receipt therefore cannot become
+/// LIVE again; only a strictly newer source receipt can reopen positive authority.
+/// This remains Simulator QA software truth only.
+struct SimulatorPowerReceiptFenceAuthority: Sendable {
+    private struct SourceIdentity: Equatable, Sendable {
+        let continuityGeneration: UInt64
+        let receiptSequenceNumber: UInt64
+        let receivedAtUptimeNanoseconds: UInt64
+
+        init(_ observation: SimulatorPowerObservation) {
+            continuityGeneration = observation.continuityGeneration
+            receiptSequenceNumber = observation.receiptSequenceNumber
+            receivedAtUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
+        }
+    }
+
+    private enum IdentityComparison {
+        case older
+        case identical
+        case contradictory
+        case newer
+    }
+
+    private(set) var projection: SimulatorPowerStoreFencedProjection = .unavailable
+    private var newestSourceObservation: SimulatorPowerObservation?
+    private var negativeAuthorityFenceIdentity: SourceIdentity?
+    private var sourceProviderIsAvailable = true
+
+    mutating func applySource(
+        _ sourceAvailability: SimulatorPowerEvidenceAvailability,
+        transportIsConnected: Bool
+    ) {
+        switch sourceAvailability.currentness {
+        case .unavailable:
+            guard sourceAvailability.observation == nil else {
+                failClosed()
+                return
+            }
+            failClosed()
+
+        case .retained:
+            guard let observation = sourceAvailability.observation else {
+                failClosed()
+                return
+            }
+            applyRetainedSource(observation)
+
+        case .live:
+            guard let observation = sourceAvailability.observation else {
+                failClosed()
+                return
+            }
+            applyLiveSource(observation, transportIsConnected: transportIsConnected)
+        }
+    }
+
+    /// Must run before aggregate non-connected state is published so the app cannot
+    /// transiently expose OFFLINE + LIVE propulsion presentation.
+    mutating func transportBecameUnavailable() {
+        guard projection.currentness == .live,
+              let observation = projection.observation else {
+            return
+        }
+        rememberNegativeFence(for: observation)
+        projection = .retained(observation)
+    }
+
+    /// Provider termination fails closed and fences the newest accepted receipt so
+    /// an already queued older callback cannot resurrect a dead source owner.
+    mutating func sourceBecameUnavailable() {
+        sourceProviderIsAvailable = false
+        failClosed()
+    }
+
+    private mutating func applyRetainedSource(_ observation: SimulatorPowerObservation) {
+        guard sourceProviderIsAvailable else { return }
+
+        switch compare(observation, to: newestSourceObservation) {
+        case .older:
+            return
+        case .contradictory:
+            failClosed()
+            return
+        case .identical:
+            projection = .retained(observation)
+            rememberNegativeFence(for: observation)
+        case .newer:
+            newestSourceObservation = observation
+            projection = .retained(observation)
+            rememberNegativeFence(for: observation)
+        }
+    }
+
+    private mutating func applyLiveSource(
+        _ observation: SimulatorPowerObservation,
+        transportIsConnected: Bool
+    ) {
+        guard sourceProviderIsAvailable else { return }
+
+        switch compare(observation, to: newestSourceObservation) {
+        case .older:
+            return
+        case .contradictory:
+            failClosed()
+            return
+        case .identical:
+            break
+        case .newer:
+            newestSourceObservation = observation
+        }
+
+        guard transportIsConnected else {
+            projection = .retained(observation)
+            rememberNegativeFence(for: observation)
+            return
+        }
+
+        if let fence = negativeAuthorityFenceIdentity {
+            switch compare(SourceIdentity(observation), to: fence) {
+            case .older, .identical:
+                if projection.currentness != .unavailable {
+                    projection = .retained(observation)
+                }
+                return
+            case .contradictory:
+                failClosed()
+                return
+            case .newer:
+                negativeAuthorityFenceIdentity = nil
+            }
+        }
+
+        projection = .live(observation)
+    }
+
+    private mutating func rememberNegativeFence(for observation: SimulatorPowerObservation) {
+        let candidate = SourceIdentity(observation)
+        guard let current = negativeAuthorityFenceIdentity else {
+            negativeAuthorityFenceIdentity = candidate
+            return
+        }
+
+        switch compare(candidate, to: current) {
+        case .newer:
+            negativeAuthorityFenceIdentity = candidate
+        case .older, .identical:
+            break
+        case .contradictory:
+            projection = .unavailable
+        }
+    }
+
+    private mutating func failClosed() {
+        fenceNewestObservationWithoutRecursion()
+        projection = .unavailable
+    }
+
+    private mutating func fenceNewestObservationWithoutRecursion() {
+        guard let observation = newestSourceObservation else { return }
+        let candidate = SourceIdentity(observation)
+        guard let current = negativeAuthorityFenceIdentity else {
+            negativeAuthorityFenceIdentity = candidate
+            return
+        }
+        if case .newer = compare(candidate, to: current) {
+            negativeAuthorityFenceIdentity = candidate
+        }
+    }
+
+    private func compare(
+        _ observation: SimulatorPowerObservation,
+        to previous: SimulatorPowerObservation?
+    ) -> IdentityComparison {
+        guard let previous else { return .newer }
+
+        let identityComparison = compare(
+            SourceIdentity(observation),
+            to: SourceIdentity(previous)
+        )
+        if case .identical = identityComparison,
+           observation != previous {
+            return .contradictory
+        }
+        return identityComparison
+    }
+
+    private func compare(
+        _ incoming: SourceIdentity,
+        to previous: SourceIdentity
+    ) -> IdentityComparison {
+        if incoming.continuityGeneration < previous.continuityGeneration {
+            return .older
+        }
+        if incoming.continuityGeneration > previous.continuityGeneration {
+            return .newer
+        }
+
+        if incoming.receiptSequenceNumber < previous.receiptSequenceNumber {
+            return .older
+        }
+        if incoming.receiptSequenceNumber > previous.receiptSequenceNumber {
+            return incoming.receivedAtUptimeNanoseconds > previous.receivedAtUptimeNanoseconds
+                ? .newer
+                : .contradictory
+        }
+
+        if incoming.receivedAtUptimeNanoseconds == previous.receivedAtUptimeNanoseconds {
+            return .identical
+        }
+        return .contradictory
+    }
+}
+
 @MainActor
 @Observable
 final class VehicleStore {
@@ -58,24 +322,15 @@ final class VehicleStore {
     /// promotes this value by itself.
     private(set) var speedEvidenceAvailability: SpeedEvidenceAvailability = .unavailable
 
-    /// The sealed source availability is intentionally private. No app surface may
-    /// bypass the transport join and interpret a source-live receipt as app-live
-    /// after aggregate connection changed.
-    private var simulatorPowerSourceAvailability: SimulatorPowerEvidenceAvailability = .unavailable
+    /// Persistent app-session custody for Simulator power. Unlike the previous
+    /// read-time join, this remembers negative receipt fences across disconnect /
+    /// reconnect so an old authentic LIVE receipt cannot be replayed as current.
+    private var simulatorPowerStoreAuthority = SimulatorPowerReceiptFenceAuthority()
 
-    /// The only Store-facing Simulator power authority. It atomically joins the
-    /// newest sealed source value with the current aggregate connection every time
-    /// it is read. Therefore independent source/state tasks have no ordering window:
-    /// source LIVE + connected -> LIVE; source LIVE + non-connected -> RETAINED;
-    /// source RETAINED stays RETAINED even after reconnect; only a fresh source LIVE
-    /// receipt can restore app-live currentness.
-    var simulatorPowerStoreProjection: SimulatorPowerStoreProjection {
-        var authority = SimulatorPowerEvidenceConsumerAuthority()
-        authority.applySource(
-            simulatorPowerSourceAvailability,
-            connectionIsConnected: state.connection == .connected
-        )
-        return authority.projection
+    /// The only Store-facing Simulator power authority. Positive state can enter only
+    /// through the exact source actor admitted by `hasSimulatorPowerEvidenceSource`.
+    var simulatorPowerStoreProjection: SimulatorPowerStoreFencedProjection {
+        simulatorPowerStoreAuthority.projection
     }
 
     var pendingCommands: Set<PendingCommand> = []
@@ -267,6 +522,15 @@ final class VehicleStore {
             for await incomingState in stream {
                 guard let self, !Task.isCancelled else { break }
                 let previousConnection = self.state.connection
+
+                // Negative power authority is retired before aggregate transport
+                // state becomes visible. Reconnect has deliberately no matching
+                // positive action; only a strictly newer sealed source receipt may
+                // clear the remembered receipt fence.
+                if incomingState.connection != .connected {
+                    self.simulatorPowerStoreAuthority.transportBecameUnavailable()
+                }
+
                 self.apply(incomingState)
 
                 if let speedEvidenceProvider {
@@ -311,19 +575,22 @@ final class VehicleStore {
                 for await _ in stream {
                     guard let self, !Task.isCancelled else { return }
 
-                    // Stream values are wake-ups only. The private raw source state is
-                    // refreshed from the provider's newest snapshot; all Store-facing
-                    // reads then join that exact sealed value with current connection.
+                    // Stream values are wake-ups only. Re-snapshot the exact source
+                    // actor, then let stateful Store custody reject stale/replayed
+                    // chronology. Aggregate connection is a negative veto only.
                     let current = await simulatorPowerEvidenceProvider.simulatorPowerEvidenceSnapshot()
-                    guard !Task.isCancelled else { return }
-                    self.simulatorPowerSourceAvailability = current
+                    guard let self, !Task.isCancelled else { return }
+                    self.simulatorPowerStoreAuthority.applySource(
+                        current,
+                        transportIsConnected: self.state.connection == .connected
+                    )
                 }
 
                 guard let self, !Task.isCancelled else { return }
-                self.simulatorPowerSourceAvailability = .unavailable
+                self.simulatorPowerStoreAuthority.sourceBecameUnavailable()
             }
         } else {
-            simulatorPowerSourceAvailability = .unavailable
+            simulatorPowerStoreAuthority.sourceBecameUnavailable()
         }
 
         if shouldAutoConnectOnStart {
