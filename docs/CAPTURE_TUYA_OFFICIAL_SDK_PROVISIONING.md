@@ -20,10 +20,28 @@ LocalSecrets/TuyaSDK/
 └── ThingSmartCryption.podspec
 ```
 
+Then use the field installer:
+
+```bash
+scripts/field/install_one_time_capture.command
+```
+
+The installer can prompt interactively for the matching Tuya AppKey/AppSecret so they do not need to appear in shell history or command-line arguments. It generates a local-only private config pod under:
+
+```text
+LocalSecrets/TuyaPrivateConfig/
+├── NembraTuyaPrivateConfig.podspec
+└── Sources/
+    └── NembraTuyaPrivateIdentity.swift
+```
+
+The generated identity module is compiled only into the privately provisioned Capture workspace. The field app conditionally imports `NembraTuyaPrivateConfig` and initializes `ThingSmartSDK` from `NembraTuyaPrivateIdentity.appKey` / `.appSecret`; a normal installed iPhone launch does not depend on Xcode launch-only environment variables.
+
 `LocalSecrets/` is git-ignored. The repository must never commit:
 
 - AppSecret;
 - private AppKey provisioning material;
+- the generated private identity source/pod;
 - the downloaded `Build/` security SDK;
 - user password;
 - verification code;
@@ -39,18 +57,21 @@ The public CocoaPods dependencies alone do **not** constitute a provisioned Tuya
 The Capture Podfile uses:
 
 - local `ThingSmartCryption` from `LocalSecrets/TuyaSDK`;
+- local `NembraTuyaPrivateConfig` from `LocalSecrets/TuyaPrivateConfig` when present;
 - the pinned SmartLife public SDK line for `ThingSmartHomeKit`;
 - the accompanying public business extension dependency used by the current workspace integration.
 
-`Scripts/bootstrap_capture_tuya_sdk.sh` fails closed when the private security component is absent. Public CI intentionally builds the standalone fallback without `ThingSmartHomeKit`; that proves fail-closed source/project wiring only, not the private SDK build or physical scooter session.
+`Scripts/provision_capture_tuya_identity.sh` validates and writes the local private identity module. `Scripts/bootstrap_capture_tuya_sdk.sh` fails closed when the private security component is absent and bootstraps CocoaPods when all private pieces are present.
 
-The privately provisioned field build is expected to be opened/built through `NembraCapture.xcworkspace` after CocoaPods integration.
+The field installer preserves the fail-closed fallback when private Tuya material is absent. With the private security SDK and identity available, it bootstraps `NembraCapture.xcworkspace` and can open that workspace for the signed iPhone build.
+
+Public CI intentionally builds the standalone fallback without the private Tuya modules. That proves fail-closed source/project wiring only, not the private SDK build or physical scooter session.
 
 ## Current app-visible authority path
 
 The standalone field app already contains the product seam needed after private provisioning:
 
-1. initialize `ThingSmartSDK` with the privately supplied matching AppKey/AppSecret;
+1. import the generated local-only `NembraTuyaPrivateConfig` module and initialize `ThingSmartSDK` with the matching private app identity;
 2. log in through Tuya's official verification-code account flow rather than collecting a reusable password;
 3. enumerate the logged-in account's homes and require the exact expected scooter device ID in owned/shared membership through `TuyaSDKAccountDeviceMembershipGate`;
 4. use CoreBluetooth only for passive target discovery/correlation;
@@ -73,14 +94,14 @@ If a future documented Tuya SDK hook exposes raw transport bytes from the **same
 
 ## Current external blocker
 
-The public repository can build/test the fail-closed product and authority contracts, but it cannot manufacture the app-specific Tuya security SDK or matching private credentials.
+The public repository can build/test the fail-closed product and authority contracts, but it cannot manufacture the app-specific Tuya security SDK or the matching private Tuya Developer Platform identity.
 
-Before the physical button can legitimately unlock on the intended iPhone, a local/private build still needs:
+Before the physical button can legitimately unlock on the intended iPhone, the local checkout still needs:
 
 - a Tuya Developer Platform SmartLife SDK app whose iOS Bundle ID exactly matches `com.jonathangana131.nembra.capturelearn`;
 - that app's generated iOS security SDK under `LocalSecrets/TuyaSDK`;
-- matching private AppKey/AppSecret supplied to the local build/run environment;
-- a signed install on the intended iPhone;
+- the matching private AppKey/AppSecret entered into the local provisioning flow so `NembraTuyaPrivateConfig` is generated;
+- the privately provisioned `NembraCapture.xcworkspace` built/signed and installed on the intended iPhone;
 - official SDK verification-code login to the user's account;
 - exact expected scooter membership proven from that SDK account.
 
