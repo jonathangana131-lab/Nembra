@@ -20,11 +20,16 @@ public struct TuyaReadOnlyConnectionToken: Hashable, Sendable {
 ///
 /// The official Tuya adapter reports lifecycle events here rather than assembling preflight
 /// snapshots itself. The ledger samples monotonic uptime at the mutation boundary, resets
-/// authentication/application evidence on every new connection, and rejects callbacks attributed
-/// to an older connection token or a different ledger instance. Structured SDK values and raw
-/// transport bytes do not cross this boundary; callers report only whether an application update
-/// was non-empty.
+/// authentication/application evidence on every new connection, rejects callbacks attributed to
+/// an older connection token or a different ledger instance, and retires callback authority at
+/// terminal acceptance/failure horizons. Structured SDK values and raw transport bytes do not
+/// cross this boundary; callers report only whether an application update was non-empty.
 public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationSessionProvider {
+    /// Maximum unobserved interval accepted inside one continuous authenticated observation.
+    /// The app polls current SDK-local BLE state more frequently than this; a suspension or
+    /// scheduling gap beyond this horizon cannot be erased by a queued application callback.
+    public static let maximumContinuousObservationGapNanoseconds: UInt64 = 5_000_000_000
+
     public enum MutationError: Error, Equatable, Sendable {
         case noActiveConnection
         case staleConnection
@@ -34,7 +39,12 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         case applicationPayloadCountExhausted
         case monotonicClockRegressed
         case connectionGenerationExhausted
+        case observationContinuityInvalidated
+        case preflightNotReady
     }
+
+    private static let observationContinuityFailureReason =
+        "Authenticated observation continuity was invalidated by a long observation gap."
 
     private let ledgerID: UUID
     private let nowUptimeNanoseconds: @Sendable () -> UInt64
@@ -96,9 +106,8 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         method: TuyaReadOnlyAuthenticationMethod
     ) throws {
         try requireCurrent(token)
-        // The current generation must contain an explicit authentication-start event.
-        // A success callback cannot jump directly from a newly minted connection into
-        // authenticated state merely by carrying an accepted method label.
+        // A success callback is authoritative only after this same generation recorded an
+        // explicit authentication-start event. The accepted method label cannot mint chronology.
         guard case .authenticating = authenticationState else {
             throw MutationError.invalidAuthenticationTransition
         }
@@ -112,25 +121,30 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         latestApplicationPayloadUptimeNanoseconds = nil
     }
 
-    /// Retires current authentication authority when the official SDK reports a terminal failure.
-    /// A failure may arrive after the initial success callback; it must still clear provenance and
-    /// application evidence rather than leave the generation looking authenticated in diagnostics.
+    /// Retires current session authority when the official SDK reports a terminal failure.
+    ///
+    /// Pre-auth failure requires a prior authentication-start event and retains no provenance.
+    /// A late failure after authenticated observations preserves already-earned chronology only as
+    /// non-authorizing diagnostics. In both cases the token is retired so a delayed callback cannot
+    /// revive this generation.
     public func markAuthenticationFailed(for token: TuyaReadOnlyConnectionToken) throws {
         try requireCurrent(token)
         switch authenticationState {
-        case .authenticating, .authenticated:
+        case .authenticating:
+            authenticationMethod = nil
+            authenticatedAtUptimeNanoseconds = nil
+            applicationPayloadCount = 0
+            latestApplicationPayloadUptimeNanoseconds = nil
+        case .authenticated:
             break
         case .waitingForAuthentication, .unavailable, .failed:
             throw MutationError.invalidAuthenticationTransition
         }
 
         let now = try nextMonotonicObservation()
-        authenticationState = .failed(reason: "Tuya authentication failed.")
-        authenticationMethod = nil
-        authenticatedAtUptimeNanoseconds = nil
+        authenticationState = .failed(reason: "Tuya SDK session failed.")
         latestObservedUptimeNanoseconds = now
-        applicationPayloadCount = 0
-        latestApplicationPayloadUptimeNanoseconds = nil
+        currentToken = nil
     }
 
     /// Records only the presence and receipt time of a non-empty application-level update.
@@ -138,6 +152,10 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     /// This deliberately accepts no `Data`: the current SmartLife SDK surface provides a
     /// structured `dpsUpdate` dictionary, not byte-exact FD50 transport. Callers must not invent
     /// serialized bytes merely to satisfy this chronology gate.
+    ///
+    /// Continuity is checked before the update may advance `latestObserved...`. This closes the
+    /// resume-order race where a queued SDK update could otherwise erase a long suspension gap
+    /// before the app watchdog observes it.
     public func recordApplicationUpdate(
         isNonEmpty: Bool,
         for token: TuyaReadOnlyConnectionToken
@@ -151,6 +169,7 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         }
 
         let now = try nextMonotonicObservation()
+        try requireContinuousAuthenticatedObservation(at: now)
         guard let authenticatedAt = authenticatedAtUptimeNanoseconds,
               now >= authenticatedAt else {
             throw MutationError.monotonicClockRegressed
@@ -171,9 +190,60 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         guard case .authenticated = authenticationState else {
             throw MutationError.authenticationRequired
         }
-        latestObservedUptimeNanoseconds = try nextMonotonicObservation()
+        let now = try nextMonotonicObservation()
+        try requireContinuousAuthenticatedObservation(at: now)
+        latestObservedUptimeNanoseconds = now
     }
 
+    /// Seals a failed observation horizon while authenticated transport may still exist.
+    /// This is not a claim that BLE disconnected. Earned chronology remains diagnostic-only while
+    /// callback authority is permanently retired.
+    public func markObservationContinuityInvalidated(
+        for token: TuyaReadOnlyConnectionToken
+    ) throws {
+        try requireCurrent(token)
+        guard case .authenticated = authenticationState else {
+            throw MutationError.authenticationRequired
+        }
+
+        _ = try nextMonotonicObservation()
+        authenticationState = .failed(reason: "Authenticated observation continuity was interrupted.")
+        currentToken = nil
+    }
+
+    /// Seals a post-authentication attempt that remained connected but failed to produce the
+    /// required application evidence. This is deliberately distinct from `endConnection`.
+    public func markApplicationObservationTimedOut(
+        for token: TuyaReadOnlyConnectionToken
+    ) throws {
+        try requireCurrent(token)
+        guard case .authenticated = authenticationState else {
+            throw MutationError.authenticationRequired
+        }
+
+        let now = try nextMonotonicObservation()
+        authenticationState = .failed(reason: "Authenticated session produced no application update before the observation deadline.")
+        latestObservedUptimeNanoseconds = now
+        currentToken = nil
+    }
+
+    /// Freezes an already-earned canonical ready verdict without manufacturing a later receipt or
+    /// extending its duration. Retiring the token makes the accepted prefix immutable.
+    public func sealAcceptedObservation(
+        for token: TuyaReadOnlyConnectionToken
+    ) throws {
+        try requireCurrent(token)
+        let now = try nextMonotonicObservation()
+        try requireContinuousAuthenticatedObservation(at: now)
+        let snapshot = makeSnapshot()
+        guard TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .readyForStationaryMapping else {
+            throw MutationError.preflightNotReady
+        }
+        currentToken = nil
+    }
+
+    /// Records an actual current connection-end boundary. Callers must not use this merely because
+    /// app observation continuity became untrustworthy; use `markObservationContinuityInvalidated`.
     public func endConnection(for token: TuyaReadOnlyConnectionToken) throws {
         try requireCurrent(token)
         let now = try nextMonotonicObservation()
@@ -188,6 +258,10 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     }
 
     public func currentPreflightSnapshot() async -> TuyaAuthenticatedReadOnlyPreflightSnapshot {
+        makeSnapshot()
+    }
+
+    private func makeSnapshot() -> TuyaAuthenticatedReadOnlyPreflightSnapshot {
         TuyaAuthenticatedReadOnlyPreflightSnapshot(
             authenticationState: authenticationState,
             authenticationMethod: authenticationMethod,
@@ -216,5 +290,19 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
             throw MutationError.monotonicClockRegressed
         }
         return now
+    }
+
+    /// Must run before any authenticated mutation can move the accepted observation horizon.
+    /// On failure, preserve the last legitimate timestamps/evidence and retire callback authority.
+    private func requireContinuousAuthenticatedObservation(at now: UInt64) throws {
+        guard let latest = latestObservedUptimeNanoseconds,
+              now >= latest else {
+            throw MutationError.monotonicClockRegressed
+        }
+        guard now - latest <= Self.maximumContinuousObservationGapNanoseconds else {
+            authenticationState = .failed(reason: Self.observationContinuityFailureReason)
+            currentToken = nil
+            throw MutationError.observationContinuityInvalidated
+        }
     }
 }
