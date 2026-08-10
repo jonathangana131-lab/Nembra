@@ -1,0 +1,219 @@
+name: Capture Account UID Reentrancy Repair
+
+on:
+  push:
+    branches:
+      - "sol/v14-capture-account-uid-reentrancy-7f5"
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sol/v14-capture-account-uid-reentrancy-7f5
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Guard exact parent and scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='7f5b655355d04099a687ca570aa7de9b4cbe7bdd'
+          test "$(git rev-parse HEAD^)" = "$parent"
+          git diff --quiet "$parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+          git diff --quiet "$parent" HEAD -- Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+
+      - name: Materialize fail-closed UID custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift')
+          source = source_path.read_text(encoding='utf-8')
+          tests = test_path.read_text(encoding='utf-8')
+
+          def one(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one match, found {count}')
+              return text.replace(old, new, 1)
+
+          old_helper = '''    private func applicationUpdateForEventCustody(_ update: [String: String]) -> [String: String] {
+              guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                    !verifiedAccountUID.isEmpty else { return update }
+
+              var redacted: [String: String] = [:]
+          '''
+          new_helper = '''    private func applicationUpdateForEventCustody(
+              _ update: [String: String],
+              verifiedAccountUID: String
+          ) -> [String: String] {
+              precondition(!verifiedAccountUID.isEmpty)
+
+              var redacted: [String: String] = [:]
+          '''
+          source = one(source, old_helper, new_helper, 'immutable UID helper input')
+
+          receiver_start = source.index('    private func receivedApplicationUpdate(')
+          receiver_end = source.index('    private func startWatchdog', receiver_start)
+          receiver = source[receiver_start:receiver_end]
+
+          admission = '''        applicationUpdateAdmissionsInFlight += 1
+          '''
+          bound_admission = '''        guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                    !verifiedAccountUID.isEmpty else {
+              await invalidateSourceAuthority(
+                  token: token,
+                  message: "Verified Tuya account UID authority disappeared before application evidence custody.",
+                  kind: "application_account_uid_authority_missing"
+              )
+              return
+          }
+          let custodySafeUpdate = applicationUpdateForEventCustody(
+              update,
+              verifiedAccountUID: verifiedAccountUID
+          )
+
+          applicationUpdateAdmissionsInFlight += 1
+          '''
+          receiver = one(receiver, admission, bound_admission, 'pre-await UID snapshot')
+          receiver = one(
+              receiver,
+              'try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)',
+              'try await sessionLedger.recordApplicationUpdate(isNonEmpty: !custodySafeUpdate.isEmpty, for: token)',
+              'ledger admission uses custody-safe payload presence'
+          )
+          old_log = '''            await refreshLedgerSnapshot()
+              let custodySafeUpdate = applicationUpdateForEventCustody(update)
+              log("tuya_application_update", custodySafeUpdate.merging([
+                  "generation": String(token.diagnosticGeneration)
+              ]) { _, trusted in trusted })
+          '''
+          new_log = '''            await refreshLedgerSnapshot()
+              guard currentConnectionToken == token,
+                    phase == .observing,
+                    sdkAccountLoggedIn,
+                    sdkDeviceMembershipVerified,
+                    accountIdentityLeaseIsAuthorized,
+                    membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) == verifiedAccountUID else {
+                  log("application_update_authority_changed_before_event_custody", [
+                      "generation": String(token.diagnosticGeneration)
+                  ])
+                  return
+              }
+              log("tuya_application_update", custodySafeUpdate.merging([
+                  "generation": String(token.diagnosticGeneration)
+              ]) { _, trusted in trusted })
+          '''
+          receiver = one(receiver, old_log, new_log, 'post-await authority recheck')
+          source = source[:receiver_start] + receiver + source[receiver_end:]
+
+          new_test = '''    @Test("account UID custody snapshots earned authority before suspension and never falls back to raw payload")
+              func accountUIDCustodyIsBoundBeforeAwait() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let helper = String(try section(
+                      in: source,
+                      from: "private func applicationUpdateForEventCustody(",
+                      to: "private func receivedApplicationUpdate("
+                  ))
+                  let updateAdmission = String(try section(
+                      in: source,
+                      from: "private func receivedApplicationUpdate(",
+                      to: "private func startWatchdog"
+                  ))
+
+                  #expect(helper.contains("verifiedAccountUID: String"))
+                  #expect(!helper.contains("membershipAccountUID"))
+                  #expect(!helper.contains("else { return update }"))
+                  #expect(updateAdmission.contains("membershipAccountUID?.trimmingCharacters"))
+                  #expect(updateAdmission.contains("application_update_authority_changed_before_event_custody"))
+
+                  let custody = try requiredOffset(
+                      containing: "let custodySafeUpdate = applicationUpdateForEventCustody(",
+                      in: updateAdmission
+                  )
+                  let firstAwait = try requiredOffset(
+                      containing: "try await sessionLedger.recordApplicationUpdate",
+                      in: updateAdmission
+                  )
+                  #expect(custody < firstAwait)
+              }
+
+          '''
+          marker = '    @Test("account UID custody is value-bound rather than a blanket generic uid-key rule")\n'
+          tests = one(tests, marker, new_test + marker, 'insert reentrancy regression')
+
+          offset_helper = '''    private func requiredOffset(containing token: String, in source: String) throws -> String.Index {
+              guard let range = source.range(of: token) else {
+                  Issue.record("Expected source token missing: \\(token)")
+                  throw SourceContractError.sectionMissing
+              }
+              return range.lowerBound
+          }
+
+          '''
+          section_marker = '    private func section(in source: String, from start: String, to end: String) throws -> Substring {\n'
+          tests = one(tests, section_marker, offset_helper + section_marker, 'insert offset helper')
+
+          source_path.write_text(source, encoding='utf-8')
+          test_path.write_text(tests, encoding='utf-8')
+          PY
+
+      - name: Verify repair contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          helper_start = s.index('private func applicationUpdateForEventCustody(')
+          receiver_start = s.index('private func receivedApplicationUpdate(', helper_start)
+          receiver_end = s.index('private func startWatchdog', receiver_start)
+          helper = s[helper_start:receiver_start]
+          receiver = s[receiver_start:receiver_end]
+          assert 'verifiedAccountUID: String' in helper
+          assert 'membershipAccountUID' not in helper
+          assert 'else { return update }' not in helper
+          assert 'let custodySafeUpdate = applicationUpdateForEventCustody(' in receiver
+          assert receiver.index('let custodySafeUpdate = applicationUpdateForEventCustody(') < receiver.index('try await sessionLedger.recordApplicationUpdate')
+          assert 'application_update_authority_changed_before_event_custody' in receiver
+          assert 'log("tuya_application_update", custodySafeUpdate.merging([' in receiver
+          assert ']) { _, trusted in trusted })' in receiver
+          assert 'log("tuya_application_update", update.merging([' not in receiver
+          print('UID custody reentrancy contract: PASS')
+          PY
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+          git diff --check
+
+      - name: Commit clean successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='7f5b655355d04099a687ca570aa7de9b4cbe7bdd'
+          rm .github/workflows/capture-account-uid-reentrancy-7f5.yml
+          git add -A
+          mapfile -t changed < <(git diff --cached --name-only | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 3
+          test "${changed[0]}" = '.github/workflows/capture-account-uid-reentrancy-7f5.yml'
+          test "${changed[1]}" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          test "${changed[2]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift'
+          git diff --cached --check
+          git config user.name nembra-sol
+          git config user.email nembra-sol@users.noreply.github.com
+          git commit -m 'fix(capture): snapshot account UID before async custody'
+          mapfile -t effective < <(git diff --name-only "$parent" HEAD | sort)
+          test "${#effective[@]}" = 2
+          test "${effective[0]}" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          test "${effective[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift'
+          git push origin HEAD:sol/v14-capture-account-uid-reentrancy-7f5
