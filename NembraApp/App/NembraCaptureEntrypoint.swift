@@ -434,14 +434,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
-        // Accepted app evidence belongs to this physical attempt only. The controller's
-        // diagnostic log intentionally survives failures for troubleshooting, so establish an
-        // explicit custody boundary before fresh membership/correlation evidence can begin.
         captureAttemptEventStartIndex = events.count
         sealedAcceptedEventPrefix = nil
 
-        // Every physical attempt receives a fresh complete current-account membership verdict
-        // before the package-owned four-window Bluetooth correlation series may start.
         verifySDKMembership { [weak self] authorized in
             guard let self else { return }
             let leaseVerdict = TuyaSDKAccountIdentityLeaseGate.verdict(for: self.accountIdentityLeaseSnapshot)
@@ -571,8 +566,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func finishCorrelationSeries(_ result: PassiveBluetoothPowerCycleObservationResult) {
-        // Preserve the package-issued receipts + exact catalogs before releasing the live scanner.
-        // The artifact can therefore audit/replay correlation without trusting a detached UUID.
         correlationProvenance = CorrelationProvenance(result: result)
         targetCorrelationMethod = correlationProvenance?.method
         targetCorrelationWindowCount = result.windows.count
@@ -797,7 +790,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
-        // Membership is re-proven immediately before granting Tuya BLE ownership.
         verifySDKMembership { [weak self] stillAuthorized in
             guard let self else { return }
             guard stillAuthorized,
@@ -842,8 +834,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
             guard let self else { return }
             do {
                 let token = try await self.sessionLedger.beginConnection()
-                // Own the package generation before any later mutation can fail. Otherwise an
-                // auth-start clock regression could strand callback authority in the ledger.
                 self.currentConnectionToken = token
                 do {
                     try await self.sessionLedger.markAuthenticationStarted(for: token)
@@ -1262,8 +1252,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
                         break
                     }
                     self.acceptanceCutIsClosed = true
-                    // Freeze only the current physical attempt. Older failed-attempt diagnostics stay
-                    // available in the live controller log but cannot contaminate accepted evidence.
                     let acceptedEventPrefixAtCut = Array(self.events.dropFirst(self.captureAttemptEventStartIndex))
                     do {
                         try await sessionLedger.sealAcceptedObservation(for: token)
@@ -1280,6 +1268,20 @@ private final class SecureLinkController: NSObject, ObservableObject {
                             ])
                             return
                         }
+
+                        self.sdkLocalBLEOnline = driver.isLocallyConnected(uuid: self.tuyaUUID)
+                        guard self.sdkLocalBLEOnline else {
+                            self.currentConnectionToken = nil
+                            self.localBLESettlementToken = nil
+                            self.driver = nil
+                            self.phase = .failed
+                            self.message = "Tuya local-BLE authority was no longer current after canonical acceptance sealing. Restart from OFF1; the sealed package chronology is diagnostic only."
+                            self.log("sdk_local_ble_lost_during_acceptance_seal", [
+                                "generation": String(token.diagnosticGeneration)
+                            ])
+                            return
+                        }
+
                         self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut
                         self.currentConnectionToken = nil
                         self.sealedAcceptedExport = self.makeExport(
@@ -1428,11 +1430,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
         log(kind, ["generation": String(token.diagnosticGeneration)])
     }
 
-    /// Mirrors a terminal continuity verdict already committed by the package mutation that threw
-    /// `observationContinuityInvalidated`. That package path clears its current token before
-    /// throwing, so calling another ledger terminal here would manufacture a false retirement
-    /// failure. This helper changes app-local ownership/presentation only; it does not claim BLE
-    /// disconnect, source loss, a new clock receipt, or a second terminal event.
     private func mirrorAlreadyTerminalObservationContinuity(
         token: TuyaReadOnlyConnectionToken,
         message: String,
@@ -1497,8 +1494,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.markInternalLifecycleFailure(for: token)
         } catch {
-            // Do not discard app ownership when package retirement itself is unproven. Keeping the
-            // token blocks generic reset/retry and makes relaunch the only safe recovery.
             phase = .failed
             self.message = "Internal session authority could not be terminally retired. Relaunch Capture before another attempt."
             log("internal_lifecycle_terminal_retirement_failed", [
@@ -1614,9 +1609,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
         pendingCorrelatedTargetID = nil
         sdkLocalBLEOnline = false
         exportData = nil
-        // Active authenticated generations must be terminally retired by their
-        // owning outcome path before a new discovery attempt. Generic reset never
-        // manufactures a transport-disconnect terminal.
         assert(currentConnectionToken == nil)
     }
 
