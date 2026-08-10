@@ -453,13 +453,13 @@ struct DashboardSpeedInstrumentView: View {
         refreshEnergyRailPresentationSchedule(for: storeProjection)
     }
 
-    /// Display scheduling is downstream-only. The Store must still be LIVE before
-    /// a package display schedule may request continuous frames or a future wake.
+    /// Display scheduling is downstream-only. Continuous 60 Hz frames remain gated
+    /// by Reduce Motion in `body`, but package-owned one-shot semantic/freshness wakes
+    /// must still run so an unchanged accepted LIVE receipt can age to RETAINED.
     private func refreshEnergyRailPresentationSchedule(
         for storeProjection: SimulatorPowerStoreProjection
     ) {
-        guard !reduceMotion,
-              hasEnergyRailSourceCapability,
+        guard hasEnergyRailSourceCapability,
               storeProjection.currentness == .live,
               storeProjection.observation != nil,
               let energyRailRuntime else {
