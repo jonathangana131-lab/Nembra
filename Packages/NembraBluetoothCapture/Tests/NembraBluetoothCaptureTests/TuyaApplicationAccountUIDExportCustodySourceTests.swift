@@ -8,13 +8,24 @@ struct TuyaApplicationAccountUIDExportCustodySourceTests {
     func acceptedEventScrubsExactLeasedAccountUID() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let receiver = String(try section(in: source, from: "private func receivedApplicationUpdate(", to: "private func startWatchdog"))
-        #expect(receiver.contains("redactedApplicationEventDetails(update)"))
-        #expect(receiver.contains("membershipAccountUID?.trimmingCharacters"))
-        #expect(receiver.contains("let redactedKey = key.replacingOccurrences("))
-        #expect(receiver.contains("value.replacingOccurrences("))
+        let scrub = try requiredOffset(containing: "let custodySafeUpdate = redactedApplicationEventDetails(update, accountUID: custodyAccountUID)", in: receiver)
+        let ledgerAwait = try requiredOffset(containing: "try await sessionLedger.recordApplicationUpdate", in: receiver)
+        #expect(scrub < ledgerAwait)
+        #expect(receiver.contains("guard let custodyAccountUID = membershipAccountUID?.trimmingCharacters"))
+        #expect(receiver.contains("var eventDetails = custodySafeUpdate"))
+        #expect(receiver.contains("for key in update.keys.sorted()"))
+        #expect(receiver.contains("while redacted[outputKey] != nil"))
+        #expect(receiver.contains("redacted[outputKey] = redactedValue"))
         #expect(receiver.contains("<redacted-account-uid>"))
         #expect(receiver.contains("options: [.caseInsensitive, .literal]"))
+        #expect(!receiver.contains("return update"))
+        #expect(!receiver.contains("redactedApplicationEventDetails(update)"))
         #expect(!receiver.contains("log(\"tuya_application_update\", update"))
+    }
+
+    private func requiredOffset(containing token: String, in source: String) throws -> String.Index {
+        guard let range = source.range(of: token) else { throw Error.sectionMissing }
+        return range.lowerBound
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
