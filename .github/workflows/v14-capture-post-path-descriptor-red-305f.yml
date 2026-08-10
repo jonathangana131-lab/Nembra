@@ -1,0 +1,40 @@
+name: V14 Capture Post-Path Descriptor RED 305F
+
+on:
+  push:
+    branches:
+      - red/v14-capture-post-path-descriptor-305f-sol
+
+jobs:
+  expected-red:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          ref: red/v14-capture-post-path-descriptor-305f-sol
+      - name: Assert exact RED parent and test-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD~2)" = '305f1e71f755884387ecb1e7c32db22590cef478'
+          git diff --name-only 305f1e71f755884387ecb1e7c32db22590cef478 HEAD | sort > /tmp/actual
+          cat > /tmp/expected <<'EOF'
+          .github/workflows/v14-capture-post-path-descriptor-red-305f.yml
+          scripts/ci/tests/test_capture_tuya_private_input_post_path_descriptor_red.py
+          EOF
+          sort -o /tmp/expected /tmp/expected
+          diff -u /tmp/expected /tmp/actual
+      - name: Prove current product is RED
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/tests/test_capture_tuya_private_input_post_path_descriptor_red.py
+          set +e
+          python3 scripts/ci/tests/test_capture_tuya_private_input_post_path_descriptor_red.py > /tmp/red.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/red.log
+          test "$status" -ne 0
+          grep -Eq 'FAILED|AssertionError' /tmp/red.log
+          echo 'EXPECTED RED: same-inode mutation after pathname metadata sample is not yet rejected.'
