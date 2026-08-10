@@ -122,6 +122,7 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         }
 
         let now = try nextMonotonicObservation()
+        currentToken = nil
         authenticationState = .failed(reason: "Tuya authentication failed.")
         authenticationMethod = nil
         authenticatedAtUptimeNanoseconds = nil
@@ -167,11 +168,30 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         latestObservedUptimeNanoseconds = try nextMonotonicObservation()
     }
 
+    /// Retires the current attempt without claiming that the underlying BLE link physically ended.
+    /// Use this when observation/authentication authority is no longer trustworthy even if the SDK
+    /// may still own a transport connection (for example after an app-observation continuity gap).
+    public func invalidateAttempt(for token: TuyaReadOnlyConnectionToken) throws {
+        try requireCurrent(token)
+        let now = try nextMonotonicObservation()
+        currentToken = nil
+        authenticationState = .failed(reason: "Authenticated read-only attempt invalidated.")
+        authenticationMethod = nil
+        authenticatedAtUptimeNanoseconds = nil
+        latestObservedUptimeNanoseconds = now
+        applicationPayloadCount = 0
+        latestApplicationPayloadUptimeNanoseconds = nil
+    }
+
+    /// Ends the ledger's current connection authority. The caller may know a more specific cause
+    /// (for example SDK-local BLE went offline), but the ledger itself does not promote that cause
+    /// to a physical transport fact because this API is also used to retire broken observation
+    /// continuity.
     public func endConnection(for token: TuyaReadOnlyConnectionToken) throws {
         try requireCurrent(token)
         let now = try nextMonotonicObservation()
         currentToken = nil
-        authenticationState = .unavailable(reason: "Bluetooth connection ended.")
+        authenticationState = .unavailable(reason: "Connection authority ended.")
         authenticationMethod = nil
         connectionStartedAtUptimeNanoseconds = nil
         authenticatedAtUptimeNanoseconds = nil
