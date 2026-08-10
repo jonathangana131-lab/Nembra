@@ -1,5 +1,6 @@
 import Dispatch
 import Foundation
+import NembraCore
 import Observation
 import SwiftUI
 
@@ -288,16 +289,41 @@ final class SpeedInstrumentModel {
     }
 }
 
+/// App-owned source signature for the Simulator-only Energy Rail fixture.
+///
+/// Equality intentionally excludes unrelated `VehicleState` fields. A redraw or an
+/// unrelated state publication carrying the same watts cannot mint another accepted
+/// power receipt. Physical/unverified profiles collapse to `.unavailable` before the
+/// package runtime is even constructed.
+private struct DashboardSimulatorEnergyRailSource: Equatable {
+    let isSimulatorQA: Bool
+    let connected: Bool
+    let watts: Double?
+    let modeKey: String?
+
+    static let unavailable = DashboardSimulatorEnergyRailSource(
+        isSimulatorQA: false,
+        connected: false,
+        watts: nil,
+        modeKey: nil
+    )
+
+    var drivesDisplayClock: Bool {
+        isSimulatorQA && connected && watts != nil
+    }
+}
+
 /// A deliberately narrow high-frequency subtree for the landscape cockpit.
 ///
-/// Only this view redraws on SwiftUI's animation timeline. Vehicle controls,
-/// ride detection, persistence, distance, and safety continue to consume the
-/// accepted domain/source state rather than the rendered interpolation frame.
+/// Speed and propulsion presentation clocks are localized here. Source admission is
+/// event-driven and remains separate from both 60 Hz timelines: render frames never
+/// flow back into `VehicleState`, ride history, distance, stats, or protocol evidence.
 @MainActor
 struct DashboardSpeedInstrumentView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model = SpeedInstrumentModel()
+    @State private var energyRailRuntime: PropulsionEnergyRailSimulatorRuntime?
 
     let modePersonality: DashboardModePersonality
 
@@ -308,22 +334,28 @@ struct DashboardSpeedInstrumentView: View {
             allowsSimulatorQA: allowsSimulatorQA
         )
 
-        TimelineView(
-            .animation(
-                minimumInterval: 1.0 / 60.0,
-                paused: reduceMotion
-                    || !model.isAnimationActive
-                    || !isLivePresentation(speedAvailability)
-            )
-        ) { _ in
-            let frame = model.presentationFrame(
-                for: rawSpeedAvailability,
-                atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
-                prefersReducedMotion: reduceMotion,
-                allowsSimulatorQA: allowsSimulatorQA
-            )
+        VStack(spacing: 0) {
+            TimelineView(
+                .animation(
+                    minimumInterval: 1.0 / 60.0,
+                    paused: reduceMotion
+                        || !model.isAnimationActive
+                        || !isLivePresentation(speedAvailability)
+                )
+            ) { _ in
+                let frame = model.presentationFrame(
+                    for: rawSpeedAvailability,
+                    atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+                    prefersReducedMotion: reduceMotion,
+                    allowsSimulatorQA: allowsSimulatorQA
+                )
 
-            instrumentContent(frame: frame, speedAvailability: speedAvailability)
+                speedInstrumentContent(frame: frame, speedAvailability: speedAvailability)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            energyRailInstrument
+                .padding(.horizontal, 16)
         }
         .task {
             model.configureInterpolationPolicy(vehicle.speedInstrumentInterpolationPolicy)
@@ -331,6 +363,7 @@ struct DashboardSpeedInstrumentView: View {
                 vehicle.speedEvidenceAvailability,
                 allowsSimulatorQA: vehicle.profile == .simulatorQA
             )
+            admitEnergyRailSource(energyRailSource)
         }
         .onChange(of: vehicle.speedEvidenceAvailability) { _, availability in
             model.setSpeedEvidenceAvailability(
@@ -338,9 +371,107 @@ struct DashboardSpeedInstrumentView: View {
                 allowsSimulatorQA: vehicle.profile == .simulatorQA
             )
         }
+        .onChange(of: energyRailSource) { _, source in
+            admitEnergyRailSource(source)
+        }
         .onDisappear {
             model.stop()
+            energyRailRuntime = nil
         }
+    }
+
+    @ViewBuilder
+    private var energyRailInstrument: some View {
+        let source = energyRailSource
+
+        TimelineView(
+            .animation(
+                minimumInterval: 1.0 / 60.0,
+                paused: reduceMotion || !source.drivesDisplayClock
+            )
+        ) { _ in
+            NembraEnergyRailView(
+                state: energyRailVisualState(
+                    source: source,
+                    atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
+                )
+            )
+        }
+    }
+
+    private var energyRailSource: DashboardSimulatorEnergyRailSource {
+        guard vehicle.profile == .simulatorQA else {
+            return .unavailable
+        }
+
+        let connected = vehicle.state.connection == .connected
+        let watts: Double?
+        if let rawWatts = vehicle.state.powerWatts,
+           rawWatts.isFinite,
+           rawWatts >= 0 {
+            watts = rawWatts == 0 ? 0 : rawWatts
+        } else {
+            watts = nil
+        }
+
+        return DashboardSimulatorEnergyRailSource(
+            isSimulatorQA: true,
+            connected: connected,
+            watts: watts,
+            modeKey: vehicle.state.rideMode?.displayName
+        )
+    }
+
+    /// Source-event clock. This is called only when the Simulator source signature
+    /// changes (plus initial task admission), never from either render timeline.
+    private func admitEnergyRailSource(_ source: DashboardSimulatorEnergyRailSource) {
+        guard source.isSimulatorQA else {
+            energyRailRuntime = nil
+            return
+        }
+
+        var runtime: PropulsionEnergyRailSimulatorRuntime
+        if let existing = energyRailRuntime {
+            runtime = existing
+        } else {
+            guard let created = try? PropulsionEnergyRailSimulatorRuntime() else {
+                energyRailRuntime = nil
+                return
+            }
+            runtime = created
+        }
+
+        _ = runtime.observe(
+            connected: source.connected,
+            watts: source.watts,
+            modeKey: source.modeKey,
+            receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
+        )
+        energyRailRuntime = runtime
+    }
+
+    /// Synchronous truth gate for SwiftUI callback ordering. If source state changes
+    /// before `.onChange` retargets the package runtime, the old accepted watts are
+    /// hidden rather than flashing as current. Only a projection that exactly matches
+    /// the current Simulator source may render numerically.
+    private func energyRailVisualState(
+        source: DashboardSimulatorEnergyRailSource,
+        atUptimeNanoseconds uptimeNanoseconds: UInt64
+    ) -> NembraEnergyRailVisualState {
+        guard source.isSimulatorQA,
+              source.connected,
+              let sourceWatts = source.watts,
+              let runtime = energyRailRuntime else {
+            return .unavailable
+        }
+
+        let state = NembraEnergyRailVisualState(
+            projection: runtime.projection(atUptimeNanoseconds: uptimeNanoseconds)
+        )
+        guard state.semanticWatts == sourceWatts else {
+            return .unavailable
+        }
+        return state
     }
 
     private func isLivePresentation(_ availability: SpeedEvidenceAvailability) -> Bool {
@@ -350,7 +481,7 @@ struct DashboardSpeedInstrumentView: View {
         return false
     }
 
-    private func instrumentContent(
+    private func speedInstrumentContent(
         frame: SpeedInstrumentDisplayFrame?,
         speedAvailability: SpeedEvidenceAvailability
     ) -> some View {
