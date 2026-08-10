@@ -43,6 +43,7 @@
 		A00000000000000000000039 /* RideLocationEvidence.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000039 /* RideLocationEvidence.swift */; };
 		A0000000000000000000003A /* RideLocationCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000003A /* RideLocationCapture.swift */; };
 		A0000000000000000000003B /* RideLocationCaptureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000003B /* RideLocationCaptureTests.swift */; };
+		A0000000000000000000003C /* NembraCore in Frameworks */ = {isa = PBXBuildFile; productRef = 600000000000000000000002 /* NembraCore */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -106,7 +107,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		F00000000000000000000001 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		F00000000000000000000001 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A0000000000000000000003C /* NembraCore in Frameworks */); runOnlyForDeploymentPostprocessing = 0; };
 		F00000000000000000000002 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 		F00000000000000000000030 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
@@ -210,6 +211,9 @@
 			buildRules = ();
 			dependencies = ();
 			name = Nembra;
+			packageProductDependencies = (
+				600000000000000000000002 /* NembraCore */,
+			);
 			productName = Nembra;
 			productReference = B0000000000000000000000C;
 			productType = "com.apple.product-type.application";
@@ -257,6 +261,9 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (en, Base);
 			mainGroup = 100000000000000000000001;
+			packageReferences = (
+				600000000000000000000001 /* XCLocalSwiftPackageReference "NembraCore" */,
+			);
 			productRefGroup = 100000000000000000000008;
 			projectDirPath = "";
 			projectRoot = "";
@@ -301,6 +308,21 @@
 		200000000000000000000003 = {isa = XCConfigurationList; buildConfigurations = (400000000000000000000005, 400000000000000000000006); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
 		200000000000000000000030 = {isa = XCConfigurationList; buildConfigurations = (400000000000000000000030, 400000000000000000000031); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		600000000000000000000001 /* XCLocalSwiftPackageReference "NembraCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/NembraCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		600000000000000000000002 /* NembraCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 600000000000000000000001 /* XCLocalSwiftPackageReference "NembraCore" */;
+			productName = NembraCore;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = D00000000000000000000001 /* Project object */;
 }
