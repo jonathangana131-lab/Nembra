@@ -9,6 +9,7 @@ on:
     paths:
       - NembraApp/App/NembraCaptureBuildIdentity.swift
       - NembraCapture.xcodeproj/project.pbxproj
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift
       - scripts/field/install_one_time_capture.command
       - .github/workflows/capture-field-build-provenance.yml
   workflow_dispatch:
@@ -47,6 +48,19 @@ jobs:
           grep -Fq 'NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$SOURCE_SHA"' "$installer"
           if grep -Fq 'Switch to capture/one-time-ble-dump-gpt56 first' "$installer"; then
             echo 'ERROR: field-build authority must bind the accepted source SHA, not a branch name.' >&2
+            exit 1
+          fi
+
+          grep -Fq 'NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE' "$installer"
+          grep -Fq 'read_private_identifier' "$installer"
+          grep -Fq 'devicectl list devices --hide-headers' "$installer"
+          grep -Fq '.coredevice.local' "$installer"
+          grep -Fq '[[ "$DEVICE_OS_VERSION" == 27.* ]]' "$installer"
+          grep -Fq '[[ "$DEVICE_MODEL" == "iPhone13,2" ]]' "$installer"
+          grep -Fq 'devicectl device install app --device "$COREDEVICE_ID"' "$installer"
+          grep -Fq -- '--device "$COREDEVICE_ID"' "$installer"
+          if grep -Fq -- '--device "$DEVICE_UDID"' "$installer"; then
+            echo 'ERROR: private intended-device UDID must not be placed in devicectl argv; use the correlated CoreDevice selector.' >&2
             exit 1
           fi
 
