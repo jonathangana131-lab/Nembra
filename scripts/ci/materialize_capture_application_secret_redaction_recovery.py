@@ -100,8 +100,12 @@ def verify() -> None:
             raise SystemExit(f"application secret redaction token missing: {token}")
     if "sanitized[String(describing: key)] = String(describing: value)" in body:
         raise SystemExit("raw dpsUpdate string projection still bypasses redaction")
+
+    # The driver legitimately owns its pre-existing connectBLE transport above this boundary.
+    # Scope no-new-authority checks to the new redaction + dpsUpdate custody section only.
+    custody = body[body.index("private static let applicationSecretKeyFragments"):]
     for forbidden in ("publishDps", "writeValue", "connectBLE(", "disconnect"):
-        if forbidden in body:
+        if forbidden in custody:
             raise SystemExit(f"secret custody introduced forbidden protocol/control authority: {forbidden}")
     if not TEST.exists():
         raise SystemExit("application secret-redaction source regression is missing")
