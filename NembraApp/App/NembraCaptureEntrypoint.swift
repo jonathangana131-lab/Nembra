@@ -429,6 +429,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         // A later SwiftUI/account callback must not mint a replacement membership probe off-screen.
         acceptsViewScopedMembershipRequests = false
         sdkDeviceMembershipVerified = false
+        membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."
         membershipAccountUID = nil
         membershipDeviceID = nil
         membershipRequestID = UUID()
@@ -486,6 +487,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         // already-issued asynchronous grants before inspecting any radio/session state.
         acceptsViewScopedMembershipRequests = false
         sdkDeviceMembershipVerified = false
+        membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."
         membershipAccountUID = nil
         membershipDeviceID = nil
         membershipRequestID = UUID()
@@ -1381,6 +1383,41 @@ private final class SecureLinkController: NSObject, ObservableObject {
         log(kind, ["generation": String(token.diagnosticGeneration)])
     }
 
+    private func redactVerifiedAccountUIDFromApplicationEvidence(
+        _ update: [String: String]
+    ) -> [String: String] {
+        let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !accountUID.isEmpty else { return update }
+
+        var redacted: [String: String] = [:]
+        redacted.reserveCapacity(update.count)
+        for (key, value) in update {
+            let redactedKey = key.replacingOccurrences(
+                of: accountUID,
+                with: "<redacted-account-uid>",
+                options: [.literal]
+            )
+            let redactedValue = value.replacingOccurrences(
+                of: accountUID,
+                with: "<redacted-account-uid>",
+                options: [.literal]
+            )
+
+            if redacted[redactedKey] == nil {
+                redacted[redactedKey] = redactedValue
+            } else {
+                var suffix = 2
+                var disambiguatedKey = "\(redactedKey)#\(suffix)"
+                while redacted[disambiguatedKey] != nil {
+                    suffix += 1
+                    disambiguatedKey = "\(redactedKey)#\(suffix)"
+                }
+                redacted[disambiguatedKey] = redactedValue
+            }
+        }
+        return redacted
+    }
+
     private func receivedApplicationUpdate(
         _ update: [String: String],
         token: TuyaReadOnlyConnectionToken
@@ -1425,9 +1462,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            let redactedUpdate = redactVerifiedAccountUIDFromApplicationEvidence(update)
+            log("tuya_application_update", redactedUpdate.merging([
                 "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -2241,7 +2279,6 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "accounttoken",
         "accesstoken",
         "refreshtoken",
-        "sessionkey",
         "authkey",
         "seckey",
     ]
