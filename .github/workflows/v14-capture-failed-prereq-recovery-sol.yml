@@ -1,0 +1,33 @@
+name: V14 Capture Failed Prerequisite Recovery Sol
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-failed-prereq-recovery-current-sol
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-failed-prereq-recovery-current-sol
+          fetch-depth: 0
+      - name: Materialize recovery repair
+        run: python3 scripts/ci/materialize_capture_failed_prereq_recovery_sol.py
+      - name: Verify diff
+        run: git diff --check
+      - name: Commit clean recovery successor
+        run: |
+          set -euo pipefail
+          rm .github/workflows/v14-capture-failed-prereq-recovery-sol.yml
+          rm scripts/ci/materialize_capture_failed_prereq_recovery_sol.py
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(capture): restore failed prerequisite recovery"
+          git push origin HEAD:fix/v14-capture-failed-prereq-recovery-current-sol
