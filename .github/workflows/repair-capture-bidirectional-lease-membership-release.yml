@@ -1,0 +1,43 @@
+name: Repair Capture Bidirectional Lease Membership Release
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-bidirectional-ble-ownership-lease-sol
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-bidirectional-ble-ownership-lease-sol
+          fetch-depth: 0
+      - name: Guard reviewed reanchor
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 99d1707245695fa4fb27cb64cabcdf35c3f70f4e HEAD
+          git diff --quiet 99d1707245695fa4fb27cb64cabcdf35c3f70f4e HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaBidirectionalBLEOwnershipLeaseSourceTests.swift
+      - name: Apply terminal release repair
+        run: python3 scripts/ci/repair_capture_bidirectional_lease_membership_release.py
+      - name: Verify
+        run: |
+          set -euo pipefail
+          git diff --check
+          grep -Fq 'releasePackageCorrelationOwnership()' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'membershipInvalidation' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaBidirectionalBLEOwnershipLeaseSourceTests.swift
+      - name: Publish clean repair
+        run: |
+          set -euo pipefail
+          rm .github/workflows/repair-capture-bidirectional-lease-membership-release.yml
+          rm scripts/ci/repair_capture_bidirectional_lease_membership_release.py
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(capture): release package lease on membership invalidation"
+          git push origin HEAD:fix/v14-capture-bidirectional-ble-ownership-lease-sol
