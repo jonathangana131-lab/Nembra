@@ -10,7 +10,7 @@ struct CaptureRootCriticalTouchTargetsSourceTests {
         let root = String(try section(
             in: source,
             from: "private struct CaptureP0Root: View",
-            to: "@MainActor\nprivate final class TuyaAccountBridge"
+            to: "@MainActor\nprivate final class SecureLinkController"
         ))
 
         for token in [
