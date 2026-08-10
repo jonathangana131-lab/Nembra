@@ -7,22 +7,22 @@ struct PropulsionEnergyRailDisplayScheduleTests {
     func continuousFramesStopAtSettlement() throws {
         var runtime = try PropulsionEnergyRailSimulatorRuntime()
 
-        #expect(runtime.observe(
-            connected: true,
+        #expect(runtime.acceptLiveSource(
             watts: 100,
-            modeKey: nil,
-            receivedAtUptimeNanoseconds: 1_000
+            receiptSequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 1_000,
+            continuityGeneration: 1
         ))
 
         let first = runtime.displaySchedule(atUptimeNanoseconds: 1_000)
         #expect(first.requiresContinuousFrames == false)
         #expect(first.nextTransitionUptimeNanoseconds == 2_000_001_001)
 
-        #expect(runtime.observe(
-            connected: true,
+        #expect(runtime.acceptLiveSource(
             watts: 400,
-            modeKey: nil,
-            receivedAtUptimeNanoseconds: 10_000_000
+            receiptSequenceNumber: 2,
+            receivedAtUptimeNanoseconds: 10_000_000,
+            continuityGeneration: 1
         ))
 
         let moving = runtime.displaySchedule(atUptimeNanoseconds: 10_000_000)
@@ -49,17 +49,17 @@ struct PropulsionEnergyRailDisplayScheduleTests {
     func fallingPowerUsesReleaseDeadline() throws {
         var runtime = try PropulsionEnergyRailSimulatorRuntime()
 
-        #expect(runtime.observe(
-            connected: true,
+        #expect(runtime.acceptLiveSource(
             watts: 400,
-            modeKey: nil,
-            receivedAtUptimeNanoseconds: 1_000
+            receiptSequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 1_000,
+            continuityGeneration: 1
         ))
-        #expect(runtime.observe(
-            connected: true,
+        #expect(runtime.acceptLiveSource(
             watts: 100,
-            modeKey: nil,
-            receivedAtUptimeNanoseconds: 10_000_000
+            receiptSequenceNumber: 2,
+            receivedAtUptimeNanoseconds: 10_000_000,
+            continuityGeneration: 1
         ))
 
         let moving = runtime.displaySchedule(atUptimeNanoseconds: 10_000_000)
@@ -71,65 +71,84 @@ struct PropulsionEnergyRailDisplayScheduleTests {
         #expect(settled.nextTransitionUptimeNanoseconds == 2_000_001_001)
     }
 
-    @Test("equal watts cannot refresh measurement or presentation deadlines")
-    func duplicatePowerDoesNotRefreshSchedule() throws {
+    @Test("only a genuine newer equal-watt receipt refreshes presentation deadlines")
+    func equalWattsRespectSourceReceiptClock() throws {
         var runtime = try PropulsionEnergyRailSimulatorRuntime()
 
-        #expect(runtime.observe(
-            connected: true,
+        #expect(runtime.acceptLiveSource(
             watts: 356,
-            modeKey: nil,
-            receivedAtUptimeNanoseconds: 100
+            receiptSequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 100,
+            continuityGeneration: 1
         ))
         let original = runtime.displaySchedule(atUptimeNanoseconds: 100)
         let accepted = runtime.projection(atUptimeNanoseconds: 100).acceptedMeasurement
 
-        #expect(runtime.observe(
-            connected: true,
+        // Exact replay is idempotent and cannot refresh presentation currentness.
+        #expect(runtime.acceptLiveSource(
             watts: 356,
-            modeKey: nil,
-            receivedAtUptimeNanoseconds: 500_000_000
+            receiptSequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 100,
+            continuityGeneration: 1
         ))
-        let duplicate = runtime.displaySchedule(atUptimeNanoseconds: 500_000_000)
-        let stillAccepted = runtime.projection(
+        let replay = runtime.displaySchedule(atUptimeNanoseconds: 500_000_000)
+        #expect(replay.nextTransitionUptimeNanoseconds == original.nextTransitionUptimeNanoseconds)
+        #expect(runtime.projection(
+            atUptimeNanoseconds: 500_000_000
+        ).acceptedMeasurement == accepted)
+
+        // A genuine equal-watt source receipt is new measurement evidence and may
+        // refresh currentness without inventing a visual delta.
+        #expect(runtime.acceptLiveSource(
+            watts: 356,
+            receiptSequenceNumber: 2,
+            receivedAtUptimeNanoseconds: 500_000_000,
+            continuityGeneration: 1
+        ))
+        let refreshed = runtime.displaySchedule(atUptimeNanoseconds: 500_000_000)
+        let refreshedMeasurement = runtime.projection(
             atUptimeNanoseconds: 500_000_000
         ).acceptedMeasurement
 
-        #expect(original.nextTransitionUptimeNanoseconds == 2_000_000_101)
-        #expect(duplicate.nextTransitionUptimeNanoseconds == 2_000_000_101)
-        #expect(accepted == stillAccepted)
+        #expect(refreshed.nextTransitionUptimeNanoseconds == 2_500_000_001)
+        #expect(refreshedMeasurement?.receiptSequenceNumber == 2)
+        #expect(refreshedMeasurement?.watts == 356)
     }
 
-    @Test("disconnect and freshness expiry leave no background display schedule")
-    func unavailableAndRetainedAreQuiescent() throws {
+    @Test("source-retained and unavailable states leave no background display schedule")
+    func retainedAndUnavailableAreQuiescent() throws {
         var runtime = try PropulsionEnergyRailSimulatorRuntime(
             freshnessNanoseconds: 1_000
         )
 
-        #expect(runtime.observe(
-            connected: true,
+        #expect(runtime.acceptLiveSource(
             watts: 250,
-            modeKey: "eco",
-            receivedAtUptimeNanoseconds: 10_000
+            receiptSequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 10_000,
+            continuityGeneration: 1
         ))
 
         let liveBoundary = runtime.displaySchedule(atUptimeNanoseconds: 11_000)
         #expect(liveBoundary.requiresContinuousFrames == false)
         #expect(liveBoundary.nextTransitionUptimeNanoseconds == 11_001)
 
-        let retained = runtime.displaySchedule(atUptimeNanoseconds: 11_001)
+        // Source custody can demote currentness immediately; render time does not
+        // need to wait for the synthetic freshness threshold.
+        #expect(runtime.retainSource(
+            watts: 250,
+            receiptSequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 10_000,
+            continuityGeneration: 1
+        ))
+        let retained = runtime.displaySchedule(atUptimeNanoseconds: 10_100)
         #expect(retained.requiresContinuousFrames == false)
         #expect(retained.nextTransitionUptimeNanoseconds == nil)
-        #expect(runtime.projection(atUptimeNanoseconds: 11_001).currentness == .retained)
+        #expect(runtime.projection(atUptimeNanoseconds: 10_100).currentness == .retained)
 
-        #expect(runtime.observe(
-            connected: false,
-            watts: nil,
-            modeKey: "eco",
-            receivedAtUptimeNanoseconds: 12_000
-        ) == false)
+        runtime.markUnavailable()
         let unavailable = runtime.displaySchedule(atUptimeNanoseconds: 12_000)
         #expect(unavailable.requiresContinuousFrames == false)
         #expect(unavailable.nextTransitionUptimeNanoseconds == nil)
+        #expect(runtime.projection(atUptimeNanoseconds: 12_000).currentness == .unavailable)
     }
 }
