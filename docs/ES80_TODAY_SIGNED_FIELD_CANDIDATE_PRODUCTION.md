@@ -35,16 +35,17 @@ The helper exists only to prevent known operator-input dead ends before the froz
 
 The current accepted private intended-device input helper is separately pinned and remains non-authorizing operator tooling:
 
-- helper commit: `91dda8ac05e937e5615312a487f7d78926b74949`
+- helper commit: `90d3578a1d39a1d019000583a712306b67786acf`
 - helper path: `scripts/ci/es80_today_private_device_input.py`
-- helper blob: `50b12675a57fd2f570d833cfcdbfd7be59f52ca4`
-- exact focused QA run: `31349898562` — terminal success
-- exact focused QA job: `93338620824` — terminal success
-- accepted main lineage carrying the same helper bytes: `af75ffa6dc4409a21822295428e4eeb922ac3d16`
+- helper blob: `62b719e8d9afb34da6d35d696e80edf926442696`
+- exact focused regression blob: `e87c15948f7a6c934b600e4fc3bb525653847f5d`
+- exact focused QA run: `31350148402` — terminal success
+- exact focused QA job: `93339277106` — terminal success
+- accepted main lineage carrying the same helper bytes: `b479d851a54437ef394a4901c69db2d829d280e4`
 
-That exact helper lineage combines the durable secret-erasure model with occupied-target rejection before secret acquisition, exclusive post-precheck creation, and EOF/secure-terminal fail-closed behavior. It never grants signing acceptance or physical authorization.
+That exact helper lineage combines occupied-target rejection before secret acquisition, exclusive race-safe creation, EOF/secure-terminal fail-closed handling, and the final nondestructive cleanup rule: after secret bytes may exist, cleanup scrubs only the exact still-open inode and never unlinks a mutable pathname. A failed acquisition may therefore leave an intentional zero-length mode-`0600` spent subject; preserve it and use a fresh private filename/path for retry. These bytes never grant signing acceptance or physical authorization.
 
-Superseded private-input helper provenance, retained only to keep the handoff auditable: commit `05ce6d9a20487ab34aa31c5b6456910ed2ed438f`, blob `9a9f7f724ceaf895e52d6d443d326043f97645c8`. **Do not materialize or invoke that superseded helper for the current handoff.**
+Superseded private-input helper provenance is retained only to keep the handoff auditable: commit `91dda8ac05e937e5615312a487f7d78926b74949`, blob `50b12675a57fd2f570d833cfcdbfd7be59f52ca4`; older commit `05ce6d9a20487ab34aa31c5b6456910ed2ed438f`, blob `9a9f7f724ceaf895e52d6d443d326043f97645c8`. **Do not materialize or invoke either superseded helper for the current handoff.**
 
 Superseded preflight provenance, retained only to make the handoff history auditable: commit `9b5bde849e6b8f6b76e2a15abb52d643e3616a7a`, blob `fcc2243c005c5f6df2d2f5bd8b8c948e785f07d8`, run `31340823325`. **Do not materialize or invoke that superseded helper for the current handoff.**
 
@@ -95,7 +96,7 @@ The producer itself will create another fresh detached worktree internally. The 
 
 Choose a private path outside the repository. The producer requires an absolute regular non-symlink mode-`0600` file and independently validates its contents/mode.
 
-Do not acquire the raw identifier through ordinary shell redirection. Even with `noclobber`, a checked parent directory pathname can be renamed and replaced before `> "$UDID_FILE"` re-resolves it. Use the accepted descriptor-bound private-input helper instead. It opens directory components with no-follow descriptors, rejects occupied targets before asking for the secret, creates the final file relative to the pinned directory descriptor, rebinds the pathname after creation, verifies directory/file identity and exact readback, durably erases partial secret bytes on failure when it can prove that erasure, and fails closed if custody cannot be proven.
+Do not acquire the raw identifier through ordinary shell redirection. Even with `noclobber`, a checked parent directory pathname can be renamed and replaced before `> "$UDID_FILE"` re-resolves it. Use the accepted descriptor-bound private-input helper instead. It opens directory components with no-follow descriptors, rejects occupied targets before asking for the secret, creates the final file relative to the pinned directory descriptor, rebinds the pathname after creation, verifies directory/file identity and exact readback, and—if secret bytes may have been written before failure—durably scrubs only the exact still-open inode. It never unlinks a mutable pathname after secret acquisition.
 
 The accepted helper identity is fixed below. These helper bytes are operator-custody tooling only; they do not alter the frozen `a0f4…` app subject and do not authorize signing acceptance or Bluetooth activity.
 
@@ -107,8 +108,8 @@ PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"
 UDID_FILE="$PRIVATE_DIR/es80-intended-device.udid"
 TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
 
-PRIVATE_INPUT_HELPER_COMMIT='91dda8ac05e937e5615312a487f7d78926b74949'
-PRIVATE_INPUT_HELPER_BLOB='50b12675a57fd2f570d833cfcdbfd7be59f52ca4'
+PRIVATE_INPUT_HELPER_COMMIT='90d3578a1d39a1d019000583a712306b67786acf'
+PRIVATE_INPUT_HELPER_BLOB='62b719e8d9afb34da6d35d696e80edf926442696'
 PRIVATE_INPUT_HELPER_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-private-input.XXXXXX)"
 PRIVATE_INPUT_HELPER="$PRIVATE_INPUT_HELPER_DIR/es80_today_private_device_input.py"
 
@@ -126,7 +127,9 @@ test -f "$UDID_FILE" && test ! -L "$UDID_FILE"
 test "$(/usr/bin/stat -f '%Lp' "$UDID_FILE")" = '600'
 ```
 
-If the helper reports `NOT_READY`, `secure-terminal-input-unavailable`, `private-intended-device-cleanup-failed`, or another nonzero blocker, stop before signing and preserve the exact blocker. Do not fall back to `printf >`, `tee`, `echo`, `noclobber`, echoing stdin, or another pathname-based secret write. Keep the resulting file private; do not commit it and do not copy it into the retained candidate directory. If the chosen final path already exists, the accepted helper refuses before secret acquisition; preserve it and choose a fresh filename/path rather than deleting or overwriting it just to satisfy the helper.
+If the helper reports `NOT_READY`, `secure-terminal-input-unavailable`, `private-intended-device-cleanup-failed`, or another nonzero blocker, stop before signing and preserve the exact blocker. Do not fall back to `printf >`, `tee`, `echo`, `noclobber`, echoing stdin, or another pathname-based secret write. If a failed acquisition left a zero-length spent subject, preserve it rather than unlinking/overwriting it; choose a fresh private filename/path for retry. If the chosen final path already exists, the accepted helper refuses before secret acquisition; preserve it and choose a fresh filename/path.
+
+Keep the resulting successful intended-device file private; do not commit it and do not copy it into the retained candidate directory.
 
 ## 3. Set the signing inputs without changing the source subject
 
@@ -272,7 +275,7 @@ Stop and preserve the exact blocker if any of these occurs:
 
 - the outer checkout is not exact clean detached `a0f4a33451f61411d6e0541f2e70edea5438342d`;
 - `DEVELOPER_DIR` is set or reintroduced after Section 3; configure Xcode 27 through the private Mac's `xcode-select` selection instead of carrying a caller override into the frozen producer;
-- the descriptor-bound private-input helper cannot be materialized at exact commit/blob, refuses the parent/input, cannot acquire the secret through a secure terminal, cannot durably clean a failed partial acquisition, or cannot create and rebind one fresh exact mode-`0600` single-link file;
+- the descriptor-bound private-input helper cannot be materialized at exact commit/blob, refuses the parent/input, cannot acquire the secret through a secure terminal, cannot durably scrub the exact open inode after failed partial acquisition, or cannot create and rebind one fresh exact mode-`0600` input;
 - the pinned external preflight cannot be materialized exactly, exits nonzero, or does not report `READY_TO_INVOKE_SIGNED_FIELD_PRODUCER` for the exact frozen source;
 - the ExportOptions plist path is not absolute, traverses a symlinked ancestor, names a symlink/non-regular/empty subject, changes identity while parsed, has a mismatched optional `teamID`, or has an invalid optional `method`;
 - the producer reports any source, signing, provisioning, intended-device, export, inspection, or evidence failure;
