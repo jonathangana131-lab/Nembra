@@ -152,6 +152,6 @@ printf '%s\n' \
     "Do NOT repeat the old 17-step ride capture." \
     "Keep the scooter stationary for this first preflight." \
     "If Capture says SDK compiled/configured, account logged in, or exact scooter membership is not proven, STOP and do not start BLE." \
-    "Only after all app gates are green: run the scooter-OFF baseline, power it ON, select the authoritative target, then Start secure read-only test." \
+    "Only after all app gates are green: complete OFF1 -> ON1 -> OFF2 -> ON2 exactly as Capture prompts, require one repeatable full CoreBluetooth UUID, then tap Confirm correlated Bluetooth target before Start secure read-only test." \
     "PASS requires exact SDK scooter membership, Tuya local BLE online, a genuine same-generation dpsUpdate, canonical continuity of at least 45 seconds, and no command/pair/reset/unbind action." \
     "If any gate fails, share the sanitized diagnostic JSON and stop. No outdoor ride is authorized by this installer."
