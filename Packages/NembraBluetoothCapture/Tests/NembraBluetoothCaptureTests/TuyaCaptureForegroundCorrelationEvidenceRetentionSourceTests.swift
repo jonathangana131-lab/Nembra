@@ -12,8 +12,13 @@ struct TuyaCaptureForegroundCorrelationEvidenceRetentionSourceTests {
             from: "private final class SecureLinkController",
             to: "@MainActor\nprivate protocol OfficialTuyaDriver"
         ))
-        let cleanup = String(try section(
+        let foreground = String(try section(
             in: controller,
+            from: "func appDidLoseForeground()",
+            to: "var privateConfig: Bool"
+        ))
+        let cleanup = String(try section(
+            in: foreground,
             from: "if phase == .correlated || phase == .selected",
             to: "guard let token = currentConnectionToken else"
         ))

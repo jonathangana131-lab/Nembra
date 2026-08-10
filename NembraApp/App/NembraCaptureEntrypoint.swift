@@ -968,6 +968,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
         membershipAccountUID = nil
         membershipDeviceID = nil
         pendingCorrelatedTargetID = nil
+        if phase == .correlated || phase == .selected {
+            // Final-window sealing already retired package scanning. Account authority loss must
+            // revoke target reuse without deleting the completed physical-correlation receipts.
+            pendingCorrelatedTargetID = nil
+            selectedID = nil
+            targetCorrelationOperatorConfirmed = false
+            phase = .failed
+            message = "SDK account authority changed after Bluetooth target correlation. Restart from OFF1 after re-verifying exact scooter membership; completed correlation evidence remains available for diagnostics."
+            log("sdk_membership_invalidated_after_target_correlation")
+        }
         if phase == .baseline || phase == .powerOn || phase == .scanning || phase == .correlated {
             abandonPackageCorrelation()
         }
@@ -1302,6 +1312,32 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 do {
                     try await sessionLedger.markAuthenticated(for: token, method: .smartLifeAppSDK)
                     await refreshLedgerSnapshot()
+
+                    // Both ledger actor hops above can interleave foreground/view/account retirement.
+                    // Never repaint an already-retired generation as authenticated observation.
+                    guard currentConnectionToken == token else {
+                        log("stale_auth_promotion_resume_ignored", [
+                            "generation": String(token.diagnosticGeneration)
+                        ])
+                        return
+                    }
+                    guard phase == .authenticating else {
+                        log("auth_promotion_resume_phase_changed_ignored", [
+                            "generation": String(token.diagnosticGeneration)
+                        ])
+                        return
+                    }
+                    guard sdkAccountLoggedIn,
+                          sdkDeviceMembershipVerified,
+                          accountIdentityLeaseIsAuthorized else {
+                        await invalidateSourceAuthority(
+                            token: token,
+                            message: "Tuya account/device source authority changed while authentication promotion was suspended.",
+                            kind: "sdk_source_authority_lost_during_auth_promotion"
+                        )
+                        return
+                    }
+
                     phase = .observing
                     message = "Authenticated generation \(token.diagnosticGeneration) is live. Waiting for a genuine application update and the canonical 45-second horizon…"
                     log("sdk_local_ble_authenticated", [
@@ -1469,6 +1505,25 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
+
+            // The ledger hops above may interleave account/view lifecycle changes. Revalidate
+            // the exact generation and account lease immediately before immutable event custody.
+            guard currentConnectionToken == token,
+                  phase == .observing,
+                  !acceptanceCutIsClosed,
+                  sdkAccountLoggedIn,
+                  sdkDeviceMembershipVerified,
+                  accountIdentityLeaseIsAuthorized,
+                  membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) == leasedAccountUID else {
+                if currentConnectionToken == token {
+                    await invalidateSourceAuthority(
+                        token: token,
+                        message: "SDK account/device authority changed before application evidence could enter event custody.",
+                        kind: "sdk_source_authority_changed_before_application_event_custody"
+                    )
+                }
+                return
+            }
             var eventDetails = custodySafeUpdate
             eventDetails["generation"] = String(token.diagnosticGeneration)
             log("tuya_application_update", eventDetails)
@@ -1983,7 +2038,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
             encoder.dateEncodingStrategy = .iso8601
             exportData = try encoder.encode(envelope)
             exportName = "Nembra-Secure-Link-\(deviceID.prefix(8))-Diagnostics.json"
-            message = "Sanitized diagnostics ready with exact compiled source + reviewed Tuya dependency-lock provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."
+            if phase != .failed {
+                message = "Sanitized diagnostics ready with exact compiled source + reviewed Tuya dependency-lock provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."
+            }
         } catch {
             exportData = nil
             message = "Diagnostic export failed: \(error.localizedDescription)"
@@ -3082,6 +3139,7 @@ private struct SecureLinkView: View {
                 Text("Restore the missing requirement below. This stopped attempt will not be reused.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                failureDiagnosticsControls
             }
         }
     }
@@ -3095,6 +3153,8 @@ private struct SecureLinkView: View {
                 Text(test.message)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+
+                failureDiagnosticsControls
 
                 if test.canRestartFromFreshOFF1 {
                     Text("Nothing from the stopped attempt will carry forward. Restore the required setup, then begin again with the scooter powered off.")
@@ -3118,6 +3178,41 @@ private struct SecureLinkView: View {
                 }
             }
         }
+    }
+
+    private var failureDiagnosticsControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Divider()
+                .overlay(Color.white.opacity(0.08))
+
+            if let data = test.exportData {
+                Text("Sanitized diagnostics ready")
+                    .font(.subheadline.weight(.semibold))
+                ShareLink(item: SecureTransfer(data: data, name: test.exportName), preview: SharePreview(test.exportName)) {
+                    Label("Share diagnostics", systemImage: "square.and.arrow.up")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .accessibilityHint("Shares only sanitized failed-attempt diagnostic evidence. It is not an accepted Capture artifact.")
+            } else {
+                Button {
+                    test.prepareExport()
+                } label: {
+                    Label("Prepare diagnostics", systemImage: "doc.badge.gearshape")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .accessibilityHint("Prepares sanitized evidence from this stopped attempt for troubleshooting. It does not accept the Capture.")
+            }
+
+            Text("Diagnostics preserve legitimate failed-attempt evidence for analysis. They never turn this stopped attempt into an accepted Capture.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .contain)
     }
 
     private var completionPanel: some View {
