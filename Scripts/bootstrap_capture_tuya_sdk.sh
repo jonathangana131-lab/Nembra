@@ -107,7 +107,7 @@ done
 # Snapshot every ignored input that can materially change the private field
 # build. The helper writes only SHA-256 fingerprints + public reviewed versions;
 # it never serializes credentials, SDK bytes, or device identifiers.
-if ! /usr/bin/python3 "$PROVENANCE_HELPER" snapshot \
+if ! /usr/bin/python3 -I "$PROVENANCE_HELPER" snapshot \
   --lockfile "$REPO_ROOT/Podfile.lock" \
   --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
   --security-build "$TUYA_PRIVATE_SDK/Build" \

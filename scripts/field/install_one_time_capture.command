@@ -73,7 +73,7 @@ TUYA_PRIVATE_SDK="$ROOT/LocalSecrets/TuyaSDK"
 TUYA_PRIVATE_IDENTITY="$ROOT/LocalSecrets/TuyaRuntime"
 TUYA_DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
 verify_private_tuya_inputs() {
-    /usr/bin/python3 "$TUYA_PROVENANCE_HELPER" verify \
+    /usr/bin/python3 -I "$TUYA_PROVENANCE_HELPER" verify \
         --lockfile "$ROOT/Podfile.lock" \
         --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
         --security-build "$TUYA_PRIVATE_SDK/Build" \
@@ -90,7 +90,7 @@ verify_private_tuya_inputs() {
 unset NEMBRA_TUYA_APP_KEY NEMBRA_TUYA_APP_SECRET || true
 
 say "Verifying the intended iPhone 12 / iOS 27 baseline"
-DEVICE_ROWS="$(xcrun xctrace list devices 2>/dev/null | /usr/bin/python3 -c '
+DEVICE_ROWS="$(xcrun xctrace list devices 2>/dev/null | /usr/bin/python3 -I -c '
 import re,sys
 section=False
 for raw in sys.stdin:
@@ -132,7 +132,7 @@ unset INTENDED_NORMALIZED ROW_NORMALIZED ROW_UDID
 # devicectl argv. `--hide-headers` is an Xcode-supported textual-output option.
 COREDEVICE_ROWS="$(xcrun devicectl list devices --hide-headers 2>/dev/null || true)"
 [[ -n "$COREDEVICE_ROWS" ]] || die "CoreDevice did not report the intended iPhone. Keep it connected/unlocked and allow Xcode device preparation to finish."
-COREDEVICE_MATCH="$(printf '%s\0%s' "$DEVICE_UDID" "$COREDEVICE_ROWS" | /usr/bin/python3 -c '
+COREDEVICE_MATCH="$(printf '%s\0%s' "$DEVICE_UDID" "$COREDEVICE_ROWS" | /usr/bin/python3 -I -c '
 import re,sys
 payload=sys.stdin.buffer.read()
 try:
@@ -168,7 +168,7 @@ unset COREDEVICE_MATCH COREDEVICE_ROWS DEVICE_ROWS DEVICE_LABEL DEVICE_MODEL
 say "Intended baseline proven: iPhone 12 / iOS $DEVICE_OS_VERSION"
 
 say "Finding Apple Development signing team"
-TEAM_IDS="$(security find-identity -v -p codesigning 2>/dev/null | /usr/bin/python3 -c '
+TEAM_IDS="$(security find-identity -v -p codesigning 2>/dev/null | /usr/bin/python3 -I -c '
 import re,sys
 seen=[]
 for line in sys.stdin:
