@@ -327,7 +327,7 @@ private struct RideHistoryRowView: View {
               let end = record.evidence.endingOdometerKilometers,
               start.isFinite,
               end.isFinite,
-              end > start else {
+              end >= start else {
             return nil
         }
         return end - start
@@ -823,7 +823,7 @@ private struct RideHistoryDetailView: View {
               let end = record.evidence.endingOdometerKilometers,
               start.isFinite,
               end.isFinite,
-              end > start else {
+              end >= start else {
             return nil
         }
         return end - start
