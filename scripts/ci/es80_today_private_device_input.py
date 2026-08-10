@@ -178,7 +178,8 @@ def create_private_input(
 
     directory_descriptor = _open_directory_chain(private_directory, create_leaf=True)
     file_descriptor: int | None = None
-    created_identity: FileIdentity | None = None
+    created_object_identity: tuple[int, int] | None = None
+    final_identity: FileIdentity | None = None
     try:
         if _directory_contains_repository(private_directory, repository_root):
             raise PrivateInputError("private-directory-traverses-source-repository")
@@ -197,10 +198,16 @@ def create_private_input(
         except OSError as error:
             raise PrivateInputError("private-intended-device-create-failed") from error
 
+        # Capture the created filesystem object immediately after O_EXCL succeeds. Cleanup must not
+        # depend on a later successful write/fsync/fstat: any failure after creation is responsible
+        # for removing this exact object, but never a pathname replacement created by another actor.
+        opened_metadata = os.fstat(file_descriptor)
+        created_object_identity = (opened_metadata.st_dev, opened_metadata.st_ino)
+
         _write_all(file_descriptor, payload)
         os.fsync(file_descriptor)
         metadata = os.fstat(file_descriptor)
-        created_identity = FileIdentity.from_stat(metadata)
+        final_identity = FileIdentity.from_stat(metadata)
         if not stat.S_ISREG(metadata.st_mode):
             raise PrivateInputError("private-intended-device-not-regular-file")
         if stat.S_IMODE(metadata.st_mode) != 0o600:
@@ -232,7 +239,7 @@ def create_private_input(
                 raise PrivateInputError("private-intended-device-path-retargeted") from error
             try:
                 rebound_identity = FileIdentity.from_stat(os.fstat(rebound_file))
-                if rebound_identity != created_identity:
+                if rebound_identity != final_identity:
                     raise PrivateInputError("private-intended-device-path-retargeted")
                 observed = os.read(rebound_file, MAX_PRIVATE_IDENTIFIER_BYTES + 1)
                 if observed != payload:
@@ -245,14 +252,22 @@ def create_private_input(
         os.fsync(directory_descriptor)
         return output_path
     except Exception:
-        if created_identity is not None:
+        if created_object_identity is not None:
             try:
                 current = os.stat(filename, dir_fd=directory_descriptor, follow_symlinks=False)
-                if FileIdentity.from_stat(current) == created_identity:
-                    os.unlink(filename, dir_fd=directory_descriptor)
-                    os.fsync(directory_descriptor)
             except OSError:
                 pass
+            else:
+                if (current.st_dev, current.st_ino) == created_object_identity:
+                    try:
+                        os.unlink(filename, dir_fd=directory_descriptor)
+                    except OSError:
+                        pass
+                    else:
+                        try:
+                            os.fsync(directory_descriptor)
+                        except OSError:
+                            pass
         raise
     finally:
         if file_descriptor is not None:
