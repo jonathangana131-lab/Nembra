@@ -103,8 +103,8 @@ jobs:
           parent='0693b471ed9ebc7756a78f1b9ed54fdf4d7f604c'
           rm .github/workflows/materialize-capture-view-exit-membership-race-sol.yml
           git add NembraApp/App/NembraCaptureEntrypoint.swift \
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift \
-            .github/workflows/materialize-capture-view-exit-membership-race-sol.yml
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift
+          git add -u .github/workflows/materialize-capture-view-exit-membership-race-sol.yml
           git diff --cached --check
           git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' \
             commit -m 'fix(capture): cancel hidden correlation start on view exit'
