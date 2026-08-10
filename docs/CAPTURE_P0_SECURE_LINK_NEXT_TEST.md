@@ -39,7 +39,7 @@ The stationary field attempt may be authorized only after the final composed sta
 2. The matching app-specific `ThingSmartCryption` security component is installed locally and remains outside Git.
 3. The public SmartLife dependencies are exactly pinned/resolved to the reviewed `ThingSmartHomeKit 7.8.0` and `ThingSmartBusinessExtensionKit 7.8.0` inputs, with the resolved `Podfile.lock` preserved and fingerprinted by the repository bootstrap.
 4. Private AppKey/AppSecret are provisioned only through the reviewed ignored local `NembraTuyaPrivateConfig` path. They are not committed, passed in process arguments, placed in the `devicectl` launch environment, logged, screenshot, or exported.
-5. The official Tuya SDK itself has an authorized verification-code account session; the metadata QR bridge is not treated as SDK login authority.
+5. The official Tuya SDK itself has an authenticated session for the **same account method that owns the scooter**. For an Apple-backed Smart Life account, use Sign in with Apple through Tuya's documented Apple OAuth transport; for an email/phone account, the verification-code path remains available. Metadata QR approval alone is not SDK login authority, and a different Tuya account must never be substituted merely because it can log in.
 6. The exact expected scooter device ID is proven to belong to that same current SDK account/home (owned or shared membership). Login alone is insufficient, and the membership proof is leased to the exact current account UID.
 7. OFF1 discovery cannot begin until compiled field-build provenance and the same-current-account exact-device authority are current.
 8. Current target authority comes only from the package-owned fresh `OFF1 → ON1 → OFF2 → ON2` result, followed by explicit operator confirmation. Historical UUID/name/RSSI/FD50/Tuya hints remain non-authoritative.
@@ -47,7 +47,7 @@ The stationary field attempt may be authorized only after the final composed sta
 10. The canonical authority is generation-bound, rejects stale/late callbacks, freezes terminal chronology, retires hidden generations before retry, and cannot resurrect a failed attempt into accepted state.
 11. Package-already-terminal observation-continuity failures are mirrored into app ownership exactly once; the app does not attempt a second ledger terminal or invent a disconnect/source-loss fact.
 12. Exact-head standalone Xcode 27 / iPhone-12-class Simulator gates are terminal green on the unchanged final candidate. Public no-secret CI is software evidence only; it cannot prove the privately provisioned SDK path or physical scooter behavior.
-13. The privately provisioned workspace builds/signs/installs the exact accepted source on the intended iPhone 12 / iOS 27, with exact build identity visible in the app and retained in exported evidence.
+13. The privately provisioned workspace builds/signs/installs the exact accepted source on the intended iPhone 12 / iOS 27, with exact build identity visible in the app and retained in exported evidence. For an Apple-backed account, the signed app must also have a valid Sign in with Apple entitlement/provisioning path and the Tuya developer workspace must have the corresponding Apple third-party-login capability configured; otherwise **STOP** before Bluetooth correlation.
 
 Until all applicable software/private-device prerequisites are true and the repository explicitly records `GO`, the physical secure-link experiment is **NO-GO**.
 
@@ -57,9 +57,9 @@ Provision a SmartLife App SDK app on the Tuya Developer Platform for the exact C
 
 Use the repository provisioning/bootstrap/field installer so the physical candidate is built from `NembraCapture.xcworkspace`, not the bare `.xcodeproj` or the normal Nembra app target. Preserve the accepted `Podfile.lock`; do not run an ad-hoc `pod update` before a physical evidence run.
 
-Keep AppKey/AppSecret, account tokens, verification codes, `local_key`, scooter/session keys, and generated private security material out of Git, logs, screenshots, issues, chat, and Capture exports.
+Keep AppKey/AppSecret, account tokens, Apple identity tokens, verification codes, `local_key`, scooter/session keys, and generated private security material out of Git, logs, screenshots, issues, chat, and Capture exports.
 
-The field utility uses the official SDK's verification-code account flow rather than collecting the Tuya account password. A successful login still does not authorize any Bluetooth correlation or authentication until exact scooter membership is established and bound to the same current SDK account.
+The field utility uses the official SDK account transport that corresponds to the same Smart Life account that owns the scooter: Sign in with Apple for an Apple-backed account, or Tuya email/phone verification code when that is the account's real login method. A successful account login still does not authorize any Bluetooth correlation or authentication until exact scooter membership is established and bound to the same current SDK account.
 
 ## Smallest physical test — only after repository status explicitly flips to GO
 
@@ -69,7 +69,7 @@ This test is indoors and stationary. It does **not** repeat the old ride sequenc
 
 1. Connect/unlock the intended iPhone 12, install the exact accepted signed Capture build, verify the app shows authoritative compiled field-build provenance, and verify `Procedure` is exactly `ES80-AUTHENTICATED-STATIONARY-v1`.
 2. Keep the scooter stationary and initially **OFF**.
-3. In Capture, log in to the official Tuya SDK account by verification code if needed.
+3. In Capture, use the same official Tuya SDK account method that owns the scooter. For this Apple-backed Smart Life account, use **Sign in with Apple**. Use email/phone verification code only when that is genuinely the owning account's login method. If the required account method is unavailable or the SDK does not enter the expected account, **STOP**; do not fall back to a different account.
 4. Require the app to freshly verify the exact expected scooter device ID in the current SDK account/home and retain the same-account UID lease.
 5. If build authority, SDK login, exact membership, or account identity changes at any point, **STOP**. Do not begin or continue Bluetooth correlation.
 
