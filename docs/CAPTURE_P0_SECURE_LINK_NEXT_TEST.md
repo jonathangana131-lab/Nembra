@@ -87,7 +87,7 @@ This test is indoors and stationary. It does **not** repeat the old ride sequenc
 
 13. Start the secure read-only test only after the app has re-proven current same-account exact-device authority. Tuya's SDK becomes the sole authenticated BLE owner. Nembra sends no scooter DP query/control command and opens no second CoreBluetooth connection.
 14. After the SDK transport-success callback, allow only the accepted bounded local-BLE settlement window. Authenticated chronology begins only after Tuya current local-BLE status is actually observed online. Timeout or monotonic-clock regression is a terminal **STOP**, not account-source drift and not a fabricated disconnect.
-15. Keep the scooter stationary, keep Capture in the foreground, and do not change mode/light/brake/throttle/charger state during this preflight.
+15. Keep the scooter stationary, keep Capture in the foreground, and do not change mode/light/brake/throttle/charger state during this preflight. If Secure Link leaves the active foreground before canonical acceptance seals, the current mutable attempt is invalid. Before official Tuya BLE handoff, any already-correlated/selected target authority must be discarded and the next attempt starts from a fresh OFF1 series. After official Tuya BLE handoff, relaunch Capture before any new stationary read-only attempt; do not reinterpret foreground loss as BLE disconnect and do not promise an in-process OFF1 restart. A previously sealed accepted artifact remains immutable and is not invalidated by a later scene transition.
 16. Acceptance requires one uninterrupted current generation with all of the following: supported SmartLife SDK authentication provenance, current same-account exact-device authority, Tuya local BLE observably online, no disqualifying continuity/clock gap, at least one genuine non-empty same-generation `ThingSmartDeviceDelegate.dpsUpdate`, and at least 45 seconds of canonical authenticated observation.
 17. The app must seal the canonical ready prefix before presenting success. Delayed callbacks after seal or failure cannot mutate the accepted artifact.
 18. Prepare/share the sanitized diagnostic JSON. The artifact must carry exact build/source provenance plus correlation provenance and must explicitly retain `rawFD50BytesCaptured=false`, `dpQueriesSent=false`, and `dpCommandsSent=false` for this supported structured-SDK path.
@@ -103,6 +103,7 @@ Stop the attempt and preserve only already-legitimate evidence if any of these o
 - explicit target confirmation is unavailable;
 - local-BLE settlement times out or its monotonic clock regresses;
 - authenticated observation has a disqualifying gap/clock regression;
+- Secure Link leaves the active foreground before canonical acceptance seals;
 - Tuya local BLE is actually observed offline;
 - authenticated application evidence does not arrive before the accepted deadline;
 - any package/app lifecycle terminal cannot prove exact-generation retirement;
