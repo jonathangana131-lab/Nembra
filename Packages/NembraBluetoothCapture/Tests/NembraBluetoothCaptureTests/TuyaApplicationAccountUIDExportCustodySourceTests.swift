@@ -4,16 +4,16 @@ import Testing
 
 @Suite("Tuya application account UID export custody")
 struct TuyaApplicationAccountUIDExportCustodySourceTests {
-    @Test("accepted event scrubs the exact leased account UID from untrusted keys and values")
-    func acceptedEventScrubsExactLeasedAccountUID() throws {
+    @Test("accepted event delegates exact leased account UID custody before logging")
+    func acceptedEventDelegatesExactLeasedAccountUIDCustody() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let receiver = String(try section(in: source, from: "private func receivedApplicationUpdate(", to: "private func startWatchdog"))
-        #expect(receiver.contains("redactedApplicationEventDetails(update)"))
-        #expect(receiver.contains("membershipAccountUID?.trimmingCharacters"))
-        #expect(receiver.contains("let redactedKey = key.replacingOccurrences("))
-        #expect(receiver.contains("value.replacingOccurrences("))
-        #expect(receiver.contains("<redacted-account-uid>"))
-        #expect(receiver.contains("options: [.caseInsensitive, .literal]"))
+        let custody = try #require(receiver.range(of: "TuyaAuthenticatedApplicationEventCustody.eventDetails("))
+        let accountUID = try #require(receiver.range(of: "accountUID: membershipAccountUID"))
+        let log = try #require(receiver.range(of: "log(\"tuya_application_update\", eventDetails)"))
+        #expect(custody.lowerBound < accountUID.lowerBound)
+        #expect(accountUID.lowerBound < log.lowerBound)
+        #expect(!receiver.contains("redactedApplicationEventDetails(update)"))
         #expect(!receiver.contains("log(\"tuya_application_update\", update"))
     }
 

@@ -4,15 +4,16 @@ import Testing
 
 @Suite("Tuya accepted application-event provenance")
 struct TuyaApplicationEventMetadataPrecedenceSourceTests {
-    @Test("trusted generation is stamped after untrusted event redaction")
-    func trustedGenerationWinsReservedCollision() throws {
+    @Test("trusted generation is owned by package custody before immutable event logging")
+    func trustedGenerationWinsWithoutDiscardingApplicationEvidence() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let receiver = String(try section(in: source, from: "private func receivedApplicationUpdate(", to: "private func startWatchdog"))
-        let redaction = try #require(receiver.range(of: "var eventDetails = redactedApplicationEventDetails(update)"))
-        let generation = try #require(receiver.range(of: "eventDetails[\"generation\"] = String(token.diagnosticGeneration)"))
+        let custody = try #require(receiver.range(of: "TuyaAuthenticatedApplicationEventCustody.eventDetails("))
+        let generation = try #require(receiver.range(of: "trustedGeneration: String(token.diagnosticGeneration)"))
         let log = try #require(receiver.range(of: "log(\"tuya_application_update\", eventDetails)"))
-        #expect(redaction.lowerBound < generation.lowerBound)
+        #expect(custody.lowerBound < generation.lowerBound)
         #expect(generation.lowerBound < log.lowerBound)
+        #expect(!receiver.contains("eventDetails[\"generation\"] ="))
         #expect(!receiver.contains("update.merging(["))
     }
 
