@@ -1,0 +1,74 @@
+name: Materialize Capture self-coherent record snapshot d7fb retry
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-record-snapshot-self-coherence-d7fb-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 5
+
+      - name: Guard exact product lineage and scaffolding-only prehistory
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='d7fbec98107098d7aa70f33c3ce0cb6555dab9e0'
+          git merge-base --is-ancestor "$expected" HEAD^
+          mapfile -t changed < <(git diff --name-only "$expected"..HEAD^ | sort)
+          expected_paths=(
+            '.github/scripts/materialize_capture_record_snapshot_self_coherence_d7fb.py'
+            '.github/workflows/materialize-capture-record-snapshot-self-coherence-d7fb.yml'
+          )
+          if [[ "${changed[*]}" != "${expected_paths[*]}" ]]; then
+            printf 'Unexpected pre-materialization scope:\n%s\n' "${changed[*]}" >&2
+            exit 78
+          fi
+
+      - name: Materialize exact-current provenance repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/materialize_capture_record_snapshot_self_coherence_d7fb.py
+          git diff --check
+
+      - name: Run adversarial provenance suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            Scripts/capture_tuya_private_input_provenance.py \
+            scripts/ci/tests/test_capture_tuya_private_input_provenance.py \
+            scripts/ci/tests/test_capture_tuya_private_input_record_snapshot_coherence.py \
+            scripts/ci/tests/test_capture_tuya_private_input_record_tree_generation.py \
+            scripts/ci/tests/test_capture_tuya_private_input_record_final_snapshot_coherence.py
+          python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          python3 scripts/ci/tests/test_capture_tuya_private_input_record_snapshot_coherence.py
+          python3 scripts/ci/tests/test_capture_tuya_private_input_record_tree_generation.py
+          python3 scripts/ci/tests/test_capture_tuya_private_input_record_final_snapshot_coherence.py
+
+      - name: Publish clean source-and-regression checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/scripts/materialize_capture_record_snapshot_self_coherence_d7fb.py
+          rm .github/workflows/materialize-capture-record-snapshot-self-coherence-d7fb.yml
+          rm .github/workflows/materialize-capture-record-snapshot-self-coherence-d7fb-retry.yml
+          git config user.name 'nembra-sol'
+          git config user.email 'nembra-sol@users.noreply.github.com'
+          git add Scripts/capture_tuya_private_input_provenance.py \
+                  scripts/ci/tests/test_capture_tuya_private_input_record_final_snapshot_coherence.py \
+                  .github/scripts/materialize_capture_record_snapshot_self_coherence_d7fb.py \
+                  .github/workflows/materialize-capture-record-snapshot-self-coherence-d7fb.yml \
+                  .github/workflows/materialize-capture-record-snapshot-self-coherence-d7fb-retry.yml
+          git diff --cached --check
+          git commit -m 'fix(capture): make private record snapshots self-coherent'
+          git push origin HEAD:fix/v14-capture-record-snapshot-self-coherence-d7fb-sol
