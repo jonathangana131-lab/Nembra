@@ -1,0 +1,57 @@
+name: Validate Capture Membership Generation Regression a267
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-membership-generation-regression-a267-20260810
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sol/v14-capture-membership-generation-regression-a267-20260810
+          fetch-depth: 0
+
+      - name: Bind one-test-file regression to exact product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='a267d0b6d16c1fee881dd23bc2ca5abc15baf9fe'
+          test "$(git merge-base "$parent" HEAD)" = "$parent"
+          changed="$(git diff --name-only "$parent" HEAD | grep -v '^.github/workflows/validate-capture-membership-generation-regression-a267.yml$' || true)"
+          test "$changed" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift'
+
+      - name: Verify both hidden-start paths are mechanically pinned
+        shell: bash
+        run: |
+          set -euo pipefail
+          test_file='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift'
+          swiftc -parse "$test_file"
+          grep -Fq 'membershipGenerationGatesBothHiddenStartPaths' "$test_file"
+          grep -Fq 'membershipRequestID = requestID' "$test_file"
+          grep -Fq 'self.membershipRequestID == requestID' "$test_file"
+          grep -Fq 'self.beginCorrelationSeries()' "$test_file"
+          grep -Fq 'self.beginOfficialConnection(candidate: candidate)' "$test_file"
+          grep -Fq '#expect(revoke < noActiveCorrelationReturn)' "$test_file"
+          grep -Fq '#expect(noActiveCorrelationReturn < abandon)' "$test_file"
+          grep -Fq '#expect(!cleanup.contains("releasePackageCorrelationLease()"))' "$test_file"
+          git diff --check
+
+      - name: Publish clean one-test-file checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/validate-capture-membership-generation-regression-a267.yml
+          git add -A
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'ci(capture): publish clean membership-generation regression'
+          git push origin HEAD:sol/v14-capture-membership-generation-regression-a267-20260810
