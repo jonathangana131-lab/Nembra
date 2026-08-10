@@ -54,6 +54,48 @@ public struct PropulsionEnergyRailAppProjection: Equatable, Sendable {
     }
 }
 
+extension PropulsionEnergyRailAppProjection {
+    /// Package-owned source-currentness override for an already accepted measurement.
+    ///
+    /// A transport/source may retire a measurement before the generic freshness
+    /// window expires. In that case the exact accepted subject remains legitimate
+    /// last-known evidence, but every live/render-only affordance must disappear
+    /// immediately. Keeping this transformation package-internal prevents SwiftUI
+    /// from rebuilding accepted/currentness/accessibility tuples by hand.
+    func retainedBySource() -> PropulsionEnergyRailAppProjection {
+        guard let acceptedMeasurement,
+              acceptedMeasurement.identity == identity,
+              acceptedMeasurement.watts.isFinite,
+              acceptedMeasurement.watts >= 0 else {
+            return PropulsionEnergyRailAppProjection(
+                identity: identity,
+                currentness: .unavailable,
+                acceptedMeasurement: nil,
+                accessibilityPresentation: .unavailable(identity: identity),
+                displayWatts: nil,
+                railFraction: nil,
+                acceptedTargetFraction: nil,
+                acceptedPeakMarkerFraction: nil,
+                scaleOrigin: nil,
+                allowsLiveMotion: false
+            )
+        }
+
+        return PropulsionEnergyRailAppProjection(
+            identity: identity,
+            currentness: .retained,
+            acceptedMeasurement: acceptedMeasurement,
+            accessibilityPresentation: .retained(acceptedMeasurement: acceptedMeasurement),
+            displayWatts: acceptedMeasurement.watts,
+            railFraction: nil,
+            acceptedTargetFraction: nil,
+            acceptedPeakMarkerFraction: nil,
+            scaleOrigin: nil,
+            allowsLiveMotion: false
+        )
+    }
+}
+
 public extension PropulsionGaugeDisplayModel {
     /// Produces the one app-facing Energy Rail subject at a single render uptime.
     ///
