@@ -349,8 +349,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var currentAccountUID: String? { OfficialTuyaFactory.currentAccountUID }
     var selected: Candidate? { selectedID.flatMap { byID[$0] } }
     var applicationUpdateCount: Int { ledgerSnapshot.applicationPayloadCount }
-    private var acceptedApplicationEventCount: Int {
-        events.lazy.filter { $0.kind == "tuya_application_update" }.count
+    private func acceptedApplicationEventCount(for token: TuyaReadOnlyConnectionToken) -> Int {
+        let generation = String(token.diagnosticGeneration)
+        return events.lazy.filter {
+            $0.kind == "tuya_application_update" && $0.details["generation"] == generation
+        }.count
     }
     var correlationProgress: PassiveBluetoothPowerCycleObservationProgress? { correlationSession?.progress }
     var correlationWindowIsScanning: Bool { correlationProgress?.isScanning == true }
@@ -1221,7 +1224,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     // A ledger mutation can finish while its MainActor callback is still suspended.
                     // Never seal until every package-admitted application receipt has a matching
                     // structured event in the app-owned evidence prefix.
-                    guard self.acceptedApplicationEventCount == self.applicationUpdateCount else {
+                    guard self.acceptedApplicationEventCount(for: token) == self.applicationUpdateCount else {
                         self.message = "Synchronizing accepted application evidence before canonical seal…"
                         break
                     }

@@ -90,14 +90,14 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         let body = String(watchdog)
 
         guard let readyCase = body.range(of: "case .readyForStationaryMapping:"),
-              let parity = body.range(of: "acceptedApplicationEventCount == self.applicationUpdateCount", range: readyCase.upperBound..<body.endIndex),
+              let parity = body.range(of: "acceptedApplicationEventCount(for: token) == self.applicationUpdateCount", range: readyCase.upperBound..<body.endIndex),
               let seal = body.range(of: "try await sessionLedger.sealAcceptedObservation(for: token)", range: readyCase.upperBound..<body.endIndex) else {
             Issue.record("Canonical seal must prove structured application evidence parity first.")
             throw SourceContractError.sectionMissing
         }
 
         #expect(parity.lowerBound < seal.lowerBound)
-        #expect(app.contains("events.lazy.filter { $0.kind == \"tuya_application_update\" }.count"))
+        #expect(app.contains("$0.kind == \"tuya_application_update\" && $0.details[\"generation\"] == generation"))
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
