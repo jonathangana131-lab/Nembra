@@ -56,6 +56,9 @@ public enum TuyaSDKAccountDeviceMembershipGate {
         guard snapshot.homeLoadFailureCount == 0 else {
             return .blocked(reason: "Tuya SDK home/device membership is incomplete because one or more homes failed to load.")
         }
+        guard snapshot.loadedHomeCount > 0 else {
+            return .blocked(reason: "Tuya SDK home/device membership has no successfully loaded homes.")
+        }
 
         if snapshot.ownedDeviceIDs.contains(expected) || snapshot.sharedDeviceIDs.contains(expected) {
             return .authorized
