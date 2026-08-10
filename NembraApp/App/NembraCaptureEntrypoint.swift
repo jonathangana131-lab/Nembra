@@ -429,6 +429,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         // A later SwiftUI/account callback must not mint a replacement membership probe off-screen.
         acceptsViewScopedMembershipRequests = false
         sdkDeviceMembershipVerified = false
+        membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."
         membershipAccountUID = nil
         membershipDeviceID = nil
         membershipRequestID = UUID()
@@ -486,6 +487,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         // already-issued asynchronous grants before inspecting any radio/session state.
         acceptsViewScopedMembershipRequests = false
         sdkDeviceMembershipVerified = false
+        membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."
         membershipAccountUID = nil
         membershipDeviceID = nil
         membershipRequestID = UUID()
@@ -1425,9 +1427,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
-                "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            let eventDetails = TuyaAuthenticatedApplicationEventCustody.eventDetails(
+                applicationUpdate: update,
+                trustedGeneration: String(token.diagnosticGeneration),
+                accountUID: membershipAccountUID
+            )
+            log("tuya_application_update", eventDetails)
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -2241,7 +2246,6 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "accounttoken",
         "accesstoken",
         "refreshtoken",
-        "sessionkey",
         "authkey",
         "seckey",
     ]
