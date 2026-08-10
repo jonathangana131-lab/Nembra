@@ -1,0 +1,50 @@
+name: Apply V14 live continuity mirror repair
+
+on:
+  push:
+    branches: [repair/v14-capture-continuity-mirror-live-sol]
+    paths:
+      - '.github/workflows/apply-v14-continuity-mirror-live.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Assert exact live convergence input
+        run: |
+          set -euo pipefail
+          test "$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)" = "ee71c1027da7f77a611e9d01b49bcc4ab171bff7"
+          test ! -e Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAlreadyTerminalObservationContinuitySourceTests.swift
+
+      - name: Transplant reviewed mirror delta only
+        run: |
+          set -euo pipefail
+          git fetch origin repair/v14-capture-terminal-continuity-mirror-sol
+          git diff 333935dbe464248cfd7a8b675b150f1068fb07c2..f6f610b4b3dff7dc71dd190cec76a6f45b67592a -- \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAlreadyTerminalObservationContinuitySourceTests.swift \
+            | git apply --3way
+          git diff --check
+          grep -Fq 'mirrorAlreadyTerminalObservationContinuity' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'accepted_prefix_seal_continuity_invalidated' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'accepted_prefix_seal_lifecycle_rejected' NembraApp/App/NembraCaptureEntrypoint.swift
+          ! grep -Fq '@preconcurrency import CoreBluetooth' NembraApp/App/NembraCaptureEntrypoint.swift
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAlreadyTerminalObservationContinuitySourceTests.swift
+
+      - name: Commit product and retire workflow
+        run: |
+          set -euo pipefail
+          rm .github/workflows/apply-v14-continuity-mirror-live.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(capture): mirror package-terminal continuity on live spine"
+          git push origin HEAD:repair/v14-capture-continuity-mirror-live-sol
