@@ -108,12 +108,73 @@ The file must contain the verification-only intended iPhone UDID and must remain
 
 If the private file is missing, points at the wrong intended device, cannot satisfy the hardened reinspection contract, or would require exposing the raw UDID to continue, stop and remain NO-GO.
 
-## Hardened Final GO invocation boundary
+## Exact Final GO executable-bundle custody
 
-The private foundation implementation is deliberately non-authorizing when executed directly. Use only:
+The hardened composer is itself authority-bearing: its output can contain `decision = GO`. Therefore `--tooling-repo` being pinned for the independent cross-check is not enough by itself. Do **not** run a moving `main`, an arbitrary local checkout, a copied script, or locally modified sibling modules as the process that mints Final GO.
+
+The accepted executable bundle for the current TODAY procedure is the exact hosted-green #1730 head:
+
+- exact tooling head: `4506bf3b0a523ca03fc09e968f34d4359e34bf91`;
+- Final GO authority QA: run `31312717529`, job `93242924865` — terminal success;
+- Final GO hardening QA: run `31312717536`, job `93242924588` — terminal success;
+- `scripts/ci/es80_today_final_go_hardened.py` blob: `1b9560bad5a8a1ceb2934f91621be231f20a8a17`;
+- `scripts/ci/_es80_today_final_go_foundation_impl.py` blob: `11a571b4439829f2c3bfe94b46e0598600238d89`;
+- `scripts/ci/es80_today_trusted_capture_xcode_subject.py` blob: `94d19c0c0456860ead9a2003511c66c21d41c31a`;
+- `scripts/ci/es80_today_final_go_publication.py` blob: `1593f00e5950935ed8c1b0514ae11f69be3a6f50`;
+- `scripts/ci/es80_today_crosscheck_receipt_custody.py` blob: `3bea883a17c9a34e8d9dd5b258824d29257886f2`;
+- `scripts/ci/es80_today_trusted_signed_candidate_reinspection.py` blob: `179cb50cb1f32595722cd2a53df47111a2ca6a45`.
+
+Those six local modules are the executable authority bundle loaded by the hardened entrypoint. The trusted signed-candidate module separately materializes its reviewed private runner and canonical inspector from the frozen Capture source by their own pinned Git objects; those downstream tool bytes remain under that existing contract.
+
+Create a dedicated detached tooling worktree and verify both the exact commit and the raw checkout bytes **before** the fresh Final GO invocation:
+
+```bash
+set -euo pipefail
+
+FINAL_GO_TOOLING_HEAD='4506bf3b0a523ca03fc09e968f34d4359e34bf91'
+TOOLING_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
+FINAL_GO_TOOLING_PARENT="$(/usr/bin/mktemp -d /tmp/nembra-es80-final-go-tooling.XXXXXX)"
+FINAL_GO_TOOLING_SOURCE="$FINAL_GO_TOOLING_PARENT/source"
+
+/usr/bin/git -C "$TOOLING_REPO" cat-file -e "$FINAL_GO_TOOLING_HEAD^{commit}"
+/usr/bin/git -C "$TOOLING_REPO" worktree add --detach "$FINAL_GO_TOOLING_SOURCE" "$FINAL_GO_TOOLING_HEAD"
+test "$(/usr/bin/git -C "$FINAL_GO_TOOLING_SOURCE" rev-parse --verify HEAD^{commit})" = "$FINAL_GO_TOOLING_HEAD"
+test -z "$(/usr/bin/git -C "$FINAL_GO_TOOLING_SOURCE" status --porcelain=v1 --untracked-files=all)"
+
+verify_final_go_blob() {
+  path="$1"
+  expected="$2"
+  test "$(/usr/bin/git -C "$FINAL_GO_TOOLING_SOURCE" rev-parse --verify "$FINAL_GO_TOOLING_HEAD:$path")" = "$expected"
+  test "$(/usr/bin/git -C "$FINAL_GO_TOOLING_SOURCE" hash-object --no-filters -- "$path")" = "$expected"
+}
+
+verify_final_go_blob scripts/ci/es80_today_final_go_hardened.py 1b9560bad5a8a1ceb2934f91621be231f20a8a17
+verify_final_go_blob scripts/ci/_es80_today_final_go_foundation_impl.py 11a571b4439829f2c3bfe94b46e0598600238d89
+verify_final_go_blob scripts/ci/es80_today_trusted_capture_xcode_subject.py 94d19c0c0456860ead9a2003511c66c21d41c31a
+verify_final_go_blob scripts/ci/es80_today_final_go_publication.py 1593f00e5950935ed8c1b0514ae11f69be3a6f50
+verify_final_go_blob scripts/ci/es80_today_crosscheck_receipt_custody.py 3bea883a17c9a34e8d9dd5b258824d29257886f2
+verify_final_go_blob scripts/ci/es80_today_trusted_signed_candidate_reinspection.py 179cb50cb1f32595722cd2a53df47111a2ca6a45
+```
+
+If the commit is unavailable, the worktree is not exact/clean, or any Git-tree/raw-checkout blob check differs, stop and remain NO-GO. Do not substitute a newer checkout merely because it is current and do not copy only the hardened entrypoint into another directory. The executing entrypoint and its sibling authority modules are one accepted bundle.
+
+Keep this exact detached worktree unchanged through Final GO evaluation. Invoke the composer with isolated system Python from the verified bundle and pass that same exact worktree as `--tooling-repo`:
 
 ```text
-scripts/ci/es80_today_final_go_hardened.py
+/usr/bin/python3 -I "$FINAL_GO_TOOLING_SOURCE/scripts/ci/es80_today_final_go_hardened.py" \
+  ... \
+  --tooling-repo "$FINAL_GO_TOOLING_SOURCE" \
+  ...
+```
+
+The `...` placeholders above are documentation shorthand only; do not literally pass them. Supply every required evidence argument listed below from the exact accepted candidate/installation/runtime subjects. After the Final GO attempt is complete and its evidence is safely retained, remove the dedicated tooling worktree through the original tooling repository rather than modifying it in place.
+
+## Hardened Final GO invocation boundary
+
+The private foundation implementation is deliberately non-authorizing when executed directly. Use only the hardened entrypoint from the exact verified tooling bundle above:
+
+```text
+/usr/bin/python3 -I "$FINAL_GO_TOOLING_SOURCE/scripts/ci/es80_today_final_go_hardened.py"
 ```
 
 Its required evidence inputs include:
@@ -127,7 +188,7 @@ Its required evidence inputs include:
 - `--trusted-xcode-artifact-archive`
 - `--independent-crosscheck-receipt`
 - `--frozen-source-repo`
-- `--tooling-repo`
+- `--tooling-repo "$FINAL_GO_TOOLING_SOURCE"`
 - `--operator-attestation`
 - `--intended-device-udid-file`
 - `--output`
@@ -153,6 +214,7 @@ Stop and remain NO-GO if:
 - explicit operator action is not required;
 - application write/command authority exists or is uncertain;
 - the trusted Xcode run/artifact is not the exact accepted current-authority subject;
+- the Final GO executable bundle is not exact clean `4506bf3b0a523ca03fc09e968f34d4359e34bf91` with all six raw checkout blobs matching the accepted Git objects;
 - the private intended-device UDID file is missing, wrong, exposed, or fails fresh signed-candidate reinspection;
 - any retained/cross-check/signing/install evidence is missing or ambiguous.
 
