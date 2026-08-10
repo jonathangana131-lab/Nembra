@@ -16,10 +16,25 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Tuya authentication required."))
     }
 
+    @Test("authenticated state without accepted authority fails closed")
+    func authenticationAuthorityRequired() {
+        let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
+            authenticationState: .authenticated,
+            authenticationAuthority: .unverified,
+            connectionStartedAtUptimeNanoseconds: 1,
+            authenticatedAtUptimeNanoseconds: 2,
+            latestObservedUptimeNanoseconds: 50_000_000_002,
+            applicationPayloadCount: 1,
+            connectionGeneration: 1
+        )
+        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Authenticated claim is missing accepted Tuya SDK authority."))
+    }
+
     @Test("authentication without payload fails closed")
     func payloadRequired() {
         let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
             authenticationState: .authenticated,
+            authenticationAuthority: .officialTuyaSDK,
             connectionStartedAtUptimeNanoseconds: 1,
             authenticatedAtUptimeNanoseconds: 2,
             latestObservedUptimeNanoseconds: 50_000_000_002,
@@ -33,6 +48,7 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
     func durationRequired() {
         let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
             authenticationState: .authenticated,
+            authenticationAuthority: .officialTuyaSDK,
             connectionStartedAtUptimeNanoseconds: 1,
             authenticatedAtUptimeNanoseconds: 10,
             latestObservedUptimeNanoseconds: 44_999_999_999,
@@ -47,6 +63,7 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
         let authenticatedAt: UInt64 = 10
         let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
             authenticationState: .authenticated,
+            authenticationAuthority: .officialTuyaSDK,
             connectionStartedAtUptimeNanoseconds: 1,
             authenticatedAtUptimeNanoseconds: authenticatedAt,
             latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds,
