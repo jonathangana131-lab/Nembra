@@ -238,21 +238,73 @@ def _private_udid_file_is_ready(path: Path, repository_root: Path) -> bool:
 
 
 def _export_options_are_ready(path: Path, expected_team: str) -> bool:
-    """Mirror the frozen producer's deterministic ExportOptions.plist admission.
+    """Mirror frozen producer coherence on one descriptor-bound ExportOptions subject.
 
-    The preflight is only an early operator check, but it must not report READY for an export-options
-    subject the frozen producer will deterministically reject. Keep the same narrow producer checks:
-    the plist root is a dictionary, optional teamID matches the requested signing TeamIdentifier,
-    and optional method is a non-empty string. Signing/provisioning authority remains with Xcode and
-    the retained-candidate inspection ladder.
+    This remains a non-authorizing operator readiness check. Walk the absolute path with
+    directory descriptors and O_NOFOLLOW, parse the exact opened regular file, require stable
+    identity across parsing, then apply the frozen producer's deterministic team/method checks.
+    The producer still reopens and revalidates the private input authoritatively at signing time.
     """
-    if _regular_nonsymlink(path) is None:
+    if (
+        not hasattr(os, "O_NOFOLLOW")
+        or not hasattr(os, "O_DIRECTORY")
+        or os.open not in os.supports_dir_fd
+    ):
         return False
+    if not path.is_absolute() or path.anchor != os.sep:
+        return False
+
+    components = path.parts[1:]
+    if not components or any(component in ("", ".", "..") for component in components):
+        return False
+
+    close_on_exec = os.O_CLOEXEC if hasattr(os, "O_CLOEXEC") else 0
+    nonblocking = os.O_NONBLOCK if hasattr(os, "O_NONBLOCK") else 0
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | close_on_exec
+    # O_NONBLOCK is inert for regular files and prevents a special-file candidate (for example a
+    # FIFO) from hanging the readiness check before fstat can reject it as non-regular.
+    file_flags = os.O_RDONLY | os.O_NOFOLLOW | close_on_exec | nonblocking
+
     try:
-        with path.open("rb") as handle:
-            payload = plistlib.load(handle)
-    except (OSError, plistlib.InvalidFileException, ValueError):
+        parent_descriptor = os.open(os.sep, directory_flags)
+    except OSError:
         return False
+
+    descriptor: int | None = None
+    try:
+        for component in components[:-1]:
+            try:
+                next_descriptor = os.open(component, directory_flags, dir_fd=parent_descriptor)
+            except OSError:
+                return False
+            os.close(parent_descriptor)
+            parent_descriptor = next_descriptor
+
+        try:
+            descriptor = os.open(components[-1], file_flags, dir_fd=parent_descriptor)
+        except OSError:
+            return False
+    finally:
+        os.close(parent_descriptor)
+
+    if descriptor is None:
+        return False
+
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size < 1:
+            return False
+        try:
+            with os.fdopen(os.dup(descriptor), "rb") as handle:
+                payload = plistlib.load(handle)
+            final_metadata = os.fstat(descriptor)
+        except (OSError, plistlib.InvalidFileException, ValueError):
+            return False
+        if _stable_file_identity(final_metadata) != _stable_file_identity(metadata):
+            return False
+    finally:
+        os.close(descriptor)
+
     if not isinstance(payload, dict):
         return False
 

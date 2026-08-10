@@ -23,14 +23,17 @@ The Simulator artifact above is software evidence only. It is **not** the signed
 
 The current accepted external pre-signing helper is also non-authorizing software tooling:
 
-- helper commit: `9b5bde849e6b8f6b76e2a15abb52d643e3616a7a`
+- helper commit: `74f4e88e4efb78bf69fe504f407ef42398e4b6ab`
 - helper path: `scripts/ci/es80_today_field_candidate_preflight.py`
-- helper blob: `fcc2243c005c5f6df2d2f5bd8b8c948e785f07d8`
-- exact focused QA run: `31340823325` — terminal success
+- helper blob: `1b0155ab8d990420c33ad4c65461e7663612f9fb`
+- exact focused QA run: `31349183788` — terminal success
+- exact focused QA job: `93336690257` — terminal success
 - helper authority on every report: `operator-pre-signing-readiness-not-field-authorization`
 - physical authorization on every report: `not-granted`
 
-The helper exists only to prevent known operator-input dead ends before the frozen producer is invoked. The frozen `a0f4…` producer independently revalidates all authoritative signing/private-input conditions.
+The helper exists only to prevent known operator-input dead ends before the frozen producer is invoked. It now binds ExportOptions coherence to one exact descriptor-opened regular-file subject, rejecting relative paths, symlinked ancestors/final subjects, special files, and identity mutation while preserving the accepted TeamIdentifier/method checks. The frozen `a0f4…` producer independently revalidates all authoritative signing/private-input conditions.
+
+Superseded preflight provenance, retained only to make the handoff history auditable: commit `9b5bde849e6b8f6b76e2a15abb52d643e3616a7a`, blob `fcc2243c005c5f6df2d2f5bd8b8c948e785f07d8`, run `31340823325`. **Do not materialize or invoke that superseded helper for the current handoff.**
 
 ## Why an exact detached source checkout is mandatory
 
@@ -43,7 +46,7 @@ Therefore the operator must first establish and verify a clean detached checkout
 Have these available only on the private signing Mac:
 
 - Apple `TeamIdentifier` for the intended signing identity;
-- an existing valid Xcode export-options plist for that team/distribution method;
+- an existing valid Xcode export-options plist for that team/distribution method, at one absolute regular non-symlink path with no symlinked ancestor;
 - the intended iPhone's UDID, stored in one absolute mode-`0600` regular non-symlink file;
 - Xcode 27 and the intended iPhone 12 / iOS 27;
 - signing/provisioning credentials needed by Xcode.
@@ -83,6 +86,12 @@ Do not acquire the raw identifier through ordinary shell redirection. Even with 
 
 The accepted helper identity is fixed below. These helper bytes are operator-custody tooling only; they do not alter the frozen `a0f4…` app subject and do not authorize signing acceptance or Bluetooth activity.
 
+Accepted current helper provenance:
+- merged helper commit: `af75ffa6dc4409a21822295428e4eeb922ac3d16`;
+- helper blob: `50b12675a57fd2f570d833cfcdbfd7be59f52ca4`;
+- exact tested predecessor head carrying the same helper blob: `91dda8ac05e937e5615312a487f7d78926b74949`;
+- focused `Capture TODAY Field Candidate Preflight QA`: run `31349898562`, job `93338620824` — terminal success.
+
 ```bash
 umask 077
 HOME_PHYSICAL="$(cd -P -- "$HOME" && /bin/pwd -P)"
@@ -91,8 +100,8 @@ PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"
 UDID_FILE="$PRIVATE_DIR/es80-intended-device.udid"
 TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
 
-PRIVATE_INPUT_HELPER_COMMIT='05ce6d9a20487ab34aa31c5b6456910ed2ed438f'
-PRIVATE_INPUT_HELPER_BLOB='9a9f7f724ceaf895e52d6d443d326043f97645c8'
+PRIVATE_INPUT_HELPER_COMMIT='af75ffa6dc4409a21822295428e4eeb922ac3d16'
+PRIVATE_INPUT_HELPER_BLOB='50b12675a57fd2f570d833cfcdbfd7be59f52ca4'
 PRIVATE_INPUT_HELPER_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-private-input.XXXXXX)"
 PRIVATE_INPUT_HELPER="$PRIVATE_INPUT_HELPER_DIR/es80_today_private_device_input.py"
 
@@ -141,13 +150,13 @@ Keep `NEMBRA_ALLOW_PROVISIONING_UPDATES=0` unless the private signing setup actu
 
 ## 3A. Run the accepted non-authorizing pre-signing preflight
 
-Do not run a moving `main` copy of the helper and do not copy the helper into the frozen source checkout. Materialize the exact accepted helper bytes from a separate local Nembra tooling repository that contains commit `9b5bde849e6b8f6b76e2a15abb52d643e3616a7a`, then run those bytes against the exact frozen `FIELD_SOURCE`.
+Do not run a moving `main` copy of the helper and do not copy the helper into the frozen source checkout. Materialize the exact accepted helper bytes from a separate local Nembra tooling repository that contains commit `74f4e88e4efb78bf69fe504f407ef42398e4b6ab`, then run those bytes against the exact frozen `FIELD_SOURCE`.
 
-The helper deliberately reads the private signing values from the environment and the intended-device value only from its mode-`0600` file. Its JSON report omits the TeamIdentifier, raw UDID, private input paths, export-options contents, and dirty-checkout text.
+The helper deliberately reads the private signing values from the environment and the intended-device value only from its mode-`0600` file. Its JSON report omits the TeamIdentifier, raw UDID, private input paths, export-options contents, and dirty-checkout text. It fails closed unless the ExportOptions subject is one absolute, non-empty regular file reached without symlinked ancestors/final subjects, remains the same file while parsed, and satisfies the accepted TeamIdentifier/method coherence rules.
 
 ```bash
-PREFLIGHT_COMMIT='9b5bde849e6b8f6b76e2a15abb52d643e3616a7a'
-PREFLIGHT_BLOB='fcc2243c005c5f6df2d2f5bd8b8c948e785f07d8'
+PREFLIGHT_COMMIT='74f4e88e4efb78bf69fe504f407ef42398e4b6ab'
+PREFLIGHT_BLOB='1b0155ab8d990420c33ad4c65461e7663612f9fb'
 PREFLIGHT_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-preflight.XXXXXX)"
 PREFLIGHT="$PREFLIGHT_DIR/es80_today_field_candidate_preflight.py"
 PREFLIGHT_REPORT="$PREFLIGHT_DIR/preflight.json"
@@ -186,7 +195,7 @@ test "$(/usr/bin/git rev-parse --verify HEAD^{commit})" = "$SOURCE_SHA"
 test -z "$(/usr/bin/git status --porcelain=v1 --untracked-files=all)"
 ```
 
-If the preflight exits nonzero, reports anything other than `READY_TO_INVOKE_SIGNED_FIELD_PRODUCER`, or the pinned helper blob cannot be materialized exactly, **stop before invoking the signed-field producer**. Correct only the reported local pre-signing blocker and rerun the exact pinned helper.
+If the preflight exits nonzero, reports anything other than `READY_TO_INVOKE_SIGNED_FIELD_PRODUCER`, the pinned helper blob cannot be materialized exactly, or the ExportOptions path/coherence/custody checks fail, **stop before invoking the signed-field producer**. Correct only the reported local pre-signing blocker and rerun the exact pinned helper.
 
 `READY_TO_INVOKE_SIGNED_FIELD_PRODUCER` means only that these local inputs are coherent enough to invoke the frozen producer. It is not signed-candidate acceptance, intended-device installation evidence, runtime provenance, Final GO, scooter identity, or permission to scan.
 
@@ -258,6 +267,7 @@ Stop and preserve the exact blocker if any of these occurs:
 - `DEVELOPER_DIR` is set or reintroduced after Section 3; configure Xcode 27 through the private Mac's `xcode-select` selection instead of carrying a caller override into the frozen producer;
 - the descriptor-bound private-input helper cannot be materialized at exact commit/blob, refuses the parent/input, or cannot create and rebind one fresh exact mode-`0600` single-link file;
 - the pinned external preflight cannot be materialized exactly, exits nonzero, or does not report `READY_TO_INVOKE_SIGNED_FIELD_PRODUCER` for the exact frozen source;
+- the ExportOptions plist path is not absolute, traverses a symlinked ancestor, names a symlink/non-regular/empty subject, changes identity while parsed, has a mismatched optional `teamID`, or has an invalid optional `method`;
 - the producer reports any source, signing, provisioning, intended-device, export, inspection, or evidence failure;
 - more than one IPA is exported or the retained `NembraField.ipa` is missing;
 - the resulting evidence names a different source SHA, recipe, or build subject;

@@ -15,6 +15,7 @@ from pathlib import Path
 import stat
 import sys
 from typing import Callable
+import warnings
 
 MAX_PRIVATE_IDENTIFIER_BYTES = 128
 READY_MARKER = "CREATED_PRIVATE_INTENDED_DEVICE_INPUT"
@@ -151,6 +152,18 @@ def _validated_secret(secret: str, output_path: Path) -> bytes:
     return encoded
 
 
+def _secure_secret_prompt() -> str:
+    # Python's getpass may otherwise warn and fall back to potentially echoed stdin when terminal
+    # echo suppression is unavailable. Convert that warning into a hard failure at the warning
+    # point so fallback input is never consumed for an intended-device identifier.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", getpass.GetPassWarning)
+        try:
+            return getpass.getpass("Intended iPhone UDID: ")
+        except (getpass.GetPassWarning, EOFError) as error:
+            raise PrivateInputError("secure-terminal-input-unavailable") from error
+
+
 def _write_all(descriptor: int, payload: bytes) -> None:
     offset = 0
     while offset < len(payload):
@@ -158,6 +171,83 @@ def _write_all(descriptor: int, payload: bytes) -> None:
         if written <= 0:
             raise PrivateInputError("private-intended-device-write-failed")
         offset += written
+
+
+def _refuse_existing_target_before_secret(directory_descriptor: int, filename: str) -> None:
+    """Reject an occupied final name before acquiring the private intended-device value.
+
+    This minimizes sensitive input only. The later O_EXCL create remains the race authority because
+    a target may appear after this precheck and before final creation.
+    """
+    try:
+        os.stat(filename, dir_fd=directory_descriptor, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    except OSError as error:
+        raise PrivateInputError("private-intended-device-path-precheck-failed") from error
+    raise PrivateInputError("private-intended-device-path-already-exists")
+
+
+def _validate_fresh_output(metadata: os.stat_result) -> None:
+    if not stat.S_ISREG(metadata.st_mode):
+        raise PrivateInputError("private-intended-device-not-regular-file")
+    if stat.S_IMODE(metadata.st_mode) != 0o600:
+        raise PrivateInputError("private-intended-device-mode-must-be-0600")
+    if metadata.st_nlink != 1:
+        raise PrivateInputError("private-intended-device-link-count-invalid")
+    if metadata.st_size != 0:
+        raise PrivateInputError("private-intended-device-fresh-size-invalid")
+    if hasattr(os, "geteuid") and metadata.st_uid != os.geteuid():
+        raise PrivateInputError("private-intended-device-owner-invalid")
+
+
+def _same_inode(left: os.stat_result, right: os.stat_result) -> bool:
+    return (left.st_dev, left.st_ino) == (right.st_dev, right.st_ino)
+
+
+def _erase_failed_private_input(
+    file_descriptor: int,
+    directory_descriptor: int,
+    filename: str,
+) -> None:
+    """Make secret erasure durable before returning a failed acquisition.
+
+    The open descriptor is the strongest remaining authority after a pathname retarget. Scrub that
+    exact inode first so an added hard link cannot preserve secret bytes. Descriptor-relative unlink
+    is a second route only when the original pathname still names the exact single-link inode and the
+    opened inode proves zero links after unlink. At least one erasure route must be proven durable;
+    otherwise surface a secret-free cleanup blocker instead of silently claiming failure atomicity.
+    """
+    try:
+        os.fstat(file_descriptor)
+    except OSError as error:
+        raise PrivateInputError("private-intended-device-cleanup-failed") from error
+
+    durable_scrub = False
+    try:
+        os.ftruncate(file_descriptor, 0)
+        os.fsync(file_descriptor)
+        durable_scrub = os.fstat(file_descriptor).st_size == 0
+    except OSError:
+        durable_scrub = False
+
+    durable_unlink = False
+    try:
+        current = os.stat(filename, dir_fd=directory_descriptor, follow_symlinks=False)
+        opened_before_unlink = os.fstat(file_descriptor)
+        if _same_inode(current, opened_before_unlink) and opened_before_unlink.st_nlink == 1:
+            os.unlink(filename, dir_fd=directory_descriptor)
+            os.fsync(directory_descriptor)
+            durable_unlink = os.fstat(file_descriptor).st_nlink == 0
+    except OSError:
+        durable_unlink = False
+
+    # Descriptor scrub is authoritative even if the path moved or acquired more links. Unlink is
+    # authoritative only after the exact open inode proves it has no surviving hard-link names.
+    if durable_scrub or durable_unlink:
+        return
+
+    raise PrivateInputError("private-intended-device-cleanup-failed")
 
 
 def create_private_input(
@@ -178,11 +268,12 @@ def create_private_input(
 
     directory_descriptor = _open_directory_chain(private_directory, create_leaf=True)
     file_descriptor: int | None = None
-    created_object_identity: tuple[int, int] | None = None
-    final_identity: FileIdentity | None = None
+    created_identity: FileIdentity | None = None
     try:
         if _directory_contains_repository(private_directory, repository_root):
             raise PrivateInputError("private-directory-traverses-source-repository")
+
+        _refuse_existing_target_before_secret(directory_descriptor, filename)
 
         secret = secret_provider()
         payload = _validated_secret(secret, output_path)
@@ -198,16 +289,14 @@ def create_private_input(
         except OSError as error:
             raise PrivateInputError("private-intended-device-create-failed") from error
 
-        # Capture the created filesystem object immediately after O_EXCL succeeds. Cleanup must not
-        # depend on a later successful write/fsync/fstat: any failure after creation is responsible
-        # for removing this exact object, but never a pathname replacement created by another actor.
-        opened_metadata = os.fstat(file_descriptor)
-        created_object_identity = (opened_metadata.st_dev, opened_metadata.st_ino)
+        # Prove the exact fresh inode before any secret byte is written. Cleanup later compares
+        # against this still-open descriptor's stable dev/inode identity, never its mutable size.
+        _validate_fresh_output(os.fstat(file_descriptor))
 
         _write_all(file_descriptor, payload)
         os.fsync(file_descriptor)
         metadata = os.fstat(file_descriptor)
-        final_identity = FileIdentity.from_stat(metadata)
+        created_identity = FileIdentity.from_stat(metadata)
         if not stat.S_ISREG(metadata.st_mode):
             raise PrivateInputError("private-intended-device-not-regular-file")
         if stat.S_IMODE(metadata.st_mode) != 0o600:
@@ -239,7 +328,7 @@ def create_private_input(
                 raise PrivateInputError("private-intended-device-path-retargeted") from error
             try:
                 rebound_identity = FileIdentity.from_stat(os.fstat(rebound_file))
-                if rebound_identity != final_identity:
+                if rebound_identity != created_identity:
                     raise PrivateInputError("private-intended-device-path-retargeted")
                 observed = os.read(rebound_file, MAX_PRIVATE_IDENTIFIER_BYTES + 1)
                 if observed != payload:
@@ -251,23 +340,12 @@ def create_private_input(
 
         os.fsync(directory_descriptor)
         return output_path
-    except Exception:
-        if created_object_identity is not None:
+    except BaseException as acquisition_error:
+        if file_descriptor is not None:
             try:
-                current = os.stat(filename, dir_fd=directory_descriptor, follow_symlinks=False)
-            except OSError:
-                pass
-            else:
-                if (current.st_dev, current.st_ino) == created_object_identity:
-                    try:
-                        os.unlink(filename, dir_fd=directory_descriptor)
-                    except OSError:
-                        pass
-                    else:
-                        try:
-                            os.fsync(directory_descriptor)
-                        except OSError:
-                            pass
+                _erase_failed_private_input(file_descriptor, directory_descriptor, filename)
+            except PrivateInputError as cleanup_error:
+                raise cleanup_error from acquisition_error
         raise
     finally:
         if file_descriptor is not None:
@@ -290,7 +368,7 @@ def main(argv: list[str] | None = None) -> int:
             args.private_directory,
             args.source_repo,
             args.filename,
-            secret_provider=lambda: getpass.getpass("Intended iPhone UDID: "),
+            secret_provider=_secure_secret_prompt,
         )
     except PrivateInputError as error:
         print(f"NOT_READY: {error}", file=sys.stderr)
