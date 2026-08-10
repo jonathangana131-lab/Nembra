@@ -14,6 +14,8 @@ env:
   PRODUCER: .github/workflows/capture-producer-custody-source.yml
   PROVENANCE: .github/workflows/capture-field-build-provenance.yml
   REGRESSION: scripts/ci/tests/test_capture_ci_python_isolation.py
+  STAGED_PRODUCER: scripts/ci/staged/capture-producer-custody-source.isolated.yml
+  STAGED_PROVENANCE: scripts/ci/staged/capture-field-build-provenance.isolated.yml
 
 jobs:
   materialize:
@@ -60,11 +62,7 @@ jobs:
           path_anchor = '      - scripts/ci/tests/test_xcode27_today_research_field_candidate.py\n'
           if text.count(path_anchor) != 1:
               raise SystemExit('producer path anchor drifted')
-          text = text.replace(
-              path_anchor,
-              path_anchor + '      - scripts/ci/tests/test_capture_ci_python_isolation.py\n',
-              1,
-          )
+          text = text.replace(path_anchor, path_anchor + '      - scripts/ci/tests/test_capture_ci_python_isolation.py\n', 1)
           text, converted = isolate_command_lines(text)
           if converted < 8:
               raise SystemExit(f'expected producer Python commands, converted {converted}')
@@ -132,16 +130,25 @@ jobs:
           /usr/bin/python3 -I "$REGRESSION"
           git diff --check
 
-      - name: Verify exact semantic scope
+      - name: Stage validated workflow bytes outside executable workflow namespace
         shell: bash
         run: |
           set -euo pipefail
-          test -f "$REGRESSION"
-          test "$(git diff --name-only -- "$PRODUCER" "$PROVENANCE" | sort)" = "$(printf '%s\n%s\n' "$PRODUCER" "$PROVENANCE" | sort)"
-          test "$(git ls-files --others --exclude-standard -- "$REGRESSION")" = "$REGRESSION"
-          test -z "$(git diff --name-only -- "$MATERIALIZER")"
+          mkdir -p scripts/ci/staged
+          cp "$PRODUCER" "$STAGED_PRODUCER"
+          cp "$PROVENANCE" "$STAGED_PROVENANCE"
+          git checkout -- "$PRODUCER" "$PROVENANCE"
+          /usr/bin/python3 -I - "$STAGED_PRODUCER" "$STAGED_PROVENANCE" <<'PY'
+          from pathlib import Path
+          import re, sys
+          for name in sys.argv[1:]:
+              path=Path(name)
+              commands=[line.strip() for line in path.read_text().splitlines() if line.strip().startswith(('python3 ', '/usr/bin/python3 '))]
+              assert commands, path
+              assert all(re.match(r'^/usr/bin/python3\s+-I(?:\s|$)', command) for command in commands), commands
+          PY
 
-      - name: Publish semantic repair and retire materializer
+      - name: Publish inert validated staging and retire materializer
         shell: bash
         run: |
           set -euo pipefail
@@ -149,6 +156,6 @@ jobs:
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add "$PRODUCER" "$PROVENANCE" "$REGRESSION"
-          git commit -m 'ci(capture): isolate Python acceptance authority'
+          git add "$REGRESSION" "$STAGED_PRODUCER" "$STAGED_PROVENANCE"
+          git commit -m 'test(capture): stage validated isolated Python acceptance gates'
           git push origin HEAD:fix/v14-capture-ci-python-isolation-b615-sol
