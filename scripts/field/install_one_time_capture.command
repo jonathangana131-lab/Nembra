@@ -238,6 +238,14 @@ BUILT_BUNDLE_ID="$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$APP_IN
 [[ "$BUILT_BUNDLE_ID" == "$BUNDLE_ID" ]] || die "Built Capture app bundle identifier does not match the intended standalone field product. Discard this candidate."
 say "Built app provenance matched exact requested source, reviewed Tuya dependency lock, canonical stationary procedure, and field product"
 
+# Entitlement/profile readback proves identity values, but it does not prove the app bundle's
+# recursive signature/seal is valid. Fail closed on the exact signed bytes before those values
+# are allowed to participate in field authority or before any device installation is attempted.
+if ! /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/codesign --verify --deep --strict "$APP" >/dev/null 2>&1; then
+    die "Final signed Capture app failed recursive strict code-signature verification. Discard this candidate."
+fi
+say "Final signed Capture app passed recursive strict code-signature verification"
+
 # Apple-backed Smart Life account entry is now part of field preflight. A source entitlement file
 # is not enough: prove the final signed executable and the exact embedded provisioning profile both
 # authorize Sign in with Apple before this build can be installed as the field candidate. Run the
