@@ -2354,11 +2354,16 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         var sanitized: [String: String] = [:]
         for (key, value) in dps {
             let keyString = String(describing: key)
+            let custodyKey = Self.redactExactSecretValues(in: keyString)
             let normalizedKey = keyString.lowercased().filter { $0.isLetter || $0.isNumber }
             if Self.secretKeyFragments.contains(where: { normalizedKey.contains($0) }) {
-                sanitized[keyString] = "<redacted>"
+                if custodyKey == keyString {
+                    sanitized[keyString] = "<redacted>"
+                } else {
+                    sanitized[custodyKey] = "<redacted>"
+                }
             } else {
-                sanitized[keyString] = String(describing: Self.redactApplicationSecrets(value))
+                sanitized[custodyKey] = Self.redactedApplicationDescription(value)
             }
         }
         onApplicationUpdate?(sanitized)
@@ -2377,16 +2382,37 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "seckey",
     ]
 
+    private static var exactSecretValues: [String] {
+#if canImport(NembraTuyaPrivateConfig)
+        return [NembraTuyaPrivateIdentity.appKey, NembraTuyaPrivateIdentity.appSecret]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+#else
+        return []
+#endif
+    }
+
+    private static func redactExactSecretValues(in value: String) -> String {
+        exactSecretValues.reduce(value) { partial, secret in
+            partial.replacingOccurrences(of: secret, with: "<redacted>", options: [.literal])
+        }
+    }
+
+    private static func redactedApplicationDescription(_ object: Any) -> String {
+        String(describing: redactApplicationSecrets(object))
+    }
+
     private static func redactApplicationSecrets(_ object: Any) -> Any {
         if let dictionary = object as? [AnyHashable: Any] {
             var sanitized: [String: Any] = [:]
             for (key, value) in dictionary {
                 let keyString = String(describing: key)
+                let custodyKey = redactExactSecretValues(in: keyString)
                 let normalizedKey = keyString.lowercased().filter { $0.isLetter || $0.isNumber }
                 if secretKeyFragments.contains(where: { normalizedKey.contains($0) }) {
-                    sanitized[keyString] = "<redacted>"
+                    sanitized[custodyKey] = "<redacted>"
                 } else {
-                    sanitized[keyString] = redactApplicationSecrets(value)
+                    sanitized[custodyKey] = redactApplicationSecrets(value)
                 }
             }
             return sanitized
@@ -2394,7 +2420,12 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         if let array = object as? [Any] {
             return array.map(redactApplicationSecrets)
         }
-        return object
+        if let string = object as? String {
+            return redactExactSecretValues(in: string)
+        }
+        let rendered = String(describing: object)
+        let redacted = redactExactSecretValues(in: rendered)
+        return redacted == rendered ? object : redacted
     }
 }
 #endif
