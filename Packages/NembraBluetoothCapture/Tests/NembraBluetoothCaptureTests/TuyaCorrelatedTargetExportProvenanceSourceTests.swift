@@ -43,15 +43,29 @@ struct TuyaCorrelatedTargetExportProvenanceSourceTests {
         #expect(confirmation.contains("candidate_selected"))
     }
 
-    @Test("prepared artifact embeds correlation provenance and reset cannot leak it into another attempt")
+    @Test("export constructor embeds correlation provenance and reset cannot leak it into another attempt")
     func exportAndResetPreserveSessionBoundary() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let prepare = try section(in: app, from: "func prepareExport()", to: "private func resetDiscoverySessionOnly")
-        #expect(prepare.contains("targetCorrelationMethod:"))
-        #expect(prepare.contains("targetCorrelationWindowCount:"))
-        #expect(prepare.contains("targetCorrelationOperatorConfirmed:"))
+        let makeExport = try section(
+            in: app,
+            from: "private func makeExport(exportedAt:",
+            to: "func prepareExport()"
+        )
+        #expect(makeExport.contains("targetCorrelationMethod: targetCorrelationMethod"))
+        #expect(makeExport.contains("targetCorrelationWindowCount: targetCorrelationWindowCount"))
+        #expect(makeExport.contains("targetCorrelationOperatorConfirmed: targetCorrelationOperatorConfirmed"))
+        #expect(makeExport.contains("targetCorrelationProvenance: correlationProvenance"))
+
+        let prepare = try section(
+            in: app,
+            from: "func prepareExport()",
+            to: "private func resetDiscoverySessionOnly"
+        )
+        #expect(prepare.contains("envelope = sealedAcceptedExport"))
+        #expect(prepare.contains("envelope = makeExport("))
 
         let reset = try section(in: app, from: "private func resetDiscoverySessionOnly", to: "private func failLocally")
+        #expect(reset.contains("correlationProvenance = nil"))
         #expect(reset.contains("targetCorrelationMethod = nil"))
         #expect(reset.contains("targetCorrelationWindowCount = nil"))
         #expect(reset.contains("targetCorrelationOperatorConfirmed = false"))
