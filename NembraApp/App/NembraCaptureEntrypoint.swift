@@ -1903,7 +1903,8 @@ private enum OfficialTuyaFactory {
 
     static func make() -> OfficialTuyaDriver? {
 #if canImport(ThingSmartHomeKit) && canImport(NembraTuyaPrivateConfig)
-        guard activePackageCorrelationOwner == nil,
+        guard !packageCorrelationRetiredForProcess,
+              activePackageCorrelationOwner == nil,
               bootstrap(),
               accountLoggedIn,
               currentAccountUID != nil else { return nil }
