@@ -65,9 +65,12 @@ struct TuyaSecureLinkAccountRecoverySourceTests {
         #expect(invalidation.contains("membershipAccountUID = nil"))
         #expect(invalidation.contains("membershipDeviceID = nil"))
         #expect(invalidation.contains("pendingCorrelatedTargetID = nil"))
-        #expect(invalidation.contains("correlationSession?.abandonCurrentWindow()"))
+        #expect(invalidation.contains("if phase == .baseline || phase == .powerOn || phase == .scanning || phase == .correlated"))
+        #expect(invalidation.contains("abandonPackageCorrelation()"))
         #expect(invalidation.contains("phase = .failed"))
         #expect(invalidation.contains("invalidateSourceAuthority("))
+        #expect(app.contains("correlationSession?.abandonCurrentWindow()"))
+        #expect(app.contains("releasePackageCorrelationLease()"))
     }
 
     @Test("account recovery preserves the accepted correlation presentation repair")
