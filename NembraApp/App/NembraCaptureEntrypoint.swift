@@ -413,6 +413,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     deinit { watchdog?.cancel() }
 
+    func abandonCorrelationForViewExit() {
+        abandonPackageCorrelation()
+    }
+
     var privateConfig: Bool { OfficialTuyaFactory.configured }
     var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }
     var fieldBuildIdentifier: String { buildIdentity.buildIdentifier }
@@ -2401,6 +2405,9 @@ private struct SecureLinkView: View {
                 test.consumeCorrelationAsyncInvalidation()
                 try? await Task.sleep(nanoseconds: 250_000_000)
             }
+        }
+        .onDisappear {
+            test.abandonCorrelationForViewExit()
         }
         .onChange(of: sdkAccount.loggedIn) { _, loggedIn in
             if loggedIn { test.verifySDKMembership() }
