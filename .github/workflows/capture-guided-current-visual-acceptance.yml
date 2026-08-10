@@ -1,0 +1,129 @@
+name: Capture Guided Current Visual Acceptance
+
+on:
+  pull_request:
+    paths:
+      - NembraApp/App/NembraCaptureEntrypoint.swift
+      - NembraApp/App/NembraCaptureBuildIdentity.swift
+      - NembraCapture.xcodeproj/project.pbxproj
+      - scripts/ci/capture_guided_frozen_visual_evidence.sh
+      - .github/workflows/capture-guided-current-visual-acceptance.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guided-visual:
+    name: Exact iPhone 12 Capture presentation
+    runs-on: xcode-27
+    timeout-minutes: 25
+    env:
+      PRODUCT_PARENT_SHA: 502cfc43d8943bacb446f287b58d46463df3a7ca
+      PROCEDURE_SOURCE_CONTRACT_ID: ES80-AUTHENTICATED-STATIONARY-v1
+    steps:
+      - name: Checkout exact validation head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Prove validation-only child
+        shell: bash
+        run: |
+          set -euo pipefail
+          validation_sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          expected="$(printf '%s' "$expected" | tr '[:upper:]' '[:lower:]')"
+          test "$validation_sha" = "$expected"
+          git cat-file -e "$PRODUCT_PARENT_SHA^{commit}"
+          mapfile -t changed < <(git diff --name-only "$PRODUCT_PARENT_SHA" "$validation_sha")
+          test "${#changed[@]}" -eq 2
+          printf '%s\n' "${changed[@]}" | grep -Fxq '.github/workflows/capture-guided-current-visual-acceptance.yml'
+          printf '%s\n' "${changed[@]}" | grep -Fxq 'scripts/ci/capture_guided_frozen_visual_evidence.sh'
+          git diff --quiet "$PRODUCT_PARENT_SHA" "$validation_sha" -- NembraApp NembraCapture.xcodeproj Packages/NembraBluetoothCapture
+          grep -Fq "$PROCEDURE_SOURCE_CONTRACT_ID" NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'procedureIdentifier == Self.fieldProcedureIdentifier' NembraApp/App/NembraCaptureBuildIdentity.swift
+          bash -n scripts/ci/capture_guided_frozen_visual_evidence.sh
+          grep -Fq 'item.get("name") == "iPhone 12"' scripts/ci/capture_guided_frozen_visual_evidence.sh
+          grep -Fq 'accessibility-extra-extra-extra-large' scripts/ci/capture_guided_frozen_visual_evidence.sh
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'CAPTURE_VISUAL_VALIDATION_SHA=%s\n' "$validation_sha" >> "$GITHUB_ENV"
+
+      - name: Build standalone Capture without field credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_sha="${CAPTURE_VISUAL_VALIDATION_SHA:?exact validation SHA was not established}"
+          label="capture-v14-${source_sha:0:12}"
+          rm -rf /tmp/NembraCaptureGuidedVisualDerived
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/NembraCaptureGuidedVisualDerived \
+            CODE_SIGNING_ALLOWED=NO \
+            NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
+            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$source_sha" \
+            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="" \
+            INFOPLIST_KEY_NembraCaptureProcedureIdentifier="" \
+            build
+          plist='/tmp/NembraCaptureGuidedVisualDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
+          test -f "$plist"
+          test "$(plutil -extract CFBundleIdentifier raw -o - "$plist")" = 'com.jonathangana131.nembra.capturelearn'
+          test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
+          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$source_sha"
+          dependency="$(plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist" 2>/dev/null || true)"
+          procedure="$(plutil -extract NembraCaptureProcedureIdentifier raw -o - "$plist" 2>/dev/null || true)"
+          test -z "$dependency"
+          test -z "$procedure"
+
+      - name: Capture standard and Accessibility XXXL evidence
+        shell: bash
+        env:
+          APP_PATH: /tmp/NembraCaptureGuidedVisualDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app
+          ARTIFACTS_DIR: ${{ runner.temp }}/NembraCaptureGuidedFrozenVisualEvidence
+        run: |
+          set -euo pipefail
+          EXPECTED_VALIDATION_SHA="$CAPTURE_VISUAL_VALIDATION_SHA" \
+          EXPECTED_PRODUCT_PARENT_SHA="$PRODUCT_PARENT_SHA" \
+          PROCEDURE_SOURCE_CONTRACT_ID="$PROCEDURE_SOURCE_CONTRACT_ID" \
+          bash scripts/ci/capture_guided_frozen_visual_evidence.sh
+
+      - name: Verify retained evidence
+        shell: bash
+        env:
+          ARTIFACTS_DIR: ${{ runner.temp }}/NembraCaptureGuidedFrozenVisualEvidence
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - "$ARTIFACTS_DIR/NembraCaptureGuidedCurrentVisualEvidence.json" "$CAPTURE_VISUAL_VALIDATION_SHA" "$PRODUCT_PARENT_SHA" <<'PY'
+          import json,sys
+          from pathlib import Path
+          path=Path(sys.argv[1]); record=json.loads(path.read_text(encoding="utf-8"))
+          assert record["schemaVersion"] == 3
+          assert record["validationSourceCommitSHA"] == sys.argv[2]
+          assert record["productParentCommitSHA"] == sys.argv[3]
+          assert record["productionBytesMatchProductParent"] is True
+          assert record["procedureBuildProvenanceVerified"] is False
+          assert record["tuyaDependencyLockSHA256"] is None
+          assert record["expectedFieldBuildAuthority"] is False
+          assert record["simulatorDeviceName"] == "iPhone 12"
+          assert record["visualAcceptanceRequiresHumanReview"] is True
+          assert record["physicalAuthorityCreated"] is False
+          assert record["protocolAuthorityCreated"] is False
+          for shot in record["screenshots"]:
+              image=path.parent/shot["relativePath"]
+              assert image.is_file() and image.stat().st_size > 0
+          print("guided current visual evidence custody: PASS")
+          PY
+
+      - name: Upload visual evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-capture-guided-current-visual-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/NembraCaptureGuidedFrozenVisualEvidence
+          if-no-files-found: ignore
+          retention-days: 14
