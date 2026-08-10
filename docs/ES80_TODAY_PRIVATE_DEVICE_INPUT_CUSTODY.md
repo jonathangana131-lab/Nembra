@@ -69,18 +69,20 @@ test "$(/usr/bin/git hash-object --no-filters -- "$PRIVATE_INPUT_HELPER")" = "$P
 HOME_PHYSICAL="$(cd -P -- "$HOME" && /bin/pwd -P)"
 test -n "$HOME_PHYSICAL" && test "${HOME_PHYSICAL#/}" != "$HOME_PHYSICAL"
 PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"
-UDID_FILE="$PRIVATE_DIR/es80-intended-device.udid"
+UDID_FILENAME='es80-intended-device.udid'
+UDID_FILE="$PRIVATE_DIR/$UDID_FILENAME"
 
 /usr/bin/python3 -I "$PRIVATE_INPUT_HELPER" \
   --private-directory "$PRIVATE_DIR" \
-  --source-repo "$FIELD_SOURCE"
+  --source-repo "$FIELD_SOURCE" \
+  --filename "$UDID_FILENAME"
 
 test -f "$UDID_FILE" && test ! -L "$UDID_FILE"
 test "$(/usr/bin/stat -f '%Lp' "$UDID_FILE")" = '600'
 NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE="$UDID_FILE"
 ```
 
-The helper prompts privately with `getpass`; do not pass the raw UDID on the command line. If secure terminal input is unavailable, the final path already exists, any custody check fails, or a failed acquisition cannot prove durable open-inode erasure, preserve the exact blocker and stop before signing. If a failed acquisition leaves a zero-length spent subject at the attempted path, preserve that entry and choose a fresh filename/path for any retry.
+The helper prompts privately with `getpass`; do not pass the raw UDID on the command line. If secure terminal input is unavailable, the final path already exists, any custody check fails, or a failed acquisition cannot prove durable open-inode erasure, preserve the exact blocker and stop before signing. If a failed acquisition leaves a zero-length spent subject at the attempted path—or any other subject already occupies that leaf—preserve it, set `UDID_FILENAME` to a fresh leaf name under the same `PRIVATE_DIR`, let `UDID_FILE` derive from that value, and rerun the exact pinned helper with `--filename "$UDID_FILENAME"`. Do not delete, overwrite, or reuse an occupied subject merely to make the helper proceed.
 
 Keep `PRIVATE_INPUT_HELPER_DIR` outside `ARTIFACTS_DIR`. Do not mutate the producer's retained candidate shape with operator tooling or auxiliary files.
 
