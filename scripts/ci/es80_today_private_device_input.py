@@ -15,6 +15,7 @@ from pathlib import Path
 import stat
 import sys
 from typing import Callable
+import warnings
 
 MAX_PRIVATE_IDENTIFIER_BYTES = 128
 READY_MARKER = "CREATED_PRIVATE_INTENDED_DEVICE_INPUT"
@@ -260,6 +261,21 @@ def create_private_input(
         os.close(directory_descriptor)
 
 
+def _secure_secret_provider() -> str:
+    """Acquire the identifier only when terminal echo suppression is guaranteed.
+
+    Python's getpass warns and falls back to ordinary input when it cannot control
+    terminal echo. For a private device identifier that downgrade is not acceptable:
+    convert GetPassWarning into an exception before fallback input can be consumed.
+    """
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", getpass.GetPassWarning)
+            return getpass.getpass("Intended iPhone UDID: ")
+    except getpass.GetPassWarning as error:
+        raise PrivateInputError("secure-terminal-input-unavailable") from error
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--private-directory", required=True, type=Path)
@@ -275,7 +291,7 @@ def main(argv: list[str] | None = None) -> int:
             args.private_directory,
             args.source_repo,
             args.filename,
-            secret_provider=lambda: getpass.getpass("Intended iPhone UDID: "),
+            secret_provider=_secure_secret_provider,
         )
     except PrivateInputError as error:
         print(f"NOT_READY: {error}", file=sys.stderr)
