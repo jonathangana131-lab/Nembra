@@ -1,0 +1,57 @@
+import Foundation
+import Testing
+@testable import NembraBluetoothCapture
+
+@Suite("Capture root product surface")
+struct TuyaCaptureRootProductSurfaceSourceTests {
+    @Test("public unprovisioned launch is guided Capture preflight, not an engineering console")
+    func publicRootIsGuidedPreflight() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let root = try section(in: app, from: "private struct CaptureP0Root: View", to: "@MainActor\nprivate final class SecureLinkController")
+        let body = String(root)
+
+        #expect(body.contains("NEMBRA CAPTURE"))
+        #expect(body.contains("Engineering details"))
+        #expect(!body.contains("P0 · TUYA AUTHENTICATION"))
+        #expect(!body.contains("Prove the secure scooter link first."))
+        #expect(!body.contains("Read-only control boundary"))
+        #expect(!body.contains("local_key"))
+        #expect(!body.contains("No DP query"))
+        #expect(!body.contains(".card()"))
+    }
+
+    @Test("premium root preserves real account and device authority actions")
+    func authorityActionsRemainReachable() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let root = try section(in: app, from: "private struct CaptureP0Root: View", to: "@MainActor\nprivate final class SecureLinkController")
+        let body = String(root)
+
+        #expect(body.contains("tuya.requestApproval()"))
+        #expect(body.contains("tuya.checkApprovalNow()"))
+        #expect(body.contains("tuya.refreshDevices()"))
+        #expect(body.contains("tuya.selectDevice(device)"))
+        #expect(body.contains("SecureLinkView(device: device)"))
+        #expect(app.contains("No DP query or scooter command is authorized by this surface."))
+    }
+
+    private func section(in source: String, from start: String, to end: String) throws -> Substring {
+        guard let startRange = source.range(of: start),
+              let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+            Issue.record("Expected source section missing: \(start) ... \(end)")
+            throw SourceContractError.sectionMissing
+        }
+        return source[startRange.lowerBound..<endRange.lowerBound]
+    }
+
+    private func readRepositoryFile(_ relativePath: String) throws -> String {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+    }
+
+    private enum SourceContractError: Error { case sectionMissing }
+}

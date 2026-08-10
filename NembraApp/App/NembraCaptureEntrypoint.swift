@@ -19,118 +19,281 @@ struct NembraCaptureApp: App {
     }
 }
 
+private enum CaptureRootTruthCopy {
+    static let commandBoundary = "No DP query or scooter command is authorized by this surface."
+}
+
 @MainActor
 private struct CaptureP0Root: View {
     @StateObject private var tuya = TuyaAccountBridge()
+    @State private var showEngineeringDetails = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("P0 · TUYA AUTHENTICATION")
-                        .font(.caption.monospaced().bold())
-                        .foregroundStyle(.green)
-                    Text("Prove the secure scooter link first.")
-                        .font(.largeTitle.bold())
-                    Text("The next physical run is stationary. It proves current SDK account authority, exact scooter membership, a fresh repeated OFF1→ON1→OFF2→ON2 Bluetooth correlation, Tuya-owned authentication, genuine same-generation application updates, and a sealed 45-second observation prefix.")
-                        .foregroundStyle(.secondary)
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("Read-only control boundary", systemImage: "shield.checkered")
-                            .font(.headline)
-                        Text("Nembra never turns local_key into a BLE login key, invents Tuya authentication frames, or opens a second CoreBluetooth connection after Tuya's SDK owns BLE.")
-                            .foregroundStyle(.secondary)
-                        Text("No DP query, DP publish, unbind, reset, lock, speed, light, mode, throttle, brake, firmware, or other scooter command is sent.")
-                            .font(.footnote.bold())
-                            .foregroundStyle(.green)
-                    }
-                    .card()
-
-                    accountCard
-                    if tuya.isLinked { deviceCard }
+                VStack(alignment: .leading, spacing: 24) {
+                    hero
+                    accountPreflight
+                    if tuya.isLinked { scooterSelection }
+                    engineeringDetails
                 }
                 .frame(maxWidth: 760)
-                .padding(18)
+                .padding(.horizontal, 20)
+                .padding(.top, 18)
+                .padding(.bottom, 40)
                 .frame(maxWidth: .infinity)
             }
-            .background(Color.black.ignoresSafeArea())
-            .navigationTitle("Nembra Capture")
+            .background(
+                LinearGradient(
+                    colors: [Color.black, Color(red: 0.035, green: 0.055, blue: 0.075), Color.black],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+            )
+            .navigationTitle("Capture")
+            .navigationBarTitleDisplayMode(.inline)
         }
+        .tint(.cyan)
     }
 
-    private var accountCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label("1 · Identify your bound Tuya device", systemImage: "person.badge.key")
-                .font(.headline)
-            Text(tuya.statusMessage).font(.footnote).foregroundStyle(.secondary)
+    private var hero: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(tuya.isLinked ? Color.green : Color.cyan)
+                    .frame(width: 8, height: 8)
+                    .accessibilityHidden(true)
+                Text("NEMBRA CAPTURE")
+                    .font(.caption.monospaced().weight(.semibold))
+                    .tracking(1.6)
+                    .foregroundStyle(.secondary)
+            }
+
+            Text(tuya.isLinked ? "Choose the machine to measure." : "Prepare a trusted capture.")
+                .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(tuya.isLinked
+                 ? "Your account link is ready. Select the scooter that will enter the stationary, read-only evidence flow."
+                 : "Link the account that already owns the scooter. Capture will verify the exact device before Bluetooth discovery begins.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    statusPill("STATIONARY", systemImage: "parkingsign.circle")
+                    statusPill("READ ONLY", systemImage: "eye")
+                    statusPill("EVIDENCE FIRST", systemImage: "checkmark.seal")
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    statusPill("STATIONARY", systemImage: "parkingsign.circle")
+                    statusPill("READ ONLY", systemImage: "eye")
+                    statusPill("EVIDENCE FIRST", systemImage: "checkmark.seal")
+                }
+            }
+        }
+        .padding(.vertical, 10)
+    }
+
+    private func statusPill(_ title: String, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(.caption2.monospaced().weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color.white.opacity(0.055), in: Capsule())
+            .overlay { Capsule().stroke(Color.white.opacity(0.09), lineWidth: 1) }
+    }
+
+    private var accountPreflight: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("ACCOUNT")
+                        .font(.caption2.monospaced().weight(.semibold))
+                        .tracking(1.3)
+                        .foregroundStyle(.secondary)
+                    Text(tuya.isLinked ? "Account ready" : "Link your Tuya account")
+                        .font(.title2.bold())
+                }
+                Spacer(minLength: 12)
+                Image(systemName: tuya.isLinked ? "checkmark.circle.fill" : "person.crop.circle.badge.key")
+                    .font(.title2)
+                    .foregroundStyle(tuya.isLinked ? Color.green : Color.cyan)
+                    .accessibilityHidden(true)
+            }
+
+            Text(tuya.statusMessage)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             if !tuya.isLinked {
                 TextField("Tuya Smart User Code", text: $tuya.userCode)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                    .padding(10)
-                    .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
-                Button("Create approval QR") { tuya.requestApproval() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(tuya.phase == .requestingApproval)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 52)
+                    .background(Color.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 15, style: .continuous)
+                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                    }
+
+                Button {
+                    tuya.requestApproval()
+                } label: {
+                    Label("Create approval QR", systemImage: "qrcode")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(tuya.phase == .requestingApproval)
+                .accessibilityHint("Creates the account approval code required before Capture can list your scooter.")
             }
 
             if let data = tuya.qrPNGData,
                let image = UIImage(data: data),
                !tuya.isLinked {
-                Image(uiImage: image)
-                    .interpolation(.none)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: 230)
-                    .padding(10)
-                    .background(.white, in: RoundedRectangle(cornerRadius: 14))
-                Button("I approved it · check now") { tuya.checkApprovalNow() }
+                VStack(alignment: .leading, spacing: 14) {
+                    Image(uiImage: image)
+                        .interpolation(.none)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: 240)
+                        .padding(12)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .accessibilityLabel("Tuya account approval QR code")
+
+                    Button {
+                        tuya.checkApprovalNow()
+                    } label: {
+                        Label("I approved it · check now", systemImage: "arrow.clockwise")
+                            .frame(maxWidth: .infinity)
+                    }
                     .buttonStyle(.bordered)
+                    .controlSize(.large)
+                }
             }
 
             if tuya.phase == .failed {
-                Button("Reset account link") { tuya.resetLink() }
-                    .buttonStyle(.bordered)
+                Button {
+                    tuya.resetLink()
+                } label: {
+                    Label("Reset account link", systemImage: "arrow.counterclockwise")
+                }
+                .buttonStyle(.bordered)
             }
         }
-        .card()
+        .padding(20)
+        .background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        }
     }
 
-    private var deviceCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label("2 · Choose the scooter", systemImage: "bicycle").font(.headline)
-            if tuya.devices.isEmpty {
-                Button("Refresh Tuya devices") { tuya.refreshDevices() }.buttonStyle(.bordered)
+    private var scooterSelection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("SCOOTER")
+                    .font(.caption2.monospaced().weight(.semibold))
+                    .tracking(1.3)
+                    .foregroundStyle(.secondary)
+                Text("Choose the scooter")
+                    .font(.title2.bold())
+                Text("Capture will use the selected account device as the identity it must re-prove before the stationary Bluetooth sequence.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+
+            if tuya.devices.isEmpty {
+                Button {
+                    tuya.refreshDevices()
+                } label: {
+                    Label("Refresh scooters", systemImage: "arrow.clockwise")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+            }
+
             ForEach(tuya.devices) { device in
-                VStack(alignment: .leading, spacing: 7) {
-                    Text(device.name.isEmpty ? "Unnamed Tuya device" : device.name).font(.headline)
-                    Text([device.productName, device.category].filter { !$0.isEmpty }.joined(separator: " · "))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    HStack {
-                        Button(tuya.selectedDeviceID == device.id ? "Refresh metadata" : "Use this device") {
-                            tuya.selectDevice(device)
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "bolt.horizontal.circle")
+                            .font(.title3)
+                            .foregroundStyle(.cyan)
+                            .frame(width: 34, height: 34)
+                            .background(Color.cyan.opacity(0.10), in: Circle())
+                            .accessibilityHidden(true)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(device.name.isEmpty ? "Unnamed scooter" : device.name)
+                                .font(.headline)
+                            let detail = [device.productName, device.category].filter { !$0.isEmpty }.joined(separator: " · ")
+                            if !detail.isEmpty {
+                                Text(detail)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
-                        .buttonStyle(.bordered)
-                        if tuya.selectedDeviceID == device.id,
-                           tuya.phase == .ready,
-                           !device.productID.isEmpty,
-                           !device.uuid.isEmpty {
-                            NavigationLink("Secure link test") { SecureLinkView(device: device) }
-                                .buttonStyle(.borderedProminent)
+                        Spacer(minLength: 8)
+                        if tuya.selectedDeviceID == device.id {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                                .accessibilityLabel("Selected")
                         }
                     }
+
+                    Button(tuya.selectedDeviceID == device.id ? "Refresh device details" : "Use this scooter") {
+                        tuya.selectDevice(device)
+                    }
+                    .buttonStyle(.bordered)
+
+                    if tuya.selectedDeviceID == device.id,
+                       tuya.phase == .ready,
+                       !device.productID.isEmpty,
+                       !device.uuid.isEmpty {
+                        NavigationLink {
+                            SecureLinkView(device: device)
+                        } label: {
+                            Label("Continue to Capture", systemImage: "arrow.right")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .accessibilityHint("Opens the guided stationary Capture flow for this selected scooter.")
+                    }
                 }
-                .padding(12)
-                .background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 14))
+                .padding(16)
+                .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(tuya.selectedDeviceID == device.id ? Color.cyan.opacity(0.45) : Color.white.opacity(0.07), lineWidth: 1)
+                }
             }
-            Text("The metadata bridge supplies device identity only. local_key never enters the BLE authentication controller.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
         }
-        .card()
+    }
+
+    private var engineeringDetails: some View {
+        DisclosureGroup(isExpanded: $showEngineeringDetails) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("This screen establishes account and device context. Bluetooth correlation and the stationary evidence run begin on the next screen.")
+                Text(CaptureRootTruthCopy.commandBoundary)
+                    .fontWeight(.semibold)
+            }
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .padding(.top, 8)
+        } label: {
+            Label("Engineering details", systemImage: "wrench.and.screwdriver")
+                .font(.subheadline.weight(.semibold))
+        }
+        .padding(.horizontal, 4)
     }
 }
 
