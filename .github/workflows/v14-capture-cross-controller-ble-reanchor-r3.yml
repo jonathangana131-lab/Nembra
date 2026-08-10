@@ -1,0 +1,68 @@
+name: V14 Capture Cross-Controller BLE Reanchor R4
+
+on:
+  push:
+    branches:
+      - integration/v14-capture-cross-controller-ble-current-sol
+
+permissions:
+  contents: write
+
+jobs:
+  reanchor:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/v14-capture-cross-controller-ble-current-sol
+          fetch-depth: 0
+
+      - name: Compose exact current product with BLE ownership fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          product='998dca193619c38355d1bc5f71122b79bf17fb5a'
+          branch='integration/v14-capture-cross-controller-ble-current-sol'
+          helper='.github/workflows/v14-capture-cross-controller-ble-reanchor-r3.yml'
+          git fetch origin 'refs/heads/product/v14-capture-guided-truth-current-sol:refs/remotes/origin/product/v14-capture-guided-truth-current-sol'
+          test "$(git rev-parse refs/remotes/origin/product/v14-capture-guided-truth-current-sol)" = "$product"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git merge --no-edit --no-ff "$product"
+          test -z "$(git diff --name-only --diff-filter=U)"
+
+          rm "$helper"
+          git add -A
+          git diff --cached --check
+          git commit --amend --no-edit
+
+          mapfile -t effective < <(git diff --name-only "$product" HEAD)
+          test "${#effective[@]}" -eq 2
+          printf '%s\n' "${effective[@]}" | grep -Fxq 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          printf '%s\n' "${effective[@]}" | grep -Fxq 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCrossControllerBLEOwnershipSourceTests.swift'
+
+          # Current credential-redaction and procedure-project truth must survive byte-for-byte.
+          git diff --quiet "$product" HEAD -- NembraApp/Features/Research/TuyaAccountBridge.swift
+          git diff --quiet "$product" HEAD -- NembraCapture.xcodeproj/project.pbxproj
+          grep -Fq 'accesstoken' NembraApp/Features/Research/TuyaAccountBridge.swift
+          test "$(grep -Fc 'INFOPLIST_KEY_NembraCaptureProcedureIdentifier = \"$(NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER)\";' NembraCapture.xcodeproj/project.pbxproj)" -eq 2
+
+          python3 - <<'PY'
+          from pathlib import Path
+          app=Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          begin=app[app.index('private func beginCorrelationSeries()'):app.index('func startNextCorrelationWindow()')]
+          read='OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID)'
+          scanner='resetDiscoverySessionOnly()'
+          assert read in begin and scanner in begin and begin.index(read) < begin.index(scanner)
+          assert 'existing_sdk_local_ble_ownership_blocks_scan' in begin
+          assert 'Package-owned correlation will not scan while Tuya still owns local BLE' in begin
+          factory=app[app.index('private enum OfficialTuyaFactory'):]
+          assert 'ThingSmartBLEManager.sharedInstance().deviceStatue(withUUID: uuid)' in factory
+          test=Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCrossControllerBLEOwnershipSourceTests.swift').read_text()
+          assert 'pre-scan ownership gate does not manufacture disconnect or command' in test
+          print('current-product cross-controller BLE composition: PASS')
+          PY
+          git diff --check "$product" HEAD
+          git push origin HEAD:"$branch"
