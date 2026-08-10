@@ -45,7 +45,9 @@ The Capture source therefore compiles without Tuya SDK using `#if canImport(Thin
 - `NEMBRA_TUYA_APP_KEY` and `NEMBRA_TUYA_APP_SECRET` are supplied privately for the local development run;
 - `ThingSmartUser` has an authorized SDK account session containing the already-bound scooter.
 
-The metadata QR session is intentionally not treated as an SDK BLE-authentication session.
+The secure-link screen now initializes the configured official SDK and exposes Tuya's verification-code **email** login for that SDK account session. Nembra does not request or store the Tuya account password. The email address and one-time code remain transient UI state and are not written into the diagnostic export. This closes the previous fresh-install dead end where `sdkAccountAuthorized` could fail closed but the Capture UI had no supported way to make it true.
+
+The metadata QR session is intentionally not treated as an SDK BLE-authentication session. Phone/SMS verification is not silently substituted for email login because Tuya documents extra region/service requirements for mobile verification; if the user's bound account is phone-only, that becomes a separate explicit preflight blocker rather than a guessed login path.
 
 ## Why one BLE owner matters
 
