@@ -1,0 +1,136 @@
+name: Materialize Capture application event custody
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-application-event-custody-6b778-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard exact product ancestry and owned paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=6b778f2104af34dbe5b80da31ddb3ca422f9667c
+          test "$(git merge-base "$expected" HEAD)" = "$expected"
+          unexpected="$(git diff --name-only "$expected"...HEAD | grep -Ev '^(Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift|Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift|\.github/workflows/materialize-capture-application-event-custody.yml)$' || true)"
+          test -z "$unexpected" || { echo "Unexpected changed paths:"; echo "$unexpected"; exit 1; }
+
+      - name: Materialize verified account UID custody and trusted metadata precedence
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text()
+
+          receiver_start = source.index("    private func receivedApplicationUpdate(")
+          receiver_end = source.index("    private func startWatchdog", receiver_start)
+          receiver = source[receiver_start:receiver_end]
+          old_log = '''            log("tuya_application_update", update.merging([
+                  "generation": String(token.diagnosticGeneration)
+              ]) { current, _ in current })
+          '''
+          new_log = '''            let exportSafeUpdate = redactVerifiedAccountUID(in: update)
+              log("tuya_application_update", exportSafeUpdate.merging([
+                  "generation": String(token.diagnosticGeneration)
+              ]) { _, trusted in trusted })
+          '''
+          if receiver.count(old_log) != 1:
+              raise SystemExit(f"Expected one untrusted-first application event merge; found {receiver.count(old_log)}")
+          receiver = receiver.replace(old_log, new_log, 1)
+          source = source[:receiver_start] + receiver + source[receiver_end:]
+
+          helper_marker = "    private func receivedApplicationUpdate("
+          helper = '''    private func redactVerifiedAccountUID(in update: [String: String]) -> [String: String] {
+              guard let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                    !accountUID.isEmpty else { return update }
+              return update.mapValues { value in
+                  value.replacingOccurrences(
+                      of: accountUID,
+                      with: "<redacted-account-uid>",
+                      options: [.literal]
+                  )
+              }
+          }
+
+          '''
+          if source.count(helper_marker) != 1:
+              raise SystemExit(f"Expected one application update receiver marker; found {source.count(helper_marker)}")
+          source = source.replace(helper_marker, helper + helper_marker, 1)
+
+          driver_start = source.index("@MainActor\nprivate final class SmartLifeDriver")
+          driver_end = source.index("#endif\n\nprivate enum AppleAccountAuthorizationError", driver_start)
+          driver = source[driver_start:driver_end]
+          fragments_start = driver.index("    private static let secretKeyFragments = [")
+          fragments_end = driver.index("    ]", fragments_start)
+          fragments = driver[fragments_start:fragments_end]
+          session_entry = '        "sessionkey",\n'
+          if fragments.count(session_entry) != 2:
+              raise SystemExit(f"Expected duplicated sessionkey classifier entry; found {fragments.count(session_entry)}")
+          fragments = fragments.replace(session_entry, "", 1)
+          driver = driver[:fragments_start] + fragments + driver[fragments_end:]
+          source = source[:driver_start] + driver + source[driver_end:]
+
+          path.write_text(source)
+          PY
+
+      - name: Verify custody contract and source syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          start = source.index("    private func receivedApplicationUpdate(")
+          end = source.index("    private func startWatchdog", start)
+          receiver = source[start:end]
+          assert "let exportSafeUpdate = redactVerifiedAccountUID(in: update)" in receiver
+          assert '"generation": String(token.diagnosticGeneration)' in receiver
+          assert ") { _, trusted in trusted })" in receiver
+          assert ") { current, _ in current })" not in receiver
+          assert 'log("tuya_application_update", update.merging([' not in receiver
+          assert 'with: "<redacted-account-uid>"' in source
+          assert "membershipAccountUID?.trimmingCharacters" in source
+
+          driver_start = source.index("@MainActor\nprivate final class SmartLifeDriver")
+          driver_end = source.index("#endif\n\nprivate enum AppleAccountAuthorizationError", driver_start)
+          driver = source[driver_start:driver_end]
+          fragments_start = driver.index("    private static let secretKeyFragments = [")
+          fragments_end = driver.index("    ]", fragments_start)
+          assert driver[fragments_start:fragments_end].count('"sessionkey"') == 1
+          assert '"uid",' not in driver
+          PY
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+          git diff --check
+
+      - name: Run focused source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaApplicationEventMetadataPrecedenceSourceTests
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaApplicationAccountUIDExportCustodySourceTests
+
+      - name: Commit product repair and retire materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-application-event-custody.yml
+          git config user.name "nembra-sol-worker"
+          git config user.email "nembra-sol-worker@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift .github/workflows/materialize-capture-application-event-custody.yml
+          git diff --cached --check
+          git commit -m "fix(capture): seal application event custody"
+          git push origin HEAD:fix/v14-capture-application-event-custody-6b778-sol
