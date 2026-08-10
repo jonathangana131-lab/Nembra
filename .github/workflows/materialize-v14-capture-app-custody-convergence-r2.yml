@@ -1,0 +1,79 @@
+name: Materialize Capture app custody convergence r2
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-app-custody-converge-r2-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact live construction base
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_product="8069c0ffec496cacbe263016d8a7f4ca15ddc64e"
+          test "$(git rev-parse HEAD^^)" = "$expected_product"
+          git fetch origin product/v14-capture-guided-truth-current-sol
+          test "$(git rev-parse FETCH_HEAD)" = "$expected_product"
+          actual=$(git diff --name-only "$expected_product" HEAD | sort)
+          expected=$(printf '%s\n' ".github/workflows/materialize-v14-capture-app-custody-convergence-r2.yml" "scripts/ci/materialize_v14_capture_app_custody_convergence.py" | sort)
+          test "$actual" = "$expected"
+
+      - name: Absorb exact red contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin \
+            +refs/pull/2415/head:refs/remotes/origin/pr-2415 \
+            +refs/pull/2419/head:refs/remotes/origin/pr-2419
+          test "$(git rev-parse refs/remotes/origin/pr-2415)" = "a8eb9b93eea7e5de1a9c80468cadf378989b5edd"
+          test "$(git rev-parse refs/remotes/origin/pr-2419)" = "8010d108a043fbe2ff03fa3bb0d1518aa7047c08"
+          tests="Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests"
+          git show refs/remotes/origin/pr-2415:"$tests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift" > "$tests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift"
+          git show refs/remotes/origin/pr-2419:"$tests/TuyaApplicationAccountUIDExportCustodySourceTests.swift" > "$tests/TuyaApplicationAccountUIDExportCustodySourceTests.swift"
+
+      - name: Materialize product repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/materialize_v14_capture_app_custody_convergence.py
+          git diff --check
+
+      - name: Validate full Capture authority package
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+
+      - name: Commit clean effective product delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_product="8069c0ffec496cacbe263016d8a7f4ca15ddc64e"
+          git rm \
+            .github/workflows/materialize-v14-capture-app-custody-convergence-r2.yml \
+            scripts/ci/materialize_v14_capture_app_custody_convergence.py
+          git add \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+          actual=$(git diff --name-only "$expected_product" | sort)
+          expected=$(printf '%s\n' \
+            "NembraApp/App/NembraCaptureEntrypoint.swift" \
+            "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift" \
+            "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift" | sort)
+          test "$actual" = "$expected"
+          git diff --check "$expected_product"
+          git config user.name "nembra-sol"
+          git config user.email "nembra-sol@users.noreply.github.com"
+          git commit -m "fix(capture): seal application event custody"
+          git push origin HEAD:agent/v14-capture-app-custody-converge-r2-sol
