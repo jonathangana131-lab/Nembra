@@ -1,0 +1,163 @@
+name: Capture account UID fail-closed review materializer
+
+on:
+  push:
+    branches:
+      - review/v14-capture-account-uid-failclosed-7f5b-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Guard exact reviewed parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='7f5b655355d04099a687ca570aa7de9b4cbe7bdd'
+          parent="$(git rev-parse HEAD^)"
+          if [[ "$parent" != "$expected" ]]; then
+            echo "This materializer is exact-parent-only; observed parent $parent" >&2
+            exit 78
+          fi
+
+      - name: Make account UID custody fail closed before evidence admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = source_path.read_text()
+
+          old_helper = '''    private func applicationUpdateForEventCustody(_ update: [String: String]) -> [String: String] {
+              guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                    !verifiedAccountUID.isEmpty else { return update }
+          '''
+          new_helper = '''    private func applicationUpdateForEventCustody(_ update: [String: String]) -> [String: String]? {
+              guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                    !verifiedAccountUID.isEmpty else { return nil }
+          '''
+          if source.count(old_helper) != 1:
+              raise SystemExit('expected exact account UID custody helper signature/guard once')
+          source = source.replace(old_helper, new_helper)
+
+          old_boundary = '''        guard driver.isLocallyConnected(uuid: tuyaUUID) else {
+              await recordObservedTransportLoss(token: token)
+              return
+          }
+
+          applicationUpdateAdmissionsInFlight += 1
+          '''
+          new_boundary = '''        guard driver.isLocallyConnected(uuid: tuyaUUID) else {
+              await recordObservedTransportLoss(token: token)
+              return
+          }
+          guard let custodySafeUpdate = applicationUpdateForEventCustody(update) else {
+              await invalidateSourceAuthority(
+                  token: token,
+                  message: "Verified account UID custody became unavailable before application evidence admission.",
+                  kind: "application_account_uid_custody_unavailable"
+              )
+              return
+          }
+
+          applicationUpdateAdmissionsInFlight += 1
+          '''
+          if source.count(old_boundary) != 1:
+              raise SystemExit('expected exact application admission boundary once')
+          source = source.replace(old_boundary, new_boundary)
+
+          stale_inside_do = '''            let custodySafeUpdate = applicationUpdateForEventCustody(update)
+          '''
+          if source.count(stale_inside_do) != 1:
+              raise SystemExit('expected old in-do custody projection once')
+          source = source.replace(stale_inside_do, '')
+          source_path.write_text(source)
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift')
+          test = test_path.read_text()
+          anchor = '''    private func section(in source: String, from start: String, to end: String) throws -> Substring {
+          '''
+          addition = '''    @Test("missing earned account UID fails closed before application evidence admission")
+              func missingAccountUIDCannotFallBackToRawApplicationEvidence() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let helper = String(try section(
+                      in: source,
+                      from: "private func applicationUpdateForEventCustody(",
+                      to: "private func receivedApplicationUpdate("
+                  ))
+                  let updateAdmission = String(try section(
+                      in: source,
+                      from: "private func receivedApplicationUpdate(",
+                      to: "private func startWatchdog"
+                  ))
+
+                  #expect(helper.contains("-> [String: String]?"))
+                  #expect(helper.contains("else { return nil }"))
+                  #expect(!helper.contains("else { return update }"))
+
+                  let custodyGuard = try requiredOffset(
+                      containing: "guard let custodySafeUpdate = applicationUpdateForEventCustody(update)",
+                      in: updateAdmission
+                  )
+                  let ledgerAdmission = try requiredOffset(
+                      containing: "sessionLedger.recordApplicationUpdate",
+                      in: updateAdmission
+                  )
+                  #expect(custodyGuard < ledgerAdmission)
+                  #expect(updateAdmission.contains("application_account_uid_custody_unavailable"))
+              }
+
+              private func requiredOffset(containing token: String, in source: String) throws -> String.Index {
+                  guard let range = source.range(of: token) else {
+                      Issue.record("Expected source token missing: \\(token)")
+                      throw SourceContractError.sectionMissing
+                  }
+                  return range.lowerBound
+              }
+
+          '''
+          if test.count(anchor) != 1:
+              raise SystemExit('expected source-test section helper anchor once')
+          test = test.replace(anchor, addition + anchor)
+          test_path.write_text(test)
+          PY
+
+      - name: Verify narrow review invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          t = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift').read_text()
+          assert 'else { return update }' not in s
+          assert 'else { return nil }' in s
+          assert 'guard let custodySafeUpdate = applicationUpdateForEventCustody(update)' in s
+          assert s.index('guard let custodySafeUpdate = applicationUpdateForEventCustody(update)') < s.index('sessionLedger.recordApplicationUpdate')
+          assert 'application_account_uid_custody_unavailable' in s
+          assert 'missingAccountUIDCannotFallBackToRawApplicationEvidence' in t
+          PY
+
+      - name: Commit durable reviewed repair and remove materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-account-uid-failclosed-review.yml
+          git config user.name 'nembra-sol'
+          git config user.email 'nembra-sol@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift \
+                  .github/workflows/materialize-capture-account-uid-failclosed-review.yml
+          git diff --cached --check
+          git commit -m 'fix(capture): fail closed account UID event custody'
+          git push origin HEAD:review/v14-capture-account-uid-failclosed-7f5b-sol
