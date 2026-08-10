@@ -123,6 +123,16 @@ private struct NembraEnergyRailAccessibilityState: Equatable {
         acceptedWatts: nil
     )
 
+    private init(
+        revision: Revision,
+        currentness: NembraEnergyRailVisualCurrentness,
+        acceptedWatts: Double?
+    ) {
+        self.revision = revision
+        self.currentness = currentness
+        self.acceptedWatts = acceptedWatts
+    }
+
     init?(presentation: PropulsionEnergyRailAccessibilityPresentation) {
         switch presentation.currentness {
         case .live:
@@ -461,7 +471,7 @@ private struct NembraRollingPowerValueView: View {
 private struct NembraEnergyRailAccessibilityRepresentation: View, Equatable {
     let state: NembraEnergyRailAccessibilityState
 
-    static func == (
+    nonisolated static func == (
         lhs: NembraEnergyRailAccessibilityRepresentation,
         rhs: NembraEnergyRailAccessibilityRepresentation
     ) -> Bool {
