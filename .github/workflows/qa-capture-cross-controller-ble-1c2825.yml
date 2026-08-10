@@ -1,4 +1,4 @@
-name: QA Capture cross-controller BLE 30600e
+name: QA Capture cross-controller BLE bbc1f8
 
 on:
   push:
@@ -21,15 +21,15 @@ jobs:
       - name: Checkout exact composed product repair SHA
         uses: actions/checkout@v4
         with:
-          ref: 30600e0d320989d77553b943ab8a6f41606756d5
+          ref: bbc1f8fcaa069103fdc831284e79d7e63e704d3e
           fetch-depth: 0
 
       - name: Prove exact checkout and one-commit two-file delta
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = '30600e0d320989d77553b943ab8a6f41606756d5'
-          test "$(git rev-parse HEAD^)" = '2bb37639656fb114c5767f6311586042b9ee4ef2'
+          test "$(git rev-parse HEAD)" = 'bbc1f8fcaa069103fdc831284e79d7e63e704d3e'
+          test "$(git rev-parse HEAD^)" = 'e618f4d0b6507078a4505238ac6439f98fe1bbd1'
           git diff --check HEAD^...HEAD
           changed="$(git diff --name-only HEAD^...HEAD)"
           printf '%s\n' "$changed"
@@ -65,7 +65,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: capture-cross-controller-ble-30600e-build-logs
+          name: capture-cross-controller-ble-bbc1f8-build-logs
           path: |
             /tmp/nembra-cross-controller-simulator-build.log
             /tmp/nembra-cross-controller-device-build.log
