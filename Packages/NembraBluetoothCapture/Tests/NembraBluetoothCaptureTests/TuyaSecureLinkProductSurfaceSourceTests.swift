@@ -33,7 +33,9 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         #expect(body.contains("CAPTURE COMPLETE"))
         #expect(body.contains("Ready for analysis"))
         #expect(body.contains("Label(\"Share Capture\""))
-        #expect(body.contains("if accepted && test.exportData == nil { test.prepareExport() }"))
+        #expect(app.contains("self.sealedAcceptedExport = self.makeExport("))
+        #expect(app.contains("self.phase = .accepted"))
+        #expect(app.contains("self.prepareExport()"))
         #expect(body.contains("Button(showEngineeringDetails ? \"Hide details\" : \"View details\")"))
         #expect(body.contains("accepted artifact is sealed"))
     }
@@ -51,7 +53,7 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         #expect(body.contains("test.authenticate()"))
         #expect(body.contains("test.sdkLocalBLEOnline"))
         #expect(body.contains("test.applicationUpdateCount > 0"))
-        #expect(body.contains("Historical UUID, name, RSSI, FD50, and Tuya hints never authorize the target."))
+        #expect(body.contains("Only the full OFF → ON → OFF → ON pattern can authorize the nearby signal for this attempt."))
         #expect(body.contains("No DP query or scooter command is authorized by this surface."))
     }
 
@@ -62,7 +64,7 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         let body = String(surface)
 
         #expect(body.contains("dynamicTypeSize.isAccessibilitySize"))
-        #expect(body.contains("Step \\(currentStageIndex + 1) of 4"))
+        #expect(body.contains("Step \(currentStageIndex + 1) of 4"))
         #expect(body.contains("accessibilityHint"))
         #expect(body.contains("accessibilityLabel"))
     }
@@ -70,7 +72,7 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
         guard let startRange = source.range(of: start),
               let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
-            Issue.record("Expected source section missing: \\(start) ... \\(end)")
+            Issue.record("Expected source section missing: \(start) ... \(end)")
             throw SourceContractError.sectionMissing
         }
         return source[startRange.lowerBound..<endRange.lowerBound]
