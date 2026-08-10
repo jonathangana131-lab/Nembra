@@ -1,3 +1,4 @@
+import AuthenticationServices
 import CoreTransferable
 import Foundation
 import NembraBluetoothCapture
@@ -1964,6 +1965,14 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
 }
 #endif
 
+private enum AppleAccountAuthorizationError: LocalizedError {
+    case unexpectedCredential
+
+    var errorDescription: String? {
+        "Apple authorization returned an unexpected credential type."
+    }
+}
+
 @MainActor
 private final class OfficialTuyaAccountAuthorizer: ObservableObject {
     enum LoginMethod: String, CaseIterable, Identifiable {
@@ -1995,7 +2004,7 @@ private final class OfficialTuyaAccountAuthorizer: ObservableObject {
         loggedIn = OfficialTuyaFactory.accountLoggedIn
         status = loggedIn
             ? "Official Tuya SDK account is logged in. Exact scooter membership must still be freshly verified before Bluetooth discovery."
-            : "SDK initialized. Sign in with a verification code; metadata QR approval does not count as SDK device authority."
+            : "SDK initialized. Use Sign in with Apple or a Tuya verification code for the account that owns this scooter; account login alone does not count as exact scooter authority."
     }
 
     func sendCode() {
@@ -2057,6 +2066,67 @@ private final class OfficialTuyaAccountAuthorizer: ObservableObject {
 #else
         status = "Official Tuya SmartLife SDK is not compiled into this build."
 #endif
+    }
+
+    func loginWithApple(credential: ASAuthorizationAppleIDCredential) {
+        guard OfficialTuyaFactory.bootstrap() else {
+            status = "Tuya SDK initialization failed closed."
+            return
+        }
+        guard !loggedIn else { return }
+        let country = countryCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !country.isEmpty else {
+            status = "Enter the country code before using Sign in with Apple."
+            return
+        }
+        guard let tokenData = credential.identityToken,
+              let identityToken = String(data: tokenData, encoding: .utf8),
+              !identityToken.isEmpty else {
+            status = "Apple did not provide an identity token, so Tuya login remains locked."
+            return
+        }
+#if canImport(ThingSmartHomeKit)
+        guard let user = ThingSmartUser.sharedInstance() else {
+            status = "Official Tuya SDK account service is unavailable. Exact scooter membership remains locked."
+            return
+        }
+        let appleUserIdentifier = credential.user
+        let appleEmail = credential.email
+        var extraInfo: [String: Any] = ["userIdentifier": appleUserIdentifier]
+        if let appleEmail, !appleEmail.isEmpty { extraInfo["email"] = appleEmail }
+        busy = true
+        codeSent = false
+        verificationCode = ""
+        status = "Completing Sign in with Apple through the official Tuya SDK…"
+        user.loginByAuth2(
+            withType: "ap",
+            countryCode: country,
+            accessToken: identityToken,
+            extraInfo: extraInfo,
+            success: { [weak self] in
+                Task { @MainActor in self?.finishLoginSuccess() }
+            },
+            failure: { [weak self] error in
+                Task { @MainActor in
+                    self?.finishAppleLoginFailure(
+                        error,
+                        submittedIdentityToken: identityToken,
+                        appleUserIdentifier: appleUserIdentifier,
+                        appleEmail: appleEmail
+                    )
+                }
+            }
+        )
+#else
+        status = "Official Tuya SmartLife SDK is not compiled into this build."
+#endif
+    }
+
+    func handleAppleAuthorizationFailure(_ error: Error) {
+        _ = error
+        busy = false
+        loggedIn = OfficialTuyaFactory.accountLoggedIn
+        status = "Sign in with Apple did not complete. Exact scooter membership remains locked."
     }
 
     func login() {
@@ -2157,6 +2227,37 @@ private final class OfficialTuyaAccountAuthorizer: ObservableObject {
         verificationCode = ""
         loggedIn = OfficialTuyaFactory.accountLoggedIn
         status = "Tuya SDK login failed: \(Self.redactedError(error, submittedIdentity: submittedIdentity))"
+    }
+
+    private func finishAppleLoginFailure(
+        _ error: Error?,
+        submittedIdentityToken: String,
+        appleUserIdentifier: String,
+        appleEmail: String?
+    ) {
+        busy = false
+        loggedIn = OfficialTuyaFactory.accountLoggedIn
+        status = "Tuya rejected the Apple-account login: \(Self.redactedAppleOAuthError(error, submittedIdentityToken: submittedIdentityToken, appleUserIdentifier: appleUserIdentifier, appleEmail: appleEmail)). Exact scooter membership remains locked."
+    }
+
+    private static func redactedAppleOAuthError(
+        _ error: Error?,
+        submittedIdentityToken: String,
+        appleUserIdentifier: String,
+        appleEmail: String?
+    ) -> String {
+        var scrubbed = error?.localizedDescription ?? "unknown error"
+        let sensitiveValues = [submittedIdentityToken, appleUserIdentifier, appleEmail ?? ""]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        for value in sensitiveValues {
+            scrubbed = scrubbed.replacingOccurrences(
+                of: value,
+                with: "<redacted-apple-oauth>",
+                options: [.caseInsensitive, .literal]
+            )
+        }
+        return scrubbed
     }
 
     private static func redactedError(_ error: Error?, submittedIdentity: String) -> String {
@@ -2682,11 +2783,41 @@ private struct SecureLinkView: View {
                     .foregroundStyle(.cyan)
                 Text("Use the account that owns this scooter")
                     .font(.title2.bold())
-                Text("Nembra uses Tuya's official verification-code login. Your password is never requested or stored.")
+                Text("Use the same account method that owns this scooter in Tuya. Apple ID uses Apple's system sign-in through Tuya's documented account transport; email/phone verification remains available. Nembra never requests your password.")
                     .foregroundStyle(.secondary)
                 Text(sdkAccount.status)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+
+                SignInWithAppleButton(.signIn) { request in
+                    request.requestedScopes = [.fullName, .email]
+                } onCompletion: { result in
+                    Task { @MainActor in
+                        switch result {
+                        case let .success(authorization):
+                            guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
+                                sdkAccount.handleAppleAuthorizationFailure(AppleAccountAuthorizationError.unexpectedCredential)
+                                return
+                            }
+                            sdkAccount.loginWithApple(credential: credential)
+                        case let .failure(error):
+                            sdkAccount.handleAppleAuthorizationFailure(error)
+                        }
+                    }
+                }
+                .signInWithAppleButtonStyle(.white)
+                .frame(height: 50)
+                .disabled(sdkAccount.busy)
+                .accessibilityHint("Uses Apple's system authorization, then hands the transient identity token directly to Tuya for account login. Exact scooter membership is still verified separately.")
+
+                HStack(spacing: 10) {
+                    Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
+                    Text("or use Tuya verification code")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
+                }
+                .accessibilityHidden(true)
 
                 Picker("Login method", selection: $sdkAccount.method) {
                     ForEach(OfficialTuyaAccountAuthorizer.LoginMethod.allCases) { Text($0.rawValue).tag($0) }
