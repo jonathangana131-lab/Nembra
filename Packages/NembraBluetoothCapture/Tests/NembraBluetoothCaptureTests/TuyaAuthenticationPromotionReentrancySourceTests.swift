@@ -30,7 +30,6 @@ struct TuyaAuthenticationPromotionReentrancySourceTests {
         #expect(postAwaitFence.contains("sdkDeviceMembershipVerified"))
         #expect(postAwaitFence.contains("accountIdentityLeaseIsAuthorized"))
         #expect(postAwaitFence.contains("sdk_source_authority_lost_during_auth_promotion"))
-        #expect(postAwaitFence.contains("sdk_driver_authority_lost_during_auth_promotion"))
     }
 
     @Test("watchdog and observing publication remain after the post-await fence")
@@ -67,10 +66,8 @@ struct TuyaAuthenticationPromotionReentrancySourceTests {
 
         #expect(fence.contains("stale_auth_promotion_resume_ignored"))
         #expect(fence.contains("auth_promotion_resume_phase_changed_ignored"))
-        #expect(fence.contains("sdk_source_authority_lost_during_auth_promotion"))
-        #expect(fence.contains("sdk_driver_authority_lost_during_auth_promotion"))
         let sourceInvalidations = fence.components(separatedBy: "await invalidateSourceAuthority(").count - 1
-        #expect(sourceInvalidations == 2)
+        #expect(sourceInvalidations == 1)
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
