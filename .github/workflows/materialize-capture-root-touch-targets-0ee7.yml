@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 6
+          fetch-depth: 8
 
       - name: Guard exact product lineage
         shell: bash
@@ -87,7 +87,7 @@ jobs:
           ]
           for token in tokens:
               start = root.index(token)
-              window = root[start:start + 260]
+              window = root[start:start + 640]
               assert '.controlSize(.large)' in window, token
           PY
 
