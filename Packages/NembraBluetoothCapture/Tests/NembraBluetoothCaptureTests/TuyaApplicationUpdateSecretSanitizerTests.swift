@@ -11,7 +11,8 @@ struct TuyaApplicationUpdateSecretSanitizerTests {
             "ACCESS-TOKEN": "access-secret",
             "refresh.token": "refresh-secret",
             "authKey": "auth-secret",
-            "sec_key": "session-secret",
+            "sec_key": "sec-secret",
+            "session_key": "session-secret",
             "speed": 17,
         ]
 
@@ -22,6 +23,7 @@ struct TuyaApplicationUpdateSecretSanitizerTests {
         #expect(sanitized["refresh.token"] == "<redacted>")
         #expect(sanitized["authKey"] == "<redacted>")
         #expect(sanitized["sec_key"] == "<redacted>")
+        #expect(sanitized["session_key"] == "<redacted>")
         #expect(sanitized["speed"] == "17")
     }
 
@@ -33,6 +35,7 @@ struct TuyaApplicationUpdateSecretSanitizerTests {
                 "nested": [
                     ["local-key": "nested-secret", "value": 1],
                     ["wrapper": ["refresh_token": "refresh-secret"]],
+                    ["security": ["session_key": "session-secret"]],
                 ],
             ] as [String: Any],
         ]
@@ -43,6 +46,7 @@ struct TuyaApplicationUpdateSecretSanitizerTests {
         #expect(payload.contains("<redacted>"))
         #expect(!payload.contains("nested-secret"))
         #expect(!payload.contains("refresh-secret"))
+        #expect(!payload.contains("session-secret"))
         #expect(payload.contains("73"))
     }
 
@@ -64,11 +68,12 @@ struct TuyaApplicationUpdateSecretSanitizerTests {
         let update: [AnyHashable: Any] = [
             "localKey": "one",
             "access_token": "two",
+            "session-key": "three",
         ]
 
         let sanitized = TuyaApplicationUpdateSecretSanitizer.sanitize(update)
 
-        #expect(sanitized.count == 2)
+        #expect(sanitized.count == 3)
         #expect(sanitized.values.allSatisfy { $0 == "<redacted>" })
     }
 
