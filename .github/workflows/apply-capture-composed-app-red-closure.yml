@@ -1,0 +1,63 @@
+name: Apply Capture composed app red closure
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-composed-app-red-closure-sol
+
+permissions:
+  contents: write
+
+jobs:
+  apply-product-patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-composed-app-red-closure-sol
+          fetch-depth: 0
+
+      - name: Verify exact product parent and staging-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='3989ac0df656e9b9740b6ffd7c541fdf377fe7f8'
+          git merge-base --is-ancestor "$base" HEAD
+          test "$(git diff --name-only "$base"...HEAD | sort)" = $'.github/workflows/apply-capture-composed-app-red-closure.yml\nscripts/ci/apply_capture_composed_app_red_closure.py'
+
+      - name: Apply deterministic composed product patch
+        run: python3 scripts/ci/apply_capture_composed_app_red_closure.py
+
+      - name: Verify authority and simplification boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          app='NembraApp/App/NembraCaptureEntrypoint.swift'
+          grep -Fq '@Published private(set) var correlationProgress' "$app"
+          grep -Fq 'func confirmCorrelatedTarget()' "$app"
+          grep -Fq 'targetCorrelationOperatorConfirmed = true' "$app"
+          grep -Fq 'var fieldBuildIsAuthoritative: Bool' "$app"
+          grep -Fq 'sessionLedger.markInternalLifecycleFailure(for: token)' "$app"
+          grep -Fq 'currentConnectionToken = token' "$app"
+          ! grep -Fq 'private var central: CBCentralManager' "$app"
+          ! grep -Fq 'CBCentralManagerDelegate' "$app"
+          ! grep -Fq 'central.stopScan' "$app"
+          ! grep -Fq 'central.scanForPeripherals' "$app"
+          ! grep -Fq 'private func updateCandidate' "$app"
+          ! grep -Fq 'try? await sessionLedger.markAuthenticationFailed(for: token)' "$app"
+          ! grep -Fq 'try? await sessionLedger.markSourceAuthorityInvalidated(for: token)' "$app"
+          ! grep -Fq 'try? await sessionLedger.markObservationContinuityInvalidated(for: token)' "$app"
+          ! grep -Fq 'try? await sessionLedger.endConnection(for: token)' "$app"
+
+      - name: Commit product and regressions only
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm scripts/ci/apply_capture_composed_app_red_closure.py
+          rm .github/workflows/apply-capture-composed-app-red-closure.yml
+          git config user.name 'nembra-v14-bot'
+          git config user.email 'nembra-v14-bot@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'feat(capture): close composed app authority reds'
+          git push origin HEAD:repair/v14-capture-composed-app-red-closure-sol
