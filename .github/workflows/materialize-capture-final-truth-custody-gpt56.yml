@@ -1,0 +1,80 @@
+name: Materialize Capture Final Truth Custody GPT56
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-final-truth-custody-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    container: swift:6.2-jammy
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Verify exact product ancestry and construction scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='1c40853f6991b4d09206df1d25ecff021458b7eb'
+          ENTRY='NembraApp/App/NembraCaptureEntrypoint.swift'
+          EXPECTED_BLOB='c58be3f6bc0cf33a9f6d0d950b7d011ff8aa1d25'
+          git merge-base --is-ancestor "$BASE" HEAD
+          test "$(git hash-object "$ENTRY")" = "$EXPECTED_BLOB"
+          actual="$(git diff --name-only "$BASE"..HEAD | sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/materialize-capture-final-truth-custody-gpt56.yml' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift' \
+            'scripts/ci/materialize_capture_final_truth_custody_gpt56.py' | sort)"
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize production repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/materialize_capture_final_truth_custody_gpt56.py
+          git diff --check
+
+      - name: Run Capture authority package
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift --version
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+
+      - name: Verify clean effective product scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='1c40853f6991b4d09206df1d25ecff021458b7eb'
+          rm '.github/workflows/materialize-capture-final-truth-custody-gpt56.yml'
+          rm 'scripts/ci/materialize_capture_final_truth_custody_gpt56.py'
+          git add -A
+          actual="$(git diff --cached --name-only "$BASE" | sort)"
+          expected="$(printf '%s\n' \
+            'NembraApp/App/NembraCaptureEntrypoint.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift' | sort)"
+          test "$actual" = "$expected"
+          git diff --cached --check
+
+      - name: Publish exact reviewed successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): close final application custody invariants'
+          git push origin HEAD:${GITHUB_REF_NAME}
