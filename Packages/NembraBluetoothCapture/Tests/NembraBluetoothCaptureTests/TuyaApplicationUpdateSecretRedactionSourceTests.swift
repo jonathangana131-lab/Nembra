@@ -24,8 +24,9 @@ struct TuyaApplicationUpdateSecretRedactionSourceTests {
         #expect(driver.contains("keyString.lowercased().filter"))
         #expect(driver.contains("$0.isLetter || $0.isNumber"))
         #expect(driver.contains("array.map(redactApplicationSecrets)"))
-        #expect(driver.contains("String(describing: Self.redactApplicationSecrets(value))"))
-        #expect(driver.contains("sanitized[keyString] = \"<redacted>\""))
+        #expect(driver.contains("Self.redactedApplicationDescription(value)"))
+        #expect(driver.contains("private static func redactKnownSecretValues(in text: String) -> String"))
+        #expect(driver.contains("sanitized[custodyKey] = \"<redacted>\""))
         #expect(driver.contains("onApplicationUpdate?(sanitized)"))
         #expect(!driver.contains("sanitized[String(describing: key)] = String(describing: value)"))
     }
@@ -45,7 +46,11 @@ struct TuyaApplicationUpdateSecretRedactionSourceTests {
         ))
 
         #expect(export.contains("secretsRedacted: true"))
-        #expect(updates.contains("log(\"tuya_application_update\", update.merging(["))
+        #expect(updates.contains("let custodySafeUpdate = redactedApplicationEventDetails(update, accountUID: leasedAccountUID)"))
+        #expect(updates.contains("var eventDetails = custodySafeUpdate"))
+        #expect(updates.contains("eventDetails[\"generation\"] = String(token.diagnosticGeneration)"))
+        #expect(updates.contains("log(\"tuya_application_update\", eventDetails)"))
+        #expect(!updates.contains("update.merging(["))
         #expect(source.contains("No account UID, AppKey/AppSecret, password, account token, local_key, session key"))
     }
 
