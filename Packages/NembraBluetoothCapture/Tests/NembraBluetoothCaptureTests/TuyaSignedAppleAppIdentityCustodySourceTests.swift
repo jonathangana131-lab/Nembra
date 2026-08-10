@@ -9,18 +9,19 @@ struct TuyaSignedAppleAppIdentityCustodySourceTests {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
 
         let required = [
-            "EXPECTED_APPLICATION_IDENTIFIER=\"${TEAM_ID}.${BUNDLE_ID}\"",
             "BUILT_APPLICATION_IDENTIFIER",
             "BUILT_TEAM_IDENTIFIER",
             "PROFILE_APPLICATION_IDENTIFIER",
             "PROFILE_TEAM_IDENTIFIER",
+            "PROFILE_ROOT_TEAM_IDENTIFIER",
             "application-identifier",
             "com.apple.developer.team-identifier",
             "TeamIdentifier",
-            "[[ \"$BUILT_APPLICATION_IDENTIFIER\" == \"$EXPECTED_APPLICATION_IDENTIFIER\" ]]",
+            "[[ \"$BUILT_APPLICATION_IDENTIFIER\" == *\".$BUNDLE_ID\" ]]",
+            "[[ \"$PROFILE_APPLICATION_IDENTIFIER\" == \"$BUILT_APPLICATION_IDENTIFIER\" ]]",
             "[[ \"$BUILT_TEAM_IDENTIFIER\" == \"$TEAM_ID\" ]]",
-            "[[ \"$PROFILE_APPLICATION_IDENTIFIER\" == \"$EXPECTED_APPLICATION_IDENTIFIER\" ]]",
-            "[[ \"$PROFILE_TEAM_IDENTIFIER\" == \"$TEAM_ID\" ]]"
+            "[[ \"$PROFILE_TEAM_IDENTIFIER\" == \"$TEAM_ID\" ]]",
+            "[[ \"$PROFILE_ROOT_TEAM_IDENTIFIER\" == \"$TEAM_ID\" ]]"
         ]
         for needle in required {
             #expect(installer.contains(needle), "missing signed Apple application-identity custody contract: \(needle)")
@@ -28,20 +29,26 @@ struct TuyaSignedAppleAppIdentityCustodySourceTests {
 
         let installMarker = try #require(installer.range(of: "say \"Installing SDK-integrated Capture on the intended iPhone\""))
         for check in [
-            "[[ \"$BUILT_APPLICATION_IDENTIFIER\" == \"$EXPECTED_APPLICATION_IDENTIFIER\" ]]",
+            "[[ \"$BUILT_APPLICATION_IDENTIFIER\" == *\".$BUNDLE_ID\" ]]",
+            "[[ \"$PROFILE_APPLICATION_IDENTIFIER\" == \"$BUILT_APPLICATION_IDENTIFIER\" ]]",
             "[[ \"$BUILT_TEAM_IDENTIFIER\" == \"$TEAM_ID\" ]]",
-            "[[ \"$PROFILE_APPLICATION_IDENTIFIER\" == \"$EXPECTED_APPLICATION_IDENTIFIER\" ]]",
-            "[[ \"$PROFILE_TEAM_IDENTIFIER\" == \"$TEAM_ID\" ]]"
+            "[[ \"$PROFILE_TEAM_IDENTIFIER\" == \"$TEAM_ID\" ]]",
+            "[[ \"$PROFILE_ROOT_TEAM_IDENTIFIER\" == \"$TEAM_ID\" ]]"
         ] {
             let range = try #require(installer.range(of: check))
             #expect(range.lowerBound < installMarker.lowerBound, "signed Apple identity must be proven before installation: \(check)")
         }
+
+        // Apple App IDs are <App ID prefix>.<bundle ID>. The App ID prefix is
+        // not guaranteed to equal the Team ID, so the installer must rendezvous
+        // the signed app and embedded profile rather than invent that equality.
+        #expect(!installer.contains("EXPECTED_APPLICATION_IDENTIFIER=\"${TEAM_ID}.${BUNDLE_ID}\""))
     }
 
     @Test("identity proof remains signing custody only")
     func identityProofCannotMintScooterAuthority() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
-        let start = try #require(installer.range(of: "EXPECTED_APPLICATION_IDENTIFIER=\"${TEAM_ID}.${BUNDLE_ID}\""))
+        let start = try #require(installer.range(of: "BUILT_APPLICATION_IDENTIFIER"))
         let end = try #require(installer.range(of: "say \"Installing SDK-integrated Capture on the intended iPhone\"", range: start.upperBound..<installer.endIndex))
         let custody = installer[start.lowerBound..<end.lowerBound]
 
