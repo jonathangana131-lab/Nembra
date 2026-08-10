@@ -1,0 +1,41 @@
+name: V14 Capture Final Provenance Identity 9695
+
+on:
+  push:
+    branches:
+      - fix/v14-private-provenance-final-identity-9695-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 3
+          ref: fix/v14-private-provenance-final-identity-9695-sol
+      - name: Materialize and validate exact-current provenance repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          PARENT='9695af19c21c93b3eb4bc867613a6df0c9a3b3d4'
+          HELPER='Scripts/capture_tuya_private_input_provenance.py'
+          TEST='scripts/ci/tests/test_capture_tuya_private_input_provenance.py'
+          test "$(git rev-parse HEAD~2)" = "$PARENT"
+          python3 tools/v14_private_provenance_final_identity_materialize.py
+          python3 -m py_compile "$HELPER" "$TEST"
+          python3 "$TEST"
+          git add "$HELPER" "$TEST"
+          git diff --cached --check
+          mapfile -t EFFECTIVE < <(git diff --cached --name-only HEAD)
+          test "${#EFFECTIVE[@]}" = '2'
+          printf '%s\n' "${EFFECTIVE[@]}" | grep -Fx "$HELPER"
+          printf '%s\n' "${EFFECTIVE[@]}" | grep -Fx "$TEST"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/v14-private-provenance-final-identity-9695.yml tools/v14_private_provenance_final_identity_materialize.py
+          git commit -m 'fix(capture): close final private input identity race'
+          git push origin HEAD:fix/v14-private-provenance-final-identity-9695-sol
