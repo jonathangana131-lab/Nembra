@@ -1,0 +1,33 @@
+name: Capture Final Explicit Confirmation Patch
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-final-explicit-pending-retirement-sol
+    paths:
+      - .github/workflows/capture-final-explicit-pending-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/v14-capture-final-explicit-pending-retirement-sol
+          fetch-depth: 0
+      - name: Apply production repair and self-retire
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 Scripts/apply_capture_final_explicit_pending_patch.py
+          rm Scripts/apply_capture_final_explicit_pending_patch.py
+          rm .github/workflows/capture-final-explicit-pending-patch.yml
+          git config user.name nembra-v14-integration
+          git config user.email actions@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(capture): preserve explicit target confirmation authority"
+          git push origin HEAD:agent/v14-capture-final-explicit-pending-retirement-sol
