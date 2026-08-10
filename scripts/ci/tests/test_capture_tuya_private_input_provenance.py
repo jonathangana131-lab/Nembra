@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import importlib.util
+import os
+import stat
+import tempfile
+import unittest
+from pathlib import Path
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+HELPER_PATH = REPOSITORY_ROOT / "Scripts" / "capture_tuya_private_input_provenance.py"
+SPEC = importlib.util.spec_from_file_location("capture_tuya_private_input_provenance", HELPER_PATH)
+if SPEC is None or SPEC.loader is None:
+    raise RuntimeError("could not load Capture private-input provenance helper")
+provenance = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(provenance)
+
+
+class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.sdk = self.root / "TuyaSDK"
+        self.identity = self.root / "TuyaRuntime"
+        self.security_build = self.sdk / "Build"
+        self.identity_sources = self.identity / "Sources" / "NembraTuyaPrivateConfig"
+        self.security_build.mkdir(parents=True)
+        self.identity_sources.mkdir(parents=True)
+        self.security_podspec = self.sdk / "ThingSmartCryption.podspec"
+        self.identity_podspec = self.identity / "NembraTuyaPrivateConfig.podspec"
+        self.lockfile = self.root / "Podfile.lock"
+        self.record = self.identity / "ResolvedTuyaDependencyProvenance.txt"
+        self.security_podspec.write_text("security-podspec-v1", encoding="utf-8")
+        (self.security_build / "ThingSmartCryption.bin").write_bytes(b"security-bytes-v1")
+        self.identity_podspec.write_text("private-config-podspec-v1", encoding="utf-8")
+        (self.identity_sources / "NembraTuyaPrivateIdentity.swift").write_text(
+            'private let encodedAppKey = "TOPSECRET-APPKEY"\n'
+            'private let encodedAppSecret = "TOPSECRET-APPSECRET"\n',
+            encoding="utf-8",
+        )
+        self.lockfile.write_text(
+            "  - ThingSmartHomeKit (7.8.0)\n"
+            "  - ThingSmartBusinessExtensionKit (7.8.0)\n",
+            encoding="utf-8",
+        )
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def current(self) -> dict[str, str]:
+        return provenance.build_record(
+            lockfile=self.lockfile,
+            security_podspec=self.security_podspec,
+            security_build=self.security_build,
+            identity_podspec=self.identity_podspec,
+            identity_sources=self.identity_sources,
+        )
+
+    def snapshot(self) -> dict[str, str]:
+        current = self.current()
+        provenance.write_record(self.record, current)
+        return current
+
+    def test_snapshot_contains_only_fingerprints_and_is_private(self) -> None:
+        current = self.snapshot()
+        provenance.verify_record(self.record, current)
+
+        text = self.record.read_text(encoding="utf-8")
+        self.assertIn("schema=nembra-capture-tuya-dependencies-v2", text)
+        self.assertIn("thing_smart_home_kit=7.8.0", text)
+        self.assertIn("thing_smart_cryption_build_tree_sha256=", text)
+        self.assertIn("private_identity_sources_tree_sha256=", text)
+        self.assertNotIn("TOPSECRET-APPKEY", text)
+        self.assertNotIn("TOPSECRET-APPSECRET", text)
+        self.assertEqual(stat.S_IMODE(self.record.stat().st_mode), 0o600)
+
+    def test_security_sdk_mutation_invalidates_snapshot(self) -> None:
+        self.snapshot()
+        (self.security_build / "ThingSmartCryption.bin").write_bytes(b"security-bytes-v2")
+        with self.assertRaises(provenance.ProvenanceError):
+            provenance.verify_record(self.record, self.current())
+
+    def test_private_identity_mutation_invalidates_snapshot(self) -> None:
+        self.snapshot()
+        (self.identity_sources / "NembraTuyaPrivateIdentity.swift").write_text(
+            'private let encodedAppKey = "DIFFERENT"\n', encoding="utf-8"
+        )
+        with self.assertRaises(provenance.ProvenanceError):
+            provenance.verify_record(self.record, self.current())
+
+    def test_lockfile_mutation_invalidates_snapshot(self) -> None:
+        self.snapshot()
+        self.lockfile.write_text("different resolution", encoding="utf-8")
+        with self.assertRaises(provenance.ProvenanceError):
+            provenance.verify_record(self.record, self.current())
+
+    def test_record_symlink_is_rejected(self) -> None:
+        self.snapshot()
+        alternate = self.root / "alternate-record"
+        alternate.write_text(self.record.read_text(encoding="utf-8"), encoding="utf-8")
+        os.chmod(alternate, 0o600)
+        self.record.unlink()
+        self.record.symlink_to(alternate)
+        with self.assertRaises(provenance.ProvenanceError):
+            provenance.read_record(self.record)
+
+    def test_escaping_security_tree_symlink_is_rejected(self) -> None:
+        outside = self.root / "outside.bin"
+        outside.write_bytes(b"outside")
+        (self.security_build / "escape").symlink_to(outside)
+        with self.assertRaises(provenance.ProvenanceError):
+            self.current()
+
+
+if __name__ == "__main__":
+    unittest.main()
