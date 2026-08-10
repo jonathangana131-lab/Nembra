@@ -1,0 +1,56 @@
+name: V14 Capture Correlation Live Patch
+
+on:
+  push:
+    branches:
+      - integration/v14-capture-correlation-invalidation-live-sol
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/v14-capture-correlation-invalidation-live-sol
+          fetch-depth: 0
+
+      - name: Apply guarded current-head repair
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text()
+
+          replacements = [
+              (
+                  "    var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }\n\n    var correlationWindowLabel: String {",
+                  "    var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }\n\n    func consumeCorrelationAsyncInvalidation() {\n        guard (phase == .baseline || phase == .scanning),\n              correlationProgress?.isSeriesInvalidated == true else { return }\n        correlationSession = nil\n        failLocally(\n            \"Bluetooth correlation ended before this window could be sealed because package-owned scanner/Bluetooth authority became unavailable. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series.\",\n            \"target_correlation_async_invalidated\"\n        )\n    }\n\n    var correlationWindowLabel: String {",
+              ),
+              (
+                  "            .background(Color.black.ignoresSafeArea())\n        }\n        .navigationTitle(\"Secure Link\")",
+                  "            .background(Color.black.ignoresSafeArea())\n            .onChange(of: test.correlationProgress?.isSeriesInvalidated == true) { _, invalidated in\n                if invalidated {\n                    test.consumeCorrelationAsyncInvalidation()\n                }\n            }\n        }\n        .navigationTitle(\"Secure Link\")",
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"guard failed: expected exactly one match, found {count}: {old[:100]!r}")
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+
+      - name: Commit production delta
+        run: |
+          git diff --check
+          git diff -- NembraApp/App/NembraCaptureEntrypoint.swift
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git commit -m "fix(capture): recover async correlation invalidation"
+          git push origin HEAD:integration/v14-capture-correlation-invalidation-live-sol
