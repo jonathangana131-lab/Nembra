@@ -44,6 +44,21 @@ struct TuyaStationaryRunbookCurrentAuthoritySourceTests {
         #expect(!provisioning.contains("OFF baseline then ON correlation"))
     }
 
+    @Test("field installer cannot instruct an obsolete two-window target flow")
+    func fieldInstallerPrintsCurrentFourWindowAuthority() throws {
+        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
+
+        #expect(installer.contains("OFF1 → ON1 → OFF2 → ON2"))
+        #expect(installer.contains("every window must reach scan liveness"))
+        #expect(installer.contains("exactly one repeatable full CoreBluetooth UUID"))
+        #expect(installer.contains("Confirm correlated Bluetooth target"))
+        #expect(installer.contains("Historical UUID/name/RSSI/FD50/Tuya hints cannot override the package result"))
+        #expect(installer.contains("Tuya's SDK remains the sole authenticated BLE owner"))
+        #expect(installer.contains("Nembra sends no DP query or command"))
+
+        #expect(!installer.contains("run the scooter-OFF baseline, power it ON, select the authoritative target"))
+    }
+
     private func readRepositoryFile(_ relativePath: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
