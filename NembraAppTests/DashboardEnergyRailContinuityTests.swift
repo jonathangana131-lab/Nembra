@@ -1,112 +1,69 @@
 import XCTest
 @testable import Nembra
+import enum NembraCore.PropulsionEnergyRailCurrentness
 
 final class DashboardEnergyRailContinuityTests: XCTestCase {
-    func testRetainedSimulatorSpeedPreservesAcceptedPowerWithoutAdmittingNewPower() throws {
-        let sample = try simulatorSpeedSample(
-            kilometersPerHour: 0,
-            uptimeNanoseconds: 1_000_000_000
+    func testLiveSourceMapsToLiveWithoutChangingReceiptIdentity() throws {
+        let observation = try SimulatorPowerObservation(
+            watts: 356,
+            receiptSequenceNumber: 41,
+            receivedAtUptimeNanoseconds: 9_000_000_000,
+            continuityGeneration: 7
         )
+        let availability = SimulatorPowerEvidenceAvailability.live(observation)
 
-        let disposition = dashboardEnergyRailSimulatorSourceDisposition(
-            allowsSimulatorQA: true,
-            supportsPowerWatts: true,
-            isConnected: true,
-            speedAvailability: .retained(sample),
-            aggregateSpeedKilometersPerHour: 0,
-            aggregatePowerWatts: 0
+        XCTAssertEqual(
+            dashboardEnergyRailSourceCurrentness(availability),
+            .live
         )
-
-        XCTAssertEqual(disposition.admission, .hardUnavailable)
-        XCTAssertTrue(disposition.preservesAcceptedPowerDuringSpeedOnlyRetention)
-        XCTAssertTrue(disposition.isPresentationEligible)
+        XCTAssertEqual(
+            dashboardEnergyRailSourceObservation(availability),
+            observation
+        )
     }
 
-    func testRetainedSpeedCannotPreservePowerAfterTransportLoss() throws {
-        let sample = try simulatorSpeedSample(
-            kilometersPerHour: 0,
-            uptimeNanoseconds: 1_000_000_000
+    func testRetainedSourceMapsToRetainedAndPreservesExactObservation() throws {
+        let observation = try SimulatorPowerObservation(
+            watts: 356,
+            receiptSequenceNumber: 41,
+            receivedAtUptimeNanoseconds: 9_000_000_000,
+            continuityGeneration: 7
         )
+        let availability = SimulatorPowerEvidenceAvailability.retained(observation)
 
-        let disposition = dashboardEnergyRailSimulatorSourceDisposition(
-            allowsSimulatorQA: true,
-            supportsPowerWatts: true,
-            isConnected: false,
-            speedAvailability: .retained(sample),
-            aggregateSpeedKilometersPerHour: 0,
-            aggregatePowerWatts: 0
+        XCTAssertEqual(
+            dashboardEnergyRailSourceCurrentness(availability),
+            .retained
         )
-
-        XCTAssertEqual(disposition.admission, .hardUnavailable)
-        XCTAssertFalse(disposition.preservesAcceptedPowerDuringSpeedOnlyRetention)
-        XCTAssertFalse(disposition.isPresentationEligible)
+        XCTAssertEqual(
+            dashboardEnergyRailSourceObservation(availability),
+            observation
+        )
     }
 
-    func testRetainedSimulatorSpeedCannotPreservePowerOutsideSimulatorProfile() throws {
-        let sample = try simulatorSpeedSample(
-            kilometersPerHour: 0,
-            uptimeNanoseconds: 1_000_000_000
-        )
+    func testUnavailableSourceCannotProvideReceiptMaterial() {
+        let availability = SimulatorPowerEvidenceAvailability.unavailable
 
-        let disposition = dashboardEnergyRailSimulatorSourceDisposition(
-            allowsSimulatorQA: false,
-            supportsPowerWatts: true,
-            isConnected: true,
-            speedAvailability: .retained(sample),
-            aggregateSpeedKilometersPerHour: 0,
-            aggregatePowerWatts: 0
+        XCTAssertEqual(
+            dashboardEnergyRailSourceCurrentness(availability),
+            .unavailable
         )
-
-        XCTAssertEqual(disposition.admission, .hardUnavailable)
-        XCTAssertFalse(disposition.preservesAcceptedPowerDuringSpeedOnlyRetention)
-        XCTAssertFalse(disposition.isPresentationEligible)
+        XCTAssertNil(dashboardEnergyRailSourceObservation(availability))
     }
 
-    func testUnavailableSpeedCannotPreserveAcceptedPower() {
-        let disposition = dashboardEnergyRailSimulatorSourceDisposition(
-            allowsSimulatorQA: true,
-            supportsPowerWatts: true,
-            isConnected: true,
-            speedAvailability: .unavailable,
-            aggregateSpeedKilometersPerHour: 0,
-            aggregatePowerWatts: 0
+    func testPowerMappingHasNoSpeedOrAggregateVehicleInput() throws {
+        let observation = try SimulatorPowerObservation(
+            watts: 0,
+            receiptSequenceNumber: 2,
+            receivedAtUptimeNanoseconds: 2_000_000_000,
+            continuityGeneration: 1
         )
 
-        XCTAssertEqual(disposition.admission, .hardUnavailable)
-        XCTAssertFalse(disposition.preservesAcceptedPowerDuringSpeedOnlyRetention)
-        XCTAssertFalse(disposition.isPresentationEligible)
-    }
-
-    func testCoherentMissingPowerStillFailsClosed() throws {
-        let sample = try simulatorSpeedSample(
-            kilometersPerHour: 18,
-            uptimeNanoseconds: 1_000_000_000
-        )
-
-        let disposition = dashboardEnergyRailSimulatorSourceDisposition(
-            allowsSimulatorQA: true,
-            supportsPowerWatts: true,
-            isConnected: true,
-            speedAvailability: .live(sample),
-            aggregateSpeedKilometersPerHour: 18,
-            aggregatePowerWatts: nil
-        )
-
-        XCTAssertEqual(disposition.admission, .hardUnavailable)
-        XCTAssertFalse(disposition.preservesAcceptedPowerDuringSpeedOnlyRetention)
-        XCTAssertFalse(disposition.isPresentationEligible)
-    }
-
-    private func simulatorSpeedSample(
-        kilometersPerHour: Double,
-        uptimeNanoseconds: UInt64
-    ) throws -> SpeedTelemetrySample {
-        try SpeedTelemetrySample(
-            source: .simulatorQA,
-            provenance: .absoluteMeasurement,
-            metersPerSecond: kilometersPerHour / 3.6,
-            receivedAtUptimeNanoseconds: uptimeNanoseconds,
-            receivedAtDate: Date(timeIntervalSince1970: 0)
-        )
+        // The source-owned bridge is intentionally a function only of the power
+        // source availability. There is no speed, connection, aggregate watts, or
+        // view-time argument capable of promoting/demoting this receipt.
+        let availability = SimulatorPowerEvidenceAvailability.live(observation)
+        XCTAssertEqual(dashboardEnergyRailSourceCurrentness(availability), .live)
+        XCTAssertEqual(dashboardEnergyRailSourceObservation(availability), observation)
     }
 }
