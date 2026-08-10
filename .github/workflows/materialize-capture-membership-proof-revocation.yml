@@ -33,20 +33,22 @@ jobs:
 
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           source = path.read_text()
-          old = """        acceptsViewScopedMembershipRequests = false
-          membershipRequestID = UUID()
-          membershipBusy = false
-          """
-          new = """        acceptsViewScopedMembershipRequests = false
-          sdkDeviceMembershipVerified = false
-          membershipAccountUID = nil
-          membershipDeviceID = nil
-          membershipRequestID = UUID()
-          membershipBusy = false
-          """
-          if source.count(old) != 1:
-              raise SystemExit(f"Expected one view-exit admission/revocation sequence, found {source.count(old)}")
-          path.write_text(source.replace(old, new, 1))
+          function_start = source.index("    func abandonCorrelationForViewExit()")
+          function_end = source.index("    var privateConfig: Bool", function_start)
+          cleanup = source[function_start:function_end]
+          marker = "        acceptsViewScopedMembershipRequests = false\n"
+          if cleanup.count(marker) != 1:
+              raise SystemExit(f"Expected one view-exit admission marker, found {cleanup.count(marker)}")
+          if "sdkDeviceMembershipVerified = false" in cleanup:
+              raise SystemExit("Membership proof is already revoked in the guarded product function")
+          insertion = (
+              marker
+              + "        sdkDeviceMembershipVerified = false\n"
+              + "        membershipAccountUID = nil\n"
+              + "        membershipDeviceID = nil\n"
+          )
+          cleanup = cleanup.replace(marker, insertion, 1)
+          path.write_text(source[:function_start] + cleanup + source[function_end:])
           PY
 
       - name: Verify ordering contract without claiming Apple/Xcode acceptance
