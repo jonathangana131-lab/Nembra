@@ -10,11 +10,17 @@ struct TuyaMidSeriesBLEOwnershipSourceTests {
         let asyncGuard = try section(in: source, from: "func consumeCorrelationAsyncInvalidation()", to: "var correlationWindowLabel")
         let start = try section(in: source, from: "private func startCurrentCorrelationWindow()", to: "func finishCorrelationWindow()")
         let finish = try section(in: source, from: "func finishCorrelationWindow()", to: "private func finishCorrelationSeries")
+        let abandon = try section(in: source, from: "private func abandonPackageCorrelation()", to: "private func releasePackageCorrelationLease()")
         let view = try section(in: source, from: "private struct SecureLinkView: View", to: "private var hero: some View")
 
         #expect(asyncGuard.contains("OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID)"))
-        #expect(asyncGuard.contains("correlationSession?.abandonCurrentWindow()"))
+        #expect(asyncGuard.contains("abandonPackageCorrelation()"))
         #expect(asyncGuard.contains("sdk_local_ble_reacquired_during_target_correlation"))
+
+        #expect(abandon.contains("correlationSession?.abandonCurrentWindow()"))
+        #expect(abandon.contains("correlationSession = nil"))
+        #expect(abandon.contains("releasePackageCorrelationLease()"))
+        #expect(abandon.range(of: "correlationSession?.abandonCurrentWindow()")!.lowerBound < abandon.range(of: "releasePackageCorrelationLease()")!.lowerBound)
 
         #expect(start.contains("OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID)"))
         #expect(start.contains("sdk_local_ble_ownership_blocks_correlation_window"))
