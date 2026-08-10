@@ -25,69 +25,93 @@ jobs:
           unexpected="$(git diff --name-only "$expected"...HEAD | grep -Ev '^(Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaVerificationCodeRedactionSourceTests.swift|\.github/workflows/materialize-capture-login-code-redaction.yml)$' || true)"
           test -z "$unexpected" || { echo "Unexpected changed paths:"; echo "$unexpected"; exit 1; }
 
-      - name: Materialize fail-closed verification-code error redaction
+      - name: Fence exact account-authorizer source section
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          s = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          start = s.index("@MainActor\nprivate final class OfficialTuyaAccountAuthorizer")
+          end = s.index("#if canImport(ThingSmartHomeKit)\n@MainActor\nprivate final class OfficialTuyaMembershipProbe", start)
+          a = s[start:end]
+          assert a.count("self?.finishLoginFailure(error, submittedIdentity: identity)") == 2
+          assert a.count("    private func finishLoginFailure(") == 1
+          assert a.count("    private static func redactedError(") == 1
+          PY
 
-          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
-          source = path.read_text()
-          class_start = source.index("@MainActor\nprivate final class OfficialTuyaAccountAuthorizer")
-          class_end = source.index("#if canImport(ThingSmartHomeKit)\n@MainActor\nprivate final class OfficialTuyaMembershipProbe", class_start)
-          authorizer = source[class_start:class_end]
+      - name: Forward snapshotted verification code on both login failures
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          s = p.read_text()
+          old = "self?.finishLoginFailure(error, submittedIdentity: identity)"
+          new = "self?.finishLoginFailure(error, submittedIdentity: identity, submittedVerificationCode: code)"
+          assert s.count(old) == 2
+          p.write_text(s.replace(old, new))
+          PY
 
-          old_failure = "self?.finishLoginFailure(error, submittedIdentity: identity)"
-          new_failure = "self?.finishLoginFailure(error, submittedIdentity: identity, submittedVerificationCode: code)"
-          if authorizer.count(old_failure) != 2:
-              raise SystemExit(f"Expected exactly two email/phone login failure callbacks; found {authorizer.count(old_failure)}")
-          authorizer = authorizer.replace(old_failure, new_failure)
+      - name: Carry the verification-code snapshot through login failure finalization
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          s = p.read_text()
+          start = s.index("    private func finishLoginFailure(")
+          end = s.index("    private func finishAppleLoginFailure", start)
+          replacement = (
+              "    private func finishLoginFailure(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) {\n"
+              "        busy = false\n"
+              "        verificationCode = \"\"\n"
+              "        loggedIn = OfficialTuyaFactory.accountLoggedIn\n"
+              "        status = \"Tuya SDK login failed: \\(Self.redactedError(error, submittedIdentity: submittedIdentity, submittedVerificationCode: submittedVerificationCode))\"\n"
+              "    }\n\n"
+          )
+          p.write_text(s[:start] + replacement + s[end:])
+          PY
 
-          finish_start = authorizer.index("    private func finishLoginFailure(")
-          finish_end = authorizer.index("    private func finishAppleLoginFailure", finish_start)
-          finish = "\n".join([
-              "    private func finishLoginFailure(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) {",
-              "        busy = false",
-              "        verificationCode = \"\"",
-              "        loggedIn = OfficialTuyaFactory.accountLoggedIn",
-              "        status = \"Tuya SDK login failed: \\(Self.redactedError(error, submittedIdentity: submittedIdentity, submittedVerificationCode: submittedVerificationCode))\"",
-              "    }",
-              "",
-          ])
-          authorizer = authorizer[:finish_start] + finish + authorizer[finish_end:]
-
-          scrub_start = authorizer.index("    private static func redactedError(")
-          class_close = authorizer.rfind("\n}\n")
-          if class_close <= scrub_start:
-              raise SystemExit("Could not isolate account-authorizer redaction tail")
-          scrubber = "\n".join([
-              "    private static func redactedError(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) -> String {",
-              "        var redacted = error?.localizedDescription ?? \"unknown error\"",
-              "        let identity = submittedIdentity.trimmingCharacters(in: .whitespacesAndNewlines)",
-              "        if !identity.isEmpty {",
-              "            redacted = redacted.replacingOccurrences(",
-              "                of: identity,",
-              "                with: \"<redacted-account>\",",
-              "                options: [.caseInsensitive, .literal]",
-              "            )",
-              "        }",
-              "        let verificationCode = submittedVerificationCode.trimmingCharacters(in: .whitespacesAndNewlines)",
-              "        if !verificationCode.isEmpty {",
-              "            redacted = redacted.replacingOccurrences(",
-              "                of: verificationCode,",
-              "                with: \"<redacted-verification-code>\",",
-              "                options: [.caseInsensitive, .literal]",
-              "            )",
-              "        }",
-              "        return redacted",
-              "    }",
-              "",
-              "    private static func redactedError(_ error: Error?, submittedIdentity: String) -> String {",
-              "        redactedError(error, submittedIdentity: submittedIdentity, submittedVerificationCode: \"\")",
-              "    }",
-          ])
-          authorizer = authorizer[:scrub_start] + scrubber + authorizer[class_close:]
-          path.write_text(source[:class_start] + authorizer + source[class_end:])
+      - name: Redact account identity and verification code independently
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          s = p.read_text()
+          class_start = s.index("@MainActor\nprivate final class OfficialTuyaAccountAuthorizer")
+          class_end = s.index("#if canImport(ThingSmartHomeKit)\n@MainActor\nprivate final class OfficialTuyaMembershipProbe", class_start)
+          a = s[class_start:class_end]
+          scrub_start = a.index("    private static func redactedError(")
+          class_close = a.rfind("\n}\n")
+          assert class_close > scrub_start
+          replacement = (
+              "    private static func redactedError(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) -> String {\n"
+              "        var redacted = error?.localizedDescription ?? \"unknown error\"\n"
+              "        let identity = submittedIdentity.trimmingCharacters(in: .whitespacesAndNewlines)\n"
+              "        if !identity.isEmpty {\n"
+              "            redacted = redacted.replacingOccurrences(\n"
+              "                of: identity,\n"
+              "                with: \"<redacted-account>\",\n"
+              "                options: [.caseInsensitive, .literal]\n"
+              "            )\n"
+              "        }\n"
+              "        let verificationCode = submittedVerificationCode.trimmingCharacters(in: .whitespacesAndNewlines)\n"
+              "        if !verificationCode.isEmpty {\n"
+              "            redacted = redacted.replacingOccurrences(\n"
+              "                of: verificationCode,\n"
+              "                with: \"<redacted-verification-code>\",\n"
+              "                options: [.caseInsensitive, .literal]\n"
+              "            )\n"
+              "        }\n"
+              "        return redacted\n"
+              "    }\n\n"
+              "    private static func redactedError(_ error: Error?, submittedIdentity: String) -> String {\n"
+              "        redactedError(error, submittedIdentity: submittedIdentity, submittedVerificationCode: \"\")\n"
+              "    }"
+          )
+          a = a[:scrub_start] + replacement + a[class_close:]
+          p.write_text(s[:class_start] + a + s[class_end:])
           PY
 
       - name: Verify strengthened credential-custody source contract
