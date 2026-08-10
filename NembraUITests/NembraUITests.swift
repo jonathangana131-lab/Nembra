@@ -94,11 +94,59 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(speed.waitForExistence(timeout: 3))
         XCTAssertFalse((speed.value as? String ?? "").isEmpty)
 
+        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
+        XCTAssertTrue(
+            energyRail.waitForExistence(timeout: 3),
+            "The real riding cockpit must mount the source-owned Energy Rail."
+        )
+        XCTAssertTrue(
+            waitForValueContaining("356 watts", element: energyRail),
+            "VoiceOver semantics must expose accepted 356 W source truth, not a render midpoint."
+        )
+        XCTAssertFalse(
+            (energyRail.value as? String ?? "").localizedCaseInsensitiveContains("last known"),
+            "Fresh riding source power must remain live rather than retained."
+        )
+
         XCTAssertTrue(app.staticTexts["Controls available when stopped"].waitForExistence(timeout: 2))
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
 
         keepScreenshot(named: "Dashboard Riding Landscape")
+    }
+
+    @MainActor
+    func testLandscapeDashboardRetainedPowerAfterReconnectIsLastKnownAndCapturable() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(
+            scenario: "riding",
+            orientation: .landscapeRight,
+            environment: ["NEMBRA_SIMULATION_RETAINED_POWER_AFTER_RECONNECT": "1"]
+        )
+
+        let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
+        XCTAssertTrue(cockpit.waitForExistence(timeout: 4))
+        XCTAssertTrue(
+            app.staticTexts["Controls available when stopped"].waitForExistence(timeout: 3),
+            "Reconnect must restore fresh moving speed authority independently from retained propulsion."
+        )
+
+        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
+        XCTAssertTrue(
+            energyRail.waitForExistence(timeout: 3),
+            "Connected transport with retained power must keep the Energy Rail mounted."
+        )
+        XCTAssertTrue(
+            waitForValueContaining("last known", element: energyRail),
+            "Reconnect alone must not repromote the old power receipt to live."
+        )
+        let railValue = energyRail.value as? String ?? ""
+        XCTAssertTrue(
+            railValue.localizedCaseInsensitiveContains("356 watts"),
+            "Retained power must preserve the exact accepted 356 W receipt instead of becoming zero or unavailable."
+        )
+
+        keepScreenshot(named: "Dashboard Retained Power Landscape")
     }
 
     @MainActor
@@ -190,6 +238,16 @@ final class NembraUITests: XCTestCase {
             "The Cockpit must not manufacture a numeric speed before any accepted source evidence exists."
         )
         XCTAssertFalse(app.staticTexts["LAST KNOWN"].exists)
+
+        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
+        XCTAssertTrue(
+            energyRail.waitForExistence(timeout: 2),
+            "Simulator QA may mount the Energy Rail before a power receipt exists."
+        )
+        XCTAssertTrue(
+            waitForValueContaining("unavailable", element: energyRail, timeout: 2),
+            "Cold power state must remain unavailable and must not manufacture a numeric zero."
+        )
 
         let vehicleStatus = app.descendants(matching: .any)["dashboard.vehicle-status"]
         XCTAssertTrue(vehicleStatus.waitForExistence(timeout: 2))
@@ -362,6 +420,17 @@ final class NembraUITests: XCTestCase {
     @MainActor
     private func waitForValue(_ value: String, element: XCUIElement, timeout: TimeInterval = 3) -> Bool {
         let predicate = NSPredicate(format: "value == %@", value)
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func waitForValueContaining(
+        _ fragment: String,
+        element: XCUIElement,
+        timeout: TimeInterval = 3
+    ) -> Bool {
+        let predicate = NSPredicate(format: "value CONTAINS[c] %@", fragment)
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
