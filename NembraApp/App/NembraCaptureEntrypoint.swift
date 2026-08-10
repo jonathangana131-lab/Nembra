@@ -2875,7 +2875,31 @@ private struct SecureLinkView: View {
 
     @ViewBuilder
     private var stageRail: some View {
-        if dynamicTypeSize.isAccessibilitySize {
+        if test.phase == .failed {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(heroAccent.opacity(0.16))
+                        .frame(width: 30, height: 30)
+                    Image(systemName: "stop.fill")
+                        .font(.caption.bold())
+                        .foregroundStyle(heroAccent)
+                }
+                .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("ATTEMPT STOPPED")
+                        .font(.caption2.bold())
+                        .tracking(1.1)
+                        .foregroundStyle(heroAccent)
+                    Text("No step is current")
+                        .font(.headline)
+                }
+                Spacer(minLength: 0)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Capture stopped. No procedure step is current. Start a fresh attempt from Target.")
+        } else if dynamicTypeSize.isAccessibilitySize {
             HStack(spacing: 10) {
                 Text("Step \(currentStageIndex + 1) of 4")
                     .font(.caption.weight(.bold))
@@ -3542,7 +3566,7 @@ private struct SecureLinkView: View {
     private var phaseTitle: String {
         switch test.phase {
         case .accepted: return test.exportData == nil ? "Capture sealed" : "Capture complete"
-        case .failed: return "Capture paused"
+        case .failed: return "Capture stopped"
         case .baseline, .scanning, .powerOn: return "Find this scooter"
         case .correlated: return "Scooter signal found"
         case .selected, .authenticating: return "Secure the link"
