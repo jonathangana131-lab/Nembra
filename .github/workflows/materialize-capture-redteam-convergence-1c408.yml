@@ -1,0 +1,185 @@
+name: Materialize Capture red-team convergence 1c408
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-redteam-convergence-1c408
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard exact product ancestry and effective scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=1c40853f6991b4d09206df1d25ecff021458b7eb
+          git merge-base --is-ancestor "$base" HEAD
+          mapfile -t changed < <(git diff --name-only "$base"...HEAD | sort)
+          expected=(
+            .github/workflows/materialize-capture-redteam-convergence-1c408.yml
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          diff <(printf '%s\n' "${expected_sorted[@]}") <(printf '%s\n' "${changed[@]}")
+
+      - name: Compose current-product truth repairs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text()
+
+          def rewrite_section(text: str, start: str, end: str, old: str, new: str) -> str:
+              a = text.index(start)
+              b = text.index(end, a)
+              section = text[a:b]
+              if section.count(old) != 1:
+                  raise SystemExit(f"expected exactly one target in {start}; found {section.count(old)}")
+              section = section.replace(old, new, 1)
+              return text[:a] + section + text[b:]
+
+          membership_old = """        sdkDeviceMembershipVerified = false
+                  membershipAccountUID = nil
+                  membershipDeviceID = nil
+                  membershipRequestID = UUID()
+          """
+          membership_new = """        sdkDeviceMembershipVerified = false
+                  membershipAccountUID = nil
+                  membershipDeviceID = nil
+                  membershipStatus = "Exact scooter membership must be verified again for this Secure Link lifetime."
+                  membershipRequestID = UUID()
+          """
+
+          source = rewrite_section(
+              source,
+              "    func abandonCorrelationForViewExit() {",
+              "    func appDidLoseForeground() {",
+              membership_old,
+              membership_new,
+          )
+          source = rewrite_section(
+              source,
+              "    func appDidLoseForeground() {",
+              "    var privateConfig: Bool",
+              membership_old,
+              membership_new,
+          )
+
+          receiver_marker = "    private func receivedApplicationUpdate(\n"
+          if source.count(receiver_marker) != 1:
+              raise SystemExit("receivedApplicationUpdate marker is not unique")
+
+          helper = '''    private func redactingVerifiedAccountUID(from update: [String: String]) -> [String: String] {
+                  guard accountIdentityLeaseIsAuthorized,
+                        let exactAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                        !exactAccountUID.isEmpty else { return update }
+
+                  let marker = "<redacted-account-uid>"
+                  var redacted: [String: String] = [:]
+                  for key in update.keys.sorted() {
+                      guard let value = update[key] else { continue }
+                      let safeKey = key.replacingOccurrences(
+                          of: exactAccountUID,
+                          with: marker,
+                          options: [.caseInsensitive]
+                      )
+                      let safeValue = value.replacingOccurrences(
+                          of: exactAccountUID,
+                          with: marker,
+                          options: [.caseInsensitive]
+                      )
+                      if redacted[safeKey] == nil {
+                          redacted[safeKey] = safeValue
+                          continue
+                      }
+
+                      // Two malformed account-UID-bearing keys can collapse after redaction.
+                      // Preserve both values without restoring the secret key material.
+                      var collisionIndex = 2
+                      var collisionKey = "\(safeKey)#\(collisionIndex)"
+                      while redacted[collisionKey] != nil {
+                          collisionIndex += 1
+                          collisionKey = "\(safeKey)#\(collisionIndex)"
+                      }
+                      redacted[collisionKey] = safeValue
+                  }
+                  return redacted
+              }
+
+          '''
+          source = source.replace(receiver_marker, helper + receiver_marker, 1)
+
+          old_log = '''            log("tuya_application_update", update.merging([
+                          "generation": String(token.diagnosticGeneration)
+                      ]) { current, _ in current })'''
+          new_log = '''            let exportSafeUpdate = redactingVerifiedAccountUID(from: update)
+                      log("tuya_application_update", exportSafeUpdate.merging([
+                          "generation": String(token.diagnosticGeneration)
+                      ]) { _, trusted in trusted })'''
+          if source.count(old_log) != 1:
+              raise SystemExit(f"expected exactly one untrusted-first event merge; found {source.count(old_log)}")
+          source = source.replace(old_log, new_log, 1)
+
+          duplicate_sessionkey = '''        "refreshtoken",
+                  "sessionkey",
+                  "authkey",'''
+          simplified_sessionkey = '''        "refreshtoken",
+                  "authkey",'''
+          if source.count(duplicate_sessionkey) != 1:
+              raise SystemExit("expected the known duplicate sessionkey classifier entry")
+          source = source.replace(duplicate_sessionkey, simplified_sessionkey, 1)
+
+          path.write_text(source)
+          PY
+
+      - name: Verify truth contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+
+          assert source.count('membershipStatus = "Exact scooter membership must be verified again for this Secure Link lifetime."') == 2
+          assert '<redacted-account-uid>' in source
+          assert 'log("tuya_application_update", update.merging([' not in source
+          assert ') { current, _ in current })' not in source
+          assert ') { _, trusted in trusted })' in source
+          assert 'let exportSafeUpdate = redactingVerifiedAccountUID(from: update)' in source
+
+          driver = source[source.index('@MainActor\nprivate final class SmartLifeDriver'):source.index('#endif\n\nprivate enum AppleAccountAuthorizationError')]
+          assert '"uid",' not in driver
+          assert '"uid"\n' not in driver
+          assert driver.count('"sessionkey",') == 1
+          PY
+          git diff --check
+
+      - name: Run Capture package tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+
+      - name: Publish clean effective product checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-redteam-convergence-1c408.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift .github/workflows/materialize-capture-redteam-convergence-1c408.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "fix(capture): close current red-team custody gaps"
+          git push origin HEAD:sol/v14-capture-redteam-convergence-1c408
