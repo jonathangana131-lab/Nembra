@@ -1,0 +1,116 @@
+name: V14 Capture Product Procedure Convergence
+
+on:
+  push:
+    branches:
+      - product/v14-capture-procedure-convergence-sol
+
+permissions:
+  contents: write
+
+jobs:
+  converge:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: product/v14-capture-procedure-convergence-sol
+          fetch-depth: 0
+
+      - name: Guard exact child ancestry
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "6efbc7577cc7e8b2719db8065db0b1f7a700000d"
+
+      - name: Align non-UI procedure surfaces to accepted flagship
+        run: |
+          set -euo pipefail
+          accepted="8b9c1cabeeffdec7cb12f9a74f53320c11e7eae0"
+          for path in \
+            NembraApp/App/NembraCaptureBuildIdentity.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift \
+            docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md \
+            scripts/field/install_one_time_capture.command; do
+            git show "$accepted:$path" > "$path"
+          done
+
+      - name: Apply only the accepted Entrypoint procedure contract
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text()
+
+          def replace_once(old, new):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"guard failed: expected one match, found {count}: {old[:110]!r}")
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              "        let tuyaDependencyLockSHA256: String\n        let tuyaDeviceID: String",
+              "        let tuyaDependencyLockSHA256: String\n        let procedureIdentifier: String\n        let tuyaDeviceID: String",
+          )
+          replace_once(
+              "    var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }\n    var sdkAccountLoggedIn: Bool",
+              "    var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }\n    var fieldProcedureIdentifier: String { NembraCaptureBuildIdentity.fieldProcedureIdentifier }\n    var sdkAccountLoggedIn: Bool",
+          )
+          replace_once("            schemaVersion: 9,", "            schemaVersion: 10,")
+          replace_once(
+              "            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,\n            tuyaDeviceID: deviceID,",
+              "            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,\n            procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier,\n            tuyaDeviceID: deviceID,",
+          )
+          replace_once(
+              "                LabeledContent(\"Source commit\", value: test.fieldBuildSourceCommitSHA)\n                LabeledContent(\"SDK account\"",
+              "                LabeledContent(\"Source commit\", value: test.fieldBuildSourceCommitSHA)\n                LabeledContent(\"Procedure\", value: test.fieldProcedureIdentifier)\n                LabeledContent(\"SDK account\"",
+          )
+          path.write_text(text)
+
+      - name: Validate exact rendezvous plus product truth
+        run: |
+          set -euo pipefail
+          git diff --check
+          bash -n scripts/field/install_one_time_capture.command
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          identity = Path('NembraApp/App/NembraCaptureBuildIdentity.swift').read_text()
+          runbook = Path('docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md').read_text()
+          installer = Path('scripts/field/install_one_time_capture.command').read_text()
+          required = [
+              'static let fieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"',
+              'let procedureIdentifier: String',
+              'var fieldProcedureIdentifier: String { NembraCaptureBuildIdentity.fieldProcedureIdentifier }',
+              'schemaVersion: 10',
+              'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier',
+              'LabeledContent("Procedure", value: test.fieldProcedureIdentifier)',
+              'var failedAttemptCanRestartFromOFF1: Bool',
+              'var acceptedArtifactCanPrepareExport: Bool',
+              'Ready for analysis',
+              'Relaunch Capture',
+          ]
+          haystack = identity + app
+          missing = [item for item in required if item not in haystack]
+          if missing:
+              raise SystemExit(f'missing converged procedure/product truth: {missing}')
+          if 'schemaVersion: 9' in app:
+              raise SystemExit('product accepted export still pins schema 9')
+          if 'PROCEDURE_ID: `ES80-AUTHENTICATED-STATIONARY-v1`' not in runbook:
+              raise SystemExit('canonical runbook procedure mismatch')
+          if 'PROCEDURE_ID="ES80-AUTHENTICATED-STATIONARY-v1"' not in installer:
+              raise SystemExit('field installer procedure mismatch')
+          PY
+
+      - name: Commit only durable product convergence
+        run: |
+          set -euo pipefail
+          rm .github/workflows/v14-capture-product-procedure-convergence.yml
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(capture): converge guided product on exact procedure"
+          git push origin HEAD:product/v14-capture-procedure-convergence-sol
