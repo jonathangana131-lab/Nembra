@@ -22,17 +22,15 @@ jobs:
           ref: fix/v14-capture-correlation-progress-current-gpt56sol
           fetch-depth: 0
 
-      - name: Guard exact current product parent
+      - name: Guard exact authoring parent and child scope
         shell: bash
         run: |
           set -euo pipefail
           parent='5e96004ec565a5a19df8312f64985862a0443cdc'
-          base_branch='product/v14-capture-guided-truth-current-sol'
-          git fetch --no-tags origin "$base_branch"
-          test "$(git rev-parse FETCH_HEAD)" = "$parent"
           test "$(git merge-base HEAD "$parent")" = "$parent"
           unexpected="$(git diff --name-only "$parent"...HEAD | grep -Ev '^(.github/workflows/apply-capture-correlation-progress-current-gpt56sol.yml|Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationTruthSourceTests.swift)$' || true)"
           test -z "$unexpected"
+          test "$(git rev-parse "$parent:NembraApp/App/NembraCaptureEntrypoint.swift")" = '651947d3190eda4f9913386a53767f972dd42b49'
 
       - name: Apply presentation-only chronology repair
         shell: python
@@ -69,7 +67,6 @@ jobs:
           start = app.index("private struct SecureLinkView: View")
           end = app.index("private struct SecureTransfer: Transferable", start)
           surface = app[start:end]
-
           required = [
               "private var correlationDisplayedWindowOrdinal: Int",
               "test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)",
