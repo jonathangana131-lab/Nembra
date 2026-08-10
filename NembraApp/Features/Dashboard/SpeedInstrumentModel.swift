@@ -317,10 +317,6 @@ struct DashboardSpeedInstrumentView: View {
     let modePersonality: DashboardModePersonality
 
     var body: some View {
-        // The one-shot wake revision deliberately participates in body observation.
-        // It is display-only state and never becomes a propulsion receipt.
-        _ = energyRailPresentationRevision
-
         let allowsSimulatorQA = vehicle.profile == .simulatorQA
         let rawSpeedAvailability = vehicle.speedEvidenceAvailability
         let speedAvailability = rawSpeedAvailability.dashboardPresentationAvailability(
@@ -357,7 +353,8 @@ struct DashboardSpeedInstrumentView: View {
             )
             let energyRailState = energyRailVisualState(
                 atUptimeNanoseconds: now,
-                source: energyRailSource
+                source: energyRailSource,
+                presentationRevision: energyRailPresentationRevision
             )
 
             instrumentContent(
@@ -489,8 +486,13 @@ struct DashboardSpeedInstrumentView: View {
 
     private func energyRailVisualState(
         atUptimeNanoseconds uptimeNanoseconds: UInt64,
-        source: DashboardEnergyRailSimulatorSourceSnapshot?
+        source: DashboardEnergyRailSimulatorSourceSnapshot?,
+        presentationRevision: UInt64
     ) -> NembraEnergyRailVisualState? {
+        // Reading the display-only revision here gives SwiftUI an explicit state
+        // dependency without placing a Void expression in the ViewBuilder body.
+        _ = presentationRevision
+
         guard source != nil,
               let runtime = energyRailRuntime else {
             return nil
