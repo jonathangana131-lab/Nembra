@@ -28,80 +28,89 @@ jobs:
           test "$actual" = "$expected"
           python3 <<'PY'
           from pathlib import Path
-          p=Path("NembraApp/App/NembraCaptureEntrypoint.swift")
-          s=p.read_text()
-          a=s.index("    private func receivedApplicationUpdate(")
-          b=s.index("    private func startWatchdog",a)
-          r=s[a:b]
-          old_guard="""        guard sdkAccountLoggedIn,
-              sdkDeviceMembershipVerified,
-              accountIdentityLeaseIsAuthorized,
-              let driver else {
-"""
-          new_guard="""        guard sdkAccountLoggedIn,
-              sdkDeviceMembershipVerified,
-              accountIdentityLeaseIsAuthorized,
-              let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !verifiedAccountUID.isEmpty,
-              let driver else {
-"""
+          p = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          s = p.read_text()
+          a = s.index("    private func receivedApplicationUpdate(")
+          b = s.index("    private func startWatchdog", a)
+          r = s[a:b]
+          old_guard = "\n".join([
+              "        guard sdkAccountLoggedIn,",
+              "              sdkDeviceMembershipVerified,",
+              "              accountIdentityLeaseIsAuthorized,",
+              "              let driver else {",
+              "",
+          ])
+          new_guard = "\n".join([
+              "        guard sdkAccountLoggedIn,",
+              "              sdkDeviceMembershipVerified,",
+              "              accountIdentityLeaseIsAuthorized,",
+              "              let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),",
+              "              !verifiedAccountUID.isEmpty,",
+              "              let driver else {",
+              "",
+          ])
           if r.count(old_guard) != 1:
               raise SystemExit(f"expected one application authority guard, found {r.count(old_guard)}")
-          r=r.replace(old_guard,new_guard,1)
-          old_log="""            log(\"tuya_application_update\", update.merging([
-                \"generation\": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
-"""
-          new_log="""            let accountUIDRedactedUpdate = Self.redactVerifiedAccountUID(
-                verifiedAccountUID,
-                from: update
-            )
-            log(\"tuya_application_update\", accountUIDRedactedUpdate.merging([
-                \"generation\": String(token.diagnosticGeneration)
-            ]) { _, trusted in trusted })
-"""
+          r = r.replace(old_guard, new_guard, 1)
+          old_log = "\n".join([
+              "            log(\"tuya_application_update\", update.merging([",
+              "                \"generation\": String(token.diagnosticGeneration)",
+              "            ]) { current, _ in current })",
+              "",
+          ])
+          new_log = "\n".join([
+              "            let accountUIDRedactedUpdate = Self.redactVerifiedAccountUID(",
+              "                verifiedAccountUID,",
+              "                from: update",
+              "            )",
+              "            log(\"tuya_application_update\", accountUIDRedactedUpdate.merging([",
+              "                \"generation\": String(token.diagnosticGeneration)",
+              "            ]) { _, trusted in trusted })",
+              "",
+          ])
           if r.count(old_log) != 1:
               raise SystemExit(f"expected one raw event custody seam, found {r.count(old_log)}")
-          r=r.replace(old_log,new_log,1)
-          s=s[:a]+r+s[b:]
-          helper="""
-    private static func redactVerifiedAccountUID(
-        _ verifiedAccountUID: String,
-        from update: [String: String]
-    ) -> [String: String] {
-        let marker = \"<redacted-account-uid>\"
-        var sanitized: [String: String] = [:]
-        sanitized.reserveCapacity(update.count)
-        for (sourceKey, sourceValue) in update.sorted(by: { $0.key < $1.key }) {
-            let redactedKeyBase = sourceKey.replacingOccurrences(of: verifiedAccountUID, with: marker, options: [.caseInsensitive])
-            let redactedValue = sourceValue.replacingOccurrences(of: verifiedAccountUID, with: marker, options: [.caseInsensitive])
-            var redactedKey = redactedKeyBase
-            var collisionIndex = 2
-            while sanitized[redactedKey] != nil {
-                redactedKey = \"\\(redactedKeyBase)#\\(collisionIndex)\"
-                collisionIndex += 1
-            }
-            sanitized[redactedKey] = redactedValue
-        }
-        return sanitized
-    }
-
-"""
-          anchor="    private func startWatchdog(token: TuyaReadOnlyConnectionToken) {\n"
+          r = r.replace(old_log, new_log, 1)
+          s = s[:a] + r + s[b:]
+          helper = "\n".join([
+              "    private static func redactVerifiedAccountUID(",
+              "        _ verifiedAccountUID: String,",
+              "        from update: [String: String]",
+              "    ) -> [String: String] {",
+              "        let marker = \"<redacted-account-uid>\"",
+              "        var sanitized: [String: String] = [:]",
+              "        sanitized.reserveCapacity(update.count)",
+              "        for (sourceKey, sourceValue) in update.sorted(by: { $0.key < $1.key }) {",
+              "            let redactedKeyBase = sourceKey.replacingOccurrences(of: verifiedAccountUID, with: marker, options: [.caseInsensitive])",
+              "            let redactedValue = sourceValue.replacingOccurrences(of: verifiedAccountUID, with: marker, options: [.caseInsensitive])",
+              "            var redactedKey = redactedKeyBase",
+              "            var collisionIndex = 2",
+              "            while sanitized[redactedKey] != nil {",
+              "                redactedKey = \"\\(redactedKeyBase)#\\(collisionIndex)\"",
+              "                collisionIndex += 1",
+              "            }",
+              "            sanitized[redactedKey] = redactedValue",
+              "        }",
+              "        return sanitized",
+              "    }",
+              "",
+              "",
+          ])
+          anchor = "    private func startWatchdog(token: TuyaReadOnlyConnectionToken) {\n"
           if s.count(anchor) != 1 or "<redacted-account-uid>" in s:
               raise SystemExit("unexpected watchdog/helper seam")
-          s=s.replace(anchor,helper+anchor,1)
+          s = s.replace(anchor, helper + anchor, 1)
           p.write_text(s)
           PY
           swiftc -parse "$TEST"
           git diff --check
           python3 <<'PY'
           from pathlib import Path
-          s=Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
-          a=s.index("    private func receivedApplicationUpdate(")
-          b=s.index("    private func startWatchdog",a)
-          r=s[a:b]
-          for x in ("verifiedAccountUID = membershipAccountUID","accountUIDRedactedUpdate","<redacted-account-uid>",") { _, trusted in trusted })"):
+          s = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          a = s.index("    private func receivedApplicationUpdate(")
+          b = s.index("    private func startWatchdog", a)
+          r = s[a:b]
+          for x in ("verifiedAccountUID = membershipAccountUID", "accountUIDRedactedUpdate", "<redacted-account-uid>", ") { _, trusted in trusted })"):
               if x not in r:
                   raise SystemExit(f"missing custody invariant: {x}")
           if ") { current, _ in current })" in r or "log(\"tuya_application_update\", update.merging" in r:
