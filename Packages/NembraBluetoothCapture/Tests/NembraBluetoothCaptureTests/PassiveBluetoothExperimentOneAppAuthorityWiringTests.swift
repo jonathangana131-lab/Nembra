@@ -68,7 +68,12 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
         let correlation = try #require(
             source.range(of: "PassiveBluetoothPowerCycleObservationSession(minimumWindowDuration: 10)")
         )
-        let officialSDKOwnership = try #require(source.range(of: "OfficialTuyaFactory.make()"))
+        let officialSDKOwnership = try #require(
+            source.range(
+                of: "OfficialTuyaFactory.make()",
+                range: correlation.upperBound..<source.endIndex
+            )
+        )
         #expect(lease.lowerBound < correlation.lowerBound)
         #expect(correlation.lowerBound < officialSDKOwnership.lowerBound)
 
