@@ -7,6 +7,7 @@ static NSString * const NembraTuyaSDKBridgeErrorDomain = @"NembraTuyaSDKBridge";
 @interface NembraTuyaSDKBridge ()
 @property (nonatomic, copy, nullable) NembraTuyaSDKUpdateHandler updateHandler;
 @property (nonatomic, strong, nullable) id observedDevice;
+@property (nonatomic, copy, nullable) NSString *currentUUID;
 @end
 
 @implementation NembraTuyaSDKBridge
@@ -56,6 +57,7 @@ static NSString * const NembraTuyaSDKBridgeErrorDomain = @"NembraTuyaSDKBridge";
               productID:(NSString *)productID
                  update:(NembraTuyaSDKUpdateHandler)update {
     self.updateHandler = update;
+    self.currentUUID = [uuid copy];
 
     if (!self.sdkAvailable) {
         [self emitErrorCode:1 description:@"Tuya SmartLife SDK is not linked into this Capture build."];
@@ -103,12 +105,18 @@ static NSString * const NembraTuyaSDKBridgeErrorDomain = @"NembraTuyaSDKBridge";
     __weak typeof(self) weakSelf = self;
     void (^success)(void) = ^{
         __strong typeof(weakSelf) self = weakSelf;
+        if (self == nil) { return; }
+        if (![self isLocallyConnectedUUID:uuid]) {
+            [self emitErrorCode:7 description:@"Tuya reported connect success, but its local BLE state does not show the scooter connected."];
+            return;
+        }
         if (self.updateHandler != nil) {
             self.updateHandler(YES, nil, nil);
         }
     };
     void (^failure)(NSError *) = ^(NSError *error) {
         __strong typeof(weakSelf) self = weakSelf;
+        if (self == nil) { return; }
         NSError *reported = error ?: [NSError errorWithDomain:NembraTuyaSDKBridgeErrorDomain
                                                          code:6
                                                      userInfo:@{NSLocalizedDescriptionKey: @"Tuya rejected the authenticated BLE connection."}];
@@ -121,21 +129,42 @@ static NSString * const NembraTuyaSDKBridgeErrorDomain = @"NembraTuyaSDKBridge";
     connectSend(manager, connectSelector, uuid, productID, success, failure);
 }
 
+- (BOOL)isLocallyConnectedUUID:(NSString *)uuid {
+    if (uuid.length == 0) { return NO; }
+    Class managerClass = NSClassFromString(@"ThingSmartBLEManager");
+    SEL sharedSelector = NSSelectorFromString(@"sharedInstance");
+    if (managerClass == Nil || ![managerClass respondsToSelector:sharedSelector]) { return NO; }
+
+    id (*sharedSend)(id, SEL) = (void *)objc_msgSend;
+    id manager = sharedSend((id)managerClass, sharedSelector);
+    SEL statusSelector = NSSelectorFromString(@"deviceStatueWithUUID:");
+    if (manager == nil || ![manager respondsToSelector:statusSelector]) { return NO; }
+
+    BOOL (*statusSend)(id, SEL, NSString *) = (void *)objc_msgSend;
+    return statusSend(manager, statusSelector, uuid);
+}
+
 - (void)disconnectUUID:(NSString *)uuid {
     Class managerClass = NSClassFromString(@"ThingSmartBLEManager");
     SEL sharedSelector = NSSelectorFromString(@"sharedInstance");
-    if (managerClass == Nil || ![managerClass respondsToSelector:sharedSelector]) { return; }
+    if (managerClass == Nil || ![managerClass respondsToSelector:sharedSelector]) {
+        self.observedDevice = nil;
+        self.currentUUID = nil;
+        self.updateHandler = nil;
+        return;
+    }
     id (*sharedSend)(id, SEL) = (void *)objc_msgSend;
     id manager = sharedSend((id)managerClass, sharedSelector);
     SEL disconnectSelector = NSSelectorFromString(@"disconnectBLEWithUUID:success:failure:");
-    if (manager == nil || ![manager respondsToSelector:disconnectSelector]) { return; }
-
-    void (^success)(void) = ^{};
-    void (^failure)(NSError *) = ^(NSError *error) { (void)error; };
-    void (*disconnectSend)(id, SEL, NSString *, void (^)(void), void (^)(NSError *)) = (void *)objc_msgSend;
-    disconnectSend(manager, disconnectSelector, uuid, success, failure);
+    if (manager != nil && [manager respondsToSelector:disconnectSelector]) {
+        void (^success)(void) = ^{};
+        void (^failure)(NSError *) = ^(NSError *error) { (void)error; };
+        void (*disconnectSend)(id, SEL, NSString *, void (^)(void), void (^)(NSError *)) = (void *)objc_msgSend;
+        disconnectSend(manager, disconnectSelector, uuid, success, failure);
+    }
 
     self.observedDevice = nil;
+    self.currentUUID = nil;
     self.updateHandler = nil;
 }
 
@@ -144,6 +173,11 @@ static NSString * const NembraTuyaSDKBridgeErrorDomain = @"NembraTuyaSDKBridge";
 // SDK is linked into the private field build.
 - (void)device:(id)device dpsUpdate:(NSDictionary *)dps {
     (void)device;
+    NSString *uuid = self.currentUUID;
+    if (uuid.length == 0 || ![self isLocallyConnectedUUID:uuid]) {
+        [self emitErrorCode:8 description:@"A Tuya device update arrived without a live local BLE session; it was not admitted as physical application evidence."];
+        return;
+    }
     if (self.updateHandler != nil && dps.count > 0) {
         self.updateHandler(YES, dps, nil);
     }
@@ -151,6 +185,11 @@ static NSString * const NembraTuyaSDKBridgeErrorDomain = @"NembraTuyaSDKBridge";
 
 - (void)deviceOnlineUpdate:(id)device {
     (void)device;
+    NSString *uuid = self.currentUUID;
+    if (uuid.length == 0 || ![self isLocallyConnectedUUID:uuid]) {
+        [self emitErrorCode:9 description:@"Tuya reports that the local BLE session is no longer connected."];
+        return;
+    }
     if (self.updateHandler != nil) {
         self.updateHandler(YES, nil, nil);
     }
