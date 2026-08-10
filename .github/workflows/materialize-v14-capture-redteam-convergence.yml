@@ -1,0 +1,182 @@
+name: Materialize V14 Capture red-team convergence
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-redteam-convergence-sol
+    paths:
+      - .github/workflows/materialize-v14-capture-redteam-convergence.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/v14-capture-redteam-convergence-sol
+          fetch-depth: 0
+
+      - name: Bind construction to current Capture parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 1c40853f6991b4d09206df1d25ecff021458b7eb HEAD
+          test "$(git rev-parse 1c40853f6991b4d09206df1d25ecff021458b7eb^{commit})" = "1c40853f6991b4d09206df1d25ecff021458b7eb"
+
+      - name: Apply converged product repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text()
+
+          revoke_old = '''        sdkDeviceMembershipVerified = false
+                  membershipAccountUID = nil
+                  membershipDeviceID = nil
+                  membershipRequestID = UUID()
+          '''
+          revoke_new = '''        sdkDeviceMembershipVerified = false
+                  membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."
+                  membershipAccountUID = nil
+                  membershipDeviceID = nil
+                  membershipRequestID = UUID()
+          '''
+          count = source.count(revoke_old)
+          if count != 2:
+              raise SystemExit(f"expected exactly 2 membership revocation seams, found {count}")
+          source = source.replace(revoke_old, revoke_new)
+
+          receiver_marker = '''    private func receivedApplicationUpdate(
+          '''
+          if source.count(receiver_marker) != 1:
+              raise SystemExit("application update receiver marker drifted")
+
+          helper = '''    private func redactVerifiedAccountUIDFromApplicationEvidence(
+                  _ update: [String: String]
+              ) -> [String: String] {
+                  let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                  guard !accountUID.isEmpty else { return update }
+
+                  var redacted: [String: String] = [:]
+                  redacted.reserveCapacity(update.count)
+                  for (key, value) in update {
+                      let redactedKey = key.replacingOccurrences(
+                          of: accountUID,
+                          with: "<redacted-account-uid>",
+                          options: [.literal]
+                      )
+                      let redactedValue = value.replacingOccurrences(
+                          of: accountUID,
+                          with: "<redacted-account-uid>",
+                          options: [.literal]
+                      )
+
+                      if redacted[redactedKey] == nil {
+                          redacted[redactedKey] = redactedValue
+                      } else {
+                          var suffix = 2
+                          var disambiguatedKey = "\\(redactedKey)#\\(suffix)"
+                          while redacted[disambiguatedKey] != nil {
+                              suffix += 1
+                              disambiguatedKey = "\\(redactedKey)#\\(suffix)"
+                          }
+                          redacted[disambiguatedKey] = redactedValue
+                      }
+                  }
+                  return redacted
+              }
+
+          '''
+          source = source.replace(receiver_marker, helper + receiver_marker, 1)
+
+          event_old = '''            log("tuya_application_update", update.merging([
+                      "generation": String(token.diagnosticGeneration)
+                  ]) { current, _ in current })
+          '''
+          event_new = '''            let redactedUpdate = redactVerifiedAccountUIDFromApplicationEvidence(update)
+                  log("tuya_application_update", redactedUpdate.merging([
+                      "generation": String(token.diagnosticGeneration)
+                  ]) { _, trusted in trusted })
+          '''
+          if source.count(event_old) != 1:
+              raise SystemExit("application event merge seam drifted")
+          source = source.replace(event_old, event_new, 1)
+
+          duplicate_session_key = '''        "refreshtoken",
+                  "sessionkey",
+                  "authkey",
+          '''
+          simplified_session_key = '''        "refreshtoken",
+                  "authkey",
+          '''
+          if source.count(duplicate_session_key) != 1:
+              raise SystemExit("expected duplicated sessionkey classifier seam not found")
+          source = source.replace(duplicate_session_key, simplified_session_key, 1)
+
+          path.write_text(source)
+          PY
+
+      - name: Verify converged source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          source = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+
+          def section(start, end):
+              i = source.index(start)
+              j = source.index(end, i + len(start))
+              return source[i:j]
+
+          exit_cleanup = section("func abandonCorrelationForViewExit()", "func appDidLoseForeground()")
+          foreground_cleanup = section("func appDidLoseForeground()", "var privateConfig: Bool")
+          for label, cleanup in [("view exit", exit_cleanup), ("foreground loss", foreground_cleanup)]:
+              clear = cleanup.index("sdkDeviceMembershipVerified = false")
+              status = cleanup.index("membershipStatus =")
+              revoke = cleanup.index("membershipRequestID = UUID()")
+              if not clear < status < revoke:
+                  raise SystemExit(f"{label}: operator status is not revoked with authority")
+              if "membership verified and leased" in cleanup.lower():
+                  raise SystemExit(f"{label}: stale positive membership copy remains")
+
+          receiver = section("private func receivedApplicationUpdate(", "private func startWatchdog")
+          if 'log("tuya_application_update", update.merging([' in receiver:
+              raise SystemExit("raw application dictionary still enters event custody")
+          if '"generation": String(token.diagnosticGeneration)' not in receiver:
+              raise SystemExit("trusted generation provenance missing")
+          if ') { _, trusted in trusted })' not in receiver:
+              raise SystemExit("trusted provenance does not win reserved-key collisions")
+
+          if "<redacted-account-uid>" not in source:
+              raise SystemExit("exact verified account UID redaction marker missing")
+          driver = section("@MainActor\nprivate final class SmartLifeDriver", "#endif\n\nprivate enum AppleAccountAuthorizationError")
+          if '"uid",' in driver or '"uid"\n' in driver:
+              raise SystemExit("generic uid key was incorrectly classified as a secret")
+          if driver.count('"sessionkey"') != 1:
+              raise SystemExit("sessionkey classifier should be canonical and non-duplicated")
+          PY
+          git diff --check
+
+      - name: Commit durable product checkpoint and remove materializer
+        shell: bash
+        env:
+          BRANCH: agent/v14-capture-redteam-convergence-sol
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-v14-capture-redteam-convergence.yml
+          git config user.name "nembra-go-worker"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            .github/workflows/materialize-v14-capture-redteam-convergence.yml
+          git diff --cached --check
+          git commit -m "fix(capture): converge pre-freeze authority custody"
+          git push origin "HEAD:${BRANCH}"
