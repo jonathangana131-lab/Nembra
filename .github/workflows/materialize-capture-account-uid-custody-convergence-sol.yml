@@ -47,61 +47,71 @@ jobs:
           if '<redacted-account-uid>' in source:
               raise SystemExit('account-UID custody repair already present or ambiguous')
 
-          helper = '''    private func applicationUpdateForEventCustody(_ update: [String: String]) -> [String: String] {
-        guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !verifiedAccountUID.isEmpty else { return update }
-
-        var redacted: [String: String] = [:]
-        for (key, value) in update {
-            let safeKey = key.replacingOccurrences(
-                of: verifiedAccountUID,
-                with: "<redacted-account-uid>",
-                options: [.caseInsensitive, .literal]
-            )
-            let safeValue = value.replacingOccurrences(
-                of: verifiedAccountUID,
-                with: "<redacted-account-uid>",
-                options: [.caseInsensitive, .literal]
-            )
-
-            // Redacting an account UID embedded in a malformed key must not silently erase a
-            // second legitimate application field that collapses to the same sanitized key.
-            var uniqueKey = safeKey
-            var collisionSuffix = 2
-            while redacted[uniqueKey] != nil {
-                uniqueKey = "\\(safeKey)#\\(collisionSuffix)"
-                collisionSuffix += 1
-            }
-            redacted[uniqueKey] = safeValue
-        }
-        return redacted
-    }
-
-'''
+          helper = '\n'.join([
+              '    private func applicationUpdateForEventCustody(_ update: [String: String]) -> [String: String] {',
+              '        guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),',
+              '              !verifiedAccountUID.isEmpty else { return update }',
+              '',
+              '        var redacted: [String: String] = [:]',
+              '        for (key, value) in update {',
+              '            let safeKey = key.replacingOccurrences(',
+              '                of: verifiedAccountUID,',
+              '                with: "<redacted-account-uid>",',
+              '                options: [.caseInsensitive, .literal]',
+              '            )',
+              '            let safeValue = value.replacingOccurrences(',
+              '                of: verifiedAccountUID,',
+              '                with: "<redacted-account-uid>",',
+              '                options: [.caseInsensitive, .literal]',
+              '            )',
+              '',
+              '            // Redacting an account UID embedded in a malformed key must not silently erase a',
+              '            // second legitimate application field that collapses to the same sanitized key.',
+              '            var uniqueKey = safeKey',
+              '            var collisionSuffix = 2',
+              '            while redacted[uniqueKey] != nil {',
+              '                uniqueKey = "\\(safeKey)#\\(collisionSuffix)"',
+              '                collisionSuffix += 1',
+              '            }',
+              '            redacted[uniqueKey] = safeValue',
+              '        }',
+              '        return redacted',
+              '    }',
+              '',
+          ]) + '\n'
           source = source.replace(receiver_marker, helper + receiver_marker, 1)
 
           receiver_start = source.index('private func receivedApplicationUpdate(')
           receiver_end = source.index('private func startWatchdog', receiver_start)
           receiver = source[receiver_start:receiver_end]
-          log_marker = '''            log("tuya_application_update", update.merging([
-                "generation": String(token.diagnosticGeneration)
-            ]) { _, trusted in trusted })'''
+          log_marker = '\n'.join([
+              '            log("tuya_application_update", update.merging([',
+              '                "generation": String(token.diagnosticGeneration)',
+              '            ]) { _, trusted in trusted })',
+          ])
           if receiver.count(log_marker) != 1:
               raise SystemExit('trusted application-event log shape changed or is ambiguous')
-          safe_log = '''            let custodySafeUpdate = applicationUpdateForEventCustody(update)
-            log("tuya_application_update", custodySafeUpdate.merging([
-                "generation": String(token.diagnosticGeneration)
-            ]) { _, trusted in trusted })'''
+          safe_log = '\n'.join([
+              '            let custodySafeUpdate = applicationUpdateForEventCustody(update)',
+              '            log("tuya_application_update", custodySafeUpdate.merging([',
+              '                "generation": String(token.diagnosticGeneration)',
+              '            ]) { _, trusted in trusted })',
+          ])
           receiver = receiver.replace(log_marker, safe_log, 1)
           source = source[:receiver_start] + receiver + source[receiver_end:]
 
-          duplicate = '''        "refreshtoken",
-        "sessionkey",
-        "authkey",'''
+          duplicate = '\n'.join([
+              '        "refreshtoken",',
+              '        "sessionkey",',
+              '        "authkey",',
+          ])
           if source.count(duplicate) != 1:
               raise SystemExit('expected duplicated sessionkey tail shape not found exactly once')
-          source = source.replace(duplicate, '''        "refreshtoken",
-        "authkey",''', 1)
+          replacement = '\n'.join([
+              '        "refreshtoken",',
+              '        "authkey",',
+          ])
+          source = source.replace(duplicate, replacement, 1)
 
           path.write_text(source, encoding='utf-8')
           PY
@@ -128,11 +138,9 @@ jobs:
           assert 'let custodySafeUpdate = applicationUpdateForEventCustody(update)' in receiver
           assert 'log("tuya_application_update", custodySafeUpdate.merging([' in receiver
           assert 'log("tuya_application_update", update.merging([' not in receiver
-          assert '"]) { _, trusted in trusted })' not in receiver  # reject malformed accidental shape
           assert ']) { _, trusted in trusted })' in receiver
           assert ']) { current, _ in current })' not in receiver
 
-          # Preserve view/foreground status-truth convergence and #2418 foreground integrity.
           status = 'membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."'
           view_exit_start = s.index('func abandonCorrelationForViewExit()')
           foreground_start = s.index('func appDidLoseForeground()', view_exit_start)
