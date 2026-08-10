@@ -37,13 +37,33 @@ jobs:
           grep -Fq "pod 'ThingSmartBusinessExtensionKit', '~> 7.8.0'" Podfile
           grep -Fq 'LocalSecrets/' .gitignore
 
-      - name: Enforce no application characteristic writes
+      - name: Enforce active Capture read-only and SDK-account contract
         shell: bash
         run: |
           set -euo pipefail
-          file='NembraApp/Features/Research/ES80CaptureShellView.swift'
-          if grep -En '(^|[^A-Za-z])writeValue[[:space:]]*\(' "$file"; then
-            echo 'ERROR: guided Capture utility must not call CoreBluetooth writeValue(...)'
+          active='NembraApp/App/NembraCaptureEntrypoint.swift'
+          legacy='NembraApp/Features/Research/ES80CaptureShellView.swift'
+
+          # The currently installed Capture entrypoint and the retained legacy shell
+          # must not grow a direct CoreBluetooth application write path. Documented
+          # Tuya SDK authentication/session establishment remains the only allowed
+          # transport writer for this preflight.
+          if grep -En '(^|[^A-Za-z])writeValue[[:space:]]*\(' "$active" "$legacy"; then
+            echo 'ERROR: Capture preflight must not call CoreBluetooth writeValue(...)'
+            exit 1
+          fi
+
+          # The official SDK account gate must remain present; metadata QR approval
+          # alone is not accepted as BLE authentication authority.
+          grep -Fq 'ThingSmartUser.sharedInstance()' "$active"
+          grep -Fq 'sendVerifyCode(withUserName:' "$active"
+          grep -Eq 'login\(withEmail:|login\(withMobile:' "$active"
+          grep -Fq 'ThingSmartBLEManager.sharedInstance().connectBLE' "$active"
+
+          # Keep password-based Tuya login out of the field utility. Verification-code
+          # login is sufficient and avoids collecting/persisting the account password.
+          if grep -En 'login\([^\n]*(password:|withPassword:)|loginBy(Email|Phone)|loginWith(Email|Phone)[^\n]*password' "$active"; then
+            echo 'ERROR: Capture must not collect/use a Tuya account password'
             exit 1
           fi
 
@@ -54,7 +74,51 @@ jobs:
             --package-path Packages/NembraBluetoothCapture \
             --filter TuyaAuthenticatedReadOnlyPreflightTests
 
-      - name: Build iOS Simulator app
+      # This is the exact standalone project Joey installs for field learning.
+      # CI intentionally compiles it without the private Tuya security package;
+      # canImport(ThingSmartHomeKit) therefore stays false and the app must remain
+      # fail-closed. A green result proves the real Capture sources/project wiring
+      # compile, not that the privately provisioned physical candidate is accepted.
+      - name: Build standalone Capture Simulator fallback
+        run: |
+          set -o pipefail
+          rm -rf /tmp/NembraCaptureSimulatorDerived
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/NembraCaptureSimulatorDerived \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tee /tmp/nembra-capture-simulator-build.log
+
+      - name: Verify standalone Simulator product exists
+        run: |
+          test -d '/tmp/NembraCaptureSimulatorDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app'
+
+      - name: Build standalone Capture iPhone fallback unsigned
+        run: |
+          set -o pipefail
+          rm -rf /tmp/NembraCaptureDeviceDerived
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath /tmp/NembraCaptureDeviceDerived \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tee /tmp/nembra-capture-device-build.log
+
+      - name: Verify standalone iPhone product exists
+        run: |
+          test -d '/tmp/NembraCaptureDeviceDerived/Build/Products/Debug-iphoneos/Nembra Capture.app'
+
+      # Keep the normal Nembra build as a regression gate because this long-lived
+      # research branch also carries app/package changes. It is not the Capture
+      # product acceptance gate and must not substitute for the standalone build.
+      - name: Build Nembra Simulator regression
         run: |
           set -o pipefail
           rm -rf /tmp/NembraGuidedCaptureSimulatorDerived
@@ -68,11 +132,11 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build | tee /tmp/nembra-guided-capture-simulator-build.log
 
-      - name: Verify Simulator product exists
+      - name: Verify Nembra Simulator product exists
         run: |
           test -d /tmp/NembraGuidedCaptureSimulatorDerived/Build/Products/Debug-iphonesimulator/Nembra.app
 
-      - name: Build physical iPhone target unsigned
+      - name: Build Nembra iPhone regression unsigned
         run: |
           set -o pipefail
           rm -rf /tmp/NembraGuidedCaptureDeviceDerived
@@ -86,7 +150,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build | tee /tmp/nembra-guided-capture-device-build.log
 
-      - name: Verify iPhone product exists
+      - name: Verify Nembra iPhone product exists
         run: |
           test -d /tmp/NembraGuidedCaptureDeviceDerived/Build/Products/Debug-iphoneos/Nembra.app
 
@@ -96,6 +160,8 @@ jobs:
         with:
           name: guided-capture-build-logs
           path: |
+            /tmp/nembra-capture-simulator-build.log
+            /tmp/nembra-capture-device-build.log
             /tmp/nembra-guided-capture-simulator-build.log
             /tmp/nembra-guided-capture-device-build.log
           if-no-files-found: ignore
