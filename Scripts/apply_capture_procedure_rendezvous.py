@@ -4,87 +4,109 @@ from pathlib import Path
 P = "ES80-AUTHENTICATED-STATIONARY-v1"
 
 
-def replace_once(path: str, old: str, new: str) -> None:
-    p = Path(path)
-    text = p.read_text()
-    if new in text:
+def read_lines(path: str) -> list[str]:
+    return Path(path).read_text().splitlines(keepends=True)
+
+
+def write_lines(path: str, lines: list[str]) -> None:
+    Path(path).write_text("".join(lines))
+
+
+def insert_after(path: str, anchor: str, line: str) -> None:
+    lines = read_lines(path)
+    if line in lines:
         return
-    count = text.count(old)
-    if count != 1:
-        raise SystemExit(f"{path}: expected exactly one anchor, found {count}: {old[:120]!r}")
-    p.write_text(text.replace(old, new, 1))
+    matches = [i for i, value in enumerate(lines) if value == anchor]
+    if len(matches) != 1:
+        raise SystemExit(f"{path}: expected one exact line anchor, found {len(matches)}: {anchor!r}")
+    lines.insert(matches[0] + 1, line)
+    write_lines(path, lines)
 
 
-# One compiled procedure identifier is shared by UI, immutable export, runbook,
-# and field installer. It is source provenance, not physical evidence.
-replace_once(
-    "NembraApp/App/NembraCaptureBuildIdentity.swift",
-    '    static let tuyaDependencyLockSHA256InfoKey = "NembraCaptureTuyaDependencyLockSHA256"\n',
-    '    static let tuyaDependencyLockSHA256InfoKey = "NembraCaptureTuyaDependencyLockSHA256"\n'
-    f'    static let fieldProcedureIdentifier = "{P}"\n',
-)
+def insert_before(path: str, anchor: str, line: str) -> None:
+    lines = read_lines(path)
+    if line in lines:
+        return
+    matches = [i for i, value in enumerate(lines) if value == anchor]
+    if len(matches) != 1:
+        raise SystemExit(f"{path}: expected one exact line anchor, found {len(matches)}: {anchor!r}")
+    lines.insert(matches[0], line)
+    write_lines(path, lines)
 
-replace_once(
-    "NembraApp/App/NembraCaptureEntrypoint.swift",
-    "        let tuyaDependencyLockSHA256: String\n        let tuyaDeviceID: String\n",
-    "        let tuyaDependencyLockSHA256: String\n        let procedureIdentifier: String\n        let tuyaDeviceID: String\n",
-)
-replace_once(
-    "NembraApp/App/NembraCaptureEntrypoint.swift",
-    "    var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }\n    var sdkAccountLoggedIn: Bool",
-    "    var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }\n"
-    "    var fieldProcedureIdentifier: String { NembraCaptureBuildIdentity.fieldProcedureIdentifier }\n"
-    "    var sdkAccountLoggedIn: Bool",
-)
-replace_once(
-    "NembraApp/App/NembraCaptureEntrypoint.swift",
-    '            LabeledContent("Source commit", value: test.fieldBuildSourceCommitSHA)\n            LabeledContent("Private SDK config"',
-    '            LabeledContent("Source commit", value: test.fieldBuildSourceCommitSHA)\n'
-    '            LabeledContent("Procedure", value: test.fieldProcedureIdentifier)\n'
-    '            LabeledContent("Private SDK config"',
-)
-replace_once(
-    "NembraApp/App/NembraCaptureEntrypoint.swift",
-    '            schemaVersion: 9,\n            purpose: "Sanitized Tuya authenticated read-only stationary preflight",',
-    '            schemaVersion: 10,\n            purpose: "Sanitized Tuya authenticated read-only stationary preflight",',
-)
-replace_once(
-    "NembraApp/App/NembraCaptureEntrypoint.swift",
-    "            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,\n            tuyaDeviceID: deviceID,",
-    "            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,\n"
-    "            procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier,\n"
-    "            tuyaDeviceID: deviceID,",
-)
 
-runbook = Path("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
-runbook_text = runbook.read_text()
-marker = f"PROCEDURE_ID: `{P}`"
-if marker not in runbook_text:
-    title = "# Nembra Capture P0 — secure-link gate\n"
-    if runbook_text.count(title) != 1:
-        raise SystemExit("runbook title anchor changed")
-    runbook.write_text(runbook_text.replace(title, title + "\n" + marker + "\n", 1))
+def replace_line(path: str, old: str, new: str) -> None:
+    lines = read_lines(path)
+    if new in lines:
+        return
+    matches = [i for i, value in enumerate(lines) if value == old]
+    if len(matches) != 1:
+        raise SystemExit(f"{path}: expected one exact replace line, found {len(matches)}: {old!r}")
+    lines[matches[0]] = new
+    write_lines(path, lines)
 
-installer = Path("scripts/field/install_one_time_capture.command")
-installer_text = installer.read_text()
-if f'PROCEDURE_ID="{P}"' not in installer_text:
-    anchor = 'BUNDLE_ID="com.jonathangana131.nembra.capturelearn"\n'
-    if installer_text.count(anchor) != 1:
-        raise SystemExit("installer bundle anchor changed")
-    installer_text = installer_text.replace(anchor, anchor + f'PROCEDURE_ID="{P}"\n', 1)
-summary_anchor = '    "The exact built device app was read back before installation and matched the requested source SHA, field-build identifier, and standalone bundle identifier." \\\n'
-summary_line = '    "Field procedure: $PROCEDURE_ID. The same identifier is compiled into the immutable accepted export." \\\n'
-if summary_line not in installer_text:
-    if installer_text.count(summary_anchor) != 1:
-        raise SystemExit("installer launch-summary anchor changed")
-    installer_text = installer_text.replace(summary_anchor, summary_anchor + summary_line, 1)
-installer.write_text(installer_text)
 
-procedure_test = Path(
+identity = "NembraApp/App/NembraCaptureBuildIdentity.swift"
+entrypoint = "NembraApp/App/NembraCaptureEntrypoint.swift"
+runbook = "docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md"
+installer = "scripts/field/install_one_time_capture.command"
+dependency_test = (
+    "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/"
+    "TuyaFieldDependencyProvenanceSourceTests.swift"
+)
+procedure_test = (
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/"
     "TuyaFieldProcedureRendezvousSourceTests.swift"
 )
-procedure_test.write_text(
+field_workflow = ".github/workflows/capture-field-build-provenance.yml"
+
+insert_after(
+    identity,
+    '    static let tuyaDependencyLockSHA256InfoKey = "NembraCaptureTuyaDependencyLockSHA256"\n',
+    f'    static let fieldProcedureIdentifier = "{P}"\n',
+)
+insert_after(
+    entrypoint,
+    "        let tuyaDependencyLockSHA256: String\n",
+    "        let procedureIdentifier: String\n",
+)
+insert_after(
+    entrypoint,
+    "    var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }\n",
+    "    var fieldProcedureIdentifier: String { NembraCaptureBuildIdentity.fieldProcedureIdentifier }\n",
+)
+insert_after(
+    entrypoint,
+    '            LabeledContent("Source commit", value: test.fieldBuildSourceCommitSHA)\n',
+    '            LabeledContent("Procedure", value: test.fieldProcedureIdentifier)\n',
+)
+replace_line(
+    entrypoint,
+    "            schemaVersion: 9,\n",
+    "            schemaVersion: 10,\n",
+)
+insert_after(
+    entrypoint,
+    "            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,\n",
+    "            procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier,\n",
+)
+
+insert_after(
+    runbook,
+    "# Nembra Capture P0 — secure-link gate\n",
+    f"\nPROCEDURE_ID: `{P}`\n",
+)
+insert_after(
+    installer,
+    'BUNDLE_ID="com.jonathangana131.nembra.capturelearn"\n',
+    f'PROCEDURE_ID="{P}"\n',
+)
+insert_after(
+    installer,
+    '    "The exact built device app was read back before installation and matched the requested source SHA, field-build identifier, and standalone bundle identifier." \\\n',
+    '    "Field procedure: $PROCEDURE_ID. The same identifier is compiled into the immutable accepted export." \\\n',
+)
+
+Path(procedure_test).write_text(
     f'''import Foundation
 import Testing
 @testable import NembraBluetoothCapture
@@ -129,55 +151,44 @@ struct TuyaFieldProcedureRendezvousSourceTests {{
 '''
 )
 
-# Schema 10 extends schema 9 with the exact procedure identifier; keep the
-# dependency-provenance test validating its field without pinning the old schema.
-replace_once(
-    "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift",
+replace_line(
+    dependency_test,
     '        #expect(app.contains("schemaVersion: 9"))\n',
     '        #expect(app.contains("schemaVersion: 10"))\n',
 )
 
-workflow = Path(".github/workflows/capture-field-build-provenance.yml")
-workflow_text = workflow.read_text()
-procedure_test_path = (
-    "      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/"
-    "TuyaFieldProcedureRendezvousSourceTests.swift\n"
+insert_after(
+    field_workflow,
+    "      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift\n",
+    "      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift\n",
 )
-if procedure_test_path not in workflow_text:
-    anchor = (
-        "      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/"
-        "TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift\n"
-    )
-    if workflow_text.count(anchor) != 1:
-        raise SystemExit("field-provenance path anchor changed")
-    workflow_text = workflow_text.replace(anchor, anchor + procedure_test_path, 1)
-
-procedure_checks = (
-    f'          grep -Fq \'static let fieldProcedureIdentifier = "{P}"\' "$identity"\n'
-    f'          grep -Fq \'PROCEDURE_ID="{P}"\' "$installer"\n'
-    '          grep -Fq \'schemaVersion: 10\' "$entrypoint"\n'
-    '          grep -Fq \'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier\' "$entrypoint"\n'
+insert_after(
+    field_workflow,
+    '          grep -Fq \'static let sourceCommitSHAInfoKey = "NembraCaptureSourceCommitSHA"\' "$identity"\n',
+    f'          grep -Fq \'static let fieldProcedureIdentifier = "{P}"\' "$identity"\n',
 )
-if f'static let fieldProcedureIdentifier = "{P}"' not in workflow_text:
-    anchor = '          grep -Fq \'static let sourceCommitSHAInfoKey = "NembraCaptureSourceCommitSHA"\' "$identity"\n'
-    if workflow_text.count(anchor) != 1:
-        raise SystemExit("field-provenance identity anchor changed")
-    workflow_text = workflow_text.replace(anchor, anchor + procedure_checks, 1)
-workflow.write_text(workflow_text)
+insert_after(
+    field_workflow,
+    '          grep -Fq \'tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256\' "$entrypoint"\n',
+    '          grep -Fq \'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier\' "$entrypoint"\n',
+)
+insert_after(
+    field_workflow,
+    '          grep -Fq \'BUILD_LABEL="capture-v14-${SOURCE_SHA:0:12}"\' "$installer"\n',
+    f'          grep -Fq \'PROCEDURE_ID="{P}"\' "$installer"\n',
+)
 
-# Fail before committing if any rendezvous surface diverges.
-for path in [
-    "NembraApp/App/NembraCaptureBuildIdentity.swift",
-    "NembraApp/App/NembraCaptureEntrypoint.swift",
-    "docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md",
-    "scripts/field/install_one_time_capture.command",
-    str(procedure_test),
-]:
+# Fail closed before commit if any authority surface diverges.
+for path in (identity, entrypoint, runbook, installer, procedure_test):
     if P not in Path(path).read_text():
         raise SystemExit(f"missing exact procedure rendezvous in {path}")
 
-entrypoint = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
-if "schemaVersion: 9" in entrypoint or "schemaVersion: 10" not in entrypoint:
+app = Path(entrypoint).read_text()
+if "schemaVersion: 9" in app or "schemaVersion: 10" not in app:
     raise SystemExit("accepted export schema did not converge to 10")
-if "procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier" not in entrypoint:
-    raise SystemExit("accepted export does not carry the compiled exact procedure")
+if "procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier" not in app:
+    raise SystemExit("immutable accepted export does not carry the compiled procedure identifier")
+
+dep = Path(dependency_test).read_text()
+if 'schemaVersion: 9' in dep or 'schemaVersion: 10' not in dep:
+    raise SystemExit("dependency-provenance regression still pins the prior export schema")
