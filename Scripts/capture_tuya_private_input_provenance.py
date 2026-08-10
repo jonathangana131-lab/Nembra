@@ -65,16 +65,22 @@ def _read_stable_regular_file_sha256(
     try:
         descriptor = os.open(path, flags)
     except OSError as error:
-        raise ProvenanceError(f"required private build input is unavailable or unsafe: {path.name}") from error
+        raise ProvenanceError(
+            f"required private build input is unavailable or unsafe: {path.name}"
+        ) from error
 
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode):
-            raise ProvenanceError(f"required private build input is not a regular file: {path.name}")
+            raise ProvenanceError(
+                f"required private build input is not a regular file: {path.name}"
+            )
 
         before_identity = _stat_identity(before)
         if expected_identity is not None and before_identity != expected_identity:
-            raise ProvenanceError("private build tree changed before an admitted file was opened")
+            raise ProvenanceError(
+                "private build tree changed before an admitted file was opened"
+            )
 
         digest = hashlib.sha256()
         bytes_read = 0
@@ -88,20 +94,28 @@ def _read_stable_regular_file_sha256(
         after = os.fstat(descriptor)
         after_identity = _stat_identity(after)
         if before_identity != after_identity or bytes_read != after.st_size:
-            raise ProvenanceError(f"private build input changed while it was fingerprinted: {path.name}")
+            raise ProvenanceError(
+                f"private build input changed while it was fingerprinted: {path.name}"
+            )
         if expected_identity is not None and after_identity != expected_identity:
-            raise ProvenanceError("private build tree changed while an admitted file was fingerprinted")
+            raise ProvenanceError(
+                "private build tree changed while an admitted file was fingerprinted"
+            )
 
         try:
             current_path = path.lstat()
         except OSError as error:
-            raise ProvenanceError(f"private build input pathname changed during fingerprinting: {path.name}") from error
+            raise ProvenanceError(
+                f"private build input pathname changed during fingerprinting: {path.name}"
+            ) from error
         if (
             stat.S_ISLNK(current_path.st_mode)
             or not stat.S_ISREG(current_path.st_mode)
             or _stat_identity(current_path) != _stat_identity(after)
         ):
-            raise ProvenanceError(f"private build input pathname changed during fingerprinting: {path.name}")
+            raise ProvenanceError(
+                f"private build input pathname changed during fingerprinting: {path.name}"
+            )
         return after, digest.hexdigest()
     finally:
         os.close(descriptor)
@@ -123,13 +137,16 @@ def _file_fingerprint(
     _feed(digest, bytes.fromhex(content_sha256))
     return digest.hexdigest()
 
+
 def _assert_internal_symlink(path: Path, root: Path) -> str:
     try:
         target = os.readlink(path)
         resolved = path.resolve(strict=True)
         resolved.relative_to(root.resolve(strict=True))
     except (OSError, ValueError) as error:
-        raise ProvenanceError("private build input contains an escaping or broken symlink") from error
+        raise ProvenanceError(
+            "private build input contains an escaping or broken symlink"
+        ) from error
     return target
 
 
@@ -141,7 +158,9 @@ def _assert_unchanged_tree_entry(
     try:
         metadata = path.lstat()
     except OSError as error:
-        raise ProvenanceError("private build tree changed while it was fingerprinted") from error
+        raise ProvenanceError(
+            "private build tree changed while it was fingerprinted"
+        ) from error
 
     if _stat_identity(metadata) != expected_identity:
         raise ProvenanceError("private build tree changed while it was fingerprinted")
@@ -157,16 +176,22 @@ def _directory_member_names(path: Path) -> tuple[str, ...]:
     try:
         return tuple(sorted(os.listdir(path), key=os.fsencode))
     except OSError as error:
-        raise ProvenanceError("private build tree changed while it was fingerprinted") from error
+        raise ProvenanceError(
+            "private build tree changed while it was fingerprinted"
+        ) from error
 
 
 def _tree_fingerprint(root: Path) -> str:
     try:
         root_metadata = root.lstat()
     except OSError as error:
-        raise ProvenanceError(f"required private build directory is unavailable: {root.name}") from error
+        raise ProvenanceError(
+            f"required private build directory is unavailable: {root.name}"
+        ) from error
     if stat.S_ISLNK(root_metadata.st_mode) or not stat.S_ISDIR(root_metadata.st_mode):
-        raise ProvenanceError(f"required private build directory is not a real directory: {root.name}")
+        raise ProvenanceError(
+            f"required private build directory is not a real directory: {root.name}"
+        )
 
     entries: list[tuple[str, str, int, bytes]] = []
     observed_states: list[tuple[Path, tuple[int, ...], str]] = [
@@ -175,7 +200,9 @@ def _tree_fingerprint(root: Path) -> str:
     observed_directory_members: dict[Path, tuple[str, ...]] = {}
     root_resolved = root.resolve(strict=True)
 
-    for current_text, directory_names, file_names in os.walk(root, topdown=True, followlinks=False):
+    for current_text, directory_names, file_names in os.walk(
+        root, topdown=True, followlinks=False
+    ):
         current = Path(current_text)
         observed_directory_members[current] = tuple(
             sorted((*directory_names, *file_names), key=os.fsencode)
@@ -198,7 +225,9 @@ def _tree_fingerprint(root: Path) -> str:
                 entries.append(("D", relative, mode, b""))
                 kept_directories.append(name)
             else:
-                raise ProvenanceError("private build tree contains an unsupported directory entry")
+                raise ProvenanceError(
+                    "private build tree contains an unsupported directory entry"
+                )
         directory_names[:] = kept_directories
 
         for name in sorted(file_names, key=os.fsencode):
@@ -218,21 +247,24 @@ def _tree_fingerprint(root: Path) -> str:
                 observed_states.append((path, identity, "F"))
                 entries.append(("F", relative, mode, bytes.fromhex(fingerprint)))
             else:
-                raise ProvenanceError("private build tree contains an unsupported file entry")
+                raise ProvenanceError(
+                    "private build tree contains an unsupported file entry"
+                )
 
-    # A per-file descriptor proves the bytes read from that one inode. The tree
-    # record is stronger: every admitted pathname and every directory membership
-    # must still describe the same finite snapshot after the full traversal.
     for path, identity, kind in observed_states:
         _assert_unchanged_tree_entry(path, identity, kind)
     for directory, members in observed_directory_members.items():
         if _directory_member_names(directory) != members:
-            raise ProvenanceError("private build tree changed while it was fingerprinted")
+            raise ProvenanceError(
+                "private build tree changed while it was fingerprinted"
+            )
 
     digest = hashlib.sha256()
     _feed(digest, b"nembra-private-tree-v1")
     _feed(digest, stat.S_IMODE(root_metadata.st_mode).to_bytes(4, "big"))
-    for kind, relative, mode, payload in sorted(entries, key=lambda item: os.fsencode(item[1])):
+    for kind, relative, mode, payload in sorted(
+        entries, key=lambda item: os.fsencode(item[1])
+    ):
         _feed(digest, kind.encode("ascii"))
         _feed(digest, os.fsencode(relative))
         _feed(digest, mode.to_bytes(4, "big"))
@@ -340,13 +372,45 @@ def _private_input_record_generation_snapshot(
     identity_podspec: Path,
     identity_sources: Path,
 ) -> tuple[object, ...]:
-    return (
-        ("podfile_lock", _regular_file_generation_identity(lockfile)),
-        ("security_podspec", _regular_file_generation_identity(security_podspec)),
-        ("security_build", _tree_generation_snapshot(security_build)),
-        ("identity_podspec", _regular_file_generation_identity(identity_podspec)),
-        ("identity_sources", _tree_generation_snapshot(identity_sources)),
+    podfile_lock_identity = _regular_file_generation_identity(lockfile)
+    security_podspec_identity = _regular_file_generation_identity(security_podspec)
+    security_build_snapshot = _tree_generation_snapshot(security_build)
+    identity_podspec_identity = _regular_file_generation_identity(identity_podspec)
+    identity_sources_snapshot = _tree_generation_snapshot(identity_sources)
+
+    # The generation witness itself must be coherent, not merely compared before and
+    # after hashing. Re-walk both private trees after every authority has been collected,
+    # then revalidate the earlier standalone path identities after those tree walks.
+    # This catches mutate→restore of an early file during the final later-tree traversal.
+    if _tree_generation_snapshot(security_build) != security_build_snapshot:
+        raise ProvenanceError(
+            "private build tree changed while the whole record generation was revalidated"
+        )
+    if _tree_generation_snapshot(identity_sources) != identity_sources_snapshot:
+        raise ProvenanceError(
+            "private identity tree changed while the whole record generation was revalidated"
+        )
+    if _regular_file_generation_identity(lockfile) != podfile_lock_identity:
+        raise ProvenanceError(
+            "Podfile.lock changed while the whole private-input generation was snapshotted"
+        )
+    if _regular_file_generation_identity(security_podspec) != security_podspec_identity:
+        raise ProvenanceError(
+            "private security podspec changed while the whole input generation was snapshotted"
+        )
+    if _regular_file_generation_identity(identity_podspec) != identity_podspec_identity:
+        raise ProvenanceError(
+            "private identity podspec changed while the whole input generation was snapshotted"
+        )
+
+    snapshot = (
+        ("podfile_lock", podfile_lock_identity),
+        ("security_podspec", security_podspec_identity),
+        ("security_build", security_build_snapshot),
+        ("identity_podspec", identity_podspec_identity),
+        ("identity_sources", identity_sources_snapshot),
     )
+    return snapshot
 
 
 def build_record(
@@ -385,6 +449,7 @@ def build_record(
             "private build inputs changed while the provenance record was constructed"
         )
     return record
+
 
 def _record_text(record: dict[str, str]) -> str:
     if set(record) != set(_RECORD_KEYS):
@@ -433,15 +498,21 @@ def read_record(path: Path) -> dict[str, str]:
     try:
         descriptor = os.open(path, flags)
     except OSError as error:
-        raise ProvenanceError("private provenance record is unavailable or unsafe") from error
+        raise ProvenanceError(
+            "private provenance record is unavailable or unsafe"
+        ) from error
     try:
         metadata = os.fstat(descriptor)
         if not stat.S_ISREG(metadata.st_mode):
             raise ProvenanceError("private provenance record is not a regular file")
         if hasattr(os, "getuid") and metadata.st_uid != os.getuid():
-            raise ProvenanceError("private provenance record is not owned by the current user")
+            raise ProvenanceError(
+                "private provenance record is not owned by the current user"
+            )
         if stat.S_IMODE(metadata.st_mode) & 0o077:
-            raise ProvenanceError("private provenance record permissions are too broad")
+            raise ProvenanceError(
+                "private provenance record permissions are too broad"
+            )
         chunks: list[bytes] = []
         while True:
             chunk = os.read(descriptor, 64 * 1024)
@@ -488,7 +559,9 @@ def _paths_from_arguments(arguments: argparse.Namespace) -> dict[str, Path]:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Nembra Capture private Tuya input provenance")
+    parser = argparse.ArgumentParser(
+        description="Nembra Capture private Tuya input provenance"
+    )
     parser.add_argument("mode", choices=("snapshot", "verify"))
     parser.add_argument("--lockfile", required=True)
     parser.add_argument("--security-podspec", required=True)
