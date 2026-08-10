@@ -1,0 +1,97 @@
+name: Materialize Capture Offscreen Tuya Session Fence a267
+
+on:
+  push:
+    branches:
+      - red/v14-capture-a267-offscreen-tuya-session-fence-sol
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: red/v14-capture-a267-offscreen-tuya-session-fence-sol
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Materialize bounded off-screen authority repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='a267d0b6d16c1fee881dd23bc2ca5abc15baf9fe'
+          git merge-base --is-ancestor "$parent" HEAD
+          git diff --quiet "$parent" HEAD -- \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkOffscreenAuthoritySourceTests.swift
+          python3 -m py_compile .github/materializers/offscreen-tuya-session-a267.py
+          python3 .github/materializers/offscreen-tuya-session-a267.py
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkOffscreenAuthoritySourceTests.swift
+          git diff --check
+
+      - name: Run focused off-screen lifecycle regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaSecureLinkOffscreenAuthoritySourceTests
+
+      - name: Verify no hidden official transport or off-screen acceptance promotion
+        shell: bash
+        run: |
+          set -euo pipefail
+          source='NembraApp/App/NembraCaptureEntrypoint.swift'
+          grep -Fq 'private var secureLinkViewGeneration = UUID()' "$source"
+          grep -Fq 'secureLinkViewGeneration = UUID()' "$source"
+          grep -Fq 'let viewGeneration = secureLinkViewGeneration' "$source"
+          grep -Fq 'view_exit_before_official_connect' "$source"
+          grep -Fq 'view_exit_during_acceptance_seal' "$source"
+          grep -Fq 'secure_link_view_exit_retired_official_authority' "$source"
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          b0=s.index('private func beginOfficialConnection(candidate: Candidate)')
+          b1=s.index('private func authenticated(token:', b0)
+          begin=s[b0:b1]
+          assert begin.rindex('self.secureLinkViewGeneration == viewGeneration') < begin.index('newDriver.connect(')
+          c0=s.index('func abandonCorrelationForViewExit()')
+          c1=s.index('var privateConfig: Bool', c0)
+          cleanup=s[c0:c1]
+          assert cleanup.index('secureLinkViewGeneration = UUID()') < cleanup.index('guard processCorrelationLease')
+          for forbidden in ('disconnectBLE', 'publishDps', 'queryDps', 'writeValue'):
+              assert forbidden not in cleanup
+          w0=s.index('private func startWatchdog(token: TuyaReadOnlyConnectionToken)')
+          w1=s.index('private func recordObservedTransportLoss', w0)
+          watchdog=s[w0:w1]
+          seal=watchdog.index('sealAcceptedObservation(for: token)')
+          fence=watchdog.index('view_exit_during_acceptance_seal', seal)
+          export=watchdog.index('self.sealedAcceptedExport = self.makeExport', fence)
+          assert seal < fence < export
+          PY
+
+      - name: Publish clean two-path successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='a267d0b6d16c1fee881dd23bc2ca5abc15baf9fe'
+          rm .github/materializers/offscreen-tuya-session-a267.py
+          rm .github/workflows/materialize-capture-offscreen-tuya-session-a267.yml
+          git reset --soft "$parent"
+          git reset
+          git add \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkOffscreenAuthoritySourceTests.swift
+          git diff --cached --check
+          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" = 2
+          git diff --cached --name-only | grep -Fxq 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          git diff --cached --name-only | grep -Fxq 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkOffscreenAuthoritySourceTests.swift'
+          git config user.name 'nembra-sol'
+          git config user.email 'nembra-sol@users.noreply.github.com'
+          git commit -m 'fix(capture): fence official Tuya authority on Secure Link exit'
+          git push --force-with-lease origin HEAD:red/v14-capture-a267-offscreen-tuya-session-fence-sol
