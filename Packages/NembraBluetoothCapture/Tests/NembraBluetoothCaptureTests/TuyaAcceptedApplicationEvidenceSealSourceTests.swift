@@ -12,21 +12,22 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
             from: "private func startWatchdog",
             to: "private func recordObservedTransportLoss"
         )
-        let body = String(watchdog)
+        let ready = try section(
+            in: String(watchdog),
+            from: "case .readyForStationaryMapping:",
+            to: "case .blocked:"
+        )
+        let body = String(ready)
 
         guard let noInflight = body.range(of: "guard self.applicationUpdateAdmissionsInFlight == 0"),
               let closeCut = body.range(of: "self.acceptanceCutIsClosed = true", range: noInflight.upperBound..<body.endIndex),
               let frozenPrefix = body.range(of: "let acceptedEventPrefixAtCut = self.events", range: closeCut.upperBound..<body.endIndex),
               let packageSeal = body.range(of: "try await sessionLedger.sealAcceptedObservation(for: token)", range: frozenPrefix.upperBound..<body.endIndex),
-              let publishPrefix = body.range(of: "self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut", range: packageSeal.upperBound..<body.endIndex) else {
+              body.range(of: "self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut", range: packageSeal.upperBound..<body.endIndex) != nil else {
             Issue.record("Canonical acceptance must close admission, freeze the quiescent app prefix before the sealing await, then publish that exact prefix after package seal succeeds.")
             throw SourceContractError.sectionMissing
         }
 
-        #expect(noInflight.lowerBound < closeCut.lowerBound)
-        #expect(closeCut.lowerBound < frozenPrefix.lowerBound)
-        #expect(frozenPrefix.lowerBound < packageSeal.lowerBound)
-        #expect(packageSeal.lowerBound < publishPrefix.lowerBound)
         #expect(!body.contains("self.sealedAcceptedEventPrefix = self.events"))
     }
 
@@ -43,14 +44,11 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         guard let cutGuard = body.range(of: "guard !acceptanceCutIsClosed"),
               let increment = body.range(of: "applicationUpdateAdmissionsInFlight += 1", range: cutGuard.upperBound..<body.endIndex),
               let decrement = body.range(of: "defer { applicationUpdateAdmissionsInFlight -= 1 }", range: increment.upperBound..<body.endIndex),
-              let mutation = body.range(of: "try await sessionLedger.recordApplicationUpdate", range: decrement.upperBound..<body.endIndex) else {
+              body.range(of: "try await sessionLedger.recordApplicationUpdate", range: decrement.upperBound..<body.endIndex) != nil else {
             Issue.record("Application evidence admission must be cut-gated and tracked across its async package mutation.")
             throw SourceContractError.sectionMissing
         }
 
-        #expect(cutGuard.lowerBound < increment.lowerBound)
-        #expect(increment.lowerBound < decrement.lowerBound)
-        #expect(decrement.lowerBound < mutation.lowerBound)
         #expect(body.contains("application_update_after_acceptance_cut_ignored"))
     }
 
@@ -67,14 +65,10 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         guard let timeoutGate = body.range(of: "if self.applicationUpdateAdmissionsInFlight == 0,"),
               let ageGate = body.range(of: "(self.canonicalObservedAgeSeconds ?? 0) > 60", range: timeoutGate.upperBound..<body.endIndex),
               let noApplication = body.range(of: "self.applicationUpdateCount == 0", range: ageGate.upperBound..<body.endIndex),
-              let terminal = body.range(of: "try await sessionLedger.markApplicationObservationTimedOut", range: noApplication.upperBound..<body.endIndex) else {
+              body.range(of: "try await sessionLedger.markApplicationObservationTimedOut", range: noApplication.upperBound..<body.endIndex) != nil else {
             Issue.record("The no-application terminal must require zero in-flight application admissions before it can retire the generation.")
             throw SourceContractError.sectionMissing
         }
-
-        #expect(timeoutGate.lowerBound < ageGate.lowerBound)
-        #expect(ageGate.lowerBound < noApplication.lowerBound)
-        #expect(noApplication.lowerBound < terminal.lowerBound)
     }
 
     @Test("accepted export fails closed onto the frozen prefix instead of the mutable live event log")
