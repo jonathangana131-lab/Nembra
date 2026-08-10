@@ -62,6 +62,7 @@ jobs:
           from pathlib import Path
           app = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
           recovery = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteRecoverySourceTests.swift').read_text()
+          apple_test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAppleAccountLoginSourceTests.swift').read_text()
           login = 'test.canRestartFromFreshOFF1 && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn)'
           membership = 'test.canRestartFromFreshOFF1 && test.sdkAccountLoggedIn && (!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized)'
           assert login in app and membership in app
@@ -69,8 +70,11 @@ jobs:
           assert 'phase == .failed && currentConnectionToken == nil && localBLESettlementToken == nil && driver == nil' in app
           assert 'procedureIdentifier == Self.fieldProcedureIdentifier' in Path('NembraApp/App/NembraCaptureBuildIdentity.swift').read_text()
           assert 'BUILT_PROCEDURE_IDENTIFIER' in Path('scripts/field/install_one_time_capture.command').read_text()
-          assert 'TuyaAppleAccountLoginSourceTests' in Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAppleAccountLoginSourceTests.swift').read_text() or 'Sign in with Apple' in app
-          assert 'ASAuthorizationAppleIDCredential' in app
+          assert 'struct TuyaAppleAccountLoginSourceTests' in apple_test
+          assert 'SignInWithAppleButton(.signIn)' in app
+          assert 'credential.identityToken' in app
+          assert 'loginByAuth2(' in app
+          assert 'withType: "ap"' in app
           assert 'Use a different Tuya account' in app
           PY
           git diff --check
