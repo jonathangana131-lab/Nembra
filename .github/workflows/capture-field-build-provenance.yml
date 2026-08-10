@@ -207,6 +207,9 @@ jobs:
           procedure='ES80-AUTHENTICATED-STATIONARY-v1'
           label="capture-v14-${sha:0:12}"
           rm -rf /tmp/NembraCaptureProvenanceDerived
+          build_log="$RUNNER_TEMP/nembra-capture-provenance-xcodebuild.log"
+          rm -f -- "$build_log"
+          set +e
           xcodebuild \
             -project NembraCapture.xcodeproj \
             -scheme 'Nembra Capture' \
@@ -219,7 +222,22 @@ jobs:
             NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" \
             NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$dependency_sha" \
             INFOPLIST_KEY_NembraCaptureProcedureIdentifier="$procedure" \
-            build
+            build 2>&1 | tee "$build_log"
+          build_status="${PIPESTATUS[0]}"
+          set -e
+          if [[ "$build_status" != "0" ]]; then
+            /usr/bin/python3 -I - "$build_log" <<'PY'
+          import sys
+          from pathlib import Path
+
+          lines = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace").splitlines()
+          errors = [line.strip() for line in lines if "error:" in line.lower()]
+          for line in errors[-12:]:
+              safe = line.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error title=Capture stamped Simulator build::{safe}")
+          PY
+            exit "$build_status"
+          fi
 
           plist='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
           test -f "$plist"
