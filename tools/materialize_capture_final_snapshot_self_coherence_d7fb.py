@@ -20,6 +20,53 @@ if source.count(old_path_rendezvous) != 1:
     raise SystemExit(f"expected one regressed pathname rendezvous, found {source.count(old_path_rendezvous)}")
 source = source.replace(old_path_rendezvous, new_path_rendezvous)
 
+old_reader_signature = "def _read_stable_regular_file_sha256(path: Path) -> tuple[os.stat_result, str]:"
+new_reader_signature = "def _read_stable_regular_file_sha256(\n    path: Path,\n    *,\n    expected_identity: tuple[int, ...] | None = None,\n) -> tuple[os.stat_result, str]:"
+if source.count(old_reader_signature) != 1:
+    raise SystemExit(f"expected one stable-reader signature, found {source.count(old_reader_signature)}")
+source = source.replace(old_reader_signature, new_reader_signature)
+
+old_regular_guard = '''        if not stat.S_ISREG(before.st_mode):
+            raise ProvenanceError(f"required private build input is not a regular file: {path.name}")
+
+        digest = hashlib.sha256()
+'''
+new_regular_guard = '''        if not stat.S_ISREG(before.st_mode):
+            raise ProvenanceError(f"required private build input is not a regular file: {path.name}")
+        if expected_identity is not None and _stat_identity(before) != expected_identity:
+            raise ProvenanceError(
+                f"private build input descriptor does not match enumerated identity: {path.name}"
+            )
+
+        digest = hashlib.sha256()
+'''
+if source.count(old_regular_guard) != 1:
+    raise SystemExit(f"expected one stable-reader regular guard, found {source.count(old_regular_guard)}")
+source = source.replace(old_regular_guard, new_regular_guard)
+
+old_fingerprint = '''def _file_fingerprint(path: Path) -> str:
+    metadata, content_sha256 = _read_stable_regular_file_sha256(path)
+'''
+new_fingerprint = '''def _file_fingerprint(
+    path: Path,
+    *,
+    expected_identity: tuple[int, ...] | None = None,
+) -> str:
+    metadata, content_sha256 = _read_stable_regular_file_sha256(
+        path,
+        expected_identity=expected_identity,
+    )
+'''
+if source.count(old_fingerprint) != 1:
+    raise SystemExit(f"expected one file fingerprint definition, found {source.count(old_fingerprint)}")
+source = source.replace(old_fingerprint, new_fingerprint)
+
+old_tree_fingerprint_call = "                fingerprint = _file_fingerprint(path)"
+new_tree_fingerprint_call = "                fingerprint = _file_fingerprint(path, expected_identity=identity)"
+if source.count(old_tree_fingerprint_call) != 1:
+    raise SystemExit(f"expected one tree file fingerprint call, found {source.count(old_tree_fingerprint_call)}")
+source = source.replace(old_tree_fingerprint_call, new_tree_fingerprint_call)
+
 tree_start = source.index("def _tree_identity_snapshot(")
 record_start = source.index("def _record_identity_snapshot(", tree_start)
 old_tree = source[tree_start:record_start]
@@ -133,10 +180,16 @@ new_record = '''def _record_identity_snapshot(
 '''
 source = source[:record_start] + new_record + source[build_start:]
 
-if "_stat_identity(current_path) != _stat_identity(after)" not in source:
-    raise SystemExit("full pathname identity rendezvous was not restored")
-if "record_snapshot_confirmed = _record_identity_snapshot" not in source:
-    raise SystemExit("whole-record outer confirmation fence regressed")
+required = [
+    "_stat_identity(current_path) != _stat_identity(after)",
+    "expected_identity: tuple[int, ...] | None = None",
+    "private build input descriptor does not match enumerated identity",
+    "_file_fingerprint(path, expected_identity=identity)",
+    "record_snapshot_confirmed = _record_identity_snapshot",
+]
+missing = [item for item in required if item not in source]
+if missing:
+    raise SystemExit(f"provenance repair lost required existing/new fences: {missing}")
 if old_tree == new_tree or old_record == new_record:
     raise SystemExit("materializer produced no effective self-coherence repair")
 
