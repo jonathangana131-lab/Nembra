@@ -1,0 +1,76 @@
+name: Materialize Capture Failed Diagnostics C38
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-failed-diagnostics-c38-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-failed-diagnostics-c38-sol
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Import reviewed two-path donor onto exact product
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "c38cb8f4c66ec1e1e8f6cdbe7fb77955daf18b5e"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/materialize-capture-failed-diagnostics-c38-sol.yml"
+          git fetch --no-tags origin fbb6bdca208dc3f82ac72c0ca23aa6861135a65b
+          git diff de74365b94c01720e01aabf39b76c7e4b316c47d fbb6bdca208dc3f82ac72c0ca23aa6861135a65b -- \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureFailedDiagnosticsProductSourceTests.swift \
+            > /tmp/failed-diagnostics.patch
+          git apply --check /tmp/failed-diagnostics.patch
+          git apply /tmp/failed-diagnostics.patch
+
+      - name: Reverify product and authority contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          recovery = source[source.index('    private var failureRecoveryContextPanel: some View {'):source.index('    private var failurePanel: some View {')]
+          terminal = source[source.index('    private var failurePanel: some View {'):source.index('    private var completionPanel: some View {')]
+          diagnostics = source[source.index('    private var failureDiagnosticsControls: some View {'):source.index('    private var sdkAuthorizationPanel: some View {')]
+          prepare = source[source.index('    func prepareExport() {'):source.index('    private func abandonPackageCorrelation()', source.index('    func prepareExport() {'))]
+          for panel, name in [(recovery, 'recovery'), (terminal, 'terminal')]:
+              if panel.count('failureDiagnosticsControls') != 1:
+                  raise SystemExit(f'{name} panel does not consume exactly one diagnostics primitive')
+          for token in ['test.prepareExport()', 'test.exportData', 'ShareLink', 'Share diagnostics', 'Prepare diagnostics', 'not an accepted Capture artifact']:
+              if token not in diagnostics:
+                  raise SystemExit(f'failed diagnostics primitive missing: {token}')
+          for token in ['if phase == .accepted', 'sealedAcceptedExport', 'makeExport(', 'phase: phase']:
+              if token not in prepare:
+                  raise SystemExit(f'accepted/failed export authority split missing: {token}')
+          for token in ['CAPTURE COMPLETE', 'Ready for analysis', 'Share Capture']:
+              if token in diagnostics:
+                  raise SystemExit(f'failed diagnostics falsely claims accepted state: {token}')
+          print('Capture failed diagnostics current reanchor: PASS')
+          PY
+          git diff --check
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureFailedDiagnosticsProductSourceTests.swift
+
+      - name: Collapse helper into current product donor
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-sol-materializer'
+          git config user.email 'actions@users.noreply.github.com'
+          git rm .github/workflows/materialize-capture-failed-diagnostics-c38-sol.yml
+          git add -A
+          git diff --cached --check
+          git commit -m 'feat(capture): expose sanitized failed-attempt diagnostics'
+          git push origin HEAD:fix/v14-capture-failed-diagnostics-c38-sol
