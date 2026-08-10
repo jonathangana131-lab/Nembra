@@ -73,32 +73,33 @@ def apply() -> None:
     source = ENTRYPOINT.read_text(encoding="utf-8")
     if source.count(OLD) != 1:
         raise SystemExit(f"SmartLife dpsUpdate boundary changed: expected one raw block, found {source.count(OLD)}")
-    if "private static func redactApplicationSecrets(_ object: Any) -> Any" in source:
+    if NEW in source or "private static func redactApplicationSecrets(_ object: Any) -> Any" in source:
         raise SystemExit("application secret redaction is already present; re-inspect current product")
     ENTRYPOINT.write_text(source.replace(OLD, NEW, 1), encoding="utf-8")
 
 
 def verify() -> None:
     source = ENTRYPOINT.read_text(encoding="utf-8")
-    start = source.index("@MainActor\nprivate final class SmartLifeDriver")
-    end = source.index("#endif\n\nprivate enum AppleAccountAuthorizationError", start)
-    body = source[start:end]
-    required = (
-        'private static let secretKeyFragments = ["localkey", "accesstoken", "refreshtoken", "seckey", "authkey"]',
-        "private static func redactApplicationSecrets(_ object: Any) -> Any",
-        "key.lowercased().filter { $0.isLetter || $0.isNumber }",
-        "array.map(redactApplicationSecrets)",
-        'sanitized[keyString] = "<redacted>"',
-        "String(describing: Self.redactApplicationSecrets(value))",
-        "onApplicationUpdate?(sanitized)",
-    )
-    for token in required:
-        if token not in body:
-            raise SystemExit(f"application secret redaction token missing: {token}")
-    if "sanitized[String(describing: key)] = String(describing: value)" in body:
+    if source.count(NEW) != 1:
+        raise SystemExit(f"exact application secret-custody repair is not unique: {source.count(NEW)}")
+    if OLD in source:
         raise SystemExit("raw dpsUpdate string projection still bypasses redaction")
     if not TEST.exists():
         raise SystemExit("application secret-redaction source regression is missing")
+
+    test = TEST.read_text(encoding="utf-8")
+    required_test_tokens = (
+        "applicationUpdateCannotRetainCredentialShapedValues",
+        "redactApplicationSecrets",
+        "array.map(redactApplicationSecrets)",
+        'sanitized[keyString] = \\"<redacted>\\"',
+        "onApplicationUpdate?(sanitized)",
+        "secretsRedacted: true",
+        "tuya_application_update",
+    )
+    for token in required_test_tokens:
+        if token not in test:
+            raise SystemExit(f"application secret-redaction regression does not pin: {token}")
 
 
 if __name__ == "__main__":
