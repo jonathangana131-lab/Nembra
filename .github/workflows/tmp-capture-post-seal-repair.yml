@@ -3,14 +3,13 @@ name: Temporary Capture Post-Seal Repair
 on:
   push:
     branches:
-      - agent/capture-post-seal-transport-recheck-sol
+      - "agent/capture-post-seal-transport-recheck-sol"
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,13 +21,13 @@ jobs:
           set -euo pipefail
           python3 <<'PY'
           from pathlib import Path
-          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           source = path.read_text()
-          needle = '''                        try await sessionLedger.sealAcceptedObservation(for: token)
+          needle = """                        try await sessionLedger.sealAcceptedObservation(for: token)
                         guard self.buildIdentity.isAuthoritativeFieldBuild,
                               self.accountIdentityLeaseIsAuthorized else {
-'''
-          replacement = '''                        try await sessionLedger.sealAcceptedObservation(for: token)
+"""
+          replacement = """                        try await sessionLedger.sealAcceptedObservation(for: token)
                         guard self.currentConnectionToken == token,
                               self.driver === driver else {
                             self.currentConnectionToken = nil
@@ -36,9 +35,9 @@ jobs:
                             self.sdkLocalBLEOnline = false
                             self.driver = nil
                             self.phase = .failed
-                            self.message = "Authenticated-session ownership changed while canonical acceptance was sealing. Restart from OFF1; no accepted artifact was published."
-                            self.log("session_owner_changed_during_acceptance_seal", [
-                                "generation": String(token.diagnosticGeneration)
+                            self.message = \"Authenticated-session ownership changed while canonical acceptance was sealing. Restart from OFF1; no accepted artifact was published.\"
+                            self.log(\"session_owner_changed_during_acceptance_seal\", [
+                                \"generation\": String(token.diagnosticGeneration)
                             ])
                             return
                         }
@@ -48,18 +47,18 @@ jobs:
                             self.localBLESettlementToken = nil
                             self.driver = nil
                             self.phase = .failed
-                            self.message = "Tuya local-BLE authority was no longer current after canonical sealing. Restart from OFF1; the sealed package chronology remains diagnostic only."
-                            self.log("sdk_local_ble_offline_after_acceptance_seal", [
-                                "generation": String(token.diagnosticGeneration)
+                            self.message = \"Tuya local-BLE authority was no longer current after canonical sealing. Restart from OFF1; the sealed package chronology remains diagnostic only.\"
+                            self.log(\"sdk_local_ble_offline_after_acceptance_seal\", [
+                                \"generation\": String(token.diagnosticGeneration)
                             ])
                             return
                         }
                         guard self.buildIdentity.isAuthoritativeFieldBuild,
                               self.accountIdentityLeaseIsAuthorized else {
-'''
+"""
           count = source.count(needle)
           if count != 1:
-              raise SystemExit(f'expected exactly one acceptance-seal anchor, found {count}')
+              raise SystemExit(f"expected exactly one acceptance-seal anchor, found {count}")
           path.write_text(source.replace(needle, replacement, 1))
           PY
           rm .github/workflows/tmp-capture-post-seal-repair.yml
