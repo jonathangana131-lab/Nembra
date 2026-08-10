@@ -1,0 +1,110 @@
+name: Apply Capture procedure rendezvous repair
+
+on:
+  pull_request:
+    types: [synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'adversarial/v14-capture-procedure-rendezvous-red-sol'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Reconcile flagship and apply exact procedure rendezvous
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-go-bot'
+          git config user.email 'nembra-go-bot@users.noreply.github.com'
+          git fetch origin integration/v14-capture-final-stationary-convergence-sol
+          flagship="$(git rev-parse FETCH_HEAD)"
+          git merge --no-edit "$flagship"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          P = "ES80-AUTHENTICATED-STATIONARY-v1"
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              s = p.read_text(encoding='utf-8')
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one match, found {count}: {old[:100]!r}')
+              p.write_text(s.replace(old, new, 1), encoding='utf-8')
+
+          replace_once(
+              'NembraApp/App/NembraCaptureBuildIdentity.swift',
+              '    static let tuyaDependencyLockSHA256InfoKey = "NembraCaptureTuyaDependencyLockSHA256"\n',
+              '    static let tuyaDependencyLockSHA256InfoKey = "NembraCaptureTuyaDependencyLockSHA256"\n    static let fieldProcedureIdentifier = "' + P + '"\n'
+          )
+
+          replace_once(
+              'NembraApp/App/NembraCaptureEntrypoint.swift',
+              '        let tuyaDependencyLockSHA256: String\n        let tuyaDeviceID: String\n',
+              '        let tuyaDependencyLockSHA256: String\n        let procedureIdentifier: String\n        let tuyaDeviceID: String\n'
+          )
+          replace_once(
+              'NembraApp/App/NembraCaptureEntrypoint.swift',
+              '    var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }\n    var sdkAccountLoggedIn: Bool',
+              '    var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }\n    var fieldProcedureIdentifier: String { NembraCaptureBuildIdentity.fieldProcedureIdentifier }\n    var sdkAccountLoggedIn: Bool'
+          )
+          replace_once(
+              'NembraApp/App/NembraCaptureEntrypoint.swift',
+              '            schemaVersion: 9,\n            purpose: "Sanitized Tuya authenticated read-only stationary preflight",\n',
+              '            schemaVersion: 10,\n            purpose: "Sanitized Tuya authenticated read-only stationary preflight",\n'
+          )
+          replace_once(
+              'NembraApp/App/NembraCaptureEntrypoint.swift',
+              '            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,\n            tuyaDeviceID: deviceID,\n',
+              '            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,\n            procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier,\n            tuyaDeviceID: deviceID,\n'
+          )
+          replace_once(
+              'NembraApp/App/NembraCaptureEntrypoint.swift',
+              '            LabeledContent("Source commit", value: test.fieldBuildSourceCommitSHA)\n            LabeledContent("Private SDK config", value: test.privateConfig ? "Present" : "Missing")\n',
+              '            LabeledContent("Source commit", value: test.fieldBuildSourceCommitSHA)\n            LabeledContent("Procedure", value: test.fieldProcedureIdentifier)\n            LabeledContent("Private SDK config", value: test.privateConfig ? "Present" : "Missing")\n'
+          )
+
+          replace_once(
+              'docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md',
+              '# Nembra Capture P0 — secure-link gate\n\n',
+              '# Nembra Capture P0 — secure-link gate\n\nPROCEDURE_ID: `' + P + '`\n\n'
+          )
+
+          replace_once(
+              'scripts/field/install_one_time_capture.command',
+              'EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"\n',
+              'PROCEDURE_ID="' + P + '"\nEXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"\n'
+          )
+          replace_once(
+              'scripts/field/install_one_time_capture.command',
+              'say "SDK-INTEGRATED CAPTURE LAUNCHED"\nprintf \'%s\\n\' \\\n',
+              'say "SDK-INTEGRATED CAPTURE LAUNCHED"\nprintf \'%s\\n\' \\\n    "Field procedure: $PROCEDURE_ID" \\\n'
+          )
+
+          identity = Path('NembraApp/App/NembraCaptureBuildIdentity.swift').read_text(encoding='utf-8')
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          runbook = Path('docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md').read_text(encoding='utf-8')
+          installer = Path('scripts/field/install_one_time_capture.command').read_text(encoding='utf-8')
+          for src in (identity, app, runbook, installer):
+              if P not in src:
+                  raise SystemExit('procedure rendezvous incomplete')
+          assert 'schemaVersion: 10' in app
+          assert 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier' in app
+          PY
+
+          rm -- .github/workflows/apply-capture-procedure-rendezvous-red.yml
+          git diff --check
+          git add -A
+          git diff --cached --exit-code && { echo 'No procedure repair delta'; exit 1; }
+          git commit -m 'fix(capture): pin canonical stationary procedure'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
