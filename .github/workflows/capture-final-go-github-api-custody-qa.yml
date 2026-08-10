@@ -1,0 +1,49 @@
+name: Capture Final GO GitHub API Custody QA
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-product-authority-sol
+
+permissions:
+  contents: write
+
+jobs:
+  capture-product-authority-patch:
+    if: github.event.head_commit.message == 'chore: invoke Capture product-authority patch via known workflow'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: agent/v14-capture-product-authority-sol
+          fetch-depth: 0
+
+      - name: Apply deterministic Capture product-authority repair
+        run: python3 scripts/ci/v14_capture_product_authority_patch.py
+
+      - name: Verify repaired authority surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -F 'func confirmCorrelatedTarget()' "$APP"
+          grep -F 'targetCorrelationOperatorConfirmed = true' "$APP"
+          grep -F 'var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }' "$APP"
+          grep -F 'PassiveBluetoothPowerCycleObservationSession' "$APP"
+          ! grep -F 'CBCentralManagerDelegate' "$APP"
+          ! grep -F 'central.stopScan' "$APP"
+          ! grep -F 'private func updateCandidate' "$APP"
+
+      - name: Commit product repair and retire all temporary helpers
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm scripts/ci/v14_capture_product_authority_patch.py
+          git rm .github/workflows/v14-capture-product-authority-patch.yml
+          git rm .github/workflows/capture-final-go-github-api-custody-qa.yml
+          git config user.name 'nembra-sol-worker'
+          git config user.email 'actions@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git commit -m 'Capture: require explicit target confirmation and one discovery owner'
+          git push origin HEAD:agent/v14-capture-product-authority-sol
