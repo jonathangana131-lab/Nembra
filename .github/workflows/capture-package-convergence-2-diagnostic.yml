@@ -1,0 +1,88 @@
+name: Capture Package Convergence 2 Diagnostic
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/capture-package-convergence-2-diagnostic.yml'
+      - 'Packages/NembraBluetoothCapture/**'
+
+permissions:
+  contents: read
+
+jobs:
+  package-differential:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify exact head
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          test -z "$(git status --porcelain)"
+
+      - name: Run full Capture package and verify 58 to 51 convergence
+        id: package
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/capture-package-convergence-2.log"
+          set +e
+          (cd Packages/NembraBluetoothCapture && swift test) 2>&1 | tee "$log"
+          status="${PIPESTATUS[0]}"
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          /usr/bin/python3 -I - "$log" <<'PY'
+          import re, sys
+          from collections import Counter
+          from pathlib import Path
+
+          lines = Path(sys.argv[1]).read_text(errors='replace').splitlines()
+          files = Counter()
+          total = 0
+          for line in lines:
+              match = re.search(r'at ([A-Za-z0-9_]+\.swift):\d+:\d+:', line)
+              if match and ('recorded an issue' in line or 'Caught error' in line):
+                  files[match.group(1)] += 1
+                  total += 1
+
+          targeted = {
+              'PassiveBluetoothExperimentOneAppAuthorityWiringTests.swift',
+              'TuyaAppChronologyIntegrityTerminalSourceTests.swift',
+              'TuyaMidSeriesBLEOwnershipSourceTests.swift',
+          }
+          print(f'CONVERGENCE_ISSUES {total}')
+          for name, count in files.most_common():
+              print(f'PACKAGE_ISSUES {count:3d} {name}')
+
+          dirty = {name: files[name] for name in targeted if files[name]}
+          if dirty:
+              print(f'::error::Second-convergence target files still report issues: {dirty}')
+              raise SystemExit(1)
+          if total != 51:
+              print(f'::error::Expected exact current differential 58 -> 51 issues; observed {total}')
+              raise SystemExit(1)
+          PY
+
+      - name: Upload exact package log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: capture-package-convergence-2-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/capture-package-convergence-2.log
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Preserve global package failure truth
+        env:
+          PACKAGE_STATUS: ${{ steps.package.outputs.status }}
+        run: |
+          echo "The 51-issue differential is acceptance evidence only if the prior step passed."
+          echo "Remain red while swift test itself is nonzero; reduced debt is not package green."
+          test "$PACKAGE_STATUS" = 0
