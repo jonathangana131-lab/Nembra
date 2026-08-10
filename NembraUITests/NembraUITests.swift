@@ -180,8 +180,19 @@ final class NembraUITests: XCTestCase {
         assertEnergyRailValue(
             containing: "Unavailable",
             in: app,
-            message: "Disconnected cached power must fail closed instead of manufacturing a live zero-watt reading."
+            message: "Disconnected cached aggregate power must not manufacture a source-owned zero-watt reading."
         )
+
+        let reconnect = app.buttons["Reconnect scooter"]
+        if reconnect.waitForExistence(timeout: 2) {
+            reconnect.tap()
+            XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 4))
+            assertEnergyRailValue(
+                containing: "Unavailable",
+                in: app,
+                message: "Reconnect alone must not mint a fresh Simulator power receipt from cached aggregate watts."
+            )
+        }
 
         XCTAssertFalse(app.staticTexts["READY"].exists)
         XCTAssertFalse(app.staticTexts["RIDING"].exists)
@@ -222,9 +233,16 @@ final class NembraUITests: XCTestCase {
 
         let vehicleStatus = app.descendants(matching: .any)["dashboard.vehicle-status"]
         XCTAssertTrue(vehicleStatus.waitForExistence(timeout: 2))
+        let unavailableVehicleData = app.descendants(matching: .any).matching(
+            NSPredicate(
+                format: "label == %@ AND value == %@",
+                "Vehicle data",
+                "No confirmed scooter telemetry yet"
+            )
+        ).firstMatch
         XCTAssertTrue(
-            app.staticTexts["WAITING FOR DATA"].waitForExistence(timeout: 2),
-            "Cold disconnected launch must expose the no-telemetry vehicle state."
+            unavailableVehicleData.waitForExistence(timeout: 2),
+            "Cold disconnected launch must expose the semantic no-telemetry accessibility contract."
         )
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
