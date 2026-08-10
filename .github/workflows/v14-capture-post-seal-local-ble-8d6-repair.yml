@@ -1,0 +1,117 @@
+name: V14 Capture Post-Seal Local-BLE 8d6 Repair
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-post-seal-local-ble-8d6-sol
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: "${{ github.actor != 'github-actions[bot]' }}"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-post-seal-local-ble-8d6-sol
+          fetch-depth: 0
+
+      - name: Verify exact repair ancestry and source blob
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 8d6ac2d94adfc9096129e7abf94701d4ac3b366a HEAD
+          test "$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)" = "21560f929a6c5177b15ec4b60e7271a2e9c0a0d1"
+
+      - name: Patch exact post-seal acceptance boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text()
+          anchor = "                        self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut\n"
+          insertion = (
+              "                        guard let driver = self.driver else {\n"
+              "                            self.currentConnectionToken = nil\n"
+              "                            self.localBLESettlementToken = nil\n"
+              "                            self.sdkLocalBLEOnline = false\n"
+              "                            self.phase = .failed\n"
+              "                            self.message = \"Tuya local-BLE authority became unavailable after canonical acceptance sealed. Restart from OFF1; no disconnect time is inferred.\"\n"
+              "                            self.log(\"sdk_local_ble_authority_missing_after_acceptance_seal\", [\n"
+              "                                \"generation\": String(token.diagnosticGeneration)\n"
+              "                            ])\n"
+              "                            return\n"
+              "                        }\n"
+              "                        let postSealLocalBLEOnline = driver.isLocallyConnected(uuid: self.tuyaUUID)\n"
+              "                        self.sdkLocalBLEOnline = postSealLocalBLEOnline\n"
+              "                        guard postSealLocalBLEOnline else {\n"
+              "                            self.currentConnectionToken = nil\n"
+              "                            self.localBLESettlementToken = nil\n"
+              "                            self.driver = nil\n"
+              "                            self.phase = .failed\n"
+              "                            self.message = \"Tuya local-BLE authority was no longer current after canonical acceptance sealed. Restart from OFF1; no disconnect time is inferred.\"\n"
+              "                            self.log(\"sdk_local_ble_not_current_after_acceptance_seal\", [\n"
+              "                                \"generation\": String(token.diagnosticGeneration)\n"
+              "                            ])\n"
+              "                            return\n"
+              "                        }\n"
+          )
+          if source.count(anchor) != 1:
+              raise SystemExit(f"expected exactly one accepted-prefix anchor, found {source.count(anchor)}")
+          seal = source.index("try await sessionLedger.sealAcceptedObservation(for: token)")
+          source_authority = source.index("source_authority_changed_during_acceptance_seal", seal)
+          anchor_position = source.index(anchor, source_authority)
+          if not seal < source_authority < anchor_position:
+              raise SystemExit("post-seal source-authority/accepted-prefix ordering changed")
+          path.write_text(source.replace(anchor, insertion + anchor, 1))
+          PY
+
+      - name: Verify adversarial source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPostSealTransportAuthoritySourceTests.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          start = source.index("private func startWatchdog")
+          end = source.index("private func recordObservedTransportLoss", start)
+          body = source[start:end]
+          seal_text = "try await sessionLedger.sealAcceptedObservation(for: token)"
+          seal = body.index(seal_text)
+          recheck = body.index("driver.isLocallyConnected(uuid: self.tuyaUUID)", seal)
+          freeze = body.index("self.sealedAcceptedExport = self.makeExport(", recheck)
+          accepted = body.index("self.phase = .accepted", freeze)
+          between = body[seal + len(seal_text):recheck]
+          assert "await " not in between
+          assert seal < recheck < freeze < accepted
+          post = body[seal:freeze]
+          for forbidden in (
+              "sessionLedger.endConnection",
+              "markAuthenticationFailed",
+              "markSourceAuthorityInvalidated",
+              "markObservationContinuityInvalidated",
+              "markInternalLifecycleFailure",
+          ):
+              assert forbidden not in post, forbidden
+          assert "self.sdkLocalBLEOnline = postSealLocalBLEOnline" in post
+          assert "sdk_local_ble_not_current_after_acceptance_seal" in post
+          PY
+          git diff --check
+
+      - name: Commit repaired product tree and retire one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/v14-capture-post-seal-local-ble-8d6-repair.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift .github/workflows/v14-capture-post-seal-local-ble-8d6-repair.yml
+          git diff --cached --check
+          git commit -m 'fix(capture): recheck local BLE after canonical seal'
+          git push origin HEAD:repair/v14-capture-post-seal-local-ble-8d6-sol
