@@ -1482,17 +1482,28 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
         var redacted: [String: String] = [:]
         redacted.reserveCapacity(update.count)
-        for (key, value) in update {
+        for key in update.keys.sorted() {
+            guard let value = update[key] else { continue }
             let redactedKey = key.replacingOccurrences(
                 of: accountUID,
                 with: "<redacted-account-uid>",
                 options: [.caseInsensitive, .literal]
             )
-            redacted[redactedKey] = value.replacingOccurrences(
+            let redactedValue = value.replacingOccurrences(
                 of: accountUID,
                 with: "<redacted-account-uid>",
                 options: [.caseInsensitive, .literal]
             )
+
+            // Account-UID redaction can collapse distinct malformed SDK keys onto one safe key.
+            // Keep every accepted evidence value under deterministic non-sensitive suffixes.
+            var admittedKey = redactedKey
+            var collisionIndex = 2
+            while redacted[admittedKey] != nil {
+                admittedKey = "\(redactedKey)#\(collisionIndex)"
+                collisionIndex += 1
+            }
+            redacted[admittedKey] = redactedValue
         }
         return redacted
     }
