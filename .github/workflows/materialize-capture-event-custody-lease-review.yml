@@ -1,0 +1,81 @@
+name: Materialize Capture Event Custody Lease Review
+
+on:
+  push:
+    branches:
+      - review/v14-capture-event-custody-0bd2-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Verify exact donor ancestry and construction scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='0bd2eff9daffcf36fdbc3b66223b9c5171dab97c'
+          ENTRY='NembraApp/App/NembraCaptureEntrypoint.swift'
+          EXPECTED_BLOB='574bc88707b549590b5e02748691fa2f1b4449c4'
+          git merge-base --is-ancestor "$BASE" HEAD
+          test "$(git hash-object "$ENTRY")" = "$EXPECTED_BLOB"
+          actual="$(git diff --name-only "$BASE"..HEAD | sort)"
+          expected="$(printf '%s\n' \
+            '.github/scripts/materialize_capture_event_custody_lease_review.py' \
+            '.github/workflows/materialize-capture-event-custody-lease-review.yml' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift' | sort)"
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize exact production repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/materialize_capture_event_custody_lease_review.py
+          git diff --check
+
+      - name: Parse real app source
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift --version
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Run portable Capture package tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+
+      - name: Verify effective review scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='0bd2eff9daffcf36fdbc3b66223b9c5171dab97c'
+          rm '.github/scripts/materialize_capture_event_custody_lease_review.py'
+          rm '.github/workflows/materialize-capture-event-custody-lease-review.yml'
+          git add -A
+          actual="$(git diff --cached --name-only "$BASE" | sort)"
+          expected="$(printf '%s\n' \
+            'NembraApp/App/NembraCaptureEntrypoint.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift' | sort)"
+          test "$actual" = "$expected"
+          git diff --cached --check
+
+      - name: Publish reviewed successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): bind event UID custody to admitted lease'
+          git push origin HEAD:${GITHUB_REF_NAME}
