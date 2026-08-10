@@ -29,7 +29,7 @@ struct TuyaTransportSuccessAuthoritySourceTests {
         #expect(sourceTerminal.lowerBound < settlement.lowerBound)
     }
 
-    @Test("duplicate success callbacks share one settlement owner and auth mutation failure retires internally")
+    @Test("duplicate success callbacks share one settlement owner and promotion revalidates suspended authority")
     func duplicateSuccessCannotStartParallelSettlement() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
@@ -46,7 +46,7 @@ struct TuyaTransportSuccessAuthoritySourceTests {
         #expect(handler.contains("localBLESettlementToken = token"))
         #expect(handler.contains("defer"))
         #expect(handler.contains("sessionLedger.markAuthenticated"))
-        #expect(handler.contains("session_auth_callback_rejected"))
+        #expect(handler.contains("session_auth_promotion_clock_regressed"))
 
         guard let promotion = handler.range(of: "sessionLedger.markAuthenticated"),
               let keepWaiting = handler.range(of: "case .keepWaiting:", range: promotion.upperBound..<handler.endIndex) else {
@@ -55,12 +55,27 @@ struct TuyaTransportSuccessAuthoritySourceTests {
         }
         let promotionTerminal = String(handler[promotion.lowerBound..<keepWaiting.lowerBound])
 
-        // Current Tuya account/device source authority has already been checked before promotion.
-        // If the owner-bound ledger mutation itself rejects chronology/invariants, cleanup must use
-        // the package's exact-token no-resample internal-lifecycle terminal, not invent source drift.
+        // markAuthenticated and refreshLedgerSnapshot are actor suspension points. The exact
+        // connection token, account/device lease, and official driver must therefore be checked
+        // again before authenticated observation is promoted. A source drift discovered there is
+        // source-authority failure; only the ledger's own chronology rejection is internal-lifecycle
+        // failure and must not be rewritten as source drift.
+        #expect(promotionTerminal.contains("await refreshLedgerSnapshot()"))
+        #expect(promotionTerminal.contains("sdk_source_authority_lost_during_auth_promotion"))
+        #expect(promotionTerminal.contains("sdk_driver_authority_lost_during_auth_promotion"))
+        #expect(promotionTerminal.contains("invalidateSourceAuthority"))
         #expect(promotionTerminal.contains("MutationError.monotonicClockRegressed"))
         #expect(promotionTerminal.contains("invalidateInternalLifecycle"))
-        #expect(!promotionTerminal.contains("invalidateSourceAuthority"))
+
+        guard let chronologyCatch = promotionTerminal.range(of: "catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed"),
+              let sourceRecheck = promotionTerminal.range(of: "sdk_source_authority_lost_during_auth_promotion", range: chronologyCatch.upperBound..<promotionTerminal.endIndex) else {
+            Issue.record("Could not isolate ledger chronology retirement from the post-suspension source-authority recheck.")
+            return
+        }
+        let chronologyTerminal = promotionTerminal[chronologyCatch.lowerBound..<sourceRecheck.lowerBound]
+        #expect(chronologyTerminal.contains("invalidateInternalLifecycle"))
+        #expect(!chronologyTerminal.contains("invalidateSourceAuthority"))
+
         #expect(!promotionTerminal.contains("authenticationAcquisitionFailed"))
         #expect(!promotionTerminal.contains("markAuthenticationFailed"))
         #expect(!handler.contains("failLocally(\"Authenticated-session chronology rejected"))
