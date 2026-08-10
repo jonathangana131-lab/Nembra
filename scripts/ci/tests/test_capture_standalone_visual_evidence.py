@@ -11,8 +11,11 @@ required = [
     'TUYA_DEPENDENCY_LOCK_SHA256="$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$INFO_PLIST")"',
     '[[ ! "$TUYA_DEPENDENCY_LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]]',
     'EXPECTED_BUILD_IDENTIFIER="capture-v14-${SOURCE_SHA:0:12}"',
+    'SIMCTL_CHILD_*|NEMBRA_SIMULATION_*)',
+    'done < <(compgen -v)',
     'launch_output="$(xcrun simctl launch "$UDID" "$BUNDLE_ID"',
     'xcrun simctl io "$UDID" screenshot "$SCREENSHOT"',
+    '"syntheticAuthorityEnvironmentRejected": True',
     '"visualAcceptanceRequiresHumanReview": True',
     '"physicalAuthorityCreated": False',
     '"protocolAuthorityCreated": False',
@@ -31,8 +34,8 @@ active_lines = [
     if line.strip() and not line.lstrip().startswith("#")
 ]
 for line in active_lines:
-    if line.startswith("SIMCTL_CHILD_") or line.startswith("NEMBRA_SIMULATION_"):
-        raise SystemExit(f"standalone visual evidence must not inject synthetic app authority: {line}")
+    if re.match(r"^(SIMCTL_CHILD_|NEMBRA_SIMULATION_)[A-Za-z0-9_]*=", line):
+        raise SystemExit(f"standalone visual evidence must not assign synthetic app authority: {line}")
 
 launch_lines = [line for line in active_lines if "xcrun simctl launch" in line]
 if len(launch_lines) != 1:
