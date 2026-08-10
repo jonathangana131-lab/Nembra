@@ -1,0 +1,78 @@
+name: Materialize Capture Event Generation Precedence 870
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-event-generation-precedence-870
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact current product
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent=870f20abe144fa7b6f9ac60bf4c0fe0a1792fb81
+          product=product/v14-capture-guided-truth-current-sol
+          git fetch origin "$product"
+          current_product=$(git rev-parse "origin/$product")
+          test "$current_product" = "$parent"
+          git diff --quiet "$parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Apply trusted provenance precedence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text(encoding="utf-8")
+          old = "]) { current, _ in current })"
+          new = "]) { _, trusted in trusted })"
+          assert source.count(old) == 1, source.count(old)
+          source = source.replace(old, new, 1)
+          path.write_text(source, encoding="utf-8")
+          start = source.index("private func receivedApplicationUpdate(")
+          end = source.index("private func startWatchdog", start)
+          receiver = source[start:end]
+          assert 'log("tuya_application_update"' in receiver
+          assert '"generation": String(token.diagnosticGeneration)' in receiver
+          assert ') { current, _ in current })' not in receiver
+          assert ') { _, trusted in trusted })' in receiver
+          PY
+          git diff --check
+
+      - name: Recheck live product and publish clean repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent=870f20abe144fa7b6f9ac60bf4c0fe0a1792fb81
+          product=product/v14-capture-guided-truth-current-sol
+          workflow=.github/workflows/materialize-capture-event-generation-precedence-870-sol.yml
+          testfile=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
+          app=NembraApp/App/NembraCaptureEntrypoint.swift
+
+          git fetch origin "$product"
+          current_product=$(git rev-parse "origin/$product")
+          test "$current_product" = "$parent"
+
+          rm "$workflow"
+          git add "$app" "$testfile"
+          git add -u "$workflow"
+          git diff --cached --check
+          git -c user.name=nembra-sol -c user.email=nembra-sol@users.noreply.github.com commit -m "fix(capture): protect event generation provenance"
+
+          changed=$(git diff --name-only "$parent" HEAD | sort)
+          expected=$(printf '%s\n%s\n' "$app" "$testfile" | sort)
+          test "$changed" = "$expected"
+          git diff --check "$parent" HEAD
+          git push origin HEAD:sol/v14-capture-event-generation-precedence-870
