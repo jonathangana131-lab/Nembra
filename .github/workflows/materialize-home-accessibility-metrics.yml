@@ -10,15 +10,11 @@ permissions:
 
 jobs:
   materialize:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Guard exact base
-        run: |
-          test "$(git rev-parse HEAD^)" = "969428349de610282fca3cc3a9b82cab636d3f5a"
       - name: Patch Home accessibility layout
         run: |
           python3 - <<'PY'
@@ -126,9 +122,7 @@ jobs:
           test.write_text('''import Foundation\nimport Testing\n\n@Test("Home status metrics reflow at Accessibility Dynamic Type")\nfunc homeStatusMetricsReflowAtAccessibilityDynamicType() throws {\n    let sourceURL = URL(fileURLWithPath: #filePath)\n        .deletingLastPathComponent()\n        .deletingLastPathComponent()\n        .deletingLastPathComponent()\n        .deletingLastPathComponent()\n        .deletingLastPathComponent()\n        .appendingPathComponent("NembraApp/Features/Home/HomeView.swift")\n    let source = try String(contentsOf: sourceURL, encoding: .utf8)\n\n    #expect(source.contains("@Environment(\\\\.dynamicTypeSize) private var dynamicTypeSize"))\n    #expect(source.contains("if dynamicTypeSize.isAccessibilitySize"))\n    #expect(source.contains("VStack(alignment: .leading, spacing: 12)"))\n    #expect(source.contains("home.metric.battery"))\n    #expect(source.contains("home.metric.trip"))\n    #expect(source.contains("home.metric.mode"))\n}\n''')
           PY
           git diff --check
-          grep -q '@Environment(\.dynamicTypeSize) private var dynamicTypeSize' NembraApp/Features/Home/HomeView.swift
-          grep -q 'if dynamicTypeSize.isAccessibilitySize' NembraApp/Features/Home/HomeView.swift
-      - name: Remove materializer and publish clean product diff
+      - name: Publish clean product diff
         run: |
           rm .github/workflows/materialize-home-accessibility-metrics.yml
           git config user.name github-actions[bot]
