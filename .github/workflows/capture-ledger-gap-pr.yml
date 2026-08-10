@@ -1,0 +1,43 @@
+name: Capture Ledger Gap Closure
+
+on:
+  push:
+    branches:
+      - capture/ledger-gap-terminal-closure-gpt56sol
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select installed Xcode 26
+        shell: bash
+        run: |
+          set -euo pipefail
+          selected=''
+          for app in /Applications/Xcode_26*.app /Applications/Xcode-26*.app /Applications/Xcode.app; do
+            [[ -d "$app/Contents/Developer" ]] || continue
+            version="$(DEVELOPER_DIR="$app/Contents/Developer" xcodebuild -version | head -n 1)"
+            if [[ "$version" =~ ^Xcode\ 26\. ]]; then
+              selected="$app/Contents/Developer"
+              break
+            fi
+          done
+          [[ -n "$selected" ]] || { echo 'No installed Xcode 26.x toolchain found'; exit 1; }
+          echo "DEVELOPER_DIR=$selected" >> "$GITHUB_ENV"
+      - name: Verify toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          xcodebuild -version | grep -Eq '^Xcode 26\.'
+      - name: Run authenticated ledger regressions
+        run: |
+          set -euo pipefail
+          swift test \
+            --package-path Packages/NembraBluetoothCapture \
+            --filter TuyaAuthenticatedReadOnlySession
