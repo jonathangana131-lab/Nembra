@@ -34,7 +34,6 @@ jobs:
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           source = path.read_text()
 
-          # 1) Revoke app-visible positive membership copy synchronously with proof revocation.
           status_line = '        membershipStatus = "Exact scooter membership must be verified again for this Secure Link view."\n'
           for function_name, end_marker in [
               ("    func abandonCorrelationForViewExit()", "    func appDidLoseForeground()"),
@@ -52,7 +51,6 @@ jobs:
               body = body.replace(proof, proof + status_line, 1)
               source = source[:start] + body + source[end:]
 
-          # 2) Scrub the exact earned account UID from both application keys and values.
           receiver_marker = "    private func receivedApplicationUpdate("
           if source.count(receiver_marker) != 1:
               raise SystemExit(f"Expected one application update receiver; found {source.count(receiver_marker)}")
@@ -86,7 +84,6 @@ jobs:
           '''
           source = source.replace(receiver_marker, helper + receiver_marker, 1)
 
-          # 3) Nembra-owned generation provenance must win collisions with untrusted SDK keys.
           receiver_start = source.index(receiver_marker)
           receiver_end = source.index("    private func startWatchdog", receiver_start)
           receiver = source[receiver_start:receiver_end]
@@ -104,7 +101,6 @@ jobs:
           receiver = receiver.replace(untrusted_policy, ']) { _, trusted in trusted })', 1)
           source = source[:receiver_start] + receiver + source[receiver_end:]
 
-          # 4) Simplify the already-accepted credential classifier without changing its contract.
           driver_start = source.index("@MainActor\nprivate final class SmartLifeDriver")
           driver_end = source.index("#endif\n\nprivate enum AppleAccountAuthorizationError", driver_start)
           driver = source[driver_start:driver_end]
@@ -185,20 +181,28 @@ jobs:
       - name: Run metadata-precedence source contract
         shell: bash
         run: |
-          set -o pipefail
-          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaApplicationEventMetadataPrecedenceSourceTests 2>&1 | tee /tmp/metadata.log
+          set +e
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaApplicationEventMetadataPrecedenceSourceTests > /tmp/metadata.log 2>&1
+          status=$?
+          cat /tmp/metadata.log
+          if [ "$status" -ne 0 ]; then
+            python3 - <<'PY'
+          from pathlib import Path
+          log = Path('/tmp/metadata.log').read_text(errors='replace')
+          tail = log[-12000:]
+          escaped = tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print(f"::error file=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift::{escaped}")
+          PY
+          fi
+          exit "$status"
 
       - name: Run account-UID source contract
         shell: bash
-        run: |
-          set -o pipefail
-          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaApplicationAccountUIDExportCustodySourceTests 2>&1 | tee /tmp/account-uid.log
+        run: swift test --package-path Packages/NembraBluetoothCapture --filter TuyaApplicationAccountUIDExportCustodySourceTests
 
       - name: Run membership-status source contract
         shell: bash
-        run: |
-          set -o pipefail
-          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaSecureLinkViewMembershipStatusRevocationSourceTests 2>&1 | tee /tmp/membership-status.log
+        run: swift test --package-path Packages/NembraBluetoothCapture --filter TuyaSecureLinkViewMembershipStatusRevocationSourceTests
 
       - name: Commit product repair and retire materializer
         shell: bash
