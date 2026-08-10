@@ -1,0 +1,22 @@
+name: Materialize Capture Current Authority Custody
+
+on:
+  push:
+    branches:
+      - integration/v14-capture-current-authority-custody-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/v14-capture-current-authority-custody-sol
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Build clean current-head product repair
+        run: python3 scripts/ci/materialize_v14_capture_current_authority_custody_sol.py
