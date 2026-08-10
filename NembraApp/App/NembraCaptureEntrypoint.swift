@@ -2126,6 +2126,10 @@ private struct SecureLinkView: View {
 
     private let stageLabels = ["Target", "Secure link", "Observe", "Seal"]
 
+    private var correlationDisplayedWindowOrdinal: Int {
+        test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)
+    }
+
     init(device: TuyaAccountBridge.LinkedDevice) {
         _test = StateObject(wrappedValue: SecureLinkController(device: device))
     }
@@ -2345,7 +2349,7 @@ private struct SecureLinkView: View {
                             .font(.title2.bold())
                     }
                     Spacer()
-                    Text("\(min(test.correlationCompletedWindowCount + 1, 4))/4")
+                    Text("\(correlationDisplayedWindowOrdinal)/4")
                         .font(.title3.monospacedDigit().bold())
                         .foregroundStyle(.secondary)
                 }
