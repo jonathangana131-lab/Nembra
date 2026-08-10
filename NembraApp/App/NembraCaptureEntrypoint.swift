@@ -431,6 +431,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Secure Link left the active view. Exact scooter membership must be freshly verified before another attempt."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -443,6 +444,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         // Foreground loss already owns the terminal retirement for this view lifetime.
         // Avoid racing a second terminal task when backgrounding is followed by onDisappear.
         if foregroundIntegrityLossHandled { return }
+        foregroundIntegrityLossHandled = true
 
         if let token = currentConnectionToken {
             phase = .failed
@@ -470,15 +472,25 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
-        guard processCorrelationLease != nil || correlationSession != nil else { return }
-        // Existing helper stops package transport before releasing this controller's lease.
-        abandonPackageCorrelation()
-        phase = .failed
-        message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
-        log("target_correlation_abandoned_on_view_exit")
+        if processCorrelationLease != nil || correlationSession != nil {
+            // Existing helper stops package transport before releasing this controller's lease.
+            abandonPackageCorrelation()
+            phase = .failed
+            message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
+            log("target_correlation_abandoned_on_view_exit")
+            return
+        }
+
+        if phase == .correlated || phase == .selected {
+            resetDiscoverySessionOnly()
+            phase = .failed
+            message = "Target correlation was retired because Capture left Secure Link. Restart from OFF1; a pre-exit correlated target is never reusable authority."
+            log("target_correlation_retired_on_view_exit")
+        }
     }
 
     func appDidLoseForeground() {
+        guard phase != .accepted else { return }
         guard !foregroundIntegrityLossHandled else { return }
         foregroundIntegrityLossHandled = true
 
@@ -488,6 +500,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Capture left the foreground. Exact scooter membership must be freshly verified after returning active."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -503,6 +516,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
             phase = .failed
             message = "Capture left the foreground during Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; interrupted windows are never reusable evidence."
             log("foreground_integrity_lost_during_target_correlation")
+            return
+        }
+
+        if phase == .correlated || phase == .selected {
+            resetDiscoverySessionOnly()
+            phase = .failed
+            message = "Capture left the foreground after target correlation. Restart from OFF1; the pre-interruption correlated target was retired."
+            log("foreground_integrity_lost_after_target_correlation")
             return
         }
 
