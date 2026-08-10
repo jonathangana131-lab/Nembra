@@ -431,6 +431,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Scooter membership must be verified again for this Secure Link view."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -488,12 +489,19 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Scooter membership must be verified again for this Secure Link view."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
         membershipProbe = nil
 #endif
         officialConnectionRequestID = UUID()
+        let foregroundTargetAuthorityWasLive = phase == .correlated || phase == .selected
+        if phase != .accepted {
+            targetCorrelationOperatorConfirmed = false
+            pendingCorrelatedTargetID = nil
+            selectedID = nil
+        }
         watchdog?.cancel()
         watchdog = nil
 
@@ -507,6 +515,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
 
         guard let token = currentConnectionToken else {
+            if foregroundTargetAuthorityWasLive {
+                phase = .failed
+                message = "Capture left the foreground after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; prior correlated target authority was revoked."
+                log("foreground_integrity_lost_after_target_correlation")
+                return
+            }
             if phase == .authenticating {
                 // OfficialTuyaFactory.make() permanently retires package correlation for this
                 // process, even if no package generation existed before foreground loss.
