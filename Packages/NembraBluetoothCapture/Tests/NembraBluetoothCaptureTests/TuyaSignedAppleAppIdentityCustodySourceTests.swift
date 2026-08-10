@@ -1,0 +1,77 @@
+import Foundation
+import Testing
+@testable import NembraBluetoothCapture
+
+@Suite("Tuya signed Apple application identity custody source contract")
+struct TuyaSignedAppleAppIdentityCustodySourceTests {
+    @Test("field installer preserves opaque App ID prefix and proves exact signed/profile identity before install")
+    func exactSignedApplicationIdentityIsProvenBeforeInstall() throws {
+        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
+
+        #expect(!installer.contains("EXPECTED_APPLICATION_IDENTIFIER=\"${TEAM_ID}.${BUNDLE_ID}\""))
+        #expect(!installer.contains("$TEAM_ID.$BUNDLE_ID"))
+
+        let required = [
+            "BUILT_APPLICATION_IDENTIFIER",
+            "BUILT_TEAM_IDENTIFIER",
+            "BUILT_APP_ID_PREFIX",
+            "PROFILE_APPLICATION_IDENTIFIER",
+            "PROFILE_TEAM_IDENTIFIER",
+            "PROFILE_ROOT_TEAM_IDENTIFIER",
+            "application-identifier",
+            "com.apple.developer.team-identifier",
+            "TeamIdentifier",
+            "[[ \"$BUILT_APPLICATION_IDENTIFIER\" == *.\"$BUNDLE_ID\" ]]",
+            "[[ -n \"$BUILT_APP_ID_PREFIX\" && \"$BUILT_APP_ID_PREFIX\" != *\"*\"* ]]",
+            "[[ \"$PROFILE_APPLICATION_IDENTIFIER\" == \"$BUILT_APPLICATION_IDENTIFIER\" ]]",
+            "[[ \"$BUILT_TEAM_IDENTIFIER\" == \"$TEAM_ID\" ]]",
+            "[[ \"$PROFILE_TEAM_IDENTIFIER\" == \"$TEAM_ID\" ]]",
+            "[[ \"$PROFILE_ROOT_TEAM_IDENTIFIER\" == \"$TEAM_ID\" ]]"
+        ]
+        for needle in required {
+            #expect(installer.contains(needle), "missing prefix-safe signed Apple identity custody contract: \(needle)")
+        }
+
+        let installMarker = try #require(installer.range(of: "say \"Installing SDK-integrated Capture on the intended iPhone\""))
+        for check in [
+            "[[ \"$BUILT_APPLICATION_IDENTIFIER\" == *.\"$BUNDLE_ID\" ]]",
+            "[[ -n \"$BUILT_APP_ID_PREFIX\" && \"$BUILT_APP_ID_PREFIX\" != *\"*\"* ]]",
+            "[[ \"$PROFILE_APPLICATION_IDENTIFIER\" == \"$BUILT_APPLICATION_IDENTIFIER\" ]]",
+            "[[ \"$BUILT_TEAM_IDENTIFIER\" == \"$TEAM_ID\" ]]",
+            "[[ \"$PROFILE_TEAM_IDENTIFIER\" == \"$TEAM_ID\" ]]",
+            "[[ \"$PROFILE_ROOT_TEAM_IDENTIFIER\" == \"$TEAM_ID\" ]]"
+        ] {
+            let range = try #require(installer.range(of: check))
+            #expect(range.lowerBound < installMarker.lowerBound, "signed Apple identity must be proven before installation: \(check)")
+        }
+    }
+
+    @Test("identity proof remains signing custody only")
+    func identityProofCannotMintScooterAuthority() throws {
+        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
+        let start = try #require(installer.range(of: "SIGNED_ENTITLEMENTS_OUTPUT="))
+        let end = try #require(installer.range(of: "say \"Installing SDK-integrated Capture on the intended iPhone\"", range: start.upperBound..<installer.endIndex))
+        let custody = installer[start.lowerBound..<end.lowerBound]
+
+        for forbidden in [
+            "connectBLE",
+            "publishDps",
+            "queryDps",
+            "writeValue",
+            "scanForPeripherals",
+            "NEMBRA_SIMULATION_"
+        ] {
+            #expect(!custody.contains(forbidden), "signed Apple identity custody must not introduce BLE/protocol/physical authority: \(forbidden)")
+        }
+    }
+
+    private func readRepositoryFile(_ relativePath: String) throws -> String {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+    }
+}
