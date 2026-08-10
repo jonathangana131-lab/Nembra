@@ -65,7 +65,7 @@ struct TuyaSecureLinkAccountRecoverySourceTests {
         #expect(invalidation.contains("membershipAccountUID = nil"))
         #expect(invalidation.contains("membershipDeviceID = nil"))
         #expect(invalidation.contains("pendingCorrelatedTargetID = nil"))
-        #expect(invalidation.contains("abandonPackageCorrelation()"))
+        #expect(invalidation.contains("correlationSession?.abandonCurrentWindow()"))
         #expect(invalidation.contains("phase = .failed"))
         #expect(invalidation.contains("invalidateSourceAuthority("))
     }
