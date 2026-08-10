@@ -1,0 +1,145 @@
+name: Capture truth custody layout finalizer
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-truth-custody-convergence-sol
+    paths:
+      - .github/workflows/capture-truth-custody-format2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/v14-capture-truth-custody-convergence-sol
+          fetch-depth: 0
+
+      - name: Normalize Swift layout exactly
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          s = p.read_text()
+
+          helper = (
+              "    private func preparedApplicationEventDetails(\n"
+              "        _ update: [String: String],\n"
+              "        verifiedAccountUID: String\n"
+              "    ) -> [String: String] {\n"
+              "        let accountUID = verifiedAccountUID.trimmingCharacters(in: .whitespacesAndNewlines)\n"
+              "        guard !accountUID.isEmpty else { return [:] }\n"
+              "\n"
+              "        let redactionMarker = \"<redacted-account-uid>\"\n"
+              "        var details: [String: String] = [:]\n"
+              "        for key in update.keys.sorted() {\n"
+              "            guard let value = update[key] else { continue }\n"
+              "            let redactedKey = key.replacingOccurrences(\n"
+              "                of: accountUID,\n"
+              "                with: redactionMarker,\n"
+              "                options: [.caseInsensitive, .literal]\n"
+              "            )\n"
+              "            let redactedValue = value.replacingOccurrences(\n"
+              "                of: accountUID,\n"
+              "                with: redactionMarker,\n"
+              "                options: [.caseInsensitive, .literal]\n"
+              "            )\n"
+              "            let baseKey = redactedKey == \"generation\" ? \"application.generation\" : redactedKey\n"
+              "            var uniqueKey = baseKey\n"
+              "            var collisionIndex = 2\n"
+              "            while details[uniqueKey] != nil {\n"
+              "                uniqueKey = \"\\(baseKey)#\\(collisionIndex)\"\n"
+              "                collisionIndex += 1\n"
+              "            }\n"
+              "            details[uniqueKey] = redactedValue\n"
+              "        }\n"
+              "        return details\n"
+              "    }\n"
+              "\n"
+          )
+          a = s.index("    private func preparedApplicationEventDetails(")
+          b = s.index("    private func receivedApplicationUpdate(", a)
+          s = s[:a] + helper + s[b:]
+
+          a = s.index("    private func receivedApplicationUpdate(")
+          b = s.index("    private func startWatchdog", a)
+          receiver = s[a:b]
+
+          uid_guard = (
+              "        guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),\n"
+              "              !verifiedAccountUID.isEmpty else {\n"
+              "            await invalidateSourceAuthority(\n"
+              "                token: token,\n"
+              "                message: \"The verified Tuya account UID lease became unavailable before application evidence custody.\",\n"
+              "                kind: \"sdk_account_uid_lease_missing_during_observation\"\n"
+              "            )\n"
+              "            return\n"
+              "        }\n"
+              "\n"
+          )
+          u = receiver.index("        guard let verifiedAccountUID =")
+          admissions = receiver.index("        applicationUpdateAdmissionsInFlight += 1", u)
+          receiver = receiver[:u] + uid_guard + receiver[admissions:]
+
+          custody = (
+              "            guard sdkAccountLoggedIn,\n"
+              "                  sdkDeviceMembershipVerified,\n"
+              "                  accountIdentityLeaseIsAuthorized,\n"
+              "                  membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) == verifiedAccountUID else {\n"
+              "                await invalidateSourceAuthority(\n"
+              "                    token: token,\n"
+              "                    message: \"SDK account/device source authority changed before application evidence could enter immutable event custody.\",\n"
+              "                    kind: \"sdk_source_authority_changed_before_application_event_custody\"\n"
+              "                )\n"
+              "                return\n"
+              "            }\n"
+              "            let eventDetails = preparedApplicationEventDetails(\n"
+              "                update,\n"
+              "                verifiedAccountUID: verifiedAccountUID\n"
+              "            )\n"
+          )
+          refresh = receiver.index("            await refreshLedgerSnapshot()") + len("            await refreshLedgerSnapshot()\n")
+          log = receiver.index("            log(\"tuya_application_update\"", refresh)
+          receiver = receiver[:refresh] + custody + receiver[log:]
+          s = s[:a] + receiver + s[b:]
+
+          p.write_text(s)
+          PY
+          git diff --check
+
+      - name: Verify semantics survived layout cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          receiver = s[s.index("    private func receivedApplicationUpdate("):s.index("    private func startWatchdog")]
+          assert '        _ update: [String: String],' in s
+          assert '              !verifiedAccountUID.isEmpty else {' in receiver
+          assert '                  sdkDeviceMembershipVerified,' in receiver
+          assert '<redacted-account-uid>' in s
+          assert 'eventDetails.merging([' in receiver
+          assert ']) { _, trusted in trusted })' in receiver
+          assert '"application.generation"' in s
+          assert s.count('        "sessionkey",') == 1
+          PY
+
+      - name: Commit cleanup and retire finalizer
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-truth-custody-format2.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift .github/workflows/capture-truth-custody-format2.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "style(capture): finalize truth custody layout"
+          git push origin HEAD:agent/v14-capture-truth-custody-convergence-sol
