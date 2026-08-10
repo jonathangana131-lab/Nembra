@@ -8,13 +8,21 @@ import Foundation
 public enum TuyaApplicationUpdateSecretSanitizer: Sendable {
     public static let redactedValue = "<redacted>"
 
+    /// Keep this classifier at least as strong as Capture's accepted-export promise.
+    /// Normalized fragments intentionally cover AppKey/AppSecret, password, account
+    /// tokens, local/session keys, and the SDK token/key spellings already observed
+    /// in Capture's custody contracts.
     private static let secretKeyFragments = [
         "localkey",
+        "sessionkey",
+        "appkey",
+        "appsecret",
+        "password",
+        "accounttoken",
         "accesstoken",
         "refreshtoken",
         "authkey",
         "seckey",
-        "sessionkey",
     ]
 
     /// Produces the string projection consumed by Capture diagnostics only after
