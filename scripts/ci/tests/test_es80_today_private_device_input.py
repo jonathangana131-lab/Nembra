@@ -47,7 +47,7 @@ class PrivateDeviceInputTests(unittest.TestCase):
             self.assertEqual(output.read_text(encoding="utf-8"), self.SECRET)
             self.assertEqual(stat.S_IMODE(private_dir.lstat().st_mode), 0o700)
 
-    def test_existing_target_is_never_clobbered(self):
+    def test_existing_target_is_rejected_before_secret_provider_runs(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             repo, private_dir = self.make_layout(root)
@@ -55,14 +55,42 @@ class PrivateDeviceInputTests(unittest.TestCase):
             target = private_dir / "es80-intended-device.udid"
             target.write_text("KEEP", encoding="utf-8")
             target.chmod(0o600)
+            provider_called = False
+
+            def secret_provider() -> str:
+                nonlocal provider_called
+                provider_called = True
+                return self.SECRET
+
             with self.assertRaisesRegex(module.PrivateInputError, "already-exists"):
                 module.create_private_input(
                     private_dir,
                     repo,
                     target.name,
-                    secret_provider=lambda: self.SECRET,
+                    secret_provider=secret_provider,
                 )
+            self.assertFalse(provider_called)
             self.assertEqual(target.read_text(encoding="utf-8"), "KEEP")
+
+    def test_target_appearing_after_precheck_is_still_rejected_by_exclusive_create(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+
+            def secret_provider() -> str:
+                target.write_text("RACE", encoding="utf-8")
+                target.chmod(0o600)
+                return self.SECRET
+
+            with self.assertRaisesRegex(module.PrivateInputError, "already-exists"):
+                module.create_private_input(
+                    private_dir,
+                    repo,
+                    target.name,
+                    secret_provider=secret_provider,
+                )
+            self.assertEqual(target.read_text(encoding="utf-8"), "RACE")
 
     def test_symlinked_ancestor_is_rejected_before_secret_provider_runs(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -429,6 +457,31 @@ class PrivateDeviceInputTests(unittest.TestCase):
             combined = stdout.getvalue() + stderr.getvalue()
             self.assertEqual(status, 2)
             self.assertFalse(fallback_consumed)
+            self.assertFalse(target.exists())
+            self.assertIn("secure-terminal-input-unavailable", stderr.getvalue())
+            self.assertNotIn(self.SECRET, combined)
+
+    def test_cli_refuses_eof_terminal_input_without_creating_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+
+            with mock.patch.object(module.getpass, "getpass", side_effect=EOFError("simulated EOF")):
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    status = module.main(
+                        [
+                            "--private-directory",
+                            str(private_dir),
+                            "--source-repo",
+                            str(repo),
+                        ]
+                    )
+
+            combined = stdout.getvalue() + stderr.getvalue()
+            self.assertEqual(status, 2)
             self.assertFalse(target.exists())
             self.assertIn("secure-terminal-input-unavailable", stderr.getvalue())
             self.assertNotIn(self.SECRET, combined)
