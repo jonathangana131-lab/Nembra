@@ -1,0 +1,153 @@
+#!/bin/bash
+set -euo pipefail
+
+APP_PATH="${APP_PATH:-/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app}"
+ARTIFACTS_DIR="${ARTIFACTS_DIR:-${RUNNER_TEMP:-/tmp}/NembraCaptureStandaloneVisualEvidence}"
+EXPECTED_BUNDLE_ID="com.jonathangana131.nembra.capturelearn"
+EXPECTED_PROCEDURE_IDENTIFIER="ES80-AUTHENTICATED-STATIONARY-v1"
+EXPECTED_DEVICE_NAME="iPhone 12"
+EXPECTED_DEVICE_TYPE="com.apple.CoreSimulator.SimDeviceType.iPhone-12"
+IDENTITY_SOURCE="NembraApp/App/NembraCaptureBuildIdentity.swift"
+
+[[ "$(uname -s)" == "Darwin" ]] || { echo "Standalone Capture visual evidence requires macOS/CoreSimulator." >&2; exit 2; }
+[[ -d "$APP_PATH" ]] || { echo "Standalone Capture app missing: $APP_PATH" >&2; exit 3; }
+[[ -x /usr/bin/plutil ]] || { echo "plutil is required." >&2; exit 4; }
+command -v xcrun >/dev/null 2>&1 || { echo "xcrun/CoreSimulator is required." >&2; exit 5; }
+
+INFO_PLIST="$APP_PATH/Info.plist"
+[[ -f "$INFO_PLIST" ]] || { echo "Standalone Capture Info.plist is missing." >&2; exit 6; }
+grep -Fq "static let requiredFieldProcedureIdentifier = \"$EXPECTED_PROCEDURE_IDENTIFIER\"" "$IDENTITY_SOURCE" || {
+  echo "Source does not declare the required stationary procedure." >&2; exit 19;
+}
+grep -Fq 'static var fieldProcedureIdentifier: String' "$IDENTITY_SOURCE" || {
+  echo "Source does not expose actual built procedure provenance." >&2; exit 24;
+}
+grep -Fq 'current.procedureIdentifier' "$IDENTITY_SOURCE" || {
+  echo "Built procedure display/export provenance is not sourced from the built app." >&2; exit 25;
+}
+
+BUNDLE_ID="$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$INFO_PLIST")"
+BUILD_IDENTIFIER="$(/usr/bin/plutil -extract NembraCaptureBuildIdentifier raw -o - "$INFO_PLIST")"
+SOURCE_SHA="$(/usr/bin/plutil -extract NembraCaptureSourceCommitSHA raw -o - "$INFO_PLIST")"
+PROCEDURE_IDENTIFIER="$(/usr/bin/plutil -extract NembraCaptureProcedureIdentifier raw -o - "$INFO_PLIST" 2>/dev/null || true)"
+TUYA_DEPENDENCY_LOCK_SHA256="$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$INFO_PLIST" 2>/dev/null || true)"
+[[ "$BUNDLE_ID" == "$EXPECTED_BUNDLE_ID" ]] || { echo "Unexpected bundle: $BUNDLE_ID" >&2; exit 7; }
+[[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Source identity must be lowercase 40-hex." >&2; exit 8; }
+[[ "$PROCEDURE_IDENTIFIER" == "$EXPECTED_PROCEDURE_IDENTIFIER" ]] || {
+  echo "Built procedure does not match required stationary procedure." >&2; exit 23;
+}
+[[ -z "$TUYA_DEPENDENCY_LOCK_SHA256" ]] || {
+  echo "Public visual evidence must not carry private Tuya dependency authority." >&2; exit 9;
+}
+EXPECTED_BUILD_IDENTIFIER="capture-v14-${SOURCE_SHA:0:12}"
+[[ "$BUILD_IDENTIFIER" == "$EXPECTED_BUILD_IDENTIFIER" ]] || { echo "Build/source rendezvous failed." >&2; exit 10; }
+CHECKOUT_SHA="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+[[ "$SOURCE_SHA" == "$CHECKOUT_SHA" ]] || { echo "Built source is not exact checkout." >&2; exit 20; }
+
+[[ ! -e "$ARTIFACTS_DIR" && ! -L "$ARTIFACTS_DIR" ]] || {
+  echo "Refusing to overwrite prior visual evidence: $ARTIFACTS_DIR" >&2; exit 11;
+}
+mkdir -p "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs"
+
+RUNTIME_ID="$({ xcrun simctl list runtimes -j | /usr/bin/python3 -c '
+import json,sys
+items=json.load(sys.stdin)["runtimes"]
+c=[x for x in items if x.get("isAvailable", True) and str(x.get("identifier", "")).startswith("com.apple.CoreSimulator.SimRuntime.iOS-27")]
+if not c: raise SystemExit(1)
+c.sort(key=lambda x: tuple(int(p) for p in str(x.get("version","0")).split(".") if p.isdigit()), reverse=True)
+print(c[0]["identifier"])
+'; } 2>/dev/null)" || { echo "No iOS 27 Simulator runtime." >&2; exit 12; }
+
+DEVICE_TYPE="$({ xcrun simctl list devicetypes -j | /usr/bin/python3 -c '
+import json,sys
+for x in json.load(sys.stdin)["devicetypes"]:
+    if x.get("name") == "iPhone 12": print(x["identifier"]); raise SystemExit(0)
+raise SystemExit(1)
+'; } 2>/dev/null)" || {
+  echo "iPhone 12 device type unavailable; no newer-device fallback may satisfy the V14 baseline." >&2; exit 13;
+}
+[[ "$DEVICE_TYPE" == "$EXPECTED_DEVICE_TYPE" ]] || { echo "Unexpected iPhone 12 device type." >&2; exit 21; }
+
+SIM_NAME="Nembra Capture Visual ${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}"
+UDID="$(xcrun simctl create "$SIM_NAME" "$DEVICE_TYPE" "$RUNTIME_ID")"
+cleanup() {
+  xcrun simctl spawn "$UDID" log show --last 5m --style compact --predicate 'process contains[c] "Nembra"' > "$ARTIFACTS_DIR/logs/nembra-capture-system.log" 2>&1 || true
+  xcrun simctl terminate "$UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
+  xcrun simctl shutdown "$UDID" >/dev/null 2>&1 || true
+  xcrun simctl delete "$UDID" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT INT TERM
+
+xcrun simctl boot "$UDID"
+xcrun simctl bootstatus "$UDID" -b
+xcrun simctl install "$UDID" "$APP_PATH"
+xcrun simctl status_bar "$UDID" override --time 9:41 --batteryState charged --batteryLevel 82 --wifiBars 3 --cellularMode active --cellularBars 4 >/dev/null 2>&1 || true
+xcrun simctl ui "$UDID" appearance dark
+
+while IFS= read -r variable_name; do
+  case "$variable_name" in
+    SIMCTL_CHILD_*|NEMBRA_SIMULATION_*)
+      echo "Refusing inherited synthetic authority: $variable_name" >&2; exit 18 ;;
+  esac
+done < <(compgen -v)
+
+launch_output="$(xcrun simctl launch "$UDID" "$BUNDLE_ID" | tee "$ARTIFACTS_DIR/logs/launch.log")"
+pid="${launch_output##*: }"
+[[ "$pid" =~ ^[0-9]+$ ]] || { echo "Could not parse Capture PID." >&2; exit 14; }
+sleep 2
+kill -0 "$pid" >/dev/null 2>&1 || { echo "Capture exited before screenshot." >&2; exit 15; }
+
+STANDARD_SCREENSHOT="$ARTIFACTS_DIR/screenshots/standalone-unprovisioned-dark-iphone12.png"
+xcrun simctl io "$UDID" screenshot "$STANDARD_SCREENSHOT"
+[[ -s "$STANDARD_SCREENSHOT" ]] || { echo "Standard screenshot missing." >&2; exit 16; }
+
+xcrun simctl ui "$UDID" content_size accessibility-extra-extra-extra-large
+sleep 1
+AX5_SCREENSHOT="$ARTIFACTS_DIR/screenshots/standalone-unprovisioned-dark-iphone12-ax5.png"
+xcrun simctl io "$UDID" screenshot "$AX5_SCREENSHOT"
+[[ -s "$AX5_SCREENSHOT" ]] || { echo "Accessibility XXXL screenshot missing." >&2; exit 22; }
+xcrun simctl ui "$UDID" content_size large
+
+STANDARD_SHA="$(shasum -a 256 "$STANDARD_SCREENSHOT" | awk '{print $1}')"
+AX5_SHA="$(shasum -a 256 "$AX5_SCREENSHOT" | awk '{print $1}')"
+PLIST_SHA="$(shasum -a 256 "$INFO_PLIST" | awk '{print $1}')"
+for digest in "$STANDARD_SHA" "$AX5_SHA" "$PLIST_SHA"; do [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || exit 17; done
+
+/usr/bin/python3 - "$ARTIFACTS_DIR/NembraCaptureStandaloneVisualEvidence.json" "$BUILD_IDENTIFIER" "$SOURCE_SHA" "$PROCEDURE_IDENTIFIER" "$BUNDLE_ID" "$RUNTIME_ID" "$DEVICE_TYPE" "$STANDARD_SHA" "$AX5_SHA" "$PLIST_SHA" <<'PY'
+import json,sys
+(output,build,source,procedure,bundle,runtime,device,standard_sha,ax5_sha,plist_sha)=sys.argv[1:]
+record={
+ "schemaVersion":5,
+ "authority":"standalone-capture-simulator-presentation-only",
+ "buildIdentifier":build,
+ "sourceCommitSHA":source,
+ "procedureIdentifier":procedure,
+ "procedureBuiltAppRendezvousVerified":True,
+ "tuyaDependencyLockSHA256":"",
+ "tuyaDependencyProvenanceClass":"deliberately-absent-public-ci",
+ "expectedFieldBuildAuthority":False,
+ "bundleIdentifier":bundle,
+ "baselineDevice":"iPhone 12",
+ "baselineOS":"iOS 27",
+ "simulatorRuntime":runtime,
+ "simulatorDeviceType":device,
+ "syntheticAuthorityEnvironmentRejected":True,
+ "visualAcceptanceRequiresHumanReview":True,
+ "physicalAuthorityCreated":False,
+ "protocolAuthorityCreated":False,
+ "screenshots":[
+   {"state":"unprovisioned-dark-standard","relativePath":"screenshots/standalone-unprovisioned-dark-iphone12.png","sha256":standard_sha},
+   {"state":"unprovisioned-dark-accessibility-xxxl","relativePath":"screenshots/standalone-unprovisioned-dark-iphone12-ax5.png","sha256":ax5_sha}
+ ],
+ "infoPlistSHA256":plist_sha
+}
+with open(output,"w",encoding="utf-8") as f: json.dump(record,f,indent=2,sort_keys=True); f.write("\n")
+PY
+
+printf '%s\n' \
+  "Standalone Capture visual evidence captured." \
+  "Build: $BUILD_IDENTIFIER" \
+  "Source: $SOURCE_SHA" \
+  "Built procedure: $PROCEDURE_IDENTIFIER" \
+  "Baseline: $EXPECTED_DEVICE_NAME / iOS 27 Simulator" \
+  "Human review is still required; no physical/protocol authority was created."
