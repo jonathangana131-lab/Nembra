@@ -8,35 +8,50 @@ import textwrap
 import unittest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "xcode27_today_research_field_candidate.sh"
-EXPECTED_MODE = "--nembra-today-research-build"
 
 
-class TodayResearchFieldCandidateWrapperTests(unittest.TestCase):
+class TodayResearchFieldCandidateRetirementTests(unittest.TestCase):
     def setUp(self):
         self.source = SCRIPT.read_text(encoding="utf-8")
 
-    def test_delegates_research_authority_as_explicit_producer_mode(self):
+    def test_legacy_today_wrapper_is_hard_retired_and_cannot_delegate_authority(self):
+        self.assertTrue(self.source.startswith("#!/bin/bash -p\n"))
+        self.assertIn('PATH="/usr/bin:/bin:/usr/sbin:/sbin"', self.source)
+        self.assertIn("unset BASH_ENV ENV", self.source)
         self.assertIn(
-            'unset SWIFT_ACTIVE_COMPILATION_CONDITIONS OTHER_SWIFT_FLAGS XCODE_XCCONFIG_FILE',
+            "SUPERSEDED: the private TODAY ES80-FINGERPRINT-v1 Research candidate path is retired.",
             self.source,
         )
         self.assertIn(
-            'exec "$CANONICAL_PRODUCER" --nembra-today-research-build "$@"',
+            "Current Capture field procedure is ES80-AUTHENTICATED-STATIONARY-v1.",
             self.source,
         )
-        self.assertNotIn("export XCODE_XCCONFIG_FILE=", self.source)
-        self.assertNotIn("export OTHER_SWIFT_FLAGS=", self.source)
-        self.assertNotIn("export SWIFT_ACTIVE_COMPILATION_CONDITIONS=", self.source)
-        self.assertNotIn("mktemp", self.source)
-        self.assertNotIn("NembraES80TodayResearch.xcconfig", self.source)
+        self.assertIn("scripts/field/install_one_time_capture.command", self.source)
+        self.assertIn(
+            "PHYSICAL NO-GO: this legacy wrapper cannot authorize scanning or an ES80 experiment.",
+            self.source,
+        )
+        self.assertIn("exit 64", self.source)
 
-    def test_executes_canonical_producer_with_mode_and_no_ambient_build_settings(self):
-        with tempfile.TemporaryDirectory(prefix="nembra-today-wrapper-test-") as temporary:
+        for forbidden in (
+            "--nembra-today-research-build",
+            'exec "$CANONICAL_PRODUCER"',
+            "xcodebuild",
+            "XCODE_XCCONFIG_FILE=",
+            "OTHER_SWIFT_FLAGS=",
+            "SWIFT_ACTIVE_COMPILATION_CONDITIONS=",
+            "mktemp",
+            "NembraES80TodayResearch.xcconfig",
+        ):
+            self.assertNotIn(forbidden, self.source)
+
+    def test_execution_fails_closed_without_running_neighboring_producer(self):
+        with tempfile.TemporaryDirectory(prefix="nembra-retired-today-wrapper-test-") as temporary:
             root = Path(temporary)
             wrapper = root / SCRIPT.name
             producer = root / "xcode27_signed_field_candidate.sh"
-            captured_args = root / "captured-args"
-            captured_environment = root / "captured-environment"
+            producer_marker = root / "producer-ran"
+            hostile_bash_env = root / "hostile-bash-env"
 
             shutil.copy2(SCRIPT, wrapper)
             wrapper.chmod(0o755)
@@ -44,21 +59,23 @@ class TodayResearchFieldCandidateWrapperTests(unittest.TestCase):
                 textwrap.dedent(
                     f"""\
                     #!/bin/bash
-                    set -euo pipefail
-                    test -z "${{XCODE_XCCONFIG_FILE+x}}"
-                    test -z "${{OTHER_SWIFT_FLAGS+x}}"
-                    test -z "${{SWIFT_ACTIVE_COMPILATION_CONDITIONS+x}}"
-                    /usr/bin/printf '%s\\n' "$@" > {str(captured_args)!r}
-                    /usr/bin/printf 'clean\\n' > {str(captured_environment)!r}
+                    /usr/bin/printf 'unexpected delegation\\n' > {str(producer_marker)!r}
+                    exit 0
                     """
                 ),
                 encoding="utf-8",
             )
             producer.chmod(0o755)
+            hostile_bash_env.write_text(
+                f"/usr/bin/printf 'unexpected startup hook\\n' > {str(producer_marker)!r}\n",
+                encoding="utf-8",
+            )
 
             env = os.environ.copy()
             env.update(
                 {
+                    "BASH_ENV": str(hostile_bash_env),
+                    "ENV": str(hostile_bash_env),
                     "XCODE_XCCONFIG_FILE": "/tmp/hostile.xcconfig",
                     "OTHER_SWIFT_FLAGS": "-DHOSTILE",
                     "SWIFT_ACTIVE_COMPILATION_CONDITIONS": "HOSTILE",
@@ -71,12 +88,13 @@ class TodayResearchFieldCandidateWrapperTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            self.assertEqual(
-                captured_args.read_text(encoding="utf-8"),
-                f"{EXPECTED_MODE}\n--sentinel\nvalue\n",
-            )
-            self.assertEqual(captured_environment.read_text(encoding="utf-8"), "clean\n")
+
+            self.assertEqual(completed.returncode, 64, completed.stderr)
+            self.assertEqual(completed.stdout, "")
+            self.assertIn("SUPERSEDED", completed.stderr)
+            self.assertIn("ES80-AUTHENTICATED-STATIONARY-v1", completed.stderr)
+            self.assertIn("PHYSICAL NO-GO", completed.stderr)
+            self.assertFalse(producer_marker.exists())
 
 
 if __name__ == "__main__":
