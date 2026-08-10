@@ -8,9 +8,11 @@ ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/Artifacts/Xcode27Simulator}"
 DERIVED_DATA="${DERIVED_DATA:-${RUNNER_TEMP:-/tmp}/NembraDerivedData}"
 RESULT_BUNDLE="$ARTIFACTS_DIR/NembraTests.xcresult"
 ATTACHMENTS_DIR="$ARTIFACTS_DIR/test-attachments"
+REDUCE_MOTION_RESULT_BUNDLE="$ARTIFACTS_DIR/NembraReduceMotionTests.xcresult"
+REDUCE_MOTION_ATTACHMENTS_DIR="$ARTIFACTS_DIR/reduce-motion-test-attachments"
 BUNDLE_ID="com.jonathangana131.nembra"
 mkdir -p "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs" "$ATTACHMENTS_DIR"
-rm -rf "$RESULT_BUNDLE"
+rm -rf "$RESULT_BUNDLE" "$REDUCE_MOTION_RESULT_BUNDLE" "$REDUCE_MOTION_ATTACHMENTS_DIR"
 
 {
   echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -102,6 +104,58 @@ fi
 if [[ "$TEST_STATUS" -ne 0 ]]; then
   echo "xcodebuild test failed with status $TEST_STATUS; preserving diagnostics before failing the job." >&2
   exit "$TEST_STATUS"
+fi
+
+# Accessibility runtime acceptance uses the real Simulator setting rather than an
+# app launch override. Continuous 60 Hz motion must be suppressed while semantic
+# LIVE/RETAINED/UNAVAILABLE truth and the mounted landscape Energy Rail remain
+# correct. Re-run only the two product states needed for this visual/accessibility
+# proof and export their keep-always screenshots separately.
+echo "reduce_motion_runtime_qa=enabled" >> "$ARTIFACTS_DIR/environment.txt"
+xcrun simctl ui "$UDID" reduce_motion enabled
+
+set +e
+set -o pipefail
+xcodebuild \
+  -project Nembra.xcodeproj \
+  -scheme Nembra \
+  -configuration Debug \
+  -destination "platform=iOS Simulator,id=$UDID" \
+  -derivedDataPath "$DERIVED_DATA" \
+  -resultBundlePath "$REDUCE_MOTION_RESULT_BUNDLE" \
+  -test-timeouts-enabled YES \
+  -default-test-execution-time-allowance 120 \
+  -maximum-test-execution-time-allowance 120 \
+  -collect-test-diagnostics never \
+  -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls \
+  -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardRetainedPowerAfterReconnectIsExplicitLastKnown \
+  CODE_SIGNING_ALLOWED=NO \
+  ONLY_ACTIVE_ARCH=YES \
+  test \
+  | tee "$ARTIFACTS_DIR/logs/xcodebuild-reduce-motion-test.log"
+REDUCE_MOTION_TEST_STATUS=${PIPESTATUS[0]}
+set -e
+
+xcrun simctl ui "$UDID" reduce_motion disabled || true
+
+if [[ -d "$REDUCE_MOTION_RESULT_BUNDLE" ]]; then
+  if xcrun xcresulttool export attachments \
+    --path "$REDUCE_MOTION_RESULT_BUNDLE" \
+    --output-path "$REDUCE_MOTION_ATTACHMENTS_DIR" \
+    > "$ARTIFACTS_DIR/logs/xcresult-reduce-motion-attachments.log" 2>&1; then
+    find "$REDUCE_MOTION_ATTACHMENTS_DIR" -type f -maxdepth 2 -print | sort \
+      > "$ARTIFACTS_DIR/reduce-motion-test-attachments.txt" || true
+  else
+    {
+      echo "Reduce Motion attachment export failed; the complete xcresult is still preserved."
+      xcrun xcresulttool help export attachments || true
+    } >> "$ARTIFACTS_DIR/logs/xcresult-reduce-motion-attachments.log" 2>&1
+  fi
+fi
+
+if [[ "$REDUCE_MOTION_TEST_STATUS" -ne 0 ]]; then
+  echo "Reduce Motion exact-head UI acceptance failed with status $REDUCE_MOTION_TEST_STATUS." >&2
+  exit "$REDUCE_MOTION_TEST_STATUS"
 fi
 
 APP_PATH="$DERIVED_DATA/Build/Products/Debug-iphonesimulator/Nembra.app"
