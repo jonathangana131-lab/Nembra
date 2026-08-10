@@ -1,0 +1,38 @@
+name: Capture Standalone Compatibility
+
+on:
+  push:
+    branches:
+      - capture/one-time-ble-dump-gpt56
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show Xcode
+        run: xcodebuild -version
+      - name: Build standalone Capture for Simulator
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme "Nembra Capture" \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+      - name: Build standalone Capture for generic iPhone
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme "Nembra Capture" \
+            -configuration Debug \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
