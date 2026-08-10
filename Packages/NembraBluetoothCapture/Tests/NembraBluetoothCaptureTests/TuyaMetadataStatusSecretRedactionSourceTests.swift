@@ -14,8 +14,11 @@ struct TuyaMetadataStatusSecretRedactionSourceTests {
         )
         let body = String(load)
 
-        #expect(body.contains("selectedDeviceStatus = Self.redactSecrets(statusMap) as? [String: Any] ?? [:]"))
+        #expect(body.contains("selectedDeviceStatus = Self.redactAccountUID("))
+        #expect(body.contains("Self.redactSecrets(statusMap),"))
+        #expect(body.contains("accountUID: accountUID"))
         #expect(!body.contains("selectedDeviceStatus = statusMap"))
+        #expect(!body.contains("selectedDeviceStatus = Self.redactSecrets(statusMap) as? [String: Any] ?? [:]"))
     }
 
     @Test("export re-applies redaction to retained status as defense in depth")
@@ -29,6 +32,7 @@ struct TuyaMetadataStatusSecretRedactionSourceTests {
         let body = String(export)
 
         #expect(body.contains("\"status\": Self.redactSecrets(selectedDeviceStatus ?? [:])"))
+        #expect(body.contains("Self.redactAccountUID(envelope, accountUID: accountUID)"))
         #expect(!body.contains("\"status\": selectedDeviceStatus ?? [:]"))
     }
 
