@@ -31,8 +31,10 @@ jobs:
           plutil -lint NembraApp/Info.plist
           bash -n scripts/field/install_one_time_capture.command
           bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          bash -n Scripts/provision_capture_tuya_identity.sh
           ruby -c Podfile
           grep -Fq "pod 'ThingSmartCryption', :path => './LocalSecrets/TuyaSDK'" Podfile
+          grep -Fq "pod 'NembraTuyaPrivateConfig', :path => './LocalSecrets/TuyaRuntime'" Podfile
           grep -Fq "pod 'ThingSmartHomeKit', '~> 7.8.0'" Podfile
           grep -Fq "pod 'ThingSmartBusinessExtensionKit', '~> 7.8.0'" Podfile
           grep -Fq 'LocalSecrets/' .gitignore
@@ -43,6 +45,7 @@ jobs:
           set -euo pipefail
           active='NembraApp/App/NembraCaptureEntrypoint.swift'
           legacy='NembraApp/Features/Research/ES80CaptureShellView.swift'
+          installer='scripts/field/install_one_time_capture.command'
 
           # The currently installed Capture entrypoint and the retained legacy shell
           # must not grow a direct CoreBluetooth application write path. Documented
@@ -62,6 +65,21 @@ jobs:
           grep -Fq 'withEmail:' "$active"
           grep -Fq 'withMobile:' "$active"
           grep -Fq 'ThingSmartBLEManager.sharedInstance().connectBLE' "$active"
+
+          # Field AppKey/AppSecret authority must come only from the ignored local
+          # NembraTuyaPrivateConfig pod. Reintroducing ProcessInfo launch secrets or
+          # devicectl environment arguments would expose the app secret via host argv.
+          grep -Fq 'canImport(NembraTuyaPrivateConfig)' "$active"
+          grep -Fq 'NembraTuyaPrivateIdentity.appKey' "$active"
+          grep -Fq 'NembraTuyaPrivateIdentity.appSecret' "$active"
+          if grep -Fq 'ProcessInfo.processInfo.environment["NEMBRA_TUYA_APP_' "$active"; then
+            echo 'ERROR: Capture must not source Tuya AppKey/AppSecret from launch environment'
+            exit 1
+          fi
+          if grep -Fq -- '--environment-variables' "$installer"; then
+            echo 'ERROR: field installer must not pass Tuya secrets through devicectl argv'
+            exit 1
+          fi
 
           # The official SDK currently delivers structured dpsUpdate dictionaries,
           # not byte-exact FD50 payloads. The app must advance canonical chronology
