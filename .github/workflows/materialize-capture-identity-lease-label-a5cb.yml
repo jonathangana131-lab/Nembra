@@ -1,0 +1,55 @@
+name: Materialize Capture Identity Lease Label a5cb
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-identity-lease-label-a5cb-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-identity-lease-label-a5cb-sol
+          fetch-depth: 0
+
+      - name: Guard exact lineage and temporary scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='a5cb12ed97241ba274d23f311d67cf84623ceb29'
+          test "$(git merge-base "$base" HEAD)" = "$base"
+          git diff --name-only "$base"...HEAD | sort > /tmp/actual
+          printf '%s\n' \
+            '.github/scripts/materialize_capture_identity_lease_label_a5cb.py' \
+            '.github/workflows/materialize-capture-identity-lease-label-a5cb.yml' \
+            | sort > /tmp/expected
+          diff -u /tmp/expected /tmp/actual
+
+      - name: Apply and verify compile repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/materialize_capture_identity_lease_label_a5cb.py apply
+          python3 .github/scripts/materialize_capture_identity_lease_label_a5cb.py verify
+          python3 -m py_compile .github/scripts/materialize_capture_identity_lease_label_a5cb.py
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAccountIdentityLeaseAppSourceIntegrationTests.swift
+          git diff --check
+
+      - name: Publish clean product checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-identity-lease-label-a5cb.yml
+          rm .github/scripts/materialize_capture_identity_lease_label_a5cb.py
+          git add -A
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): match identity lease initializer label'
+          git push origin HEAD:fix/v14-capture-identity-lease-label-a5cb-sol
