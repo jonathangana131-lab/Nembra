@@ -474,6 +474,22 @@ private final class SecureLinkController: NSObject, ObservableObject {
         startCurrentCorrelationWindow()
     }
 
+
+    func consumeCorrelationAsyncInvalidation() {
+        guard (phase == .baseline || phase == .scanning),
+              correlationProgress?.isSeriesInvalidated == true else { return }
+
+        let invalidatedWindow = correlationWindowLabel
+        // The package has already terminally invalidated and retired this observation-series
+        // authority. Releasing only the app reference creates no receipt, candidate authority,
+        // timestamp, BLE fact, or physical claim. A new attempt must restart from OFF1.
+        correlationSession = nil
+        failLocally(
+            "\(invalidatedWindow) Bluetooth correlation was invalidated by the package before it could be sealed. Restart from OFF1 and repeat the complete OFF1→ON1→OFF2→ON2 series.",
+            "target_correlation_async_invalidated"
+        )
+    }
+
     private func startCurrentCorrelationWindow() {
         guard sdkAccountLoggedIn,
               sdkDeviceMembershipVerified,
@@ -1977,6 +1993,9 @@ private struct SecureLinkView: View {
                 .frame(maxWidth: .infinity)
             }
             .background(Color.black.ignoresSafeArea())
+            .onChange(of: test.correlationProgress?.isSeriesInvalidated) { _, invalidated in
+                if invalidated == true { test.consumeCorrelationAsyncInvalidation() }
+            }
         }
         .navigationTitle("Secure Link")
         .task {
