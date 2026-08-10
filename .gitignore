@@ -12,6 +12,10 @@ xcuserdata/
 .swiftpm/
 Package.resolved
 
+# CocoaPods / private Tuya SDK
+Pods/
+.tuya-private-sdk/
+
 # Python
 __pycache__/
 
