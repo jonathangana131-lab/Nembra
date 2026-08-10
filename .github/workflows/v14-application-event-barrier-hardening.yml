@@ -1,0 +1,42 @@
+name: V14 current-attempt event barrier hardening
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-accepted-application-seal-parity-sol
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 3
+      - name: Verify exact repair parent
+        run: test "$(git rev-parse HEAD^^)" = "5e21f7a87ce8d3234add4924d7ade3955124c862"
+      - name: Patch and validate portable contracts
+        run: |
+          python3 scripts/ci/v14_application_event_barrier_patch.py
+          git diff --check
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedApplicationEvidenceSealSourceTests.swift
+      - name: Commit clean product delta
+        env:
+          BRANCH: repair/v14-capture-accepted-application-seal-parity-sol
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin "refs/heads/$BRANCH" | awk '{print $1}')" = "$EVENT_SHA"
+          rm scripts/ci/v14_application_event_barrier_patch.py
+          rm .github/workflows/v14-application-event-barrier-hardening.yml
+          git config user.name "nembra-v14-integration"
+          git config user.email "actions@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedApplicationEvidenceSealSourceTests.swift scripts/ci/v14_application_event_barrier_patch.py .github/workflows/v14-application-event-barrier-hardening.yml
+          git commit -m "fix(capture): snapshot current attempt at seal barrier"
+          git push origin "HEAD:$BRANCH"
