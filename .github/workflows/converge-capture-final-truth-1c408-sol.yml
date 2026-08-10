@@ -19,7 +19,7 @@ jobs:
           ref: repair/v14-capture-application-event-custody-6b77-sol
           fetch-depth: 0
 
-      - name: Merge exact current product into convergence branch
+      - name: Guard convergence inputs and merge exact current product into QA branch
         shell: bash
         run: |
           set -euo pipefail
@@ -27,6 +27,8 @@ jobs:
           expected='1c40853f6991b4d09206df1d25ecff021458b7eb'
           git fetch origin "$product"
           test "$(git rev-parse FETCH_HEAD)" = "$expected"
+          unexpected="$(git diff --name-only 6b778f2104af34dbe5b80da31ddb3ca422f9667c...HEAD | grep -Ev '^(.github/workflows/converge-capture-final-truth-1c408-sol.yml|Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventAuthorityCustodySourceTests.swift|Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaForegroundResidualAuthoritySourceTests.swift|NembraApp/App/NembraCaptureEntrypoint.swift)$' || true)"
+          test -z "$unexpected"
           git config user.name "nembra-v14-bot"
           git config user.email "actions@users.noreply.github.com"
           git merge --no-edit "$expected"
@@ -118,85 +120,6 @@ jobs:
           path.write_text(text[:foreground_start] + foreground + text[foreground_end:], encoding="utf-8")
           PY
 
-      - name: Strengthen current lifecycle regressions
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          foreground_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegritySourceTests.swift")
-          text = foreground_path.read_text(encoding="utf-8")
-          old = '''        let membershipRevoke = try requiredOffset(
-              containing: "membershipRequestID = UUID()",
-              in: cleanup
-          )
-'''
-          new = '''        let statusReset = try requiredOffset(
-              containing: "membershipStatus = \"Scooter membership must be verified again for this Secure Link view.\"",
-              in: cleanup
-          )
-          let membershipRevoke = try requiredOffset(
-              containing: "membershipRequestID = UUID()",
-              in: cleanup
-          )
-'''
-          if text.count(old) != 1:
-              raise SystemExit("foreground test membership anchor changed")
-          text = text.replace(old, new, 1)
-          old_order = '''        #expect(closeAdmission < clearVerified)
-          #expect(clearVerified < membershipRevoke)
-'''
-          new_order = '''        #expect(closeAdmission < clearVerified)
-          #expect(clearVerified < statusReset)
-          #expect(statusReset < membershipRevoke)
-'''
-          if text.count(old_order) != 1:
-              raise SystemExit("foreground test order anchor changed")
-          text = text.replace(old_order, new_order, 1)
-          marker = '''        #expect(cleanup.contains("foregroundIntegrityLossHandled = true"))
-'''
-          additions = marker + '''        #expect(cleanup.contains("let foregroundTargetAuthorityWasLive = phase == .correlated || phase == .selected"))
-          #expect(cleanup.contains("targetCorrelationOperatorConfirmed = false"))
-          #expect(cleanup.contains("pendingCorrelatedTargetID = nil"))
-          #expect(cleanup.contains("selectedID = nil"))
-          #expect(cleanup.contains("foreground_integrity_lost_after_target_correlation"))
-          #expect(!cleanup.contains("membership verified and leased"))
-'''
-          if text.count(marker) != 1:
-              raise SystemExit("foreground test target anchor changed")
-          foreground_path.write_text(text.replace(marker, additions, 1), encoding="utf-8")
-
-          nav_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift")
-          nav = nav_path.read_text(encoding="utf-8")
-          old_end = '''            from: "func abandonCorrelationForViewExit()",
-              to: "var privateConfig: Bool"
-'''
-          new_end = '''            from: "func abandonCorrelationForViewExit()",
-              to: "func appDidLoseForeground()"
-'''
-          if nav.count(old_end) < 2:
-              raise SystemExit("navigation test cleanup boundaries changed")
-          nav = nav.replace(old_end, new_end)
-          revoke_marker = '''        let revoke = try requiredOffset(containing: "membershipRequestID = UUID()", in: cleanup)
-'''
-          revoke_replacement = '''        let clearVerified = try requiredOffset(containing: "sdkDeviceMembershipVerified = false", in: cleanup)
-          let statusReset = try requiredOffset(containing: "membershipStatus = \"Scooter membership must be verified again for this Secure Link view.\"", in: cleanup)
-          let revoke = try requiredOffset(containing: "membershipRequestID = UUID()", in: cleanup)
-'''
-          if nav.count(revoke_marker) != 1:
-              raise SystemExit("navigation test revoke anchor changed")
-          nav = nav.replace(revoke_marker, revoke_replacement, 1)
-          order_marker = '''        #expect(revoke < noActiveCorrelationReturn)
-'''
-          order_replacement = '''        #expect(clearVerified < statusReset)
-          #expect(statusReset < revoke)
-          #expect(revoke < noActiveCorrelationReturn)
-'''
-          if nav.count(order_marker) != 1:
-              raise SystemExit("navigation test order anchor changed")
-          nav_path.write_text(nav.replace(order_marker, order_replacement, 1), encoding="utf-8")
-          PY
-
       - name: Verify complete truth convergence
         shell: bash
         run: |
@@ -233,6 +156,7 @@ jobs:
               assert forbidden not in fg
           PY
           swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventAuthorityCustodySourceTests.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaForegroundResidualAuthoritySourceTests.swift
           swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegritySourceTests.swift
           swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift
           git diff --check "$product"...HEAD
@@ -244,7 +168,6 @@ jobs:
           git rm .github/workflows/converge-capture-final-truth-1c408-sol.yml
           git add NembraApp/App/NembraCaptureEntrypoint.swift \
             Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventAuthorityCustodySourceTests.swift \
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegritySourceTests.swift \
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaForegroundResidualAuthoritySourceTests.swift
           git commit -m "fix(capture): converge foreground and event authority custody"
           git push origin HEAD:repair/v14-capture-application-event-custody-6b77-sol
