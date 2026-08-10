@@ -1,0 +1,99 @@
+name: V14 Capture Sealed Export Prefix One Shot
+
+on:
+  push:
+    branches:
+      - integration/v14-capture-sealed-application-prefix-product-sol
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: integration/v14-capture-sealed-application-prefix-product-sol
+          fetch-depth: 0
+
+      - name: Apply exact immutable-export repair
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text()
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one anchor, found {count}')
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              '    private var driver: OfficialTuyaDriver?\n    private var events: [Event] = []\n    private var watchdog: Task<Void, Never>?\n',
+              '    private var driver: OfficialTuyaDriver?\n    private var events: [Event] = []\n    private var sealedAcceptedEventPrefix: [Event]?\n    private var watchdog: Task<Void, Never>?\n',
+              'sealed-prefix storage',
+          )
+
+          replace_once(
+              '                        try await sessionLedger.sealAcceptedObservation(for: token)\n                        self.currentConnectionToken = nil\n                        await self.refreshLedgerSnapshot()\n',
+              '                        try await sessionLedger.sealAcceptedObservation(for: token)\n                        self.sealedAcceptedEventPrefix = self.events\n                        self.currentConnectionToken = nil\n                        await self.refreshLedgerSnapshot()\n',
+              'synchronous acceptance seal',
+          )
+
+          replace_once(
+              '    func prepareExport() {\n        let envelope = Export(\n',
+              '''    func prepareExport() {\n        let exportEvents: [Event]\n        if phase == .accepted {\n            guard let sealedAcceptedEventPrefix else {\n                exportData = nil\n                message = "Accepted diagnostic export unavailable: immutable accepted application evidence prefix is missing."\n                return\n            }\n            exportEvents = sealedAcceptedEventPrefix\n        } else {\n            exportEvents = events\n        }\n\n        let envelope = Export(\n''',
+              'fail-closed export selection',
+          )
+
+          replace_once(
+              '            events: events\n',
+              '            events: exportEvents\n',
+              'export event source',
+          )
+
+          replace_once(
+              '        targetCorrelationOperatorConfirmed = false\n        watchdog?.cancel()\n',
+              '        targetCorrelationOperatorConfirmed = false\n        sealedAcceptedEventPrefix = nil\n        watchdog?.cancel()\n',
+              'fresh-life prefix retirement',
+          )
+
+          path.write_text(source)
+          PY
+
+      - name: Verify focused source contract and patch shape
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          required = [
+              'private var sealedAcceptedEventPrefix: [Event]?',
+              'self.sealedAcceptedEventPrefix = self.events',
+              'if phase == .accepted',
+              'guard let sealedAcceptedEventPrefix else',
+              'exportEvents = sealedAcceptedEventPrefix',
+              'events: exportEvents',
+              'sealedAcceptedEventPrefix = nil',
+          ]
+          missing = [x for x in required if x not in s]
+          if missing:
+              raise SystemExit(f'missing repaired anchors: {missing}')
+          if 'events: events\n' in s:
+              raise SystemExit('mutable event log still serialized directly')
+          PY
+          git diff --check
+
+      - name: Retire one-shot machinery and checkpoint product repair
+        run: |
+          set -euo pipefail
+          rm .github/workflows/v14-capture-sealed-export-prefix-one-shot.yml
+          git config user.name 'nembra-v14-bot'
+          git config user.email 'nembra-v14-bot@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift .github/workflows/v14-capture-sealed-export-prefix-one-shot.yml
+          git commit -m 'fix(capture): freeze accepted application export prefix'
+          git push origin HEAD:integration/v14-capture-sealed-application-prefix-product-sol
