@@ -35,6 +35,11 @@ struct TuyaApplicationEventCustodyReentrancySourceTests {
             in: receiver,
             after: refreshHop
         )
+        let rejectionLog = try requiredOffset(
+            containing: "application_update_source_authority_changed_before_event_custody",
+            in: receiver,
+            after: refreshHop
+        )
         let redactionCall = try requiredOffset(
             containing: "accountUID: admittedAccountUID",
             in: receiver,
@@ -50,9 +55,13 @@ struct TuyaApplicationEventCustodyReentrancySourceTests {
         #expect(ledgerHop < refreshHop)
         #expect(refreshHop < postHopTokenGate)
         #expect(postHopTokenGate < exactLeaseGate)
-        #expect(exactLeaseGate < redactionCall)
+        #expect(exactLeaseGate < rejectionLog)
+        #expect(rejectionLog < redactionCall)
         #expect(redactionCall < eventLog)
-        #expect(receiver.contains("sdk_source_authority_changed_before_application_event_custody"))
+
+        // The account/foreground mutation that broke the gate owns terminal retirement.
+        // This path only rejects event custody, avoiding a second competing ledger terminal.
+        #expect(!receiver.contains("sdk_source_authority_changed_before_application_event_custody"))
     }
 
     @Test("UID redaction never falls back to raw update and preserves sanitized key collisions")
