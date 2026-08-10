@@ -15,25 +15,60 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 3
+          fetch-depth: 0
           ref: fix/v14-private-provenance-final-identity-9695-sol
-      - name: Materialize and validate exact-current provenance repair
+
+      - name: Assert exact ancestry and temporary scope
         shell: bash
         run: |
           set -euo pipefail
           PARENT='9695af19c21c93b3eb4bc867613a6df0c9a3b3d4'
+          test "$(git merge-base "$PARENT" HEAD)" = "$PARENT"
+          git diff --name-only "$PARENT" HEAD | sort > /tmp/actual
+          cat > /tmp/expected <<'EOF'
+          .github/workflows/v14-private-provenance-final-identity-9695.yml
+          tools/v14_private_provenance_final_identity_materialize.py
+          EOF
+          sort -o /tmp/expected /tmp/expected
+          diff -u /tmp/expected /tmp/actual
+
+      - name: Materialize final file-identity custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/v14_private_provenance_final_identity_materialize.py
+
+      - name: Parse provenance helper and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            Scripts/capture_tuya_private_input_provenance.py \
+            scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+
+      - name: Run focused provenance unit suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+
+      - name: Prove exact effective repair scope
+        shell: bash
+        run: |
+          set -euo pipefail
           HELPER='Scripts/capture_tuya_private_input_provenance.py'
           TEST='scripts/ci/tests/test_capture_tuya_private_input_provenance.py'
-          test "$(git rev-parse HEAD~2)" = "$PARENT"
-          python3 tools/v14_private_provenance_final_identity_materialize.py
-          python3 -m py_compile "$HELPER" "$TEST"
-          python3 "$TEST"
           git add "$HELPER" "$TEST"
           git diff --cached --check
           mapfile -t EFFECTIVE < <(git diff --cached --name-only HEAD)
           test "${#EFFECTIVE[@]}" = '2'
           printf '%s\n' "${EFFECTIVE[@]}" | grep -Fx "$HELPER"
           printf '%s\n' "${EFFECTIVE[@]}" | grep -Fx "$TEST"
+
+      - name: Commit durable two-path checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git rm .github/workflows/v14-private-provenance-final-identity-9695.yml tools/v14_private_provenance_final_identity_materialize.py
