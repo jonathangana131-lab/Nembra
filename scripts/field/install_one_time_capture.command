@@ -19,7 +19,7 @@ EXPECTED_SOURCE_SHA="$(printf '%s' "$EXPECTED_SOURCE_SHA" | tr '[:upper:]' '[:lo
 SOURCE_SHA="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
 [[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]] || die "Current checkout $SOURCE_SHA does not match accepted Capture source $EXPECTED_SOURCE_SHA. Checkout the exact accepted SHA before building."
 [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Working tree has local changes. Commit/stash them first."
-say "Exact accepted Capture source: $SOURCE_SHA"
+say "Exact requested Capture source matched: $SOURCE_SHA"
 
 # The physical authentication candidate is the standalone Capture product with
 # Tuya's app-specific security SDK and private app identity integrated through
