@@ -5,7 +5,7 @@ struct NembraCaptureBuildIdentity: Codable, Equatable, Sendable {
     static let sourceCommitSHAInfoKey = "NembraCaptureSourceCommitSHA"
     static let tuyaDependencyLockSHA256InfoKey = "NembraCaptureTuyaDependencyLockSHA256"
     static let procedureIdentifierInfoKey = "NembraCaptureProcedureIdentifier"
-    static let fieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"
+    static let requiredFieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"
 
     let buildIdentifier: String
     let sourceCommitSHA: String
@@ -14,6 +14,13 @@ struct NembraCaptureBuildIdentity: Codable, Equatable, Sendable {
 
     static var current: Self {
         from(infoDictionary: Bundle.main.infoDictionary ?? [:])
+    }
+
+    /// App-visible and exported procedure provenance must describe the built app,
+    /// including failed/non-authoritative diagnostic builds, rather than echoing
+    /// the procedure Nembra expected the installer to stamp.
+    static var fieldProcedureIdentifier: String {
+        current.procedureIdentifier
     }
 
     static func from(infoDictionary: [String: Any]) -> Self {
@@ -34,7 +41,7 @@ struct NembraCaptureBuildIdentity: Codable, Equatable, Sendable {
               tuyaDependencyLockSHA256.utf8.allSatisfy({ byte in
                   (byte >= 48 && byte <= 57) || (byte >= 97 && byte <= 102)
               }),
-              procedureIdentifier == Self.fieldProcedureIdentifier else { return false }
+              procedureIdentifier == Self.requiredFieldProcedureIdentifier else { return false }
 
         let expectedIdentifier = "capture-v14-\(sourceCommitSHA.prefix(12))"
         return buildIdentifier == expectedIdentifier
