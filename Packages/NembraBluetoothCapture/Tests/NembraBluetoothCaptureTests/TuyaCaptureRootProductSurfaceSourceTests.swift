@@ -44,6 +44,20 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         #expect(app.contains("No DP query or scooter command is authorized by this surface."))
     }
 
+    @Test("legacy card-based Capture root is retired from the metadata bridge")
+    func legacyCardRootIsRetired() throws {
+        let bridge = try readRepositoryFile("NembraApp/Features/Research/TuyaAccountBridge.swift")
+
+        #expect(bridge.contains("final class TuyaAccountBridge: ObservableObject"))
+        #expect(bridge.contains("struct TuyaQRCodeExport: Transferable"))
+        #expect(bridge.contains("struct TuyaMetadataExport: Transferable"))
+        #expect(!bridge.contains("struct NembraCaptureRootView: View"))
+        #expect(!bridge.contains("func captureCard() -> some View"))
+        #expect(!bridge.contains("ES80OneTimeBluetoothDumpView()"))
+        #expect(!bridge.contains("We already proved this scooter uses Tuya FD50."))
+        #expect(!bridge.contains("Continue to Bluetooth Capture"))
+    }
+
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
         guard let startRange = source.range(of: start),
               let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
