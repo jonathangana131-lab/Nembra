@@ -1,0 +1,155 @@
+name: Materialize Capture Apple App ID Prefix Correction
+
+on:
+  push:
+    branches: [fix/v14-capture-apple-appid-prefix-correct-sol]
+    paths: [.github/workflows/materialize_capture_apple_appid_prefix_correction.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-apple-appid-prefix-correct-sol
+          fetch-depth: 0
+
+      - name: Guard current product and untouched installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 1b12dc56ec20a7dad30760b57a81106644ffc263 HEAD
+          test "$(git rev-parse 1b12dc56ec20a7dad30760b57a81106644ffc263:scripts/field/install_one_time_capture.command)" = "$(git rev-parse HEAD:scripts/field/install_one_time_capture.command)"
+
+      - name: Correct App ID prefix authority contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/field/install_one_time_capture.command")
+          text = path.read_text(encoding="utf-8")
+          expected_line = 'EXPECTED_APPLICATION_IDENTIFIER="${TEAM_ID}.${BUNDLE_ID}"\n'
+          if text.count(expected_line) != 1:
+              raise SystemExit("expected exactly one incorrect Team-ID-derived App ID line")
+          text = text.replace(expected_line, "", 1)
+
+          built_start = text.index('BUILT_SIGNING_IDENTITY="$(printf')
+          built_end = text.index('\n\nBUILT_PROFILE=', built_start)
+          built = r'''BUILT_SIGNING_IDENTITY="$(printf '%s' "$SIGNED_ENTITLEMENTS_OUTPUT" | /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c '
+          import plistlib, sys
+          payload = sys.stdin.buffer.read()
+          start = payload.find(b"<?xml")
+          end = payload.rfind(b"</plist>")
+          if start < 0 or end < start:
+              raise SystemExit(2)
+          try:
+              entitlements = plistlib.loads(payload[start:end + len(b"</plist>")])
+              apple = entitlements.get("com.apple.developer.applesignin")
+              application = entitlements.get("application-identifier")
+              team = entitlements.get("com.apple.developer.team-identifier")
+          except Exception:
+              raise SystemExit(2)
+          if (apple == ["Default"] and isinstance(application, str) and isinstance(team, str)
+                  and all(value and "\t" not in value and "\n" not in value for value in (application, team))):
+              sys.stdout.write(application + "\t" + team)
+          ' || true)"
+          IFS=$'\t' read -r BUILT_APPLICATION_IDENTIFIER BUILT_TEAM_IDENTIFIER <<< "$BUILT_SIGNING_IDENTITY"
+          [[ -n "$BUILT_APPLICATION_IDENTIFIER" && -n "$BUILT_TEAM_IDENTIFIER" ]] || \
+              die "Final signed Capture app is missing required Sign in with Apple or exact application/team identity entitlements. Discard this candidate."
+          [[ "$BUILT_APPLICATION_IDENTIFIER" == *".$BUNDLE_ID" ]] || \
+              die "Final signed Capture app application identifier does not end in the exact standalone Capture bundle identifier. Discard this candidate."
+          [[ "$BUILT_APPLICATION_IDENTIFIER" != *"*"* ]] || \
+              die "Final signed Capture app application identifier is wildcard-shaped. Discard this candidate."
+          [[ "$BUILT_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \
+              die "Final signed Capture app team identifier does not match the selected Apple Development team. Discard this candidate."'''
+          text = text[:built_start] + built + text[built_end:]
+
+          profile_start = text.index('PROFILE_SIGNING_IDENTITY="$(printf')
+          profile_end = text.index('\nsay "Final signed app and embedded provisioning profile authorize Sign in with Apple for the exact selected App ID and team"', profile_start)
+          profile = r'''PROFILE_SIGNING_IDENTITY="$(printf '%s' "$PROFILE_PLIST_XML" | /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c '
+          import plistlib, sys
+          try:
+              root = plistlib.loads(sys.stdin.buffer.read())
+              apple = root.get("Entitlements", {}).get("com.apple.developer.applesignin")
+              entitlements = root.get("Entitlements", {})
+              application = entitlements.get("application-identifier")
+              entitlement_team = entitlements.get("com.apple.developer.team-identifier")
+              team_identifiers = root.get("TeamIdentifier")
+          except Exception:
+              raise SystemExit(2)
+          if (apple == ["Default"] and isinstance(application, str) and isinstance(entitlement_team, str)
+                  and isinstance(team_identifiers, list) and len(team_identifiers) == 1
+                  and isinstance(team_identifiers[0], str)
+                  and all(value and "\t" not in value and "\n" not in value for value in (application, entitlement_team, team_identifiers[0]))):
+              sys.stdout.write(application + "\t" + entitlement_team + "\t" + team_identifiers[0])
+          ' || true)"
+          IFS=$'\t' read -r PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_IDENTIFIER PROFILE_ROOT_TEAM_IDENTIFIER <<< "$PROFILE_SIGNING_IDENTITY"
+          [[ -n "$PROFILE_APPLICATION_IDENTIFIER" && -n "$PROFILE_TEAM_IDENTIFIER" && -n "$PROFILE_ROOT_TEAM_IDENTIFIER" ]] || \
+              die "Embedded provisioning profile is missing required Sign in with Apple or exact application/team identity custody. Discard this candidate."
+          [[ "$PROFILE_APPLICATION_IDENTIFIER" == "$BUILT_APPLICATION_IDENTIFIER" ]] || \
+              die "Embedded provisioning profile application identifier does not exactly match the final signed Capture app. Discard this candidate."
+          [[ "$PROFILE_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \
+              die "Embedded provisioning profile team entitlement does not match the selected Apple Development team. Discard this candidate."
+          [[ "$PROFILE_ROOT_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \
+              die "Embedded provisioning profile root TeamIdentifier does not match the selected Apple Development team. Discard this candidate."'''
+          text = text[:profile_start] + profile + text[profile_end:]
+
+          old_unset = 'unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_SIGNING_IDENTITY BUILT_APPLICATION_IDENTIFIER BUILT_TEAM_IDENTIFIER PROFILE_PLIST_XML PROFILE_SIGNING_IDENTITY PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_IDENTIFIER BUILT_PROFILE'
+          new_unset = 'unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_SIGNING_IDENTITY BUILT_APPLICATION_IDENTIFIER BUILT_TEAM_IDENTIFIER PROFILE_PLIST_XML PROFILE_SIGNING_IDENTITY PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_IDENTIFIER PROFILE_ROOT_TEAM_IDENTIFIER BUILT_PROFILE'
+          if text.count(old_unset) != 1:
+              raise SystemExit("expected exactly one signing-custody unset anchor")
+          text = text.replace(old_unset, new_unset, 1)
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Validate corrected portable contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/field/install_one_time_capture.command
+          python3 scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
+          python3 - <<'PY'
+          from pathlib import Path
+          installer = Path("scripts/field/install_one_time_capture.command").read_text(encoding="utf-8")
+          test = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSignedAppleAppIdentityCustodySourceTests.swift").read_text(encoding="utf-8")
+          required = [
+              '[[ "$BUILT_APPLICATION_IDENTIFIER" == *".$BUNDLE_ID" ]]',
+              '[[ "$PROFILE_APPLICATION_IDENTIFIER" == "$BUILT_APPLICATION_IDENTIFIER" ]]',
+              '[[ "$BUILT_TEAM_IDENTIFIER" == "$TEAM_ID" ]]',
+              '[[ "$PROFILE_TEAM_IDENTIFIER" == "$TEAM_ID" ]]',
+              '[[ "$PROFILE_ROOT_TEAM_IDENTIFIER" == "$TEAM_ID" ]]',
+          ]
+          install = installer.index('say "Installing SDK-integrated Capture on the intended iPhone"')
+          for needle in required:
+              if needle not in installer or needle not in test:
+                  raise SystemExit(f"corrected contract missing: {needle}")
+              if installer.index(needle) >= install:
+                  raise SystemExit(f"corrected identity check after install: {needle}")
+          forbidden = 'EXPECTED_APPLICATION_IDENTIFIER="${TEAM_ID}.${BUNDLE_ID}"'
+          if forbidden in installer or forbidden not in test:
+              raise SystemExit("Team ID must not be treated as the App ID prefix")
+          custody = installer[installer.index("SIGNED_ENTITLEMENTS_OUTPUT="):install]
+          if custody.count("/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c '") != 2:
+              raise SystemExit("must preserve exactly two closed-environment plist parsers")
+          print("corrected Apple App ID prefix authority contract: PASS")
+          PY
+          git diff --check
+
+      - name: Publish clean correction and remove materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-sol-materializer"
+          git config user.email "actions@users.noreply.github.com"
+          git rm .github/workflows/materialize_capture_apple_appid_prefix_correction.yml
+          git add scripts/field/install_one_time_capture.command scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSignedAppleAppIdentityCustodySourceTests.swift
+          git diff --cached --check
+          git commit -m "fix(capture): preserve distinct Apple App ID prefix"
+          git push origin HEAD:fix/v14-capture-apple-appid-prefix-correct-sol
