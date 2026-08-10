@@ -94,11 +94,142 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(speed.waitForExistence(timeout: 3))
         XCTAssertFalse((speed.value as? String ?? "").isEmpty)
 
+        assertEnergyRailValue(
+            containing: "356 watts",
+            in: app,
+            message: "Simulator riding power must reach the mounted Energy Rail as simulator-only semantic truth."
+        )
+
         XCTAssertTrue(app.staticTexts["Controls available when stopped"].waitForExistence(timeout: 2))
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
 
         keepScreenshot(named: "Dashboard Riding Landscape")
+    }
+
+    @MainActor
+    func testLandscapeDashboardRetainedSpeedTruthIsVisibleAndCapturable() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(
+            scenario: "connected-stopped",
+            orientation: .landscapeRight,
+            environment: ["NEMBRA_SIMULATION_SPEED_EVIDENCE_GAP": "1"]
+        )
+
+        let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
+        XCTAssertTrue(
+            cockpit.waitForExistence(timeout: 4),
+            "Landscape must keep the real Cockpit visible while speed evidence is retained."
+        )
+
+        let speed = app.descendants(matching: .any)["dashboard.speed"]
+        XCTAssertTrue(speed.waitForExistence(timeout: 2))
+        XCTAssertTrue(
+            (speed.value as? String ?? "").localizedCaseInsensitiveContains("last known"),
+            "A connected source gap must present the accepted speed as last-known, not live or unavailable."
+        )
+        XCTAssertTrue(
+            app.staticTexts["LAST KNOWN"].waitForExistence(timeout: 2),
+            "Retained speed evidence must carry an explicit last-known visual qualifier."
+        )
+        XCTAssertFalse(app.staticTexts["READY"].exists)
+        XCTAssertFalse(app.staticTexts["RIDING"].exists)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["dashboard.controls-speed-unavailable-message"]
+                .waitForExistence(timeout: 2),
+            "A connected speed gap must retire stopped-control authority while preserving retained presentation."
+        )
+
+        // Speed currentness is deliberately independent from propulsion currentness.
+        // This fixture opens only the source-owned speed evidence gap, so connected
+        // Simulator power remains a separately admitted live zero measurement.
+        assertEnergyRailValue(
+            containing: "0 watts",
+            in: app,
+            message: "A retained speed sample must not falsely demote a still-connected Simulator power source."
+        )
+
+        XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
+        XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
+
+        keepScreenshot(named: "Dashboard Retained Speed Landscape")
+    }
+
+    @MainActor
+    func testLandscapeDashboardDisconnectedCachedSpeedProjectsUnavailable() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(scenario: "scooter-unavailable", orientation: .landscapeRight)
+
+        let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
+        XCTAssertTrue(
+            cockpit.waitForExistence(timeout: 4),
+            "Landscape must still render the real Cockpit when transport is unavailable."
+        )
+
+        let speed = app.descendants(matching: .any)["dashboard.speed"]
+        XCTAssertTrue(speed.waitForExistence(timeout: 2))
+        XCTAssertTrue(
+            (speed.value as? String ?? "").localizedCaseInsensitiveContains("unavailable"),
+            "A disconnected cached speed must not bypass app projection and become retained/current speed authority."
+        )
+        XCTAssertTrue(
+            app.staticTexts["NO LIVE SPEED"].waitForExistence(timeout: 2),
+            "Disconnected transport must fail the field-specific speed projection closed."
+        )
+
+        assertEnergyRailValue(
+            containing: "Unavailable",
+            in: app,
+            message: "Disconnected cached power must fail closed instead of manufacturing a live zero-watt reading."
+        )
+
+        XCTAssertFalse(app.staticTexts["READY"].exists)
+        XCTAssertFalse(app.staticTexts["RIDING"].exists)
+        XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
+        XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
+
+        keepScreenshot(named: "Dashboard Disconnected Cached Speed Landscape")
+    }
+
+    @MainActor
+    func testLandscapeDashboardNeverObservedSpeedIsUnavailableAndCapturable() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(scenario: "cold-disconnected", orientation: .landscapeRight)
+
+        let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
+        XCTAssertTrue(
+            cockpit.waitForExistence(timeout: 4),
+            "Landscape must still render the real Cockpit before any speed evidence exists."
+        )
+
+        let speed = app.descendants(matching: .any)["dashboard.speed"]
+        XCTAssertTrue(speed.waitForExistence(timeout: 2))
+        XCTAssertTrue(
+            (speed.value as? String ?? "").localizedCaseInsensitiveContains("unavailable"),
+            "No accepted speed evidence must remain explicitly unavailable rather than becoming zero."
+        )
+        XCTAssertTrue(
+            app.staticTexts["NO LIVE SPEED"].waitForExistence(timeout: 2),
+            "The Cockpit must not manufacture a numeric speed before any accepted source evidence exists."
+        )
+        XCTAssertFalse(app.staticTexts["LAST KNOWN"].exists)
+
+        assertEnergyRailValue(
+            containing: "Unavailable",
+            in: app,
+            message: "No observed power evidence must keep the Energy Rail explicitly unavailable."
+        )
+
+        let vehicleStatus = app.descendants(matching: .any)["dashboard.vehicle-status"]
+        XCTAssertTrue(vehicleStatus.waitForExistence(timeout: 2))
+        XCTAssertTrue(
+            app.staticTexts["WAITING FOR DATA"].waitForExistence(timeout: 2),
+            "Cold disconnected launch must expose the no-telemetry vehicle state."
+        )
+        XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
+        XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
+
+        keepScreenshot(named: "Dashboard No Speed Evidence Landscape")
     }
 
     @MainActor
@@ -160,6 +291,24 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testLandscapeDashboardLaunchPerformance() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        XCUIDevice.shared.orientation = .landscapeRight
+
+        measure(metrics: [XCTApplicationLaunchMetric(waitUntilResponsive: true)]) {
+            let app = XCUIApplication()
+            app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = "connected-stopped"
+            app.launch()
+
+            XCTAssertTrue(
+                app.descendants(matching: .any)["dashboard.cockpit"].waitForExistence(timeout: 4),
+                "Launch measurement is valid only when the real landscape Cockpit becomes responsive."
+            )
+            app.terminate()
+        }
+    }
+
+    @MainActor
     private func selectDashboardMode(
         identifier: String,
         expectedValue: String,
@@ -203,13 +352,40 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    private func assertEnergyRailValue(
+        containing expectedFragment: String,
+        in app: XCUIApplication,
+        message: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
+        XCTAssertTrue(
+            energyRail.waitForExistence(timeout: 2),
+            "The Energy Rail accessibility surface must be mounted in the real Dashboard cockpit.",
+            file: file,
+            line: line
+        )
+        XCTAssertTrue(
+            waitForValueContaining(expectedFragment, element: energyRail),
+            message,
+            file: file,
+            line: line
+        )
+    }
+
+    @MainActor
     private func launch(
         scenario: String,
-        orientation: UIDeviceOrientation
+        orientation: UIDeviceOrientation,
+        environment: [String: String] = [:]
     ) -> XCUIApplication {
         XCUIDevice.shared.orientation = orientation
         let app = XCUIApplication()
         app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = scenario
+        for (key, value) in environment {
+            app.launchEnvironment[key] = value
+        }
         app.launch()
         return app
     }
@@ -230,6 +406,17 @@ final class NembraUITests: XCTestCase {
     @MainActor
     private func waitForValue(_ value: String, element: XCUIElement, timeout: TimeInterval = 3) -> Bool {
         let predicate = NSPredicate(format: "value == %@", value)
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func waitForValueContaining(
+        _ fragment: String,
+        element: XCUIElement,
+        timeout: TimeInterval = 3
+    ) -> Bool {
+        let predicate = NSPredicate(format: "value CONTAINS[c] %@", fragment)
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
