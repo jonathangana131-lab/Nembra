@@ -160,6 +160,23 @@ def _write_all(descriptor: int, payload: bytes) -> None:
         offset += written
 
 
+def _validate_fresh_output(metadata: os.stat_result) -> None:
+    if not stat.S_ISREG(metadata.st_mode):
+        raise PrivateInputError("private-intended-device-not-regular-file")
+    if stat.S_IMODE(metadata.st_mode) != 0o600:
+        raise PrivateInputError("private-intended-device-mode-must-be-0600")
+    if metadata.st_nlink != 1:
+        raise PrivateInputError("private-intended-device-link-count-invalid")
+    if metadata.st_size != 0:
+        raise PrivateInputError("private-intended-device-fresh-size-invalid")
+    if hasattr(os, "geteuid") and metadata.st_uid != os.geteuid():
+        raise PrivateInputError("private-intended-device-owner-invalid")
+
+
+def _same_inode(left: os.stat_result, right: os.stat_result) -> bool:
+    return (left.st_dev, left.st_ino) == (right.st_dev, right.st_ino)
+
+
 def create_private_input(
     private_directory: Path,
     repository_root: Path,
@@ -196,6 +213,8 @@ def create_private_input(
             raise PrivateInputError("private-intended-device-path-already-exists") from error
         except OSError as error:
             raise PrivateInputError("private-intended-device-create-failed") from error
+
+        _validate_fresh_output(os.fstat(file_descriptor))
 
         _write_all(file_descriptor, payload)
         os.fsync(file_descriptor)
@@ -244,11 +263,12 @@ def create_private_input(
 
         os.fsync(directory_descriptor)
         return output_path
-    except Exception:
-        if created_identity is not None:
+    except BaseException:
+        if file_descriptor is not None:
             try:
                 current = os.stat(filename, dir_fd=directory_descriptor, follow_symlinks=False)
-                if FileIdentity.from_stat(current) == created_identity:
+                opened = os.fstat(file_descriptor)
+                if _same_inode(current, opened):
                     os.unlink(filename, dir_fd=directory_descriptor)
                     os.fsync(directory_descriptor)
             except OSError:
