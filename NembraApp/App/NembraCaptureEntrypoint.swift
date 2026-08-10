@@ -423,6 +423,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
         // Close the screen-lifetime admission boundary before revoking every already-issued grant.
         // A later SwiftUI/account callback must not mint a replacement membership probe off-screen.
         acceptsViewScopedMembershipRequests = false
+        sdkDeviceMembershipVerified = false
+        membershipAccountUID = nil
+        membershipDeviceID = nil
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
