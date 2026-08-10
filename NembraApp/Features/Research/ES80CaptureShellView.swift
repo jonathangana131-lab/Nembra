@@ -682,7 +682,7 @@ final class ES80GuidedBluetoothCapture: NSObject, ObservableObject {
     private static func advertisementDetails(_ advertisementData: [String: Any], rssi: NSNumber) -> [String: String] {
         var details: [String: String] = [:]
         if let name = advertisementData[CBAdvertisementDataLocalNameKey] as? String { details["localName"] = name }
-        if let connectable = advertisementData[CBAdvertisementDataIsConnectableKey] as? NSNumber { details["isConnectable"] = connectable.boolValue ? "true" : "false" }
+        if let connectable = advertisementData[CBAdvertisementDataIsConnectable] as? NSNumber { details["isConnectable"] = connectable.boolValue ? "true" : "false" }
         if let tx = advertisementData[CBAdvertisementDataTxPowerLevelKey] as? NSNumber { details["txPower"] = tx.stringValue }
         if let manufacturer = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data { details["manufacturerDataBase64"] = manufacturer.base64EncodedString(); details["manufacturerDataHex"] = hex(manufacturer) }
         if let uuids = advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] { details["serviceUUIDs"] = uuids.map { $0.uuidString.uppercased() }.joined(separator: ",") }
@@ -749,7 +749,7 @@ extension ES80GuidedBluetoothCapture: @preconcurrency CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) {
         let normalizedRSSI = RSSI.intValue == 127 ? nil : RSSI.intValue
         let localName = (advertisementData[CBAdvertisementDataLocalNameKey] as? String) ?? peripheral.name
-        let connectable = (advertisementData[CBAdvertisementDataIsConnectableKey] as? NSNumber)?.boolValue
+        let connectable = (advertisementData[CBAdvertisementDataIsConnectable] as? NSNumber)?.boolValue
         peripheralByID[peripheral.identifier] = peripheral
         if discoveryStage == .baselineScanning { baselinePeripheralIDs.insert(peripheral.identifier) }
         let existing = candidateByID[peripheral.identifier]
