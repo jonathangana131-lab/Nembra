@@ -65,6 +65,12 @@ EOF
   exit 6
 fi
 
+# One final secret-free gate proves the public target still uses the exact
+# bundle identity required by Tuya, both local private pods are present, the
+# official SDK versions remain pinned, and LocalSecrets is still git-ignored.
+# It deliberately never reads or prints AppKey/AppSecret contents.
+bash "$SCRIPT_DIR/validate_capture_tuya_field_prereqs.sh"
+
 printf 'Resolving the official Tuya SmartLife iOS SDK and private field identity for Nembra Capture...\n'
 # Tuya's integration guide uses `pod update` after the app-specific Cryption
 # package is present. Explicit Podfile version constraints keep the public SDK
@@ -84,9 +90,17 @@ ThingSmartCryption package and local-only app identity pod.
 NEXT BUILD RULE:
   Open NembraCapture.xcworkspace, not NembraCapture.xcodeproj.
 
-This bootstrap still does NOT authorize the physical experiment. The exact app
-must consume the private identity pod, authorize the user's own SDK session,
-prove exact scooter membership, receive a genuine structured application
-update, and survive the canonical authenticated 45-second gate before
-stationary mapping can unlock.
+NEXT PHYSICAL TEST:
+  Keep the scooter stationary. Use the Capture P0 Tuya authentication flow only.
+  Do not run the old 17-step calibration or ride sequence yet.
+
+ACCEPTANCE:
+  1. the logged-in official SDK account proves exact scooter membership;
+  2. Tuya reports the scooter locally BLE-connected;
+  3. at least one genuine same-generation application update arrives; and
+  4. that authenticated local BLE generation remains continuously observed for
+     at least 45 seconds, beyond the prior ~30-second unauthenticated cutoff.
+
+No DP command, unbind, reset, pairing mutation, lock, light, speed, mode, throttle,
+brake, firmware, or other scooter control is authorized by this bootstrap.
 EOF
