@@ -41,16 +41,16 @@ jobs:
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           text = path.read_text(encoding="utf-8")
 
-          begin_anchor = '''        guard currentConnectionToken == nil else {
-'''
-          begin_guard = '''        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {
-            failLocally(
-                "Tuya still reports a current local-BLE session for this scooter. Power the scooter OFF and wait for that session to clear, or relaunch Capture. Package-owned correlation will not scan while Tuya still owns local BLE.",
-                "existing_sdk_local_ble_ownership_blocks_scan"
-            )
-            return
-        }
-'''
+          begin_anchor = "        guard currentConnectionToken == nil else {\n"
+          begin_guard = (
+              "        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {\n"
+              "            failLocally(\n"
+              "                \"Tuya still reports a current local-BLE session for this scooter. Power the scooter OFF and wait for that session to clear, or relaunch Capture. Package-owned correlation will not scan while Tuya still owns local BLE.\",\n"
+              "                \"existing_sdk_local_ble_ownership_blocks_scan\"\n"
+              "            )\n"
+              "            return\n"
+              "        }\n"
+          )
           begin = text.index("    private func beginCorrelationSeries()")
           next_func = text.index("    func startNextCorrelationWindow()", begin)
           section = text[begin:next_func]
@@ -61,18 +61,17 @@ jobs:
           section = section.replace(begin_anchor, begin_guard + begin_anchor, 1)
           text = text[:begin] + section + text[next_func:]
 
-          factory_anchor = '''    static func make() -> OfficialTuyaDriver? {
-'''
-          factory_method = '''    static func isLocallyConnected(uuid: String) -> Bool {
-#if canImport(ThingSmartHomeKit) && canImport(NembraTuyaPrivateConfig)
-        guard bootstrap(), !uuid.isEmpty else { return false }
-        return ThingSmartBLEManager.sharedInstance().deviceStatue(withUUID: uuid)
-#else
-        return false
-#endif
-    }
-
-'''
+          factory_anchor = "    static func make() -> OfficialTuyaDriver? {\n"
+          factory_method = (
+              "    static func isLocallyConnected(uuid: String) -> Bool {\n"
+              "#if canImport(ThingSmartHomeKit) && canImport(NembraTuyaPrivateConfig)\n"
+              "        guard bootstrap(), !uuid.isEmpty else { return false }\n"
+              "        return ThingSmartBLEManager.sharedInstance().deviceStatue(withUUID: uuid)\n"
+              "#else\n"
+              "        return false\n"
+              "#endif\n"
+              "    }\n\n"
+          )
           factory = text.index("private enum OfficialTuyaFactory")
           probe = text.index("#if canImport(ThingSmartHomeKit)\n@MainActor\nprivate final class OfficialTuyaMembershipProbe", factory)
           factory_section = text[factory:probe]
