@@ -15,6 +15,7 @@ Package.resolved
 # CocoaPods / local Tuya SDK integration
 Pods/
 NembraCapture.xcworkspace/
+Podfile.lock
 
 # Private local provisioning material (never commit Tuya app/user/device secrets)
 LocalSecrets/
