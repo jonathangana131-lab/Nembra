@@ -1,0 +1,39 @@
+name: Capture Final Product Compose
+
+on:
+  push:
+    branches:
+      - integration/v14-capture-final-product-convergence-sol
+    paths:
+      - .github/workflows/capture-final-product-compose.yml
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/v14-capture-final-product-convergence-sol
+          fetch-depth: 0
+      - name: Compose reviewed explicit-confirmation product bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          donor=bd38bb5be481f76450df577f7820a2a5e21cc674
+          git fetch origin integration/v14-capture-final-explicit-confirmation-sol
+          git cat-file -e "$donor^{commit}"
+          git checkout "$donor" -- \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldBuildPresentationAuthoritySourceTests.swift
+          rm .github/workflows/capture-final-product-compose.yml
+          git config user.name nembra-v14-integration
+          git config user.email actions@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git diff --cached --name-only
+          test "$(git diff --cached --name-only | sort | tr '\n' ' ')" = "NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldBuildPresentationAuthoritySourceTests.swift "
+          git commit -m "fix(capture): compose explicit confirmation and field-build authority"
+          git push origin HEAD:integration/v14-capture-final-product-convergence-sol
