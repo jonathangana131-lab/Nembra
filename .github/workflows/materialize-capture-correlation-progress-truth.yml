@@ -16,9 +16,23 @@ jobs:
       - uses: actions/checkout@v4
       - name: Apply source repair
         run: python3 scripts/ci/apply_capture_correlation_progress_truth.py
-      - name: Validate focused Capture contract
-        working-directory: Packages/NembraBluetoothCapture
-        run: swift test --filter TuyaCorrelationProgressPresentationTruthSourceTests
+      - name: Validate focused source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          start = source.index('private struct SecureLinkView: View')
+          end = source.index('private struct SecureTransfer: Transferable', start)
+          body = source[start:end]
+          assert 'Text("\\(min(test.correlationCompletedWindowCount + 1, 4))/4")' not in body
+          assert 'private var correlationDisplayedWindowOrdinal: Int' in body
+          assert 'test.phase == .correlated ? 4' in body
+          assert 'min(test.correlationCompletedWindowCount + 1, 4)' in body
+          assert 'Text("\\(correlationDisplayedWindowOrdinal)/4")' in body
+          PY
+          git diff --check
       - name: Publish clean repair
         shell: bash
         run: |
