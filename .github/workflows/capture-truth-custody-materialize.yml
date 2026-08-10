@@ -38,51 +38,37 @@ jobs:
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           source = path.read_text()
 
-          def replace_in_section(text: str, start: str, end: str, old: str, new: str) -> str:
-              start_index = text.index(start)
-              end_index = text.index(end, start_index)
-              section = text[start_index:end_index]
-              if section.count(old) != 1:
-                  raise SystemExit(f"expected one exact replacement in {start!r}, found {section.count(old)}")
-              section = section.replace(old, new, 1)
-              return text[:start_index] + section + text[end_index:]
+          def section_bounds(text: str, start: str, end: str):
+              a = text.index(start)
+              b = text.index(end, a)
+              return a, b
 
-          authority_clear = """        sdkDeviceMembershipVerified = false
-          membershipAccountUID = nil
-          membershipDeviceID = nil
-          membershipRequestID = UUID()
-          """
+          def insert_after_once_in_section(text: str, start: str, end: str, needle: str, insertion: str) -> str:
+              a, b = section_bounds(text, start, end)
+              section = text[a:b]
+              if section.count(needle) != 1:
+                  raise RuntimeError(f"{start.strip()}: expected exactly one {needle.strip()!r}, found {section.count(needle)}")
+              section = section.replace(needle, needle + insertion, 1)
+              return text[:a] + section + text[b:]
 
-          source = replace_in_section(
+          source = insert_after_once_in_section(
               source,
               "    func abandonCorrelationForViewExit() {",
               "    func appDidLoseForeground() {",
-              authority_clear,
-              """        sdkDeviceMembershipVerified = false
-          membershipStatus = "Secure Link changed. Exact scooter membership must be verified again for this view before Bluetooth discovery."
-          membershipAccountUID = nil
-          membershipDeviceID = nil
-          membershipRequestID = UUID()
-          """,
+              "        sdkDeviceMembershipVerified = false\n",
+              "        membershipStatus = \"Secure Link changed. Exact scooter membership must be verified again for this view before Bluetooth discovery.\"\n",
           )
-
-          source = replace_in_section(
+          source = insert_after_once_in_section(
               source,
               "    func appDidLoseForeground() {",
               "    var privateConfig: Bool",
-              authority_clear,
-              """        sdkDeviceMembershipVerified = false
-          membershipStatus = "Capture left the foreground. Exact scooter membership must be verified again before a new authenticated attempt."
-          membershipAccountUID = nil
-          membershipDeviceID = nil
-          membershipRequestID = UUID()
-          """,
+              "        sdkDeviceMembershipVerified = false\n",
+              "        membershipStatus = \"Capture left the foreground. Exact scooter membership must be verified again before a new authenticated attempt.\"\n",
           )
 
           receiver_marker = "    private func receivedApplicationUpdate(\n"
           if source.count(receiver_marker) != 1:
-              raise SystemExit("receivedApplicationUpdate marker changed")
-
+              raise RuntimeError("receivedApplicationUpdate marker changed")
           helper = '''    private func preparedApplicationEventDetails(
               _ update: [String: String],
               verifiedAccountUID: String
@@ -104,9 +90,6 @@ jobs:
                       with: redactionMarker,
                       options: [.caseInsensitive, .literal]
                   )
-
-                  // Preserve an SDK field named `generation` as application evidence without
-                  // allowing it to impersonate Nembra-owned connection provenance.
                   let baseKey = redactedKey == "generation" ? "application.generation" : redactedKey
                   var uniqueKey = baseKey
                   var collisionIndex = 2
@@ -122,22 +105,17 @@ jobs:
           '''
           source = source.replace(receiver_marker, helper + receiver_marker, 1)
 
-          guard_block = """        guard driver.isLocallyConnected(uuid: tuyaUUID) else {
-              await recordObservedTransportLoss(token: token)
-              return
-          }
+          receiver_start, receiver_end = section_bounds(
+              source,
+              "    private func receivedApplicationUpdate(",
+              "    private func startWatchdog",
+          )
+          receiver = source[receiver_start:receiver_end]
 
-          applicationUpdateAdmissionsInFlight += 1
-          """
-          if source.count(guard_block) != 1:
-              raise SystemExit("application transport guard changed")
-          source = source.replace(
-              guard_block,
-              """        guard driver.isLocallyConnected(uuid: tuyaUUID) else {
-              await recordObservedTransportLoss(token: token)
-              return
-          }
-          guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+          admissions = "        applicationUpdateAdmissionsInFlight += 1\n"
+          if receiver.count(admissions) != 1:
+              raise RuntimeError("application admission counter shape changed")
+          uid_guard = '''        guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
                 !verifiedAccountUID.isEmpty else {
               await invalidateSourceAuthority(
                   token: token,
@@ -147,21 +125,13 @@ jobs:
               return
           }
 
-          applicationUpdateAdmissionsInFlight += 1
-          """,
-              1,
-          )
+          '''
+          receiver = receiver.replace(admissions, uid_guard + admissions, 1)
 
-          old_log = """            try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
-              await refreshLedgerSnapshot()
-              log("tuya_application_update", update.merging([
-                  "generation": String(token.diagnosticGeneration)
-              ]) { current, _ in current })
-              message = "Receiving same-generation scooter application data · \\(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
-          """
-          new_log = """            try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
-              await refreshLedgerSnapshot()
-              guard sdkAccountLoggedIn,
+          refresh = "            await refreshLedgerSnapshot()\n"
+          if receiver.count(refresh) != 1:
+              raise RuntimeError(f"expected one receiver ledger refresh, found {receiver.count(refresh)}")
+          custody = '''            guard sdkAccountLoggedIn,
                     sdkDeviceMembershipVerified,
                     accountIdentityLeaseIsAuthorized,
                     membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) == verifiedAccountUID else {
@@ -176,20 +146,25 @@ jobs:
                   update,
                   verifiedAccountUID: verifiedAccountUID
               )
-              log("tuya_application_update", eventDetails.merging([
-                  "generation": String(token.diagnosticGeneration)
-              ]) { _, trusted in trusted })
-              message = "Receiving same-generation scooter application data · \\(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
-          """
-          if source.count(old_log) != 1:
-              raise SystemExit("application event log shape changed")
-          source = source.replace(old_log, new_log, 1)
+          '''
+          receiver = receiver.replace(refresh, refresh + custody, 1)
 
-          duplicate = '        "refreshtoken",\n        "sessionkey",\n        "authkey",\n'
-          if source.count(duplicate) != 1:
-              raise SystemExit("secret classifier duplicate shape changed")
+          old_log = '''            log("tuya_application_update", update.merging([
+                  "generation": String(token.diagnosticGeneration)
+              ]) { current, _ in current })'''
+          new_log = '''            log("tuya_application_update", eventDetails.merging([
+                  "generation": String(token.diagnosticGeneration)
+              ]) { _, trusted in trusted })'''
+          if receiver.count(old_log) != 1:
+              raise RuntimeError(f"application event merge shape changed; matches={receiver.count(old_log)}")
+          receiver = receiver.replace(old_log, new_log, 1)
+          source = source[:receiver_start] + receiver + source[receiver_end:]
+
+          trailing_duplicate = '        "refreshtoken",\n        "sessionkey",\n        "authkey",\n'
+          if source.count(trailing_duplicate) != 1:
+              raise RuntimeError("expected duplicate sessionkey classifier immediately after refreshtoken")
           source = source.replace(
-              duplicate,
+              trailing_duplicate,
               '        "refreshtoken",\n        "authkey",\n',
               1,
           )
