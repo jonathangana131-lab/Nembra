@@ -782,10 +782,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
         verifySDKMembership { [weak self] stillAuthorized in
             guard let self else { return }
             guard stillAuthorized,
+                  self.phase == .selected,
+                  self.targetCorrelationOperatorConfirmed,
                   self.sdkAccountLoggedIn,
                   self.accountIdentityLeaseIsAuthorized,
                   self.selectedID == candidate.id else {
-                self.failLocally("Exact scooter/account authority could not be re-verified immediately before BLE authentication.", "sdk_device_membership_recheck_failed")
+                self.failLocally("Exact confirmed scooter/account authority could not be re-verified immediately before BLE authentication.", "sdk_device_membership_recheck_failed")
                 return
             }
             self.beginOfficialConnection(candidate: candidate)
@@ -793,12 +795,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func beginOfficialConnection(candidate: Candidate) {
-        guard phase == .selected || phase == .failed else { return }
-        guard candidate.likely,
+        guard phase == .selected else { return }
+        guard targetCorrelationOperatorConfirmed,
+              selectedID == candidate.id,
+              candidate.likely,
+              buildIdentity.isAuthoritativeFieldBuild,
               sdkDeviceMembershipVerified,
               sdkAccountLoggedIn,
               accountIdentityLeaseIsAuthorized else {
-            failLocally("Tuya account/device authority changed before connection start.", "sdk_authority_changed")
+            failLocally("Confirmed build or Tuya account/device authority changed before connection start.", "sdk_authority_changed")
             return
         }
         guard let newDriver = OfficialTuyaFactory.make() else {
