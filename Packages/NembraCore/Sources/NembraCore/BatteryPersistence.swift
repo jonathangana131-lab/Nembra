@@ -103,6 +103,17 @@ public struct RetainedBatterySnapshot: Equatable, Codable, Sendable {
         guard seconds.isFinite, seconds >= 0 else { return nil }
         return seconds
     }
+
+    /// Reconstructs the original authority-bearing observation without promoting
+    /// retained data to live/current evidence. Storage time remains storage chronology;
+    /// only the original observation time crosses back into the battery truth model.
+    public var authoritativeObservation: AuthoritativeBatteryObservation? {
+        AuthoritativeBatteryObservation(
+            percent: percent,
+            authority: authority,
+            observedAt: observedAt
+        )
+    }
 }
 
 /// Small persistence codec kept separate from storage choice so UserDefaults/files/SwiftData

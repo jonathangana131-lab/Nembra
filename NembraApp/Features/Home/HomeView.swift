@@ -649,6 +649,9 @@ struct HomeView: View {
 
         switch vehicle.state.connection {
         case .connected:
+            guard vehicle.state.dataAvailability == .live else {
+                return "Connected · waiting for data"
+            }
             if let speed = vehicle.simulatorQualifiedLiveSpeedKilometersPerHour, speed > 0.5 {
                 return "Riding · \(VehicleDisplayFormatting.speed(kilometersPerHour: speed))"
             }
