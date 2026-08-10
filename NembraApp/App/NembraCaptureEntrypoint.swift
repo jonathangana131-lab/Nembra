@@ -1013,7 +1013,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             case .invalidClock:
                 await invalidateInternalLifecycle(
                     token: token,
-                    message: "Local-BLE settlement failed closed because the monotonic clock regressed. The exact generation was retired without resampling that clock.",
+                    message: "Local-BLE settlement failed closed because the monotonic clock regressed. The exact generation was retired without resampling that clock again.",
                     kind: "sdk_local_ble_settlement_clock_invalid"
                 )
                 return
@@ -1276,6 +1276,22 @@ private final class SecureLinkController: NSObject, ObservableObject {
                             self.phase = .failed
                             self.message = "Source authority changed while canonical acceptance was sealing. Restart from OFF1; the sealed package chronology is diagnostic only."
                             self.log("source_authority_changed_during_acceptance_seal", [
+                                "generation": String(token.diagnosticGeneration)
+                            ])
+                            return
+                        }
+                        let postSealLocalBLEOnline = driver.isLocallyConnected(uuid: self.tuyaUUID)
+                        self.sdkLocalBLEOnline = postSealLocalBLEOnline
+                        guard postSealLocalBLEOnline else {
+                            // The package has already sealed/retired this generation. This is a
+                            // fresh presentation/source-authority sample only, so do not manufacture
+                            // a second disconnect/source/lifecycle terminal in the sealed ledger.
+                            self.currentConnectionToken = nil
+                            self.localBLESettlementToken = nil
+                            self.driver = nil
+                            self.phase = .failed
+                            self.message = "Tuya local-BLE authority was no longer current when canonical acceptance finished sealing. Restart from OFF1; the sealed package chronology remains diagnostic only."
+                            self.log("sdk_local_ble_not_current_after_acceptance_seal", [
                                 "generation": String(token.diagnosticGeneration)
                             ])
                             return
