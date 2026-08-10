@@ -1,63 +1,49 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import os
-import shutil
+import re
 import subprocess
 import tempfile
-import textwrap
 import unittest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "xcode27_today_research_field_candidate.sh"
-EXPECTED_MODE = "--nembra-today-research-build"
 
 
-class TodayResearchFieldCandidateWrapperTests(unittest.TestCase):
+class TodayResearchFieldCandidateRetirementTests(unittest.TestCase):
     def setUp(self):
         self.source = SCRIPT.read_text(encoding="utf-8")
 
-    def test_delegates_research_authority_as_explicit_producer_mode(self):
-        self.assertIn(
-            'unset SWIFT_ACTIVE_COMPILATION_CONDITIONS OTHER_SWIFT_FLAGS XCODE_XCCONFIG_FILE',
-            self.source,
-        )
-        self.assertIn(
-            'exec "$CANONICAL_PRODUCER" --nembra-today-research-build "$@"',
-            self.source,
-        )
-        self.assertNotIn("export XCODE_XCCONFIG_FILE=", self.source)
-        self.assertNotIn("export OTHER_SWIFT_FLAGS=", self.source)
-        self.assertNotIn("export SWIFT_ACTIVE_COMPILATION_CONDITIONS=", self.source)
-        self.assertNotIn("mktemp", self.source)
-        self.assertNotIn("NembraES80TodayResearch.xcconfig", self.source)
+    def test_wrapper_is_explicitly_retired_and_non_authoritative(self):
+        self.assertEqual(self.source.splitlines()[0], "#!/bin/bash -p")
+        self.assertIn("SUPERSEDED: the private TODAY ES80-FINGERPRINT-v1 Research candidate path is retired.", self.source)
+        self.assertIn("Current Capture field procedure is ES80-AUTHENTICATED-STATIONARY-v1.", self.source)
+        self.assertIn("PHYSICAL NO-GO", self.source)
+        self.assertRegex(self.source, re.compile(r'(?m)^exit 64$'))
 
-    def test_executes_canonical_producer_with_mode_and_no_ambient_build_settings(self):
-        with tempfile.TemporaryDirectory(prefix="nembra-today-wrapper-test-") as temporary:
-            root = Path(temporary)
-            wrapper = root / SCRIPT.name
-            producer = root / "xcode27_signed_field_candidate.sh"
-            captured_args = root / "captured-args"
-            captured_environment = root / "captured-environment"
+    def test_wrapper_cannot_delegate_to_signed_field_producer_or_compiler_overrides(self):
+        for forbidden in (
+            "CANONICAL_PRODUCER=",
+            "--nembra-today-research-build",
+            "XCODE_XCCONFIG_FILE",
+            "OTHER_SWIFT_FLAGS",
+            "SWIFT_ACTIVE_COMPILATION_CONDITIONS",
+            "NEMBRA_ES80_TODAY_RESEARCH",
+            "xcodebuild",
+            "mktemp",
+        ):
+            self.assertNotIn(forbidden, self.source)
+        self.assertNotRegex(self.source, re.compile(r'(?m)^\s*(?:exec|source|\.)\s+'))
 
-            shutil.copy2(SCRIPT, wrapper)
-            wrapper.chmod(0o755)
-            producer.write_text(
-                textwrap.dedent(
-                    f"""\
-                    #!/bin/bash
-                    set -euo pipefail
-                    test -z "${{XCODE_XCCONFIG_FILE+x}}"
-                    test -z "${{OTHER_SWIFT_FLAGS+x}}"
-                    test -z "${{SWIFT_ACTIVE_COMPILATION_CONDITIONS+x}}"
-                    /usr/bin/printf '%s\\n' "$@" > {str(captured_args)!r}
-                    /usr/bin/printf 'clean\\n' > {str(captured_environment)!r}
-                    """
-                ),
-                encoding="utf-8",
-            )
-            producer.chmod(0o755)
+    def test_invocation_fails_closed_without_executing_caller_startup_authority(self):
+        with tempfile.TemporaryDirectory(prefix="nembra-retired-today-field-wrapper-") as temporary:
+            directory = Path(temporary)
+            marker = directory / "caller-code-ran"
+            hook = directory / "bash-env-hook.sh"
+            hook.write_text(f"printf 'caller startup hook executed\\n' > {str(marker)!r}\n", encoding="utf-8")
 
-            env = os.environ.copy()
-            env.update(
+            environment = os.environ.copy()
+            environment["BASH_ENV"] = str(hook)
+            environment.update(
                 {
                     "XCODE_XCCONFIG_FILE": "/tmp/hostile.xcconfig",
                     "OTHER_SWIFT_FLAGS": "-DHOSTILE",
@@ -65,18 +51,18 @@ class TodayResearchFieldCandidateWrapperTests(unittest.TestCase):
                 }
             )
             completed = subprocess.run(
-                [str(wrapper), "--sentinel", "value"],
-                env=env,
+                [str(SCRIPT), "--sentinel", "value"],
+                env=environment,
                 check=False,
                 capture_output=True,
                 text=True,
             )
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            self.assertEqual(
-                captured_args.read_text(encoding="utf-8"),
-                f"{EXPECTED_MODE}\n--sentinel\nvalue\n",
-            )
-            self.assertEqual(captured_environment.read_text(encoding="utf-8"), "clean\n")
+
+            self.assertEqual(completed.returncode, 64)
+            self.assertFalse(marker.exists(), "Caller BASH_ENV executed before retired wrapper fail-closed.")
+            self.assertIn("SUPERSEDED", completed.stderr)
+            self.assertIn("PHYSICAL NO-GO", completed.stderr)
+            self.assertNotIn("hostile", completed.stdout.lower() + completed.stderr.lower())
 
 
 if __name__ == "__main__":
