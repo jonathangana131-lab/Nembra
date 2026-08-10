@@ -77,8 +77,6 @@ jobs:
           if total != 58:
               print(f'::error::Expected exact composed differential 82 -> 58 issues; observed {total}')
               raise SystemExit(1)
-          if status := 0:
-              pass
           PY
 
       - name: Upload exact package log
