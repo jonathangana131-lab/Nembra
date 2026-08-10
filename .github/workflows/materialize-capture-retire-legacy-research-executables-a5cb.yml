@@ -1,0 +1,85 @@
+name: Reanchor Capture Legacy Research Executable Retirement a5cb
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-retire-legacy-research-executables-a5cb
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact product parent and unchanged legacy subjects
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='a5cb12ed97241ba274d23f311d67cf84623ceb29'
+          test "$(git rev-parse HEAD^)" = "$parent"
+          mapfile -t changed < <(git diff --name-only "$parent"...HEAD | sort)
+          test "${#changed[@]}" = 1
+          test "${changed[0]}" = '.github/workflows/materialize-capture-retire-legacy-research-executables-a5cb.yml'
+          test "$(git rev-parse "$parent:scripts/ci/xcode27_today_research_field_candidate.sh")" = 'b42ab38b98609c14f7b8cdcc46d653a7a3468cc6'
+          test "$(git rev-parse "$parent:scripts/ci/xcode27_signed_field_candidate.sh")" = 'd9a3621ef5b0b3cdd2a70163ca71b35a1ce28b50'
+          test ! -e Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayExecutableAuthorityRetirementSourceTests.swift
+          grep -Fq 'RETIRED / NON-AUTHORITATIVE / PHYSICAL NO-GO' CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md
+          grep -Fq 'PROCEDURE_ID: `ES80-AUTHENTICATED-STATIONARY-v1`' docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md
+
+      - name: Import exact reviewed semantic repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          donor='c156bbadad5da2797d44497bf4726de95dd0f6ec'
+          git fetch --no-tags origin sol/v14-capture-retire-legacy-research-executables-6b778
+          git cat-file -e "$donor^{commit}"
+          git checkout "$donor" -- scripts/ci/xcode27_today_research_field_candidate.sh scripts/ci/xcode27_signed_field_candidate.sh
+          git show "$donor:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayExecutableAuthorityRetirementSourceTests.swift" > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayExecutableAuthorityRetirementSourceTests.swift
+          git diff --check
+
+      - name: Prove retired executables fail closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ci/xcode27_today_research_field_candidate.sh
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          set +e
+          wrapper_output="$(bash -p scripts/ci/xcode27_today_research_field_candidate.sh 2>&1)"
+          wrapper_status=$?
+          producer_output="$(bash -p scripts/ci/xcode27_signed_field_candidate.sh --nembra-today-research-build 2>&1)"
+          producer_status=$?
+          set -e
+          test "$wrapper_status" = 64
+          test "$producer_status" = 64
+          grep -Fq 'SUPERSEDED:' <<< "$wrapper_output"
+          grep -Fq 'ES80-AUTHENTICATED-STATIONARY-v1' <<< "$wrapper_output"
+          grep -Fq 'SUPERSEDED: --nembra-today-research-build' <<< "$producer_output"
+          ! grep -Fq 'TODAY_RESEARCH_BUILD_MODE=1' scripts/ci/xcode27_signed_field_candidate.sh
+          ! grep -Fq 'canonical-producer-explicit-mode' scripts/ci/xcode27_signed_field_candidate.sh
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayExecutableAuthorityRetirementSourceTests.swift
+
+      - name: Collapse helper and publish clean repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='a5cb12ed97241ba274d23f311d67cf84623ceb29'
+          rm .github/workflows/materialize-capture-retire-legacy-research-executables-a5cb.yml
+          git add scripts/ci/xcode27_today_research_field_candidate.sh scripts/ci/xcode27_signed_field_candidate.sh Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayExecutableAuthorityRetirementSourceTests.swift
+          git add -u .github/workflows/materialize-capture-retire-legacy-research-executables-a5cb.yml
+          git diff --cached --check
+          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' commit -m 'fix(capture): retire legacy Research executable authority'
+          mapfile -t effective < <(git diff --name-only "$parent"...HEAD | sort)
+          printf '%s\n' "${effective[@]}"
+          test "${#effective[@]}" = 3
+          test "${effective[0]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayExecutableAuthorityRetirementSourceTests.swift'
+          test "${effective[1]}" = 'scripts/ci/xcode27_signed_field_candidate.sh'
+          test "${effective[2]}" = 'scripts/ci/xcode27_today_research_field_candidate.sh'
+          git diff --check "$parent" HEAD
+          git push origin HEAD:sol/v14-capture-retire-legacy-research-executables-a5cb
