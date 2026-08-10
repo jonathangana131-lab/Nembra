@@ -1283,7 +1283,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     break
                 }
 
-                if (self.canonicalObservedAgeSeconds ?? 0) > 60,
+                if self.applicationUpdateAdmissionsInFlight == 0,
+                   (self.canonicalObservedAgeSeconds ?? 0) > 60,
                    self.applicationUpdateCount == 0 {
                     do {
                         try await sessionLedger.markApplicationObservationTimedOut(for: token)
