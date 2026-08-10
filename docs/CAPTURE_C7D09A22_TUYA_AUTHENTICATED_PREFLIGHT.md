@@ -28,6 +28,8 @@ The preflight MUST NOT:
 - log Tuya passwords, account tokens, AppSecret, local/session keys, auth keys, device secrets, QR authorization tokens, or full decrypted secure frames;
 - claim speed/battery/power/mode/brake/light/odometer semantics before repeatable authenticated payload evidence exists.
 
+The cloud `local_key` returned by the already-authorized metadata route may be retained privately for evidence continuity, but it is **not** accepted by itself as proof of FD50 BLE authentication material. The physical gate must carry an accepted official authentication-method provenance from the session provider.
+
 ## Allowed authentication routes
 
 Only an official/documented Tuya route may provide authentication material.
@@ -40,12 +42,12 @@ After login, Nembra may locate the already-bound scooter in the user's home/devi
 
 ### Alternate route B — official Tuya device-sharing authorization
 
-If App SDK setup is not used, an official Tuya device-sharing / QR authorization flow may be used to grant Nembra read access to the user's already-linked Tuya account/device. This route is acceptable only if it produces documented read access without unbinding/re-pairing the scooter. Keep cloud authorization material out of logs and local JSON exports.
+If App SDK setup is not used, an official Tuya device-sharing / QR authorization flow may be used to grant Nembra read access to the user's already-linked Tuya account/device. This route is acceptable only if it produces a documented authenticated BLE read session without unbinding/re-pairing the scooter. Cloud authorization or possession of `local_key` alone does not satisfy the BLE gate. Keep cloud authorization material out of logs and local JSON exports.
 
 ## Read-only preflight state machine
 
 1. `notConfigured`
-   - Tuya SDK/app credentials or official device-sharing authorization are absent.
+   - Tuya SDK/app credentials or other documented BLE session authorization are absent.
    - UI says authentication setup is required.
    - Do not open the raw FD50 command characteristic.
 
@@ -65,13 +67,14 @@ If App SDK setup is not used, an official Tuya device-sharing / QR authorization
    - No Nembra-authored raw application command frames.
 
 5. `authenticatedObservation`
-   - Start a 45-second stationary observation.
+   - Start a 45-second stationary observation after authenticated-session authority is established.
    - Record only metadata needed to prove the channel is alive plus redacted/raw application payload bytes that are safe for protocol analysis.
    - Do not send control commands.
 
 6. `accepted`
-   - At least one real application notification payload is observed; AND
-   - the secure connection remains alive past `35 s` (comfortably past the previous ~29.93 s rejection window); AND
+   - The current connection generation carries an accepted official authentication-method provenance; AND
+   - at least one real application notification payload is observed; AND
+   - the authenticated session remains alive for at least `45 s`, comfortably past the previous ~29.93 s rejection window; AND
    - no unbind/reset/pair/activation/control action occurred.
 
 7. `failed`
@@ -92,9 +95,10 @@ The next JSON should add:
 
 ## First physical acceptance gate
 
-Do not repeat the full outside run until BOTH are true:
+Do not repeat the full outside run until ALL are true:
 
-1. `applicationNotificationCount > 0`
-2. secure BLE stays connected for `> 35 s`
+1. the session reports an accepted official authentication-method provenance;
+2. `applicationNotificationCount > 0`;
+3. authenticated BLE stays connected for at least `45 s`.
 
 Once that passes, the next experiment is stationary only: idle -> mode changes -> light -> brake -> optional charger plug/unplug. Only after those DPs are repeatable should speed/power correlation use another short outdoor ride.
