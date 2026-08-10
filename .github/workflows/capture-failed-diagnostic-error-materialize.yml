@@ -1,0 +1,184 @@
+name: Capture failed diagnostic error separation materializer
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-failed-diagnostic-error-sol
+    paths:
+      - .github/workflows/capture-failed-diagnostic-error-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/v14-capture-failed-diagnostic-error-sol
+          fetch-depth: 0
+
+      - name: Bind exact construction parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='202666ed57be990978d874da4d7f086d11652eab'
+          git merge-base --is-ancestor "$base" HEAD
+          test -z "$(git diff --name-only "$base" HEAD -- \
+            ':!Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureFailedDiagnosticPreparationErrorSourceTests.swift' \
+            ':!.github/workflows/capture-failed-diagnostic-error-materialize.yml')"
+
+      - name: Separate stopped-attempt diagnostic preparation error
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text()
+
+          published = '    @Published private(set) var exportName = "Nembra-Secure-Link-Diagnostics.json"\n'
+          if source.count(published) != 1:
+              raise SystemExit(f'export presentation state shape changed: {source.count(published)}')
+          source = source.replace(
+              published,
+              published + '    @Published private(set) var diagnosticExportError: String?\n',
+              1,
+          )
+
+          prepare_start = source.index('    func prepareExport() {')
+          prepare_end = source.index('    private func abandonPackageCorrelation()', prepare_start)
+          prepare = source[prepare_start:prepare_end]
+
+          signature = '    func prepareExport() {\n        let envelope: Export\n'
+          if prepare.count(signature) != 1:
+              raise SystemExit('prepareExport signature/body shape changed')
+          prepare = prepare.replace(
+              signature,
+              '    func prepareExport() {\n        diagnosticExportError = nil\n        let envelope: Export\n',
+              1,
+          )
+
+          old_catch = '''        } catch {
+              exportData = nil
+              message = "Diagnostic export failed: \\(error.localizedDescription)"
+          }
+          '''
+          old_catch = '\n'.join(
+              line[10:] if line.startswith('          ') else line
+              for line in old_catch.splitlines()
+          ) + '\n'
+          new_catch = '''        } catch {
+              exportData = nil
+              if phase == .failed {
+                  diagnosticExportError = "Diagnostics could not be prepared: \\(error.localizedDescription)"
+              } else {
+                  message = "Diagnostic export failed: \\(error.localizedDescription)"
+              }
+          }
+          '''
+          new_catch = '\n'.join(
+              line[10:] if line.startswith('          ') else line
+              for line in new_catch.splitlines()
+          ) + '\n'
+          if prepare.count(old_catch) != 1:
+              raise SystemExit(f'prepareExport catch shape changed: {prepare.count(old_catch)}')
+          prepare = prepare.replace(old_catch, new_catch, 1)
+          source = source[:prepare_start] + prepare + source[prepare_end:]
+
+          reset_start = source.index('    private func resetDiscoverySessionOnly() {')
+          reset_end = source.index('    private func beginCorrelationSeries()', reset_start)
+          reset = source[reset_start:reset_end]
+          reset_token = '        exportData = nil\n'
+          if reset.count(reset_token) != 1:
+              raise SystemExit(f'reset export state shape changed: {reset.count(reset_token)}')
+          reset = reset.replace(reset_token, reset_token + '        diagnosticExportError = nil\n', 1)
+          source = source[:reset_start] + reset + source[reset_end:]
+
+          controls_start = source.index('    private var failureDiagnosticsControls: some View {')
+          controls_end = source.index('    private var completionPanel: some View {', controls_start)
+          controls = source[controls_start:controls_end]
+          explanation = '''            Text("Diagnostics preserve legitimate failed-attempt evidence for analysis. They never turn this stopped attempt into an accepted Capture.")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                  .fixedSize(horizontal: false, vertical: true)
+          '''
+          explanation = '\n'.join(
+              line[10:] if line.startswith('          ') else line
+              for line in explanation.splitlines()
+          ) + '\n'
+          if controls.count(explanation) != 1:
+              raise SystemExit('failed diagnostics explanatory copy changed')
+          secondary_error = '''            if let diagnosticExportError = test.diagnosticExportError {
+                  Label("Diagnostics preparation issue", systemImage: "exclamationmark.triangle")
+                      .font(.subheadline.weight(.semibold))
+                      .foregroundStyle(.orange)
+                  Text(diagnosticExportError)
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                      .fixedSize(horizontal: false, vertical: true)
+                      .accessibilityLabel("Diagnostics preparation issue. \\(diagnosticExportError)")
+              }
+
+          '''
+          secondary_error = '\n'.join(
+              line[10:] if line.startswith('          ') else line
+              for line in secondary_error.splitlines()
+          ) + '\n'
+          controls = controls.replace(explanation, secondary_error + explanation, 1)
+          source = source[:controls_start] + controls + source[controls_end:]
+
+          path.write_text(source)
+          PY
+          git diff --check
+
+      - name: Verify failure truth and retry contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+
+          prepare = s[s.index('    func prepareExport() {'):s.index('    private func abandonPackageCorrelation()', s.index('    func prepareExport() {'))]
+          catch = prepare[prepare.index('        } catch {'):]
+          assert 'diagnosticExportError = nil' in prepare
+          assert 'if phase == .failed {' in catch
+          assert 'diagnosticExportError = "Diagnostics could not be prepared:' in catch
+          assert 'message = "Diagnostic export failed:' in catch
+          failed_branch = catch[catch.index('if phase == .failed {'):catch.index('} else {')]
+          assert 'message =' not in failed_branch
+
+          panel = s[s.index('    private var failurePanel: some View {'):s.index('    private var completionPanel: some View {')]
+          assert 'Text(test.message)' in panel
+          assert 'test.diagnosticExportError' in panel
+          assert 'Prepare diagnostics' in panel
+          assert 'stopped attempt' in panel
+          assert 'Diagnostics preparation issue' in panel
+
+          reset = s[s.index('    private func resetDiscoverySessionOnly() {'):s.index('    private func beginCorrelationSeries()', s.index('    private func resetDiscoverySessionOnly() {'))]
+          assert 'diagnosticExportError = nil' in reset
+          PY
+
+      - name: Collapse to exact product plus regression paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='202666ed57be990978d874da4d7f086d11652eab'
+          rm .github/workflows/capture-failed-diagnostic-error-materialize.yml
+          git add -A
+          git diff --cached --check "$base"
+          git diff --cached --name-only "$base" | sort > /tmp/actual
+          cat > /tmp/expected <<'EOF'
+          NembraApp/App/NembraCaptureEntrypoint.swift
+          Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureFailedDiagnosticPreparationErrorSourceTests.swift
+          EOF
+          sort -o /tmp/expected /tmp/expected
+          diff -u /tmp/expected /tmp/actual
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): preserve primary failure during diagnostic prep'
+          git push origin HEAD:agent/v14-capture-failed-diagnostic-error-sol
