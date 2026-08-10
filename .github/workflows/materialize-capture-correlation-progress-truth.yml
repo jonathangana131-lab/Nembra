@@ -1,0 +1,33 @@
+name: Materialize Capture correlation progress truth
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-correlation-progress-current-sol
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply source repair
+        run: python3 scripts/ci/apply_capture_correlation_progress_truth.py
+      - name: Validate focused Capture contract
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test --filter TuyaCorrelationProgressPresentationTruthSourceTests
+      - name: Publish clean repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm scripts/ci/apply_capture_correlation_progress_truth.py
+          rm .github/workflows/materialize-capture-correlation-progress-truth.yml
+          git diff --check
+          git add -A
+          git config user.name 'nembra-v14-agent'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): present completed correlation as four of four'
+          git push origin HEAD:repair/v14-capture-correlation-progress-current-sol
