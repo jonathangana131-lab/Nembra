@@ -31,41 +31,38 @@ jobs:
           set -euo pipefail
           python3 <<'PY'
           from pathlib import Path
-
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           source = path.read_text()
-
-          controller_anchor = '''    private func abandonPackageCorrelation() {
-'''
-          controller_insert = '''    func abandonCorrelationForViewExit() {
-        // Navigation can destroy this controller while OFF1/ON1/OFF2/ON2 still owns
-        // a package CoreBluetooth scanner. Retire the transport before releasing its
-        // process-global owner token; do nothing once correlation has already ended.
-        guard correlationSession != nil || processCorrelationLease != nil else { return }
-        abandonPackageCorrelation()
-        pendingCorrelatedTargetID = nil
-        log("target_correlation_abandoned_on_view_exit")
-    }
-
-'''
+          controller_anchor = "    private func abandonPackageCorrelation() {\n"
+          controller_insert = (
+              "    func abandonCorrelationForViewExit() {\n"
+              "        // Navigation can destroy this controller while OFF1/ON1/OFF2/ON2 still owns\n"
+              "        // a package CoreBluetooth scanner. Retire the transport before releasing its\n"
+              "        // process-global owner token; do nothing once correlation has already ended.\n"
+              "        guard correlationSession != nil || processCorrelationLease != nil else { return }\n"
+              "        abandonPackageCorrelation()\n"
+              "        pendingCorrelatedTargetID = nil\n"
+              "        log(\"target_correlation_abandoned_on_view_exit\")\n"
+              "    }\n\n"
+          )
           if source.count(controller_anchor) != 1:
               raise SystemExit(f"expected one package-abandonment seam, found {source.count(controller_anchor)}")
           source = source.replace(controller_anchor, controller_insert + controller_anchor, 1)
-
-          view_anchor = '''        .onChange(of: sdkAccount.loggedIn) { _, loggedIn in
-            if loggedIn { test.verifySDKMembership() }
-            else { test.invalidateSDKMembership() }
-        }
-'''
-          view_replacement = view_anchor + '''        .onDisappear {
-            test.abandonCorrelationForViewExit()
-        }
-'''
+          view_anchor = (
+              "        .onChange(of: sdkAccount.loggedIn) { _, loggedIn in\n"
+              "            if loggedIn { test.verifySDKMembership() }\n"
+              "            else { test.invalidateSDKMembership() }\n"
+              "        }\n"
+          )
+          view_replacement = view_anchor + (
+              "        .onDisappear {\n"
+              "            test.abandonCorrelationForViewExit()\n"
+              "        }\n"
+          )
           if source.count(view_anchor) != 1:
               raise SystemExit(f"expected one Secure Link lifecycle seam, found {source.count(view_anchor)}")
           source = source.replace(view_anchor, view_replacement, 1)
           path.write_text(source)
-
           controller_start = source.index("private final class SecureLinkController")
           controller_end = source.index("@MainActor\nprivate protocol OfficialTuyaDriver", controller_start)
           controller = source[controller_start:controller_end]
@@ -85,30 +82,24 @@ jobs:
           ):
               if forbidden in method:
                   raise SystemExit(f"view-exit cleanup gained forbidden authenticated/protocol mutation: {forbidden}")
-
           view_start = source.index("private struct SecureLinkView: View")
           view_end = source.index("private extension SecureLinkView", view_start)
           view = source[view_start:view_end]
           if ".onDisappear" not in view or "test.abandonCorrelationForViewExit()" not in view:
-              raise SystemExit("Secure Link view does not deterministically invoke package-correlation retirement")
+              raise SystemExit("Secure Link view does not invoke package-correlation retirement")
           PY
-
           git diff --check
-          python3 - <<'PY'
+          python3 <<'PY'
           from pathlib import Path
-          test = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift").read_text()
           source = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
-          for needle in (
-              "func abandonCorrelationForViewExit()",
-              "abandonPackageCorrelation()",
-              ".onDisappear",
-              "test.abandonCorrelationForViewExit()",
-          ):
+          regression = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift").read_text()
+          transport = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothPowerCycleObservationSession.swift").read_text()
+          for needle in ("func abandonCorrelationForViewExit()", ".onDisappear", "test.abandonCorrelationForViewExit()"):
               if needle not in source:
                   raise SystemExit(f"expected RED contract is not satisfied: {needle}")
-          if "public func abandonCurrentWindow()" not in Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothPowerCycleObservationSession.swift").read_text():
+          if "public func abandonCurrentWindow()" not in transport or "manager.stopScan()" not in transport:
               raise SystemExit("package explicit abandonment API disappeared")
-          if "TuyaNavigationBLELeaseRetirementSourceTests" not in test:
+          if "TuyaNavigationBLELeaseRetirementSourceTests" not in regression:
               raise SystemExit("expected RED regression is missing")
           PY
 
