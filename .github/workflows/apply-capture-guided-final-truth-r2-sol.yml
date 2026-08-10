@@ -1,0 +1,103 @@
+name: Apply Capture guided final truth r2
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-guided-final-truth-r2-sol
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-guided-final-truth-r2-sol
+          fetch-depth: 0
+      - name: Apply product truth repairs
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow='.github/workflows/apply-capture-guided-final-truth-r2-sol.yml'
+          entry='NembraApp/App/NembraCaptureEntrypoint.swift'
+          git config user.name 'nembra-go-bot'
+          git config user.email 'nembra-go-bot@users.noreply.github.com'
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          text = p.read_text()
+          def once(old, new):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one anchor, found {count}: {old[:120]!r}')
+              text = text.replace(old, new, 1)
+          once(
+              '    private let stageLabels = ["Target", "Secure link", "Observe", "Seal"]\n',
+              '    private let stageLabels = ["Target", "Secure link", "Observe", "Seal"]\n\n    private var correlationDisplayedWindowOrdinal: Int {\n        test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)\n    }\n'
+          )
+          once(
+              '        case .failed:\n            failurePanel\n',
+              '        case .failed:\n            if !test.fieldBuildIsAuthoritative || !test.privateConfig {\n                VStack(spacing: 16) {\n                    failureRecoveryContextPanel\n                    preflightPanel\n                }\n            } else if !sdkAccount.loggedIn || !test.sdkAccountLoggedIn {\n                VStack(spacing: 16) {\n                    failureRecoveryContextPanel\n                    sdkAuthorizationPanel\n                }\n            } else if !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized {\n                VStack(spacing: 16) {\n                    failureRecoveryContextPanel\n                    preflightPanel\n                }\n            } else {\n                failurePanel\n            }\n'
+          )
+          once(
+              '                    Text("\\(min(test.correlationCompletedWindowCount + 1, 4))/4")\n',
+              '                    Text("\\(correlationDisplayedWindowOrdinal)/4")\n'
+          )
+          marker = '    private var failurePanel: some View {\n'
+          recovery = '    private var failureRecoveryContextPanel: some View {\n        panel {\n            VStack(alignment: .leading, spacing: 10) {\n                Label("Capture paused", systemImage: "exclamationmark.circle")\n                    .font(.title2.bold())\n                    .foregroundStyle(.orange)\n                Text(test.message)\n                    .foregroundStyle(.secondary)\n                    .fixedSize(horizontal: false, vertical: true)\n                Text("Restore the missing prerequisite below. The failed attempt is not reused as evidence.")\n                    .font(.footnote)\n                    .foregroundStyle(.secondary)\n            }\n        }\n    }\n\n'
+          if text.count(marker) != 1:
+              raise SystemExit('failurePanel marker changed')
+          text = text.replace(marker, recovery + marker, 1)
+          start = text.index('    private var failurePanel: some View {')
+          end = text.index('    private var completionPanel: some View {', start)
+          failure = text[start:end]
+          if failure.count('if test.failedAttemptCanRestartFromOFF1 && test.canRestartFromFreshOFF1 {') != 1:
+              raise SystemExit('failure restart guard changed')
+          failure = failure.replace('if test.failedAttemptCanRestartFromOFF1 && test.canRestartFromFreshOFF1 {', 'if test.canRestartFromFreshOFF1 {', 1)
+          if failure.count('                        test.startBaseline()') != 1:
+              raise SystemExit('failure restart action changed')
+          failure = failure.replace('                        test.startBaseline()', '                        test.retry()', 1)
+          control = '                    .controlSize(.large)\n'
+          if failure.count(control) != 1:
+              raise SystemExit('failure retry control anchor changed')
+          failure = failure.replace(control, control + '                    .disabled(!authorityReady || test.membershipBusy)\n', 1)
+          text = text[:start] + failure + text[end:]
+          once(
+              '    func authenticate() {\n',
+              '    func retry() {\n        guard phase == .failed, canRestartFromFreshOFF1 else {\n            message = "This failed attempt still retains session authority. Relaunch Capture before another OFF1 attempt."\n            log("in_process_retry_rejected")\n            return\n        }\n        startBaseline()\n    }\n\n    func authenticate() {\n'
+          )
+          once(
+              '        case .failed:\n            return "No evidence was promoted past the blocker. Fix the condition and restart from scooter OFF."\n',
+              '        case .failed:\n            return test.canRestartFromFreshOFF1\n                ? "No evidence was promoted past the blocker. Restore the required prerequisite, then restart from scooter OFF."\n                : "No evidence was promoted past the blocker. This session is not proven retired; relaunch Capture before another attempt."\n'
+          )
+          p.write_text(text)
+          PY
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          required = [
+              'test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)',
+              'Text("\\(correlationDisplayedWindowOrdinal)/4")',
+              '!test.fieldBuildIsAuthoritative || !test.privateConfig',
+              '!sdkAccount.loggedIn || !test.sdkAccountLoggedIn',
+              '!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized',
+              'failureRecoveryContextPanel',
+              'func retry()',
+              'guard phase == .failed, canRestartFromFreshOFF1 else',
+              'test.retry()',
+              '.disabled(!authorityReady || test.membershipBusy)',
+              'Relaunch Capture before another OFF1 attempt'
+          ]
+          for needle in required:
+              assert needle in app, needle
+          assert 'Text("\\(min(test.correlationCompletedWindowCount + 1, 4))/4")' not in app
+          assert '.github/workflows/v14-capture-guided-final-polish.yml' not in [str(p) for p in Path('.github/workflows').glob('*')]
+          PY
+          git diff --check
+          git rm "$workflow"
+          git add "$entry" Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationTruthSourceTests.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteRecoverySourceTests.swift
+          git commit -m 'fix(capture): close guided correlation and recovery truth'
+          git push origin HEAD:repair/v14-capture-guided-final-truth-r2-sol
