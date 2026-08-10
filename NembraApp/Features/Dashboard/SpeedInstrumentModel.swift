@@ -319,14 +319,18 @@ struct DashboardSpeedInstrumentView: View {
             allowsSimulatorQA: allowsSimulatorQA
         )
         let energyRailSource = energyRailSimulatorSourceSnapshot
+        let energyRailClockActive = shouldRunEnergyRailDisplayClock(energyRailSource)
+        let speedClockActive = model.isAnimationActive && isLivePresentation(speedAvailability)
 
         TimelineView(
             .animation(
-                minimumInterval: 1.0 / 60.0,
-                paused: reduceMotion || (
-                    !(model.isAnimationActive && isLivePresentation(speedAvailability))
-                        && !shouldRunEnergyRailDisplayClock(energyRailSource)
-                )
+                // Reduce Motion removes the 60 Hz spatial clock but must not freeze
+                // monotonic freshness. A restrained 1 Hz semantic tick lets the
+                // package projection age live -> retained/unavailable truthfully.
+                minimumInterval: reduceMotion ? 1.0 : 1.0 / 60.0,
+                paused: reduceMotion
+                    ? !energyRailClockActive
+                    : !(speedClockActive || energyRailClockActive)
             )
         ) { _ in
             let now = DispatchTime.now().uptimeNanoseconds
@@ -439,13 +443,22 @@ struct DashboardSpeedInstrumentView: View {
         return true
     }
 
+    /// Simulator QA owns the only current app source capable of driving this rail.
+    /// Keep the surface mounted for that capability even when its current evidence
+    /// is unavailable, so disconnect/reconnect/freshness failure states are designed
+    /// and assistive technology can hear `Unavailable`. Physical/unverified profiles
+    /// still hide the rail entirely until a real power capability is earned.
     private func energyRailVisualState(
         atUptimeNanoseconds uptimeNanoseconds: UInt64,
         source: DashboardEnergyRailSimulatorSourceSnapshot?
     ) -> NembraEnergyRailVisualState? {
+        guard vehicle.profile == .simulatorQA,
+              vehicle.profile.capabilities.supportsPowerWatts else {
+            return nil
+        }
         guard source != nil,
               let runtime = energyRailRuntime else {
-            return nil
+            return .unavailable
         }
         return NembraEnergyRailVisualState(
             projection: runtime.projection(atUptimeNanoseconds: uptimeNanoseconds)
