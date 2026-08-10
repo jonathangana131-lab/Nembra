@@ -3,21 +3,11 @@
 /// This is the only package projection intended to cross into the SwiftUI adapter. It deliberately
 /// fuses accepted/semantic truth, accessibility cadence, and dual-clock render presentation while
 /// preserving their different authority classes. App code must not reconstruct one from the other.
-///
-/// The sealed accepted measurement is carried across this boundary intact so downstream UI cannot
-/// erase whether the numeric truth is Simulator-only or package-sealed verified vehicle evidence.
-/// Receipt/generation/uptime provenance remains attached for stale-generation rejection; it is not
-/// display telemetry and must never be synthesized by SwiftUI.
 public struct PropulsionEnergyRailAppProjection: Equatable, Sendable {
     public let identity: PropulsionGaugeIdentity
     public let currentness: PropulsionEnergyRailCurrentness
     public let acceptedMeasurement: PropulsionGaugeCockpitAcceptedMeasurement?
-
-    /// Stable semantic/accessibility state. SwiftUI should key VoiceOver-facing updates on
-    /// `accessibilityPresentation.semanticRevision`, never on this projection's render-changing
-    /// display watts or rail geometry.
     public let accessibilityPresentation: PropulsionEnergyRailAccessibilityPresentation
-
     public let displayWatts: Double?
     public let railFraction: Double?
     public let acceptedTargetFraction: Double?
@@ -25,8 +15,6 @@ public struct PropulsionEnergyRailAppProjection: Equatable, Sendable {
     public let scaleOrigin: PropulsionGaugeScaleOrigin?
     public let allowsLiveMotion: Bool
 
-    /// Accepted numeric truth is always read from the sealed measurement subject so watts cannot
-    /// drift from its authority/chronology tuple while crossing the app boundary.
     public var acceptedWatts: Double? { acceptedMeasurement?.watts }
 
     fileprivate init(
@@ -53,15 +41,57 @@ public struct PropulsionEnergyRailAppProjection: Equatable, Sendable {
         self.allowsLiveMotion = allowsLiveMotion
     }
 
+#if SWIFT_PACKAGE
+    /// Reconstructs one exact source-owned Simulator receipt as retained app truth
+    /// when the package runtime is mounted after the source already demoted it.
+    /// Construction remains package-only; SwiftUI cannot manufacture accepted watts.
+    package static func retainedSimulatorSource(
+        identity: PropulsionGaugeIdentity,
+        watts: Double,
+        receiptSequenceNumber: UInt64,
+        receivedAtUptimeNanoseconds: UInt64,
+        continuityGeneration: UInt64
+    ) -> Self? {
+        guard let cockpit = PropulsionGaugeCockpitSnapshot.retainedSimulatorSource(
+            identity: identity,
+            watts: watts,
+            receiptSequenceNumber: receiptSequenceNumber,
+            receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
+            continuityGeneration: continuityGeneration
+        ),
+        case let .retained(accepted) = cockpit.measurement else {
+            return nil
+        }
+
+        let accessibility = cockpit.energyRailAccessibilityPresentation
+        guard accessibility.identity == identity,
+              accessibility.currentness == .retained,
+              accessibility.acceptedWatts == accepted.watts,
+              let revision = accessibility.acceptedRevision,
+              revision.authority == accepted.authority,
+              revision.continuityGeneration == accepted.continuityGeneration,
+              revision.receiptSequenceNumber == accepted.receiptSequenceNumber,
+              revision.receivedAtUptimeNanoseconds == accepted.receivedAtUptimeNanoseconds else {
+            return nil
+        }
+
+        return Self(
+            identity: identity,
+            currentness: .retained,
+            acceptedMeasurement: accepted,
+            accessibilityPresentation: accessibility,
+            displayWatts: accepted.watts,
+            railFraction: nil,
+            acceptedTargetFraction: nil,
+            acceptedPeakMarkerFraction: nil,
+            scaleOrigin: nil,
+            allowsLiveMotion: false
+        )
+    }
+#endif
+
     /// Lowers a sealed LIVE/RETAINED package projection to RETAINED without
-    /// creating, re-dating, or relabeling an accepted measurement. This is used
-    /// when a stronger source-owned currentness boundary (for example an explicit
-    /// Simulator disconnect) demotes an exact already-accepted receipt before the
-    /// package freshness timeout would naturally expire.
-    ///
-    /// Because this operation can only remove authority/geometry/motion and keeps
-    /// the complete accepted receipt subject unchanged, it is safe for package
-    /// runtime composition but remains unavailable to app-side construction.
+    /// creating, re-dating, or relabeling an accepted measurement.
     func retainedWithoutNewMeasurement() -> PropulsionEnergyRailAppProjection {
         guard let acceptedMeasurement,
               acceptedMeasurement.identity == identity,
@@ -89,14 +119,6 @@ public struct PropulsionEnergyRailAppProjection: Equatable, Sendable {
 }
 
 public extension PropulsionGaugeDisplayModel {
-    /// Produces the one app-facing Energy Rail subject at a single render uptime.
-    ///
-    /// The cockpit projection owns the sealed accepted measurement and semantic target. The render
-    /// projection owns display-only watts and interpolated rail/peak geometry. The accessibility
-    /// projection owns accepted semantic cadence. All three must agree on identity, currentness, and
-    /// accepted numeric truth before the package admits them across one app boundary. Any disagreement
-    /// fails closed to unavailable rather than allowing SwiftUI to splice mismatched authority,
-    /// semantics, or render generations.
     func energyRailAppProjection(
         atUptimeNanoseconds now: UInt64,
         scale: PropulsionGaugeScale?
@@ -137,12 +159,6 @@ public extension PropulsionGaugeDisplayModel {
                 return unavailableEnergyRailAppProjection(identity: semantic.identity)
             }
 
-            // The rail remains a valid live presentation after interpolation settles. Do not couple
-            // rail visibility to `allowsDisplayWattsMotion`: that flag only says whether the watt
-            // numeral is currently between accepted measurements. The sealed SwiftUI state has one
-            // live-motion admission bit, so bind it to complete live rail geometry; a settled
-            // `displayWatts == acceptedWatts` value is static naturally because its value no longer
-            // changes.
             let motionAllowed = semantic.allowsLiveMotion && render.allowsRailMotion
 
             return PropulsionEnergyRailAppProjection(
