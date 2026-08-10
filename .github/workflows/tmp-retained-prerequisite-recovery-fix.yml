@@ -67,7 +67,7 @@ jobs:
           assert login in app and membership in app
           assert login in test and membership in test
           assert 'phase == .failed && currentConnectionToken == nil && localBLESettlementToken == nil && driver == nil' in app
-          assert 'procedureIdentifier: buildIdentity.procedureIdentifier' in app
+          assert 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier' in app
           assert 'procedureIdentifier == Self.fieldProcedureIdentifier' in Path('NembraApp/App/NembraCaptureBuildIdentity.swift').read_text()
           assert 'BUILT_PROCEDURE_IDENTIFIER' in Path('scripts/field/install_one_time_capture.command').read_text()
           PY
