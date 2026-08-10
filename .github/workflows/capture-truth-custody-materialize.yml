@@ -1,0 +1,237 @@
+name: Capture truth custody materializer
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-truth-custody-convergence-sol
+    paths:
+      - .github/workflows/capture-truth-custody-materialize.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/v14-capture-truth-custody-convergence-sol
+          fetch-depth: 0
+
+      - name: Bind expected parent lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 1c40853f6991b4d09206df1d25ecff021458b7eb HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Apply converged Capture truth repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text()
+
+          def replace_in_section(text: str, start: str, end: str, old: str, new: str) -> str:
+              start_index = text.index(start)
+              end_index = text.index(end, start_index)
+              section = text[start_index:end_index]
+              if section.count(old) != 1:
+                  raise SystemExit(f"expected one exact replacement in {start!r}, found {section.count(old)}")
+              section = section.replace(old, new, 1)
+              return text[:start_index] + section + text[end_index:]
+
+          authority_clear = """        sdkDeviceMembershipVerified = false
+          membershipAccountUID = nil
+          membershipDeviceID = nil
+          membershipRequestID = UUID()
+          """
+
+          source = replace_in_section(
+              source,
+              "    func abandonCorrelationForViewExit() {",
+              "    func appDidLoseForeground() {",
+              authority_clear,
+              """        sdkDeviceMembershipVerified = false
+          membershipStatus = "Secure Link changed. Exact scooter membership must be verified again for this view before Bluetooth discovery."
+          membershipAccountUID = nil
+          membershipDeviceID = nil
+          membershipRequestID = UUID()
+          """,
+          )
+
+          source = replace_in_section(
+              source,
+              "    func appDidLoseForeground() {",
+              "    var privateConfig: Bool",
+              authority_clear,
+              """        sdkDeviceMembershipVerified = false
+          membershipStatus = "Capture left the foreground. Exact scooter membership must be verified again before a new authenticated attempt."
+          membershipAccountUID = nil
+          membershipDeviceID = nil
+          membershipRequestID = UUID()
+          """,
+          )
+
+          receiver_marker = "    private func receivedApplicationUpdate(\n"
+          if source.count(receiver_marker) != 1:
+              raise SystemExit("receivedApplicationUpdate marker changed")
+
+          helper = '''    private func preparedApplicationEventDetails(
+              _ update: [String: String],
+              verifiedAccountUID: String
+          ) -> [String: String] {
+              let accountUID = verifiedAccountUID.trimmingCharacters(in: .whitespacesAndNewlines)
+              guard !accountUID.isEmpty else { return [:] }
+
+              let redactionMarker = "<redacted-account-uid>"
+              var details: [String: String] = [:]
+              for key in update.keys.sorted() {
+                  guard let value = update[key] else { continue }
+                  let redactedKey = key.replacingOccurrences(
+                      of: accountUID,
+                      with: redactionMarker,
+                      options: [.caseInsensitive, .literal]
+                  )
+                  let redactedValue = value.replacingOccurrences(
+                      of: accountUID,
+                      with: redactionMarker,
+                      options: [.caseInsensitive, .literal]
+                  )
+
+                  // Preserve an SDK field named `generation` as application evidence without
+                  // allowing it to impersonate Nembra-owned connection provenance.
+                  let baseKey = redactedKey == "generation" ? "application.generation" : redactedKey
+                  var uniqueKey = baseKey
+                  var collisionIndex = 2
+                  while details[uniqueKey] != nil {
+                      uniqueKey = "\\(baseKey)#\\(collisionIndex)"
+                      collisionIndex += 1
+                  }
+                  details[uniqueKey] = redactedValue
+              }
+              return details
+          }
+
+          '''
+          source = source.replace(receiver_marker, helper + receiver_marker, 1)
+
+          guard_block = """        guard driver.isLocallyConnected(uuid: tuyaUUID) else {
+              await recordObservedTransportLoss(token: token)
+              return
+          }
+
+          applicationUpdateAdmissionsInFlight += 1
+          """
+          if source.count(guard_block) != 1:
+              raise SystemExit("application transport guard changed")
+          source = source.replace(
+              guard_block,
+              """        guard driver.isLocallyConnected(uuid: tuyaUUID) else {
+              await recordObservedTransportLoss(token: token)
+              return
+          }
+          guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                !verifiedAccountUID.isEmpty else {
+              await invalidateSourceAuthority(
+                  token: token,
+                  message: "The verified Tuya account UID lease became unavailable before application evidence custody.",
+                  kind: "sdk_account_uid_lease_missing_during_observation"
+              )
+              return
+          }
+
+          applicationUpdateAdmissionsInFlight += 1
+          """,
+              1,
+          )
+
+          old_log = """            try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
+              await refreshLedgerSnapshot()
+              log("tuya_application_update", update.merging([
+                  "generation": String(token.diagnosticGeneration)
+              ]) { current, _ in current })
+              message = "Receiving same-generation scooter application data · \\(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
+          """
+          new_log = """            try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
+              await refreshLedgerSnapshot()
+              guard sdkAccountLoggedIn,
+                    sdkDeviceMembershipVerified,
+                    accountIdentityLeaseIsAuthorized,
+                    membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) == verifiedAccountUID else {
+                  await invalidateSourceAuthority(
+                      token: token,
+                      message: "SDK account/device source authority changed before application evidence could enter immutable event custody.",
+                      kind: "sdk_source_authority_changed_before_application_event_custody"
+                  )
+                  return
+              }
+              let eventDetails = preparedApplicationEventDetails(
+                  update,
+                  verifiedAccountUID: verifiedAccountUID
+              )
+              log("tuya_application_update", eventDetails.merging([
+                  "generation": String(token.diagnosticGeneration)
+              ]) { _, trusted in trusted })
+              message = "Receiving same-generation scooter application data · \\(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
+          """
+          if source.count(old_log) != 1:
+              raise SystemExit("application event log shape changed")
+          source = source.replace(old_log, new_log, 1)
+
+          duplicate = '        "refreshtoken",\n        "sessionkey",\n        "authkey",\n'
+          if source.count(duplicate) != 1:
+              raise SystemExit("secret classifier duplicate shape changed")
+          source = source.replace(
+              duplicate,
+              '        "refreshtoken",\n        "authkey",\n',
+              1,
+          )
+
+          path.write_text(source)
+          PY
+
+      - name: Verify converged source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+
+          view = s[s.index("    func abandonCorrelationForViewExit() {"):s.index("    func appDidLoseForeground() {")]
+          assert view.index("sdkDeviceMembershipVerified = false") < view.index("membershipStatus =") < view.index("membershipRequestID = UUID()")
+          assert "membership verified and leased" not in view.lower()
+
+          foreground = s[s.index("    func appDidLoseForeground() {"):s.index("    var privateConfig: Bool")]
+          assert foreground.index("sdkDeviceMembershipVerified = false") < foreground.index("membershipStatus =") < foreground.index("membershipRequestID = UUID()")
+          assert "verified again" in foreground.lower()
+
+          receiver = s[s.index("    private func receivedApplicationUpdate("):s.index("    private func startWatchdog")]
+          assert '<redacted-account-uid>' in s
+          assert 'log("tuya_application_update", update.merging([' not in receiver
+          assert ') { current, _ in current })' not in receiver
+          assert ') { _, trusted in trusted })' in receiver
+          assert 'verifiedAccountUID: verifiedAccountUID' in receiver
+          assert 'sdk_source_authority_changed_before_application_event_custody' in receiver
+          assert '"application.generation"' in s
+          assert s.count('        "sessionkey",') == 1
+          PY
+          git diff --check
+
+      - name: Commit product repair and retire materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-truth-custody-materialize.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift .github/workflows/capture-truth-custody-materialize.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(capture): converge truth custody blockers"
+          git push origin HEAD:agent/v14-capture-truth-custody-convergence-sol
