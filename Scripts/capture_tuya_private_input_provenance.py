@@ -332,6 +332,40 @@ def _tree_generation_snapshot(root: Path) -> tuple[tuple[object, ...], ...]:
     return tuple(sorted(states, key=lambda item: os.fsencode(str(item[1]))))
 
 
+def _assert_tree_generation_snapshot_unchanged(
+    root: Path,
+    snapshot: tuple[tuple[object, ...], ...],
+) -> None:
+    """Revalidate every pathname and directory membership in one collected tree witness."""
+    root_resolved = root.resolve(strict=True)
+    expected_members: dict[str, list[str]] = {}
+
+    for kind, relative, identity, symlink_target in snapshot:
+        relative_text = str(relative)
+        candidate = root if relative_text == "." else root / relative_text
+        _assert_unchanged_tree_entry(candidate, identity, str(kind))
+        if kind == "L":
+            if _assert_internal_symlink(candidate, root_resolved) != symlink_target:
+                raise ProvenanceError(
+                    "private build tree symlink changed while its record generation was snapshotted"
+                )
+        if kind == "D":
+            expected_members.setdefault(relative_text, [])
+
+        if relative_text != ".":
+            parent, separator, name = relative_text.rpartition("/")
+            parent_relative = parent if separator else "."
+            expected_members.setdefault(parent_relative, []).append(name)
+
+    for relative_text, members in expected_members.items():
+        directory = root if relative_text == "." else root / relative_text
+        expected = tuple(sorted(members, key=os.fsencode))
+        if _directory_member_names(directory) != expected:
+            raise ProvenanceError(
+                "private build tree membership changed while its record generation was snapshotted"
+            )
+
+
 def _private_input_record_generation_snapshot(
     *,
     lockfile: Path,
@@ -340,14 +374,44 @@ def _private_input_record_generation_snapshot(
     identity_podspec: Path,
     identity_sources: Path,
 ) -> tuple[object, ...]:
-    return (
-        ("podfile_lock", _regular_file_generation_identity(lockfile)),
-        ("security_podspec", _regular_file_generation_identity(security_podspec)),
-        ("security_build", _tree_generation_snapshot(security_build)),
-        ("identity_podspec", _regular_file_generation_identity(identity_podspec)),
-        ("identity_sources", _tree_generation_snapshot(identity_sources)),
+    lockfile_identity = _regular_file_generation_identity(lockfile)
+    security_podspec_identity = _regular_file_generation_identity(security_podspec)
+    security_build_snapshot = _tree_generation_snapshot(security_build)
+    identity_podspec_identity = _regular_file_generation_identity(identity_podspec)
+    identity_sources_snapshot = _tree_generation_snapshot(identity_sources)
+
+    snapshot = (
+        ("podfile_lock", lockfile_identity),
+        ("security_podspec", security_podspec_identity),
+        ("security_build", security_build_snapshot),
+        ("identity_podspec", identity_podspec_identity),
+        ("identity_sources", identity_sources_snapshot),
     )
 
+    # The five observations above are sequential. Before returning them as one
+    # generation witness, revalidate every collected tree pathname/membership
+    # and each standalone file identity after all later collection has finished.
+    _assert_tree_generation_snapshot_unchanged(
+        security_build,
+        security_build_snapshot,
+    )
+    _assert_tree_generation_snapshot_unchanged(
+        identity_sources,
+        identity_sources_snapshot,
+    )
+    if _regular_file_generation_identity(security_podspec) != security_podspec_identity:
+        raise ProvenanceError(
+            "private security podspec changed while the record generation was snapshotted"
+        )
+    if _regular_file_generation_identity(identity_podspec) != identity_podspec_identity:
+        raise ProvenanceError(
+            "private identity podspec changed while the record generation was snapshotted"
+        )
+    if _regular_file_generation_identity(lockfile) != lockfile_identity:
+        raise ProvenanceError(
+            "Podfile.lock changed while the private record generation was snapshotted"
+        )
+    return snapshot
 
 def build_record(
     *,
