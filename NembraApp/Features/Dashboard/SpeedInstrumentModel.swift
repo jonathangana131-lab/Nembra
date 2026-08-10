@@ -300,33 +300,52 @@ private struct DashboardEnergyRailSimulatorSourceSnapshot: Equatable {
 
 /// A deliberately narrow high-frequency subtree for the landscape cockpit.
 ///
-/// Only this view redraws on SwiftUI's animation timeline. Vehicle controls,
-/// ride detection, persistence, distance, and safety continue to consume the
-/// accepted domain/source state rather than rendered speed or Energy Rail frames.
+/// Only this view redraws on the animation timeline. Vehicle controls, ride
+/// detection, persistence, distance, and safety continue to consume accepted
+/// domain/source state rather than rendered speed or Energy Rail frames.
+/// Energy Rail source admission happens only on source-snapshot changes; package
+/// display scheduling decides when the localized render clock may run or wake.
 @MainActor
 struct DashboardSpeedInstrumentView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model = SpeedInstrumentModel()
     @State private var energyRailRuntime: PropulsionEnergyRailSimulatorRuntime? = try? PropulsionEnergyRailSimulatorRuntime()
+    @State private var energyRailNextTransitionUptimeNanoseconds: UInt64? = nil
+    @State private var energyRailPresentationRevision: UInt64 = 0
 
     let modePersonality: DashboardModePersonality
 
     var body: some View {
+        // The one-shot wake revision deliberately participates in body observation.
+        // It is display-only state and never becomes a propulsion receipt.
+        _ = energyRailPresentationRevision
+
         let allowsSimulatorQA = vehicle.profile == .simulatorQA
         let rawSpeedAvailability = vehicle.speedEvidenceAvailability
         let speedAvailability = rawSpeedAvailability.dashboardPresentationAvailability(
             allowsSimulatorQA: allowsSimulatorQA
         )
         let energyRailSource = energyRailSimulatorSourceSnapshot
+        let scheduleNow = DispatchTime.now().uptimeNanoseconds
+        let speedShouldTick = !reduceMotion
+            && model.isAnimationActive
+            && isLivePresentation(speedAvailability)
+        let energyRailShouldTick: Bool
+        if !reduceMotion,
+           energyRailSource != nil,
+           let energyRailRuntime {
+            energyRailShouldTick = energyRailRuntime.displaySchedule(
+                atUptimeNanoseconds: scheduleNow
+            ).requiresContinuousFrames
+        } else {
+            energyRailShouldTick = false
+        }
 
         TimelineView(
             .animation(
                 minimumInterval: 1.0 / 60.0,
-                paused: reduceMotion || (
-                    !(model.isAnimationActive && isLivePresentation(speedAvailability))
-                        && !shouldRunEnergyRailDisplayClock(energyRailSource)
-                )
+                paused: !(speedShouldTick || energyRailShouldTick)
             )
         ) { _ in
             let now = DispatchTime.now().uptimeNanoseconds
@@ -354,6 +373,9 @@ struct DashboardSpeedInstrumentView: View {
                 allowsSimulatorQA: vehicle.profile == .simulatorQA
             )
             synchronizeEnergyRailSource(energyRailSimulatorSourceSnapshot)
+        }
+        .task(id: energyRailNextTransitionUptimeNanoseconds) {
+            await waitForEnergyRailPresentationTransition()
         }
         .onChange(of: vehicle.speedEvidenceAvailability) { _, availability in
             model.setSpeedEvidenceAvailability(
@@ -404,15 +426,17 @@ struct DashboardSpeedInstrumentView: View {
     private func synchronizeEnergyRailSource(
         _ snapshot: DashboardEnergyRailSimulatorSourceSnapshot?
     ) {
-        guard var runtime = energyRailRuntime else { return }
+        guard var runtime = energyRailRuntime else {
+            energyRailNextTransitionUptimeNanoseconds = nil
+            return
+        }
 
         if let snapshot {
             _ = runtime.observe(
                 connected: true,
                 watts: snapshot.watts,
                 // Synthetic mode changes are not propulsion measurements. Keep the
-                // runtime on a mode-neutral simulator identity until the source
-                // exposes mode-bound propulsion evidence explicitly.
+                // runtime mode-neutral until source evidence explicitly binds mode.
                 modeKey: nil,
                 receivedAtUptimeNanoseconds: snapshot.sourceSample.receivedAtUptimeNanoseconds
             )
@@ -426,17 +450,41 @@ struct DashboardSpeedInstrumentView: View {
         }
 
         energyRailRuntime = runtime
+        refreshEnergyRailPresentationSchedule()
     }
 
-    private func shouldRunEnergyRailDisplayClock(
-        _ source: DashboardEnergyRailSimulatorSourceSnapshot?
-    ) -> Bool {
-        guard let source,
-              source.watts.isFinite,
-              source.watts >= 0 else {
-            return false
+    private func refreshEnergyRailPresentationSchedule() {
+        guard energyRailSimulatorSourceSnapshot != nil,
+              let energyRailRuntime else {
+            energyRailNextTransitionUptimeNanoseconds = nil
+            return
         }
-        return true
+
+        let now = DispatchTime.now().uptimeNanoseconds
+        energyRailNextTransitionUptimeNanoseconds = energyRailRuntime.displaySchedule(
+            atUptimeNanoseconds: now
+        ).nextTransitionUptimeNanoseconds
+    }
+
+    private func waitForEnergyRailPresentationTransition() async {
+        guard let deadline = energyRailNextTransitionUptimeNanoseconds else {
+            return
+        }
+
+        let now = DispatchTime.now().uptimeNanoseconds
+        if deadline > now {
+            do {
+                try await Task.sleep(nanoseconds: deadline - now)
+            } catch {
+                return
+            }
+        }
+        guard !Task.isCancelled else { return }
+
+        // Force one presentation recomposition at the package-owned monotonic
+        // boundary, then schedule only the next remaining display transition.
+        energyRailPresentationRevision &+= 1
+        refreshEnergyRailPresentationSchedule()
     }
 
     private func energyRailVisualState(
@@ -487,9 +535,8 @@ struct DashboardSpeedInstrumentView: View {
             .animation(modeAnimation, value: modePersonality.speedScale)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Speed")
-            // VoiceOver consumes the same sanitized field-specific speed state,
-            // never a 60 Hz render midpoint, estimate, cached aggregate speed, or
-            // synthetic sample ineligible for the active vehicle profile.
+            // VoiceOver consumes sanitized field-specific speed truth, never a
+            // 60 Hz render midpoint or Energy Rail display-clock state.
             .accessibilityValue(accessibilitySpeed(speedAvailability))
             .accessibilityIdentifier("dashboard.speed")
 
