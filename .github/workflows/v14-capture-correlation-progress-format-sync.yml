@@ -1,0 +1,59 @@
+name: V14 Capture Correlation Progress Format Sync
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-correlation-progress-current-r2-sol
+
+permissions:
+  contents: write
+
+jobs:
+  normalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-correlation-progress-current-r2-sol
+          fetch-depth: 0
+
+      - name: Guard and normalize indentation
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess
+
+          expected_parent = "9b98768e64212fed425b4132d1fb5f6191db0c58"
+          actual_parent = subprocess.check_output(["git", "rev-parse", "HEAD^"], text=True).strip()
+          if actual_parent != expected_parent:
+              raise SystemExit(f"stale formatting parent: {actual_parent}")
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text()
+          old = '''    private var correlationDisplayedWindowOrdinal: Int {
+          test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)
+          }
+          '''
+          old = old.replace("          test.phase", "    test.phase").replace("          }", "    }").replace("          \n", "\n")
+          new = '''    private var correlationDisplayedWindowOrdinal: Int {
+          test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)
+          }
+          '''
+          new = new.replace("          test.phase", "        test.phase").replace("          }", "    }").replace("          \n", "\n")
+          if text.count(old) != 1:
+              raise SystemExit(f"format guard failed: found {text.count(old)} matches")
+          path.write_text(text.replace(old, new, 1))
+
+      - name: Verify and commit clean formatting
+        run: |
+          set -euo pipefail
+          git diff --check
+          grep -Fq '        test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)' NembraApp/App/NembraCaptureEntrypoint.swift
+          rm .github/workflows/v14-capture-correlation-progress-format-sync.yml
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "style(capture): normalize correlation progress helper"
+          git push origin HEAD:fix/v14-capture-correlation-progress-current-r2-sol
