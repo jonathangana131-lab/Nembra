@@ -45,6 +45,42 @@ struct TuyaFieldAppPreflightIntegrationSourceTests {
         #expect(gapFailure.lowerBound < observationAdvance.lowerBound)
     }
 
+    @Test("package discovery cannot restart after official Tuya takes BLE ownership")
+    func officialTuyaOwnershipIsProcessLifetimeLatched() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+
+        #expect(source.contains("officialTuyaOwnershipStarted"))
+        #expect(source.contains("package_discovery_blocked_after_tuya_ownership"))
+
+        guard let ownershipLatch = source.range(of: "officialTuyaOwnershipStarted = true"),
+              let connectRequest = source.range(of: "newDriver.connect(") else {
+            Issue.record("Official Tuya ownership must be latched before the supported SDK connection starts.")
+            return
+        }
+        #expect(ownershipLatch.lowerBound < connectRequest.lowerBound)
+
+        guard let startBaseline = source.range(of: "func startBaseline()"),
+              let saveBaseline = source.range(of: "func saveBaseline()"),
+              let powerOnScan = source.range(of: "func scanAfterPowerOn()"),
+              let stopScan = source.range(of: "func stopScan()") else {
+            Issue.record("Expected guided discovery entrypoints are missing.")
+            return
+        }
+
+        let baselineBody = String(source[startBaseline.lowerBound..<saveBaseline.lowerBound])
+        let powerOnBody = String(source[powerOnScan.lowerBound..<stopScan.lowerBound])
+        #expect(baselineBody.contains("guard !officialTuyaOwnershipStarted"))
+        #expect(powerOnBody.contains("guard !officialTuyaOwnershipStarted"))
+
+        guard let resetDiscovery = source.range(of: "private func resetDiscovery()"),
+              let fail = source.range(of: "private func fail(", range: resetDiscovery.upperBound..<source.endIndex) else {
+            Issue.record("Expected discovery reset boundary is missing.")
+            return
+        }
+        let resetBody = String(source[resetDiscovery.lowerBound..<fail.lowerBound])
+        #expect(!resetBody.contains("officialTuyaOwnershipStarted = false"))
+    }
+
     @Test("canonical ledger and membership gates remain app-visible")
     func canonicalAuthorityRemainsIntegrated() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
