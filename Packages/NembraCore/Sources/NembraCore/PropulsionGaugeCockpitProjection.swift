@@ -53,6 +53,13 @@ public struct PropulsionGaugeCockpitSnapshot: Equatable, Sendable {
 
     /// Render-only position for the live propulsion band. Never telemetry evidence.
     public let visualPropulsionFraction: Double?
+    /// Exact accepted measurement normalized against the same admitted presentation scale.
+    ///
+    /// This is still presentation-only geometry, not a second power measurement. Unlike
+    /// `visualPropulsionFraction`, it does not interpolate at the display clock, so accessibility
+    /// consumers such as Reduce Motion can present the accepted target without reconstructing watts
+    /// from a render frame.
+    public let acceptedPropulsionFraction: Double?
     /// Render-only marker derived from accepted peak samples inside the canonical hold window.
     public let recentAcceptedPeakMarkerFraction: Double?
     /// The compatible presentation-scale origin admitted by the canonical gauge frame.
@@ -63,15 +70,55 @@ public struct PropulsionGaugeCockpitSnapshot: Equatable, Sendable {
         identity: PropulsionGaugeIdentity,
         measurement: PropulsionGaugeCockpitMeasurement,
         visualPropulsionFraction: Double?,
+        acceptedPropulsionFraction: Double?,
         recentAcceptedPeakMarkerFraction: Double?,
         scaleOrigin: PropulsionGaugeScaleOrigin?
     ) {
         self.identity = identity
         self.measurement = measurement
         self.visualPropulsionFraction = visualPropulsionFraction
+        self.acceptedPropulsionFraction = acceptedPropulsionFraction
         self.recentAcceptedPeakMarkerFraction = recentAcceptedPeakMarkerFraction
         self.scaleOrigin = scaleOrigin
     }
+
+#if SWIFT_PACKAGE
+    /// Package-sealed reconstruction of an exact source-owned Simulator receipt as
+    /// retained cockpit truth. This exists specifically for app-session remounts or
+    /// source demotion that already occurred before the package runtime observed the
+    /// LIVE transition. It never creates live motion or presentation scale geometry.
+    package static func retainedSimulatorSource(
+        identity: PropulsionGaugeIdentity,
+        watts: Double,
+        receiptSequenceNumber: UInt64,
+        receivedAtUptimeNanoseconds: UInt64,
+        continuityGeneration: UInt64
+    ) -> Self? {
+        guard watts.isFinite,
+              watts >= 0,
+              receiptSequenceNumber > 0,
+              continuityGeneration > 0 else {
+            return nil
+        }
+
+        let accepted = PropulsionGaugeCockpitAcceptedMeasurement(
+            identity: identity,
+            watts: watts == 0 ? 0 : watts,
+            receiptSequenceNumber: receiptSequenceNumber,
+            receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
+            continuityGeneration: continuityGeneration,
+            authority: .simulator
+        )
+        return Self(
+            identity: identity,
+            measurement: .retained(accepted),
+            visualPropulsionFraction: nil,
+            acceptedPropulsionFraction: nil,
+            recentAcceptedPeakMarkerFraction: nil,
+            scaleOrigin: nil
+        )
+    }
+#endif
 }
 
 public extension PropulsionGaugeDisplayModel {
@@ -92,6 +139,7 @@ public extension PropulsionGaugeDisplayModel {
                 identity: frame.identity,
                 measurement: .unavailable,
                 visualPropulsionFraction: nil,
+                acceptedPropulsionFraction: nil,
                 recentAcceptedPeakMarkerFraction: nil,
                 scaleOrigin: nil
             )
@@ -102,6 +150,7 @@ public extension PropulsionGaugeDisplayModel {
                 identity: frame.identity,
                 measurement: measurement,
                 visualPropulsionFraction: nil,
+                acceptedPropulsionFraction: nil,
                 recentAcceptedPeakMarkerFraction: nil,
                 scaleOrigin: nil
             )
@@ -111,9 +160,40 @@ public extension PropulsionGaugeDisplayModel {
             identity: frame.identity,
             measurement: measurement,
             visualPropulsionFraction: frame.normalizedPropulsion,
+            acceptedPropulsionFraction: acceptedPropulsionFraction(
+                from: measurement,
+                scale: scale,
+                admittedScaleOrigin: frame.scaleOrigin
+            ),
             recentAcceptedPeakMarkerFraction: frame.acceptedPeakNormalized,
             scaleOrigin: frame.scaleOrigin
         )
+    }
+
+    /// Normalizes the accepted endpoint only after `frame(...)` has already admitted this same scale.
+    /// `frame.scaleOrigin` is therefore the canonical authority decision; this projection deliberately
+    /// does not duplicate the gauge model's authority table and cannot drift from future canonical policy.
+    private func acceptedPropulsionFraction(
+        from measurement: PropulsionGaugeCockpitMeasurement,
+        scale: PropulsionGaugeScale?,
+        admittedScaleOrigin: PropulsionGaugeScaleOrigin?
+    ) -> Double? {
+        guard case let .live(accepted) = measurement,
+              let scale,
+              let admittedScaleOrigin,
+              accepted.identity == identity,
+              accepted.watts.isFinite,
+              accepted.watts >= 0,
+              scale.identity == identity,
+              scale.origin == admittedScaleOrigin,
+              scale.ceilingWatts.isFinite,
+              scale.ceilingWatts > 0 else {
+            return nil
+        }
+
+        let fraction = accepted.watts / scale.ceilingWatts
+        guard fraction.isFinite else { return nil }
+        return min(1, max(0, fraction))
     }
 
     private func cockpitMeasurement(
