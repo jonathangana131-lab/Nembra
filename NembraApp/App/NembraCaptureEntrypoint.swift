@@ -401,6 +401,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var membershipProbe: OfficialTuyaMembershipProbe?
 #endif
     private var membershipRequestID = UUID()
+    private var officialConnectionRequestID = UUID()
 
     init(device: TuyaAccountBridge.LinkedDevice) {
         deviceID = device.id
@@ -414,13 +415,43 @@ private final class SecureLinkController: NSObject, ObservableObject {
     deinit { watchdog?.cancel() }
 
     func abandonCorrelationForViewExit() {
-        // Revoke an in-flight membership request before checking scanner ownership. A late
-        // authorized callback must never begin OFF1 after Secure Link has left the screen.
+        // Revoke every pre-radio asynchronous grant before inspecting current transport state.
+        // Late membership or ledger-generation work must not start OFF1/authentication off-screen.
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
         membershipProbe = nil
 #endif
+        officialConnectionRequestID = UUID()
+        watchdog?.cancel()
+        watchdog = nil
+
+        if let token = currentConnectionToken {
+            phase = .failed
+            message = "Authenticated observation stopped because Capture left Secure Link. Relaunch before another authenticated attempt; no BLE disconnect is claimed."
+            log("authenticated_session_abandoned_on_view_exit", ["generation": String(token.diagnosticGeneration)])
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.invalidateInternalLifecycle(
+                    token: token,
+                    message: "Authenticated observation stopped because Capture left Secure Link. Relaunch before another authenticated attempt; no BLE disconnect is claimed.",
+                    kind: "authenticated_session_abandoned_on_view_exit"
+                )
+            }
+            return
+        }
+
+        if phase == .authenticating {
+            // Driver handoff happened, but no package generation exists yet. The request-id fence
+            // below forces the pending ledger task to retire its generation before SDK connect.
+            localBLESettlementToken = nil
+            sdkLocalBLEOnline = false
+            driver = nil
+            phase = .failed
+            message = "Authentication start stopped because Capture left Secure Link. Relaunch before another authenticated attempt; no BLE disconnect is claimed."
+            log("authentication_start_abandoned_on_view_exit")
+            return
+        }
 
         guard processCorrelationLease != nil || correlationSession != nil else { return }
         // Existing helper stops package transport before releasing this controller's lease.
@@ -980,6 +1011,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        let connectionRequestID = UUID()
+        officialConnectionRequestID = connectionRequestID
         driver = newDriver
         watchdog?.cancel()
         watchdog = nil
@@ -995,6 +1028,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 // Own the package generation before any later mutation can fail. Otherwise an
                 // auth-start clock regression could strand callback authority in the ledger.
                 self.currentConnectionToken = token
+                guard self.officialConnectionRequestID == connectionRequestID,
+                      self.phase == .authenticating else {
+                    await self.invalidateInternalLifecycle(
+                        token: token,
+                        message: "Authentication generation was retired because Secure Link left before SDK connection could start. No BLE disconnect is claimed.",
+                        kind: "authentication_generation_abandoned_before_sdk_connect"
+                    )
+                    return
+                }
                 do {
                     try await self.sessionLedger.markAuthenticationStarted(for: token)
                 } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
@@ -1027,6 +1069,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     return
                 }
                 await self.refreshLedgerSnapshot()
+                guard self.officialConnectionRequestID == connectionRequestID,
+                      self.currentConnectionToken == token,
+                      self.phase == .authenticating else {
+                    await self.invalidateInternalLifecycle(
+                        token: token,
+                        message: "Authentication generation was retired because Secure Link left before SDK connection could start. No BLE disconnect is claimed.",
+                        kind: "authentication_generation_abandoned_before_sdk_connect"
+                    )
+                    return
+                }
                 self.log("official_connect_requested", [
                     "generation": String(token.diagnosticGeneration),
                     "coreBluetoothID": candidate.id.uuidString,

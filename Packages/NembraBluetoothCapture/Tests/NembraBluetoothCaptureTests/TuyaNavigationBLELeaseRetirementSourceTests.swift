@@ -77,6 +77,42 @@ struct TuyaNavigationBLELeaseRetirementSourceTests {
         #expect(authenticate.contains("self.beginOfficialConnection(candidate: candidate)"))
     }
 
+    @Test("view exit fences pending official ledger generation before SDK connect")
+    func viewExitFencesPendingOfficialAuthentication() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let controller = String(try section(
+            in: source,
+            from: "private final class SecureLinkController",
+            to: "@MainActor\nprivate protocol OfficialTuyaDriver"
+        ))
+        let cleanup = String(try section(
+            in: controller,
+            from: "func abandonCorrelationForViewExit()",
+            to: "var privateConfig: Bool"
+        ))
+        let begin = String(try section(
+            in: controller,
+            from: "private func beginOfficialConnection(candidate: Candidate)",
+            to: "private func authenticated(token: TuyaReadOnlyConnectionToken)"
+        ))
+
+        let requestRevoke = try requiredOffset(containing: "officialConnectionRequestID = UUID()", in: cleanup)
+        let tokenRetirement = try requiredOffset(containing: "if let token = currentConnectionToken", in: cleanup)
+        #expect(requestRevoke < tokenRetirement)
+        #expect(cleanup.contains("watchdog?.cancel()"))
+        #expect(cleanup.contains("invalidateInternalLifecycle("))
+        #expect(cleanup.contains("if phase == .authenticating"))
+        #expect(cleanup.contains("authentication_start_abandoned_on_view_exit"))
+        #expect(!cleanup.contains("disconnectBLE"))
+
+        #expect(begin.contains("let connectionRequestID = UUID()"))
+        #expect(begin.contains("officialConnectionRequestID = connectionRequestID"))
+        #expect(begin.components(separatedBy: "self.officialConnectionRequestID == connectionRequestID").count - 1 == 2)
+        let finalTokenFence = try requiredOffset(containing: "self.currentConnectionToken == token", in: begin)
+        let sdkConnect = try requiredOffset(containing: "newDriver.connect(", in: begin)
+        #expect(finalTokenFence < sdkConnect)
+    }
+
     @Test("cleanup reuses transport-first package abandonment path")
     func packageTransportRetirementPrecedesLeaseRelease() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
