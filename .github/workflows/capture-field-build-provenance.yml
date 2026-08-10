@@ -16,6 +16,8 @@ on:
       - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift
       - Scripts/bootstrap_capture_tuya_sdk.sh
       - Scripts/capture_tuya_private_input_provenance.py
+      - scripts/ci/capture_standalone_visual_evidence.sh
+      - scripts/ci/tests/test_capture_standalone_visual_evidence.py
       - scripts/ci/tests/test_capture_tuya_private_input_provenance.py
       - scripts/field/install_one_time_capture.command
       - .github/workflows/capture-field-build-provenance.yml
@@ -31,6 +33,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Validate private Tuya input provenance helper
         shell: bash
@@ -39,6 +43,14 @@ jobs:
           /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
           /usr/bin/python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
           bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+
+      - name: Validate standalone visual evidence source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ci/capture_standalone_visual_evidence.sh
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
 
       - name: Verify source contract
         shell: bash
@@ -154,9 +166,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sha='0123456789abcdef0123456789abcdef01234567'
+          expected_sha="${{ github.event.pull_request.head.sha || github.sha }}"
+          sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$sha" == "$expected_sha" ]]
+          # Public Simulator presentation QA cannot inspect the private Tuya dependency lock.
+          # This 64-hex stamp only exercises Info.plist plumbing; the evidence manifest marks
+          # dependency provenance unverified and creates no field/physical authority.
           dependency_sha='abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'
-          label='capture-v14-0123456789ab'
+          label="capture-v14-${sha:0:12}"
           rm -rf /tmp/NembraCaptureProvenanceDerived
           xcodebuild \
             -project NembraCapture.xcodeproj \
@@ -176,3 +194,18 @@ jobs:
           test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
           test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$sha"
           test "$(plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist")" = "$dependency_sha"
+
+      - name: Capture standalone Simulator visual evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          EXPECTED_SOURCE_SHA="$sha" scripts/ci/capture_standalone_visual_evidence.sh
+
+      - name: Upload standalone Simulator visual evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nembra-Capture-Standalone-Visual-Evidence
+          path: ${{ runner.temp }}/NembraCaptureStandaloneVisualEvidence
+          if-no-files-found: error
+          retention-days: 14
