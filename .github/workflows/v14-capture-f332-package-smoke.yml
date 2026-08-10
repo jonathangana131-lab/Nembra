@@ -13,13 +13,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
       - name: Verify source subject parent
         shell: bash
         run: |
           set -euo pipefail
           git show -s --format='%H %P' HEAD
-          test "$(git rev-parse HEAD^)" = "f33286e976eee89bbb92501eaad69ed493a328aa"
-          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/v14-capture-f332-package-smoke.yml"
+          test "$(git rev-parse HEAD^)" = "102f442b0e17acb0e5bca98d2db83b496534f74a"
+          test "$(git rev-parse HEAD^^)" = "f33286e976eee89bbb92501eaad69ed493a328aa"
+          changed="$(git diff --name-only f33286e976eee89bbb92501eaad69ed493a328aa..HEAD)"
+          test "$changed" = ".github/workflows/v14-capture-f332-package-smoke.yml"
       - name: Full Capture package
         shell: bash
         run: |
