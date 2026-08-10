@@ -217,7 +217,6 @@ class FieldCandidatePreflightTests(unittest.TestCase):
             repository_private.write_text(self.PRIVATE_UDID, encoding="utf-8")
             repository_private.chmod(0o600)
             inputs = replace(inputs, intended_device_udid_file=repository_private)
-
             report, exit_code = preflight.evaluate_preflight(
                 inputs,
                 runner=FakeRunner(self.SOURCE),
@@ -263,9 +262,9 @@ class FieldCandidatePreflightTests(unittest.TestCase):
 
     def test_production_handoff_consumes_accepted_descriptor_bound_private_input_before_signing(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
-        helper_commit = "05ce6d9a20487ab34aa31c5b6456910ed2ed438f"
+        helper_commit = "c8c706e3d67d2aeab37341035468437dc2af0491"
         helper_path = "scripts/ci/es80_today_private_device_input.py"
-        helper_blob = "9a9f7f724ceaf895e52d6d443d326043f97645c8"
+        helper_blob = "38eb695792fb759428a98686081b883e39c3b118"
         helper_invoke = '/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER"'
         private_directory_arg = '--private-directory "$PRIVATE_DIR"'
         source_repo_arg = '--source-repo "$FIELD_SOURCE"'
