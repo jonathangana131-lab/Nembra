@@ -1,4 +1,9 @@
+@preconcurrency import CoreBluetooth
 import SwiftUI
+
+// CoreBluetooth exposes this dictionary key as CBAdvertisementDataIsConnectable.
+// Keep the capture implementation readable without depending on a non-existent *Key alias.
+let CBAdvertisementDataIsConnectableKey = CBAdvertisementDataIsConnectable
 
 /// Dedicated one-time ES80 Bluetooth evidence build.
 ///
