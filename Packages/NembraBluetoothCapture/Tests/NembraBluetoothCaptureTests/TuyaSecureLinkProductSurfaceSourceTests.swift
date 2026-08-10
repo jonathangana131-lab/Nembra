@@ -42,7 +42,7 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         #expect(body.contains("accepted artifact is sealed"))
     }
 
-    @Test("truth gates remain visible in the guided product surface")
+    @Test("truth gates remain visible without promoting correlation heuristics into rider jargon")
     func truthGatesRemainProductVisible() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let surface = try section(in: app, from: "private struct SecureLinkView: View", to: "private struct SecureTransfer: Transferable")
@@ -55,8 +55,10 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         #expect(body.contains("test.authenticate()"))
         #expect(body.contains("test.sdkLocalBLEOnline"))
         #expect(body.contains("test.applicationUpdateCount > 0"))
-        #expect(body.contains("Historical UUID, name, RSSI, FD50, and Tuya hints never authorize the target."))
         #expect(body.contains("No DP query or scooter command is authorized by this surface."))
+        #expect(!body.contains("Historical UUID, name, RSSI, FD50, and Tuya hints never authorize the target."))
+        #expect(app.contains("Do not guess from name, RSSI, FD50, or Tuya hints"))
+        #expect(app.contains("Do not fall back to the historical capture UUID"))
     }
 
     @Test("large Dynamic Type receives a recomposed stage indicator")
