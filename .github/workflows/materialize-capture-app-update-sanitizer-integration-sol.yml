@@ -1,0 +1,228 @@
+name: Materialize Capture Application Sanitizer Integration Sol
+
+on:
+  push:
+    branches:
+      - "fix/v14-capture-app-update-sanitizer-integration-sol"
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 8
+
+      - name: Verify exact stacked donor and product ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          donor="071c1bcae4756d049ce9df76a57d62458e01846b"
+          product="52333deb09ea9a5964250097f83884d285f25d78"
+          test "$(git rev-parse HEAD^)" = "$donor"
+          git merge-base --is-ancestor "$product" HEAD
+          test -f Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaApplicationUpdateSecretSanitizer.swift
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationUpdateSecretSanitizerTests.swift
+
+      - name: Materialize app consumption and source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source_path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = source_path.read_text()
+          old = (
+              "    func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {\n"
+              "        guard let dps, !dps.isEmpty else { return }\n"
+              "        var sanitized: [String: String] = [:]\n"
+              "        for (key, value) in dps {\n"
+              "            sanitized[String(describing: key)] = String(describing: value)\n"
+              "        }\n"
+              "        onApplicationUpdate?(sanitized)\n"
+              "    }\n"
+          )
+          new = (
+              "    func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {\n"
+              "        guard let dps, !dps.isEmpty else { return }\n"
+              "        let sanitized = TuyaApplicationUpdateSecretSanitizer.sanitize(dps)\n"
+              "        onApplicationUpdate?(sanitized)\n"
+              "    }\n"
+          )
+          if source.count(old) != 1:
+              raise SystemExit(f"expected exactly one unsanitized SDK application projection, found {source.count(old)}")
+          source_path.write_text(source.replace(old, new))
+
+          test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationUpdateSecretRedactionSourceTests.swift")
+          if test_path.exists():
+              raise SystemExit(f"refusing to overwrite existing {test_path}")
+          test_path.write_text(r'''import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Tuya authenticated application update secret custody integration")
+          struct TuyaApplicationUpdateSecretRedactionSourceTests {
+              @Test("SmartLifeDriver sanitizes before controller event custody")
+              func smartLifeDriverUsesPackageSanitizerBeforeCallback() throws {
+                  let appSource = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let driver = String(try section(
+                      in: appSource,
+                      from: "@MainActor\nprivate final class SmartLifeDriver",
+                      to: "#endif\n\nprivate enum AppleAccountAuthorizationError"
+                  ))
+
+                  #expect(driver.contains("guard let dps, !dps.isEmpty else { return }"))
+                  #expect(driver.contains("let sanitized = TuyaApplicationUpdateSecretSanitizer.sanitize(dps)"))
+                  #expect(driver.contains("onApplicationUpdate?(sanitized)"))
+                  #expect(!driver.contains("sanitized[String(describing: key)] = String(describing: value)"))
+                  #expect(driver.components(separatedBy: "onApplicationUpdate?(sanitized)").count == 2)
+              }
+
+              @Test("package sanitizer owns recursive credential-key redaction")
+              func sanitizerOwnsExpectedFailClosedContract() throws {
+                  let sanitizer = try readRepositoryFile(
+                      "Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaApplicationUpdateSecretSanitizer.swift"
+                  )
+
+                  #expect(sanitizer.contains("public enum TuyaApplicationUpdateSecretSanitizer"))
+                  #expect(sanitizer.contains("public static func sanitize(_ update: [AnyHashable: Any]) -> [String: String]"))
+                  #expect(sanitizer.contains("key.lowercased().filter { $0.isLetter || $0.isNumber }"))
+                  #expect(sanitizer.contains("array.map(redactApplicationSecrets)"))
+                  #expect(sanitizer.contains("localkey"))
+                  #expect(sanitizer.contains("accesstoken"))
+                  #expect(sanitizer.contains("refreshtoken"))
+                  #expect(sanitizer.contains("authkey"))
+                  #expect(sanitizer.contains("seckey"))
+                  #expect(sanitizer.contains("redactedValue = \"<redacted>\""))
+              }
+
+              @Test("export redaction declaration remains coupled to application-event custody")
+              func exportRedactionClaimIncludesApplicationEvents() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let export = String(try section(
+                      in: source,
+                      from: "private func makeExport(exportedAt:",
+                      to: "func prepareExport()"
+                  ))
+                  let updates = String(try section(
+                      in: source,
+                      from: "private func receivedApplicationUpdate(",
+                      to: "private func startWatchdog"
+                  ))
+
+                  #expect(export.contains("secretsRedacted: true"))
+                  #expect(updates.contains("log(\"tuya_application_update\", update.merging(["))
+              }
+
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let startRange = source.range(of: start),
+                        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+                      Issue.record("Expected source section missing: \(start) ... \(end)")
+                      throw SourceContractError.sectionMissing
+                  }
+                  return source[startRange.lowerBound..<endRange.lowerBound]
+              }
+
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  let repositoryRoot = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+              }
+
+              private enum SourceContractError: Error {
+                  case sectionMissing
+              }
+          }
+          ''')
+          PY
+
+      - name: Validate sanitizer behavior and app source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationUpdateSecretRedactionSourceTests.swift
+
+          mkdir -p /tmp/nembra-secret-probe
+          cp Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaApplicationUpdateSecretSanitizer.swift /tmp/nembra-secret-probe/TuyaApplicationUpdateSecretSanitizer.swift
+          cat > /tmp/nembra-secret-probe/main.swift <<'SWIFT'
+          import Foundation
+
+          let update: [AnyHashable: Any] = [
+              "speed": 17,
+              "local_key": "root-secret",
+              "payload": [
+                  ["access_token": "nested-secret", "battery": 72],
+                  ["wrapper": ["session-key": "session-secret"]],
+              ],
+          ]
+          let output = TuyaApplicationUpdateSecretSanitizer.sanitize(update)
+          precondition(output.count == 3)
+          precondition(output["speed"] == "17")
+          precondition(output["local_key"] == "<redacted>")
+          let payload = output["payload"] ?? ""
+          precondition(payload.contains("<redacted>"))
+          precondition(payload.contains("72"))
+          precondition(!payload.contains("nested-secret"))
+          precondition(!payload.contains("session-secret"))
+
+          let ordinary = TuyaApplicationUpdateSecretSanitizer.sanitize([
+              "note": "literal local_key text under an ordinary key",
+          ])
+          precondition(ordinary["note"] == "literal local_key text under an ordinary key")
+          SWIFT
+          swiftc -swift-version 6 -warnings-as-errors \
+            /tmp/nembra-secret-probe/TuyaApplicationUpdateSecretSanitizer.swift \
+            /tmp/nembra-secret-probe/main.swift \
+            -o /tmp/nembra-secret-probe/probe
+          /tmp/nembra-secret-probe/probe
+
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          start = source.index("@MainActor\nprivate final class SmartLifeDriver")
+          end = source.index("#endif\n\nprivate enum AppleAccountAuthorizationError", start)
+          driver = source[start:end]
+          required = "let sanitized = TuyaApplicationUpdateSecretSanitizer.sanitize(dps)"
+          if required not in driver:
+              raise SystemExit("SmartLifeDriver does not consume package sanitizer")
+          if "sanitized[String(describing: key)] = String(describing: value)" in driver:
+              raise SystemExit("legacy unsanitized projection remains")
+          if driver.count("onApplicationUpdate?(sanitized)") != 1:
+              raise SystemExit("SDK application callback admission is not singular")
+          if "secretsRedacted: true" not in source:
+              raise SystemExit("accepted export no longer declares secret redaction")
+          PY
+          git diff --check
+
+      - name: Commit clean four-path integration checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-app-update-sanitizer-integration-sol.yml
+          git add -A
+          git diff --cached --check
+          product="52333deb09ea9a5964250097f83884d285f25d78"
+          mapfile -t changed < <(git diff --cached --name-only "$product" | sort)
+          expected=(
+            "NembraApp/App/NembraCaptureEntrypoint.swift"
+            "Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaApplicationUpdateSecretSanitizer.swift"
+            "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationUpdateSecretRedactionSourceTests.swift"
+            "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationUpdateSecretSanitizerTests.swift"
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          test "${changed[*]}" = "${expected_sorted[*]}" || {
+            printf 'Unexpected effective paths:\n'; printf '  %s\n' "${changed[@]}"; exit 1;
+          }
+          git config user.name "Nembra V14 Sol"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "fix(capture): sanitize authenticated application updates"
+          git push origin HEAD:fix/v14-capture-app-update-sanitizer-integration-sol
