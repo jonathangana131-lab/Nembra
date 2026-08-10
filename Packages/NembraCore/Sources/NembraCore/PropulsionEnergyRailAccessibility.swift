@@ -94,6 +94,27 @@ public struct PropulsionEnergyRailAccessibilityPresentation: Equatable, Sendable
             acceptedRevision: nil
         )
     }
+
+    /// Package-owned source-retained projection for an already accepted measurement.
+    /// The accepted revision remains byte-for-byte tied to the measurement while
+    /// semantic currentness changes to retained. This lets VoiceOver announce
+    /// "last known" immediately when the source retires without pretending that a
+    /// new measurement arrived or exposing a constructor to SwiftUI.
+    static func retained(
+        acceptedMeasurement: PropulsionGaugeCockpitAcceptedMeasurement
+    ) -> PropulsionEnergyRailAccessibilityPresentation {
+        PropulsionEnergyRailAccessibilityPresentation(
+            identity: acceptedMeasurement.identity,
+            currentness: .retained,
+            acceptedWatts: acceptedMeasurement.watts,
+            acceptedRevision: PropulsionEnergyRailAcceptedRevision(
+                authority: acceptedMeasurement.authority,
+                continuityGeneration: acceptedMeasurement.continuityGeneration,
+                receiptSequenceNumber: acceptedMeasurement.receiptSequenceNumber,
+                receivedAtUptimeNanoseconds: acceptedMeasurement.receivedAtUptimeNanoseconds
+            )
+        )
+    }
 }
 
 public extension PropulsionGaugeCockpitSnapshot {
