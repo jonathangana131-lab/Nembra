@@ -1,0 +1,49 @@
+name: Validate Capture Apple custody test alignment
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-apple-custody-test-alignment-sol
+    paths:
+      - .github/workflows/validate-capture-apple-custody-test-alignment-sol.yml
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-apple-custody-test-alignment-sol
+          fetch-depth: 0
+
+      - name: Guard exact product and test-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='518fe048b11a1e666e04976a7f7bd4fcb1a4af69'
+          test "$(git merge-base HEAD "$parent")" = "$parent"
+          unexpected="$(git diff --name-only "$parent"...HEAD | grep -Ev '^(.github/workflows/validate-capture-apple-custody-test-alignment-sol.yml|scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py)$' || true)"
+          test -z "$unexpected"
+          test "$(git rev-parse "$parent:scripts/field/install_one_time_capture.command")" = "$(git rev-parse HEAD:scripts/field/install_one_time_capture.command)"
+
+      - name: Run focused custody contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/field/install_one_time_capture.command
+          python3 -m py_compile scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
+          python3 scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
+          git diff --check 518fe048b11a1e666e04976a7f7bd4fcb1a4af69...HEAD
+
+      - name: Remove helper and commit clean test-only checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-v14-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git rm .github/workflows/validate-capture-apple-custody-test-alignment-sol.yml
+          git commit -m "test(capture): keep Apple custody repair test-only"
+          git push origin HEAD:repair/v14-capture-apple-custody-test-alignment-sol
