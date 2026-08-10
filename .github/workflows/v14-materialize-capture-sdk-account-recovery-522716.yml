@@ -1,0 +1,57 @@
+name: Materialize Capture SDK Account Recovery 522716
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-sdk-account-recovery-522716-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: fix/v14-capture-sdk-account-recovery-522716-sol
+
+      - name: Guard exact construction parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "522716b8112fda6456beba24a62a6a563e66629a"
+
+      - name: Materialize reviewed account recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/materialize_capture_sdk_account_recovery_522716.py
+          git diff --check
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkAccountRecoverySourceTests.swift
+
+      - name: Verify preserved product truth
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'private var correlationDisplayedWindowOrdinal: Int' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Text("\(correlationDisplayedWindowOrdinal)/4")' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'func signOut()' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Use a different Tuya account' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'test.membershipStatus' NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Publish validated construction checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f scripts/ci/materialize_capture_sdk_account_recovery_522716.py .github/workflows/v14-materialize-capture-sdk-account-recovery-522716.yml
+          git config user.name "nembra-v14-bot"
+          git config user.email "nembra-v14-bot@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(capture): recover from the wrong Tuya account"
+          git push origin HEAD:fix/v14-capture-sdk-account-recovery-522716-sol
