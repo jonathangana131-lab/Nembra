@@ -29,8 +29,9 @@ class CaptureTuyaPrivateInputRecordSnapshotCoherenceTests(unittest.TestCase):
         self.security_podspec = self.sdk / "ThingSmartCryption.podspec"
         self.identity_podspec = self.identity / "NembraTuyaPrivateConfig.podspec"
         self.lockfile = self.root / "Podfile.lock"
+        self.security_binary = self.security_build / "ThingSmartCryption.bin"
         self.security_podspec.write_text("security-podspec-v1", encoding="utf-8")
-        (self.security_build / "ThingSmartCryption.bin").write_bytes(b"security-bytes-v1")
+        self.security_binary.write_bytes(b"security-bytes-v1")
         self.identity_podspec.write_text("private-config-podspec-v1", encoding="utf-8")
         (self.identity_sources / "NembraTuyaPrivateIdentity.swift").write_text(
             'private let encodedAppKey = "TOPSECRET-APPKEY"\n'
@@ -55,6 +56,13 @@ class CaptureTuyaPrivateInputRecordSnapshotCoherenceTests(unittest.TestCase):
             identity_sources=self.identity_sources,
         )
 
+    def test_stable_inputs_produce_a_record(self) -> None:
+        record = self.build_record()
+        self.assertEqual(record["schema"], provenance.SCHEMA)
+        self.assertEqual(len(record["podfile_lock_sha256"]), 64)
+        self.assertEqual(len(record["thing_smart_cryption_build_tree_sha256"]), 64)
+        self.assertEqual(len(record["private_identity_sources_tree_sha256"]), 64)
+
     def test_record_rejects_earlier_input_mutation_during_later_tree_fingerprint(self) -> None:
         original_tree_fingerprint = provenance._tree_fingerprint
         mutated_and_restored = False
@@ -78,6 +86,75 @@ class CaptureTuyaPrivateInputRecordSnapshotCoherenceTests(unittest.TestCase):
 
         self.assertTrue(mutated_and_restored)
 
+    def test_record_rejects_same_bytes_inode_replacement_after_baseline(self) -> None:
+        original_tree_fingerprint = provenance._tree_fingerprint
+        replaced = False
+
+        def fingerprint_then_replace(path: Path) -> str:
+            nonlocal replaced
+            result = original_tree_fingerprint(path)
+            if path == self.identity_sources and not replaced:
+                self.security_binary.unlink()
+                self.security_binary.write_bytes(b"security-bytes-v1")
+                replaced = True
+            return result
+
+        with mock.patch.object(
+            provenance,
+            "_tree_fingerprint",
+            side_effect=fingerprint_then_replace,
+        ):
+            with self.assertRaises(provenance.ProvenanceError):
+                self.build_record()
+
+        self.assertTrue(replaced)
+
+    def test_record_rejects_tree_membership_mutate_restore_after_baseline(self) -> None:
+        original_tree_fingerprint = provenance._tree_fingerprint
+        mutated = False
+
+        def fingerprint_then_membership_mutation(path: Path) -> str:
+            nonlocal mutated
+            result = original_tree_fingerprint(path)
+            if path == self.identity_sources and not mutated:
+                transient = self.security_build / "transient.bin"
+                transient.write_bytes(b"transient")
+                transient.unlink()
+                mutated = True
+            return result
+
+        with mock.patch.object(
+            provenance,
+            "_tree_fingerprint",
+            side_effect=fingerprint_then_membership_mutation,
+        ):
+            with self.assertRaises(provenance.ProvenanceError):
+                self.build_record()
+
+        self.assertTrue(mutated)
+
+    def test_record_rejects_mutation_between_the_two_baseline_snapshots(self) -> None:
+        original_snapshot = provenance._record_identity_snapshot
+        calls = 0
+
+        def snapshot_then_mutate(**arguments: Path) -> tuple[object, ...]:
+            nonlocal calls
+            result = original_snapshot(**arguments)
+            calls += 1
+            if calls == 1:
+                self.security_podspec.write_text("security-podspec-v2", encoding="utf-8")
+            return result
+
+        with mock.patch.object(
+            provenance,
+            "_record_identity_snapshot",
+            side_effect=snapshot_then_mutate,
+        ):
+            with self.assertRaises(provenance.ProvenanceError):
+                self.build_record()
+
+        self.assertGreaterEqual(calls, 2)
+
     def test_build_record_has_one_whole_snapshot_boundary_not_only_per_component_reads(self) -> None:
         source = HELPER_PATH.read_text(encoding="utf-8")
         start = source.index("def build_record(")
@@ -85,13 +162,16 @@ class CaptureTuyaPrivateInputRecordSnapshotCoherenceTests(unittest.TestCase):
         build_record_source = source[start:end]
 
         self.assertNotIn("    return {", build_record_source)
-        self.assertTrue(
-            "record" in build_record_source.lower()
-            and (
-                "snapshot" in build_record_source.lower()
-                or "identity" in build_record_source.lower()
-                or "unchanged" in build_record_source.lower()
-            )
+        self.assertIn("record_snapshot_before", build_record_source)
+        self.assertIn("record_snapshot_confirmed", build_record_source)
+        self.assertIn("record_snapshot_after", build_record_source)
+        self.assertLess(
+            build_record_source.index("record_snapshot_confirmed"),
+            build_record_source.index("record = {"),
+        )
+        self.assertLess(
+            build_record_source.index("record = {"),
+            build_record_source.index("record_snapshot_after"),
         )
 
 
