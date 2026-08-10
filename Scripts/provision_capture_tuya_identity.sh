@@ -2,7 +2,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-DEST="$ROOT/LocalSecrets/TuyaRuntime"
+# The field path is fixed by default. A caller may override only the destination
+# directory so CI can exercise this generator with dummy credentials without
+# touching a developer's real ignored LocalSecrets/TuyaRuntime contents.
+DEST="${NEMBRA_TUYA_RUNTIME_DIR:-$ROOT/LocalSecrets/TuyaRuntime}"
 SOURCE_DIR="$DEST/Sources/NembraTuyaPrivateConfig"
 
 umask 077
