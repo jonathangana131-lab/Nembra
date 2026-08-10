@@ -34,37 +34,103 @@ public extension SimulatorPowerEvidenceProvider {
     }
 }
 
-/// Consumer-side projection for sealed Simulator propulsion evidence.
+/// App-session currentness for one exact source-issued Simulator power receipt.
+/// This is deliberately distinct from source currentness: transport is allowed to
+/// demote a legitimate LIVE receipt to RETAINED immediately, but the app layer can
+/// never create a receipt or promote retained evidence back to live.
+enum SimulatorPowerStoreCurrentness: Equatable, Sendable {
+    case unavailable
+    case retained
+    case live
+}
+
+struct SimulatorPowerStoreProjection: Equatable, Sendable {
+    let currentness: SimulatorPowerStoreCurrentness
+    let observation: SimulatorPowerObservation?
+
+    static let unavailable = SimulatorPowerStoreProjection(
+        currentness: .unavailable,
+        observation: nil
+    )
+
+    fileprivate static func retained(
+        _ observation: SimulatorPowerObservation
+    ) -> SimulatorPowerStoreProjection {
+        SimulatorPowerStoreProjection(
+            currentness: .retained,
+            observation: observation
+        )
+    }
+
+    fileprivate static func live(
+        _ observation: SimulatorPowerObservation
+    ) -> SimulatorPowerStoreProjection {
+        SimulatorPowerStoreProjection(
+            currentness: .live,
+            observation: observation
+        )
+    }
+
+    private init(
+        currentness: SimulatorPowerStoreCurrentness,
+        observation: SimulatorPowerObservation?
+    ) {
+        self.currentness = currentness
+        self.observation = observation
+    }
+}
+
+/// Consumer-side custody for sealed Simulator propulsion evidence.
 ///
-/// The source owns every positive availability. This consumer can only preserve
-/// one exact sealed value or remove authority. Aggregate connection is therefore
-/// a negative veto: non-connected transport may keep source-issued retained
-/// evidence, but it can never expose source-issued `.live` as current app truth.
-/// Reconnect alone likewise cannot manufacture live currentness.
-struct SimulatorPowerEvidenceConsumerAuthority {
-    private(set) var availability: SimulatorPowerEvidenceAvailability = .unavailable
+/// Positive authority can enter only through a source-file-sealed availability.
+/// Aggregate connection is a one-way negative veto: it may synchronously demote
+/// LIVE -> RETAINED while preserving the exact immutable source receipt, but can
+/// never promote RETAINED -> LIVE. Source/provider loss fails completely closed.
+struct SimulatorPowerEvidenceConsumerAuthority: Sendable {
+    private(set) var projection: SimulatorPowerStoreProjection = .unavailable
 
-    mutating func invalidate() {
-        availability = .unavailable
-    }
-
-    mutating func revokeLiveForNonConnectedTransport() {
-        if availability.currentness == .live {
-            availability = .unavailable
-        }
-    }
-
-    @discardableResult
-    mutating func commit(
-        _ candidate: SimulatorPowerEvidenceAvailability,
+    mutating func applySource(
+        _ sourceAvailability: SimulatorPowerEvidenceAvailability,
         connectionIsConnected: Bool
-    ) -> Bool {
-        guard connectionIsConnected || candidate.currentness != .live else {
-            availability = .unavailable
-            return false
+    ) {
+        switch sourceAvailability.currentness {
+        case .unavailable:
+            guard sourceAvailability.observation == nil else {
+                projection = .unavailable
+                return
+            }
+            projection = .unavailable
+
+        case .retained:
+            guard let observation = sourceAvailability.observation else {
+                projection = .unavailable
+                return
+            }
+            projection = .retained(observation)
+
+        case .live:
+            guard let observation = sourceAvailability.observation else {
+                projection = .unavailable
+                return
+            }
+            projection = connectionIsConnected
+                ? .live(observation)
+                : .retained(observation)
         }
-        availability = candidate
-        return true
+    }
+
+    /// Must be called before publishing aggregate non-connected state. This keeps
+    /// last-known presentation available without ever exposing OFFLINE + LIVE.
+    mutating func transportBecameUnavailable() {
+        guard projection.currentness == .live,
+              let observation = projection.observation else {
+            return
+        }
+        projection = .retained(observation)
+    }
+
+    mutating func sourceBecameUnavailable() {
+        projection = .unavailable
     }
 }
 
