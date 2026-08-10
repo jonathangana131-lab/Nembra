@@ -1,0 +1,95 @@
+name: Open Capture UID Custody PR
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-uid-custody-ba3-r1
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 3
+
+      - name: Guard exact reviewed repair head
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='bd5c19cf79266aa6232dfcabd6f87f5d82cbe323'
+          test "$(git rev-parse HEAD^)" = "$expected"
+          test "$(git diff --name-only "$expected"..HEAD)" = '.github/workflows/open-capture-uid-custody-pr.yml'
+
+      - name: Self-remove publication workflow
+        id: clean
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/open-capture-uid-custody-pr.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/open-capture-uid-custody-pr.yml
+          git commit -m 'chore(capture): retire UID custody PR publisher'
+          git push origin HEAD:sol/v14-capture-uid-custody-ba3-r1
+          echo "head=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Open current-parent convergence PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPAIR_HEAD: ${{ steps.clean.outputs.head }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch='sol/v14-capture-uid-custody-ba3-r1'
+          base='product/v14-capture-guided-truth-current-sol'
+          existing="$(gh pr list --repo '${{ github.repository }}' --head "$branch" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            echo "PR #$existing already exists"
+            exit 0
+          fi
+
+          cat > /tmp/body.md <<EOF
+          PROTOCOL_VERSION: 14
+          FEATURE: Nembra Capture / ES80 authenticated stationary physical truth
+          ROLE: account-identity export custody / adversarial current-head closure
+          EXACT PRODUCT PARENT: \`product/v14-capture-guided-truth-current-sol@ba3a1eeae36caca6dd84beaabd0f15f4f0b57925\`
+          EXACT REPAIR HEAD: \`${REPAIR_HEAD}\`
+          STATUS: AHEAD-ONLY CURRENT-PARENT REPAIR / EXACT-HEAD ACCEPTANCE REQUIRED / PHYSICAL NO-GO
+
+          ## Residual defect on current product
+          \`ba3a1eea...\` added value-bound account-UID scrubbing and trusted Nembra \`generation\` stamping, but \`receivedApplicationUpdate\` performed two actor suspension points before the scrubber read \`membershipAccountUID\`. A foreground/account transition could therefore clear or replace the lease after callback admission; the old helper also returned raw update content when the UID was absent. Two malformed UID-bearing keys that collapsed to the same redacted key could overwrite evidence.
+
+          ## Repair
+          - snapshots the already-earned membershipAccountUID lease and sanitizes the application dictionary before the first successful-path suspension;
+          - fail-closes through source-authority retirement if that lease is unexpectedly unavailable at admission;
+          - carries only the custody-safe dictionary across actor awaits into event logging;
+          - keeps Nembra-owned generation stamping after untrusted payload sanitization;
+          - deterministically sorts keys before redaction;
+          - preserves redacted-key collisions with deterministic suffixes instead of overwriting evidence;
+          - strengthens the source regression so scrub ordering is mechanically before the ledger await and raw-update fallback is forbidden.
+
+          ## Exact effective scope
+          The reviewed product repair is exactly two paths relative to parent \`ba3a1eea...\`:
+          - \`NembraApp/App/NembraCaptureEntrypoint.swift\`
+          - \`Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift\`
+
+          One-shot exact-parent construction run \`31379624224\` completed SUCCESS and self-removed its materializer. The PR-publication workflow also self-removes before this PR is opened, so neither workflow is part of the effective product diff. Construction is not final product acceptance.
+
+          No BLE write, DP query/publish, scooter command, telemetry semantic, raw-FD50 promotion, physical acknowledgement, or new hardware claim is introduced.
+
+          After composition the final unchanged product head must re-earn full Xcode/package, Capture Field Build Provenance, iPhone 12/iOS 27 visual/accessibility, and private signed-runtime gates.
+
+          **PHYSICAL STATUS: NO-GO / DO NOT SCAN / DO NOT RUN / DO NOT REPEAT THE OLD RIDE.**
+          EOF
+
+          gh pr create \
+            --repo '${{ github.repository }}' \
+            --base "$base" \
+            --head "$branch" \
+            --title '[Capture P0][TRUTH] Bind account UID scrub before async custody' \
+            --body-file /tmp/body.md
