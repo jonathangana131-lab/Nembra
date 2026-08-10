@@ -20,7 +20,11 @@ fail() {
 # Developer Platform to stay coherent. Refuse to prepare a private field build
 # if the standalone Capture target drifts away from the identity for which the
 # private security component must be generated.
-BUNDLE_COUNT="$(grep -F "PRODUCT_BUNDLE_IDENTIFIER = $EXPECTED_BUNDLE_ID;" "$PROJECT" | wc -l | tr -d ' ')"
+#
+# grep returns 1 when there are zero matches. Under set -e + pipefail that must
+# not bypass the explicit NOT_READY diagnostic below, so normalize the expected
+# zero-match status while still preserving the exact fixed-string count.
+BUNDLE_COUNT="$(grep -Fc "PRODUCT_BUNDLE_IDENTIFIER = $EXPECTED_BUNDLE_ID;" "$PROJECT" || true)"
 [[ "$BUNDLE_COUNT" == '2' ]] || fail 'capture-bundle-id-does-not-match-tuya-field-identity' 4
 
 # The security component is app-specific private material downloaded from the
