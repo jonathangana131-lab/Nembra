@@ -14,15 +14,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 3
+          fetch-depth: 4
 
       - name: Guard exact current product parent
         shell: bash
         run: |
           set -euo pipefail
           expected='a7a28ca6e744d4bad8be08fd3553a2af8c609b15'
-          actual_base="$(git rev-parse HEAD~2)"
-          test "$actual_base" = "$expected"
+          git merge-base --is-ancestor "$expected" HEAD
           test "$(git diff --name-only "$expected"..HEAD)" = '.github/workflows/materialize-capture-field-python-isolation.yml'
 
       - name: Isolate authority-bearing Python interpreters
@@ -41,8 +40,9 @@ jobs:
           for path in targets:
               source = path.read_text()
               updated = re.sub(r'/usr/bin/python3 (?!-I\b)', '/usr/bin/python3 -I ', source)
+              updated = updated.replace('[[ -x /usr/bin/python3 -I ]]', '[[ -x /usr/bin/python3 ]]')
               if updated == source:
-                  raise SystemExit(f'expected at least one non-isolated system-Python call in {path}')
+                  raise SystemExit(f'expected at least one non-isolated system-Python execution in {path}')
               path.write_text(updated)
 
           bootstrap = Path('Scripts/bootstrap_capture_tuya_sdk.sh').read_text()
@@ -59,7 +59,7 @@ jobs:
                   if stripped.startswith('[[ -x /usr/bin/python3 ]]'):
                       continue
                   if '/usr/bin/python3 -I' not in stripped:
-                      raise SystemExit(f'{script_name}:{line_number}: non-isolated system Python authority: {stripped}')
+                      raise SystemExit(f'{script_name}:{line_number}: non-isolated system Python execution: {stripped}')
 
           test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldPythonIsolationSourceTests.swift')
           if test_path.exists():
