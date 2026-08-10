@@ -414,6 +414,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
     deinit { watchdog?.cancel() }
 
     func abandonCorrelationForViewExit() {
+        // Leaving Secure Link revokes this controller's user-intent boundary before checking
+        // whether package correlation has reached scanner ownership. Both the initial OFF1
+        // membership proof and the final selected-phase membership recheck use this generation.
+        membershipRequestID = UUID()
+        membershipBusy = false
+#if canImport(ThingSmartHomeKit)
+        membershipProbe = nil
+#endif
+
         guard processCorrelationLease != nil || correlationSession != nil else { return }
         abandonPackageCorrelation()
         phase = .failed
