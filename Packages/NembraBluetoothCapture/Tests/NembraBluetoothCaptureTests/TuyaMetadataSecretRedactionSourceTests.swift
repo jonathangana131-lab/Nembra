@@ -18,6 +18,7 @@ struct TuyaMetadataSecretRedactionSourceTests {
         #expect(body.contains("localkey"))
         #expect(body.contains("accesstoken"))
         #expect(body.contains("refreshtoken"))
+        #expect(body.contains("sessionkey"))
         #expect(body.contains("authkey"))
         #expect(body.contains("seckey"))
         #expect(body.contains("key.lowercased().filter"))
@@ -26,6 +27,7 @@ struct TuyaMetadataSecretRedactionSourceTests {
         #expect(body.contains("array.map(redactsecrets)"))
         #expect(!body.contains("normalized.contains(\"access_token\")"))
         #expect(!body.contains("normalized.contains(\"refresh_token\")"))
+        #expect(!body.contains("normalized.contains(\"session_key\")"))
     }
 
     @Test("linked device UI state does not retain raw device dictionaries or local key")
