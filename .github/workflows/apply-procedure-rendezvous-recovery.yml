@@ -1,0 +1,129 @@
+name: Apply Capture procedure rendezvous recovery
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-procedure-rendezvous-recovery-sol
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-procedure-rendezvous-recovery
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-procedure-rendezvous-recovery-sol
+          fetch-depth: 2
+      - name: Apply exact product patch and self-delete
+        shell: bash
+        env:
+          EXPECTED_PARENT: dee52e17577d25dd6d928378b2fb530f321923bb
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          git config user.name nembra-go-bot
+          git config user.email nembra-go-bot@users.noreply.github.com
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64
+          
+          PROCEDURE = "ES80-AUTHENTICATED-STATIONARY-v1"
+          
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              source = p.read_text()
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one anchor, found {count}: {old!r}")
+              p.write_text(source.replace(old, new, 1))
+          
+          replace_once(
+              "NembraApp/App/NembraCaptureBuildIdentity.swift",
+              '    static let tuyaDependencyLockSHA256InfoKey = "NembraCaptureTuyaDependencyLockSHA256"\n',
+              '    static let tuyaDependencyLockSHA256InfoKey = "NembraCaptureTuyaDependencyLockSHA256"\n    static let fieldProcedureIdentifier = "'+PROCEDURE+'"\n'
+          )
+          replace_once(
+              "NembraApp/App/NembraCaptureEntrypoint.swift",
+              '        let tuyaDependencyLockSHA256: String\n        let tuyaDeviceID: String\n',
+              '        let tuyaDependencyLockSHA256: String\n        let procedureIdentifier: String\n        let tuyaDeviceID: String\n'
+          )
+          replace_once(
+              "NembraApp/App/NembraCaptureEntrypoint.swift",
+              '    var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }\n    var sdkAccountLoggedIn: Bool',
+              '    var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }\n    var fieldProcedureIdentifier: String { NembraCaptureBuildIdentity.fieldProcedureIdentifier }\n    var sdkAccountLoggedIn: Bool'
+          )
+          replace_once(
+              "NembraApp/App/NembraCaptureEntrypoint.swift",
+              '            LabeledContent("Source commit", value: test.fieldBuildSourceCommitSHA)\n            LabeledContent("Private SDK config"',
+              '            LabeledContent("Source commit", value: test.fieldBuildSourceCommitSHA)\n            LabeledContent("Procedure", value: test.fieldProcedureIdentifier)\n            LabeledContent("Private SDK config"'
+          )
+          replace_once(
+              "NembraApp/App/NembraCaptureEntrypoint.swift",
+              '            schemaVersion: 9,\n            purpose: "Sanitized Tuya authenticated read-only stationary preflight"',
+              '            schemaVersion: 10,\n            purpose: "Sanitized Tuya authenticated read-only stationary preflight"',
+          )
+          replace_once(
+              "NembraApp/App/NembraCaptureEntrypoint.swift",
+              '            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,\n            tuyaDeviceID: deviceID,',
+              '            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,\n            procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier,\n            tuyaDeviceID: deviceID,'
+          )
+          runbook = Path("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
+          source = runbook.read_text()
+          title = "# Nembra Capture P0 â€” secure-link gate\n"
+          marker = f"PROCEDURE_ID: `{PROCEDURE}`"
+          if marker in source:
+              raise SystemExit("runbook already carries procedure marker unexpectedly")
+          if source.count(title) != 1:
+              raise SystemExit("runbook title anchor changed")
+          runbook.write_text(source.replace(title, title + "\n" + marker + "\n", 1))
+          installer = Path("scripts/field/install_one_time_capture.command")
+          source = installer.read_text()
+          bundle_anchor = 'BUNDLE_ID="com.jonathangana131.nembra.capturelearn"\n'
+          if source.count(bundle_anchor) != 1:
+              raise SystemExit("installer bundle anchor changed")
+          source = source.replace(bundle_anchor, bundle_anchor + f'PROCEDURE_ID="{PROCEDURE}"\n', 1)
+          launch_anchor = '    "The exact built device app was read back before installation and matched the requested source SHA, field-build identifier, and standalone bundle identifier." \\\n'
+          procedure_line = '    "Field procedure: $PROCEDURE_ID. Confirm the same identifier in Capture before OFF1 and in the canonical runbook." \\\n'
+          if source.count(launch_anchor) != 1:
+              raise SystemExit("installer launch anchor changed")
+          source = source.replace(launch_anchor, launch_anchor + procedure_line, 1)
+          installer.write_text(source)
+          test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift")
+          if test_path.exists():
+              raise SystemExit("procedure source test unexpectedly already exists")
+          test_path.write_bytes(base64.b64decode("aW1wb3J0IFZvdW5kYXRpb24KYW13b3J0IFRlc3RpbmcKQHRlc3RhYmxlIGltcG9ydCBOZW1icmFCbHVldG9vdGhDYXB0dXJlCgpAU3hpdGUoIkNhcHR1cmUgZmllbGQgcHJvY2VkdXJlIHJlbmRlenZvdXMiKQpzdHJ1Y3QgVHV5YUZpZWxkUHJvY2VkdXJlUmVuZGV6dm91c1NvdXJjZVRlc3RzIHsKICAgIHByaXZhdGUgc3RhdGljIGxldCB3cm9jZWR1cmUgPSAiRVM4MC1BVVRIRU5USUNBVEUtLVNUQVRJT05BUlktdjEiCgogICAgQFRlc3QoImNvbXBpbGVkIFVJLCBpbW11dGFibGUgZXhwb3J0LCBydW5ib29rLCBpbnN0YWxsZXIsIGFuZCBwcm92ZW5hbmNlIGdhdGUgc2hhcmUgb25lIGV4YWN0IHByb2NlZHVyZSIpCiAgICBmdW5jIG9uZVByb2NlZHVyZUFjcm9zc0ZpZWxkQXV0aG9yaXR5U3VyZmFjZXMoKSB0aHJvd3MgewogICAgICAgIGxldCBpZGVudGl0eSA9IHRyeSByZWFkKCJOZW1icmFBcHAvQXBwL05lbWJyYUNhcHR1cmVCdWlsZElkZW50aXR5LnN3aWZ0IikKICAgICAgISBsZXQgYXBwID0gdHJ5IHJlYWQoIk5lbWJyYUFwcC9BcHAvTmVtYnJhQ2FwdHVyZUVudHJ4cG9pbnQuc3dpZnQiKQogICAgICAgIGxldCBydW5ib29rID0gdHJ5IHJlYWQoImRvY3MvQ0FQVFVSRV9QMF9TRVNVUkVfTElOS19ORVh0X1RFU1QubWQiKQogICAgICAgIGxldCBpbnN0YWxsZXIgPSB0cnkgcmVhZCgic2NyaXB0cy9maWVsZC9pbnN0YWxsX29uZV90aW1lX2NhcHR1cmUuY29tbWFuZCIpCiAgICAgICAgbGV0IGwYWRvamFibmNib2QgPSB0cnkgcmVhZCgiLmdpdGh1Yi93b3JrZmxvd3MvY2FwdHVyZS1maWVsZC1idWlsZC1wcm92ZW5hbmNlLnltbCIpCgogICAgICAgICNlaHBlY3QoaWRlbnRpdHkuY29udGFpbnMoInN0YXRpYyBsZXQgZmllbGRQcm9jZWR1cmVJZGVudGlmaWVyID0gXCJcKFNlbGYucHJvY2VkdXJlKVwiIikpCiAgICAgICAgI2V4cGVjdChhcHAu“›ŒÖŒUÛXŞYÚX‘ÕŒRXŒ“›’V•[Ö•ÍLUÖœ–M’Q“ŒÛ[VR\Ô[ÙÒPĞYÒPĞYÒPÓ›R›LÔ[ØQÑØĞÍZ˜ŒLUÛXŞYÚXÒ–L•šÙ›ÕÔ››”œ›[Ú›ÙÕU[’šL‘ÙV•Rœ‘Ô’–‘ÕYÛTÍ[XUÕœÖ‘XŒ“›’V•[Ö•ÍLUÖœ–ZRÔÚÒÒPĞYÒPĞYÒPĞZ––Ö•ÓŒÑÑØĞÍZ˜ŒLUÛXŞYÚUÑšV•Ş‘S˜›”››”[ÖÒ’XÛNZ–•ÔŒXÛU˜ÒZ]ÙÙQœÙÕM’R›ÌÔ]V›[‘Ô”XÛNZ–•ÔŒXÛU’–‘ÕYÛXUÕRÔÒZRÔ[ÙÒPĞYÒPĞYÒPÓ›R›LÔ[ØÛ•V[N]˜^MZ˜ŒLUÛXŞYÚUQR”‘•’‘–SÚP™ÔŞ•ŞSXŒ“›’V”ÛÒZR\Ô[ÙÒPĞYÒPĞYÒPÓ›R›LÔ[ØUÍ^™ÑœØ‘ÕSS˜›”šUÍ^’ĞÒ”UZÎQ•T••ZÕ™”ÕTNVÒ˜ÒÑ“›‘Ö]XÒ–L•šÙ›ÕÚRZJ\ÚPYÒPĞYÒPĞYÒL•ÑÕš™ÚØÛNL–•ÍZ›S›S˜›”šUÍ^’Ñ“›‘Ö]XÒ–L•šÙ›ÔÚÒÒPĞYÒRĞÚPYÒPĞU‘Õ™ÙÚXÒ–L•šÙ›Ò›Vœ›XÙÖUÓš––Œ•ÔYÖ–ØŒÒŒQÑšÙQVL•’QÒ›UÎ]VĞšÖ–››T››SSŞ–LœÙØÌ“›Ö•ÌZZZÒÒPĞYÒQÖŒX›SYÖ–ØŒÒŒL“›Ö•ÌZUÔŒ–UÍZ––[ÒÔĞŒR™ÓYÙ]ÛÙÒPĞYÒPĞYÒQŞĞšÒYÔĞŒÛšÙØÛUšÙÚUU[’šVÓØĞÎSÖ•ÌZXÛQ‘VŒ›•ÍLÛ›ØŒ›YÍ^™›YÒ\ÚPYÒPĞYÒPĞYÒL•ÑÕš™ÚÒ]VL]YÑœ›“[Ò[“š˜QÕU–›Û“œŒ’Q]ÒZZÜÚPYÒPĞYÒPĞYÒL•ÑÕš™ÙÚVÓS˜›”šUÍ^’ĞÒ–Lš•Ñ•Ö–˜UÎ]SÚPMRZZÜÚPYÒPĞPÙÛÙÒPĞYØÒœQŒ”Ğ›YÍZ’R›UÔ[ÖPÖV›ÓÚP•œ›XÜR›ØÛNLØŞP]P•œ›XÙÙ]ÛÙÒPĞYÒPĞYÒQŞĞXŒLQÕ•’“RÑÖœ‘Õ••ZŞV›ÕQÑŒQÙÒL–œ‘Õ”VV›ÒÔ[ÙÒPĞYÒPĞYÒPĞYÒPĞ]V‘ÕœÖ–œ›YVVŒQÑŒQS˜–˜›UYÙÜÚPYÒPYÒPĞYÒPĞYÒPÍZÕ•ŞÛVŒÌÔ”VV›ÔL]ÑÎ]V•ÍLĞÚÒÒPĞYÒPĞYÒPĞYÒPĞYÓT›‘ÕŒUÍ[•Ú™šÚŒŒ]ØŒ[›”[ÒÔ[ÙÒPĞYÒPĞYÒPĞYÒPĞ]YUœÖ–œ›YVVŒQÑŒQS˜–˜›UYÙÜÚPYÒPĞYÒPĞYÒPĞYÒPÍZÖ•ŞÛVŒÌÔ”VV›ÔL]ÑÎ]V•ÍLĞÚÒÒPĞYÒPĞYÒPĞV–ŒXÛMÙRQ“ŒÛ[VP›L]V‘ÕRQÔ˜Œ]XUÓŒŒÒSÑV•Õ]VVÖ•ÍZØUÍ[•QÑŒQS˜–˜›UYÚÖV›ÒÔİÙÖ•ÍZ˜Œ”œ›XÍ’PÍLYÖ[ÒÔ[ÙÒPĞYÒRÙ”[ÏHŠJBˆ›İ™[˜[˜ÙHH]
+‹™Ú]X‹İÛÜšÙ›İÜËØØ\\™KYšY[XZ[\›İ™[˜[˜ÙK[[ŠBˆÛİ\˜ÙHH›İ™[˜[˜ÙKœ™XYİ^
+
+Bˆ]Ø[˜ÚÜˆH	ÈHXÚØYÙ\ËÓ™[Xœ˜P›Y]ÛİØ\\™KÕ\İËÓ™[Xœ˜P›Y]ÛİØ\\™U\İËÕ^XQšY[[œİ[\’[[™Y]šXÙP]]Üš]TÛİ\˜ÙU\İËœİÚY‰ÂˆYˆÛİ\˜ÙK˜Ûİ[
+]Ø[˜ÚÜŠHOHN‚ˆ˜Z\ÙHŞ\İ[Q^]
+œ›İ™[˜[˜ÙH][˜ÚÜˆÚ[™ÙYŠBˆÛİ\˜ÙHHÛİ\˜ÙKœ™\XÙJˆ]Ø[˜ÚÜ‹ˆ]Ø[˜ÚÜ‚ˆ
+È	ÈHXÚØYÙ\ËÓ™[Xœ˜P›Y]ÛİØ\\™KÕ\İËÓ™[Xœ˜P›Y]ÛİØ\\™U\İËÕ^XQšY[›ØÙY\™T™[™^›İ\ÔÛİ\˜ÙU\İËœİÚY‰Âˆ
+È	ÈHØÜËĞĞTT‘WÔÔÑPÕT‘WÓS’×Ó‘VÕTÕ›Y‰ËˆBˆ
+BˆY[]WØ[˜ÚÜˆHˆÜ™\QœH	Üİ]XÈ]^XQ\[™[˜ŞSØÚÔÒLM’[™›ÒÙ^HH“™[Xœ˜PØ\\™U^XQ\[™[˜ŞSØÚÔÒLM—‰È‰Y[]W—ˆ‚ˆYˆÛİ\˜ÙK˜Ûİ[
+Y[]WØ[˜ÚÜŠHOHN‚ˆ˜Z\ÙHŞ\İ[Q^]
+œ›İ™[˜[˜ÙHY[]H[˜ÚÜˆÚ[™ÙYŠBˆ›ØÙY\™WØÚXÚÜÈH
+ˆˆˆÜ™\QœH	Üİ]XÈ]šY[›ØÙY\™RY[YšY\ˆHÔ“ĞÑQT‘_W‰È‰Y[]W—ˆ‚ˆˆˆÜ™\QœH	Ô“ĞÑQT‘WÒQWÔ“ĞÑQT‘_W‰È‰[œİ[\——ˆ‚ˆˆˆÜ™\QœH	Ô“ĞÑQT‘WÒQˆÔ“ĞÑQT‘_X	ÈØÜËĞĞTT‘WÔÔÑPÕT‘WÓS’×Ó‘VÕTÕ›Yˆ‚ˆˆÜ™\QœH	Û]›ØÙY\™RY[YšY\ˆİš[™ÉÈ‰[\Ú[—ˆ‚ˆˆÜ™\QœH	Ü›ØÙY\™RY[YšY\ˆ™[Xœ˜PØ\\™PZ[Y[]K™šY[›ØÙY\™RY[YšY\‰È‰[\Ú[—ˆ‚ˆˆÜ™\QœH	ÓX™[YÛÛ[
+”›ØÙY\™W‹˜[YNˆ\İ™šY[›ØÙY\™RY[YšY\ŠIÈ‰[\Ú[—ˆ‚ˆˆÜ™\QœH	ÜØÚ[XU™\œÚ[ÛˆL	È‰[\Ú[—ˆ‚ˆ
+BˆÛİ\˜ÙHHÛİ\˜ÙKœ™\XÙJY[]WØ[˜ÚÜ‹Y[]WØ[˜ÚÜˆ
+È›ØÙY\™WØÚXÚÜËJBˆ›İ™[˜[˜ÙKÜš]Wİ^
+Ûİ\˜ÙJBˆ™\]Z\™YHÂˆ“™[Xœ˜P\Ğ\Ó™[Xœ˜PØ\\™PZ[Y[]KœİÚYˆ“ĞÑQT‘Kˆ“™[Xœ˜P\Ğ\Ó™[Xœ˜PØ\\™Q[\Ú[œİÚYˆœ›ØÙY\™RY[YšY\ˆ™[Xœ˜PØ\\™PZ[Y[]K™šY[›ØÙY\™RY[YšY\ˆ‹ˆ™ØÜËĞĞTT‘WÔÔÑPÕT‘WÓS’×Ó‘VÕTÕ›YˆX\šÙ\‹ˆœØÜš\ËÙšY[Ú[œİ[ÛÛ™Wİ[YWØØ\\™K˜ÛÛ[X[™ˆ‰Ô“ĞÑQT‘WÒQHÔ“ĞÑQT‘_H‰Ëˆ‹™Ú]X‹İÛÜšÙ›İÜËØØ\\™KYšY[XZ[\›İ™[˜[˜ÙK[[ˆ“ĞÑQT‘KˆBˆ›Üˆ]™YYH[ˆ™\]Z\™Yš][\Ê
+N‚ˆYˆ™YYH›İ[ˆ]
+]
+Kœ™XYİ^
+
+N‚ˆ˜Z\ÙHŞ\İ[Q^]
+ˆ›Z\ÜÚ[™È™[™^›İ\ÈX\šÙ\ˆ[ˆÜ]HŠBˆBˆ›H™Ú]X‹İÛÜšÙ›İÜËØ\K\›ØÙY\™K\™[™^›İ\Ë\™XÛİ™\K[[ˆ˜\Ú[ˆØÜš\ËÙšY[Ú[œİ[ÛÛ™Wİ[YWØØ\\™K˜ÛÛ[X[™ˆÚ]YPBˆÚ]Y™ˆKXØXÚYKXÚXÚÂˆ\İ‰
+Ú]Y™ˆKXØXÚYK[˜[YK[Û›HÜ™\XÈ	×“™[Xœ˜P\Ğ\Ó™[Xœ˜PØ\\™PZ[Y[]KœİÚY		ÊHˆHBˆ\İ‰
+Ú]Y™ˆKXØXÚYK[˜[YK[Û›HÜ™\XÈ	×“™[Xœ˜P\Ğ\Ó™[Xœ˜PØ\\™Q[\Ú[œİÚY		ÊHˆHBˆ\İ‰
+Ú]Y™ˆKXØXÚYK[˜[YK[Û›HÜ™\XÈ	×™ØÜËĞĞTT‘WÔÔÑPÕT‘WÓS’×Ó‘VÕTÕ›Y		ÊHˆHBˆ\İ‰
+Ú]Y™ˆKXØXÚYK[˜[YK[Û›HÜ™\XÈ	×œØÜš\ËÙšY[Ú[œİ[ÛÛ™Wİ[YWØØ\\™K˜ÛÛ[X[™		ÊHˆHBˆ\İ‰
+Ú]Y™ˆKXØXÚYK[˜[YK[Û›HÜ™\XÈ	×”XÚØYÙ\ËÓ™[Xœ˜P›Y]ÛİØ\\™KÕ\İËÓ™[Xœ˜P›Y]ÛİØ\\™U\İËÕ^XQšY[›ØÙY\™T™[™^›İ\ÔÛİ\˜ÙU\İËœİÚY		ÊHˆHBˆ\İ‰
+Ú]Y™ˆKXØXÚYK[˜[YK[Û›HÜ™\XÈ	×‹™Ú]X‹İÛÜšÙ›İÜËØØ\\™KYšY[XZ[\›İ™[˜[˜ÙK[[		ÊHˆHBˆ\İ‰
+Ú]Y™ˆKXØXÚYK[˜[YK[Û›HØÈ[ˆY	È	ÊHˆH‚ˆÚ]ÛÛ[Z][H	Ùš^
+Ø\\™JNˆš[™^Xİİ][Û˜\H›ØÙY\™HY[]IÂˆÚ]\ÚÜšYÚ[ˆPQœ™\Z\‹İŒMXØ\\™K\›ØÙY\™K\™[™^›İ\Ë\™XÛİ™\K\ÛÛ
