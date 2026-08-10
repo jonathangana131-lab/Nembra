@@ -1,4 +1,14 @@
 import Foundation
+import NembraCore
+
+// The app target still directly compiles selected NembraCore vehicle/ride sources while the
+// package migration is incremental. Keep the Battery truth/persistence slice package-owned and
+// expose only the exact missing names needed by existing app source. These aliases are module-
+// wide compile-time seams; they do not copy or redefine Battery authority semantics.
+typealias RetainedBatterySnapshotStorage = NembraCore.RetainedBatterySnapshotStorage
+typealias UserDefaultsRetainedBatterySnapshotStorage = NembraCore.UserDefaultsRetainedBatterySnapshotStorage
+typealias BatteryObservationAuthority = NembraCore.BatteryObservationAuthority
+typealias AuthoritativeBatteryObservation = NembraCore.AuthoritativeBatteryObservation
 
 enum VehicleDisplayFormatting {
     static var usesMetric: Bool {
