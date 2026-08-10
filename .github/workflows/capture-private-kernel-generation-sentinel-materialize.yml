@@ -1,0 +1,506 @@
+name: Capture private kernel generation sentinel materializer
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-private-kernel-generation-sentinel-sol
+    paths:
+      - .github/workflows/capture-private-kernel-generation-sentinel-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/v14-capture-private-kernel-generation-sentinel-sol
+          fetch-depth: 0
+
+      - name: Bind exact current product
+        run: |
+          set -euo pipefail
+          base='25e789ea04c523b6d7e2507013b6c415006642d4'
+          git merge-base --is-ancestor "$base" HEAD
+          test -z "$(git diff --name-only "$base" HEAD -- \
+            ':!scripts/ci/tests/test_capture_tuya_private_input_final_snapshot_coherence.py' \
+            ':!.github/workflows/capture-private-kernel-generation-sentinel-materialize.yml')"
+
+      - name: Add kernel mutation sentinel around whole record custody
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          helper = Path("Scripts/capture_tuya_private_input_provenance.py")
+          source = helper.read_text()
+
+          old_imports = """import argparse
+          import hashlib
+          import os
+          import stat
+          import tempfile
+          """
+          old_imports = "\n".join(line[10:] if line.startswith("          ") else line for line in old_imports.splitlines()) + "\n"
+          new_imports = """import argparse
+          import ctypes
+          import hashlib
+          import os
+          import select
+          import stat
+          import sys
+          import tempfile
+          """
+          new_imports = "\n".join(line[10:] if line.startswith("          ") else line for line in new_imports.splitlines()) + "\n"
+          if source.count(old_imports) != 1:
+              raise SystemExit("provenance import block changed")
+          source = source.replace(old_imports, new_imports, 1)
+
+          insertion_marker = "\ndef _regular_file_generation_identity(path: Path) -> tuple[int, ...]:\n"
+          if source.count(insertion_marker) != 1:
+              raise SystemExit("generation identity insertion marker changed")
+
+          sentinel_lines = [
+              "",
+              "class _PrivateInputMutationSentinel:",
+              "    \"\"\"Kernel-backed mutation witness spanning one private provenance record.\"\"\"",
+              "",
+              "    _IN_FILE_MASK = (",
+              "        0x00000002  # IN_MODIFY",
+              "        | 0x00000004  # IN_ATTRIB",
+              "        | 0x00000008  # IN_CLOSE_WRITE",
+              "        | 0x00000400  # IN_DELETE_SELF",
+              "        | 0x00000800  # IN_MOVE_SELF",
+              "        | 0x00002000  # IN_UNMOUNT",
+              "        | 0x02000000  # IN_DONT_FOLLOW",
+              "    )",
+              "    _IN_DIRECTORY_MASK = (",
+              "        _IN_FILE_MASK",
+              "        | 0x00000040  # IN_MOVED_FROM",
+              "        | 0x00000080  # IN_MOVED_TO",
+              "        | 0x00000100  # IN_CREATE",
+              "        | 0x00000200  # IN_DELETE",
+              "    )",
+              "",
+              "    def __init__(",
+              "        self,",
+              "        *,",
+              "        standalone_files: tuple[Path, ...],",
+              "        tree_roots: tuple[Path, ...],",
+              "    ) -> None:",
+              "        self._standalone_files = standalone_files",
+              "        self._tree_roots = tree_roots",
+              "        self._backend = \"\"",
+              "        self._inotify_fd: int | None = None",
+              "        self._inotify_add_watch = None",
+              "        self._kqueue = None",
+              "        self._kqueue_descriptors: list[int] = []",
+              "",
+              "    def __enter__(self) -> \"_PrivateInputMutationSentinel\":",
+              "        try:",
+              "            self._start_backend()",
+              "            for path in self._standalone_files:",
+              "                self._watch_regular_file(path)",
+              "            for root in self._tree_roots:",
+              "                self._watch_tree(root)",
+              "            self.assert_unchanged(",
+              "                \"private build inputs changed while the kernel mutation sentinel was armed\"",
+              "            )",
+              "            return self",
+              "        except Exception:",
+              "            self.close()",
+              "            raise",
+              "",
+              "    def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:",
+              "        self.close()",
+              "",
+              "    def _start_backend(self) -> None:",
+              "        if sys.platform == \"darwin\" and hasattr(select, \"kqueue\"):",
+              "            self._backend = \"kqueue\"",
+              "            self._kqueue = select.kqueue()",
+              "            return",
+              "        if sys.platform.startswith(\"linux\"):",
+              "            libc = ctypes.CDLL(None, use_errno=True)",
+              "            init1 = libc.inotify_init1",
+              "            init1.argtypes = [ctypes.c_int]",
+              "            init1.restype = ctypes.c_int",
+              "            add_watch = libc.inotify_add_watch",
+              "            add_watch.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_uint32]",
+              "            add_watch.restype = ctypes.c_int",
+              "            descriptor = init1(os.O_NONBLOCK | getattr(os, \"O_CLOEXEC\", 0))",
+              "            if descriptor < 0:",
+              "                error = ctypes.get_errno()",
+              "                raise ProvenanceError(",
+              "                    f\"private input kernel mutation sentinel could not start: errno {error}\"",
+              "                )",
+              "            self._backend = \"inotify\"",
+              "            self._inotify_fd = descriptor",
+              "            self._inotify_add_watch = add_watch",
+              "            return",
+              "        raise ProvenanceError(",
+              "            \"private input provenance requires a kernel mutation sentinel (kqueue or inotify)\"",
+              "        )",
+              "",
+              "    def _backend_watch(",
+              "        self,",
+              "        path: Path,",
+              "        *,",
+              "        expected_identity: tuple[int, ...],",
+              "        is_directory: bool,",
+              "    ) -> None:",
+              "        if self._backend == \"inotify\":",
+              "            assert self._inotify_fd is not None",
+              "            assert self._inotify_add_watch is not None",
+              "            mask = self._IN_DIRECTORY_MASK if is_directory else self._IN_FILE_MASK",
+              "            watch = self._inotify_add_watch(",
+              "                self._inotify_fd,",
+              "                os.fsencode(path),",
+              "                mask,",
+              "            )",
+              "            if watch < 0:",
+              "                error = ctypes.get_errno()",
+              "                raise ProvenanceError(",
+              "                    f\"private input kernel mutation sentinel could not watch {path.name}: errno {error}\"",
+              "                )",
+              "            return",
+              "",
+              "        if self._backend == \"kqueue\":",
+              "            assert self._kqueue is not None",
+              "            flags = getattr(os, \"O_EVTONLY\", os.O_RDONLY)",
+              "            flags |= getattr(os, \"O_NOFOLLOW\", 0) | getattr(os, \"O_CLOEXEC\", 0)",
+              "            try:",
+              "                descriptor = os.open(path, flags)",
+              "            except OSError as error:",
+              "                raise ProvenanceError(",
+              "                    f\"private input kernel mutation sentinel could not watch {path.name}\"",
+              "                ) from error",
+              "            metadata = os.fstat(descriptor)",
+              "            if _stat_identity(metadata) != expected_identity:",
+              "                os.close(descriptor)",
+              "                raise ProvenanceError(",
+              "                    \"private build input changed while the kernel mutation sentinel was armed\"",
+              "                )",
+              "            note_flags = 0",
+              "            for name in (",
+              "                \"KQ_NOTE_WRITE\",",
+              "                \"KQ_NOTE_EXTEND\",",
+              "                \"KQ_NOTE_ATTRIB\",",
+              "                \"KQ_NOTE_LINK\",",
+              "                \"KQ_NOTE_RENAME\",",
+              "                \"KQ_NOTE_DELETE\",",
+              "                \"KQ_NOTE_REVOKE\",",
+              "            ):",
+              "                note_flags |= int(getattr(select, name, 0))",
+              "            event = select.kevent(",
+              "                descriptor,",
+              "                filter=select.KQ_FILTER_VNODE,",
+              "                flags=select.KQ_EV_ADD | select.KQ_EV_ENABLE | select.KQ_EV_CLEAR,",
+              "                fflags=note_flags,",
+              "            )",
+              "            try:",
+              "                self._kqueue.control([event], 0, 0)",
+              "            except OSError as error:",
+              "                os.close(descriptor)",
+              "                raise ProvenanceError(",
+              "                    f\"private input kernel mutation sentinel could not register {path.name}\"",
+              "                ) from error",
+              "            self._kqueue_descriptors.append(descriptor)",
+              "            return",
+              "",
+              "        raise ProvenanceError(\"private input kernel mutation sentinel is not active\")",
+              "",
+              "    def _watch_regular_file(self, path: Path) -> None:",
+              "        try:",
+              "            before = path.lstat()",
+              "        except OSError as error:",
+              "            raise ProvenanceError(f\"required private build input is unavailable: {path.name}\") from error",
+              "        if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):",
+              "            raise ProvenanceError(f\"required private build input is not a regular file: {path.name}\")",
+              "        identity = _stat_identity(before)",
+              "        self._backend_watch(path, expected_identity=identity, is_directory=False)",
+              "        if _regular_file_generation_identity(path) != identity:",
+              "            raise ProvenanceError(",
+              "                \"private build input changed while the kernel mutation sentinel was armed\"",
+              "            )",
+              "",
+              "    def _watch_directory(self, path: Path) -> tuple[int, ...]:",
+              "        try:",
+              "            before = path.lstat()",
+              "        except OSError as error:",
+              "            raise ProvenanceError(f\"required private build directory is unavailable: {path.name}\") from error",
+              "        if stat.S_ISLNK(before.st_mode) or not stat.S_ISDIR(before.st_mode):",
+              "            raise ProvenanceError(f\"required private build directory is not a real directory: {path.name}\")",
+              "        identity = _stat_identity(before)",
+              "        self._backend_watch(path, expected_identity=identity, is_directory=True)",
+              "        try:",
+              "            after = path.lstat()",
+              "        except OSError as error:",
+              "            raise ProvenanceError(\"private build tree changed while the kernel mutation sentinel was armed\") from error",
+              "        if _stat_identity(after) != identity:",
+              "            raise ProvenanceError(",
+              "                \"private build tree changed while the kernel mutation sentinel was armed\"",
+              "            )",
+              "        return identity",
+              "",
+              "    def _watch_tree(self, root: Path) -> None:",
+              "        self._watch_directory(root)",
+              "        root_resolved = root.resolve(strict=True)",
+              "        for current_text, directory_names, file_names in os.walk(",
+              "            root,",
+              "            topdown=True,",
+              "            followlinks=False,",
+              "        ):",
+              "            current = Path(current_text)",
+              "            admitted_members = tuple(",
+              "                sorted((*directory_names, *file_names), key=os.fsencode)",
+              "            )",
+              "            kept_directories: list[str] = []",
+              "            for name in sorted(directory_names, key=os.fsencode):",
+              "                candidate = current / name",
+              "                metadata = candidate.lstat()",
+              "                identity = _stat_identity(metadata)",
+              "                if stat.S_ISLNK(metadata.st_mode):",
+              "                    _assert_internal_symlink(candidate, root_resolved)",
+              "                    _assert_unchanged_tree_entry(candidate, identity, \"L\")",
+              "                elif stat.S_ISDIR(metadata.st_mode):",
+              "                    self._watch_directory(candidate)",
+              "                    kept_directories.append(name)",
+              "                else:",
+              "                    raise ProvenanceError(\"private build tree contains an unsupported directory entry\")",
+              "            directory_names[:] = kept_directories",
+              "",
+              "            for name in sorted(file_names, key=os.fsencode):",
+              "                candidate = current / name",
+              "                metadata = candidate.lstat()",
+              "                identity = _stat_identity(metadata)",
+              "                if stat.S_ISLNK(metadata.st_mode):",
+              "                    _assert_internal_symlink(candidate, root_resolved)",
+              "                    _assert_unchanged_tree_entry(candidate, identity, \"L\")",
+              "                elif stat.S_ISREG(metadata.st_mode):",
+              "                    self._watch_regular_file(candidate)",
+              "                else:",
+              "                    raise ProvenanceError(\"private build tree contains an unsupported file entry\")",
+              "",
+              "            if _directory_member_names(current) != admitted_members:",
+              "                raise ProvenanceError(",
+              "                    \"private build tree membership changed while the kernel mutation sentinel was armed\"",
+              "                )",
+              "",
+              "    def assert_unchanged(self, message: str) -> None:",
+              "        if self._backend == \"inotify\":",
+              "            assert self._inotify_fd is not None",
+              "            changed = False",
+              "            while True:",
+              "                try:",
+              "                    payload = os.read(self._inotify_fd, 64 * 1024)",
+              "                except BlockingIOError:",
+              "                    break",
+              "                except OSError as error:",
+              "                    raise ProvenanceError(\"private input kernel mutation sentinel failed\") from error",
+              "                if not payload:",
+              "                    break",
+              "                changed = True",
+              "            if changed:",
+              "                raise ProvenanceError(message)",
+              "            return",
+              "",
+              "        if self._backend == \"kqueue\":",
+              "            assert self._kqueue is not None",
+              "            try:",
+              "                events = self._kqueue.control(None, 64, 0)",
+              "            except OSError as error:",
+              "                raise ProvenanceError(\"private input kernel mutation sentinel failed\") from error",
+              "            if events:",
+              "                raise ProvenanceError(message)",
+              "            return",
+              "",
+              "        raise ProvenanceError(\"private input kernel mutation sentinel is not active\")",
+              "",
+              "    def close(self) -> None:",
+              "        if self._kqueue is not None:",
+              "            try:",
+              "                self._kqueue.close()",
+              "            finally:",
+              "                self._kqueue = None",
+              "        for descriptor in self._kqueue_descriptors:",
+              "            try:",
+              "                os.close(descriptor)",
+              "            except OSError:",
+              "                pass",
+              "        self._kqueue_descriptors.clear()",
+              "        if self._inotify_fd is not None:",
+              "            try:",
+              "                os.close(self._inotify_fd)",
+              "            except OSError:",
+              "                pass",
+              "            self._inotify_fd = None",
+              "        self._inotify_add_watch = None",
+              "        self._backend = \"\"",
+              "",
+              "",
+          ]
+          sentinel = "\n".join(sentinel_lines)
+          source = source.replace(insertion_marker, sentinel + insertion_marker, 1)
+
+          snapshot_start = source.index("def _private_input_record_generation_snapshot(")
+          build_start = source.index("def build_record(", snapshot_start)
+          snapshot = source[snapshot_start:build_start]
+          old_signature_tail = """    identity_podspec: Path,
+              identity_sources: Path,
+          ) -> tuple[object, ...]:
+          """
+          old_signature_tail = "\n".join(line[10:] if line.startswith("          ") else line for line in old_signature_tail.splitlines()) + "\n"
+          new_signature_tail = """    identity_podspec: Path,
+              identity_sources: Path,
+              mutation_guard: _PrivateInputMutationSentinel | None = None,
+          ) -> tuple[object, ...]:
+          """
+          new_signature_tail = "\n".join(line[10:] if line.startswith("          ") else line for line in new_signature_tail.splitlines()) + "\n"
+          if snapshot.count(old_signature_tail) != 1:
+              raise SystemExit("generation snapshot signature changed")
+          snapshot = snapshot.replace(old_signature_tail, new_signature_tail, 1)
+          return_token = "    return snapshot\n"
+          if snapshot.count(return_token) != 1:
+              raise SystemExit("generation snapshot return shape changed")
+          guard_tail = (
+              "    if mutation_guard is not None:\n"
+              "        mutation_guard.assert_unchanged(\n"
+              "            \"private input generation changed while its whole-record snapshot was collected\",\n"
+              "        )\n"
+          )
+          snapshot = snapshot.replace(return_token, guard_tail + return_token, 1)
+          source = source[:snapshot_start] + snapshot + source[build_start:]
+
+          build_start = source.index("def build_record(")
+          record_text_start = source.index("\ndef _record_text", build_start)
+          old_build = source[build_start:record_text_start]
+          new_build_lines = [
+              "def build_record(",
+              "    *,",
+              "    lockfile: Path,",
+              "    security_podspec: Path,",
+              "    security_build: Path,",
+              "    identity_podspec: Path,",
+              "    identity_sources: Path,",
+              ") -> dict[str, str]:",
+              "    with _PrivateInputMutationSentinel(",
+              "        standalone_files=(lockfile, security_podspec, identity_podspec),",
+              "        tree_roots=(security_build, identity_sources),",
+              "    ) as mutation_guard:",
+              "        generation_snapshot = _private_input_record_generation_snapshot(",
+              "            lockfile=lockfile,",
+              "            security_podspec=security_podspec,",
+              "            security_build=security_build,",
+              "            identity_podspec=identity_podspec,",
+              "            identity_sources=identity_sources,",
+              "            mutation_guard=mutation_guard,",
+              "        )",
+              "        record = {",
+              "            \"schema\": SCHEMA,",
+              "            \"podfile_lock_sha256\": _read_stable_regular_file_sha256(lockfile)[1],",
+              "            \"thing_smart_home_kit\": THING_SMART_HOME_KIT_VERSION,",
+              "            \"thing_smart_business_extension_kit\": THING_SMART_BUSINESS_EXTENSION_KIT_VERSION,",
+              "            \"thing_smart_cryption_podspec_sha256\": _file_fingerprint(security_podspec),",
+              "            \"thing_smart_cryption_build_tree_sha256\": _tree_fingerprint(security_build),",
+              "            \"private_identity_podspec_sha256\": _file_fingerprint(identity_podspec),",
+              "            \"private_identity_sources_tree_sha256\": _tree_fingerprint(identity_sources),",
+              "        }",
+              "        mutation_guard.assert_unchanged(",
+              "            \"private build inputs changed while provenance fingerprints were collected\",",
+              "        )",
+              "        if _private_input_record_generation_snapshot(",
+              "            lockfile=lockfile,",
+              "            security_podspec=security_podspec,",
+              "            security_build=security_build,",
+              "            identity_podspec=identity_podspec,",
+              "            identity_sources=identity_sources,",
+              "            mutation_guard=mutation_guard,",
+              "        ) != generation_snapshot:",
+              "            raise ProvenanceError(",
+              "                \"private build inputs changed while the provenance record was constructed\"",
+              "            )",
+              "        mutation_guard.assert_unchanged(",
+              "            \"private build inputs changed before the provenance record was sealed\",",
+              "        )",
+              "        return record",
+              "",
+          ]
+          source = source[:build_start] + "\n".join(new_build_lines) + source[record_text_start:]
+          helper.write_text(source)
+
+          workflow = Path(".github/workflows/capture-field-build-provenance.yml")
+          workflow_source = workflow.read_text()
+          old_validation = (
+              "          /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py\n"
+              "          /usr/bin/python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py\n"
+          )
+          new_validation = old_validation + (
+              "          /usr/bin/python3 scripts/ci/tests/test_capture_tuya_private_input_record_snapshot_coherence.py\n"
+              "          /usr/bin/python3 scripts/ci/tests/test_capture_tuya_private_input_final_snapshot_coherence.py\n"
+          )
+          if workflow_source.count(old_validation) != 1:
+              raise SystemExit("field provenance validation step changed")
+          workflow.write_text(workflow_source.replace(old_validation, new_validation, 1))
+          PY
+          git diff --check
+
+      - name: Run all private provenance adversarial suites on Linux backend
+        run: |
+          set -euo pipefail
+          python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
+          python3 -m py_compile scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          python3 -m py_compile scripts/ci/tests/test_capture_tuya_private_input_record_snapshot_coherence.py
+          python3 -m py_compile scripts/ci/tests/test_capture_tuya_private_input_final_snapshot_coherence.py
+          python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          python3 scripts/ci/tests/test_capture_tuya_private_input_record_snapshot_coherence.py
+          python3 scripts/ci/tests/test_capture_tuya_private_input_final_snapshot_coherence.py
+
+      - name: Verify kernel-guarded custody contract
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path("Scripts/capture_tuya_private_input_provenance.py").read_text()
+          w = Path(".github/workflows/capture-field-build-provenance.yml").read_text()
+          snapshot = s[s.index("def _private_input_record_generation_snapshot("):s.index("\ndef build_record", s.index("def _private_input_record_generation_snapshot("))]
+          build = s[s.index("def build_record("):s.index("\ndef _record_text", s.index("def build_record("))]
+          for token in (
+              "class _PrivateInputMutationSentinel",
+              "inotify_init1",
+              "select.kqueue",
+              "IN_DONT_FOLLOW",
+              "mutation_guard.assert_unchanged",
+              "_stat_identity(current_path) != _stat_identity(after)",
+              "expected_identity=identity",
+          ):
+              assert token in s, token
+          assert "    return (\n" not in snapshot
+          assert "mutation_guard.assert_unchanged" in snapshot
+          assert "with _PrivateInputMutationSentinel" in build
+          assert build.count("mutation_guard.assert_unchanged") >= 2
+          assert "test_capture_tuya_private_input_record_snapshot_coherence.py" in w
+          assert "test_capture_tuya_private_input_final_snapshot_coherence.py" in w
+          PY
+
+      - name: Collapse to product and adversarial paths only
+        run: |
+          set -euo pipefail
+          base='25e789ea04c523b6d7e2507013b6c415006642d4'
+          rm .github/workflows/capture-private-kernel-generation-sentinel-materialize.yml
+          git add -A
+          git diff --cached --check "$base"
+          git diff --cached --name-only "$base" | sort > /tmp/actual
+          cat > /tmp/expected <<'EOF'
+          .github/workflows/capture-field-build-provenance.yml
+          Scripts/capture_tuya_private_input_provenance.py
+          scripts/ci/tests/test_capture_tuya_private_input_final_snapshot_coherence.py
+          EOF
+          sort -o /tmp/expected /tmp/expected
+          diff -u /tmp/expected /tmp/actual
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): guard private record generation with kernel mutation sentinel'
+          git push origin HEAD:agent/v14-capture-private-kernel-generation-sentinel-sol
