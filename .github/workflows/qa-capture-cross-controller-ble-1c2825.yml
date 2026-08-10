@@ -1,4 +1,4 @@
-name: QA Capture cross-controller BLE a47f96
+name: QA Capture cross-controller BLE 8642c7
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: qa-capture-cross-controller-ble-a47f96
+  group: qa-capture-cross-controller-ble-current
   cancel-in-progress: true
 
 jobs:
@@ -21,15 +21,15 @@ jobs:
       - name: Checkout exact composed product repair SHA
         uses: actions/checkout@v4
         with:
-          ref: a47f96eaa9a6ecd2912684fe426ae10ef6ab4c9b
+          ref: 8642c758dbaaaa632af6d8e4baaca21464397889
           fetch-depth: 0
 
       - name: Prove exact checkout and one-commit two-file delta
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = 'a47f96eaa9a6ecd2912684fe426ae10ef6ab4c9b'
-          test "$(git rev-parse HEAD^)" = '39b574275f390cfa14c4e106cdabc54c1b9580b2'
+          test "$(git rev-parse HEAD)" = '8642c758dbaaaa632af6d8e4baaca21464397889'
+          test "$(git rev-parse HEAD^)" = '502cfc43d8943bacb446f287b58d46463df3a7ca'
           git diff --check HEAD^...HEAD
           changed="$(git diff --name-only HEAD^...HEAD)"
           printf '%s\n' "$changed"
@@ -83,7 +83,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: capture-cross-controller-ble-a47f96-build-logs
+          name: capture-cross-controller-ble-8642c7-build-logs
           path: |
             /tmp/nembra-cross-controller-simulator-build.log
             /tmp/nembra-cross-controller-device-build.log
