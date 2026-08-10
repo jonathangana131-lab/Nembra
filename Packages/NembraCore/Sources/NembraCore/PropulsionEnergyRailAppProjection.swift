@@ -54,6 +54,80 @@ public struct PropulsionEnergyRailAppProjection: Equatable, Sendable {
     }
 }
 
+public extension PropulsionEnergyRailAppProjection {
+    /// Applies source-owned lifecycle currentness without allowing presentation code
+    /// to upgrade package truth. This is intentionally one-way:
+    /// - `.live` preserves only an already-live sealed package projection;
+    /// - `.retained` may demote an accepted live/retained measurement to static
+    ///   last-known semantics while preserving its exact receipt identity;
+    /// - `.unavailable` strips all numeric/geometry presentation.
+    ///
+    /// The method never creates an accepted measurement, receipt, generation, watt
+    /// value, scale, peak, or render position. It only constrains an existing sealed
+    /// projection using currentness owned by the accepted source boundary.
+    func constrained(
+        toSourceCurrentness sourceCurrentness: PropulsionEnergyRailCurrentness
+    ) -> PropulsionEnergyRailAppProjection {
+        switch sourceCurrentness {
+        case .live:
+            guard currentness == .live else {
+                return sourceUnavailableProjection()
+            }
+            return self
+
+        case .retained:
+            guard currentness != .unavailable,
+                  let acceptedMeasurement,
+                  acceptedMeasurement.identity == identity,
+                  acceptedMeasurement.watts.isFinite,
+                  acceptedMeasurement.watts >= 0,
+                  let acceptedRevision = accessibilityPresentation.acceptedRevision,
+                  acceptedRevision.authority == acceptedMeasurement.authority,
+                  acceptedRevision.continuityGeneration == acceptedMeasurement.continuityGeneration,
+                  acceptedRevision.receiptSequenceNumber == acceptedMeasurement.receiptSequenceNumber,
+                  acceptedRevision.receivedAtUptimeNanoseconds == acceptedMeasurement.receivedAtUptimeNanoseconds else {
+                return sourceUnavailableProjection()
+            }
+
+            return PropulsionEnergyRailAppProjection(
+                identity: identity,
+                currentness: .retained,
+                acceptedMeasurement: acceptedMeasurement,
+                accessibilityPresentation: PropulsionEnergyRailAccessibilityPresentation(
+                    identity: identity,
+                    currentness: .retained,
+                    acceptedWatts: acceptedMeasurement.watts,
+                    acceptedRevision: acceptedRevision
+                ),
+                displayWatts: acceptedMeasurement.watts,
+                railFraction: nil,
+                acceptedTargetFraction: nil,
+                acceptedPeakMarkerFraction: nil,
+                scaleOrigin: nil,
+                allowsLiveMotion: false
+            )
+
+        case .unavailable:
+            return sourceUnavailableProjection()
+        }
+    }
+
+    private func sourceUnavailableProjection() -> PropulsionEnergyRailAppProjection {
+        PropulsionEnergyRailAppProjection(
+            identity: identity,
+            currentness: .unavailable,
+            acceptedMeasurement: nil,
+            accessibilityPresentation: .unavailable(identity: identity),
+            displayWatts: nil,
+            railFraction: nil,
+            acceptedTargetFraction: nil,
+            acceptedPeakMarkerFraction: nil,
+            scaleOrigin: nil,
+            allowsLiveMotion: false
+        )
+    }
+}
+
 public extension PropulsionGaugeDisplayModel {
     /// Produces the one app-facing Energy Rail subject at a single render uptime.
     ///
