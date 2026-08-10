@@ -1,0 +1,60 @@
+name: Materialize Capture Event Custody 8069
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-event-custody-8069-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-event-custody-8069-sol
+          fetch-depth: 0
+
+      - name: Verify exact helper-only anchor
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='8069c0ffec496cacbe263016d8a7f4ca15ddc64e'
+          git merge-base --is-ancestor "$base" HEAD
+          changed="$(git diff --name-only "$base"...HEAD | sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/materialize-capture-event-custody-8069.yml' \
+            'scripts/ci/materialize_capture_event_custody_8069.py' | sort)"
+          test "$changed" = "$expected"
+
+      - name: Materialize and validate current source repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/materialize_capture_event_custody_8069.py
+          python3 scripts/ci/materialize_capture_event_custody_8069.py
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureApplicationEventCustodySourceTests.swift
+          git diff --check
+
+      - name: Publish clean product delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-event-custody-8069.yml
+          rm scripts/ci/materialize_capture_event_custody_8069.py
+          rm -rf scripts/ci/__pycache__
+          git add -A
+          git diff --cached --check
+          changed="$(git diff --cached --name-only | sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/materialize-capture-event-custody-8069.yml' \
+            'NembraApp/App/NembraCaptureEntrypoint.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureApplicationEventCustodySourceTests.swift' \
+            'scripts/ci/materialize_capture_event_custody_8069.py' | sort)"
+          test "$changed" = "$expected"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'Capture: harden authenticated event custody'
+          git push origin HEAD:fix/v14-capture-event-custody-8069-sol
