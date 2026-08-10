@@ -42,7 +42,7 @@ struct NembraCaptureBuildIdentity: Codable, Equatable, Sendable {
 
     var blocker: String? {
         guard isAuthoritativeFieldBuild else {
-            return "This build has no valid exact Git + reviewed Tuya dependency + canonical stationary procedure provenance. Install Capture through the repository field installer before physical evidence collection."
+            return "This build has no valid exact Git + reviewed Tuya dependency + field-procedure provenance. Install Capture through the repository field installer before physical evidence collection."
         }
         return nil
     }
