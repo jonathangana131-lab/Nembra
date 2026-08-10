@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: agent/v14-capture-correlation-evidence-retention-sol
           fetch-depth: 0
@@ -35,61 +35,67 @@ jobs:
           from pathlib import Path
 
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
-          source = path.read_text()
+          s = path.read_text()
 
-          view_guard = """        guard processCorrelationLease != nil || correlationSession != nil else { return }
-          // Existing helper stops package transport before releasing this controller's lease.
-          abandonPackageCorrelation()
-          phase = .failed
-          message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
-          log("target_correlation_abandoned_on_view_exit")
-          """
-          if source.count(view_guard) != 1:
-              raise SystemExit(f"unexpected view-exit correlation guard shape: {source.count(view_guard)}")
+          def bounds(text, start, end):
+              a = text.find(start)
+              if a < 0: raise SystemExit(f"missing section start: {start}")
+              b = text.find(end, a + len(start))
+              if b < 0: raise SystemExit(f"missing section end: {end}")
+              return a, b
 
-          completed_view = """        if phase == .correlated || phase == .selected {
-              // The four-window result is already sealed and package transport is retired. Revoke
-              // only reusable target authority; keep the completed receipts for failed diagnostics.
-              pendingCorrelatedTargetID = nil
-              selectedID = nil
-              targetCorrelationOperatorConfirmed = false
-              phase = .failed
-              message = "Capture left Secure Link after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the completed correlation remains diagnostic evidence only and cannot be reused as target authority."
-              log("target_correlation_abandoned_on_view_exit")
-              return
-          }
+          # View-exit completed state: there is no live package lease after final-window sealing,
+          # so this branch must precede the in-progress transport guard.
+          ea, eb = bounds(s, "    func abandonCorrelationForViewExit() {", "    func appDidLoseForeground() {")
+          exit_block = s[ea:eb]
+          if "        if phase == .correlated || phase == .selected {" in exit_block:
+              raise SystemExit("completed view-exit branch already exists; refusing ambiguous patch")
+          guard_token = "        guard processCorrelationLease != nil || correlationSession != nil else { return }"
+          gi = exit_block.find(guard_token)
+          if gi < 0: raise SystemExit("view-exit in-progress guard changed")
+          completed_view = (
+              "        if phase == .correlated || phase == .selected {\n"
+              "            // The four-window result is already sealed and package transport is retired. Revoke\n"
+              "            // only reusable target authority; keep completed receipts for failed diagnostics.\n"
+              "            pendingCorrelatedTargetID = nil\n"
+              "            selectedID = nil\n"
+              "            targetCorrelationOperatorConfirmed = false\n"
+              "            phase = .failed\n"
+              "            message = \"Capture left Secure Link after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the completed correlation remains diagnostic evidence only and cannot be reused as target authority.\"\n"
+              "            log(\"target_correlation_abandoned_on_view_exit\")\n"
+              "            return\n"
+              "        }\n\n"
+          )
+          exit_block = exit_block[:gi] + completed_view + exit_block[gi:]
+          s = s[:ea] + exit_block + s[eb:]
 
-          """
-          source = source.replace(view_guard, completed_view + view_guard, 1)
-
-          old_foreground = """        if phase == .correlated || phase == .selected {
-              // Final-window sealing already retires the package scanner/lease. These phases can
-              // therefore hold actionable target authority with no live transport object to inspect.
-              // Foreground loss must invalidate that authority explicitly before a retry.
-              resetDiscoverySessionOnly()
-              phase = .failed
-              message = "Capture left the foreground after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the prior correlated/selected target cannot cross a foreground-integrity break."
-              log("foreground_integrity_lost_after_target_correlation")
-              return
-          }
-          """
-          new_foreground = """        if phase == .correlated || phase == .selected {
-              // Final-window sealing already retires the package scanner/lease. Revoke reusable
-              // target authority without deleting the legitimate completed four-window evidence.
-              pendingCorrelatedTargetID = nil
-              selectedID = nil
-              targetCorrelationOperatorConfirmed = false
-              phase = .failed
-              message = "Capture left the foreground after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the completed correlation remains diagnostic evidence only and cannot cross a foreground-integrity break as target authority."
-              log("foreground_integrity_lost_after_target_correlation")
-              return
-          }
-          """
-          if source.count(old_foreground) != 1:
-              raise SystemExit(f"unexpected completed foreground branch shape: {source.count(old_foreground)}")
-          source = source.replace(old_foreground, new_foreground, 1)
-
-          path.write_text(source)
+          # Foreground completed state: replace only this branch. The preceding live scanner branch
+          # deliberately keeps resetDiscoverySessionOnly() for scanner-first retirement.
+          fa, fb = bounds(s, "    func appDidLoseForeground() {", "    var privateConfig: Bool")
+          foreground = s[fa:fb]
+          ca = foreground.find("        if phase == .correlated || phase == .selected {")
+          if ca < 0: raise SystemExit("foreground completed-correlation branch missing")
+          cb = foreground.find("        guard let token = currentConnectionToken else {", ca)
+          if cb < 0: raise SystemExit("foreground post-correlation guard missing")
+          old_completed = foreground[ca:cb]
+          if "resetDiscoverySessionOnly()" not in old_completed:
+              raise SystemExit("foreground completed branch no longer matches expected red state")
+          new_completed = (
+              "        if phase == .correlated || phase == .selected {\n"
+              "            // Final-window sealing already retires the package scanner/lease. Revoke reusable\n"
+              "            // target authority without deleting the legitimate completed four-window evidence.\n"
+              "            pendingCorrelatedTargetID = nil\n"
+              "            selectedID = nil\n"
+              "            targetCorrelationOperatorConfirmed = false\n"
+              "            phase = .failed\n"
+              "            message = \"Capture left the foreground after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the completed correlation remains diagnostic evidence only and cannot cross a foreground-integrity break as target authority.\"\n"
+              "            log(\"foreground_integrity_lost_after_target_correlation\")\n"
+              "            return\n"
+              "        }\n\n"
+          )
+          foreground = foreground[:ca] + new_completed + foreground[cb:]
+          s = s[:fa] + foreground + s[fb:]
+          path.write_text(s)
           PY
           git diff --check
 
@@ -100,67 +106,26 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           s = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
-
           def section(text, start, end):
-              a = text.index(start)
-              b = text.index(end, a + len(start))
-              return text[a:b]
-
-          exit_block = section(s, "    func abandonCorrelationForViewExit() {", "    func appDidLoseForeground() {")
-          exit_completed = section(
-              exit_block,
-              "        if phase == .correlated || phase == .selected {",
-              "        guard processCorrelationLease != nil || correlationSession != nil else { return }",
-          )
-          foreground = section(s, "    func appDidLoseForeground() {", "    var privateConfig: Bool")
-          foreground_completed = section(
-              foreground,
-              "        if phase == .correlated || phase == .selected {",
-              "        guard let token = currentConnectionToken else {",
-          )
-
-          for label, block in (("view exit", exit_completed), ("foreground", foreground_completed)):
-              for required in (
-                  "pendingCorrelatedTargetID = nil",
-                  "selectedID = nil",
-                  "targetCorrelationOperatorConfirmed = false",
-                  "phase = .failed",
-                  "Restart from OFF1",
-              ):
-                  assert required in block, f"{label}: missing {required}"
-              for forbidden in (
-                  "resetDiscoverySessionOnly()",
-                  "correlationProvenance = nil",
-                  "targetCorrelationMethod = nil",
-                  "targetCorrelationWindowCount = nil",
-                  "candidates.removeAll()",
-              ):
-                  assert forbidden not in block, f"{label}: evidence erasure leaked into completed branch: {forbidden}"
-
+              a=text.index(start); b=text.index(end, a+len(start)); return text[a:b]
+          exit_block=section(s,"    func abandonCorrelationForViewExit() {","    func appDidLoseForeground() {")
+          exit_completed=section(exit_block,"        if phase == .correlated || phase == .selected {","        guard processCorrelationLease != nil || correlationSession != nil else { return }")
+          foreground=section(s,"    func appDidLoseForeground() {","    var privateConfig: Bool")
+          foreground_completed=section(foreground,"        if phase == .correlated || phase == .selected {","        guard let token = currentConnectionToken else {")
+          for label,block in (("view",exit_completed),("foreground",foreground_completed)):
+              for token in ("pendingCorrelatedTargetID = nil","selectedID = nil","targetCorrelationOperatorConfirmed = false","phase = .failed","Restart from OFF1"):
+                  assert token in block, (label,token)
+              for token in ("resetDiscoverySessionOnly()","correlationProvenance = nil","targetCorrelationMethod = nil","targetCorrelationWindowCount = nil","candidates.removeAll()"):
+                  assert token not in block, (label,token)
           assert "target_correlation_abandoned_on_view_exit" in exit_completed
           assert "foreground_integrity_lost_after_target_correlation" in foreground_completed
-
-          # In-progress correlation still owns the full scanner-first reset.
-          in_progress = section(
-              foreground,
-              "        if processCorrelationLease != nil || correlationSession != nil {",
-              "        if phase == .correlated || phase == .selected {",
-          )
+          in_progress=section(foreground,"        if processCorrelationLease != nil || correlationSession != nil {","        if phase == .correlated || phase == .selected {")
           assert "resetDiscoverySessionOnly()" in in_progress
-
-          begin = section(s, "    private func beginCorrelationSeries() {", "    func startNextCorrelationWindow() {")
-          assert "resetDiscoverySessionOnly()" in begin
-          assert "OfficialTuyaFactory.packageCorrelationMayStart" in begin
-
-          export_builder = section(s, "    private func makeExport(exportedAt:", "    func prepareExport()")
-          for required in (
-              "targetCorrelationMethod: targetCorrelationMethod",
-              "targetCorrelationWindowCount: targetCorrelationWindowCount",
-              "targetCorrelationOperatorConfirmed: targetCorrelationOperatorConfirmed",
-              "targetCorrelationProvenance: correlationProvenance",
-              "candidates: candidates",
-          ):
-              assert required in export_builder, f"export lost {required}"
+          begin=section(s,"    private func beginCorrelationSeries() {","    func startNextCorrelationWindow() {")
+          assert "resetDiscoverySessionOnly()" in begin and "OfficialTuyaFactory.packageCorrelationMayStart" in begin
+          export=section(s,"    private func makeExport(exportedAt:","    func prepareExport()")
+          for token in ("targetCorrelationMethod: targetCorrelationMethod","targetCorrelationWindowCount: targetCorrelationWindowCount","targetCorrelationOperatorConfirmed: targetCorrelationOperatorConfirmed","targetCorrelationProvenance: correlationProvenance","candidates: candidates"):
+              assert token in export, token
           PY
 
       - name: Commit repair and retire materializer
