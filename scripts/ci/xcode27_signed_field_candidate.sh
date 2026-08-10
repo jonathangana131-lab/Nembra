@@ -11,21 +11,16 @@ unset NEMBRA_INTENDED_FIELD_DEVICE_UDID
 
 # Research capability is an explicit signing-operator choice, never ambient build-setting state.
 # Scrub caller-controlled Xcode/Swift override channels before any child process can observe them.
-TODAY_RESEARCH_BUILD_MODE=0
 if [[ "${1:-}" == "--nembra-today-research-build" ]]; then
-  TODAY_RESEARCH_BUILD_MODE=1
-  shift
+  echo "SUPERSEDED: --nembra-today-research-build cannot authorize the current Capture procedure." >&2
+  echo "Use scripts/field/install_one_time_capture.command for ES80-AUTHENTICATED-STATIONARY-v1 after exact current-product acceptance." >&2
+  exit 64
 fi
+TODAY_RESEARCH_BUILD_MODE=0
 unset XCODE_XCCONFIG_FILE OTHER_SWIFT_FLAGS SWIFT_ACTIVE_COMPILATION_CONDITIONS
-if [[ "$TODAY_RESEARCH_BUILD_MODE" == "1" ]]; then
-  RESEARCH_COMPILE_MODE="private-today-v1"
-  RESEARCH_COMPILE_AUTHORITY="canonical-producer-explicit-mode"
-  RESEARCH_COMPILE_CONDITION="NEMBRA_ES80_TODAY_RESEARCH"
-else
-  RESEARCH_COMPILE_MODE="standard"
-  RESEARCH_COMPILE_AUTHORITY="none"
-  RESEARCH_COMPILE_CONDITION="none"
-fi
+RESEARCH_COMPILE_MODE="standard"
+RESEARCH_COMPILE_AUTHORITY="none"
+RESEARCH_COMPILE_CONDITION="none"
 
 # Python participates directly in private-input validation and signed-field evidence admission.
 # Never discover it through caller PATH, and always use isolated mode so caller PYTHON* startup or
