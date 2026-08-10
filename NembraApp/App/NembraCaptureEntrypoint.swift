@@ -75,7 +75,7 @@ private struct CaptureP0Root: View {
 }
 
 @MainActor
-private final class SecureLinkController: NSObject, ObservableObject {
+private final class SecureLinkController: NSObject, ObservableObject, TuyaReadOnlyAuthenticationSessionProvider {
     struct Candidate: Identifiable, Codable, Equatable {
         let id: UUID
         var name: String?
@@ -92,7 +92,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         var likely: Bool { knownID || (fd50 && tuyaCompany) || score >= 600 }
     }
     enum Phase: String, Codable { case idle, baseline, powerOn, scanning, selected, authenticating, observing, accepted, failed }
-    struct Event: Codable { let at: Date; let kind: String; let details: [String: String] }
+    struct Event: Codable { let at: Date; let uptimeNanoseconds: UInt64; let kind: String; let details: [String: String] }
     struct Export: Codable {
         let schemaVersion: Int
         let purpose: String
@@ -109,6 +109,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let secureSessionAgeSeconds: Double?
         let sdkLocalBLEOnline: Bool
         let applicationUpdateCount: Int
+        let connectionGeneration: UInt64
+        let connectionStartedAtUptimeNanoseconds: UInt64?
+        let authenticatedAtUptimeNanoseconds: UInt64?
+        let latestObservedUptimeNanoseconds: UInt64?
+        let latestApplicationPayloadUptimeNanoseconds: UInt64?
+        let authoritativePreflightReady: Bool
         let secretsRedacted: Bool
         let dpCommandsSent: Bool
         let candidates: [Candidate]
@@ -117,6 +123,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     static let knownPeripheral = UUID(uuidString: "6815A5F5-4D1E-E004-BAE8-6DF924123907")!
     static let fd50 = CBUUID(string: "FD50")
+    private static let maximumObservationPollGapNanoseconds: UInt64 = 5_000_000_000
+    private static let localBLEGraceNanoseconds: UInt64 = 2_000_000_000
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var message = "Start with the scooter OFF. This test only identifies it and proves Tuya's supported secure session."
     @Published private(set) var candidates: [Candidate] = []
@@ -134,7 +142,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var byID: [UUID: Candidate] = [:]
     private var baseline = Set<UUID>()
     private var driver: OfficialTuyaDriver?
+    private var connectionGeneration: UInt64 = 0
+    private var connectionStartedAtUptime: UInt64?
+    private var sdkConnectSucceededAtUptime: UInt64?
     private var authenticatedAtUptime: UInt64?
+    private var latestObservedUptime: UInt64?
+    private var latestApplicationPayloadUptime: UInt64?
     private var events: [Event] = []
     private var watchdog: Task<Void, Never>?
 
@@ -148,11 +161,30 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var sdkAccountAuthorized: Bool { OfficialTuyaFactory.accountReady }
     var selected: Candidate? { selectedID.flatMap { byID[$0] } }
     var secureSessionAgeSeconds: Double? {
-        guard let start = authenticatedAtUptime else { return nil }
-        let now = DispatchTime.now().uptimeNanoseconds
-        return now >= start ? Double(now - start) / 1_000_000_000 : nil
+        guard let start = authenticatedAtUptime, let latest = latestObservedUptime, latest >= start else { return nil }
+        return Double(latest - start) / 1_000_000_000
     }
-    var passed: Bool { secureSessionEstablished && sdkLocalBLEOnline && applicationUpdateCount > 0 && (secureSessionAgeSeconds ?? 0) > 45 }
+    private var preflightAuthenticationState: TuyaAuthenticatedReadOnlyPreflightSnapshot.AuthenticationState {
+        if phase == .failed { return .failed(reason: message) }
+        if secureSessionEstablished && sdkLocalBLEOnline && authenticatedAtUptime != nil { return .authenticated }
+        if phase == .authenticating || secureSessionEstablished { return .authenticating }
+        return .waitingForAuthentication
+    }
+    private var preflightSnapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot {
+        TuyaAuthenticatedReadOnlyPreflightSnapshot(
+            authenticationState: preflightAuthenticationState,
+            authenticationMethod: secureSessionEstablished ? .smartLifeAppSDK : nil,
+            connectionStartedAtUptimeNanoseconds: connectionStartedAtUptime,
+            authenticatedAtUptimeNanoseconds: authenticatedAtUptime,
+            latestObservedUptimeNanoseconds: latestObservedUptime,
+            applicationPayloadCount: applicationUpdateCount,
+            latestApplicationPayloadUptimeNanoseconds: latestApplicationPayloadUptime,
+            connectionGeneration: connectionGeneration
+        )
+    }
+    private var preflightVerdict: TuyaAuthenticatedReadOnlyPreflight.Verdict { TuyaAuthenticatedReadOnlyPreflight.verdict(for: preflightSnapshot) }
+    var passed: Bool { preflightVerdict == .readyForStationaryMapping }
+    func currentPreflightSnapshot() async -> TuyaAuthenticatedReadOnlyPreflightSnapshot { preflightSnapshot }
 
     func startBaseline() {
         guard central.state == .poweredOn else { fail("Bluetooth is not ready.", "bluetooth_unavailable"); return }
@@ -186,41 +218,148 @@ private final class SecureLinkController: NSObject, ObservableObject {
         guard sdkCompiled, privateConfig else { fail("Official Tuya SmartLife SDK/security configuration is not provisioned. Do not run the physical test yet.", "sdk_unavailable"); return }
         guard sdkAccountAuthorized else { fail("The official Tuya SDK has no authorized account session. The metadata QR session cannot substitute for SDK login.", "sdk_account_not_authorized"); return }
         guard let newDriver = OfficialTuyaFactory.make() else { fail("Official Tuya provider is unavailable.", "sdk_provider_unavailable"); return }
+        connectionGeneration &+= 1
+        if connectionGeneration == 0 { connectionGeneration = 1 }
+        let generation = connectionGeneration
+        connectionStartedAtUptime = DispatchTime.now().uptimeNanoseconds
+        sdkConnectSucceededAtUptime = nil
+        authenticatedAtUptime = nil
+        latestObservedUptime = nil
+        latestApplicationPayloadUptime = nil
+        applicationUpdateCount = 0
+        secureSessionEstablished = false
+        sdkLocalBLEOnline = false
         central.stopScan(); driver = newDriver; phase = .authenticating; message = "Tuya's SDK is establishing the supported secure BLE session. Nembra sends no DP command."
-        log("official_connect_requested", ["coreBluetoothID": candidate.id.uuidString, "tuyaDeviceID": deviceID, "tuyaUUID": tuyaUUID, "productID": productID])
-        newDriver.connect(deviceID: deviceID, uuid: tuyaUUID, productID: productID, onApplicationUpdate: { [weak self] update in Task { @MainActor in self?.receivedApplicationUpdate(update) } }, success: { [weak self] in Task { @MainActor in self?.authenticated() } }, failure: { [weak self] error in Task { @MainActor in self?.fail(error, "official_connect_failed") } })
+        log("official_connect_requested", ["generation": String(generation), "coreBluetoothID": candidate.id.uuidString, "tuyaDeviceID": deviceID, "tuyaUUID": tuyaUUID, "productID": productID])
+        newDriver.connect(
+            deviceID: deviceID,
+            uuid: tuyaUUID,
+            productID: productID,
+            onApplicationUpdate: { [weak self] update in Task { @MainActor in self?.receivedApplicationUpdate(update, generation: generation) } },
+            success: { [weak self] in Task { @MainActor in self?.authenticated(generation: generation) } },
+            failure: { [weak self] error in Task { @MainActor in self?.failIfCurrent(error, "official_connect_failed", generation: generation) } }
+        )
     }
-    private func authenticated() {
-        guard phase == .authenticating, let driver else { return }
-        secureSessionEstablished = true; sdkLocalBLEOnline = driver.isLocallyConnected(uuid: tuyaUUID); authenticatedAtUptime = DispatchTime.now().uptimeNanoseconds; phase = .observing
-        message = "Secure Tuya session established. Waiting for application updates while the SDK remains the only BLE owner…"
-        log("official_session_ready", ["localBLEOnline": sdkLocalBLEOnline ? "true" : "false"]); startWatchdog()
+    private func authenticated(generation: UInt64) {
+        guard generation == connectionGeneration, phase == .authenticating, let driver else { return }
+        secureSessionEstablished = true
+        sdkConnectSucceededAtUptime = DispatchTime.now().uptimeNanoseconds
+        phase = .observing
+        let locallyOnline = refreshSDKConnectionState(generation: generation, driver: driver)
+        message = locallyOnline ? "Secure Tuya session established. Waiting for application updates while the SDK remains the only BLE owner…" : "Official connect returned. Waiting for Tuya's SDK to prove the scooter is locally BLE-online…"
+        log("official_session_ready", ["generation": String(generation), "localBLEOnline": locallyOnline ? "true" : "false"])
+        startWatchdog(generation: generation)
     }
-    private func receivedApplicationUpdate(_ update: [String: String]) {
-        guard secureSessionEstablished else { return }
-        applicationUpdateCount += 1; log("tuya_application_update", update)
-        message = passed ? "Secure scooter link passed. Tuya delivered real application data and remained locally connected beyond 45 seconds." : "Receiving scooter application data · \(applicationUpdateCount) update(s). Keep it stationary until the 45-second gate passes."
+    @discardableResult
+    private func refreshSDKConnectionState(generation: UInt64, driver: OfficialTuyaDriver) -> Bool {
+        guard generation == connectionGeneration, secureSessionEstablished else { return false }
+        let now = DispatchTime.now().uptimeNanoseconds
+        let connected = driver.isLocallyConnected(uuid: tuyaUUID)
+        if connected {
+            if !sdkLocalBLEOnline || authenticatedAtUptime == nil {
+                sdkLocalBLEOnline = true
+                authenticatedAtUptime = now
+                log("sdk_local_ble_authenticated", ["generation": String(generation)])
+            }
+            latestObservedUptime = now
+        } else {
+            sdkLocalBLEOnline = false
+        }
+        return connected
+    }
+    private func receivedApplicationUpdate(_ update: [String: String], generation: UInt64) {
+        guard generation == connectionGeneration, secureSessionEstablished, let driver else { return }
+        _ = refreshSDKConnectionState(generation: generation, driver: driver)
+        guard sdkLocalBLEOnline, authenticatedAtUptime != nil else {
+            log("tuya_application_update_ignored_before_local_auth", ["generation": String(generation), "entryCount": String(update.count)])
+            return
+        }
+        let receipt = DispatchTime.now().uptimeNanoseconds
+        applicationUpdateCount += 1
+        latestApplicationPayloadUptime = receipt
+        latestObservedUptime = max(latestObservedUptime ?? receipt, receipt)
+        log("tuya_application_update", update.merging(["generation": String(generation)]) { current, _ in current })
+        message = passed ? "Secure scooter link passed. Tuya delivered current-session application data and remained locally connected beyond 45 seconds." : "Receiving scooter application data · \(applicationUpdateCount) update(s). Keep it stationary until the canonical 45-second gate passes."
         if passed { phase = .accepted }
     }
-    private func startWatchdog() {
+    private func startWatchdog(generation: UInt64) {
         watchdog?.cancel(); watchdog = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                guard let self, self.secureSessionEstablished, let driver = self.driver else { return }
-                self.sdkLocalBLEOnline = driver.isLocallyConnected(uuid: self.tuyaUUID)
-                if !self.sdkLocalBLEOnline, (self.secureSessionAgeSeconds ?? 0) > 2 { self.fail("Tuya's local BLE session dropped before acceptance. Export diagnostics; do not repeat the outdoor ride capture.", "sdk_local_ble_dropped"); return }
-                if self.passed { self.phase = .accepted; self.message = "Secure scooter link passed. Tuya delivered real application data and remained connected beyond 45 seconds."; self.log("acceptance_passed", ["applicationUpdates": String(self.applicationUpdateCount)]); return }
-                if (self.secureSessionAgeSeconds ?? 0) > 60 && self.applicationUpdateCount == 0 { self.fail("The secure session survived, but Tuya delivered no application update within 60 seconds.", "no_application_updates"); return }
+                guard let self, generation == self.connectionGeneration, self.secureSessionEstablished, let driver = self.driver else { return }
+                let now = DispatchTime.now().uptimeNanoseconds
+                if let latest = self.latestObservedUptime, now >= latest, now - latest > Self.maximumObservationPollGapNanoseconds {
+                    self.failIfCurrent("Authenticated observation continuity was interrupted. Export diagnostics; do not promote the 45-second gate.", "observation_continuity_gap", generation: generation)
+                    return
+                }
+                let hadAuthenticatedLocalBLE = self.authenticatedAtUptime != nil
+                let connected = self.refreshSDKConnectionState(generation: generation, driver: driver)
+                if !connected {
+                    if hadAuthenticatedLocalBLE {
+                        self.failIfCurrent("Tuya's local BLE session dropped before acceptance. Export diagnostics; do not repeat the outdoor ride capture.", "sdk_local_ble_dropped", generation: generation)
+                        return
+                    }
+                    if let successAt = self.sdkConnectSucceededAtUptime, now >= successAt, now - successAt > Self.localBLEGraceNanoseconds {
+                        self.failIfCurrent("Tuya's official connect callback returned, but local BLE never became current. Export diagnostics; do not repeat the outdoor ride capture.", "sdk_local_ble_not_current", generation: generation)
+                        return
+                    }
+                }
+                if self.passed {
+                    self.phase = .accepted
+                    self.message = "Secure scooter link passed. The canonical preflight accepted current-session application data and >45 seconds of observed local BLE continuity."
+                    self.log("acceptance_passed", ["generation": String(generation), "applicationUpdates": String(self.applicationUpdateCount)])
+                    return
+                }
+                if (self.secureSessionAgeSeconds ?? 0) > 60 && self.applicationUpdateCount == 0 {
+                    self.failIfCurrent("The authenticated local session survived, but Tuya delivered no admissible application update within 60 observed seconds.", "no_application_updates", generation: generation)
+                    return
+                }
                 try? await Task.sleep(for: .seconds(1))
             }
         }
     }
     func prepareExport() {
-        let envelope = Export(schemaVersion: 2, purpose: "Sanitized Tuya authenticated read-only preflight", exportedAt: Date(), tuyaDeviceID: deviceID, tuyaUUID: tuyaUUID, productID: productID, selectedPeripheralID: selectedID?.uuidString, phase: phase, sdkCompiled: sdkCompiled, privateConfigPresent: privateConfig, sdkAccountAuthorized: sdkAccountAuthorized, secureSessionEstablished: secureSessionEstablished, secureSessionAgeSeconds: secureSessionAgeSeconds, sdkLocalBLEOnline: sdkLocalBLEOnline, applicationUpdateCount: applicationUpdateCount, secretsRedacted: true, dpCommandsSent: false, candidates: candidates, events: events)
+        let envelope = Export(
+            schemaVersion: 3,
+            purpose: "Sanitized Tuya authenticated read-only preflight",
+            exportedAt: Date(),
+            tuyaDeviceID: deviceID,
+            tuyaUUID: tuyaUUID,
+            productID: productID,
+            selectedPeripheralID: selectedID?.uuidString,
+            phase: phase,
+            sdkCompiled: sdkCompiled,
+            privateConfigPresent: privateConfig,
+            sdkAccountAuthorized: sdkAccountAuthorized,
+            secureSessionEstablished: secureSessionEstablished,
+            secureSessionAgeSeconds: secureSessionAgeSeconds,
+            sdkLocalBLEOnline: sdkLocalBLEOnline,
+            applicationUpdateCount: applicationUpdateCount,
+            connectionGeneration: connectionGeneration,
+            connectionStartedAtUptimeNanoseconds: connectionStartedAtUptime,
+            authenticatedAtUptimeNanoseconds: authenticatedAtUptime,
+            latestObservedUptimeNanoseconds: latestObservedUptime,
+            latestApplicationPayloadUptimeNanoseconds: latestApplicationPayloadUptime,
+            authoritativePreflightReady: passed,
+            secretsRedacted: true,
+            dpCommandsSent: false,
+            candidates: candidates,
+            events: events
+        )
         do { let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]; encoder.dateEncodingStrategy = .iso8601; exportData = try encoder.encode(envelope); exportName = "Nembra-Secure-Link-\(deviceID.prefix(8))-Diagnostics.json"; message = "Sanitized diagnostics ready. Passwords, account tokens, local_key and AppSecret are excluded." } catch { message = "Diagnostic export failed: \(error.localizedDescription)" }
     }
-    private func resetDiscovery() { central.stopScan(); watchdog?.cancel(); watchdog = nil; driver = nil; byID.removeAll(); candidates.removeAll(); baseline.removeAll(); selectedID = nil; secureSessionEstablished = false; sdkLocalBLEOnline = false; authenticatedAtUptime = nil; applicationUpdateCount = 0; exportData = nil }
+    private func resetDiscovery() {
+        central.stopScan(); watchdog?.cancel(); watchdog = nil; driver = nil
+        byID.removeAll(); candidates.removeAll(); baseline.removeAll(); selectedID = nil
+        secureSessionEstablished = false; sdkLocalBLEOnline = false
+        connectionStartedAtUptime = nil; sdkConnectSucceededAtUptime = nil; authenticatedAtUptime = nil; latestObservedUptime = nil; latestApplicationPayloadUptime = nil
+        applicationUpdateCount = 0; exportData = nil
+    }
+    private func failIfCurrent(_ text: String, _ kind: String, generation: UInt64) {
+        guard generation == connectionGeneration, [.authenticating, .observing, .accepted].contains(phase) else { return }
+        fail(text, kind)
+    }
     private func fail(_ text: String, _ kind: String) { watchdog?.cancel(); watchdog = nil; phase = .failed; message = text; log(kind, ["message": sanitize(text)]) }
-    private func log(_ kind: String, _ details: [String: String] = [:]) { events.append(Event(at: Date(), kind: kind, details: details.mapValues(sanitize))) }
+    private func log(_ kind: String, _ details: [String: String] = [:]) { events.append(Event(at: Date(), uptimeNanoseconds: DispatchTime.now().uptimeNanoseconds, kind: kind, details: details.mapValues(sanitize))) }
     private func sanitize(_ text: String) -> String { var result = text; for key in ["NEMBRA_TUYA_APP_KEY", "NEMBRA_TUYA_APP_SECRET"] { if let value = ProcessInfo.processInfo.environment[key], !value.isEmpty { result = result.replacingOccurrences(of: value, with: "<redacted>") } }; return result }
     private static func hasTuyaCompanyID(_ data: Data?) -> Bool { guard let data, data.count >= 2 else { return false }; return (UInt16(data[data.startIndex]) | UInt16(data[data.index(after: data.startIndex)]) << 8) == 0x07D0 }
     private func updateCandidate(_ peripheral: CBPeripheral, advertisement: [String: Any], rssi number: NSNumber) {
@@ -429,13 +568,13 @@ private struct SecureLinkView: View {
                     }
                     VStack(alignment: .leading, spacing: 7) {
                         Label("Acceptance", systemImage: test.passed ? "checkmark.seal.fill" : "hourglass").font(.headline).foregroundStyle(test.passed ? .green : .white)
-                        Text("Pass only when Tuya's official SDK reports the scooter locally connected, the secure session survives >45 seconds, and at least one genuine device application update is received. Nembra still assigns no DP meaning here.").font(.footnote).foregroundStyle(.secondary)
+                        Text("Pass only when the canonical authenticated preflight accepts one current-session Tuya application update plus >45 seconds of observed local BLE continuity. Nembra still assigns no DP meaning here.").font(.footnote).foregroundStyle(.secondary)
                         if test.passed { Text("Secure scooter link established\nReceiving scooter data").font(.title3.bold()).foregroundStyle(.green) }
                     }.card()
                     VStack(alignment: .leading, spacing: 8) {
                         Button("Prepare sanitized diagnostic JSON") { test.prepareExport() }.buttonStyle(.bordered)
                         if let data = test.exportData { ShareLink(item: SecureTransfer(data: data, name: test.exportName), preview: SharePreview(test.exportName)) { Label("Share diagnostic JSON", systemImage: "square.and.arrow.up") }.buttonStyle(.borderedProminent) }
-                        Text("Export includes candidate evidence, continuity, SDK-local status, failures and opaque application-update values. It excludes passwords, account tokens, local_key and AppSecret.").font(.footnote).foregroundStyle(.secondary)
+                        Text("Export includes candidate evidence, connection generation, monotonic authentication/payload chronology, SDK-local status, failures and opaque application-update values. It excludes passwords, account tokens, local_key and AppSecret.").font(.footnote).foregroundStyle(.secondary)
                     }.card()
                 }.frame(maxWidth: 760).padding(18).frame(maxWidth: .infinity)
             }.background(Color.black.ignoresSafeArea())
