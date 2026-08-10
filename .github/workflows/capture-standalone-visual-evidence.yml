@@ -83,9 +83,11 @@ jobs:
             scripts/ci/capture_standalone_visual_evidence.sh
           test "$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')" = "$NEMBRA_VISUAL_SOURCE_SHA"
           manifest="$RUNNER_TEMP/NembraCaptureStandaloneVisualEvidence/NembraCaptureStandaloneVisualEvidence.json"
-          screenshot="$RUNNER_TEMP/NembraCaptureStandaloneVisualEvidence/screenshots/standalone-unprovisioned-dark-iphone12.png"
+          standard="$RUNNER_TEMP/NembraCaptureStandaloneVisualEvidence/screenshots/standalone-unprovisioned-dark-iphone12.png"
+          ax5="$RUNNER_TEMP/NembraCaptureStandaloneVisualEvidence/screenshots/standalone-unprovisioned-dark-iphone12-ax5.png"
           test -s "$manifest"
-          test -s "$screenshot"
+          test -s "$standard"
+          test -s "$ax5"
           /usr/bin/python3 - "$manifest" "$NEMBRA_VISUAL_SOURCE_SHA" <<'PY'
           import json, sys
           path, expected_sha = sys.argv[1:]
@@ -102,6 +104,8 @@ jobs:
           assert record["visualAcceptanceRequiresHumanReview"] is True
           assert record["physicalAuthorityCreated"] is False
           assert record["protocolAuthorityCreated"] is False
+          states = {shot["state"] for shot in record["screenshots"]}
+          assert states == {"unprovisioned-dark-standard", "unprovisioned-dark-accessibility-xxxl"}
           PY
 
       - name: Upload standalone Capture visual evidence
