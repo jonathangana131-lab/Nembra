@@ -1,0 +1,120 @@
+name: Materialize Capture Failed Diagnostic Error 202666
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-failed-diagnostic-error-separation-202666-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard exact parent and staged scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='202666ed57be990978d874da4d7f086d11652eab'
+          test "$(git merge-base HEAD "$BASE")" = "$BASE"
+          mapfile -t paths < <(git diff --name-only "$BASE"...HEAD)
+          test "${#paths[@]}" -eq 2
+          printf '%s\n' "${paths[@]}" | grep -Fxq '.github/workflows/materialize-capture-failed-diagnostic-error-202666.yml'
+          printf '%s\n' "${paths[@]}" | grep -Fxq 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureFailedDiagnosticPreparationErrorSourceTests.swift'
+
+      - name: Apply failure-state error separation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+
+          property_anchor = '''    @Published private(set) var exportData: Data?\n    @Published private(set) var exportName = "Nembra-Secure-Link-Diagnostics.json"'''
+          property_replacement = '''    @Published private(set) var exportData: Data?\n    @Published private(set) var diagnosticExportError: String?\n    @Published private(set) var exportName = "Nembra-Secure-Link-Diagnostics.json"'''
+          if source.count(property_anchor) != 1:
+              raise SystemExit('export property seam drifted')
+          source = source.replace(property_anchor, property_replacement, 1)
+
+          prepare_anchor = '''    func prepareExport() {\n        let envelope: Export'''
+          prepare_replacement = '''    func prepareExport() {\n        diagnosticExportError = nil\n        let envelope: Export'''
+          if source.count(prepare_anchor) != 1:
+              raise SystemExit('prepareExport entry seam drifted')
+          source = source.replace(prepare_anchor, prepare_replacement, 1)
+
+          catch_anchor = '''        } catch {\n            exportData = nil\n            message = "Diagnostic export failed: \\(error.localizedDescription)"\n        }'''
+          catch_replacement = '''        } catch {\n            exportData = nil\n            let exportError = "Diagnostic export failed: \\(error.localizedDescription)"\n            if phase == .failed {\n                diagnosticExportError = exportError\n            } else {\n                message = exportError\n            }\n        }'''
+          if source.count(catch_anchor) != 1:
+              raise SystemExit('diagnostic export catch seam drifted')
+          source = source.replace(catch_anchor, catch_replacement, 1)
+
+          reset_anchor = '''        sdkLocalBLEOnline = false\n        exportData = nil\n        // Active authenticated generations must be terminally retired'''
+          reset_replacement = '''        sdkLocalBLEOnline = false\n        exportData = nil\n        diagnosticExportError = nil\n        // Active authenticated generations must be terminally retired'''
+          if source.count(reset_anchor) != 1:
+              raise SystemExit('discovery reset export seam drifted')
+          source = source.replace(reset_anchor, reset_replacement, 1)
+
+          ui_anchor = '''            Text("Diagnostics preserve legitimate failed-attempt evidence for analysis. They never turn this stopped attempt into an accepted Capture.")'''
+          ui_replacement = '''            if let diagnosticExportError = test.diagnosticExportError {\n                Label(diagnosticExportError, systemImage: "exclamationmark.triangle.fill")\n                    .font(.footnote)\n                    .foregroundStyle(.orange)\n                    .fixedSize(horizontal: false, vertical: true)\n                    .accessibilityLabel("Diagnostic preparation error")\n                    .accessibilityValue(diagnosticExportError)\n            }\n\n            Text("Diagnostics preserve legitimate failed-attempt evidence for analysis. They never turn this stopped attempt into an accepted Capture.")'''
+          if source.count(ui_anchor) != 1:
+              raise SystemExit('failed diagnostics UI seam drifted')
+          source = source.replace(ui_anchor, ui_replacement, 1)
+
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Verify source truth contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          start = source.index('    func prepareExport() {')
+          end = source.index('    private func abandonPackageCorrelation()', start)
+          prepare = source[start:end]
+          catch = prepare[prepare.index('        } catch {'):]
+          assert '@Published private(set) var diagnosticExportError: String?' in source
+          assert 'diagnosticExportError = nil' in prepare
+          assert 'let exportError = "Diagnostic export failed:' in catch
+          assert 'if phase == .failed {' in catch
+          assert 'diagnosticExportError = exportError' in catch
+          assert 'message = "Diagnostic export failed:' not in catch
+          failure = source[source.index('    private var failurePanel: some View'):source.index('    private var completionPanel: some View')]
+          assert 'Text(test.message)' in failure
+          assert 'if let diagnosticExportError = test.diagnosticExportError' in failure
+          assert 'Diagnostic preparation error' in failure
+          assert 'Prepare diagnostics' in failure
+          PY
+          git diff --check
+
+      - name: Parse changed Swift
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureFailedDiagnosticPreparationErrorSourceTests.swift
+
+      - name: Publish two-path donor
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='202666ed57be990978d874da4d7f086d11652eab'
+          rm .github/workflows/materialize-capture-failed-diagnostic-error-202666.yml
+          git add -A
+          git diff --cached --check
+          mapfile -t paths < <(git diff --cached --name-only "$BASE")
+          test "${#paths[@]}" -eq 2
+          printf '%s\n' "${paths[@]}" | grep -Fxq 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          printf '%s\n' "${paths[@]}" | grep -Fxq 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureFailedDiagnosticPreparationErrorSourceTests.swift'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): keep diagnostic export errors secondary'
+          git push origin HEAD:fix/v14-capture-failed-diagnostic-error-separation-202666-sol
