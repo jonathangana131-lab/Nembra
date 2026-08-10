@@ -115,9 +115,9 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     public func markAuthenticationFailed(for token: TuyaReadOnlyConnectionToken) throws {
         try requireCurrent(token)
         switch authenticationState {
-        case .waitingForAuthentication, .authenticating:
+        case .waitingForAuthentication, .authenticating, .authenticated:
             break
-        case .unavailable, .authenticated, .failed:
+        case .unavailable, .failed:
             throw MutationError.invalidAuthenticationTransition
         }
 
@@ -132,9 +132,9 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
 
     /// Records only the presence and receipt time of a non-empty application-level update.
     ///
-    /// This deliberately accepts no `Data`: the current SmartLife SDK surface provides a
-    /// structured `dpsUpdate` dictionary, not byte-exact FD50 transport. Callers must not invent
-    /// serialized bytes merely to satisfy this chronology gate.
+    /// This deliberately accepts no SDK values: the current SmartLife surface provides a
+    /// structured `dpsUpdate` dictionary, not byte-exact FD50 transport. The dictionary's
+    /// contents belong only to the separately sanitized diagnostics path.
     public func recordApplicationUpdate(
         isNonEmpty: Bool,
         for token: TuyaReadOnlyConnectionToken
@@ -160,10 +160,26 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         latestObservedUptimeNanoseconds = now
     }
 
-    /// Advances only the non-secret liveness observation for the current connection.
+    /// Temporary compatibility for the already-composed field app at `1541291a…`.
+    ///
+    /// That app serializes its already-sanitized structured SDK dictionary solely to prove that
+    /// the callback was non-empty. These bytes are NOT raw FD50 evidence, are never retained, and
+    /// their length never becomes telemetry or payload semantics. Remove this shim when the app
+    /// calls `recordApplicationUpdate(isNonEmpty:for:)` directly.
+    public func recordApplicationPayload(
+        _ structuredProjection: Data,
+        for token: TuyaReadOnlyConnectionToken
+    ) throws {
+        try recordApplicationUpdate(isNonEmpty: !structuredProjection.isEmpty, for: token)
+    }
+
+    /// Advances only the non-secret liveness observation for the current authenticated session.
     /// No telemetry or application payload is manufactured by this call.
     public func observeCurrentConnection(for token: TuyaReadOnlyConnectionToken) throws {
         try requireCurrent(token)
+        guard case .authenticated = authenticationState else {
+            throw MutationError.authenticationRequired
+        }
         latestObservedUptimeNanoseconds = try nextMonotonicObservation()
     }
 
