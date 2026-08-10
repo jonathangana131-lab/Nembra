@@ -21,9 +21,10 @@ jobs:
       - name: Verify Xcode 26 / Swift toolchain
         run: |
           set -euo pipefail
-          xcodebuild -version
+          XCODE_VERSION="$(xcodebuild -version)"
+          printf '%s\n' "$XCODE_VERSION"
           swift --version
-          xcodebuild -version | grep -Eq '^Xcode 26\.'
+          [[ "$XCODE_VERSION" == Xcode\ 26.* ]]
       - name: Test Tuya SDK account device-membership authority
         run: |
           set -euo pipefail
