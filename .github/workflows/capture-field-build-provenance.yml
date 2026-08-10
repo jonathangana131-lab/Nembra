@@ -64,6 +64,18 @@ jobs:
             exit 1
           fi
 
+          grep -Fq '[[ -x /usr/bin/plutil ]]' "$installer"
+          grep -Fq 'APP_INFO_PLIST="$APP/Info.plist"' "$installer"
+          grep -Fq 'plutil -extract NembraCaptureBuildIdentifier raw -o - "$APP_INFO_PLIST"' "$installer"
+          grep -Fq 'plutil -extract NembraCaptureSourceCommitSHA raw -o - "$APP_INFO_PLIST"' "$installer"
+          grep -Fq 'plutil -extract CFBundleIdentifier raw -o - "$APP_INFO_PLIST"' "$installer"
+          grep -Fq '[[ "$BUILT_BUILD_IDENTIFIER" == "$BUILD_LABEL" ]]' "$installer"
+          grep -Fq '[[ "$BUILT_SOURCE_SHA" == "$SOURCE_SHA" ]]' "$installer"
+          grep -Fq '[[ "$BUILT_BUNDLE_ID" == "$BUNDLE_ID" ]]' "$installer"
+          readback_line="$(grep -nF 'APP_INFO_PLIST="$APP/Info.plist"' "$installer" | cut -d: -f1)"
+          install_line="$(grep -nF 'say "Installing SDK-integrated Capture on the intended iPhone"' "$installer" | cut -d: -f1)"
+          test -n "$readback_line" && test -n "$install_line" && test "$readback_line" -lt "$install_line"
+
           grep -Fq 'NembraCaptureBuildIdentity.swift in Sources' "$project"
           grep -Fq 'INFOPLIST_KEY_NembraCaptureBuildIdentifier = "$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)";' "$project"
           grep -Fq 'INFOPLIST_KEY_NembraCaptureSourceCommitSHA = "$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)";' "$project"
