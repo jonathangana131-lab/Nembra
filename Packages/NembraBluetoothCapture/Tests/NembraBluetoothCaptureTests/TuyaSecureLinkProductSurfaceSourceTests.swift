@@ -24,18 +24,37 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         #expect(!app.contains("func card() -> some View"))
     }
 
-    @Test("accepted experience prepares the sealed artifact and makes Share Capture primary")
+    @Test("accepted experience prepares the immutable sealed artifact before Share Capture becomes primary")
     func acceptedExperienceIsCaptureCompleteShareFlow() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let surface = try section(in: app, from: "private struct SecureLinkView: View", to: "private struct SecureTransfer: Transferable")
         let body = String(surface)
+        let controller = String(try section(
+            in: app,
+            from: "private final class SecureLinkController",
+            to: "@MainActor\nprivate protocol OfficialTuyaDriver"
+        ))
 
         #expect(body.contains("CAPTURE COMPLETE"))
         #expect(body.contains("Ready for analysis"))
         #expect(body.contains("Label(\"Share Capture\""))
-        #expect(body.contains("if accepted && test.exportData == nil { test.prepareExport() }"))
         #expect(body.contains("Button(showEngineeringDetails ? \"Hide details\" : \"View details\")"))
         #expect(body.contains("accepted artifact is sealed"))
+
+        #expect(controller.contains("self.sealedAcceptedExport = self.makeExport("))
+        #expect(controller.contains("phase: .accepted"))
+        #expect(controller.contains("self.exportData = nil"))
+        #expect(controller.contains("self.phase = .accepted"))
+        #expect(controller.contains("self.prepareExport()"))
+        #expect(appearsInOrder(
+            [
+                "self.sealedAcceptedExport = self.makeExport(",
+                "self.exportData = nil",
+                "self.phase = .accepted",
+                "self.prepareExport()"
+            ],
+            in: controller
+        ))
     }
 
     @Test("truth gates remain visible in the guided product surface")
@@ -51,8 +70,9 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         #expect(body.contains("test.authenticate()"))
         #expect(body.contains("test.sdkLocalBLEOnline"))
         #expect(body.contains("test.applicationUpdateCount > 0"))
-        #expect(body.contains("Historical UUID, name, RSSI, FD50, and Tuya hints never authorize the target."))
-        #expect(body.contains("No DP query or scooter command is authorized by this surface."))
+        #expect(body.contains("Only the full OFF → ON → OFF → ON pattern can authorize the nearby signal for this attempt."))
+        #expect(body.contains("Nembra can now open the secure Tuya link. Capture stays read-only and cannot send scooter commands."))
+        #expect(body.contains("Application values are sanitized SDK-level projections, not raw FD50 bytes. No DP query or scooter command is authorized by this surface."))
     }
 
     @Test("large Dynamic Type receives a recomposed stage indicator")
@@ -67,10 +87,19 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         #expect(body.contains("accessibilityLabel"))
     }
 
+    private func appearsInOrder(_ needles: [String], in source: String) -> Bool {
+        var cursor = source.startIndex
+        for needle in needles {
+            guard let range = source.range(of: needle, range: cursor..<source.endIndex) else { return false }
+            cursor = range.upperBound
+        }
+        return true
+    }
+
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
         guard let startRange = source.range(of: start),
               let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
-            Issue.record("Expected source section missing: \\(start) ... \\(end)")
+            Issue.record("Expected source section missing: \(start) ... \(end)")
             throw SourceContractError.sectionMissing
         }
         return source[startRange.lowerBound..<endRange.lowerBound]
