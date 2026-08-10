@@ -1,20 +1,21 @@
 name: Materialize Capture View Exit Membership Race
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - fix/v14-capture-view-exit-membership-race-sol
 
 permissions:
   contents: write
 
 jobs:
   materialize:
-    if: github.event.pull_request.head.ref == 'fix/v14-capture-view-exit-membership-race-sol' && github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: fix/v14-capture-view-exit-membership-race-sol
           fetch-depth: 0
           persist-credentials: true
 
@@ -110,4 +111,4 @@ jobs:
             commit -m 'fix(capture): cancel hidden correlation start on view exit'
           test "$(git diff --name-only "$parent" HEAD | sort)" = "$(printf '%s\n' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift' | sort)"
           git diff --check "$parent" HEAD
-          git push origin HEAD:${GITHUB_HEAD_REF}
+          git push origin HEAD:fix/v14-capture-view-exit-membership-race-sol
