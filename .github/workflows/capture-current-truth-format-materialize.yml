@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: agent/capture-current-truth-convergence-1c40
-      - name: Normalize only reviewed cleanup blocks
+      - name: Normalize reviewed cleanup blocks
         shell: bash
         run: |
           set -euo pipefail
@@ -24,39 +24,43 @@ jobs:
           from pathlib import Path
           p = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           s = p.read_text(encoding='utf-8')
-          replacements = {
-          '''        if phase == .correlated || phase == .selected {
-    resetDiscoverySessionOnly()
-    phase = .failed
-    message = "Correlated target authority ended with Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
-    log("target_correlation_authority_revoked_on_view_exit")
-    return
-}
-          ''': '''        if phase == .correlated || phase == .selected {
-            resetDiscoverySessionOnly()
-            phase = .failed
-            message = "Correlated target authority ended with Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
-            log("target_correlation_authority_revoked_on_view_exit")
-            return
-        }
-          ''',
-          '''        if phase == .correlated || phase == .selected {
-    resetDiscoverySessionOnly()
-    phase = .failed
-    message = "Capture left the foreground after target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; pre-background target authority is never reusable evidence."
-    log("foreground_integrity_lost_after_target_correlation")
-    return
-}
-          ''': '''        if phase == .correlated || phase == .selected {
-            resetDiscoverySessionOnly()
-            phase = .failed
-            message = "Capture left the foreground after target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; pre-background target authority is never reusable evidence."
-            log("foreground_integrity_lost_after_target_correlation")
-            return
-        }
-          ''',
-          }
-          for old, new in replacements.items():
+          bad_view = (
+              '        if phase == .correlated || phase == .selected {\n'
+              '    resetDiscoverySessionOnly()\n'
+              '    phase = .failed\n'
+              '    message = "Correlated target authority ended with Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."\n'
+              '    log("target_correlation_authority_revoked_on_view_exit")\n'
+              '    return\n'
+              '}\n'
+          )
+          good_view = (
+              '        if phase == .correlated || phase == .selected {\n'
+              '            resetDiscoverySessionOnly()\n'
+              '            phase = .failed\n'
+              '            message = "Correlated target authority ended with Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."\n'
+              '            log("target_correlation_authority_revoked_on_view_exit")\n'
+              '            return\n'
+              '        }\n'
+          )
+          bad_foreground = (
+              '        if phase == .correlated || phase == .selected {\n'
+              '    resetDiscoverySessionOnly()\n'
+              '    phase = .failed\n'
+              '    message = "Capture left the foreground after target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; pre-background target authority is never reusable evidence."\n'
+              '    log("foreground_integrity_lost_after_target_correlation")\n'
+              '    return\n'
+              '}\n'
+          )
+          good_foreground = (
+              '        if phase == .correlated || phase == .selected {\n'
+              '            resetDiscoverySessionOnly()\n'
+              '            phase = .failed\n'
+              '            message = "Capture left the foreground after target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; pre-background target authority is never reusable evidence."\n'
+              '            log("foreground_integrity_lost_after_target_correlation")\n'
+              '            return\n'
+              '        }\n'
+          )
+          for old, new in ((bad_view, good_view), (bad_foreground, good_foreground)):
               if s.count(old) != 1:
                   raise SystemExit('reviewed cleanup formatting shape changed')
               s = s.replace(old, new, 1)
@@ -69,11 +73,9 @@ jobs:
         run: |
           set -euo pipefail
           base='1c40853f6991b4d09206df1d25ecff021458b7eb'
-          test "$(git diff --name-only "$base" | sort)" = "$(printf '%s\n' \
-            'NembraApp/App/NembraCaptureEntrypoint.swift' \
-            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift' \
-            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegrityCurrentSourceTests.swift' \
-            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift' | sort)"
+          changed="$(git diff --name-only "$base" | sort)"
+          wanted="$(printf '%s\n' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegrityCurrentSourceTests.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift' | sort)"
+          test "$changed" = "$wanted"
       - name: Commit formatting correction
         shell: bash
         run: |
