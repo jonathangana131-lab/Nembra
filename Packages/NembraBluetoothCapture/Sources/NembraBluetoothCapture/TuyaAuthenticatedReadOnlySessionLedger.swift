@@ -180,6 +180,26 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         latestObservedUptimeNanoseconds = try nextMonotonicObservation()
     }
 
+    /// Seals a failed observation horizon while authenticated transport may still exist.
+    ///
+    /// This is intentionally distinct from `endConnection`: a suspended/stalled observation loop
+    /// proves that Nembra can no longer claim continuous witnessed liveness, but does not prove the
+    /// SDK's BLE transport disconnected. Earned authentication/application chronology is retained
+    /// for diagnostics while the generation is made permanently non-authorizing.
+    public func markObservationContinuityInvalidated(
+        for token: TuyaReadOnlyConnectionToken
+    ) throws {
+        try requireCurrent(token)
+        guard case .authenticated = authenticationState else {
+            throw MutationError.authenticationRequired
+        }
+
+        let now = try nextMonotonicObservation()
+        authenticationState = .failed(reason: "Authenticated observation continuity was interrupted.")
+        latestObservedUptimeNanoseconds = now
+        currentToken = nil
+    }
+
     /// Seals a post-authentication attempt that remained connected but failed to produce the
     /// required application evidence. This is deliberately distinct from `endConnection`: the
     /// terminal fact is "authenticated observation failed", not "Bluetooth disconnected".
