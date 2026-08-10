@@ -34,16 +34,28 @@ jobs:
           path = pathlib.Path(sys.argv[1])
           status = int(sys.argv[2])
           lines = path.read_text(errors='replace').splitlines()
+
           patterns = [
-              r'\berror:', r'Expectation failed', r'Issue recorded', r'failed after',
-              r'\bfailed\b', r'✘', r'\bTest .* failed', r'\bSuite .* failed'
+              r'\berror:',
+              r'Expectation failed',
+              r'Issue recorded',
+              r'^✘ ',
+              r'^Test Case .* failed',
+              r'^Test Suite .* failed',
           ]
           selected = []
           for idx, line in enumerate(lines):
-              if any(re.search(p, line, re.I) for p in patterns):
-                  start = max(0, idx - 2)
-                  end = min(len(lines), idx + 3)
+              if any(re.search(p, line) for p in patterns):
+                  start = max(0, idx - 3)
+                  end = min(len(lines), idx + 5)
                   selected.append(' | '.join(x.strip() for x in lines[start:end] if x.strip()))
+
+          # Always include the terminal summary separately so an interleaved Swift
+          # Testing failure cannot be hidden behind high-volume start messages.
+          tail = ' | '.join(x.strip() for x in lines[-120:] if x.strip())
+          if tail:
+              selected.append('TERMINAL OUTPUT: ' + tail)
+
           seen = set()
           emitted = 0
           for item in selected:
@@ -51,13 +63,11 @@ jobs:
                   continue
               seen.add(item)
               safe = item.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
-              print(f'::error title=Capture package failure::{safe[:3000]}')
+              print(f'::error title=Capture package exact failure::{safe[:5000]}')
               emitted += 1
-              if emitted >= 30:
+              if emitted >= 20:
                   break
           if emitted == 0:
-              tail = ' | '.join(x.strip() for x in lines[-100:] if x.strip())
-              safe = tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
-              print(f'::error title=Capture package failure tail::{safe[:3000]}')
+              print('::error title=Capture package exact failure::swift test exited nonzero without a recognized failure marker')
           raise SystemExit(status)
           PY
