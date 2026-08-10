@@ -128,7 +128,12 @@ If the helper reports `PRIVATE_INPUT_NOT_CREATED`, stop before signing and prese
 
 Set paths/values for the private Mac. `ARTIFACTS_DIR` must name a destination that does **not** already exist; the producer publishes it failure-atomically only after the archive/export/inspection sequence succeeds.
 
+The accepted preflight deliberately verifies the Xcode selected by `/usr/bin/xcode-select` inside a closed child environment. The frozen `a0f4…` producer predates that helper and does not scrub a caller-provided `DEVELOPER_DIR` before invoking `xcodebuild`. A shell-level `DEVELOPER_DIR` override could therefore make preflight validate one Xcode while the frozen producer later uses another. This handoff closes that operator split without changing the frozen product: clear `DEVELOPER_DIR` before preflight, keep it absent through production, and configure the private Mac's Xcode 27 selection through `xcode-select` instead of a per-shell override.
+
 ```bash
+unset DEVELOPER_DIR
+test -z "${DEVELOPER_DIR+x}"
+
 NEMBRA_DEVELOPMENT_TEAM='<10-character Apple TeamIdentifier>'
 NEMBRA_EXPORT_OPTIONS_PLIST='/absolute/private/path/ExportOptions.plist'
 NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE="$UDID_FILE"
@@ -144,7 +149,7 @@ test "$(/usr/bin/git rev-parse --verify HEAD^{commit})" = "$SOURCE_SHA"
 test -z "$(/usr/bin/git status --porcelain=v1 --untracked-files=all)"
 ```
 
-Keep `NEMBRA_ALLOW_PROVISIONING_UPDATES=0` unless the private signing setup actually requires Xcode-managed provisioning updates. If it must be `1`, make that an explicit operator choice; it does not change the frozen source SHA or grant field authorization.
+Keep `NEMBRA_ALLOW_PROVISIONING_UPDATES=0` unless the private signing setup actually requires Xcode-managed provisioning updates. If it must be `1`, make that an explicit operator choice; it does not change the frozen source SHA or grant field authorization. If Xcode 27 is not the system-selected Xcode, correct the private Mac's `xcode-select` selection before continuing; do not reintroduce `DEVELOPER_DIR` merely to make the preflight or producer pass.
 
 ## 3A. Run the accepted non-authorizing pre-signing preflight
 
@@ -165,6 +170,7 @@ test "$(/usr/bin/git rev-parse --verify "$PREFLIGHT_COMMIT:scripts/ci/es80_today
 /usr/bin/git show "$PREFLIGHT_COMMIT:scripts/ci/es80_today_field_candidate_preflight.py" > "$PREFLIGHT"
 test "$(/usr/bin/git hash-object --no-filters -- "$PREFLIGHT")" = "$PREFLIGHT_BLOB"
 
+test -z "${DEVELOPER_DIR+x}"
 NEMBRA_DEVELOPMENT_TEAM="$NEMBRA_DEVELOPMENT_TEAM" \
 NEMBRA_EXPORT_OPTIONS_PLIST="$NEMBRA_EXPORT_OPTIONS_PLIST" \
 NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE="$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" \
@@ -200,9 +206,10 @@ Keep the preflight report outside `ARTIFACTS_DIR`; do not mutate the producer's 
 
 ## 4. Produce exactly one Research Field Build candidate
 
-Pass the private inputs only to the TODAY wrapper invocation:
+Pass the private inputs only to the TODAY wrapper invocation. Reassert the `DEVELOPER_DIR` absence immediately before entering the frozen wrapper so the producer cannot silently diverge from the Xcode selection the preflight just checked:
 
 ```bash
+test -z "${DEVELOPER_DIR+x}"
 NEMBRA_DEVELOPMENT_TEAM="$NEMBRA_DEVELOPMENT_TEAM" \
 NEMBRA_EXPORT_OPTIONS_PLIST="$NEMBRA_EXPORT_OPTIONS_PLIST" \
 NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE="$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" \
@@ -260,6 +267,7 @@ Only an accepted Final GO record for the exact signed/install/runtime evidence c
 Stop and preserve the exact blocker if any of these occurs:
 
 - the outer checkout is not exact clean detached `a0f4a33451f61411d6e0541f2e70edea5438342d`;
+- `DEVELOPER_DIR` is set or reintroduced after Section 3; configure Xcode 27 through the private Mac's `xcode-select` selection instead of carrying a caller override into the frozen producer;
 - the descriptor-bound private-input helper cannot be materialized at exact commit/blob, refuses the parent/input, or cannot create one fresh exact mode-`0600` single-link file;
 - the pinned external preflight cannot be materialized exactly, exits nonzero, or does not report `READY_TO_INVOKE_SIGNED_FIELD_PRODUCER` for the exact frozen source;
 - the producer reports any source, signing, provisioning, intended-device, export, inspection, or evidence failure;
