@@ -4,20 +4,44 @@ import Testing
 
 @Suite("Capture fresh-target and acquisition-terminal truth")
 struct TuyaFreshTargetAndAcquisitionTerminalSourceTests {
-    @Test("historical C7D09A22 peripheral UUID cannot become durable scooter identity")
+    @Test("historical C7D09A22 peripheral UUID cannot become current target authority")
     func historicalPeripheralUUIDDoesNotMintCurrentTargetAuthority() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let physicalTruth = try readRepositoryFile("docs/ES80_PHYSICAL_TRUTH_C7D09A22.md")
 
-        #expect(physicalTruth.contains("historical capture-local evidence only"))
-        #expect(physicalTruth.contains("not accepted as a durable physical scooter identity"))
+        guard let candidateStart = app.range(of: "struct Candidate:"),
+              let candidateEnd = app.range(of: "enum Phase:", range: candidateStart.upperBound..<app.endIndex),
+              let finishStart = app.range(of: "private func finishCorrelationSeries("),
+              let finishEnd = app.range(of: "func invalidateSDKMembership()", range: finishStart.upperBound..<app.endIndex) else {
+            Issue.record("Could not isolate current target-authority source boundaries.")
+            return
+        }
 
-        // C7D09A22's CoreBluetooth identifier may remain descriptive historical evidence,
-        // but the next field attempt must not promote that historical capture-local value
-        // into the sole current target authority.
-        #expect(!app.contains("var likely: Bool { knownID }"))
+        let candidateAuthority = String(app[candidateStart.lowerBound..<candidateEnd.lowerBound])
+        let correlationPromotion = String(app[finishStart.lowerBound..<finishEnd.lowerBound])
+
+        // The historical C7D09A22 CoreBluetooth identifier may remain descriptive evidence,
+        // but only the fresh package-owned repeated correlation may mint current-session authority.
+        #expect(candidateAuthority.contains("var likely: Bool { freshlyCorrelated }"))
+        #expect(!candidateAuthority.contains("var likely: Bool { knownID }"))
+        #expect(app.contains("historicalCapturePeripheral"))
+        #expect(correlationPromotion.contains("fresh-repeated-off-on-full-corebluetooth-id"))
+        #expect(correlationPromotion.contains("matches C7D09A22 capture-local UUID descriptive"))
+        #expect(correlationPromotion.contains("not permanent scooter identity"))
+
         #expect(!app.contains("accepted prior physical UUID matched"))
         #expect(!app.contains("accepted-prior-physical-corebluetooth-uuid"))
+    }
+
+    @Test("fresh target authority consumes the package-owned four-window producer")
+    func currentTargetRequiresPackageOwnedRepeatedCorrelation() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+
+        #expect(app.contains("PassiveBluetoothPowerCycleObservationSession(minimumWindowDuration: 10)"))
+        #expect(app.contains("case let .singleRepeatableCandidate(id):"))
+        #expect(app.contains("case let .ambiguousRepeatableCandidates(ids):"))
+        #expect(app.contains("case .noRepeatableCandidate:"))
+        #expect(app.contains("case .invalidObservationAuthority, .invalidObservationWindowOrder:"))
+        #expect(app.contains("freshlyCorrelated: true"))
     }
 
     @Test("local-BLE settlement failure does not masquerade as SDK source-authority loss")
@@ -37,6 +61,8 @@ struct TuyaFreshTargetAndAcquisitionTerminalSourceTests {
 
         // Account/login/membership drift owns markSourceAuthorityInvalidated. A local-BLE
         // acquisition timeout or monotonic-clock failure is a different physical/software fact.
+        #expect(timeoutBranch.contains("authenticationAcquisitionFailed"))
+        #expect(invalidClockBranch.contains("authenticationAcquisitionFailed"))
         #expect(!timeoutBranch.contains("invalidateSourceAuthority"))
         #expect(!invalidClockBranch.contains("invalidateSourceAuthority"))
     }
