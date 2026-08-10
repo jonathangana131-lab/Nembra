@@ -1,0 +1,56 @@
+name: Reanchor Capture visual authority to b59 product
+
+on:
+  push:
+    branches:
+      - qa/v14-capture-visual-194197ed-sol
+    paths:
+      - .github/workflows/reanchor-capture-visual-b59-sol.yml
+
+permissions:
+  contents: write
+
+jobs:
+  reanchor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: qa/v14-capture-visual-194197ed-sol
+          fetch-depth: 0
+
+      - name: Merge exact current product into QA only
+        shell: bash
+        run: |
+          set -euo pipefail
+          product='product/v14-capture-guided-truth-current-sol'
+          expected='b59cd71272b465bcad70fcc3425382bb29541b2e'
+          git fetch origin "$product"
+          actual="$(git rev-parse FETCH_HEAD)"
+          test "$actual" = "$expected"
+          git config user.name "nembra-v14-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git merge --no-edit "$expected"
+
+      - name: Verify exact three-file visual delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          product='b59cd71272b465bcad70fcc3425382bb29541b2e'
+          expected_files=$'.github/workflows/capture-standalone-visual-evidence.yml\nscripts/ci/capture_standalone_visual_evidence.sh\nscripts/ci/tests/test_capture_standalone_visual_evidence.py'
+          effective="$(git diff --name-only "$product"...HEAD | grep -v '^.github/workflows/reanchor-capture-visual-b59-sol.yml$')"
+          test "$effective" = "$expected_files"
+          test "$(git rev-parse "$product:NembraApp/App/NembraCaptureEntrypoint.swift")" = "$(git rev-parse HEAD:NembraApp/App/NembraCaptureEntrypoint.swift)"
+          grep -Fq 'guard !packageCorrelationRetiredForProcess,' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'TuyaSingleOfficialDriverHandoffSourceTests.swift' <(git ls-tree -r --name-only HEAD)
+          python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          bash -n scripts/ci/capture_standalone_visual_evidence.sh
+          git diff --check "$product"...HEAD
+
+      - name: Remove helper and push clean QA reanchor
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/reanchor-capture-visual-b59-sol.yml
+          git commit -m "chore(capture): reanchor visual evidence to b59 product"
+          git push origin HEAD:qa/v14-capture-visual-194197ed-sol
