@@ -40,8 +40,23 @@ struct TuyaCaptureForegroundIntegritySourceTests {
         #expect(view.contains("test.appDidLoseForeground()"))
         #expect(view.contains("if scenePhase == .active"))
 
-        #expect(activation.contains("foregroundIntegrityLossHandled = false"))
-        #expect(activation.contains("acceptsViewScopedMembershipRequests = true"))
+        // Reactivation may not reopen view-scoped authority while the exact old authenticated
+        // generation is still being terminally retired. Otherwise an active transition can reset
+        // the duplicate-retirement fence before a following onDisappear arrives.
+        let retiredGenerationGate = try requiredOffset(
+            containing: "guard currentConnectionToken == nil else { return }",
+            in: activation
+        )
+        let resetForegroundFence = try requiredOffset(
+            containing: "foregroundIntegrityLossHandled = false",
+            in: activation
+        )
+        let reopenAdmission = try requiredOffset(
+            containing: "acceptsViewScopedMembershipRequests = true",
+            in: activation
+        )
+        #expect(retiredGenerationGate < resetForegroundFence)
+        #expect(resetForegroundFence < reopenAdmission)
         #expect(viewExit.contains("if foregroundIntegrityLossHandled { return }"))
 
         let closeAdmission = try requiredOffset(
