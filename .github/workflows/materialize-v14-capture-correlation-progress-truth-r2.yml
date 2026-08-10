@@ -17,12 +17,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Guard exact current product parent
+      - name: Guard exact current product ancestry
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = '5e96004ec565a5a19df8312f64985862a0443cdc'
-          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/materialize-v14-capture-correlation-progress-truth-r2.yml'
+          base='5e96004ec565a5a19df8312f64985862a0443cdc'
+          test "$(git merge-base HEAD "$base")" = "$base"
+          test "$(git diff --name-only "$base" HEAD)" = '.github/workflows/materialize-v14-capture-correlation-progress-truth-r2.yml'
 
       - name: Apply reviewed chronology presentation repair
         shell: bash
@@ -30,108 +31,41 @@ jobs:
           set -euo pipefail
           python3 <<'PY'
           from pathlib import Path
-
-          app_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
-          app = app_path.read_text(encoding='utf-8')
-
-          old_visible = 'Text("\\(min(test.correlationCompletedWindowCount + 1, 4))/4")'
-          new_visible = 'Text("\\(correlationDisplayedWindowOrdinal)/4")'
-          if app.count(old_visible) != 1:
-              raise SystemExit(f'expected exactly one stale visible ordinal, found {app.count(old_visible)}')
-          app = app.replace(old_visible, new_visible, 1)
-
-          anchor = '''    private var hero: some View {\n'''
-          helper = '''    private var correlationDisplayedWindowOrdinal: Int {\n        test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)\n    }\n\n'''
-          if helper in app:
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+          old = 'Text("\\(min(test.correlationCompletedWindowCount + 1, 4))/4")'
+          new = 'Text("\\(correlationDisplayedWindowOrdinal)/4")'
+          if source.count(old) != 1:
+              raise SystemExit(f'expected exactly one stale visible ordinal, found {source.count(old)}')
+          source = source.replace(old, new, 1)
+          anchor = '    private var hero: some View {\n'
+          helper = '    private var correlationDisplayedWindowOrdinal: Int {\n        test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)\n    }\n\n'
+          if helper in source:
               raise SystemExit('correlation ordinal helper already present')
-          if app.count(anchor) != 1:
-              raise SystemExit(f'expected one SecureLink hero anchor, found {app.count(anchor)}')
-          app = app.replace(anchor, helper + anchor, 1)
-          app_path.write_text(app, encoding='utf-8')
-
-          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationTruthSourceTests.swift')
-          if test_path.exists():
-              raise SystemExit('correlation progress regression already exists')
-          test_path.write_text(r'''import Foundation
-import Testing
-@testable import NembraBluetoothCapture
-
-@Suite("Capture correlation progress presentation truth")
-struct TuyaCorrelationProgressPresentationTruthSourceTests {
-    @Test("completed OFF1 ON1 OFF2 ON2 correlation presents four of four")
-    func completedCorrelationDoesNotFallBackToOneOfFour() throws {
-        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let surface = try section(
-            in: app,
-            from: "private struct SecureLinkView: View",
-            to: "private struct SecureTransfer: Transferable"
-        )
-        let body = String(surface)
-
-        // The controller intentionally retires correlationSession before publishing `.correlated`.
-        // Presentation therefore cannot derive the completed state from the now-nil live session.
-        #expect(!body.contains("Text(\"\\(min(test.correlationCompletedWindowCount + 1, 4))/4\")"))
-        #expect(body.contains("correlationDisplayedWindowOrdinal"))
-        #expect(body.contains("test.phase == .correlated ? 4"))
-        #expect(body.contains("Text(\"\\(correlationDisplayedWindowOrdinal)/4\")"))
-    }
-
-    @Test("in-progress correlation still derives its ordinal from package-owned completed windows")
-    func activeCorrelationProgressRemainsEvidenceBacked() throws {
-        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let surface = try section(
-            in: app,
-            from: "private struct SecureLinkView: View",
-            to: "private struct SecureTransfer: Transferable"
-        )
-        let body = String(surface)
-
-        #expect(body.contains("min(test.correlationCompletedWindowCount + 1, 4)"))
-        #expect(!body.localizedCaseInsensitiveContains("rssi progress"))
-        #expect(!body.localizedCaseInsensitiveContains("name progress"))
-        #expect(!body.localizedCaseInsensitiveContains("tuya hint progress"))
-    }
-
-    private func section(in source: String, from start: String, to end: String) throws -> Substring {
-        guard let startRange = source.range(of: start),
-              let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
-            Issue.record("Expected source section missing: \(start) ... \(end)")
-            throw SourceContractError.sectionMissing
-        }
-        return source[startRange.lowerBound..<endRange.lowerBound]
-    }
-
-    private func readRepositoryFile(_ relativePath: String) throws -> String {
-        let repositoryRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
-    }
-
-    private enum SourceContractError: Error {
-        case sectionMissing
-    }
-}
-''', encoding='utf-8')
+          if source.count(anchor) != 1:
+              raise SystemExit(f'expected one SecureLink hero anchor, found {source.count(anchor)}')
+          path.write_text(source.replace(anchor, helper + anchor, 1), encoding='utf-8')
           PY
+
+          regression='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationTruthSourceTests.swift'
+          test ! -e "$regression"
+          git show '6508c5d8e2902589164d6cef34b30c5326c86599:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationTruthSourceTests.swift' > "$regression"
 
           grep -Fq 'private var correlationDisplayedWindowOrdinal: Int {' NembraApp/App/NembraCaptureEntrypoint.swift
           grep -Fq 'test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)' NembraApp/App/NembraCaptureEntrypoint.swift
           grep -Fq 'Text("\(correlationDisplayedWindowOrdinal)/4")' NembraApp/App/NembraCaptureEntrypoint.swift
           ! grep -Fq 'Text("\(min(test.correlationCompletedWindowCount + 1, 4))/4")' NembraApp/App/NembraCaptureEntrypoint.swift
-          grep -Fq 'completed OFF1 ON1 OFF2 ON2 correlation presents four of four' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationTruthSourceTests.swift
+          grep -Fq 'completed OFF1 ON1 OFF2 ON2 correlation presents four of four' "$regression"
           git diff --check
 
       - name: Publish clean product successor
         shell: bash
         run: |
           set -euo pipefail
-          rm .github/workflows/materialize-v14-capture-correlation-progress-truth-r2.yml
+          workflow='.github/workflows/materialize-v14-capture-correlation-progress-truth-r2.yml'
+          rm "$workflow"
           git add -A
-          expected="$(printf '%s\n' '.github/workflows/materialize-v14-capture-correlation-progress-truth-r2.yml' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationTruthSourceTests.swift' | sort)"
+          expected="$(printf '%s\n' "$workflow" 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationTruthSourceTests.swift' | sort)"
           test "$(git diff --cached --name-only | sort)" = "$expected"
           git config user.name 'nembra-v14-agent'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
