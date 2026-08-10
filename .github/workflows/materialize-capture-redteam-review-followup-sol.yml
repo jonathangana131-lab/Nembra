@@ -1,0 +1,99 @@
+name: Materialize Capture Red-Team Review Follow-Up
+
+on:
+  push:
+    branches:
+      - converge/v14-capture-redteam-current-1c40-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: converge/v14-capture-redteam-current-1c40-sol
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Apply post-materialization source review
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "8f4da6823a0a21002d1a7ad9cb5bb1eb092dcac8"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+
+          old_status = 'membershipStatus = "Scooter membership authority was revoked by foreground loss. Verify this scooter again before a fresh OFF1 correlation."'
+          new_status = 'membershipStatus = "Scooter membership authority was revoked by foreground loss. Reopen Capture and verify this scooter again before another authenticated attempt."'
+          if source.count(old_status) != 1:
+              raise SystemExit('foreground status review anchor missing')
+          source = source.replace(old_status, new_status, 1)
+
+          start = source.index('    func abandonCorrelationForViewExit() {')
+          end = source.index('    func appDidLoseForeground() {', start)
+          section = source[start:end]
+          anchor = '        guard processCorrelationLease != nil || correlationSession != nil else { return }'
+          if section.count(anchor) != 1:
+              raise SystemExit('view-exit correlation review anchor missing')
+          insertion = '''        if phase == .correlated || phase == .selected {
+              resetDiscoverySessionOnly()
+              phase = .failed
+              message = "Capture left Secure Link after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the prior target cannot cross a view lifetime."
+              log("target_correlation_abandoned_on_view_exit")
+              return
+          }
+
+          '''
+          section = section.replace(anchor, insertion + anchor, 1)
+          source = source[:start] + section + source[end:]
+          path.write_text(source, encoding='utf-8')
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift')
+          test = test_path.read_text(encoding='utf-8')
+          test_anchor = '        #expect(!cleanup.lowercased().contains("membership verified and leased"))\n'
+          test_new = test_anchor + '        #expect(cleanup.contains("phase == .correlated || phase == .selected"))\n        #expect(cleanup.contains("resetDiscoverySessionOnly()"))\n'
+          if test.count(test_anchor) != 1:
+              raise SystemExit('view-exit source regression anchor missing')
+          test_path.write_text(test.replace(test_anchor, test_new, 1), encoding='utf-8')
+          PY
+
+      - name: Verify review follow-up
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          start = source.index('    func abandonCorrelationForViewExit() {')
+          end = source.index('    func appDidLoseForeground() {', start)
+          cleanup = source[start:end]
+          for token in ['phase == .correlated || phase == .selected', 'resetDiscoverySessionOnly()', 'target_correlation_abandoned_on_view_exit']:
+              if token not in cleanup:
+                  raise SystemExit(f'missing reviewed view-exit closure: {token}')
+          if 'fresh OFF1 correlation' in source[source.index('func appDidLoseForeground()'):source.index('var privateConfig: Bool')]:
+              raise SystemExit('foreground status still promises an in-process OFF1 path after official handoff')
+          print('Capture red-team review follow-up: PASS')
+          PY
+          git diff --check
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift
+
+      - name: Collapse helper into reviewed product commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-sol-materializer'
+          git config user.email 'actions@users.noreply.github.com'
+          git rm .github/workflows/materialize-capture-redteam-review-followup-sol.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift .github/workflows/materialize-capture-redteam-review-followup-sol.yml
+          git diff --cached --check
+          git commit -m 'fix(capture): clear target authority on Secure Link exit'
+          git push origin HEAD:converge/v14-capture-redteam-current-1c40-sol
