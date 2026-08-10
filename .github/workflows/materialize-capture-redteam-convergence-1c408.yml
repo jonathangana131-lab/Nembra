@@ -169,10 +169,26 @@ jobs:
           git diff --check
 
       - name: Run Capture package tests
+        id: capture_package
+        continue-on-error: true
         shell: bash
         run: |
-          set -euo pipefail
-          swift test --package-path Packages/NembraBluetoothCapture
+          set -o pipefail
+          swift test --package-path Packages/NembraBluetoothCapture 2>&1 | tee capture-package-test.log
+
+      - name: Upload package diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-redteam-package-${{ github.sha }}
+          path: capture-package-test.log
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Enforce package result
+        if: steps.capture_package.outcome != 'success'
+        shell: bash
+        run: exit 1
 
       - name: Publish clean effective product checkpoint
         shell: bash
