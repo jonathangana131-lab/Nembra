@@ -1,0 +1,28 @@
+name: V14 Capture f332 Package Smoke
+
+on:
+  push:
+    branches:
+      - validation/v14-capture-f332-package-sol
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Verify source subject parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show -s --format='%H %P' HEAD
+          test "$(git rev-parse HEAD^)" = "f33286e976eee89bbb92501eaad69ed493a328aa"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/v14-capture-f332-package-smoke.yml"
+      - name: Full Capture package
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift --version
+          swift test --package-path Packages/NembraBluetoothCapture
