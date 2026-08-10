@@ -8,6 +8,13 @@ on:
 permissions:
   contents: write
 
+env:
+  BASE_SHA: b615375e12e43abc55e111deb5dc36f3790c7506
+  MATERIALIZER: .github/workflows/materialize-capture-ci-python-isolation-b615.yml
+  PRODUCER: .github/workflows/capture-producer-custody-source.yml
+  PROVENANCE: .github/workflows/capture-field-build-provenance.yml
+  REGRESSION: scripts/ci/tests/test_capture_ci_python_isolation.py
+
 jobs:
   materialize:
     runs-on: ubuntu-latest
@@ -16,19 +23,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Isolate authority-bearing Python validation
+
+      - name: Verify exact construction branch
         shell: bash
         run: |
           set -euo pipefail
-          base='b615375e12e43abc55e111deb5dc36f3790c7506'
-          materializer='.github/workflows/materialize-capture-ci-python-isolation-b615.yml'
-          producer='.github/workflows/capture-producer-custody-source.yml'
-          provenance='.github/workflows/capture-field-build-provenance.yml'
-          regression='scripts/ci/tests/test_capture_ci_python_isolation.py'
+          test "$(git merge-base HEAD "$BASE_SHA")" = "$BASE_SHA"
+          test "$(git diff --name-only "$BASE_SHA" HEAD)" = "$MATERIALIZER"
 
-          test "$(git merge-base HEAD "$base")" = "$base"
-          test "$(git diff --name-only "$base" HEAD)" = "$materializer"
-
+      - name: Materialize isolated Python commands
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
 
@@ -81,7 +87,7 @@ jobs:
           provenance.write_text(text, encoding='utf-8')
           PY
 
-          cat > "$regression" <<'PY'
+          cat > "$REGRESSION" <<'PY'
           #!/usr/bin/env python3
           from pathlib import Path
           import re
@@ -118,17 +124,31 @@ jobs:
           print('capture CI authority Python isolation source contract: PASS')
           PY
 
-          /usr/bin/python3 -I -m py_compile "$regression"
-          /usr/bin/python3 -I "$regression"
+      - name: Validate isolation contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I -m py_compile "$REGRESSION"
+          /usr/bin/python3 -I "$REGRESSION"
           git diff --check
 
-          rm "$materializer"
-          actual="$(git status --short | awk '{print $2}' | sort)"
-          expected="$(printf '%s\n%s\n%s\n%s\n' "$materializer" "$producer" "$provenance" "$regression" | sort)"
-          test "$actual" = "$expected"
+      - name: Verify exact semantic scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "$REGRESSION"
+          test "$(git diff --name-only -- "$PRODUCER" "$PROVENANCE" | sort)" = "$(printf '%s\n%s\n' "$PRODUCER" "$PROVENANCE" | sort)"
+          test "$(git ls-files --others --exclude-standard -- "$REGRESSION")" = "$REGRESSION"
+          test -z "$(git diff --name-only -- "$MATERIALIZER")"
 
+      - name: Publish semantic repair and retire materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm "$MATERIALIZER"
+          git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
+          git add "$PRODUCER" "$PROVENANCE" "$REGRESSION"
           git commit -m 'ci(capture): isolate Python acceptance authority'
           git push origin HEAD:fix/v14-capture-ci-python-isolation-b615-sol
