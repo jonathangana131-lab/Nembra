@@ -1,0 +1,50 @@
+name: Materialize Capture Signed Apple Identity Custody
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-signed-apple-identity-custody-20260810
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sol/v14-capture-signed-apple-identity-custody-20260810
+          fetch-depth: 0
+
+      - name: Guard exact current product parent
+        run: |
+          set -euo pipefail
+          product_parent='e60494fd32a8b307cb825e5e47b0e393ff3509dd'
+          test "$(git merge-base "$product_parent" HEAD)" = "$product_parent"
+          git diff --quiet "$product_parent" HEAD -- scripts/field/install_one_time_capture.command
+          test ! -e Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSignedAppleAppIdentityCustodySourceTests.swift
+
+      - name: Apply signed identity custody repair
+        run: python3 scripts/ci/materialize_capture_signed_apple_identity_custody.py apply
+
+      - name: Verify signed identity custody repair
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/materialize_capture_signed_apple_identity_custody.py verify
+          python3 -m py_compile scripts/ci/materialize_capture_signed_apple_identity_custody.py
+          bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+
+      - name: Publish clean product checkpoint
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-signed-apple-identity-custody.yml
+          rm scripts/ci/materialize_capture_signed_apple_identity_custody.py
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(capture): prove exact signed Apple app identity"
+          git push origin HEAD:sol/v14-capture-signed-apple-identity-custody-20260810
