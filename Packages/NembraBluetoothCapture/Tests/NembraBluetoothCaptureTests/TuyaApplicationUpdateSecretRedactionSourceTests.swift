@@ -18,6 +18,7 @@ struct TuyaApplicationUpdateSecretRedactionSourceTests {
         #expect(driver.contains("localkey"))
         #expect(driver.contains("accesstoken"))
         #expect(driver.contains("refreshtoken"))
+        #expect(driver.contains("sessionkey"))
         #expect(driver.contains("authkey"))
         #expect(driver.contains("seckey"))
         #expect(driver.contains("keyString.lowercased().filter"))
@@ -45,6 +46,7 @@ struct TuyaApplicationUpdateSecretRedactionSourceTests {
 
         #expect(export.contains("secretsRedacted: true"))
         #expect(updates.contains("log(\"tuya_application_update\", update.merging(["))
+        #expect(source.contains("No account UID, AppKey/AppSecret, password, account token, local_key, session key"))
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
