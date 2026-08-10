@@ -23,11 +23,11 @@ jobs:
         run: |
           set -euo pipefail
           base='4b41c9ad783f568d0d353acc9f7016a9bd0b64c2'
-          test='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaVerificationCodeRedactionSourceTests.swift'
+          testfile='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaVerificationCodeRedactionSourceTests.swift'
           workflow='.github/workflows/materialize-capture-login-code-redaction-4b41.yml'
           test "$(git merge-base "$base" HEAD)" = "$base"
           mapfile -t paths < <(git diff --name-only "$base"...HEAD | sort)
-          expected=("$workflow" "$test")
+          expected=("$workflow" "$testfile")
           printf '%s\n' "${expected[@]}" | sort > /tmp/expected
           printf '%s\n' "${paths[@]}" > /tmp/actual
           diff -u /tmp/expected /tmp/actual
@@ -42,42 +42,46 @@ jobs:
           path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           s = path.read_text()
 
-          old_call = 'self?.finishLoginFailure(error, submittedIdentity: identity)'
-          new_call = 'self?.finishLoginFailure(error, submittedIdentity: identity, submittedVerificationCode: code)'
-          if s.count(old_call) != 2:
-              raise SystemExit(f'expected 2 login failure callbacks, found {s.count(old_call)}')
-          s = s.replace(old_call, new_call)
+          def replace_exact(old: str, new: str, count: int, label: str) -> None:
+              global s
+              actual = s.count(old)
+              if actual != count:
+                  raise SystemExit(f'{label}: expected {count} occurrence(s), found {actual}')
+              s = s.replace(old, new)
 
-          old_failure = '''    private func finishLoginFailure(_ error: Error?, submittedIdentity: String) {
-              busy = false
-              verificationCode = ""
-              loggedIn = OfficialTuyaFactory.accountLoggedIn
-              status = "Tuya SDK login failed: \\(Self.redactedError(error, submittedIdentity: submittedIdentity))"
-          }
-          '''
-          new_failure = '''    private func finishLoginFailure(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) {
-              busy = false
-              verificationCode = ""
-              loggedIn = OfficialTuyaFactory.accountLoggedIn
-              status = "Tuya SDK login failed: \\(Self.redactedError(error, submittedIdentity: submittedIdentity, submittedVerificationCode: submittedVerificationCode))"
-          }
-          '''
-          if s.count(old_failure) != 1:
-              raise SystemExit(f'expected exact finishLoginFailure body once, found {s.count(old_failure)}')
-          s = s.replace(old_failure, new_failure)
+          replace_exact(
+              'self?.finishLoginFailure(error, submittedIdentity: identity)',
+              'self?.finishLoginFailure(error, submittedIdentity: identity, submittedVerificationCode: code)',
+              2,
+              'login failure callback'
+          )
+          replace_exact(
+              'private func finishLoginFailure(_ error: Error?, submittedIdentity: String)',
+              'private func finishLoginFailure(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String)',
+              1,
+              'finishLoginFailure signature'
+          )
+          replace_exact(
+              'Self.redactedError(error, submittedIdentity: submittedIdentity)',
+              'Self.redactedError(error, submittedIdentity: submittedIdentity, submittedVerificationCode: submittedVerificationCode)',
+              1,
+              'finishLoginFailure sanitizer call'
+          )
 
-          old_scrubber = '''    private static func redactedError(_ error: Error?, submittedIdentity: String) -> String {
-              let raw = error?.localizedDescription ?? "unknown error"
-              let identity = submittedIdentity.trimmingCharacters(in: .whitespacesAndNewlines)
-              guard !identity.isEmpty else { return raw }
-              return raw.replacingOccurrences(
-                  of: identity,
-                  with: "<redacted-account>",
-                  options: [.caseInsensitive, .literal]
-              )
-          }
-          '''
-          new_scrubber = '''    private static func redactedError(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) -> String {
+          start_marker = '    private static func redactedError(_ error: Error?, submittedIdentity: String) -> String {'
+          if s.count(start_marker) != 1:
+              raise SystemExit(f'redactedError start: expected 1 occurrence, found {s.count(start_marker)}')
+          start = s.index(start_marker)
+          end_marker = '\n    }\n}'
+          end = s.find(end_marker, start)
+          if end == -1:
+              raise SystemExit('redactedError end marker missing')
+          end += len('\n    }')
+          old_function = s[start:end]
+          if 'with: "<redacted-account>"' not in old_function:
+              raise SystemExit('refusing to replace unexpected redactedError implementation')
+
+          new_function = '''    private static func redactedError(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) -> String {
               let raw = error?.localizedDescription ?? "unknown error"
               let identity = submittedIdentity.trimmingCharacters(in: .whitespacesAndNewlines)
               let verificationCode = submittedVerificationCode.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -97,11 +101,8 @@ jobs:
                   )
               }
               return redacted
-          }
-          '''
-          if s.count(old_scrubber) != 1:
-              raise SystemExit(f'expected exact redactedError body once, found {s.count(old_scrubber)}')
-          s = s.replace(old_scrubber, new_scrubber)
+          }'''
+          s = s[:start] + new_function + s[end:]
           path.write_text(s)
           PY
 
@@ -114,7 +115,8 @@ jobs:
           swiftc -parse "$source"
           swiftc -parse "$testfile"
           test "$(grep -Foc 'finishLoginFailure(error, submittedIdentity: identity, submittedVerificationCode: code)' "$source")" -eq 2
-          grep -Fq 'private func finishLoginFailure(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String)' "$source"
+          test "$(grep -Foc 'private func finishLoginFailure(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String)' "$source")" -eq 1
+          test "$(grep -Foc 'private static func redactedError(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) -> String' "$source")" -eq 1
           grep -Fq 'let verificationCode = submittedVerificationCode.trimmingCharacters(in: .whitespacesAndNewlines)' "$source"
           grep -Fq 'of: verificationCode' "$source"
           grep -Fq 'with: "<redacted-verification-code>"' "$source"
