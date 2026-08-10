@@ -162,11 +162,9 @@ struct SimulatorPowerStoreAuthority: Sendable {
         case .contradictory:
             failClosed()
             return
-        case .identical, .newer:
+        case .identical:
             break
-        }
-
-        if sourceComparison == .newer {
+        case .newer:
             newestSourceObservation = observation
         }
 
@@ -220,7 +218,8 @@ struct SimulatorPowerStoreAuthority: Sendable {
         guard let previous else { return .newer }
 
         let identityComparison = compare(SourceIdentity(observation), to: SourceIdentity(previous))
-        if identityComparison == .identical && observation != previous {
+        if case .identical = identityComparison,
+           observation != previous {
             return .contradictory
         }
         return identityComparison
