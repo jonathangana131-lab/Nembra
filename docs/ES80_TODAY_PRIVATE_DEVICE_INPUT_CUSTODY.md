@@ -6,22 +6,25 @@ Feature: Nembra Capture / first physical ES80 truth.
 
 Frozen Capture product subject: `a0f4a33451f61411d6e0541f2e70edea5438342d`.
 
-This helper closes one operator-side custody race without changing the frozen Capture app, Bluetooth behavior, signing authority, field authorization, telemetry semantics, or the accepted producer.
+This helper closes operator-side custody races without changing the frozen Capture app, Bluetooth behavior, signing authority, field authorization, telemetry semantics, or the accepted producer.
 
 ## Why this helper exists
 
 The earlier shell example correctly rejected symlinked private directories and existing final files and used Bash `noclobber`. That protects the final filename from ordinary replacement, but shell redirection still resolves the parent pathname at write time. A same-UID local actor could rename/retarget `.nembra-private` after the operator entered the secret but before the redirection opened the final file. The later accepted preflight would fail closed, but the secret could already have been written under the wrong directory subject.
 
-`scripts/ci/es80_today_private_device_input.py` removes that write-time pathname authority:
+`scripts/ci/es80_today_private_device_input.py` removes that write-time pathname authority and now also closes the later secret-custody failure paths:
 
 - opens every private-directory component with `O_DIRECTORY|O_NOFOLLOW`;
 - creates only the final private directory when absent and requires exact mode `0700` plus current-user ownership;
 - rejects a private path that traverses the supplied Nembra source repository;
-- acquires the intended-device identifier only after directory admission;
+- rejects an already-occupied final target before prompting for the secret while retaining `O_EXCL` as the post-precheck race authority;
+- acquires the intended-device identifier only after directory and target admission;
+- refuses `getpass` fallback when terminal echo cannot be disabled and fails closed on EOF;
 - creates the final file relative to the pinned directory descriptor with `O_CREAT|O_EXCL|O_NOFOLLOW` and mode `0600`;
+- captures the exact created filesystem identity before secret bytes are written;
 - writes and `fsync`s through the file descriptor;
 - reopens the full pathname after creation and requires the same directory device/inode and the same file identity plus exact byte readback;
-- if the pathname was retargeted, fails closed and removes only the file whose identity matches the file created under the original pinned directory;
+- on ordinary failure or terminal abort, removes only the pathname whose device/inode still matches the exact object created under the pinned directory, then re-raises the original failure;
 - never places the raw identifier in argv, environment variables, stdout, filenames, GitHub, or retained candidate artifacts.
 
 This is private-input custody only. A successful helper invocation does not mean the signed candidate is accepted and does not grant permission to scan.
@@ -30,15 +33,15 @@ This is private-input custody only. A successful helper invocation does not mean
 
 The exact Capture field source `a0f4…` is intentionally frozen and therefore does **not** contain this later operator helper. Do not copy a moving `main` helper into `FIELD_SOURCE`, do not commit tooling into the frozen worktree, and do not substitute a newer app source SHA merely to gain the helper.
 
-The helper must be materialized from a separate trusted local Nembra tooling repository exactly like the already accepted external pre-signing helper. The current candidate helper identity is:
+The helper must be materialized from a separate trusted local Nembra tooling repository exactly like the already accepted external pre-signing helper. The accepted composed helper identity is:
 
-- helper source commit: `05ce6d9a20487ab34aa31c5b6456910ed2ed438f`;
+- helper source commit: `c8c706e3d67d2aeab37341035468437dc2af0491`;
 - helper path: `scripts/ci/es80_today_private_device_input.py`;
-- helper Git blob: `9a9f7f724ceaf895e52d6d443d326043f97645c8`.
+- helper Git blob: `38eb695792fb759428a98686081b883e39c3b118`.
 
-These bytes remain non-authorizing. Before this helper is used for an actual field candidate, this PR/lineage itself must be accepted into the trusted handoff. Until then, keep following the currently accepted production gates and keep Experiment One NO-GO.
+These bytes remain non-authorizing. They are the durable default-branch helper subject consumed by the signed-field handoff; physical Experiment One remains NO-GO.
 
-## Operator materialization and use after acceptance
+## Operator materialization and use
 
 Start with the exact frozen outer `FIELD_SOURCE` and a separate tooling repository containing the accepted helper commit. Materialize and verify the helper outside both the frozen source and the retained candidate directory:
 
@@ -46,8 +49,8 @@ Start with the exact frozen outer `FIELD_SOURCE` and a separate tooling reposito
 set -euo pipefail
 umask 077
 
-PRIVATE_INPUT_HELPER_COMMIT='05ce6d9a20487ab34aa31c5b6456910ed2ed438f'
-PRIVATE_INPUT_HELPER_BLOB='9a9f7f724ceaf895e52d6d443d326043f97645c8'
+PRIVATE_INPUT_HELPER_COMMIT='c8c706e3d67d2aeab37341035468437dc2af0491'
+PRIVATE_INPUT_HELPER_BLOB='38eb695792fb759428a98686081b883e39c3b118'
 TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
 PRIVATE_INPUT_HELPER_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-private-input.XXXXXX)"
 PRIVATE_INPUT_HELPER="$PRIVATE_INPUT_HELPER_DIR/es80_today_private_device_input.py"
@@ -72,7 +75,7 @@ test "$(/usr/bin/stat -f '%Lp' "$UDID_FILE")" = '600'
 NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE="$UDID_FILE"
 ```
 
-The helper prompts privately with `getpass`; do not pass the raw UDID on the command line. If the final path already exists, preserve it and choose a fresh filename/path rather than deleting or overwriting it just to satisfy the helper.
+The helper prompts privately with `getpass`; do not pass the raw UDID on the command line. If secure terminal input is unavailable, if the final path already exists, or if any custody check fails, preserve the exact blocker and stop before signing. Do not delete or overwrite an existing final path merely to satisfy the helper.
 
 Keep `PRIVATE_INPUT_HELPER_DIR` outside `ARTIFACTS_DIR`. Do not mutate the producer's retained candidate shape with operator tooling or auxiliary files.
 
@@ -91,16 +94,20 @@ Focused adversarial coverage lives in:
 
 `scripts/ci/tests/test_es80_today_private_device_input.py`
 
-It must prove at minimum:
+It proves at minimum:
 
 1. exact `0600` regular single-link creation under an exact `0700` private directory;
-2. pre-existing final targets are never clobbered;
-3. symlinked ancestors fail before the secret provider is called;
-4. repository-contained private paths fail before secret acquisition;
-5. a parent pathname retarget after file creation fails closed and cleans the original created file rather than touching the replacement directory;
-6. surrounding whitespace/newline is rejected and no final file is created.
+2. pre-existing final targets are rejected before secret acquisition and never clobbered;
+3. a target appearing after the precheck is still caught by exclusive creation;
+4. symlinked ancestors fail before the secret provider is called;
+5. repository-contained private paths fail before secret acquisition;
+6. a parent pathname retarget after file creation fails closed and cleans the original created file rather than touching the replacement directory;
+7. ordinary write/fsync failures remove only the exact created object and never unlink a replacement pathname;
+8. terminal abort after secret write propagates while removing the exact created private file;
+9. `getpass` echoed fallback and EOF fail closed without returning or persisting the identifier;
+10. surrounding whitespace/newline is rejected and no final file is created.
 
-The exact tested candidate helper blob is `9a9f7f724ceaf895e52d6d443d326043f97645c8`; the exact tested regression blob is `f1aeb6fa6336481222626d3b6b01137ba338b346`.
+The exact accepted helper blob is `38eb695792fb759428a98686081b883e39c3b118`; the composed regression blob on `c8c706e3d67d2aeab37341035468437dc2af0491` is `5d5d8efef2763aa1222e9d2af0d7d43260683b8c`.
 
 ## Truth boundary
 
