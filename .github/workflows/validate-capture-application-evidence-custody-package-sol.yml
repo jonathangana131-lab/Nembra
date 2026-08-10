@@ -1,0 +1,107 @@
+name: Validate Capture application evidence custody package
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-application-evidence-custody-package-sol
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 4
+
+      - name: Verify exact product ancestry and package-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='6b778f2104af34dbe5b80da31ddb3ca422f9667c'
+          git merge-base --is-ancestor "$expected" HEAD
+          actual="$(git diff --name-only "$expected" HEAD | sort)"
+          wanted="$(printf '%s\n' \
+            '.github/workflows/validate-capture-application-evidence-custody-package-sol.yml' \
+            'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaApplicationUpdateSecretSanitizer.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationUpdateSecretSanitizerTests.swift' | sort)"
+          test "$actual" = "$wanted"
+
+      - name: Compile and execute sanitizer custody behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          helper='Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaApplicationUpdateSecretSanitizer.swift'
+          tests='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationUpdateSecretSanitizerTests.swift'
+
+          swiftc -warnings-as-errors -emit-library -module-name SanitizerProbe "$helper" -o /tmp/libSanitizerProbe.so
+          swiftc -frontend -parse "$tests"
+
+          cp "$helper" /tmp/main.swift
+          cat >> /tmp/main.swift <<'SWIFT'
+
+          private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
+              guard condition() else { fatalError(message) }
+          }
+
+          let promisedSpellings = [
+              "local_key", "session-key", "app.key", "appSecret", "password",
+              "account_token", "accessToken", "refresh-token", "auth_key", "secKey"
+          ]
+          for key in promisedSpellings {
+              require(TuyaApplicationUpdateSecretSanitizer.isSecretKey(key), "missing secret class: \(key)")
+          }
+
+          let projected = TuyaApplicationUpdateSecretSanitizer.sanitizeForStringProjection([
+              "password": "do-not-export",
+              "ordinary": "evidence",
+              "nested": ["session_key": "session-value", "watts": 120],
+          ])
+          require(projected["password"] == "<redacted>", "top-level credential escaped")
+          require(projected["ordinary"] == "evidence", "ordinary evidence changed")
+          require(projected["nested"]?.contains("session-value") == false, "nested credential escaped")
+
+          let verifiedUID = "account-uid-7A91"
+          let uidRedacted = TuyaApplicationUpdateSecretSanitizer.redactingAccountUID(
+              in: [
+                  "uid": "device-uid-123",
+                  "status": "owner=account-uid-7A91; mode=eco",
+                  "account": "account-uid-7A91",
+              ],
+              verifiedAccountUID: verifiedUID
+          )
+          require(uidRedacted["uid"] == "device-uid-123", "generic device uid was erased")
+          require(uidRedacted["status"] == "owner=<redacted-account-uid>; mode=eco", "embedded account UID escaped")
+          require(uidRedacted["account"] == "<redacted-account-uid>", "exact account UID escaped")
+          require(uidRedacted.values.allSatisfy { !$0.contains(verifiedUID) }, "verified account UID remains")
+          require(!TuyaApplicationUpdateSecretSanitizer.isSecretKey("uid"), "generic uid key gained account semantics")
+          require(
+              TuyaApplicationUpdateSecretSanitizer.redactingAccountUID(
+                  in: ["uid": "device-uid"],
+                  verifiedAccountUID: ""
+              )["uid"] == "device-uid",
+              "empty exact sensitive value was not a no-op"
+          )
+          SWIFT
+
+          swiftc -warnings-as-errors /tmp/main.swift -o /tmp/application-custody-probe
+          /tmp/application-custody-probe
+          git diff --check
+
+      - name: Retire validation helper and checkpoint package delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/validate-capture-application-evidence-custody-package-sol.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          actual="$(git diff --cached --name-only '6b778f2104af34dbe5b80da31ddb3ca422f9667c' | sort)"
+          wanted="$(printf '%s\n' \
+            'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaApplicationUpdateSecretSanitizer.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationUpdateSecretSanitizerTests.swift' | sort)"
+          test "$actual" = "$wanted"
+          git commit -m 'test(capture): validate application evidence custody helper'
+          git push origin HEAD:agent/v14-capture-application-evidence-custody-package-sol
