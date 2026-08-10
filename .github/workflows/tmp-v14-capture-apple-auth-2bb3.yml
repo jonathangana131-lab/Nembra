@@ -1,0 +1,125 @@
+name: Temporary Capture Apple-account 2bb3 recovery
+
+on:
+  push:
+    branches:
+      - recovery/v14-capture-apple-auth-2bb3-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: recovery/v14-capture-apple-auth-2bb3-sol
+          fetch-depth: 20
+
+      - name: Guard exact current guided product bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 2bb37639656fb114c5767f6311586042b9ee4ef2 HEAD
+          test "$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)" = "689ad97a6fa1dde381e5487392bbc18741c66287"
+          test "$(git hash-object NembraCapture.xcodeproj/project.pbxproj)" = "0c4feb5daf70411dfc919de7efea056ebae769b9"
+          test ! -e NembraCapture.entitlements
+          test ! -e Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAppleAccountLoginSourceTests.swift
+          test ! -e Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAppleOAuthCredentialCustodySourceTests.swift
+
+      - name: Apply reviewed Apple auth and current field runbook
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin recovery/v14-capture-apple-auth-current-sol --depth=30
+          git show 2555105ffc67e9d671afeb580ab71f31102f33fb:scripts/ci/apply_capture_apple_account_auth_current_recovery.py > /tmp/apply_capture_apple_auth.py
+          test "$(git hash-object /tmp/apply_capture_apple_auth.py)" = "0c973b59c3fbe8a697992cf0dcdb5f54e7091c7b"
+          python3 /tmp/apply_capture_apple_auth.py
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          s = p.read_text(encoding="utf-8")
+          def once(old, new):
+              global s
+              n = s.count(old)
+              if n != 1:
+                  raise SystemExit(f"expected one anchor, found {n}: {old!r}")
+              s = s.replace(old, new, 1)
+          once(
+              '            : "SDK initialized. Sign in with a verification code; metadata QR approval does not count as SDK device authority."',
+              '            : "SDK initialized. Use Sign in with Apple or a Tuya verification code for the account that owns this scooter; account login alone does not count as exact scooter authority."',
+          )
+          once(
+              '#if canImport(ThingSmartHomeKit)\n        let appleUserIdentifier = credential.user',
+              '#if canImport(ThingSmartHomeKit)\n        guard let user = ThingSmartUser.sharedInstance() else {\n            status = "Official Tuya SDK account service is unavailable. Exact scooter membership remains locked."\n            return\n        }\n        let appleUserIdentifier = credential.user',
+          )
+          once(
+              '        ThingSmartUser.sharedInstance()?.loginByAuth2(\n            withType: "ap",',
+              '        user.loginByAuth2(\n            withType: "ap",',
+          )
+          p.write_text(s, encoding="utf-8")
+          PY
+
+          # Carry forward the canonical Apple-backed stationary procedure and its stronger source contract.
+          git show 7503591f5523e552b10208be464eadd9071450c0:docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md > docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md
+          git show 7503591f5523e552b10208be464eadd9071450c0:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAppleAccountLoginSourceTests.swift > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAppleAccountLoginSourceTests.swift
+
+      - name: Validate current truth plus Apple credential custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAppleAccountLoginSourceTests.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAppleOAuthCredentialCustodySourceTests.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkAccountRecoverySourceTests.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          e = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          p = Path('NembraCapture.xcodeproj/project.pbxproj').read_text()
+          q = Path('NembraCapture.entitlements').read_text()
+          r = Path('docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md').read_text()
+          required = [
+              'import AuthenticationServices', 'SignInWithAppleButton(.signIn)',
+              'credential.identityToken', 'guard let user = ThingSmartUser.sharedInstance()',
+              'user.loginByAuth2(', 'withType: "ap"', 'redactedAppleOAuthError',
+              'submittedIdentityToken: identityToken', 'loggedIn = OfficialTuyaFactory.accountLoggedIn',
+              'if loggedIn { test.verifySDKMembership() }',
+              'sdkDeviceMembershipVerified && test.accountIdentityLeaseIsAuthorized',
+              'Use Sign in with Apple or a Tuya verification code',
+              'Official Tuya SDK account service is unavailable. Exact scooter membership remains locked.',
+              'func signOut()', 'Sign Out of This Tuya Account',
+          ]
+          for needle in required:
+              if needle not in e: raise SystemExit(f'missing required marker: {needle}')
+          forbidden = [
+              'loggedIn = true', 'UserDefaults.standard.set(identityToken',
+              'log("apple_identity_token',
+              'Tuya rejected the Apple-account login: \\(error?.localizedDescription',
+              'ThingSmartUser.sharedInstance()?.loginByAuth2(',
+          ]
+          for needle in forbidden:
+              if needle in e: raise SystemExit(f'forbidden custody marker: {needle}')
+          if p.count('CODE_SIGN_ENTITLEMENTS = NembraCapture.entitlements;') != 2:
+              raise SystemExit('Sign in with Apple entitlement not bound in both configurations')
+          if 'com.apple.developer.applesignin' not in q or '<string>Default</string>' not in q:
+              raise SystemExit('Sign in with Apple entitlement payload incomplete')
+          if 'For this Apple-backed Smart Life account, use **Sign in with Apple**.' not in r:
+              raise SystemExit('canonical field runbook does not use Apple-backed owning account')
+          if 'has an authorized verification-code account session' in r:
+              raise SystemExit('stale verification-code-only field gate returned')
+          PY
+          git diff --check
+
+      - name: Commit exact permanent product repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-capture-bot"
+          git config user.email "nembra-capture-bot@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift NembraCapture.xcodeproj/project.pbxproj NembraCapture.entitlements Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAppleAccountLoginSourceTests.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAppleOAuthCredentialCustodySourceTests.swift docs/CAPTURE_P0_APPLE_ACCOUNT_LOGIN.md docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md
+          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" = "7"
+          git diff --cached --check
+          git commit -m "feat(capture): add Apple-backed owning-account entry"
+          git push origin HEAD:recovery/v14-capture-apple-auth-2bb3-sol
