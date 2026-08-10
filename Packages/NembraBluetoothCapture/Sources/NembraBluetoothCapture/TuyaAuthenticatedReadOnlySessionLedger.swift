@@ -26,6 +26,12 @@ public struct TuyaReadOnlyConnectionToken: Hashable, Sendable {
 /// it never extends `latestObservedUptimeNanoseconds`. Structured SDK values and raw transport
 /// bytes do not cross this boundary; callers report only whether an application update was non-empty.
 public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationSessionProvider {
+    /// Maximum unobserved interval accepted inside one continuous authenticated observation.
+    /// The field app polls SDK-local BLE more frequently than this. The same bound is enforced
+    /// here so a queued SDK callback cannot erase a suspension/scheduling gap before the watchdog
+    /// sees it.
+    public static let maximumContinuousObservationGapNanoseconds: UInt64 = 5_000_000_000
+
     public enum MutationError: Error, Equatable, Sendable {
         case noActiveConnection
         case staleConnection
@@ -35,8 +41,12 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         case applicationPayloadCountExhausted
         case monotonicClockRegressed
         case connectionGenerationExhausted
+        case observationContinuityInvalidated
         case preflightNotReady
     }
+
+    private static let automaticContinuityFailureReason =
+        "Authenticated observation continuity was invalidated by a long observation gap."
 
     private let ledgerID: UUID
     private let nowUptimeNanoseconds: @Sendable () -> UInt64
@@ -144,6 +154,10 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     /// This deliberately accepts no `Data`: the current SmartLife SDK surface provides a
     /// structured `dpsUpdate` dictionary, not byte-exact FD50 transport. Callers must not invent
     /// serialized bytes merely to satisfy this chronology gate.
+    ///
+    /// Continuity is checked before the update may advance `latestObserved...`. This closes the
+    /// resume-order race where a queued SDK update could otherwise erase a long suspension gap
+    /// before the app watchdog observes it.
     public func recordApplicationUpdate(
         isNonEmpty: Bool,
         for token: TuyaReadOnlyConnectionToken
@@ -157,6 +171,7 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         }
 
         let now = try nextMonotonicObservation()
+        try requireContinuousAuthenticatedObservation(at: now)
         guard let authenticatedAt = authenticatedAtUptimeNanoseconds,
               now >= authenticatedAt else {
             throw MutationError.monotonicClockRegressed
@@ -170,13 +185,16 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     }
 
     /// Advances only the non-secret liveness observation for the current authenticated connection.
-    /// No telemetry or application payload is manufactured by this call.
+    /// No telemetry or application payload is manufactured by this call, and a pre-auth poll can
+    /// never lengthen the chronology later used by the physical stability gate.
     public func observeCurrentConnection(for token: TuyaReadOnlyConnectionToken) throws {
         try requireCurrent(token)
         guard case .authenticated = authenticationState else {
             throw MutationError.authenticationRequired
         }
-        latestObservedUptimeNanoseconds = try nextMonotonicObservation()
+        let now = try nextMonotonicObservation()
+        try requireContinuousAuthenticatedObservation(at: now)
+        latestObservedUptimeNanoseconds = now
     }
 
     /// Seals a post-authentication attempt that remained connected but failed to produce the
@@ -218,10 +236,16 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     /// Freezes an already-earned canonical ready verdict without manufacturing a later receipt or
     /// extending its duration. Retiring the token makes the accepted prefix immutable: delayed
     /// callbacks from this connection can no longer mutate update count or liveness chronology.
+    ///
+    /// The current clock is checked against the last legitimate receipt before sealing, but the
+    /// check itself does not become a new receipt. A long pause between readiness and sealing is
+    /// therefore rejected instead of being silently accepted.
     public func sealAcceptedObservation(
         for token: TuyaReadOnlyConnectionToken
     ) throws {
         try requireCurrent(token)
+        let now = try nextMonotonicObservation()
+        try requireContinuousAuthenticatedObservation(at: now)
         let snapshot = makeSnapshot()
         guard TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .readyForStationaryMapping else {
             throw MutationError.preflightNotReady
@@ -275,5 +299,19 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
             throw MutationError.monotonicClockRegressed
         }
         return now
+    }
+
+    /// Must run before any authenticated mutation can move the accepted observation horizon.
+    /// On failure, preserve the last legitimate timestamps/evidence and retire callback authority.
+    private func requireContinuousAuthenticatedObservation(at now: UInt64) throws {
+        guard let latest = latestObservedUptimeNanoseconds,
+              now >= latest else {
+            throw MutationError.monotonicClockRegressed
+        }
+        guard now - latest <= Self.maximumContinuousObservationGapNanoseconds else {
+            authenticationState = .failed(reason: Self.automaticContinuityFailureReason)
+            currentToken = nil
+            throw MutationError.observationContinuityInvalidated
+        }
     }
 }
