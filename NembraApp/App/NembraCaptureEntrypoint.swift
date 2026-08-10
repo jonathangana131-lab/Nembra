@@ -278,7 +278,18 @@ private enum TuyaCaptureCredentialStore {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
-        SecItemDelete(query as CFDictionary)
+
+        let update: [String: Any] = [
+            kSecValueData as String: data
+        ]
+        let updateStatus = SecItemUpdate(query as CFDictionary, update as CFDictionary)
+        if updateStatus == errSecSuccess {
+            return true
+        }
+        guard updateStatus == errSecItemNotFound else {
+            // Preserve the last known-good credential if Keychain refuses a replacement.
+            return false
+        }
 
         var insert = query
         insert[kSecValueData as String] = data
