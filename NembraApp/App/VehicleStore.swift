@@ -579,7 +579,7 @@ final class VehicleStore {
                     // actor, then let stateful Store custody reject stale/replayed
                     // chronology. Aggregate connection is a negative veto only.
                     let current = await simulatorPowerEvidenceProvider.simulatorPowerEvidenceSnapshot()
-                    guard let self, !Task.isCancelled else { return }
+                    guard !Task.isCancelled else { return }
                     self.simulatorPowerStoreAuthority.applySource(
                         current,
                         transportIsConnected: self.state.connection == .connected
