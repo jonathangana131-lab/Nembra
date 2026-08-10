@@ -55,6 +55,19 @@ public struct OdometerContinuityReference: Codable, Equatable, Sendable {
     public var totalKilometers: Double {
         totalMiles * 1.609_344
     }
+
+    /// User continuity history is never device telemetry.
+    ///
+    /// This remains false even when a later authenticated scooter odometer happens to equal
+    /// the reference total. Equality may support a separately recorded comparison, but it
+    /// cannot retroactively relabel this history as Bluetooth-derived truth.
+    public var authorizesDeviceReportedOdometer: Bool { false }
+
+    /// Explicit projection fence for callers that work with `VehicleState`.
+    ///
+    /// The numerical kilometer conversion above is for presentation/comparison only and must
+    /// not be copied into `VehicleState.odometerKilometers` as physical device evidence.
+    public var mayProjectIntoVehicleStateOdometer: Bool { false }
 }
 
 public extension OdometerContinuityReference {
