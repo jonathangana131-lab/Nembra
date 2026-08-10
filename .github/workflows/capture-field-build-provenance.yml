@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - capture/field-build-provenance-gpt56
+      - capture/field-build-provenance-gpt56-v2
       - capture/one-time-ble-dump-gpt56
   pull_request:
     paths:
@@ -34,7 +35,7 @@ jobs:
 
           bash -n "$installer"
           grep -Fq 'SOURCE_SHA="$(git rev-parse HEAD)' "$installer"
-          grep -Fq 'BUILD_LABEL="capture-v14-${SOURCE_SHA:0:12}"' "$installer"
+          grep -Fq 'BUILD_LABEL="Authenticated stationary capture ${SOURCE_SHA:0:12}"' "$installer"
           grep -Fq 'NEMBRA_CAPTURE_BUILD_IDENTIFIER="$BUILD_LABEL"' "$installer"
           grep -Fq 'NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$SOURCE_SHA"' "$installer"
 
@@ -45,14 +46,14 @@ jobs:
           grep -Fq 'static let buildIdentifierInfoKey = "NembraCaptureBuildIdentifier"' "$identity"
           grep -Fq 'static let sourceCommitSHAInfoKey = "NembraCaptureSourceCommitSHA"' "$identity"
           grep -Fq 'sourceCommitSHA.count == 40' "$identity"
-          grep -Fq 'let expectedIdentifier = "capture-v14-\(sourceCommitSHA.prefix(12))"' "$identity"
+          grep -Fq 'let expectedIdentifier = "Authenticated stationary capture \(sourceCommitSHA.prefix(12))"' "$identity"
 
       - name: Build stamped standalone Simulator app
         shell: bash
         run: |
           set -euo pipefail
           sha='0123456789abcdef0123456789abcdef01234567'
-          label='capture-v14-0123456789ab'
+          label='Authenticated stationary capture 0123456789ab'
           rm -rf /tmp/NembraCaptureProvenanceDerived
           xcodebuild \
             -project NembraCapture.xcodeproj \
