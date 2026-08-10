@@ -1,0 +1,105 @@
+name: Reanchor Capture product procedure sol
+
+on:
+  push:
+    branches:
+      - reanchor/v14-capture-product-onto-procedure-sol
+
+permissions:
+  contents: write
+
+jobs:
+  reanchor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: reanchor/v14-capture-product-onto-procedure-sol
+          fetch-depth: 0
+
+      - name: Merge exact truth head and preserve guided product UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch='reanchor/v14-capture-product-onto-procedure-sol'
+          truth='8b9c1cabeeffdec7cb12f9a74f53320c11e7eae0'
+          product_parent='d5915a97c1359846b103f08602db78eac815a47f'
+          workflow='.github/workflows/reanchor-capture-product-procedure-sol.yml'
+          entry='NembraApp/App/NembraCaptureEntrypoint.swift'
+
+          test "$(git rev-parse HEAD^)" = "$product_parent"
+          test "$(git diff --name-only HEAD^ HEAD)" = "$workflow"
+          git fetch origin integration/v14-capture-final-stationary-convergence-sol
+          test "$(git rev-parse origin/integration/v14-capture-final-stationary-convergence-sol)" = "$truth"
+
+          set +e
+          git merge --no-commit --no-ff "$truth"
+          merge_status=$?
+          set -e
+
+          if [ "$merge_status" -ne 0 ]; then
+            unresolved="$(git diff --name-only --diff-filter=U)"
+            test "$unresolved" = "$entry"
+            git checkout --ours -- "$entry"
+            python3 - <<'PY'
+          from pathlib import Path
+          p = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s = p.read_text()
+
+          def once(old, new):
+              global s
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one anchor, found {count}: {old!r}')
+              s = s.replace(old, new, 1)
+
+          once(
+              '        let tuyaDependencyLockSHA256: String\n        let tuyaDeviceID: String\n',
+              '        let tuyaDependencyLockSHA256: String\n        let procedureIdentifier: String\n        let tuyaDeviceID: String\n'
+          )
+          once(
+              '    var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }\n',
+              '    var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }\n    var fieldProcedureIdentifier: String { NembraCaptureBuildIdentity.fieldProcedureIdentifier }\n'
+          )
+          once('            schemaVersion: 9,\n', '            schemaVersion: 10,\n')
+          once(
+              '            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,\n            tuyaDeviceID: deviceID,\n',
+              '            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,\n            procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier,\n            tuyaDeviceID: deviceID,\n'
+          )
+          once(
+              '                LabeledContent("Source commit", value: test.fieldBuildSourceCommitSHA)\n',
+              '                LabeledContent("Source commit", value: test.fieldBuildSourceCommitSHA)\n                LabeledContent("Procedure", value: test.fieldProcedureIdentifier)\n'
+          )
+          p.write_text(s)
+          PY
+            git add "$entry"
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+          procedure = 'ES80-AUTHENTICATED-STATIONARY-v1'
+          identity = Path('NembraApp/App/NembraCaptureBuildIdentity.swift').read_text()
+          entry = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          runbook = Path('docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md').read_text()
+          installer = Path('scripts/field/install_one_time_capture.command').read_text()
+          assert f'static let fieldProcedureIdentifier = "{procedure}"' in identity
+          assert 'let procedureIdentifier: String' in entry
+          assert 'schemaVersion: 10' in entry and 'schemaVersion: 9' not in entry
+          assert 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier' in entry
+          assert 'LabeledContent("Procedure", value: test.fieldProcedureIdentifier)' in entry
+          assert procedure in runbook
+          assert procedure in installer
+          assert 'CAPTURE COMPLETE' in entry
+          assert 'Ready for analysis' in entry
+          assert 'Label("Share Capture", systemImage: "square.and.arrow.up")' in entry
+          assert 'Label("Engineering details", systemImage: "wrench.and.screwdriver")' in entry
+          PY
+
+          bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+          git rm "$workflow"
+          git add -A
+          git config user.name 'nembra-go-bot'
+          git config user.email 'nembra-go-bot@users.noreply.github.com'
+          git commit -m 'merge(capture): reanchor guided product on procedure truth'
+          git push origin HEAD:"$branch"
