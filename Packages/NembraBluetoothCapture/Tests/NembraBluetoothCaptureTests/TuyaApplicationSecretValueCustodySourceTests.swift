@@ -15,13 +15,10 @@ struct TuyaApplicationSecretValueCustodySourceTests {
         let callback = String(try section(
             in: driver,
             from: "func device(_ device: ThingSmartDevice?, dpsUpdate",
-            to: "private static let secretKeyFragments"
+            to: "private static func sortedApplicationEntries("
         ))
-        let sanitizer = String(try section(
-            in: driver,
-            from: "private static let secretKeyFragments",
-            to: "}\n#endif"
-        ))
+        let sanitizerStart = try #require(driver.range(of: "private static let secretKeyFragments"))
+        let sanitizer = String(driver[sanitizerStart.lowerBound...])
 
         #expect(driver.contains("NembraTuyaPrivateIdentity.appKey"))
         #expect(driver.contains("NembraTuyaPrivateIdentity.appSecret"))
@@ -31,6 +28,7 @@ struct TuyaApplicationSecretValueCustodySourceTests {
                 || sanitizer.contains("knownSecretValues")
                 || sanitizer.contains("secretValues")
         )
+        #expect(callback.contains("Self.redactedApplicationDescription(value)"))
         #expect(!callback.contains("String(describing: Self.redactApplicationSecrets(value))"))
     }
 
