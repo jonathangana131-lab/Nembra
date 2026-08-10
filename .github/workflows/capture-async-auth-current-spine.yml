@@ -1,0 +1,39 @@
+name: Capture Async Auth Current Spine
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-async-auth-current-spine-sol
+    paths:
+      - .github/workflows/capture-async-auth-current-spine.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/v14-capture-async-auth-current-spine-sol
+          fetch-depth: 0
+      - name: Apply authority repair and self-retire
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 Scripts/apply_capture_async_auth_current_spine.py
+          rm Scripts/apply_capture_async_auth_current_spine.py
+          rm .github/workflows/capture-async-auth-current-spine.yml
+          git config user.name nembra-v14-integration
+          git config user.email actions@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          diff_text="$(git diff --cached -- NembraApp/App/NembraCaptureEntrypoint.swift)"
+          grep -Fq 'guard phase == .selected' <<<"$diff_text"
+          grep -Fq 'self.phase == .selected' <<<"$diff_text"
+          grep -Fq 'self.targetCorrelationOperatorConfirmed' <<<"$diff_text"
+          grep -Fq 'selectedID == candidate.id' <<<"$diff_text"
+          ! grep -Fq 'phase == .selected || phase == .failed' <<<"$diff_text"
+          git commit -m "fix(capture): fence async authentication start authority"
+          git push origin HEAD:agent/v14-capture-async-auth-current-spine-sol
