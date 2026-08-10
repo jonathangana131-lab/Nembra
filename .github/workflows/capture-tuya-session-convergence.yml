@@ -1,0 +1,42 @@
+name: Capture Tuya Session Convergence
+
+on:
+  pull_request:
+    branches:
+      - capture/one-time-ble-dump-gpt56
+    paths:
+      - 'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlySessionLedgerTests.swift'
+      - '.github/workflows/capture-tuya-session-convergence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-tuya-session-convergence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test converged authenticated-session authority
+    runs-on: macos-15
+    timeout-minutes: 10
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Swift 6.2 toolchain
+        run: |
+          set -euo pipefail
+          XCODE_VERSION="$(xcodebuild -version)"
+          printf '%s\n' "$XCODE_VERSION"
+          swift --version
+          [[ "$XCODE_VERSION" == Xcode\ 26.* ]]
+      - name: Test converged authenticated session ledger
+        run: |
+          set -euo pipefail
+          swift test \
+            --package-path Packages/NembraBluetoothCapture \
+            --filter TuyaAuthenticatedReadOnlySessionLedgerTests \
+            -Xswiftc -warnings-as-errors
