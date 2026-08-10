@@ -489,7 +489,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
-        membershipStatus = "Capture left the foreground. Exact scooter membership must be verified again before a fresh OFF1 attempt."
+        membershipStatus = "Capture left the foreground. Exact scooter membership must be verified again before Capture can continue."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
