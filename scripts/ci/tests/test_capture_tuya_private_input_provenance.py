@@ -132,6 +132,61 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
                 self.current()
         self.assertTrue(mutated)
 
+    def test_file_fingerprint_rejects_same_inode_mutation_after_post_read_fstat(self) -> None:
+        target = self.security_podspec
+        original_fstat = provenance.os.fstat
+        fstat_count = 0
+        mutated = False
+
+        def fstat_then_mutate(descriptor: int) -> os.stat_result:
+            nonlocal fstat_count, mutated
+            metadata = original_fstat(descriptor)
+            fstat_count += 1
+            if fstat_count == 2 and not mutated:
+                mutated = True
+                original_inode = target.stat().st_ino
+                size = target.stat().st_size
+                target.write_bytes(b"Q" * size)
+                os.utime(
+                    target,
+                    ns=(target.stat().st_atime_ns, metadata.st_mtime_ns + 1_000_000_000),
+                )
+                self.assertEqual(target.stat().st_ino, original_inode)
+                self.assertEqual(target.stat().st_size, size)
+            return metadata
+
+        with mock.patch.object(provenance.os, "fstat", side_effect=fstat_then_mutate):
+            with self.assertRaises(provenance.ProvenanceError):
+                provenance._file_fingerprint(target)
+        self.assertTrue(mutated)
+
+    def test_file_fingerprint_rejects_same_inode_mutation_during_pathname_check(self) -> None:
+        target = self.security_podspec
+        original_stat = provenance.os.stat
+        mutated = False
+
+        def stat_then_mutate(path: os.PathLike[str] | str, *args: object, **kwargs: object) -> os.stat_result:
+            nonlocal mutated
+            metadata = original_stat(path, *args, **kwargs)
+            if kwargs.get("follow_symlinks") is False and Path(path) == target and not mutated:
+                mutated = True
+                original_inode = metadata.st_ino
+                size = metadata.st_size
+                target.write_bytes(b"R" * size)
+                os.utime(
+                    target,
+                    ns=(metadata.st_atime_ns, metadata.st_mtime_ns + 1_000_000_000),
+                )
+                final_metadata = original_stat(target)
+                self.assertEqual(final_metadata.st_ino, original_inode)
+                self.assertEqual(final_metadata.st_size, size)
+            return metadata
+
+        with mock.patch.object(provenance.os, "stat", side_effect=stat_then_mutate):
+            with self.assertRaises(provenance.ProvenanceError):
+                provenance._file_fingerprint(target)
+        self.assertTrue(mutated)
+
     def test_tree_rejects_file_replacement_after_individual_fingerprint(self) -> None:
         target = self.security_build / "ThingSmartCryption.bin"
         replacement = self.root / "replacement.bin"
