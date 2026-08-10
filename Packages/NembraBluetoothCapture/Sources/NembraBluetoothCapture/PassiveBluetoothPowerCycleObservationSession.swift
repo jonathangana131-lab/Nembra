@@ -117,21 +117,6 @@ enum PassiveBluetoothPowerCycleScanReadinessPolicy {
     }
 }
 
-/// Delivery policy for the bounded physical-correlation windows.
-///
-/// The authoritative receipt window opens only after Nembra separately observes `isScanning`.
-/// A discovery callback may arrive between the scan request and that boundary and is intentionally
-/// rejected as pre-window evidence. CoreBluetooth may coalesce repeated discoveries when duplicate
-/// filtering is enabled, so these short research scans must request duplicate delivery to keep a
-/// later post-readiness advertisement eligible for the accepted catalog. The catalog itself still
-/// deduplicates by full peripheral UUID and merges connectability monotonically.
-///
-/// This prevents one known app-created false-negative. It does not make callback absence proof of
-/// RF completeness or physical scooter absence.
-enum PassiveBluetoothPowerCycleScanDeliveryPolicy {
-    static let allowsDuplicateDiscoveryCallbacks = true
-}
-
 /// Monotonic merge for repeated discovery evidence within one live window.
 /// Explicit non-connectable evidence dominates; otherwise explicit connectable dominates unknown.
 enum PassiveBluetoothPowerCycleConnectabilityMerge {
@@ -557,10 +542,7 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject {
         scanReadinessToken = token
         manager.scanForPeripherals(
             withServices: nil,
-            options: [
-                CBCentralManagerScanOptionAllowDuplicatesKey:
-                    PassiveBluetoothPowerCycleScanDeliveryPolicy.allowsDuplicateDiscoveryCallbacks
-            ]
+            options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
         )
         beginScanReadinessObservation(token: token)
     }
