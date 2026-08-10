@@ -1,0 +1,106 @@
+name: Materialize Capture Membership Status 1c408
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-membership-status-current-1c408
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sol/v14-capture-membership-status-current-1c408
+          fetch-depth: 0
+
+      - name: Guard exact lineage and scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='1c40853f6991b4d09206df1d25ecff021458b7eb'
+          testfile='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift'
+          workflow='.github/workflows/materialize-capture-membership-status-1c408.yml'
+          test "$(git merge-base "$base" HEAD)" = "$base"
+          git diff --name-only "$base"...HEAD | sort > /tmp/actual
+          printf '%s\n' "$workflow" "$testfile" | sort > /tmp/expected
+          diff -u /tmp/expected /tmp/actual
+
+      - name: Reset revoked membership status in both lifecycle boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text()
+          status_line = '        membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."\n'
+          old = (
+              '        sdkDeviceMembershipVerified = false\n'
+              '        membershipAccountUID = nil\n'
+              '        membershipDeviceID = nil\n'
+              '        membershipRequestID = UUID()\n'
+          )
+          new = (
+              '        sdkDeviceMembershipVerified = false\n'
+              '        membershipAccountUID = nil\n'
+              '        membershipDeviceID = nil\n'
+              + status_line +
+              '        membershipRequestID = UUID()\n'
+          )
+
+          def function_bounds(text: str, signature: str) -> tuple[int, int]:
+              if text.count(signature) != 1:
+                  raise SystemExit(f'{signature}: expected exactly once, found {text.count(signature)}')
+              start = text.index(signature)
+              open_brace = text.index('{', start)
+              depth = 0
+              for index in range(open_brace, len(text)):
+                  if text[index] == '{':
+                      depth += 1
+                  elif text[index] == '}':
+                      depth -= 1
+                      if depth == 0:
+                          return start, index + 1
+              raise SystemExit(f'{signature}: closing brace missing')
+
+          for signature in ('func abandonCorrelationForViewExit()', 'func appDidLoseForeground()'):
+              start, end = function_bounds(source, signature)
+              function = source[start:end]
+              if function.count(old) != 1:
+                  raise SystemExit(f'{signature}: expected one exact membership-revocation sequence, found {function.count(old)}')
+              if 'membershipStatus =' in function:
+                  raise SystemExit(f'{signature}: status already reset; refusing duplicate materialization')
+              function = function.replace(old, new, 1)
+              source = source[:start] + function + source[end:]
+
+          path.write_text(source)
+          PY
+
+      - name: Validate source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          source='NembraApp/App/NembraCaptureEntrypoint.swift'
+          testfile='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift'
+          swiftc -parse "$source"
+          swiftc -parse "$testfile"
+          test "$(grep -Foc 'membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."' "$source")" -eq 2
+          git diff --check
+
+      - name: Publish clean donor checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-membership-status-1c408.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift .github/workflows/materialize-capture-membership-status-1c408.yml
+          git diff --cached --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'fix(capture): reset revoked membership status'
+          git push origin HEAD:sol/v14-capture-membership-status-current-1c408
