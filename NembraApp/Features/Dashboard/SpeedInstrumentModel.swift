@@ -380,6 +380,9 @@ struct DashboardSpeedInstrumentView: View {
             synchronizeEnergyRailStoreProjection(projection)
         }
         .onChange(of: reduceMotion) { _, _ in
+            // Reduce Motion suppresses continuous spatial/high-frequency animation,
+            // but package-owned one-shot freshness deadlines must still wake semantic
+            // LIVE -> RETAINED transitions for VoiceOver and visible currentness.
             refreshEnergyRailPresentationSchedule(
                 for: vehicle.simulatorPowerStoreProjection
             )
@@ -403,7 +406,7 @@ struct DashboardSpeedInstrumentView: View {
     /// No view clock, aggregate watts, speed receipt, mode, or lifecycle callback can
     /// create positive propulsion authority here.
     private func synchronizeEnergyRailStoreProjection(
-        _ storeProjection: SimulatorPowerStoreProjection
+        _ storeProjection: SimulatorPowerStoreFencedProjection
     ) {
         guard hasEnergyRailSourceCapability else {
             energyRailRuntime = nil
@@ -453,13 +456,13 @@ struct DashboardSpeedInstrumentView: View {
         refreshEnergyRailPresentationSchedule(for: storeProjection)
     }
 
-    /// Display scheduling is downstream-only. The Store must still be LIVE before
-    /// a package display schedule may request continuous frames or a future wake.
+    /// Continuous display frames may be suppressed by Reduce Motion, but package-
+    /// owned one-shot deadlines still wake semantic freshness transitions. Scheduling
+    /// remains downstream-only and never creates source or accepted chronology.
     private func refreshEnergyRailPresentationSchedule(
-        for storeProjection: SimulatorPowerStoreProjection
+        for storeProjection: SimulatorPowerStoreFencedProjection
     ) {
-        guard !reduceMotion,
-              hasEnergyRailSourceCapability,
+        guard hasEnergyRailSourceCapability,
               storeProjection.currentness == .live,
               storeProjection.observation != nil,
               let energyRailRuntime else {
@@ -503,7 +506,7 @@ struct DashboardSpeedInstrumentView: View {
     /// freshness-lowered RETAINED state for the exact same source receipt.
     private func energyRailVisualState(
         atUptimeNanoseconds uptimeNanoseconds: UInt64,
-        storeProjection: SimulatorPowerStoreProjection,
+        storeProjection: SimulatorPowerStoreFencedProjection,
         presentationRevision: UInt64
     ) -> NembraEnergyRailVisualState? {
         _ = presentationRevision
