@@ -21,7 +21,9 @@ jobs:
       - name: Guard exact product source
         run: |
           set -euo pipefail
-          test "$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)" = "b4fea4aa52bc38a1c14ba6b1e71a39216f6339f1"
+          PRODUCT_PARENT="522716b8112fda6456beba24a62a6a563e66629a"
+          git merge-base --is-ancestor "$PRODUCT_PARENT" HEAD
+          test -z "$(git diff --name-only "$PRODUCT_PARENT" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift)"
           test ! -e Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteActionabilitySourceTests.swift
 
       - name: Route failed prerequisites to actionable product surfaces
