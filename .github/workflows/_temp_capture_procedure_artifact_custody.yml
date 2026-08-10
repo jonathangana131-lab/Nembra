@@ -1,0 +1,61 @@
+name: Temporary Capture procedure artifact custody
+
+on:
+  push:
+    branches:
+      - work/v14-capture-procedure-custody-8b9-sol
+
+permissions:
+  contents: write
+
+jobs:
+  apply-custody:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: work/v14-capture-procedure-custody-8b9-sol
+      - name: Apply guarded custody repair
+        run: |
+          python3 -m py_compile scripts/_temp_apply_capture_procedure_artifact_custody.py
+          python3 scripts/_temp_apply_capture_procedure_artifact_custody.py
+      - name: Validate portable custody contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/field/install_one_time_capture.command
+          python3 - <<'PY'
+          from pathlib import Path
+          procedure='ES80-AUTHENTICATED-STATIONARY-v1'
+          identity=Path('NembraApp/App/NembraCaptureBuildIdentity.swift').read_text()
+          project=Path('NembraCapture.xcodeproj/project.pbxproj').read_text()
+          app=Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          installer=Path('scripts/field/install_one_time_capture.command').read_text()
+          assert 'procedureIdentifier == Self.fieldProcedureIdentifier' in identity
+          assert project.count(f'INFOPLIST_KEY_NembraCaptureProcedureIdentifier = "{procedure}";') == 2
+          assert 'procedureIdentifier: buildIdentity.procedureIdentifier' in app
+          assert 'var fieldProcedureIdentifier: String { buildIdentity.procedureIdentifier }' in app
+          assert 'plutil -extract NembraCaptureProcedureIdentifier raw -o - "$APP_INFO_PLIST"' in installer
+          assert '[[ "$BUILT_PROCEDURE_ID" == "$PROCEDURE_ID" ]]' in installer
+          readback=installer.index('BUILT_PROCEDURE_ID=')
+          compare=installer.index('[[ "$BUILT_PROCEDURE_ID" == "$PROCEDURE_ID" ]]')
+          install=installer.index('say "Installing SDK-integrated Capture on the intended iPhone"')
+          assert readback < compare < install
+          PY
+          git diff --check
+      - name: Commit product-only custody repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name nembra-v14-recovery
+          git config user.email actions@users.noreply.github.com
+          git add \
+            NembraApp/App/NembraCaptureBuildIdentity.swift \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            NembraCapture.xcodeproj/project.pbxproj \
+            scripts/field/install_one_time_capture.command \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureArtifactCustodySourceTests.swift
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m 'fix(capture): bind procedure to built artifact custody'
+          git push origin HEAD:work/v14-capture-procedure-custody-8b9-sol
