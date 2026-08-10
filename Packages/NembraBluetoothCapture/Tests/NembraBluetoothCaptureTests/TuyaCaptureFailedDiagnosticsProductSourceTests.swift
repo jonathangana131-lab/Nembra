@@ -4,13 +4,18 @@ import Testing
 
 @Suite("Capture failed diagnostics product path")
 struct TuyaCaptureFailedDiagnosticsProductSourceTests {
-    @Test("every failed-state composition exposes sanitized diagnostic preparation and share")
+    @Test("both failed-state panels expose sanitized diagnostic preparation and share")
     func failedStatesExposeDiagnostics() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let primarySurface = String(try section(
+        let recovery = String(try section(
             in: source,
-            from: "private var primarySurface: some View",
-            to: "private var preflightPanel: some View"
+            from: "private var failureRecoveryContextPanel: some View",
+            to: "private var failurePanel: some View"
+        ))
+        let terminal = String(try section(
+            in: source,
+            from: "private var failurePanel: some View",
+            to: "private var completionPanel: some View"
         ))
         let diagnostics = String(try section(
             in: source,
@@ -18,8 +23,10 @@ struct TuyaCaptureFailedDiagnosticsProductSourceTests {
             to: "private var sdkAuthorizationPanel: some View"
         ))
 
-        #expect(primarySurface.contains("case .failed:"))
-        #expect(primarySurface.components(separatedBy: "failureDiagnosticsControls").count - 1 >= 3)
+        // Current failed-state composition always reaches one of these two panels. Keep the
+        // diagnostic action at the shared panel layer so every current recovery branch receives it.
+        #expect(recovery.contains("failureDiagnosticsControls"))
+        #expect(terminal.contains("failureDiagnosticsControls"))
         #expect(diagnostics.contains("test.prepareExport()"))
         #expect(diagnostics.contains("test.exportData"))
         #expect(diagnostics.contains("ShareLink"))
