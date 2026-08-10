@@ -1,0 +1,46 @@
+name: Capture Package Mac Diagnostics dfd3
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-package-diagnostic-dfd3
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capture-package:
+    name: Diagnose Capture package on Xcode 27
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify diagnostic parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "dfd3b72e54395e19efa11627499fec6355bedcd0"
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          test "$changed" = ".github/workflows/capture-package-mac-diagnostics-dfd3.yml"
+      - name: Run exact Capture package with failure extraction
+        shell: bash
+        run: |
+          set +e
+          swift test --package-path Packages/NembraBluetoothCapture > /tmp/nembra-capture-package.log 2>&1
+          rc=$?
+          set -e
+          if [[ "$rc" -ne 0 ]]; then
+            printf '%s\n' '--- Capture package failure tail ---'
+            tail -n 120 /tmp/nembra-capture-package.log
+            summary="$(grep -E 'error:|failed|Failure|Test .* failed|Expectation failed|Issue recorded' /tmp/nembra-capture-package.log | tail -n 12 | tr '\n' ' ')"
+            if [[ -z "$summary" ]]; then
+              summary="$(tail -n 30 /tmp/nembra-capture-package.log | tr '\n' ' ')"
+            fi
+            summary="${summary//'%'/'%25'}"
+            summary="${summary//$'\r'/'%0D'}"
+            summary="${summary//$'\n'/'%0A'}"
+            printf '::error file=Packages/NembraBluetoothCapture,title=Exact Capture package failure::%s\n' "$summary"
+            exit "$rc"
+          fi
+          tail -n 40 /tmp/nembra-capture-package.log
