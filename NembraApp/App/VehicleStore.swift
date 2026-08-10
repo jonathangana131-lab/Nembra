@@ -135,6 +135,7 @@ final class VehicleStore {
     @ObservationIgnored private var speedEvidenceTask: Task<Void, Never>?
     @ObservationIgnored private var simulatorPowerEvidenceTask: Task<Void, Never>?
     @ObservationIgnored private var speedEvidenceConsumerAuthority = SpeedEvidenceConsumerAuthority()
+    @ObservationIgnored private var simulatorPowerEvidenceConsumerAuthority = SimulatorPowerEvidenceConsumerAuthority()
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private let shouldAutoConnectOnStart: Bool
 
@@ -244,7 +245,7 @@ final class VehicleStore {
             simulatorPowerEvidenceProvider = nil
         }
 
-        updatesTask = Task { [weak self, service, speedEvidenceProvider, simulatorPowerEvidenceProvider] in
+        updatesTask = Task { [weak self, service, speedEvidenceProvider] in
             let stream = await service.stateUpdates()
             for await incomingState in stream {
                 guard let self, !Task.isCancelled else { break }
@@ -254,9 +255,9 @@ final class VehicleStore {
                 // live power before the disconnected/reconnecting aggregate state is
                 // published so SwiftUI can never observe OFFLINE + LIVE POWER. Do not
                 // synthesize retained here: only the sealed provider may supply it.
-                if incomingState.connection != .connected,
-                   self.simulatorPowerEvidenceAvailability.currentness == .live {
-                    self.simulatorPowerEvidenceAvailability = .unavailable
+                if incomingState.connection != .connected {
+                    self.simulatorPowerEvidenceConsumerAuthority.revokeLiveForNonConnectedTransport()
+                    self.simulatorPowerEvidenceAvailability = self.simulatorPowerEvidenceConsumerAuthority.availability
                 }
 
                 self.apply(incomingState)
@@ -275,11 +276,6 @@ final class VehicleStore {
                 } else if incomingState.connection != .connected {
                     self.invalidateSpeedEvidenceAuthority()
                 }
-
-                // No positive power promotion occurs in the aggregate-state task.
-                // If source/provider scheduling lags, the Store remains safely
-                // unavailable until the provider task publishes its sealed state.
-                _ = simulatorPowerEvidenceProvider
             }
         }
 
@@ -308,19 +304,26 @@ final class VehicleStore {
                 for await _ in stream {
                     guard let self, !Task.isCancelled else { return }
 
-                    // Events are wake-ups only. Re-read newest source state and then
-                    // apply the Store's connection veto. A stale/provider-live value
-                    // can never survive while aggregate transport is non-connected.
+                    // Events are wake-ups only. Re-read newest source state, then let
+                    // the tested consumer authority join it with current aggregate
+                    // connection. The consumer can preserve source truth or remove
+                    // authority; it cannot mint live/retained itself.
                     let current = await simulatorPowerEvidenceProvider.simulatorPowerEvidenceSnapshot()
                     guard !Task.isCancelled else { return }
-                    self.simulatorPowerEvidenceAvailability = self.connectionVettedSimulatorPowerAvailability(current)
+                    _ = self.simulatorPowerEvidenceConsumerAuthority.commit(
+                        current,
+                        connectionIsConnected: self.state.connection == .connected
+                    )
+                    self.simulatorPowerEvidenceAvailability = self.simulatorPowerEvidenceConsumerAuthority.availability
                 }
 
                 guard let self, !Task.isCancelled else { return }
-                self.simulatorPowerEvidenceAvailability = .unavailable
+                self.simulatorPowerEvidenceConsumerAuthority.invalidate()
+                self.simulatorPowerEvidenceAvailability = self.simulatorPowerEvidenceConsumerAuthority.availability
             }
         } else {
-            simulatorPowerEvidenceAvailability = .unavailable
+            simulatorPowerEvidenceConsumerAuthority.invalidate()
+            simulatorPowerEvidenceAvailability = simulatorPowerEvidenceConsumerAuthority.availability
         }
 
         if shouldAutoConnectOnStart {
@@ -496,18 +499,6 @@ final class VehicleStore {
             return
         }
         speedEvidenceAvailability = speedEvidenceConsumerAuthority.availability
-    }
-
-    /// Aggregate connection can only remove live power authority; it can never
-    /// create or relabel positive evidence. Retained/live construction remains
-    /// mechanically source-sealed in `SimulatedScooterService.swift`.
-    private func connectionVettedSimulatorPowerAvailability(
-        _ candidate: SimulatorPowerEvidenceAvailability
-    ) -> SimulatorPowerEvidenceAvailability {
-        guard state.connection == .connected || candidate.currentness != .live else {
-            return .unavailable
-        }
-        return candidate
     }
 
     private func perform(_ command: PendingCommand, operation: () async throws -> Void) async {
