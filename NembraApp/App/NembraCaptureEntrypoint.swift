@@ -443,10 +443,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
         guard currentConnectionToken == nil else {
-            failLocally(
-                "A prior authenticated generation has not been terminally retired. Relaunch Capture before starting another attempt.",
-                "active_generation_blocks_discovery_reset"
-            )
+            if let token = currentConnectionToken {
+                Task { @MainActor [weak self] in
+                    await self?.invalidateInternalLifecycle(
+                        token: token,
+                        message: "A prior authenticated generation unexpectedly still owned session authority when OFF1 restart was requested. It was retired before discovery reset.",
+                        kind: "active_generation_blocks_discovery_reset"
+                    )
+                }
+            }
             return
         }
 
@@ -998,16 +1003,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private func authenticationFailed(token: TuyaReadOnlyConnectionToken) async {
         guard currentConnectionToken == token else {
             log("stale_connect_failure_ignored", ["generation": String(token.diagnosticGeneration)])
-            return
-        }
-        guard sdkAccountLoggedIn,
-              sdkDeviceMembershipVerified,
-              accountIdentityLeaseIsAuthorized else {
-            await invalidateSourceAuthority(
-                token: token,
-                message: "Tuya account/device source authority changed before the SDK failure callback was classified.",
-                kind: "sdk_source_authority_lost_before_auth_failure"
-            )
             return
         }
         await authenticationAcquisitionFailed(
