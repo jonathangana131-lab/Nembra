@@ -34,6 +34,40 @@ public extension SimulatorPowerEvidenceProvider {
     }
 }
 
+/// Consumer-side projection for sealed Simulator propulsion evidence.
+///
+/// The source owns every positive availability. This consumer can only preserve
+/// one exact sealed value or remove authority. Aggregate connection is therefore
+/// a negative veto: non-connected transport may keep source-issued retained
+/// evidence, but it can never expose source-issued `.live` as current app truth.
+/// Reconnect alone likewise cannot manufacture live currentness.
+struct SimulatorPowerEvidenceConsumerAuthority {
+    private(set) var availability: SimulatorPowerEvidenceAvailability = .unavailable
+
+    mutating func invalidate() {
+        availability = .unavailable
+    }
+
+    mutating func revokeLiveForNonConnectedTransport() {
+        if availability.currentness == .live {
+            availability = .unavailable
+        }
+    }
+
+    @discardableResult
+    mutating func commit(
+        _ candidate: SimulatorPowerEvidenceAvailability,
+        connectionIsConnected: Bool
+    ) -> Bool {
+        guard connectionIsConnected || candidate.currentness != .live else {
+            availability = .unavailable
+            return false
+        }
+        availability = candidate
+        return true
+    }
+}
+
 /// Optional source-owned projection for consumers that require field-specific
 /// current speed truth rather than cached `VehicleState` values.
 ///
