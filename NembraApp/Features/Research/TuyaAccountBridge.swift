@@ -72,11 +72,21 @@ final class TuyaAccountBridge: ObservableObject {
     private let schema = "haauthorize"
     private let loginBaseURL = "https://apigw.iotbing.com"
     private var qrToken: String?
+    private var approvalUserCode: String?
     private var session: Session?
+    private var operationGeneration: UInt64 = 0
+    private var approvalRequestTask: Task<Void, Never>?
+    private var manualApprovalTask: Task<Void, Never>?
     private var pollTask: Task<Void, Never>?
+    private var deviceLoadTask: Task<Void, Never>?
+    private var selectedDeviceTask: Task<Void, Never>?
 
     deinit {
+        approvalRequestTask?.cancel()
+        manualApprovalTask?.cancel()
         pollTask?.cancel()
+        deviceLoadTask?.cancel()
+        selectedDeviceTask?.cancel()
     }
 
     var isLinked: Bool { session != nil }
@@ -89,33 +99,37 @@ final class TuyaAccountBridge: ObservableObject {
             statusMessage = "Paste the User Code from Tuya Smart → Me → Settings → Account and Security → User Code."
             return
         }
+        guard phase != .requestingApproval else { return }
 
-        pollTask?.cancel()
+        invalidateAsyncOperations()
+        let generation = operationGeneration
         phase = .requestingApproval
         statusMessage = "Creating a private Tuya approval QR…"
         qrPayload = nil
         qrPNGData = nil
+        qrToken = nil
+        approvalUserCode = nil
         session = nil
         homes = []
         devices = []
         selectedDeviceID = nil
-        selectedDeviceMetadata = nil
-        selectedDeviceStatus = nil
-        selectedDeviceSpecifications = nil
-        selectedDeviceLocalStrategy = nil
-        redactedExportData = nil
+        clearSelectedDeviceDetails()
 
-        Task {
+        approvalRequestTask = Task { [weak self] in
+            guard let self else { return }
             do {
                 let token = try await createQRToken(userCode: normalized)
+                guard !Task.isCancelled, generation == operationGeneration else { return }
                 qrToken = token
+                approvalUserCode = normalized
                 let payload = "tuyaSmart--qrLogin?token=\(token)"
                 qrPayload = payload
                 qrPNGData = Self.makeQRCodePNG(payload)
                 phase = .waitingForApproval
                 statusMessage = "Approve this QR in Tuya Smart. Nembra will notice automatically when approval finishes."
-                startPolling(userCode: normalized, token: token)
+                startPolling(userCode: normalized, token: token, generation: generation)
             } catch {
+                guard !Task.isCancelled, generation == operationGeneration else { return }
                 phase = .failed
                 statusMessage = "Tuya approval setup failed: \(Self.readable(error))"
             }
@@ -123,12 +137,16 @@ final class TuyaAccountBridge: ObservableObject {
     }
 
     func checkApprovalNow() {
-        guard let qrToken else {
+        guard let token = qrToken, let boundUserCode = approvalUserCode else {
             requestApproval()
             return
         }
-        let normalized = userCode.trimmingCharacters(in: .whitespacesAndNewlines)
-        Task { await pollApprovalOnce(userCode: normalized, token: qrToken) }
+        manualApprovalTask?.cancel()
+        let generation = operationGeneration
+        manualApprovalTask = Task { [weak self] in
+            guard let self else { return }
+            await pollApprovalOnce(userCode: boundUserCode, token: token, generation: generation)
+        }
     }
 
     func refreshDevices() {
@@ -137,19 +155,35 @@ final class TuyaAccountBridge: ObservableObject {
             statusMessage = "Tuya is not linked yet."
             return
         }
-        Task { await loadHomesAndDevices() }
+        selectedDeviceTask?.cancel()
+        selectedDeviceTask = nil
+        selectedDeviceID = nil
+        clearSelectedDeviceDetails()
+        phase = .loadingDevices
+        statusMessage = "Refreshing the linked Tuya device list…"
+        scheduleDeviceLoad(generation: operationGeneration)
     }
 
     func selectDevice(_ device: LinkedDevice) {
+        selectedDeviceTask?.cancel()
         selectedDeviceID = device.id
+        clearSelectedDeviceDetails()
+        phase = .loadingDevices
         statusMessage = "Reading \(device.name)'s Tuya status and DP definitions…"
-        redactedExportData = nil
-        Task {
+        let generation = operationGeneration
+        selectedDeviceTask = Task { [weak self] in
+            guard let self else { return }
             do {
-                try await loadSelectedDeviceDetails(device)
+                try await loadSelectedDeviceDetails(device, generation: generation)
+                guard !Task.isCancelled,
+                      generation == operationGeneration,
+                      selectedDeviceID == device.id else { return }
                 phase = .ready
                 statusMessage = "Tuya metadata is ready. No scooter control command was sent."
             } catch {
+                guard !Task.isCancelled,
+                      generation == operationGeneration,
+                      selectedDeviceID == device.id else { return }
                 phase = .failed
                 statusMessage = "Device metadata read failed: \(Self.readable(error))"
             }
@@ -203,22 +237,40 @@ final class TuyaAccountBridge: ObservableObject {
     }
 
     func resetLink() {
-        pollTask?.cancel()
-        pollTask = nil
+        invalidateAsyncOperations()
         session = nil
         qrToken = nil
+        approvalUserCode = nil
         qrPayload = nil
         qrPNGData = nil
         homes = []
         devices = []
         selectedDeviceID = nil
+        clearSelectedDeviceDetails()
+        phase = .needsUserCode
+        statusMessage = "Tuya link cleared from this Capture session."
+    }
+
+    private func invalidateAsyncOperations() {
+        operationGeneration &+= 1
+        approvalRequestTask?.cancel()
+        approvalRequestTask = nil
+        manualApprovalTask?.cancel()
+        manualApprovalTask = nil
+        pollTask?.cancel()
+        pollTask = nil
+        deviceLoadTask?.cancel()
+        deviceLoadTask = nil
+        selectedDeviceTask?.cancel()
+        selectedDeviceTask = nil
+    }
+
+    private func clearSelectedDeviceDetails() {
         selectedDeviceMetadata = nil
         selectedDeviceStatus = nil
         selectedDeviceSpecifications = nil
         selectedDeviceLocalStrategy = nil
         redactedExportData = nil
-        phase = .needsUserCode
-        statusMessage = "Tuya link cleared from this Capture session."
     }
 
     private func createQRToken(userCode: String) async throws -> String {
@@ -242,25 +294,32 @@ final class TuyaAccountBridge: ObservableObject {
         return token
     }
 
-    private func startPolling(userCode: String, token: String) {
+    private func startPolling(userCode: String, token: String, generation: UInt64) {
         pollTask?.cancel()
         pollTask = Task { [weak self] in
             guard let self else { return }
             for _ in 0..<90 {
-                if Task.isCancelled { return }
-                await self.pollApprovalOnce(userCode: userCode, token: token)
-                if self.session != nil { return }
+                guard !Task.isCancelled,
+                      generation == operationGeneration,
+                      qrToken == token,
+                      session == nil else { return }
+                await pollApprovalOnce(userCode: userCode, token: token, generation: generation)
+                if session != nil { return }
                 try? await Task.sleep(for: .seconds(2))
             }
-            if self.session == nil {
-                self.phase = .failed
-                self.statusMessage = "Tuya approval timed out. Tap Try again to make a fresh QR."
-            }
+            guard !Task.isCancelled,
+                  generation == operationGeneration,
+                  qrToken == token,
+                  session == nil else { return }
+            phase = .failed
+            statusMessage = "Tuya approval timed out. Tap Try again to make a fresh QR."
         }
     }
 
-    private func pollApprovalOnce(userCode: String, token: String) async {
-        guard session == nil else { return }
+    private func pollApprovalOnce(userCode: String, token: String, generation: UInt64) async {
+        guard generation == operationGeneration,
+              qrToken == token,
+              session == nil else { return }
         do {
             var components = URLComponents(string: "\(loginBaseURL)/v1.0/m/life/home-assistant/qrcode/tokens/\(token)")!
             components.queryItems = [
@@ -272,6 +331,10 @@ final class TuyaAccountBridge: ObservableObject {
             request.httpMethod = "GET"
             request.timeoutInterval = 15
             let object = try await Self.requestJSON(request)
+            guard !Task.isCancelled,
+                  generation == operationGeneration,
+                  qrToken == token,
+                  session == nil else { return }
             guard Self.bool(object["success"]), let result = object["result"] as? [String: Any] else {
                 if phase == .waitingForApproval {
                     statusMessage = "Waiting for approval in Tuya Smart…"
@@ -290,6 +353,10 @@ final class TuyaAccountBridge: ObservableObject {
             guard !access.isEmpty, !refresh.isEmpty, !endpoint.isEmpty else {
                 throw BridgeError.malformed("Tuya approval succeeded but the account session was incomplete.")
             }
+            guard !Task.isCancelled,
+                  generation == operationGeneration,
+                  qrToken == token,
+                  session == nil else { return }
 
             session = Session(
                 userCode: userCode,
@@ -301,41 +368,66 @@ final class TuyaAccountBridge: ObservableObject {
                 issuedAtMilliseconds: issued,
                 expiresInSeconds: expire
             )
-            pollTask?.cancel()
-            pollTask = nil
             phase = .loadingDevices
             statusMessage = "Tuya approved. Reading your device list…"
-            await loadHomesAndDevices()
+            scheduleDeviceLoad(generation: generation)
+            pollTask?.cancel()
+            pollTask = nil
+            manualApprovalTask?.cancel()
+            manualApprovalTask = nil
         } catch {
+            guard !Task.isCancelled,
+                  generation == operationGeneration,
+                  qrToken == token,
+                  session == nil else { return }
             if phase == .waitingForApproval {
                 statusMessage = "Still waiting for Tuya approval…"
             }
         }
     }
 
-    private func loadHomesAndDevices() async {
-        guard session != nil else { return }
+    private func scheduleDeviceLoad(generation: UInt64) {
+        deviceLoadTask?.cancel()
+        deviceLoadTask = Task { [weak self] in
+            guard let self else { return }
+            await loadHomesAndDevices(generation: generation)
+        }
+    }
+
+    private func loadHomesAndDevices(generation: UInt64) async {
+        guard generation == operationGeneration, session != nil else { return }
         phase = .loadingDevices
         do {
             let homeResponse = try await signedGET(path: "/v1.0/m/life/users/homes")
+            guard !Task.isCancelled,
+                  generation == operationGeneration,
+                  session != nil else { return }
             guard let homeArray = homeResponse["result"] as? [[String: Any]] else {
                 throw BridgeError.malformed("Tuya returned no homes for this account.")
             }
-            homes = homeArray.compactMap { item in
+            let loadedHomes = homeArray.compactMap { item -> Home? in
                 guard let owner = Self.string(item["ownerId"]) else { return nil }
                 return Home(id: owner, name: Self.string(item["name"]) ?? "Tuya Home")
             }
 
             var discovered: [LinkedDevice] = []
             var seen = Set<String>()
-            for home in homes {
+            for home in loadedHomes {
                 let response = try await signedGET(path: "/v1.0/m/life/ha/home/devices", params: ["homeId": home.id])
+                guard !Task.isCancelled,
+                      generation == operationGeneration,
+                      session != nil else { return }
                 guard let array = response["result"] as? [[String: Any]] else { continue }
                 for rawDevice in array {
                     guard let id = Self.string(rawDevice["id"]), !id.isEmpty, seen.insert(id).inserted else { continue }
                     discovered.append(Self.makeDevice(rawDevice))
                 }
             }
+
+            guard !Task.isCancelled,
+                  generation == operationGeneration,
+                  session != nil else { return }
+            homes = loadedHomes
             devices = discovered.sorted { lhs, rhs in
                 if lhs.online != rhs.online { return lhs.online && !rhs.online }
                 return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
@@ -349,17 +441,23 @@ final class TuyaAccountBridge: ObservableObject {
                 statusMessage = "Found \(devices.count) Tuya devices. Tap the scooter."
             }
         } catch {
+            guard !Task.isCancelled,
+                  generation == operationGeneration,
+                  session != nil else { return }
             phase = .failed
             statusMessage = "Tuya device read failed: \(Self.readable(error))"
         }
     }
 
-    private func loadSelectedDeviceDetails(_ device: LinkedDevice) async throws {
+    private func loadSelectedDeviceDetails(_ device: LinkedDevice, generation: UInt64) async throws {
         async let detailResponse = signedGET(path: "/v1.0/m/life/ha/devices/detail", params: ["devIds": device.id])
         async let specResponse = signedGET(path: "/v1.1/m/life/\(device.id)/specifications")
         async let strategyResponse = signedGET(path: "/v1.0/m/life/devices/\(device.id)/status")
 
         let (detail, specs, strategy) = try await (detailResponse, specResponse, strategyResponse)
+        guard !Task.isCancelled,
+              generation == operationGeneration,
+              selectedDeviceID == device.id else { return }
         let detailArray = detail["result"] as? [[String: Any]] ?? []
         let rawDetail = detailArray.first ?? [:]
         selectedDeviceMetadata = Self.redactSecrets(rawDetail) as? [String: Any] ?? [:]
@@ -374,6 +472,9 @@ final class TuyaAccountBridge: ObservableObject {
                 }
             }
         }
+        guard !Task.isCancelled,
+              generation == operationGeneration,
+              selectedDeviceID == device.id else { return }
         selectedDeviceStatus = statusMap
         prepareRedactedExport()
     }
