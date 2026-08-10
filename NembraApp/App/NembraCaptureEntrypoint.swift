@@ -105,7 +105,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     @Published private(set) var exportName = "Nembra-Secure-Link-Diagnostics.json"
     let deviceID: String; let deviceName: String; let productID: String; let tuyaUUID: String
     private var central: CBCentralManager!; private var peripherals: [UUID:CBPeripheral] = [:]; private var byID: [UUID:Candidate] = [:]; private var baseline = Set<UUID>()
-    private var selectedPeripheral: CBPeripheral?; private var driver: OfficialTuyaDriver?; private var authUptime: UInt64?; private var acceptRaw = false; private var events: [Event] = []; private var watchdog: Task<Void,Never>?
+    private var selectedPeripheral: CBPeripheral?; private var driver: OfficialTuyaDriver?; private var authUptime: UInt64?; private var authEndUptime: UInt64?; private var continuityActive = false; private var acceptRaw = false; private var events: [Event] = []; private var watchdog: Task<Void,Never>?
     init(device: TuyaAccountBridge.LinkedDevice) {
         deviceID = device.id; deviceName = device.name; productID = device.productID; tuyaUUID = device.uuid
         super.init(); central = CBCentralManager(delegate: self, queue: .main); log("controller_created")
@@ -115,8 +115,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var privateConfig: Bool { OfficialTuyaFactory.configured }
     var sdkAccountAuthorized: Bool { OfficialTuyaFactory.accountReady }
     var selected: Candidate? { selectedID.flatMap { byID[$0] } }
-    var age: Double? { guard let a = authUptime else { return nil }; let n = DispatchTime.now().uptimeNanoseconds; return n >= a ? Double(n-a)/1e9 : nil }
-    var passed: Bool { secure && (phase == .observing || phase == .accepted) && packetCount > 0 && (age ?? 0) > 45 }
+    var age: Double? { guard let a = authUptime else { return nil }; let n = authEndUptime ?? DispatchTime.now().uptimeNanoseconds; return n >= a ? Double(n-a)/1e9 : nil }
+    private var acceptanceEligible: Bool { phase == .observing && secure && continuityActive && packetCount > 0 && (age ?? 0) >= 45 }
+    var passed: Bool { phase == .accepted }
     func startBaseline() {
         guard central.state == .poweredOn else { fail("Bluetooth is not ready.", "bluetooth_unavailable"); return }
         resetDiscovery(); phase = .baseline; message = "Keep the scooter OFF for a few seconds."; log("baseline_started"); central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey:true])
@@ -136,20 +137,22 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
     private func authenticated() {
         guard phase == .authenticating, let p = selectedPeripheral else { return }
-        secure = true; acceptRaw = true; authUptime = DispatchTime.now().uptimeNanoseconds; phase = .observing; message = "Secure scooter link established. Attaching passive FD50 notification observer…"; log("official_session_ready")
+        secure = true; continuityActive = true; acceptRaw = true; authUptime = DispatchTime.now().uptimeNanoseconds; authEndUptime = nil; phase = .observing; message = "Secure scooter link established. Attaching passive FD50 notification observer…"; log("official_session_ready")
         p.delegate = self; central.connect(p); startWatchdog()
     }
     private func startWatchdog() {
         watchdog?.cancel(); watchdog = Task { @MainActor [weak self] in
-            while !Task.isCancelled { guard let self, self.secure else { return }; if self.passed { self.phase = .accepted; self.message = "Receiving scooter data. Secure link passed the 45-second gate."; self.log("acceptance_passed",["packets":String(self.packetCount)]); return }; if (self.age ?? 0) > 60 && self.packetCount == 0 { self.fail("Secure session survived, but no post-auth FD50 notification arrived within 60 seconds.","no_notifications"); return }; try? await Task.sleep(for:.seconds(1)) }
+            while !Task.isCancelled { guard let self, self.phase == .observing, self.continuityActive else { return }; if self.acceptanceEligible { self.acceptCurrentHorizon(); return }; if (self.age ?? 0) > 60 && self.packetCount == 0 { self.fail("Secure session survived, but no post-auth FD50 notification arrived within 60 seconds.","no_notifications"); return }; try? await Task.sleep(for:.seconds(1)) }
         }
     }
+    private func acceptCurrentHorizon() { guard acceptanceEligible else { return }; let packets = packetCount; freezeContinuity(); phase = .accepted; message = "Receiving scooter data. Secure link passed the 45-second gate."; log("acceptance_passed",["packets":String(packets),"durationSeconds":String(format:"%.3f",age ?? 0)]) }
+    private func freezeContinuity() { if continuityActive, authEndUptime == nil { authEndUptime = DispatchTime.now().uptimeNanoseconds }; continuityActive = false; acceptRaw = false }
     func prepareExport() {
         let x = Export(schemaVersion:1,purpose:"Sanitized Tuya authenticated read-only preflight",exportedAt:Date(),tuyaDeviceID:deviceID,tuyaUUID:tuyaUUID,productID:productID,selectedPeripheralID:selectedID?.uuidString,phase:phase,sdkCompiled:sdkCompiled,privateConfigPresent:privateConfig,sdkAccountAuthorized:sdkAccountAuthorized,secureSessionEstablished:secure,secureSessionAgeSeconds:age,applicationNotificationCount:packetCount,candidates:candidates,secretsRedacted:true,dpCommandsSent:false,events:events)
         do { let e=JSONEncoder(); e.outputFormatting=[.prettyPrinted,.sortedKeys,.withoutEscapingSlashes]; e.dateEncodingStrategy = .iso8601; exportData=try e.encode(x); exportName="Nembra-Secure-Link-\(deviceID.prefix(8))-Diagnostics.json"; message="Sanitized diagnostics ready; passwords, tokens, local_key and AppSecret are excluded." } catch { message="Diagnostic export failed: \(error.localizedDescription)" }
     }
-    private func resetDiscovery() { central.stopScan(); watchdog?.cancel(); watchdog=nil; peripherals.removeAll(); byID.removeAll(); candidates.removeAll(); baseline.removeAll(); selectedID=nil; selectedPeripheral=nil; secure=false; acceptRaw=false; authUptime=nil; packetCount=0; exportData=nil }
-    private func fail(_ m:String,_ kind:String) { watchdog?.cancel(); watchdog=nil; acceptRaw=false; phase = .failed; message=m; log(kind,["message":sanitize(m)]) }
+    private func resetDiscovery() { central.stopScan(); watchdog?.cancel(); watchdog=nil; peripherals.removeAll(); byID.removeAll(); candidates.removeAll(); baseline.removeAll(); selectedID=nil; selectedPeripheral=nil; secure=false; continuityActive=false; acceptRaw=false; authUptime=nil; authEndUptime=nil; packetCount=0; exportData=nil }
+    private func fail(_ m:String,_ kind:String) { watchdog?.cancel(); watchdog=nil; freezeContinuity(); phase = .failed; message=m; log(kind,["message":sanitize(m)]) }
     private func log(_ kind:String,_ details:[String:String]=[:],raw:Data?=nil) { events.append(Event(at:Date(),kind:kind,details:details.mapValues(sanitize),hex:raw.map{ $0.map{String(format:"%02X",$0)}.joined() },base64:raw?.base64EncodedString())) }
     private func sanitize(_ s:String)->String { var r=s; for k in ["NEMBRA_TUYA_APP_KEY","NEMBRA_TUYA_APP_SECRET"] { if let v=ProcessInfo.processInfo.environment[k],!v.isEmpty { r=r.replacingOccurrences(of:v,with:"<redacted>") } }; return r }
     private static func tuyaCompany(_ d:Data?)->Bool { guard let d,d.count>=2 else{return false}; return (UInt16(d[d.startIndex]) | UInt16(d[d.index(after:d.startIndex)])<<8) == 0x07D0 }
@@ -169,16 +172,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
 extension SecureLinkController: @preconcurrency CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central:CBCentralManager) { log("central_state",["raw":String(central.state.rawValue)]) }
     func centralManager(_ central:CBCentralManager,didDiscover p:CBPeripheral,advertisementData ad:[String:Any],rssi:NSNumber) { update(p,ad,rssi) }
-    func centralManager(_ central:CBCentralManager,didConnect p:CBPeripheral) { guard acceptRaw,selectedID==p.identifier else{return}; log("observer_connected"); p.delegate=self; p.discoverServices([Self.fd50]); message="Secure scooter link established. Looking for FD50 notify 0002…" }
-    func centralManager(_ central:CBCentralManager,didFailToConnect p:CBPeripheral,error:Error?) { guard acceptRaw,selectedID==p.identifier else{return}; fail("Passive observer could not attach: \(error?.localizedDescription ?? "unknown")","observer_connect_failed") }
-    func centralManager(_ central:CBCentralManager,didDisconnectPeripheral p:CBPeripheral,error:Error?) { guard selectedID==p.identifier else{return}; log("observer_disconnected",["error":error?.localizedDescription ?? ""]); if secure && phase != .accepted { fail("Secure link disconnected before acceptance. Export diagnostics; do not repeat the ride capture.","disconnect_before_acceptance") } }
+    func centralManager(_ central:CBCentralManager,didConnect p:CBPeripheral) { guard acceptRaw,continuityActive,selectedID==p.identifier else{return}; log("observer_connected"); p.delegate=self; p.discoverServices([Self.fd50]); message="Secure scooter link established. Looking for FD50 notify 0002…" }
+    func centralManager(_ central:CBCentralManager,didFailToConnect p:CBPeripheral,error:Error?) { guard continuityActive,selectedID==p.identifier else{return}; fail("Passive observer could not attach: \(error?.localizedDescription ?? "unknown")","observer_connect_failed") }
+    func centralManager(_ central:CBCentralManager,didDisconnectPeripheral p:CBPeripheral,error:Error?) { guard selectedID==p.identifier else{return}; log("observer_disconnected",["error":error?.localizedDescription ?? ""]); if phase == .accepted { freezeContinuity(); return }; if continuityActive { fail("Secure link disconnected before acceptance. Export diagnostics; do not repeat the ride capture.","disconnect_before_acceptance") } }
 }
 
 extension SecureLinkController: @preconcurrency CBPeripheralDelegate {
     func peripheral(_ p:CBPeripheral,didDiscoverServices error:Error?) { if let error{fail("FD50 discovery failed: \(error.localizedDescription)","fd50_discovery_failed");return}; guard let s=p.services?.first(where:{$0.uuid==Self.fd50}) else{fail("FD50 service missing.","fd50_missing");return}; p.discoverCharacteristics([Self.notify],for:s); log("fd50_found") }
     func peripheral(_ p:CBPeripheral,didDiscoverCharacteristicsFor s:CBService,error:Error?) { if let error{fail("Notify discovery failed: \(error.localizedDescription)","notify_discovery_failed");return}; guard let c=s.characteristics?.first(where:{$0.uuid==Self.notify}),c.properties.contains(.notify)||c.properties.contains(.indicate) else{fail("FD50 notify characteristic 0002 missing.","notify_missing");return}; p.setNotifyValue(true,for:c); log("notify_subscription_requested") }
-    func peripheral(_ p:CBPeripheral,didUpdateNotificationStateFor c:CBCharacteristic,error:Error?) { if let error{fail("Notification subscription failed: \(error.localizedDescription)","subscription_failed");return}; log("notify_state",["enabled":c.isNotifying ? "true":"false"]); if c.isNotifying{message="Secure scooter link established. Waiting for post-auth FD50 bytes…"} }
-    func peripheral(_ p:CBPeripheral,didUpdateValueFor c:CBCharacteristic,error:Error?) { guard acceptRaw,c.uuid==Self.notify,c.isNotifying else{return}; if let error{log("notification_error",["error":error.localizedDescription]);return}; guard let v=c.value,!v.isEmpty else{return}; packetCount+=1; log("post_auth_fd50_notification",["bytes":String(v.count)],raw:v); if passed{phase = .accepted;message="Receiving scooter data. Secure link passed."} else{message="Receiving scooter data · \(packetCount) packet(s). Keep it stationary until >45 s."} }
+    func peripheral(_ p:CBPeripheral,didUpdateNotificationStateFor c:CBCharacteristic,error:Error?) { if let error{fail("Notification subscription failed: \(error.localizedDescription)","subscription_failed");return}; log("notify_state",["enabled":c.isNotifying ? "true":"false"]); if c.isNotifying,continuityActive{message="Secure scooter link established. Waiting for post-auth FD50 bytes…"} }
+    func peripheral(_ p:CBPeripheral,didUpdateValueFor c:CBCharacteristic,error:Error?) { guard acceptRaw,continuityActive,phase == .observing,c.uuid==Self.notify,c.isNotifying else{return}; if let error{log("notification_error",["error":error.localizedDescription]);return}; guard let v=c.value,!v.isEmpty else{return}; packetCount+=1; log("post_auth_fd50_notification",["bytes":String(v.count)],raw:v); if acceptanceEligible{acceptCurrentHorizon()} else{message="Receiving scooter data · \(packetCount) packet(s). Keep it stationary until >45 s."} }
 }
 
 @MainActor private protocol OfficialTuyaDriver: AnyObject { func connect(uuid:String,productID:String,success:@escaping()->Void,failure:@escaping(String)->Void) }
