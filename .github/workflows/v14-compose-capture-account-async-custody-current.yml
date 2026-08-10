@@ -1,0 +1,74 @@
+name: Compose Capture Account Async Custody Current
+
+on:
+  push:
+    branches:
+      - integration/v14-capture-account-async-custody-2bb-sol
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: integration/v14-capture-account-async-custody-2bb-sol
+
+      - name: Merge live product only when owned paths stayed stable
+        shell: bash
+        run: |
+          set -euo pipefail
+          minimum_product='2bb37639656fb114c5767f6311586042b9ee4ef2'
+          workflow='.github/workflows/v14-compose-capture-account-async-custody-current.yml'
+          app='NembraApp/App/NembraCaptureEntrypoint.swift'
+          bridge='NembraApp/Features/Research/TuyaAccountBridge.swift'
+          regression='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAccountBridgeAsyncCustodySourceTests.swift'
+
+          git config user.name 'nembra-v14-bot'
+          git config user.email 'nembra-v14-bot@users.noreply.github.com'
+          git fetch origin 'refs/heads/product/v14-capture-guided-truth-current-sol:refs/remotes/origin/product/v14-capture-guided-truth-current-sol'
+          product="$(git rev-parse refs/remotes/origin/product/v14-capture-guided-truth-current-sol)"
+          git merge-base --is-ancestor "$minimum_product" "$product"
+
+          overlap="$(git diff --name-only "$minimum_product..$product" -- "$app" "$bridge" "$regression")"
+          if [[ -n "$overlap" ]]; then
+            printf 'ERROR: live product changed async-custody-owned paths after %s:\n%s\n' "$minimum_product" "$overlap" >&2
+            exit 1
+          fi
+
+          printf 'Composing async custody onto live product %s\n' "$product"
+          git merge --no-edit "$product"
+          test -z "$(git diff --name-only --diff-filter=U)"
+
+          # Current product truth that this child must preserve.
+          grep -Fq 'func signOut()' "$app"
+          grep -Fq 'Use a different Tuya account' "$app"
+          grep -Fq 'logout state change revokes membership and any current attempt authority' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkAccountRecoverySourceTests.swift
+          grep -Fq 'procedureIdentifier == Self.fieldProcedureIdentifier' NembraApp/App/NembraCaptureBuildIdentity.swift
+          grep -Fq 'private var correlationDisplayedWindowOrdinal: Int' "$app"
+          grep -Fq 'failureRecoveryContextPanel' "$app"
+
+          # Async-custody contract from #2264.
+          grep -Fq 'private var operationGeneration: UInt64 = 0' "$bridge"
+          grep -Fq 'private var approvalRequestTask: Task<Void, Never>?' "$bridge"
+          grep -Fq 'private var manualApprovalTask: Task<Void, Never>?' "$bridge"
+          grep -Fq 'private var deviceLoadTask: Task<Void, Never>?' "$bridge"
+          grep -Fq 'private var selectedDeviceTask: Task<Void, Never>?' "$bridge"
+          grep -Fq 'invalidateAsyncOperations()' "$bridge"
+          grep -Fq 'generation == operationGeneration' "$bridge"
+          grep -Fq 'selectedDeviceID == device.id' "$bridge"
+          grep -Fq 'phase == .requestingApproval' "$app"
+          grep -Fq 'async state custody' "$regression"
+
+          swiftc -frontend -parse "$app"
+          swiftc -frontend -parse "$bridge"
+          swiftc -frontend -parse "$regression"
+          git diff --check
+
+          git rm "$workflow"
+          git commit -m 'chore(capture): remove one-shot async-custody composer' -m "Composed against product $product after owned-path overlap and parser/truth guards."
+          git push origin HEAD:integration/v14-capture-account-async-custody-2bb-sol
