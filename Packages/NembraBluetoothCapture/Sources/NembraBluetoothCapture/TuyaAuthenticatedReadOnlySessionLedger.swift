@@ -191,6 +191,25 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         currentToken = nil
     }
 
+    /// Seals an authenticated attempt whose observation chronology is no longer continuous enough
+    /// to support the 45-second gate. This does not claim that BLE disconnected: the SDK may still
+    /// own a transport link after the app was suspended or otherwise unable to make timely liveness
+    /// observations. Earned authentication/update evidence is preserved for diagnostics, but the
+    /// token is retired so a later callback cannot heal the invalid horizon.
+    public func markObservationContinuityInvalidated(
+        for token: TuyaReadOnlyConnectionToken
+    ) throws {
+        try requireCurrent(token)
+        guard case .authenticated = authenticationState else {
+            throw MutationError.authenticationRequired
+        }
+
+        let now = try nextMonotonicObservation()
+        authenticationState = .failed(reason: "Authenticated observation continuity was invalidated.")
+        latestObservedUptimeNanoseconds = now
+        currentToken = nil
+    }
+
     /// Freezes an already-earned canonical ready verdict without manufacturing a later receipt or
     /// extending its duration. Retiring the token makes the accepted prefix immutable: delayed
     /// callbacks from this connection can no longer mutate update count or liveness chronology.
