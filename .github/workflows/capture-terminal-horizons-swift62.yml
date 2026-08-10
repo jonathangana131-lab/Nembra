@@ -8,6 +8,7 @@ on:
       - 'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift'
       - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlySessionLedgerTests.swift'
       - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedTerminalHorizonTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaObservationContinuityTerminalTests.swift'
       - '.github/workflows/capture-terminal-horizons-swift62.yml'
   workflow_dispatch:
 
@@ -47,4 +48,11 @@ jobs:
           swift test \
             --package-path Packages/NembraBluetoothCapture \
             --filter TuyaAuthenticatedTerminalHorizonTests \
+            -Xswiftc -warnings-as-errors
+      - name: Test continuity authority adversarially
+        run: |
+          set -euo pipefail
+          swift test \
+            --package-path Packages/NembraBluetoothCapture \
+            --filter TuyaObservationContinuityTerminalTests \
             -Xswiftc -warnings-as-errors

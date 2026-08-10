@@ -51,7 +51,7 @@ struct TuyaAuthenticatedTerminalHorizonTests {
         try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
     }
 
-    @Test("no-application deadline is terminal without inventing disconnect")
+    @Test("no-application deadline is terminal without inventing disconnect or liveness")
     func applicationTimeoutIsDistinctTerminalFact() async throws {
         let clock = TerminalClock(1_000)
         let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
@@ -60,6 +60,7 @@ struct TuyaAuthenticatedTerminalHorizonTests {
         try await ledger.markAuthenticationStarted(for: token)
         clock.advance(to: 2_000)
         try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
+        let before = await ledger.currentPreflightSnapshot()
 
         clock.advance(to: 60_000_002_000)
         try await ledger.markApplicationObservationTimedOut(for: token)
@@ -69,6 +70,8 @@ struct TuyaAuthenticatedTerminalHorizonTests {
         #expect(terminal.authenticationMethod == .smartLifeAppSDK)
         #expect(terminal.authenticatedAtUptimeNanoseconds == 2_000)
         #expect(terminal.applicationPayloadCount == 0)
+        #expect(terminal.latestObservedUptimeNanoseconds == before.latestObservedUptimeNanoseconds)
+        #expect(terminal.latestObservedUptimeNanoseconds == 2_000)
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: terminal) == .blocked(reason: "Authenticated session produced no application update before the observation deadline."))
 
         clock.advance(to: 61_000_002_000)
@@ -78,7 +81,7 @@ struct TuyaAuthenticatedTerminalHorizonTests {
         #expect(await ledger.currentPreflightSnapshot() == terminal)
     }
 
-    @Test("continuity invalidation preserves earned evidence but retires callbacks")
+    @Test("continuity invalidation preserves earned evidence and last witnessed liveness")
     func continuityInvalidationIsTerminal() async throws {
         let clock = TerminalClock(10)
         let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
@@ -100,6 +103,8 @@ struct TuyaAuthenticatedTerminalHorizonTests {
         #expect(terminal.authenticatedAtUptimeNanoseconds == before.authenticatedAtUptimeNanoseconds)
         #expect(terminal.applicationPayloadCount == before.applicationPayloadCount)
         #expect(terminal.latestApplicationPayloadUptimeNanoseconds == before.latestApplicationPayloadUptimeNanoseconds)
+        #expect(terminal.latestObservedUptimeNanoseconds == before.latestObservedUptimeNanoseconds)
+        #expect(terminal.latestObservedUptimeNanoseconds == 30)
 
         clock.advance(to: 50)
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection) {
@@ -108,8 +113,8 @@ struct TuyaAuthenticatedTerminalHorizonTests {
         #expect(await ledger.currentPreflightSnapshot() == terminal)
     }
 
-    @Test("late SDK failure after authentication clears authority and retires token")
-    func lateSDKFailureRetiresToken() async throws {
+    @Test("late SDK failure revokes authority but preserves earned diagnostics")
+    func lateSDKFailureRetiresTokenWithoutErasingEvidence() async throws {
         let clock = TerminalClock(100)
         let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
         let token = try await ledger.beginConnection()
@@ -119,14 +124,19 @@ struct TuyaAuthenticatedTerminalHorizonTests {
         try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
         clock.advance(to: 300)
         try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
+        let before = await ledger.currentPreflightSnapshot()
+
         clock.advance(to: 400)
         try await ledger.markAuthenticationFailed(for: token)
-
         let failed = await ledger.currentPreflightSnapshot()
-        #expect(failed.authenticationState == .failed(reason: "Tuya authentication failed."))
-        #expect(failed.authenticationMethod == nil)
-        #expect(failed.authenticatedAtUptimeNanoseconds == nil)
-        #expect(failed.applicationPayloadCount == 0)
+
+        #expect(failed.authenticationState == .failed(reason: "Tuya SDK session failed."))
+        #expect(failed.authenticationMethod == before.authenticationMethod)
+        #expect(failed.authenticatedAtUptimeNanoseconds == before.authenticatedAtUptimeNanoseconds)
+        #expect(failed.applicationPayloadCount == before.applicationPayloadCount)
+        #expect(failed.latestApplicationPayloadUptimeNanoseconds == before.latestApplicationPayloadUptimeNanoseconds)
+        #expect(failed.latestObservedUptimeNanoseconds == before.latestObservedUptimeNanoseconds)
+        #expect(failed.latestObservedUptimeNanoseconds == 300)
 
         clock.advance(to: 500)
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection) {
