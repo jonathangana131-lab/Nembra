@@ -33,9 +33,9 @@ jobs:
 
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           source = path.read_text()
-          start = source.index("@MainActor\nprivate final class OfficialTuyaAccountAuthorizer")
-          end = source.index("#if canImport(ThingSmartHomeKit)\n@MainActor\nprivate final class OfficialTuyaMembershipProbe", start)
-          authorizer = source[start:end]
+          class_start = source.index("@MainActor\nprivate final class OfficialTuyaAccountAuthorizer")
+          class_end = source.index("#if canImport(ThingSmartHomeKit)\n@MainActor\nprivate final class OfficialTuyaMembershipProbe", class_start)
+          authorizer = source[class_start:class_end]
 
           old_failure = "self?.finishLoginFailure(error, submittedIdentity: identity)"
           new_failure = "self?.finishLoginFailure(error, submittedIdentity: identity, submittedVerificationCode: code)"
@@ -43,65 +43,51 @@ jobs:
               raise SystemExit(f"Expected exactly two email/phone login failure callbacks; found {authorizer.count(old_failure)}")
           authorizer = authorizer.replace(old_failure, new_failure)
 
-          old_finish = '''    private func finishLoginFailure(_ error: Error?, submittedIdentity: String) {
-              busy = false
-              verificationCode = ""
-              loggedIn = OfficialTuyaFactory.accountLoggedIn
-              status = "Tuya SDK login failed: \\(Self.redactedError(error, submittedIdentity: submittedIdentity))"
-          }
-          '''
-          new_finish = '''    private func finishLoginFailure(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) {
-              busy = false
-              verificationCode = ""
-              loggedIn = OfficialTuyaFactory.accountLoggedIn
-              status = "Tuya SDK login failed: \\(Self.redactedError(error, submittedIdentity: submittedIdentity, submittedVerificationCode: submittedVerificationCode))"
-          }
-          '''
-          if authorizer.count(old_finish) != 1:
-              raise SystemExit(f"Expected exactly one login failure finalizer; found {authorizer.count(old_finish)}")
-          authorizer = authorizer.replace(old_finish, new_finish, 1)
+          finish_start = authorizer.index("    private func finishLoginFailure(")
+          finish_end = authorizer.index("    private func finishAppleLoginFailure", finish_start)
+          finish = "\n".join([
+              "    private func finishLoginFailure(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) {",
+              "        busy = false",
+              "        verificationCode = \"\"",
+              "        loggedIn = OfficialTuyaFactory.accountLoggedIn",
+              "        status = \"Tuya SDK login failed: \\(Self.redactedError(error, submittedIdentity: submittedIdentity, submittedVerificationCode: submittedVerificationCode))\"",
+              "    }",
+              "",
+          ])
+          authorizer = authorizer[:finish_start] + finish + authorizer[finish_end:]
 
-          old_scrubber = '''    private static func redactedError(_ error: Error?, submittedIdentity: String) -> String {
-              let raw = error?.localizedDescription ?? "unknown error"
-              let identity = submittedIdentity.trimmingCharacters(in: .whitespacesAndNewlines)
-              guard !identity.isEmpty else { return raw }
-              return raw.replacingOccurrences(
-                  of: identity,
-                  with: "<redacted-account>",
-                  options: [.caseInsensitive, .literal]
-              )
-          }
-          '''
-          new_scrubber = '''    private static func redactedError(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) -> String {
-              var redacted = error?.localizedDescription ?? "unknown error"
-              let identity = submittedIdentity.trimmingCharacters(in: .whitespacesAndNewlines)
-              if !identity.isEmpty {
-                  redacted = redacted.replacingOccurrences(
-                      of: identity,
-                      with: "<redacted-account>",
-                      options: [.caseInsensitive, .literal]
-                  )
-              }
-              let verificationCode = submittedVerificationCode.trimmingCharacters(in: .whitespacesAndNewlines)
-              if !verificationCode.isEmpty {
-                  redacted = redacted.replacingOccurrences(
-                      of: verificationCode,
-                      with: "<redacted-verification-code>",
-                      options: [.caseInsensitive, .literal]
-                  )
-              }
-              return redacted
-          }
-
-          private static func redactedError(_ error: Error?, submittedIdentity: String) -> String {
-              redactedError(error, submittedIdentity: submittedIdentity, submittedVerificationCode: "")
-          }
-          '''
-          if authorizer.count(old_scrubber) != 1:
-              raise SystemExit(f"Expected exactly one account-only error scrubber; found {authorizer.count(old_scrubber)}")
-          authorizer = authorizer.replace(old_scrubber, new_scrubber, 1)
-
-          path.write_text(source[:start] + authorizer + source[end:])
+          scrub_start = authorizer.index("    private static func redactedError(")
+          class_close = authorizer.rfind("\n}\n")
+          if class_close <= scrub_start:
+              raise SystemExit("Could not isolate account-authorizer redaction tail")
+          scrubber = "\n".join([
+              "    private static func redactedError(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) -> String {",
+              "        var redacted = error?.localizedDescription ?? \"unknown error\"",
+              "        let identity = submittedIdentity.trimmingCharacters(in: .whitespacesAndNewlines)",
+              "        if !identity.isEmpty {",
+              "            redacted = redacted.replacingOccurrences(",
+              "                of: identity,",
+              "                with: \"<redacted-account>\",",
+              "                options: [.caseInsensitive, .literal]",
+              "            )",
+              "        }",
+              "        let verificationCode = submittedVerificationCode.trimmingCharacters(in: .whitespacesAndNewlines)",
+              "        if !verificationCode.isEmpty {",
+              "            redacted = redacted.replacingOccurrences(",
+              "                of: verificationCode,",
+              "                with: \"<redacted-verification-code>\",",
+              "                options: [.caseInsensitive, .literal]",
+              "            )",
+              "        }",
+              "        return redacted",
+              "    }",
+              "",
+              "    private static func redactedError(_ error: Error?, submittedIdentity: String) -> String {",
+              "        redactedError(error, submittedIdentity: submittedIdentity, submittedVerificationCode: \"\")",
+              "    }",
+          ])
+          authorizer = authorizer[:scrub_start] + scrubber + authorizer[class_close:]
+          path.write_text(source[:class_start] + authorizer + source[class_end:])
           PY
 
       - name: Verify strengthened credential-custody source contract
@@ -123,7 +109,9 @@ jobs:
           assert 'with: "<redacted-verification-code>"' in a
           assert "of: identity" in a
           assert 'with: "<redacted-account>"' in a
-          assert 'verificationCode = ""' in a[a.index("private func finishLoginFailure("):a.index("private func finishAppleLoginFailure")]
+          failure = a[a.index("private func finishLoginFailure("):a.index("private func finishAppleLoginFailure")]
+          assert 'verificationCode = ""' in failure
+          assert "submittedVerificationCode" in failure
           PY
           swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
           swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaVerificationCodeRedactionSourceTests.swift
