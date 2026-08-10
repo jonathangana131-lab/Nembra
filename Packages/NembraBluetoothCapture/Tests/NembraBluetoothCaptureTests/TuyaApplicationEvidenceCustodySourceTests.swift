@@ -7,6 +7,9 @@ struct TuyaApplicationEvidenceCustodySourceTests {
     @Test("verified account UID is redacted before accepted application event custody")
     func accountUIDCannotEnterApplicationEvent() throws {
         let source = try entrypointSource()
+        let sanitizer = try readRepositoryFile(
+            "Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaApplicationUpdateSecretSanitizer.swift"
+        )
         let receiver = String(try section(
             in: source,
             from: "private func receivedApplicationUpdate(",
@@ -23,7 +26,7 @@ struct TuyaApplicationEvidenceCustodySourceTests {
         #expect(receiver.contains("accountIdentityLeaseIsAuthorized"))
         #expect(receiver.contains("TuyaApplicationUpdateSecretSanitizer.redactingAccountUID("))
         #expect(receiver.contains("verifiedAccountUID: verifiedAccountUID"))
-        #expect(source.contains("<redacted-account-uid>"))
+        #expect(sanitizer.contains("<redacted-account-uid>"))
         #expect(!receiver.contains("log(\"tuya_application_update\", update.merging(["))
     }
 
