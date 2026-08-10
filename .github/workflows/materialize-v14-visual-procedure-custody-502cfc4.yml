@@ -1,0 +1,121 @@
+name: Bind visual evidence to built procedure custody
+
+on:
+  push:
+    branches:
+      - validation/v14-capture-guided-visual-522716b-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: validation/v14-capture-guided-visual-522716b-sol
+          fetch-depth: 0
+
+      - name: Apply procedure-custody QA hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_parent='999d0f9a8b8841af7b7334b19ead4907e2b0e21c'
+          product='502cfc43d8943bacb446f287b58d46463df3a7ca'
+          workflow='.github/workflows/materialize-v14-visual-procedure-custody-502cfc4.yml'
+          test "$(git rev-parse HEAD^)" = "$expected_parent"
+          test "$(git diff --name-only HEAD^ HEAD)" = "$workflow"
+          git merge-base --is-ancestor "$product" HEAD
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          shell_path = Path('scripts/ci/capture_standalone_visual_evidence.sh')
+          shell = shell_path.read_text(encoding='utf-8')
+          anchor = 'TUYA_DEPENDENCY_LOCK_SHA256="$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$INFO_PLIST" 2>/dev/null || true)"\n'
+          addition = 'BUILT_PROCEDURE_IDENTIFIER="$(/usr/bin/plutil -extract NembraCaptureProcedureIdentifier raw -o - "$INFO_PLIST" 2>/dev/null || true)"\n'
+          if addition not in shell:
+              if shell.count(anchor) != 1:
+                  raise SystemExit('visual shell procedure readback anchor changed')
+              shell = shell.replace(anchor, anchor + addition, 1)
+          guard_anchor = 'if [[ "$BUNDLE_ID" != "$EXPECTED_BUNDLE_ID" ]]; then\n'
+          procedure_guard = '''if [[ "$BUILT_PROCEDURE_IDENTIFIER" != "$EXPECTED_PROCEDURE_IDENTIFIER" ]]; then
+  echo "Standalone Capture embedded procedure does not match the canonical stationary procedure: $BUILT_PROCEDURE_IDENTIFIER" >&2
+  exit 23
+fi
+'''
+          if procedure_guard not in shell:
+              if shell.count(guard_anchor) != 1:
+                  raise SystemExit('visual shell bundle guard anchor changed')
+              shell = shell.replace(guard_anchor, procedure_guard + guard_anchor, 1)
+          manifest_anchor = '    "procedureSourceRendezvousVerified": True,\n'
+          manifest_line = '    "procedureBuildRendezvousVerified": True,\n'
+          if manifest_line not in shell:
+              if shell.count(manifest_anchor) != 1:
+                  raise SystemExit('visual manifest procedure anchor changed')
+              shell = shell.replace(manifest_anchor, manifest_anchor + manifest_line, 1)
+          shell_path.write_text(shell, encoding='utf-8')
+
+          workflow_path = Path('.github/workflows/capture-standalone-visual-evidence.yml')
+          wf = workflow_path.read_text(encoding='utf-8')
+          build_anchor = '            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="" \\\n            build\n'
+          build_new = '            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="" \\\n            INFOPLIST_KEY_NembraCaptureProcedureIdentifier="ES80-AUTHENTICATED-STATIONARY-v1" \\\n            build\n'
+          if build_new not in wf:
+              if wf.count(build_anchor) != 1:
+                  raise SystemExit('visual workflow xcodebuild anchor changed')
+              wf = wf.replace(build_anchor, build_new, 1)
+          plist_anchor = '          test -z "$embedded_dependency"\n'
+          plist_check = '          test "$(/usr/bin/plutil -extract NembraCaptureProcedureIdentifier raw -o - "$plist")" = "ES80-AUTHENTICATED-STATIONARY-v1"\n'
+          if plist_check not in wf:
+              if wf.count(plist_anchor) != 1:
+                  raise SystemExit('visual workflow plist anchor changed')
+              wf = wf.replace(plist_anchor, plist_anchor + plist_check, 1)
+          manifest_assert_anchor = '          assert record["procedureIdentifier"] == "ES80-AUTHENTICATED-STATIONARY-v1"\n'
+          manifest_assert = '          assert record["procedureBuildRendezvousVerified"] is True\n'
+          if manifest_assert not in wf:
+              if wf.count(manifest_assert_anchor) != 1:
+                  raise SystemExit('visual workflow manifest assert anchor changed')
+              wf = wf.replace(manifest_assert_anchor, manifest_assert_anchor + manifest_assert, 1)
+          workflow_path.write_text(wf, encoding='utf-8')
+
+          test_path = Path('scripts/ci/tests/test_capture_standalone_visual_evidence.py')
+          test = test_path.read_text(encoding='utf-8')
+          required_anchor = '    \'TUYA_DEPENDENCY_LOCK_SHA256="$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$INFO_PLIST" 2>/dev/null || true)"\',\n'
+          required_addition = (
+              '    \'BUILT_PROCEDURE_IDENTIFIER="$(/usr/bin/plutil -extract NembraCaptureProcedureIdentifier raw -o - "$INFO_PLIST" 2>/dev/null || true)"\',\n'
+              '    \'[[ "$BUILT_PROCEDURE_IDENTIFIER" != "$EXPECTED_PROCEDURE_IDENTIFIER" ]]\',\n'
+              '    \'Standalone Capture embedded procedure does not match the canonical stationary procedure\',\n'
+          )
+          if required_addition not in test:
+              if test.count(required_anchor) != 1:
+                  raise SystemExit('visual source-test readback anchor changed')
+              test = test.replace(required_anchor, required_anchor + required_addition, 1)
+          manifest_test_anchor = '    \'"procedureSourceRendezvousVerified": True\',\n'
+          manifest_test_line = '    \'"procedureBuildRendezvousVerified": True\',\n'
+          if manifest_test_line not in test:
+              if test.count(manifest_test_anchor) != 1:
+                  raise SystemExit('visual source-test manifest anchor changed')
+              test = test.replace(manifest_test_anchor, manifest_test_anchor + manifest_test_line, 1)
+          test_path.write_text(test, encoding='utf-8')
+          PY
+
+          rm -- "$workflow"
+          bash -n scripts/ci/capture_standalone_visual_evidence.sh
+          python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          git add -A
+          git diff --cached --check
+          expected_paths="$(printf '%s\n' \
+            '.github/workflows/capture-standalone-visual-evidence.yml' \
+            'scripts/ci/capture_standalone_visual_evidence.sh' \
+            'scripts/ci/tests/test_capture_standalone_visual_evidence.py' | sort)"
+          actual_paths="$(git diff --cached --name-only "$product" | sort)"
+          test "$actual_paths" = "$expected_paths"
+          grep -Fq 'INFOPLIST_KEY_NembraCaptureProcedureIdentifier="ES80-AUTHENTICATED-STATIONARY-v1"' .github/workflows/capture-standalone-visual-evidence.yml
+          grep -Fq 'BUILT_PROCEDURE_IDENTIFIER="$(/usr/bin/plutil -extract NembraCaptureProcedureIdentifier' scripts/ci/capture_standalone_visual_evidence.sh
+          grep -Fq '"procedureBuildRendezvousVerified": True' scripts/ci/capture_standalone_visual_evidence.sh
+
+          git config user.name 'nembra-go-bot'
+          git config user.email 'nembra-go-bot@users.noreply.github.com'
+          git commit -m 'qa(capture): bind visual evidence to built procedure custody' -m 'Stamp and read back the canonical stationary procedure in the standalone Simulator app before screenshot evidence is admitted. QA-only; physical/protocol authority remains false.'
+          git push origin HEAD:validation/v14-capture-guided-visual-522716b-sol
