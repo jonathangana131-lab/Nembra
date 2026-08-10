@@ -1,0 +1,90 @@
+name: Materialize V14 Private Input Descriptor Custody
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-private-input-descriptor-custody-a5cb
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require exact live-product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "a5cb12ed97241ba274d23f311d67cf84623ceb29"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/materialize-v14-private-input-descriptor-custody.yml"
+
+      - name: Materialize descriptor-bound private file admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          from pathlib import Path
+          helper = Path('Scripts/capture_tuya_private_input_provenance.py')
+          source = helper.read_text(encoding='utf-8')
+          start = source.index('def _require_regular_file(')
+          end = source.index('\ndef _assert_internal_symlink(', start)
+          replacement = base64.b64decode('ZGVmIF9zdGF0X2lkZW50aXR5KG1ldGFkYXRhOiBvcy5zdGF0X3Jlc3VsdCkgLT4gdHVwbGVbaW50LCAuLi5dOgogICAgcmV0dXJuICgKICAgICAgICBtZXRhZGF0YS5zdF9kZXYsCiAgICAgICAgbWV0YWRhdGEuc3RfaW5vLAogICAgICAgIG1ldGFkYXRhLnN0X21vZGUsCiAgICAgICAgbWV0YWRhdGEuc3RfdWlkLAogICAgICAgIG1ldGFkYXRhLnN0X2dpZCwKICAgICAgICBtZXRhZGF0YS5zdF9zaXplLAogICAgICAgIG1ldGFkYXRhLnN0X210aW1lX25zLAogICAgICAgIG1ldGFkYXRhLnN0X2N0aW1lX25zLAogICAgKQoKCmRlZiBfcmVhZF9zdGFibGVfcmVndWxhcl9maWxlX3NoYTI1NihwYXRoOiBQYXRoKSAtPiB0dXBsZVtvcy5zdGF0X3Jlc3VsdCwgc3RyXToKICAgIG5vZm9sbG93ID0gZ2V0YXR0cihvcywgIk9fTk9GT0xMT1ciLCBOb25lKQogICAgaWYgbm9mb2xsb3cgaXMgTm9uZToKICAgICAgICByYWlzZSBQcm92ZW5hbmNlRXJyb3IoInByaXZhdGUgYnVpbGQgaW5wdXQgYWRtaXNzaW9uIHJlcXVpcmVzIE9fTk9GT0xMT1cgc3VwcG9ydCIpCiAgICBmbGFncyA9IG9zLk9fUkRPTkxZIHwgbm9mb2xsb3cgfCBnZXRhdHRyKG9zLCAiT19DTE9FWEVDIiwgMCkKICAgIHRyeToKICAgICAgICBkZXNjcmlwdG9yID0gb3Mub3BlbihwYXRoLCBmbGFncykKICAgIGV4Y2VwdCBPU0Vycm9yIGFzIGVycm9yOgogICAgICAgIHJhaXNlIFByb3ZlbmFuY2VFcnJvcihmInJlcXVpcmVkIHByaXZhdGUgYnVpbGQgaW5wdXQgaXMgdW5hdmFpbGFibGUgb3IgdW5zYWZlOiB7cGF0aC5uYW1lfSIpIGZyb20gZXJyb3IKCiAgICB0cnk6CiAgICAgICAgYmVmb3JlID0gb3MuZnN0YXQoZGVzY3JpcHRvcikKICAgICAgICBpZiBub3Qgc3RhdC5TX0lTUkVHKGJlZm9yZS5zdF9tb2RlKToKICAgICAgICAgICAgcmFpc2UgUHJvdmVuYW5jZUVycm9yKGYicmVxdWlyZWQgcHJpdmF0ZSBidWlsZCBpbnB1dCBpcyBub3QgYSByZWd1bGFyIGZpbGU6IHtwYXRoLm5hbWV9IikKCiAgICAgICAgZGlnZXN0ID0gaGFzaGxpYi5zaGEyNTYoKQogICAgICAgIGJ5dGVzX3JlYWQgPSAwCiAgICAgICAgd2hpbGUgVHJ1ZToKICAgICAgICAgICAgY2h1bmsgPSBvcy5yZWFkKGRlc2NyaXB0b3IsIDEwMjQgKiAxMDI0KQogICAgICAgICAgICBpZiBub3QgY2h1bms6CiAgICAgICAgICAgICAgICBicmVhawogICAgICAgICAgICBieXRlc19yZWFkICs9IGxlbihjaHVuaykKICAgICAgICAgICAgZGlnZXN0LnVwZGF0ZShjaHVuaykKCiAgICAgICAgYWZ0ZXIgPSBvcy5mc3RhdChkZXNjcmlwdG9yKQogICAgICAgIGlmIF9zdGF0X2lkZW50aXR5KGJlZm9yZSkgIT0gX3N0YXRfaWRlbnRpdHkoYWZ0ZXIpIG9yIGJ5dGVzX3JlYWQgIT0gYWZ0ZXIuc3Rfc2l6ZToKICAgICAgICAgICAgcmFpc2UgUHJvdmVuYW5jZUVycm9yKGYicHJpdmF0ZSBidWlsZCBpbnB1dCBjaGFuZ2VkIHdoaWxlIGl0IHdhcyBmaW5nZXJwcmludGVkOiB7cGF0aC5uYW1lfSIpCgogICAgICAgIHRyeToKICAgICAgICAgICAgY3VycmVudF9wYXRoID0gcGF0aC5sc3RhdCgpCiAgICAgICAgZXhjZXB0IE9TRXJyb3IgYXMgZXJyb3I6CiAgICAgICAgICAgIHJhaXNlIFByb3ZlbmFuY2VFcnJvcihmInByaXZhdGUgYnVpbGQgaW5wdXQgcGF0aG5hbWUgY2hhbmdlZCBkdXJpbmcgZmluZ2VycHJpbnRpbmc6IHtwYXRoLm5hbWV9IikgZnJvbSBlcnJvcgogICAgICAgIGlmICgKICAgICAgICAgICAgc3RhdC5TX0lTTE5LKGN1cnJlbnRfcGF0aC5zdF9tb2RlKQogICAgICAgICAgICBvciBub3Qgc3RhdC5TX0lTUkVHKGN1cnJlbnRfcGF0aC5zdF9tb2RlKQogICAgICAgICAgICBvciBjdXJyZW50X3BhdGguc3RfZGV2ICE9IGFmdGVyLnN0X2RldgogICAgICAgICAgICBvciBjdXJyZW50X3BhdGguc3RfaW5vICE9IGFmdGVyLnN0X2lubwogICAgICAgICk6CiAgICAgICAgICAgIHJhaXNlIFByb3ZlbmFuY2VFcnJvcihmInByaXZhdGUgYnVpbGQgaW5wdXQgcGF0aG5hbWUgY2hhbmdlZCBkdXJpbmcgZmluZ2VycHJpbnRpbmc6IHtwYXRoLm5hbWV9IikKICAgICAgICByZXR1cm4gYWZ0ZXIsIGRpZ2VzdC5oZXhkaWdlc3QoKQogICAgZmluYWxseToKICAgICAgICBvcy5jbG9zZShkZXNjcmlwdG9yKQoKCmRlZiBfZmlsZV9maW5nZXJwcmludChwYXRoOiBQYXRoKSAtPiBzdHI6CiAgICBtZXRhZGF0YSwgY29udGVudF9zaGEyNTYgPSBfcmVhZF9zdGFibGVfcmVndWxhcl9maWxlX3NoYTI1NihwYXRoKQogICAgZGlnZXN0ID0gaGFzaGxpYi5zaGEyNTYoKQogICAgX2ZlZWQoZGlnZXN0LCBiIm5lbWJyYS1wcml2YXRlLWZpbGUtdjEiKQogICAgX2ZlZWQoZGlnZXN0LCBzdGF0LlNfSU1PREUobWV0YWRhdGEuc3RfbW9kZSkudG9fYnl0ZXMoNCwgImJpZyIpKQogICAgX2ZlZWQoZGlnZXN0LCBtZXRhZGF0YS5zdF9zaXplLnRvX2J5dGVzKDgsICJiaWciKSkKICAgIF9mZWVkKGRpZ2VzdCwgYnl0ZXMuZnJvbWhleChjb250ZW50X3NoYTI1NikpCiAgICByZXR1cm4gZGlnZXN0LmhleGRpZ2VzdCgpCgo=').decode('utf-8')
+          source = source[:start] + replacement + source[end + 1:]
+          old_lock = '        "podfile_lock_sha256": hashlib.sha256(lockfile.read_bytes()).hexdigest()\n        if _require_regular_file(lockfile)\n        else "",\n'
+          if source.count(old_lock) != 1:
+              raise SystemExit(f'lockfile admission replacement count != 1: {source.count(old_lock)}')
+          source = source.replace(old_lock, '        "podfile_lock_sha256": _read_stable_regular_file_sha256(lockfile)[1],\n', 1)
+          helper.write_text(source, encoding='utf-8')
+
+          tests = Path('scripts/ci/tests/test_capture_tuya_private_input_provenance.py')
+          test_source = tests.read_text(encoding='utf-8')
+          import_anchor = 'import unittest\nfrom pathlib import Path\n'
+          if test_source.count(import_anchor) != 1:
+              raise SystemExit('test import anchor missing')
+          test_source = test_source.replace(import_anchor, 'import unittest\nfrom pathlib import Path\nfrom unittest import mock\n', 1)
+          new_tests = base64.b64decode('ICAgIGRlZiB0ZXN0X2ZpbGVfZmluZ2VycHJpbnRfcmVqZWN0c19zYW1lX3NpemVfbXV0YXRpb25fZHVyaW5nX3JlYWQoc2VsZikgLT4gTm9uZToKICAgICAgICB0YXJnZXQgPSBzZWxmLnNlY3VyaXR5X3BvZHNwZWMKICAgICAgICBvcmlnaW5hbF9yZWFkID0gcHJvdmVuYW5jZS5vcy5yZWFkCiAgICAgICAgbXV0YXRlZCA9IEZhbHNlCgogICAgICAgIGRlZiByZWFkX3RoZW5fbXV0YXRlKGRlc2NyaXB0b3I6IGludCwgY291bnQ6IGludCkgLT4gYnl0ZXM6CiAgICAgICAgICAgIG5vbmxvY2FsIG11dGF0ZWQKICAgICAgICAgICAgY2h1bmsgPSBvcmlnaW5hbF9yZWFkKGRlc2NyaXB0b3IsIGNvdW50KQogICAgICAgICAgICBpZiBjaHVuayBhbmQgbm90IG11dGF0ZWQ6CiAgICAgICAgICAgICAgICBtdXRhdGVkID0gVHJ1ZQogICAgICAgICAgICAgICAgdGFyZ2V0LndyaXRlX2J5dGVzKGIiWiIgKiB0YXJnZXQuc3RhdCgpLnN0X3NpemUpCiAgICAgICAgICAgIHJldHVybiBjaHVuawoKICAgICAgICB3aXRoIG1vY2sucGF0Y2gub2JqZWN0KHByb3ZlbmFuY2Uub3MsICJyZWFkIiwgc2lkZV9lZmZlY3Q9cmVhZF90aGVuX211dGF0ZSk6CiAgICAgICAgICAgIHdpdGggc2VsZi5hc3NlcnRSYWlzZXMocHJvdmVuYW5jZS5Qcm92ZW5hbmNlRXJyb3IpOgogICAgICAgICAgICAgICAgcHJvdmVuYW5jZS5fZmlsZV9maW5nZXJwcmludCh0YXJnZXQpCiAgICAgICAgc2VsZi5hc3NlcnRUcnVlKG11dGF0ZWQpCgogICAgZGVmIHRlc3RfbG9ja2ZpbGVfZGlnZXN0X3JlamVjdHNfc2FtZV9zaXplX211dGF0aW9uX2R1cmluZ19yZWFkKHNlbGYpIC0+IE5vbmU6CiAgICAgICAgdGFyZ2V0ID0gc2VsZi5sb2NrZmlsZQogICAgICAgIG9yaWdpbmFsX3JlYWQgPSBwcm92ZW5hbmNlLm9zLnJlYWQKICAgICAgICBtdXRhdGVkID0gRmFsc2UKCiAgICAgICAgZGVmIHJlYWRfdGhlbl9tdXRhdGUoZGVzY3JpcHRvcjogaW50LCBjb3VudDogaW50KSAtPiBieXRlczoKICAgICAgICAgICAgbm9ubG9jYWwgbXV0YXRlZAogICAgICAgICAgICBjaHVuayA9IG9yaWdpbmFsX3JlYWQoZGVzY3JpcHRvciwgY291bnQpCiAgICAgICAgICAgIGlmIGNodW5rIGFuZCBub3QgbXV0YXRlZDoKICAgICAgICAgICAgICAgIG11dGF0ZWQgPSBUcnVlCiAgICAgICAgICAgICAgICB0YXJnZXQud3JpdGVfYnl0ZXMoYiJMIiAqIHRhcmdldC5zdGF0KCkuc3Rfc2l6ZSkKICAgICAgICAgICAgcmV0dXJuIGNodW5rCgogICAgICAgIHdpdGggbW9jay5wYXRjaC5vYmplY3QocHJvdmVuYW5jZS5vcywgInJlYWQiLCBzaWRlX2VmZmVjdD1yZWFkX3RoZW5fbXV0YXRlKToKICAgICAgICAgICAgd2l0aCBzZWxmLmFzc2VydFJhaXNlcyhwcm92ZW5hbmNlLlByb3ZlbmFuY2VFcnJvcik6CiAgICAgICAgICAgICAgICBzZWxmLmN1cnJlbnQoKQogICAgICAgIHNlbGYuYXNzZXJ0VHJ1ZShtdXRhdGVkKQoK').decode('utf-8')
+          insertion_anchor = '    def test_record_symlink_is_rejected(self) -> None:\n'
+          if test_source.count(insertion_anchor) != 1:
+              raise SystemExit('test insertion anchor missing')
+          test_source = test_source.replace(insertion_anchor, new_tests + insertion_anchor, 1)
+          tests.write_text(test_source, encoding='utf-8')
+          PY
+
+      - name: Validate focused provenance custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+          source = Path('Scripts/capture_tuya_private_input_provenance.py').read_text(encoding='utf-8')
+          assert 'os.open(path, flags)' in source
+          assert 'os.fstat(descriptor)' in source
+          assert 'os.read(descriptor, 1024 * 1024)' in source
+          assert 'path.open("rb")' not in source
+          assert 'lockfile.read_bytes()' not in source
+          assert 'current_path.st_ino != after.st_ino' in source
+          assert 'private build input changed while it was fingerprinted' in source
+          PY
+          git diff --check
+          test "$(git diff --name-only | sort)" = "$(printf '%s\n' 'Scripts/capture_tuya_private_input_provenance.py' 'scripts/ci/tests/test_capture_tuya_private_input_provenance.py' | sort)"
+
+      - name: Commit clean closure checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-v14-private-input-descriptor-custody.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "fix(capture): bind private file fingerprints to descriptors"
+          git push origin HEAD:sol/v14-capture-private-input-descriptor-custody-a5cb
