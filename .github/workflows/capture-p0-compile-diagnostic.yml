@@ -1,0 +1,79 @@
+name: Capture P0 Compile Diagnostic
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/capture-p0-compile-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify exact head
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED"
+      - name: Capture package diagnostic
+        id: package
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/capture-swift-test.log"
+          set +e
+          (cd Packages/NembraBluetoothCapture && swift test) 2>&1 | tee "$log"
+          status="${PIPESTATUS[0]}"
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          /usr/bin/python3 -I - "$log" <<'PY'
+          import sys
+          from pathlib import Path
+          for line in [x.strip() for x in Path(sys.argv[1]).read_text(errors='replace').splitlines() if 'error:' in x.lower()][-30:]:
+              safe=line.replace('%','%25').replace('\r','%0D').replace('\n','%0A')
+              print(f'::error title=Capture package compiler::{safe}')
+          PY
+      - name: Capture standalone diagnostic
+        id: standalone
+        shell: bash
+        run: |
+          set -uo pipefail
+          sha="$(git rev-parse HEAD)"
+          label="capture-v14-${sha:0:12}"
+          log="$RUNNER_TEMP/capture-standalone.log"
+          set +e
+          xcodebuild -project NembraCapture.xcodeproj -scheme 'Nembra Capture' -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/NembraCaptureDiagnosticDerived" CODE_SIGNING_ALLOWED=NO NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256='abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789' INFOPLIST_KEY_NembraCaptureProcedureIdentifier='ES80-AUTHENTICATED-STATIONARY-v1' build 2>&1 | tee "$log"
+          status="${PIPESTATUS[0]}"
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          /usr/bin/python3 -I - "$log" <<'PY'
+          import sys
+          from pathlib import Path
+          for line in [x.strip() for x in Path(sys.argv[1]).read_text(errors='replace').splitlines() if 'error:' in x.lower()][-30:]:
+              safe=line.replace('%','%25').replace('\r','%0D').replace('\n','%0A')
+              print(f'::error title=Capture standalone compiler::{safe}')
+          PY
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: capture-compile-diagnostics-${{ github.event.pull_request.head.sha }}
+          path: |
+            ${{ runner.temp }}/capture-swift-test.log
+            ${{ runner.temp }}/capture-standalone.log
+          retention-days: 7
+          if-no-files-found: error
+      - name: Preserve failure truth
+        env:
+          PACKAGE_STATUS: ${{ steps.package.outputs.status }}
+          STANDALONE_STATUS: ${{ steps.standalone.outputs.status }}
+        run: |
+          test "$PACKAGE_STATUS" = 0
+          test "$STANDALONE_STATUS" = 0
