@@ -32,12 +32,14 @@ jobs:
           bash -n scripts/field/install_one_time_capture.command
           bash -n Scripts/bootstrap_capture_tuya_sdk.sh
           bash -n Scripts/provision_capture_tuya_identity.sh
+          bash -n Scripts/test_capture_tuya_identity_provisioning.sh
           ruby -c Podfile
           grep -Fq "pod 'ThingSmartCryption', :path => './LocalSecrets/TuyaSDK'" Podfile
           grep -Fq "pod 'NembraTuyaPrivateConfig', :path => './LocalSecrets/TuyaRuntime'" Podfile
-          grep -Fq "pod 'ThingSmartHomeKit', '~> 7.8.0'" Podfile
-          grep -Fq "pod 'ThingSmartBusinessExtensionKit', '~> 7.8.0'" Podfile
+          grep -Fq "pod 'ThingSmartHomeKit', '7.8.0'" Podfile
+          grep -Fq "pod 'ThingSmartBusinessExtensionKit', '7.8.0'" Podfile
           grep -Fq 'LocalSecrets/' .gitignore
+          grep -Fxq 'Podfile.lock' .gitignore
 
       - name: Enforce active Capture read-only and SDK-account contract
         shell: bash
