@@ -178,13 +178,19 @@ xcrun simctl status_bar "$UDID" override \
 capture_state() {
   local state="$1"
   local appearance="${2:-light}"
+  local suffix="${3:-}"
+  local artifact_name="${state}-${appearance}"
+  if [[ -n "$suffix" ]]; then
+    artifact_name="${artifact_name}-${suffix}"
+  fi
+
   xcrun simctl terminate "$UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
   xcrun simctl ui "$UDID" appearance "$appearance" >/dev/null 2>&1 || true
   local launch_output pid screenshot_path
   launch_output="$(
     SIMCTL_CHILD_NEMBRA_SIMULATION_SCENARIO="$state" \
       xcrun simctl launch "$UDID" "$BUNDLE_ID" \
-      | tee "$ARTIFACTS_DIR/logs/launch-${state}-${appearance}.log"
+      | tee "$ARTIFACTS_DIR/logs/launch-${artifact_name}.log"
   )"
   pid="${launch_output##*: }"
   if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
@@ -194,18 +200,33 @@ capture_state() {
 
   sleep 2
   if ! kill -0 "$pid" >/dev/null 2>&1; then
-    echo "Nembra exited before ${state}/${appearance} screenshot capture." >&2
+    echo "Nembra exited before ${artifact_name} screenshot capture." >&2
     exit 6
   fi
 
-  screenshot_path="$ARTIFACTS_DIR/screenshots/${state}-${appearance}.png"
+  screenshot_path="$ARTIFACTS_DIR/screenshots/${artifact_name}.png"
   xcrun simctl io "$UDID" screenshot "$screenshot_path"
   if [[ ! -s "$screenshot_path" ]]; then
-    echo "Simulator screenshot was not created for ${state}/${appearance}." >&2
+    echo "Simulator screenshot was not created for ${artifact_name}." >&2
     exit 7
   fi
 }
 
+set_content_size() {
+  local size="$1"
+  if ! xcrun simctl ui "$UDID" content_size "$size" \
+      > "$ARTIFACTS_DIR/logs/content-size-${size}.log" 2>&1; then
+    {
+      echo "Could not set Simulator content size to ${size}."
+      echo "Exact simctl UI help follows so the failure remains diagnosable on the Xcode 27 runner:"
+      xcrun simctl help ui || true
+    } >> "$ARTIFACTS_DIR/logs/content-size-${size}.log" 2>&1
+    return 1
+  fi
+}
+
+# Baseline product matrix at the normal system text size.
+set_content_size large || exit 8
 for state in \
   cold-disconnected \
   reconnecting \
@@ -221,6 +242,17 @@ do
 done
 capture_state connected-stopped dark
 capture_state reconnecting dark
+
+# Accessibility Dynamic Type uses the real iOS Simulator system preference rather
+# than a SwiftUI environment override. AX5 is the maximum accessibility category.
+AX5_CONTENT_SIZE="accessibility-extra-extra-extra-large"
+set_content_size "$AX5_CONTENT_SIZE" || exit 9
+echo "dashboard_ax5_content_size=$AX5_CONTENT_SIZE" >> "$ARTIFACTS_DIR/environment.txt"
+capture_state connected-stopped light ax5
+capture_state riding light ax5
+
+# Leave diagnostics/subsequent invocations in the normal baseline environment.
+set_content_size large || exit 10
 
 printf '%s\n' "Captured screenshots:" > "$ARTIFACTS_DIR/screenshots.txt"
 find "$ARTIFACTS_DIR/screenshots" -type f -name '*.png' -print | sort >> "$ARTIFACTS_DIR/screenshots.txt"
