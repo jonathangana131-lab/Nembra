@@ -45,11 +45,13 @@ struct TuyaCaptureCorrelationEvidenceCustodySourceTests {
             to: "func appDidLoseForeground()"
         ))
 
-        let alreadyOwned = try #require(cleanup.range(of: "if foregroundIntegrityLossHandled { return }"))
-        let claim = try #require(cleanup.range(of: "foregroundIntegrityLossHandled = true"))
-        let token = try #require(cleanup.range(of: "if let token = currentConnectionToken"))
-        #expect(alreadyOwned.lowerBound < claim.lowerBound)
-        #expect(claim.lowerBound < token.lowerBound)
+        let terminalOwnership = String(try section(
+            in: cleanup,
+            from: "if foregroundIntegrityLossHandled { return }",
+            to: "if let token = currentConnectionToken"
+        ))
+        #expect(terminalOwnership.contains("foregroundIntegrityLossHandled = true"))
+        #expect(terminalOwnership.components(separatedBy: "foregroundIntegrityLossHandled = true").count == 2)
 
         let active = String(try section(
             in: cleanup,
