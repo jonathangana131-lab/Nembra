@@ -1,0 +1,140 @@
+name: Materialize Capture Account Switch Touch Target 9695
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-account-switch-touch-target-9695-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard exact parent and scaffold-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='9695af19c21c93b3eb4bc867613a6df0c9a3b3d4'
+          test "$(git merge-base HEAD "$BASE")" = "$BASE"
+          mapfile -t paths < <(git diff --name-only "$BASE"...HEAD)
+          test "${#paths[@]}" -eq 1
+          test "${paths[0]}" = '.github/workflows/materialize-capture-account-switch-touch-target-9695.yml'
+
+      - name: Apply touch-target repair and regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = app_path.read_text(encoding='utf-8')
+          old = '''                        Button("Use a different Tuya account") {
+                            sdkAccount.signOut()
+                        }
+                        .buttonStyle(.plain)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.cyan)
+                        .disabled(test.membershipBusy || sdkAccount.busy)
+                        .accessibilityHint("Signs out of the official Tuya SDK account so you can log in with the account that owns this scooter.")'''
+          new = '''                        Button("Use a different Tuya account") {
+                            sdkAccount.signOut()
+                        }
+                        .buttonStyle(.plain)
+                        .frame(minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.cyan)
+                        .disabled(test.membershipBusy || sdkAccount.busy)
+                        .accessibilityHint("Signs out of the official Tuya SDK account so you can log in with the account that owns this scooter.")'''
+          if source.count(old) != 1:
+              raise SystemExit(f'expected one account-switch button anchor, found {source.count(old)}')
+          app_path.write_text(source.replace(old, new, 1), encoding='utf-8')
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureAccountSwitchTouchTargetSourceTests.swift')
+          if test_path.exists():
+              raise SystemExit('touch-target regression already exists; refresh live product')
+          test_path.write_text(r'''import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Capture Tuya account-switch touch target")
+          struct CaptureAccountSwitchTouchTargetSourceTests {
+              @Test("quiet account-switch action retains a full 44-point rectangular hit target")
+              func accountSwitchTargetIsAccessibleWithoutChangingHierarchy() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let preflight = String(try section(
+                      in: source,
+                      from: "private var preflightPanel: some View",
+                      to: "private var correlationDisplayedWindowOrdinal"
+                  ))
+                  let buttonStart = try #require(preflight.range(of: "Button(\"Use a different Tuya account\")"))
+                  let hint = try #require(preflight.range(
+                      of: ".accessibilityHint(\"Signs out of the official Tuya SDK account",
+                      range: buttonStart.lowerBound..<preflight.endIndex
+                  ))
+                  let button = String(preflight[buttonStart.lowerBound..<hint.upperBound])
+
+                  #expect(button.contains("sdkAccount.signOut()"))
+                  #expect(button.contains(".buttonStyle(.plain)"))
+                  #expect(button.contains(".frame(minHeight: 44, alignment: .leading)"))
+                  #expect(button.contains(".contentShape(Rectangle())"))
+                  #expect(button.contains(".disabled(test.membershipBusy || sdkAccount.busy)"))
+              }
+
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let a = source.range(of: start),
+                        let b = source.range(of: end, range: a.upperBound..<source.endIndex) else {
+                      Issue.record("Expected source section missing: \(start) ... \(end)")
+                      throw SourceContractError.sectionMissing
+                  }
+                  return source[a.lowerBound..<b.lowerBound]
+              }
+
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  let root = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)
+              }
+
+              private enum SourceContractError: Error { case sectionMissing }
+          }
+          ''', encoding='utf-8')
+          PY
+
+      - name: Validate focused source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureAccountSwitchTouchTargetSourceTests.swift
+          git diff --check
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors --filter CaptureAccountSwitchTouchTargetSourceTests
+
+      - name: Publish clean two-path repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='9695af19c21c93b3eb4bc867613a6df0c9a3b3d4'
+          rm .github/workflows/materialize-capture-account-switch-touch-target-9695.yml
+          git add -A
+          git diff --cached --check
+          mapfile -t paths < <(git diff --cached --name-only "$BASE")
+          test "${#paths[@]}" -eq 2
+          printf '%s\n' "${paths[@]}" | grep -Fxq 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          printf '%s\n' "${paths[@]}" | grep -Fxq 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureAccountSwitchTouchTargetSourceTests.swift'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): restore account-switch touch target'
+          git push origin HEAD:fix/v14-capture-account-switch-touch-target-9695-sol
