@@ -15,20 +15,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Apply exact post-seal transport-authority repair
+      - name: Patch Entrypoint
         shell: bash
         run: |
-          set -euo pipefail
           python3 <<'PY'
           from pathlib import Path
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           source = path.read_text()
-          needle = """                        try await sessionLedger.sealAcceptedObservation(for: token)
-                        guard self.buildIdentity.isAuthoritativeFieldBuild,
-                              self.accountIdentityLeaseIsAuthorized else {
-          """
-          replacement = """                        try await sessionLedger.sealAcceptedObservation(for: token)
-                        guard self.currentConnectionToken == token,
+          anchor = "                        try await sessionLedger.sealAcceptedObservation(for: token)\n"
+          insertion = """                        guard self.currentConnectionToken == token,
                               self.driver === driver else {
                             self.currentConnectionToken = nil
                             self.localBLESettlementToken = nil
@@ -53,18 +48,32 @@ jobs:
                             ])
                             return
                         }
-                        guard self.buildIdentity.isAuthoritativeFieldBuild,
-                              self.accountIdentityLeaseIsAuthorized else {
           """
-          count = source.count(needle)
+          count = source.count(anchor)
+          print(f"anchor count: {count}")
           if count != 1:
-              raise SystemExit(f"expected exactly one acceptance-seal anchor, found {count}")
-          path.write_text(source.replace(needle, replacement, 1))
+              raise SystemExit(11)
+          if "sdk_local_ble_offline_after_acceptance_seal" in source:
+              raise SystemExit(12)
+          path.write_text(source.replace(anchor, anchor + insertion, 1))
           PY
-          rm .github/workflows/tmp-capture-post-seal-repair.yml
+      - name: Verify product diff
+        shell: bash
+        run: |
+          set -euo pipefail
           git diff --check
+          git diff -- NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -q 'driver.isLocallyConnected(uuid: self.tuyaUUID)' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -q 'sdk_local_ble_offline_after_acceptance_seal' NembraApp/App/NembraCaptureEntrypoint.swift
+      - name: Commit repair and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tmp-capture-post-seal-repair.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add NembraApp/App/NembraCaptureEntrypoint.swift .github/workflows/tmp-capture-post-seal-repair.yml
           git commit -m "fix(capture): recheck local BLE after seal"
-          git push origin HEAD:agent/capture-post-seal-transport-recheck-sol
+      - name: Push repair
+        shell: bash
+        run: git push origin HEAD:agent/capture-post-seal-transport-recheck-sol
