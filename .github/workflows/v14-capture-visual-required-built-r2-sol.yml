@@ -1,0 +1,39 @@
+name: V14 Capture Visual Required Built R2 Sol
+
+on:
+  push:
+    branches:
+      - qa/v14-capture-visual-a480-procedure-r2-sol
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: qa/v14-capture-visual-a480-procedure-r2-sol
+          fetch-depth: 0
+      - name: Materialize current procedure truth
+        run: python3 scripts/ci/materialize_capture_visual_required_built_procedure_r2.py
+      - name: Verify QA source contracts
+        run: |
+          set -euo pipefail
+          bash -n scripts/ci/capture_standalone_visual_evidence.sh
+          python3 -m py_compile scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          git diff --check
+      - name: Commit clean repaired QA bytes
+        run: |
+          set -euo pipefail
+          rm .github/workflows/v14-capture-visual-required-built-r2-sol.yml
+          rm scripts/ci/materialize_capture_visual_required_built_procedure_r2.py
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "test(capture): align visual gate with built procedure truth"
+          git push origin HEAD:qa/v14-capture-visual-a480-procedure-r2-sol
