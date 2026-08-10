@@ -1,4 +1,4 @@
-name: Materialize Capture whole-record private-input coherence
+name: Materialize Capture provenance record coherence
 
 on:
   push:
@@ -17,183 +17,27 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Guard exact current parent and repair scope
+      - name: Guard repair ancestry and scaffold scope
         shell: bash
         run: |
           set -euo pipefail
           base='9695af19c21c93b3eb4bc867613a6df0c9a3b3d4'
           test "$(git merge-base "$base" HEAD)" = "$base"
-          mapfile -t changed < <(git diff --name-only "$base" HEAD | sort)
-          expected=(
-            .github/workflows/materialize-capture-provenance-record-coherence-9695.yml
-            scripts/ci/tests/test_capture_tuya_private_input_record_snapshot_coherence.py
-          )
-          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
-          diff <(printf '%s\n' "${expected_sorted[@]}") <(printf '%s\n' "${changed[@]}")
+          git diff --name-only "$base" HEAD | sort > /tmp/actual
+          printf '%s\n' \
+            '.github/workflows/materialize-capture-provenance-record-coherence-9695.yml' \
+            'scripts/ci/materialize_capture_provenance_record_coherence.py' \
+            'scripts/ci/tests/test_capture_tuya_private_input_record_snapshot_coherence.py' \
+            | sort > /tmp/expected
+          diff -u /tmp/expected /tmp/actual
 
-      - name: Add whole-record metadata-generation witness
+      - name: Materialize whole-record generation fence
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
+          python3 scripts/ci/materialize_capture_provenance_record_coherence.py
 
-          path = Path('Scripts/capture_tuya_private_input_provenance.py')
-          source = path.read_text(encoding='utf-8')
-          marker = '\ndef build_record(\n'
-          if source.count(marker) != 1:
-              raise SystemExit(f'expected one build_record marker, found {source.count(marker)}')
-
-          helpers = r'''
-
-def _regular_file_generation_witness(path: Path) -> tuple[int, ...]:
-    try:
-        metadata = path.lstat()
-    except OSError as error:
-        raise ProvenanceError(f"required private build input is unavailable: {path.name}") from error
-    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
-        raise ProvenanceError(f"required private build input is not a regular file: {path.name}")
-    return _stat_identity(metadata)
-
-
-def _tree_generation_witness(
-    root: Path,
-) -> tuple[
-    tuple[tuple[str, str, tuple[int, ...], str], ...],
-    tuple[tuple[str, tuple[str, ...]], ...],
-]:
-    try:
-        root_metadata = root.lstat()
-    except OSError as error:
-        raise ProvenanceError(f"required private build directory is unavailable: {root.name}") from error
-    if stat.S_ISLNK(root_metadata.st_mode) or not stat.S_ISDIR(root_metadata.st_mode):
-        raise ProvenanceError(f"required private build directory is not a real directory: {root.name}")
-
-    root_resolved = root.resolve(strict=True)
-    observed_states: list[tuple[Path, str, tuple[int, ...], str, str]] = [
-        (root, ".", _stat_identity(root_metadata), "D", "")
-    ]
-    observed_directory_members: dict[Path, tuple[str, tuple[str, ...]]] = {}
-
-    for current_text, directory_names, file_names in os.walk(root, topdown=True, followlinks=False):
-        current = Path(current_text)
-        relative_current = "." if current == root else current.relative_to(root).as_posix()
-        observed_directory_members[current] = (
-            relative_current,
-            tuple(sorted((*directory_names, *file_names), key=os.fsencode)),
-        )
-        kept_directories: list[str] = []
-
-        for name in sorted(directory_names, key=os.fsencode):
-            entry = current / name
-            relative = entry.relative_to(root).as_posix()
-            metadata = entry.lstat()
-            identity = _stat_identity(metadata)
-            if stat.S_ISLNK(metadata.st_mode):
-                target = _assert_internal_symlink(entry, root_resolved)
-                _assert_unchanged_tree_entry(entry, identity, "L")
-                observed_states.append((entry, relative, identity, "L", target))
-            elif stat.S_ISDIR(metadata.st_mode):
-                observed_states.append((entry, relative, identity, "D", ""))
-                kept_directories.append(name)
-            else:
-                raise ProvenanceError("private build tree contains an unsupported directory entry")
-        directory_names[:] = kept_directories
-
-        for name in sorted(file_names, key=os.fsencode):
-            entry = current / name
-            relative = entry.relative_to(root).as_posix()
-            metadata = entry.lstat()
-            identity = _stat_identity(metadata)
-            if stat.S_ISLNK(metadata.st_mode):
-                target = _assert_internal_symlink(entry, root_resolved)
-                _assert_unchanged_tree_entry(entry, identity, "L")
-                observed_states.append((entry, relative, identity, "L", target))
-            elif stat.S_ISREG(metadata.st_mode):
-                observed_states.append((entry, relative, identity, "F", ""))
-            else:
-                raise ProvenanceError("private build tree contains an unsupported file entry")
-
-    for entry, _relative, identity, kind, _target in observed_states:
-        _assert_unchanged_tree_entry(entry, identity, kind)
-    for directory, (_relative, members) in observed_directory_members.items():
-        if _directory_member_names(directory) != members:
-            raise ProvenanceError("private build tree changed while its generation witness was captured")
-
-    states = tuple(
-        sorted(
-            ((relative, kind, identity, target) for _entry, relative, identity, kind, target in observed_states),
-            key=lambda item: os.fsencode(item[0]),
-        )
-    )
-    memberships = tuple(
-        sorted(
-            observed_directory_members.values(),
-            key=lambda item: os.fsencode(item[0]),
-        )
-    )
-    return states, memberships
-'''
-          source = source.replace(marker, helpers + marker, 1)
-
-          start = source.index('def build_record(\n')
-          end = source.index('\ndef _record_text', start)
-          replacement = r'''def build_record(
-    *,
-    lockfile: Path,
-    security_podspec: Path,
-    security_build: Path,
-    identity_podspec: Path,
-    identity_sources: Path,
-) -> dict[str, str]:
-    # Capture metadata-generation witnesses for the complete authority set before
-    # hashing any component. The matching after-witnesses prove that all component
-    # digests belonged to one finite private-input snapshot, not merely five
-    # individually stable reads performed at different times.
-    regular_generation_before = (
-        _regular_file_generation_witness(lockfile),
-        _regular_file_generation_witness(security_podspec),
-        _regular_file_generation_witness(identity_podspec),
-    )
-    tree_generation_before = (
-        _tree_generation_witness(security_build),
-        _tree_generation_witness(identity_sources),
-    )
-
-    record = {
-        "schema": SCHEMA,
-        "podfile_lock_sha256": _read_stable_regular_file_sha256(lockfile)[1],
-        "thing_smart_home_kit": THING_SMART_HOME_KIT_VERSION,
-        "thing_smart_business_extension_kit": THING_SMART_BUSINESS_EXTENSION_KIT_VERSION,
-        "thing_smart_cryption_podspec_sha256": _file_fingerprint(security_podspec),
-        "thing_smart_cryption_build_tree_sha256": _tree_fingerprint(security_build),
-        "private_identity_podspec_sha256": _file_fingerprint(identity_podspec),
-        "private_identity_sources_tree_sha256": _tree_fingerprint(identity_sources),
-    }
-
-    regular_generation_after = (
-        _regular_file_generation_witness(lockfile),
-        _regular_file_generation_witness(security_podspec),
-        _regular_file_generation_witness(identity_podspec),
-    )
-    tree_generation_after = (
-        _tree_generation_witness(security_build),
-        _tree_generation_witness(identity_sources),
-    )
-    if (
-        regular_generation_before != regular_generation_after
-        or tree_generation_before != tree_generation_after
-    ):
-        raise ProvenanceError(
-            "private build inputs changed while the whole provenance record was assembled"
-        )
-    return record
-'''
-          source = source[:start] + replacement + source[end:]
-          path.write_text(source, encoding='utf-8')
-          PY
-
-      - name: Validate provenance behavior and source hygiene
+      - name: Validate provenance behavior
         shell: bash
         run: |
           set -euo pipefail
@@ -202,11 +46,12 @@ def _tree_generation_witness(
           python3 scripts/ci/tests/test_capture_tuya_private_input_record_snapshot_coherence.py
           git diff --check
 
-      - name: Publish clean effective repair
+      - name: Publish clean repair
         shell: bash
         run: |
           set -euo pipefail
           rm .github/workflows/materialize-capture-provenance-record-coherence-9695.yml
+          rm scripts/ci/materialize_capture_provenance_record_coherence.py
           git add -A
           git diff --cached --check
           git config user.name github-actions[bot]
