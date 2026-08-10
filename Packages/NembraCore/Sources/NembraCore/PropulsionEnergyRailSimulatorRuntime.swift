@@ -7,13 +7,7 @@ import Foundation
 /// needs one wake-up. It never creates an accepted propulsion observation, refreshes
 /// measurement currentness, changes receipt chronology, or carries physical authority.
 public struct PropulsionEnergyRailDisplaySchedule: Equatable, Sendable {
-    /// True only while the canonical package model is actually between accepted
-    /// display targets. Settled live geometry does not require a 60 Hz clock.
     public let requiresContinuousFrames: Bool
-
-    /// Earliest monotonic uptime at which presentation can change without a new
-    /// source observation: interpolation settlement, accepted-peak expiry, or
-    /// freshness demotion. `nil` means no timer-driven presentation transition remains.
     public let nextTransitionUptimeNanoseconds: UInt64?
 
     fileprivate init(
@@ -32,61 +26,43 @@ public struct PropulsionEnergyRailDisplaySchedule: Equatable, Sendable {
 
 /// Simulator-only source/runtime owner for Energy Rail product QA.
 ///
-/// This type deliberately cannot mint verified-vehicle propulsion authority. Every
-/// accepted sample uses `PropulsionPowerSample.simulator`, every presentation scale
-/// uses `.simulator`, and the runtime is named explicitly so app integration cannot
-/// mistake its values for ES80 hardware evidence.
-///
-/// The runtime owns synthetic chronology at the **measurement clock**. Repeated calls
-/// carrying the same connected watt value do not mint new accepted receipts merely
-/// because a renderer asked for another frame. A caller that has a real source-owned
-/// Simulator observation may additionally provide its monotonic
-/// `sourceObservationRevision`; a strictly newer revision is allowed to refresh an
-/// unchanged watt value because that is new source evidence rather than render polling.
-/// Display interpolation and scheduling remain presentation-only inside
-/// `PropulsionGaugeSourceSession` / this adapter.
+/// Positive authority enters only through an immutable source-owned Simulator power
+/// receipt tuple. Aggregate vehicle state, speed chronology, mode callbacks, SwiftUI
+/// lifecycle, and display clocks have no API capable of minting or refreshing watts.
+/// The display scheduler is downstream presentation state only.
 public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
-    /// Synthetic visual ceiling chosen only because `SimulatedScooterService`
-    /// currently caps generated QA power at 620 W. This is not a rated motor,
-    /// controller maximum, observed physical ceiling, or ES80 claim.
     public static let defaultPresentationCeilingWatts: Double = 650
-
-    /// Synthetic currentness window for deterministic Simulator UI sessions.
-    /// This is not a claim about any physical BLE publication cadence.
     public static let defaultFreshnessNanoseconds: UInt64 = 30_000_000_000
 
-    private let vehicleID: String
-    private let presentationCeilingWatts: Double
+    private struct SourceObservation: Equatable, Sendable {
+        let watts: Double
+        let receiptSequenceNumber: UInt64
+        let receivedAtUptimeNanoseconds: UInt64
+        let continuityGeneration: UInt64
+    }
+
+    private enum SourceDisposition: Equatable, Sendable {
+        case unavailable
+        case retained(SourceObservation)
+        case live(SourceObservation)
+    }
+
+    private enum SourceComparison {
+        case stale
+        case identical
+        case contradictory
+        case newer
+    }
+
     private let animationPolicy: PropulsionGaugeAnimationPolicy
     private let freshnessPolicy: PropulsionGaugeFreshnessPolicy
-
     private var session: PropulsionGaugeSourceSession
     private var scale: PropulsionGaugeScale
-    private var activeModeKey: String?
-    private var continuityGeneration: UInt64 = 1
-    private var nextReceiptSequenceNumber: UInt64 = 1
-    private var lastAcceptedWatts: Double?
-    private var lastAcceptedUptimeNanoseconds: UInt64?
+    private var disposition: SourceDisposition = .unavailable
+    private var newestAcceptedSourceObservation: SourceObservation?
 
-    /// Opaque source-owned chronology. Once source revisions are used, legacy
-    /// no-revision calls are no longer allowed to regain positive authority. The
-    /// floor deliberately survives local lifecycle retirement so a delayed pre-gap
-    /// source receipt cannot revive cached power after reconnect.
-    private var lastAcceptedSourceObservationRevision: UInt64?
-    private var lastAcceptedSourceObservationUptimeNanoseconds: UInt64?
-
-    private var requiresNewGeneration = false
-
-    /// Source-owned RETAINED state is an authority-lowering override of an exact
-    /// sealed package projection. The underlying session is retired at the same
-    /// boundary so a later LIVE receipt always starts a new presentation generation
-    /// and cannot interpolate across a disconnect/data gap.
-    private var retainedProjection: PropulsionEnergyRailAppProjection?
-    private var retainedSourceObservationRevision: UInt64?
-
-    // These mirrors schedule presentation-only wake-ups. They are deliberately
-    // downstream of successfully accepted package measurements and never feed
-    // back into `session`, accepted samples, telemetry, history, or persistence.
+    // Presentation-only scheduling mirrors. These are updated only after the package
+    // accepts an immutable source observation and never feed back into evidence.
     private var presentationTransitionEndUptimeNanoseconds: UInt64?
     private var presentationPeakWatts: Double?
     private var presentationPeakUptimeNanoseconds: UInt64?
@@ -112,8 +88,6 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
             ceilingWatts: presentationCeilingWatts
         )
 
-        self.vehicleID = vehicleID
-        self.presentationCeilingWatts = presentationCeilingWatts
         self.animationPolicy = animationPolicy
         self.freshnessPolicy = freshnessPolicy
         self.session = PropulsionGaugeSourceSession(
@@ -122,234 +96,164 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
             freshnessPolicy: freshnessPolicy
         )
         self.scale = scale
-        self.activeModeKey = nil
     }
 
-    /// Admits one Simulator source state change.
+    /// Admits one exact source-owned LIVE Simulator power observation.
     ///
-    /// Legacy isolated callers may omit `sourceObservationRevision`; unchanged watts
-    /// then remain de-duplicated so render polling cannot become telemetry. Product
-    /// integration with `SimulatorPowerEvidenceProvider` must pass the provider's
-    /// immutable receipt sequence plus its original monotonic receipt uptime.
-    ///
-    /// Once a source-owned revision has been accepted, revision-less calls can never
-    /// regain positive authority. A strictly newer source revision may refresh equal
-    /// watts. An equal revision may only replay the exact same watts/mode/uptime tuple.
-    /// Lower revisions are stale and ignored without erasing newer evidence.
+    /// There is intentionally no overload without source receipt identity. A genuine
+    /// equal-watt observation refreshes currentness only when its source tuple is newer.
     @discardableResult
-    public mutating func observe(
-        connected: Bool,
-        watts: Double?,
-        modeKey: String?,
-        sourceObservationRevision: UInt64? = nil,
-        receivedAtUptimeNanoseconds: UInt64
+    public mutating func acceptLiveSource(
+        watts: Double,
+        receiptSequenceNumber: UInt64,
+        receivedAtUptimeNanoseconds: UInt64,
+        continuityGeneration: UInt64
     ) -> Bool {
-        guard connected,
-              let watts,
-              watts.isFinite,
-              watts >= 0 else {
-            retireCurrentGenerationAsUnavailable()
+        guard let incoming = validatedSourceObservation(
+            watts: watts,
+            receiptSequenceNumber: receiptSequenceNumber,
+            receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
+            continuityGeneration: continuityGeneration
+        ) else {
+            markUnavailable()
             return false
         }
 
-        let normalizedModeKey = normalizedMode(modeKey)
+        switch compare(incoming, to: newestAcceptedSourceObservation) {
+        case .stale:
+            // Delayed older evidence cannot erase newer live/retained truth.
+            return false
 
-        if lastAcceptedSourceObservationRevision != nil,
-           sourceObservationRevision == nil {
-            // Once the stronger source clock exists, a legacy call cannot bypass it.
+        case .identical:
+            if case let .live(current) = disposition, current == incoming {
+                return true
+            }
+            // An exact receipt already lowered to retained/unavailable cannot regain
+            // positive authority by being replayed.
+            return false
+
+        case .contradictory:
+            markUnavailable()
+            return false
+
+        case .newer:
+            break
+        }
+
+        let sharesPresentationContinuity = sharesPresentationContinuity(with: incoming)
+
+        do {
+            let sample = try PropulsionPowerSample.simulator(
+                identity: session.identity,
+                watts: incoming.watts,
+                receiptSequenceNumber: incoming.receiptSequenceNumber,
+                receivedAtUptimeNanoseconds: incoming.receivedAtUptimeNanoseconds,
+                continuityGeneration: incoming.continuityGeneration
+            )
+            try session.accept(sample)
+        } catch {
+            markUnavailable()
             return false
         }
 
-        if let sourceObservationRevision {
-            guard sourceObservationRevision > 0 else {
-                retireCurrentGenerationAsUnavailable()
-                return false
-            }
+        newestAcceptedSourceObservation = incoming
+        disposition = .live(incoming)
+        updatePresentationScheduleAfterAcceptedSample(
+            watts: incoming.watts,
+            receivedAtUptimeNanoseconds: incoming.receivedAtUptimeNanoseconds,
+            sharesContinuity: sharesPresentationContinuity
+        )
+        return true
+    }
 
-            if let lastRevision = lastAcceptedSourceObservationRevision {
-                if sourceObservationRevision < lastRevision {
-                    // Delayed old source evidence is non-authoritative, but it must
-                    // not erase the newer accepted/retained state already held.
-                    return false
-                }
-
-                if sourceObservationRevision == lastRevision {
-                    let sameUptime = lastAcceptedSourceObservationUptimeNanoseconds
-                        == receivedAtUptimeNanoseconds
-                    let sameTuple = normalizedModeKey == activeModeKey
-                        && lastAcceptedWatts == watts
-                        && sameUptime
-
-                    if sameTuple {
-                        // Exact source replay is idempotent. If the receipt has
-                        // already been demoted to RETAINED, replay does not promote it.
-                        return true
-                    }
-
-                    // One immutable source revision cannot name two semantic tuples.
-                    retireCurrentGenerationAsUnavailable()
-                    return false
-                }
-
-                if let lastSourceUptime = lastAcceptedSourceObservationUptimeNanoseconds,
-                   receivedAtUptimeNanoseconds <= lastSourceUptime {
-                    // A newer source sequence with non-increasing source receipt time
-                    // contradicts the provider contract. Fail closed rather than
-                    // re-dating the measurement locally.
-                    retireCurrentGenerationAsUnavailable()
-                    return false
-                }
-            } else if let localUptime = lastAcceptedUptimeNanoseconds,
-                      receivedAtUptimeNanoseconds <= localUptime {
-                // Transitioning from the legacy isolated path to source-owned
-                // chronology cannot move the accepted measurement clock backwards.
-                retireCurrentGenerationAsUnavailable()
-                return false
-            }
+    /// Immediately lowers one exact source-owned receipt to RETAINED.
+    ///
+    /// If the runtime already accepted this receipt live, its sealed projection is
+    /// authority-lowered without changing measurement identity. On a cold remount,
+    /// the complete source tuple may be admitted once as already-retained evidence;
+    /// no render timestamp is used to manufacture staleness.
+    @discardableResult
+    public mutating func retainSource(
+        watts: Double,
+        receiptSequenceNumber: UInt64,
+        receivedAtUptimeNanoseconds: UInt64,
+        continuityGeneration: UInt64
+    ) -> Bool {
+        guard let incoming = validatedSourceObservation(
+            watts: watts,
+            receiptSequenceNumber: receiptSequenceNumber,
+            receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
+            continuityGeneration: continuityGeneration
+        ) else {
+            markUnavailable()
+            return false
         }
 
-        if normalizedModeKey != activeModeKey {
-            guard rebuildSession(modeKey: normalizedModeKey) else {
-                retireCurrentGenerationAsUnavailable()
+        switch compare(incoming, to: newestAcceptedSourceObservation) {
+        case .stale:
+            return false
+
+        case .identical:
+            switch disposition {
+            case let .live(current) where current == incoming:
+                _ = session.markUnavailable(
+                    authority: .simulator,
+                    continuityGeneration: incoming.continuityGeneration
+                )
+                disposition = .retained(incoming)
+                resetPresentationSchedule()
+                return true
+
+            case let .retained(current) where current == incoming:
+                return true
+
+            case .unavailable, .live, .retained:
                 return false
             }
-        } else if requiresNewGeneration {
-            guard continuityGeneration < UInt64.max else {
-                retireCurrentGenerationAsUnavailable()
-                return false
-            }
-            continuityGeneration &+= 1
-            nextReceiptSequenceNumber = 1
-            lastAcceptedWatts = nil
-            lastAcceptedUptimeNanoseconds = nil
-            retainedProjection = nil
-            retainedSourceObservationRevision = nil
-            resetPresentationSchedule()
-            requiresNewGeneration = false
-        }
 
-        // Without a source revision, preserve the original safe polling behavior:
-        // an unchanged value is not a new accepted measurement. A strictly newer
-        // source revision, however, is genuine source evidence even when watts match.
-        if sourceObservationRevision == nil,
-           lastAcceptedWatts == watts {
-            return true
-        }
+        case .contradictory:
+            markUnavailable()
+            return false
 
-        let admittedUptime: UInt64
-        if sourceObservationRevision != nil {
-            // The immutable provider receipt already owns this clock. Never replace
-            // it with render time, callback time, speed time, or aggregate lastUpdated.
-            admittedUptime = receivedAtUptimeNanoseconds
-        } else {
-            guard let increasing = strictlyIncreasingUptime(
-                receivedAtUptimeNanoseconds
-            ) else {
-                retireCurrentGenerationAsUnavailable()
-                return false
-            }
-            admittedUptime = increasing
-        }
-
-        let sharesPresentationContinuity: Bool
-        if let previousUptime = lastAcceptedUptimeNanoseconds,
-           admittedUptime > previousUptime {
-            let gap = admittedUptime - previousUptime
-            sharesPresentationContinuity = gap <= freshnessPolicy.staleAfterNanoseconds
-        } else {
-            sharesPresentationContinuity = false
+        case .newer:
+            break
         }
 
         do {
             let sample = try PropulsionPowerSample.simulator(
                 identity: session.identity,
-                watts: watts,
-                receiptSequenceNumber: nextReceiptSequenceNumber,
-                receivedAtUptimeNanoseconds: admittedUptime,
-                continuityGeneration: continuityGeneration
+                watts: incoming.watts,
+                receiptSequenceNumber: incoming.receiptSequenceNumber,
+                receivedAtUptimeNanoseconds: incoming.receivedAtUptimeNanoseconds,
+                continuityGeneration: incoming.continuityGeneration
             )
             try session.accept(sample)
         } catch {
-            retireCurrentGenerationAsUnavailable()
+            markUnavailable()
             return false
         }
 
-        retainedProjection = nil
-        retainedSourceObservationRevision = nil
-        updatePresentationScheduleAfterAcceptedSample(
-            watts: watts,
-            receivedAtUptimeNanoseconds: admittedUptime,
-            sharesContinuity: sharesPresentationContinuity
+        newestAcceptedSourceObservation = incoming
+        _ = session.markUnavailable(
+            authority: .simulator,
+            continuityGeneration: incoming.continuityGeneration
         )
-
-        lastAcceptedWatts = watts == 0 ? 0 : watts
-        lastAcceptedUptimeNanoseconds = admittedUptime
-        if let sourceObservationRevision {
-            lastAcceptedSourceObservationRevision = sourceObservationRevision
-            lastAcceptedSourceObservationUptimeNanoseconds = admittedUptime
-        }
-        if nextReceiptSequenceNumber < UInt64.max {
-            nextReceiptSequenceNumber &+= 1
-        }
+        disposition = .retained(incoming)
+        resetPresentationSchedule()
         return true
     }
 
-    /// Immediately lowers the exact newest source-owned accepted receipt to
-    /// RETAINED. This is the package bridge for an explicit source currentness
-    /// transition such as Simulator disconnect/reconnect.
-    ///
-    /// The source revision must exactly match the newest accepted source receipt.
-    /// This method never creates a new receipt, never changes accepted watts or
-    /// accepted revision, and never supplies a local timestamp. It removes live
-    /// rail/peak/target geometry and motion, retires the underlying local generation,
-    /// and leaves the source revision floor intact so a pre-gap receipt cannot revive.
-    @discardableResult
-    public mutating func retain(
-        sourceObservationRevision: UInt64
-    ) -> Bool {
-        guard sourceObservationRevision > 0,
-              sourceObservationRevision == lastAcceptedSourceObservationRevision,
-              let lastAcceptedWatts,
-              let lastAcceptedUptimeNanoseconds else {
-            return false
+    /// Ends current source availability without manufacturing zero or retained power.
+    /// A source receipt already seen by this runtime cannot later reopen live authority.
+    public mutating func markUnavailable() {
+        if let newestAcceptedSourceObservation {
+            _ = session.markUnavailable(
+                authority: .simulator,
+                continuityGeneration: newestAcceptedSourceObservation.continuityGeneration
+            )
         }
-
-        if let retainedProjection,
-           retainedSourceObservationRevision == sourceObservationRevision,
-           retainedProjection.acceptedWatts == lastAcceptedWatts {
-            return true
-        }
-
-        let accepted = session.energyRailAppProjection(
-            atUptimeNanoseconds: lastAcceptedUptimeNanoseconds,
-            scale: scale
-        )
-        guard accepted.currentness != .unavailable,
-              accepted.acceptedWatts == lastAcceptedWatts,
-              accepted.acceptedMeasurement?.authority == .simulator,
-              accepted.acceptedMeasurement?.continuityGeneration == continuityGeneration,
-              accepted.acceptedMeasurement?.receivedAtUptimeNanoseconds
-                == lastAcceptedUptimeNanoseconds else {
-            return false
-        }
-
-        let retained = accepted.retainedWithoutNewMeasurement()
-        guard retained.currentness == .retained,
-              retained.acceptedMeasurement == accepted.acceptedMeasurement,
-              retained.accessibilityPresentation.acceptedRevision
-                == accepted.accessibilityPresentation.acceptedRevision else {
-            return false
-        }
-
-        _ = session.markUnavailable(
-            authority: .simulator,
-            continuityGeneration: continuityGeneration
-        )
-        retainedProjection = retained
-        retainedSourceObservationRevision = sourceObservationRevision
-        requiresNewGeneration = true
+        disposition = .unavailable
         resetPresentationSchedule()
-        return true
     }
 
     /// Canonical sealed app projection at the display clock.
@@ -357,40 +261,48 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
     public func projection(
         atUptimeNanoseconds now: UInt64
     ) -> PropulsionEnergyRailAppProjection {
-        if let retainedProjection {
-            return retainedProjection
+        switch disposition {
+        case .live:
+            return session.energyRailAppProjection(
+                atUptimeNanoseconds: now,
+                scale: scale
+            )
+
+        case let .retained(observation):
+            return PropulsionEnergyRailAppProjection.retainedSimulatorSource(
+                identity: session.identity,
+                watts: observation.watts,
+                receiptSequenceNumber: observation.receiptSequenceNumber,
+                receivedAtUptimeNanoseconds: observation.receivedAtUptimeNanoseconds,
+                continuityGeneration: observation.continuityGeneration
+            ) ?? session.energyRailAppProjection(
+                atUptimeNanoseconds: now,
+                scale: scale
+            )
+
+        case .unavailable:
+            return session.energyRailAppProjection(
+                atUptimeNanoseconds: now,
+                scale: scale
+            )
         }
-        return session.energyRailAppProjection(
-            atUptimeNanoseconds: now,
-            scale: scale
-        )
     }
 
     /// Presentation-only scheduler for the app's localized display clock.
     ///
-    /// The package projection remains the visual source of truth. This method only
-    /// reports when that projection can change with no new source observation:
-    /// - continuous frames while the canonical frame is actually interpolating;
-    /// - one wake at interpolation settlement;
-    /// - one wake at accepted-peak marker expiry;
-    /// - one wake when live currentness becomes retained.
-    ///
-    /// Calling this method never mutates the runtime or accepted chronology.
+    /// Continuous frames are requested only while canonical interpolation is active.
+    /// One-shot wakes cover interpolation settlement, accepted-peak expiry, and live
+    /// freshness demotion. Retained/unavailable states are fully quiescent.
     public func displaySchedule(
         atUptimeNanoseconds now: UInt64
     ) -> PropulsionEnergyRailDisplaySchedule {
-        if retainedProjection != nil {
-            return .inactive
-        }
+        guard case .live = disposition else { return .inactive }
 
         let frame = session.frame(
             atUptimeNanoseconds: now,
             scale: scale
         )
-
-        guard frame.availability == .live else {
-            return .inactive
-        }
+        guard frame.availability == .live else { return .inactive }
 
         let requiresContinuousFrames = frame.origin == .visuallyInterpolated
         var nextTransition: UInt64?
@@ -433,6 +345,17 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
             requiresContinuousFrames: requiresContinuousFrames,
             nextTransitionUptimeNanoseconds: nextTransition
         )
+    }
+
+    private func sharesPresentationContinuity(with incoming: SourceObservation) -> Bool {
+        guard case .live = disposition,
+              let previous = newestAcceptedSourceObservation,
+              incoming.continuityGeneration == previous.continuityGeneration,
+              incoming.receivedAtUptimeNanoseconds > previous.receivedAtUptimeNanoseconds else {
+            return false
+        }
+        return incoming.receivedAtUptimeNanoseconds - previous.receivedAtUptimeNanoseconds
+            <= freshnessPolicy.staleAfterNanoseconds
     }
 
     private mutating func updatePresentationScheduleAfterAcceptedSample(
@@ -482,73 +405,56 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
         return uptime - peakUptime > animationPolicy.acceptedPeakHoldNanoseconds
     }
 
-    private mutating func retireCurrentGenerationAsUnavailable() {
-        _ = session.markUnavailable(
-            authority: .simulator,
-            continuityGeneration: continuityGeneration
-        )
-        requiresNewGeneration = true
-        lastAcceptedWatts = nil
-        lastAcceptedUptimeNanoseconds = nil
-        retainedProjection = nil
-        retainedSourceObservationRevision = nil
-        resetPresentationSchedule()
-        // Deliberately preserve source revision + source uptime floors. A callback
-        // from before this lifecycle boundary must remain stale after it.
-    }
-
-    private mutating func rebuildSession(modeKey: String?) -> Bool {
-        do {
-            let identity = try PropulsionGaugeIdentity(
-                vehicleID: vehicleID,
-                modeKey: modeKey
-            )
-            let scale = try PropulsionGaugeScale.simulator(
-                identity: identity,
-                ceilingWatts: presentationCeilingWatts
-            )
-
-            session = PropulsionGaugeSourceSession(
-                identity: identity,
-                animationPolicy: animationPolicy,
-                freshnessPolicy: freshnessPolicy
-            )
-            self.scale = scale
-            activeModeKey = modeKey
-            continuityGeneration = 1
-            nextReceiptSequenceNumber = 1
-            lastAcceptedWatts = nil
-            lastAcceptedUptimeNanoseconds = nil
-            retainedProjection = nil
-            retainedSourceObservationRevision = nil
-            resetPresentationSchedule()
-            requiresNewGeneration = false
-            // Keep cross-mode source chronology floors. A mode rebinding changes
-            // presentation identity; it does not erase caller source chronology.
-            return true
-        } catch {
-            return false
-        }
-    }
-
     private mutating func resetPresentationSchedule() {
         presentationTransitionEndUptimeNanoseconds = nil
         presentationPeakWatts = nil
         presentationPeakUptimeNanoseconds = nil
     }
 
-    private func normalizedMode(_ modeKey: String?) -> String? {
-        guard let modeKey else { return nil }
-        let trimmed = modeKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+    private func compare(
+        _ incoming: SourceObservation,
+        to previous: SourceObservation?
+    ) -> SourceComparison {
+        guard let previous else { return .newer }
+
+        if incoming.continuityGeneration < previous.continuityGeneration {
+            return .stale
+        }
+        if incoming.continuityGeneration > previous.continuityGeneration {
+            return .newer
+        }
+
+        if incoming.receiptSequenceNumber < previous.receiptSequenceNumber {
+            return .stale
+        }
+        if incoming.receiptSequenceNumber > previous.receiptSequenceNumber {
+            return incoming.receivedAtUptimeNanoseconds > previous.receivedAtUptimeNanoseconds
+                ? .newer
+                : .contradictory
+        }
+
+        return incoming == previous ? .identical : .contradictory
     }
 
-    private func strictlyIncreasingUptime(_ proposed: UInt64) -> UInt64? {
-        guard let previous = lastAcceptedUptimeNanoseconds else {
-            return proposed
+    private func validatedSourceObservation(
+        watts: Double,
+        receiptSequenceNumber: UInt64,
+        receivedAtUptimeNanoseconds: UInt64,
+        continuityGeneration: UInt64
+    ) -> SourceObservation? {
+        guard watts.isFinite,
+              watts >= 0,
+              receiptSequenceNumber > 0,
+              receivedAtUptimeNanoseconds > 0,
+              continuityGeneration > 0 else {
+            return nil
         }
-        guard proposed > previous else { return nil }
-        return proposed
+        return SourceObservation(
+            watts: watts == 0 ? 0 : watts,
+            receiptSequenceNumber: receiptSequenceNumber,
+            receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
+            continuityGeneration: continuityGeneration
+        )
     }
 
     private func deadline(after start: UInt64, interval: UInt64) -> UInt64? {
@@ -556,9 +462,6 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
         return overflow ? nil : value
     }
 
-    /// Currentness/peak transitions are defined by `age > interval`, so wake one
-    /// nanosecond after the inclusive boundary. If arithmetic cannot represent a
-    /// future deadline, there is no reachable UInt64 uptime at which to schedule it.
     private func exclusiveDeadline(after start: UInt64, interval: UInt64) -> UInt64? {
         guard let inclusive = deadline(after: start, interval: interval) else {
             return nil
