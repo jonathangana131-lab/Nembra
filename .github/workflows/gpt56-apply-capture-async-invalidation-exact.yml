@@ -1,0 +1,121 @@
+name: GPT56 Apply Capture Async Invalidation Exact Repair
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-async-invalidation-exact-contract-gpt56-sol
+
+permissions:
+  contents: write
+
+jobs:
+  apply-repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply exact live-spine lifecycle repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          app_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          app = app_path.read_text()
+
+          function_marker = '''    func finishCorrelationWindow() {
+'''
+          consumer = '''    /// Mirrors an asynchronous terminal already committed by the package-owned
+    /// correlation session. This consumes presentation/lifecycle state only: it does not
+    /// manufacture a second scanner terminal, candidate authority, authentication evidence,
+    /// telemetry, or physical scooter claims.
+    func consumeCorrelationAsyncInvalidation() {
+        guard phase == .baseline || phase == .scanning,
+              correlationProgress?.isSeriesInvalidated == true else { return }
+
+        let invalidatedWindow = correlationWindowLabel
+        let completedWindows = correlationCompletedWindowCount
+        correlationSession = nil
+        resetDiscoverySessionOnly()
+        phase = .failed
+        message = "\\(invalidatedWindow) Bluetooth correlation was invalidated by the package transport lifecycle. Restart from OFF1; the complete OFF1→ON1→OFF2→ON2 series must be repeated and prior windows are not reusable."
+        log("target_correlation_async_invalidated", [
+            "window": invalidatedWindow,
+            "completedWindows": String(completedWindows),
+            "authority": "package-owned-series-terminal"
+        ])
+    }
+
+'''
+          assert app.count(function_marker) == 1, 'unexpected finishCorrelationWindow source shape'
+          assert 'func consumeCorrelationAsyncInvalidation' not in app, 'repair already present under exact contract name'
+          app = app.replace(function_marker, consumer + function_marker, 1)
+
+          view_start = app.index('@MainActor\nprivate struct SecureLinkView: View')
+          before = app[:view_start]
+          view = app[view_start:]
+          background_marker = '''            .background(Color.black.ignoresSafeArea())
+        }
+        .navigationTitle("Secure Link")
+'''
+          background_replacement = '''            .background(Color.black.ignoresSafeArea())
+            .onChange(of: test.correlationProgress?.isSeriesInvalidated, initial: true) { _, invalidated in
+                if invalidated == true {
+                    test.consumeCorrelationAsyncInvalidation()
+                }
+            }
+        }
+        .navigationTitle("Secure Link")
+'''
+          assert view.count(background_marker) == 1, 'unexpected SecureLinkView Timeline source shape'
+          assert '.onChange(of: test.correlationProgress?.isSeriesInvalidated' not in view, 'exact direct invalidation consumer already present'
+          view = view.replace(background_marker, background_replacement, 1)
+          app = before + view
+
+          # Mirror the live expected-red contract before committing. These are source-contract
+          # checks only; exact-head Xcode/package acceptance remains separate.
+          controller = app[app.index('private final class SecureLinkController'):app.index('private protocol OfficialTuyaDriver')]
+          secure_view = app[app.index('private struct SecureLinkView'):app.index('private struct SecureTransfer')]
+          function_start = controller.index('func consumeCorrelationAsyncInvalidation')
+          function_tail = controller[function_start:]
+          depth = 0
+          opening = function_tail.index('{')
+          end = None
+          for i, ch in enumerate(function_tail[opening:], start=opening):
+              if ch == '{': depth += 1
+              elif ch == '}':
+                  depth -= 1
+                  if depth == 0:
+                      end = i + 1
+                      break
+          assert end is not None
+          fn = function_tail[:end]
+          assert 'isSeriesInvalidated == true' in fn
+          assert 'phase == .baseline' in fn or 'phase == .scanning' in fn
+          assert 'correlationSession = nil' in fn
+          assert 'target_correlation_async_invalidated' in fn
+          assert 'Restart from OFF1' in fn
+          assert 'selectedID =' not in fn
+          assert 'pendingCorrelatedTargetID =' not in fn
+          assert 'targetCorrelationOperatorConfirmed = true' not in fn
+          assert 'beginOfficialConnection' not in fn
+          assert 'TimelineView(.periodic(from: .now, by: 0.5))' in secure_view
+          assert '.onChange(of: test.correlationProgress?.isSeriesInvalidated' in secure_view
+          assert 'test.consumeCorrelationAsyncInvalidation()' in secure_view
+          assert 'milliseconds(100)' not in secure_view
+          assert 'correlationProgressTask' not in secure_view
+
+          app_path.write_text(app)
+          PY
+
+          rm -- .github/workflows/gpt56-apply-capture-async-invalidation-exact.yml
+          git diff --check
+          git config user.name 'nembra-gpt56-sol'
+          git config user.email 'nembra-gpt56-sol@users.noreply.github.com'
+          git add -A
+          git diff --cached --exit-code && { echo 'No repair delta'; exit 1; }
+          git commit -m 'fix(capture): consume async correlation terminal on live spine'
+          git push origin HEAD:repair/v14-capture-async-invalidation-exact-contract-gpt56-sol
