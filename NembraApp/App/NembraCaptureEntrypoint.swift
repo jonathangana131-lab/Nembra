@@ -2366,7 +2366,7 @@ private final class OfficialTuyaAccountAuthorizer: ObservableObject {
                 countryCode: country,
                 code: code,
                 success: { [weak self] in Task { @MainActor in self?.finishLoginSuccess() } },
-                failure: { [weak self] error in Task { @MainActor in self?.finishLoginFailure(error, submittedIdentity: identity) } }
+                failure: { [weak self] error in Task { @MainActor in self?.finishLoginFailure(error, submittedIdentity: identity, submittedVerificationCode: code) } }
             )
         case .phone:
             ThingSmartUser.sharedInstance()?.login(
@@ -2374,7 +2374,7 @@ private final class OfficialTuyaAccountAuthorizer: ObservableObject {
                 countryCode: country,
                 code: code,
                 success: { [weak self] in Task { @MainActor in self?.finishLoginSuccess() } },
-                failure: { [weak self] error in Task { @MainActor in self?.finishLoginFailure(error, submittedIdentity: identity) } }
+                failure: { [weak self] error in Task { @MainActor in self?.finishLoginFailure(error, submittedIdentity: identity, submittedVerificationCode: code) } }
             )
         }
 #else
@@ -2436,11 +2436,11 @@ private final class OfficialTuyaAccountAuthorizer: ObservableObject {
             : "Tuya returned a login-success callback, but the SDK reports no current logged-in session. Bluetooth remains disabled."
     }
 
-    private func finishLoginFailure(_ error: Error?, submittedIdentity: String) {
+    private func finishLoginFailure(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) {
         busy = false
         verificationCode = ""
         loggedIn = OfficialTuyaFactory.accountLoggedIn
-        status = "Tuya SDK login failed: \(Self.redactedError(error, submittedIdentity: submittedIdentity))"
+        status = "Tuya SDK login failed: \(Self.redactedError(error, submittedIdentity: submittedIdentity, submittedVerificationCode: submittedVerificationCode))"
     }
 
     private func finishAppleLoginFailure(_ error: Error?) {
@@ -2450,15 +2450,26 @@ private final class OfficialTuyaAccountAuthorizer: ObservableObject {
         status = "Tuya rejected the Apple-account login (code \(code)). Exact scooter membership remains locked."
     }
 
-    private static func redactedError(_ error: Error?, submittedIdentity: String) -> String {
+    private static func redactedError(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) -> String {
         let raw = error?.localizedDescription ?? "unknown error"
         let identity = submittedIdentity.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !identity.isEmpty else { return raw }
-        return raw.replacingOccurrences(
-            of: identity,
-            with: "<redacted-account>",
-            options: [.caseInsensitive, .literal]
-        )
+        let verificationCode = submittedVerificationCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        var redacted = raw
+        if !identity.isEmpty {
+            redacted = redacted.replacingOccurrences(
+                of: identity,
+                with: "<redacted-account>",
+                options: [.caseInsensitive, .literal]
+            )
+        }
+        if !verificationCode.isEmpty {
+            redacted = redacted.replacingOccurrences(
+                of: verificationCode,
+                with: "<redacted-verification-code>",
+                options: [.literal]
+            )
+        }
+        return redacted
     }
 }
 
