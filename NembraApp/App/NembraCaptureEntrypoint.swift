@@ -1384,37 +1384,37 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func preparedApplicationEventDetails(
-    _ update: [String: String],
-    verifiedAccountUID: String
-) -> [String: String] {
-    let accountUID = verifiedAccountUID.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !accountUID.isEmpty else { return [:] }
+        _ update: [String: String],
+        verifiedAccountUID: String
+    ) -> [String: String] {
+        let accountUID = verifiedAccountUID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !accountUID.isEmpty else { return [:] }
 
-    let redactionMarker = "<redacted-account-uid>"
-    var details: [String: String] = [:]
-    for key in update.keys.sorted() {
-        guard let value = update[key] else { continue }
-        let redactedKey = key.replacingOccurrences(
-            of: accountUID,
-            with: redactionMarker,
-            options: [.caseInsensitive, .literal]
-        )
-        let redactedValue = value.replacingOccurrences(
-            of: accountUID,
-            with: redactionMarker,
-            options: [.caseInsensitive, .literal]
-        )
-        let baseKey = redactedKey == "generation" ? "application.generation" : redactedKey
-        var uniqueKey = baseKey
-        var collisionIndex = 2
-        while details[uniqueKey] != nil {
-            uniqueKey = "\(baseKey)#\(collisionIndex)"
-            collisionIndex += 1
+        let redactionMarker = "<redacted-account-uid>"
+        var details: [String: String] = [:]
+        for key in update.keys.sorted() {
+            guard let value = update[key] else { continue }
+            let redactedKey = key.replacingOccurrences(
+                of: accountUID,
+                with: redactionMarker,
+                options: [.caseInsensitive, .literal]
+            )
+            let redactedValue = value.replacingOccurrences(
+                of: accountUID,
+                with: redactionMarker,
+                options: [.caseInsensitive, .literal]
+            )
+            let baseKey = redactedKey == "generation" ? "application.generation" : redactedKey
+            var uniqueKey = baseKey
+            var collisionIndex = 2
+            while details[uniqueKey] != nil {
+                uniqueKey = "\(baseKey)#\(collisionIndex)"
+                collisionIndex += 1
+            }
+            details[uniqueKey] = redactedValue
         }
-        details[uniqueKey] = redactedValue
+        return details
     }
-    return details
-}
 
     private func receivedApplicationUpdate(
         _ update: [String: String],
@@ -1455,14 +1455,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
 
         guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
-    !verifiedAccountUID.isEmpty else {
-    await invalidateSourceAuthority(
-        token: token,
-        message: "The verified Tuya account UID lease became unavailable before application evidence custody.",
-        kind: "sdk_account_uid_lease_missing_during_observation"
-    )
-    return
-}
+              !verifiedAccountUID.isEmpty else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "The verified Tuya account UID lease became unavailable before application evidence custody.",
+                kind: "sdk_account_uid_lease_missing_during_observation"
+            )
+            return
+        }
 
         applicationUpdateAdmissionsInFlight += 1
         defer { applicationUpdateAdmissionsInFlight -= 1 }
@@ -1471,20 +1471,20 @@ private final class SecureLinkController: NSObject, ObservableObject {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
             guard sdkAccountLoggedIn,
-          sdkDeviceMembershipVerified,
-          accountIdentityLeaseIsAuthorized,
-          membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) == verifiedAccountUID else {
-        await invalidateSourceAuthority(
-            token: token,
-            message: "SDK account/device source authority changed before application evidence could enter immutable event custody.",
-            kind: "sdk_source_authority_changed_before_application_event_custody"
-        )
-        return
-    }
-    let eventDetails = preparedApplicationEventDetails(
-        update,
-        verifiedAccountUID: verifiedAccountUID
-    )
+                  sdkDeviceMembershipVerified,
+                  accountIdentityLeaseIsAuthorized,
+                  membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) == verifiedAccountUID else {
+                await invalidateSourceAuthority(
+                    token: token,
+                    message: "SDK account/device source authority changed before application evidence could enter immutable event custody.",
+                    kind: "sdk_source_authority_changed_before_application_event_custody"
+                )
+                return
+            }
+            let eventDetails = preparedApplicationEventDetails(
+                update,
+                verifiedAccountUID: verifiedAccountUID
+            )
             log("tuya_application_update", eventDetails.merging([
                 "generation": String(token.diagnosticGeneration)
             ]) { _, trusted in trusted })
