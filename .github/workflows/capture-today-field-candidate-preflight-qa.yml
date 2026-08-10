@@ -6,6 +6,7 @@ on:
     paths:
       - scripts/ci/es80_today_field_candidate_preflight.py
       - scripts/ci/tests/test_es80_today_field_candidate_preflight.py
+      - scripts/ci/tests/test_es80_today_field_candidate_developer_dir_handoff.py
       - scripts/ci/es80_today_private_device_input.py
       - scripts/ci/tests/test_es80_today_private_device_input.py
       - docs/ES80_TODAY_SIGNED_FIELD_CANDIDATE_PRODUCTION.md
@@ -42,6 +43,7 @@ jobs:
           python3 -m py_compile \
             scripts/ci/es80_today_field_candidate_preflight.py \
             scripts/ci/tests/test_es80_today_field_candidate_preflight.py \
+            scripts/ci/tests/test_es80_today_field_candidate_developer_dir_handoff.py \
             scripts/ci/es80_today_private_device_input.py \
             scripts/ci/tests/test_es80_today_private_device_input.py
 
@@ -49,4 +51,5 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/ci/tests/test_es80_today_field_candidate_preflight.py -v
+          python3 scripts/ci/tests/test_es80_today_field_candidate_developer_dir_handoff.py -v
           python3 scripts/ci/tests/test_es80_today_private_device_input.py -v
