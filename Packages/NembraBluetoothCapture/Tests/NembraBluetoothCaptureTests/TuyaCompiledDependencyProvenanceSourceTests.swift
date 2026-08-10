@@ -36,7 +36,7 @@ struct TuyaCompiledDependencyProvenanceSourceTests {
         let export = try section(
             in: app,
             from: "struct Export: Codable",
-            to: "private var phase"
+            to: "struct Event: Codable"
         )
         #expect(export.contains("tuyaPodfileLockSHA256"))
     }
