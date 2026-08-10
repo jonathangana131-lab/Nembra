@@ -1,0 +1,62 @@
+name: Materialize Capture Application Account UID Custody
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-foreground-integrity-4b41-r3
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sol/v14-capture-foreground-integrity-4b41-r3
+          fetch-depth: 0
+
+      - name: Guard reviewed successor input
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = '330529738308d843a63e05230cee620107ac7246'
+          construction_parent='4b41c9ad783f568d0d353acc9f7016a9bd0b64c2'
+          test "$(git merge-base "$construction_parent" HEAD)" = "$construction_parent"
+          grep -Fq 'func appDidLoseForeground()' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'foreground_integrity_lost_after_target_correlation' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq ']) { _, trusted in trusted })' NembraApp/App/NembraCaptureEntrypoint.swift
+          ! grep -Fq 'private func redactVerifiedAccountUIDFromApplicationUpdate(' NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Apply and verify account UID custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/materialize_capture_application_account_uid_custody.py apply
+          python3 scripts/ci/materialize_capture_application_account_uid_custody.py verify
+          python3 -m py_compile scripts/ci/materialize_capture_application_account_uid_custody.py
+          git diff --check
+
+      - name: Publish clean successor bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          construction_parent='4b41c9ad783f568d0d353acc9f7016a9bd0b64c2'
+          rm .github/workflows/capture-application-account-uid-custody.yml
+          rm scripts/ci/materialize_capture_application_account_uid_custody.py
+          git add -A
+          changed="$(git diff --cached "$construction_parent" --name-only | sort)"
+          expected="$(printf '%s\n' \
+            'NembraApp/App/NembraCaptureEntrypoint.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegritySourceTests.swift' | sort)"
+          test "$changed" = "$expected"
+          git diff --cached "$construction_parent" --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): scrub verified account UID before event custody'
+          git push origin HEAD:sol/v14-capture-foreground-integrity-4b41-r3
