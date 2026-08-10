@@ -1,0 +1,69 @@
+name: Capture Package Green Final Diagnostic
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/capture-package-green-final-diagnostic.yml'
+      - 'Packages/NembraBluetoothCapture/**'
+
+permissions:
+  contents: read
+
+jobs:
+  package-green:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Bind to exact clean head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Run complete Capture package
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/capture-package-green-final.log"
+          (cd Packages/NembraBluetoothCapture && swift test) 2>&1 | tee "$log"
+
+      - name: Require zero recorded issues
+        shell: bash
+        run: |
+          /usr/bin/python3 -I - "$RUNNER_TEMP/capture-package-green-final.log" <<'PY'
+          import re
+          import sys
+          from collections import Counter
+          from pathlib import Path
+
+          lines = Path(sys.argv[1]).read_text(errors="replace").splitlines()
+          files = Counter()
+          for line in lines:
+              match = re.search(r'at ([A-Za-z0-9_]+\.swift):\d+:\d+:', line)
+              if match and ("recorded an issue" in line or "Caught error" in line):
+                  files[match.group(1)] += 1
+
+          total = sum(files.values())
+          print(f"TOTAL_PACKAGE_ISSUES {total}")
+          for name, count in files.most_common():
+              print(f"PACKAGE_ISSUES {count:3d} {name}")
+          if total != 0:
+              raise SystemExit(f"Capture package is not green: {total} recorded issues")
+          PY
+
+      - name: Upload exact package log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: capture-package-green-final-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/capture-package-green-final.log
+          retention-days: 7
+          if-no-files-found: error
