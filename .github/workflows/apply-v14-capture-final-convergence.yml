@@ -1,0 +1,54 @@
+name: Apply V14 Capture final convergence repair
+
+on:
+  push:
+    branches: [agent/v14-capture-explicit-confirmation-lifecycle-ui]
+    paths:
+      - '.github/workflows/apply-v14-capture-final-convergence.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Assert exact reviewed parent blobs
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 5936e0e93fdcccffe22bb8e83fc79a1a7e5d784a HEAD
+          test "$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)" = "a63857ed1db3b1044635b1ae3634d55db0df8106"
+          test "$(git hash-object Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFreshTargetAndAcquisitionTerminalSourceTests.swift)" = "46b9beacbe30a1e477d5f2e70b2647e847f62274"
+          python3 -m py_compile .ci-patches/apply-v14-capture-final-convergence.py
+
+      - name: Apply deterministic convergence repair
+        run: |
+          set -euo pipefail
+          python3 .ci-patches/apply-v14-capture-final-convergence.py
+          git diff --check
+          grep -Fq 'case idle, baseline, powerOn, scanning, correlated, selected' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'func confirmCorrelatedCandidate' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'operator-confirmed-current-session-correlation' NembraApp/App/NembraCaptureEntrypoint.swift
+          ! grep -Fq 'selectedID = id' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'private var localBLESettlementToken: TuyaReadOnlyConnectionToken?' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'duplicate_connect_success_settlement_ignored' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'sdk_source_authority_lost_before_local_ble_settlement' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Confirm correlated Bluetooth target' NembraApp/App/NembraCaptureEntrypoint.swift
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFinalConvergenceAuthoritySourceTests.swift
+
+      - name: Commit product repair and retire helper
+        run: |
+          set -euo pipefail
+          rm .ci-patches/apply-v14-capture-final-convergence.py
+          rm .github/workflows/apply-v14-capture-final-convergence.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(capture): require confirmed current target authority"
+          git push origin HEAD:agent/v14-capture-explicit-confirmation-lifecycle-ui
