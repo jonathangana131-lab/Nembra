@@ -7,9 +7,9 @@ typedef void (^NembraTuyaSDKUpdateHandler)(BOOL authenticated, NSDictionary * _N
 /// Narrow Objective-C runtime bridge around Tuya SmartLife SDK APIs used by the
 /// authenticated stationary Capture preflight.
 ///
-/// The bridge intentionally exposes only SDK initialization, connection, DP
-/// observation, and disconnect. There is no generic write, publish-DP, pairing,
-/// reset, unbind, activation, firmware, or control surface here.
+/// The bridge intentionally exposes only SDK initialization, connection-state
+/// observation, DP observation, and disconnect. There is no generic write,
+/// publish-DP, pairing, reset, unbind, activation, firmware, or control surface.
 @interface NembraTuyaSDKBridge : NSObject
 
 @property (nonatomic, readonly) BOOL sdkAvailable;
@@ -20,6 +20,12 @@ typedef void (^NembraTuyaSDKUpdateHandler)(BOOL authenticated, NSDictionary * _N
                    uuid:(NSString *)uuid
               productID:(NSString *)productID
                  update:(NembraTuyaSDKUpdateHandler)update;
+
+/// Reads Tuya's own local BLE connection status for the exact UUID. This is the
+/// authority used by the monotonic stability gate; elapsed UI time cannot keep a
+/// disconnected session alive.
+- (BOOL)isLocallyConnectedUUID:(NSString *)uuid;
+
 - (void)disconnectUUID:(NSString *)uuid;
 
 @end
