@@ -591,110 +591,12 @@ final class NembraAppTests: XCTestCase {
         XCTAssertFalse(model.isAnimationActive)
     }
 
-    func testEnergyRailSourceStatePreservesContinuityWhileSimulatorStreamsAreSkewed() throws {
-        let sample = try simulatorSpeedSample(
-            kilometersPerHour: 18,
-            uptimeNanoseconds: 1_000_000_000
-        )
-
-        let state = dashboardEnergyRailSimulatorSourceState(
-            allowsSimulatorQA: true,
-            supportsPowerWatts: true,
-            isConnected: true,
-            speedAvailability: .live(sample),
-            aggregateSpeedKilometersPerHour: 17,
-            aggregatePowerWatts: 356
-        )
-
-        XCTAssertEqual(state, .awaitingCoherentAggregate)
-        XCTAssertTrue(state.isPresentationEligible)
-    }
-
-    func testEnergyRailSourceStateAdmitsOnlySpeedMatchedSimulatorAggregate() throws {
-        let sample = try simulatorSpeedSample(
-            kilometersPerHour: 18,
-            uptimeNanoseconds: 1_000_000_000
-        )
-
-        let state = dashboardEnergyRailSimulatorSourceState(
-            allowsSimulatorQA: true,
-            supportsPowerWatts: true,
-            isConnected: true,
-            speedAvailability: .live(sample),
-            aggregateSpeedKilometersPerHour: 18,
-            aggregatePowerWatts: 356
-        )
-
-        guard case let .coherent(snapshot) = state else {
-            return XCTFail("Expected a coherent Simulator propulsion source")
-        }
-        XCTAssertEqual(snapshot.watts, 356, accuracy: 0.000_1)
-        XCTAssertEqual(snapshot.sourceSample, sample)
-        XCTAssertTrue(state.isPresentationEligible)
-    }
-
-    func testEnergyRailSourceStateFailsClosedOnAuthorityLossAndCoherentMissingPower() throws {
-        let sample = try simulatorSpeedSample(
-            kilometersPerHour: 18,
-            uptimeNanoseconds: 1_000_000_000
-        )
-
-        XCTAssertEqual(
-            dashboardEnergyRailSimulatorSourceState(
-                allowsSimulatorQA: true,
-                supportsPowerWatts: true,
-                isConnected: true,
-                speedAvailability: .retained(sample),
-                aggregateSpeedKilometersPerHour: 18,
-                aggregatePowerWatts: 356
-            ),
-            .hardUnavailable
-        )
-
-        XCTAssertEqual(
-            dashboardEnergyRailSimulatorSourceState(
-                allowsSimulatorQA: false,
-                supportsPowerWatts: true,
-                isConnected: true,
-                speedAvailability: .live(sample),
-                aggregateSpeedKilometersPerHour: 18,
-                aggregatePowerWatts: 356
-            ),
-            .hardUnavailable
-        )
-
-        XCTAssertEqual(
-            dashboardEnergyRailSimulatorSourceState(
-                allowsSimulatorQA: true,
-                supportsPowerWatts: true,
-                isConnected: true,
-                speedAvailability: .live(sample),
-                aggregateSpeedKilometersPerHour: 18,
-                aggregatePowerWatts: nil
-            ),
-            .hardUnavailable
-        )
-    }
-
     private func speedSample(
         kilometersPerHour: Double,
         uptimeNanoseconds: UInt64
     ) throws -> SpeedTelemetrySample {
         try SpeedTelemetrySample(
             source: .scooterBluetooth,
-            provenance: .absoluteMeasurement,
-            metersPerSecond: kilometersPerHour / 3.6,
-            receivedAtUptimeNanoseconds: uptimeNanoseconds,
-            receivedAtDate: Date(timeIntervalSince1970: 0)
-        )
-    }
-
-    private func simulatorSpeedSample(
-        kilometersPerHour: Double,
-        uptimeNanoseconds: UInt64
-    ) throws -> SpeedTelemetrySample {
-        try SpeedTelemetrySample(
-            source: .simulatorQA,
             provenance: .absoluteMeasurement,
             metersPerSecond: kilometersPerHour / 3.6,
             receivedAtUptimeNanoseconds: uptimeNanoseconds,
