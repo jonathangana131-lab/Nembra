@@ -1434,6 +1434,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
             )
             return
         }
+        guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !verifiedAccountUID.isEmpty else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "Verified Tuya account identity was unavailable before application evidence custody.",
+                kind: "sdk_account_uid_authority_missing_during_observation"
+            )
+            return
+        }
         guard driver.isLocallyConnected(uuid: tuyaUUID) else {
             await recordObservedTransportLoss(token: token)
             return
@@ -1445,7 +1454,30 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            var eventDetails = redactedApplicationEventDetails(update)
+
+            // The actor hops above can interleave account/view lifecycle changes. Re-earn the exact
+            // token + account lease immediately before immutable event custody; a stale callback
+            // must never enter a later attempt or fall back to unsanitized application content.
+            guard currentConnectionToken == token,
+                  phase == .observing,
+                  sdkAccountLoggedIn,
+                  sdkDeviceMembershipVerified,
+                  accountIdentityLeaseIsAuthorized,
+                  membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) == verifiedAccountUID else {
+                if currentConnectionToken == token {
+                    await invalidateSourceAuthority(
+                        token: token,
+                        message: "SDK account/device authority changed before application evidence could enter event custody.",
+                        kind: "sdk_source_authority_changed_before_application_event_custody"
+                    )
+                }
+                return
+            }
+
+            var eventDetails = redactedApplicationEventDetails(
+                update,
+                verifiedAccountUID: verifiedAccountUID
+            )
             eventDetails["generation"] = String(token.diagnosticGeneration)
             log("tuya_application_update", eventDetails)
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
@@ -1474,25 +1506,36 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
     }
 
-    private func redactedApplicationEventDetails(_ update: [String: String]) -> [String: String] {
-        guard let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !accountUID.isEmpty else {
-            return update
-        }
+    private func redactedApplicationEventDetails(
+        _ update: [String: String],
+        verifiedAccountUID: String
+    ) -> [String: String] {
+        let accountUID = verifiedAccountUID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !accountUID.isEmpty else { return [:] }
 
         var redacted: [String: String] = [:]
         redacted.reserveCapacity(update.count)
-        for (key, value) in update {
+        for (key, value) in update.sorted(by: { $0.key < $1.key }) {
             let redactedKey = key.replacingOccurrences(
                 of: accountUID,
                 with: "<redacted-account-uid>",
                 options: [.caseInsensitive, .literal]
             )
-            redacted[redactedKey] = value.replacingOccurrences(
+            let redactedValue = value.replacingOccurrences(
                 of: accountUID,
                 with: "<redacted-account-uid>",
                 options: [.caseInsensitive, .literal]
             )
+
+            // Redaction can collapse two malformed keys to the same spelling. Keep both opaque
+            // values deterministically without reintroducing the sensitive original identifier.
+            var admittedKey = redactedKey
+            var collisionOrdinal = 2
+            while redacted[admittedKey] != nil {
+                admittedKey = "\(redactedKey)#\(collisionOrdinal)"
+                collisionOrdinal += 1
+            }
+            redacted[admittedKey] = redactedValue
         }
         return redacted
     }
