@@ -1,0 +1,112 @@
+name: Temporary retained-generation prerequisite recovery fix
+
+on:
+  push:
+    branches:
+      - red/v14-capture-retained-prerequisite-recovery-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: red/v14-capture-retained-prerequisite-recovery-sol
+          fetch-depth: 4
+
+      - name: Guard exact red child
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^^)" = "bfdb372708f9147119208bdeb4b9a552da263dbd"
+          test "$(git rev-parse HEAD^^^)" = "e7af19bf1d9b21c2b184c2a8c403d0d86dbc06c7"
+          changed="$(git diff --name-only e7af19bf1d9b21c2b184c2a8c403d0d86dbc06c7..HEAD | sort)"
+          expected=$(printf '%s\n' \
+            '.github/workflows/tmp-retained-prerequisite-recovery-fix.yml' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaRetainedGenerationPrerequisiteRecoverySourceTests.swift' | sort)
+          test "$changed" = "$expected"
+
+      - name: Tighten failed prerequisite routing
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text()
+          replacements = {
+              "            } else if !sdkAccount.loggedIn || !test.sdkAccountLoggedIn {":
+              "            } else if test.canRestartFromFreshOFF1 && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn) {",
+              "            } else if !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized {":
+              "            } else if test.canRestartFromFreshOFF1 && test.sdkAccountLoggedIn && (!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized) {",
+          }
+          for old, new in replacements.items():
+              if text.count(old) != 1:
+                  raise SystemExit(f"expected one guarded recovery anchor, found {text.count(old)}: {old}")
+              text = text.replace(old, new, 1)
+          path.write_text(text)
+
+      - name: Strengthen current recovery regression
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteRecoverySourceTests.swift")
+          text = path.read_text()
+          text = text.replace(
+              '#expect(body.contains("!sdkAccount.loggedIn || !test.sdkAccountLoggedIn"))',
+              '#expect(body.contains("test.canRestartFromFreshOFF1 && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn)"))',
+              1,
+          )
+          text = text.replace(
+              '#expect(body.contains("!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized"))',
+              '#expect(body.contains("test.canRestartFromFreshOFF1 && test.sdkAccountLoggedIn && (!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized)"))',
+              1,
+          )
+          anchor = '''    @Test("in-process retry remains gated by controller-owned retired-session authority")
+'''
+          test = '''    @Test("retained generation remains relaunch-only even when a prerequisite is missing")
+    func retainedGenerationCannotEnterPrerequisiteRecovery() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let surface = try section(in: app, from: "private var primarySurface: some View", to: "private var preflightPanel: some View")
+        let body = String(surface)
+        #expect(body.contains("test.canRestartFromFreshOFF1 && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn)"))
+        #expect(body.contains("test.canRestartFromFreshOFF1 && test.sdkAccountLoggedIn && (!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized)"))
+        #expect(body.contains("else {\n                failurePanel\n            }"))
+    }
+
+'''
+          if text.count(anchor) != 1:
+              raise SystemExit("recovery regression insertion anchor changed")
+          path.write_text(text.replace(anchor, test + anchor, 1))
+
+      - name: Validate source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteRecoverySourceTests.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaRetainedGenerationPrerequisiteRecoverySourceTests.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          assert 'test.canRestartFromFreshOFF1 && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn)' in app
+          assert 'test.canRestartFromFreshOFF1 && test.sdkAccountLoggedIn && (!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized)' in app
+          assert 'phase == .failed && currentConnectionToken == nil && localBLESettlementToken == nil && driver == nil' in app
+          assert 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier' in app
+          assert 'schemaVersion: 10' in app
+          PY
+          git diff --check
+
+      - name: Commit clean fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -- .github/workflows/tmp-retained-prerequisite-recovery-fix.yml
+          git config user.name 'nembra-go-bot'
+          git config user.email 'nembra-go-bot@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(capture): gate prerequisite recovery by retired generation'
+          git push origin HEAD:red/v14-capture-retained-prerequisite-recovery-sol
