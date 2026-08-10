@@ -1,4 +1,4 @@
-name: Capture Per-Window BLE Fence Materializer
+name: Materialize Capture Per-Window BLE Ownership Fence
 
 on:
   push:
@@ -10,178 +10,39 @@ permissions:
 
 jobs:
   materialize:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
           ref: fix/v14-capture-per-window-ble-fence-eee5-sol
+          fetch-depth: 0
 
-      - name: Verify exact parent
-        shell: bash
+      - name: Guard unchanged current product source
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "eee5a96fae1d30796ba5707f0a7f30f4f4d62530"
+          product_parent='eee5a96fae1d30796ba5707f0a7f30f4f4d62530'
+          git merge-base --is-ancestor "$product_parent" HEAD
+          git diff --quiet "$product_parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+          test ! -e Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationPerWindowBLEOwnershipSourceTests.swift
 
-      - name: Materialize product repair and regression
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
+      - name: Apply per-window ownership repair
+        run: python3 scripts/ci/materialize_capture_per_window_ble_fence.py
 
-          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
-          source = path.read_text()
-          old = '''        guard let session = correlationSession,
-                    let progress = session.progress else {
-              failLocally("Fresh Bluetooth correlation authority is unavailable. Restart from OFF1.", "target_correlation_authority_unavailable")
-              return
-          }
-
-          let label = correlationWindowLabel
-'''
-          new = '''        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {
-              correlationSession?.abandonCurrentWindow()
-              correlationSession = nil
-              failLocally(
-                  "Tuya regained local BLE ownership before the next correlation window. Restart from scooter OFF after that SDK session has cleared; package-owned scanning will not compete with Tuya BLE.",
-                  "sdk_local_ble_ownership_changed_during_target_correlation"
-              )
-              return
-          }
-          guard let session = correlationSession,
-                    let progress = session.progress else {
-              failLocally("Fresh Bluetooth correlation authority is unavailable. Restart from OFF1.", "target_correlation_authority_unavailable")
-              return
-          }
-
-          let label = correlationWindowLabel
-'''
-          if source.count(old) != 1:
-              raise SystemExit("expected exact startCurrentCorrelationWindow insertion point once")
-          source = source.replace(old, new, 1)
-          path.write_text(source)
-          PY
-
-          cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationPerWindowBLEOwnershipSourceTests.swift <<'SWIFT'
-          import Foundation
-          import Testing
-          @testable import NembraBluetoothCapture
-
-          @Suite("Capture per-window Tuya BLE ownership")
-          struct TuyaCorrelationPerWindowBLEOwnershipSourceTests {
-              @Test("every fresh correlation window rechecks global Tuya local-BLE ownership before package scan")
-              func everyWindowRechecksGlobalOwnership() throws {
-                  let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-                  let window = try section(
-                      in: app,
-                      from: "private func startCurrentCorrelationWindow()",
-                      to: "func finishCorrelationWindow()"
-                  )
-                  let body = String(window)
-
-                  guard let ownershipRead = body.range(of: "OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID)"),
-                        let scannerStart = body.range(of: "try session.startCurrentWindow()") else {
-                      Issue.record("Each fresh OFF1/ON1/OFF2/ON2 scanner window must synchronously recheck process-global Tuya local-BLE ownership before package-owned scanning starts.")
-                      throw SourceContractError.sectionMissing
-                  }
-
-                  #expect(ownershipRead.lowerBound < scannerStart.lowerBound)
-                  #expect(body[ownershipRead.upperBound..<scannerStart.lowerBound].contains("return"))
-              }
-
-              @Test("the shared window-start path actually owns every OFF1 ON1 OFF2 ON2 scanner admission")
-              func sharedWindowStartPathOwnsSeries() throws {
-                  let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-                  let begin = try section(
-                      in: app,
-                      from: "private func beginCorrelationSeries()",
-                      to: "func finishCorrelationWindow()"
-                  )
-                  let body = String(begin)
-
-                  #expect(body.contains("startCurrentCorrelationWindow()"))
-                  #expect(body.contains("func startNextCorrelationWindow()"))
-                  #expect(body.contains("startCurrentCorrelationWindow()\n    }"))
-              }
-
-              @Test("per-window ownership fence remains observation-only and cannot mutate scooter state")
-              func ownershipFenceIsReadOnly() throws {
-                  let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-                  let window = try section(
-                      in: app,
-                      from: "private func startCurrentCorrelationWindow()",
-                      to: "func finishCorrelationWindow()"
-                  )
-                  let body = String(window)
-
-                  #expect(!body.contains("disconnectBLE"))
-                  #expect(!body.contains("publishDps"))
-                  #expect(!body.contains("queryDps"))
-                  #expect(!body.contains("writeValue"))
-                  #expect(!body.contains("sessionLedger.endConnection"))
-              }
-
-              @Test("ownership loss abandons the in-progress series and fails closed")
-              func ownershipLossAbandonsSeries() throws {
-                  let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-                  let window = try section(
-                      in: app,
-                      from: "private func startCurrentCorrelationWindow()",
-                      to: "func finishCorrelationWindow()"
-                  )
-                  let body = String(window)
-                  let ownership = try #require(body.range(of: "guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else"))
-                  let scannerStart = try #require(body.range(of: "try session.startCurrentWindow()"))
-                  let guarded = body[ownership.lowerBound..<scannerStart.lowerBound]
-                  #expect(guarded.contains("correlationSession?.abandonCurrentWindow()"))
-                  #expect(guarded.contains("correlationSession = nil"))
-                  #expect(guarded.contains("sdk_local_ble_ownership_changed_during_target_correlation"))
-              }
-
-              private func section(in source: String, from start: String, to end: String) throws -> Substring {
-                  guard let startRange = source.range(of: start),
-                        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
-                      Issue.record("Expected source section missing: \(start) ... \(end)")
-                      throw SourceContractError.sectionMissing
-                  }
-                  return source[startRange.lowerBound..<endRange.lowerBound]
-              }
-
-              private func readRepositoryFile(_ relativePath: String) throws -> String {
-                  let repositoryRoot = URL(fileURLWithPath: #filePath)
-                      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-                      .deletingLastPathComponent().deletingLastPathComponent()
-                  return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
-              }
-
-              private enum SourceContractError: Error { case sectionMissing }
-          }
-          SWIFT
-
-      - name: Validate focused package and diff
-        shell: bash
+      - name: Verify focused repair
         run: |
           set -euo pipefail
           swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors --filter TuyaCorrelationPerWindowBLEOwnershipSourceTests
           git diff --check
-          python3 - <<'PY'
-          from pathlib import Path
-          s = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
-          section = s.split("private func startCurrentCorrelationWindow()", 1)[1].split("func finishCorrelationWindow()", 1)[0]
-          assert section.index("OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID)") < section.index("try session.startCurrentWindow()")
-          for forbidden in ("disconnectBLE", "publishDps", "queryDps", "writeValue", "sessionLedger.endConnection"):
-              assert forbidden not in section
-          print("per-window ownership source contract: PASS")
-          PY
 
-      - name: Commit durable repair and self-remove materializer
-        shell: bash
+      - name: Publish clean product bytes
         run: |
           set -euo pipefail
           rm .github/workflows/capture-per-window-ble-fence-materialize.yml
+          rm scripts/ci/materialize_capture_per_window_ble_fence.py
+          git add -A
+          git diff --cached --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationPerWindowBLEOwnershipSourceTests.swift .github/workflows/capture-per-window-ble-fence-materialize.yml
           git commit -m "fix(capture): fence every correlation window from Tuya BLE"
           git push origin HEAD:fix/v14-capture-per-window-ble-fence-eee5-sol
