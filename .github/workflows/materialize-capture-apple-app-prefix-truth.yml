@@ -1,0 +1,139 @@
+name: Materialize Capture Apple App ID Prefix Truth
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-apple-app-prefix-truth-sol
+    paths:
+      - .github/workflows/materialize-capture-apple-app-prefix-truth.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-apple-app-prefix-truth-sol
+          fetch-depth: 0
+
+      - name: Repair signed App ID prefix custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/field/install_one_time_capture.command")
+          text = path.read_text(encoding="utf-8")
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one match, found {count}")
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              'EXPECTED_APPLICATION_IDENTIFIER="${TEAM_ID}.${BUNDLE_ID}"\n',
+              '',
+              'remove unsafe Team-ID-derived App ID',
+          )
+
+          replace_once(
+              '''[[ "$BUILT_APPLICATION_IDENTIFIER" == "$EXPECTED_APPLICATION_IDENTIFIER" ]] || \\
+              die "Final signed Capture app application-identifier does not match the selected team and Capture bundle identifier. Discard this candidate."''',
+              '''[[ "$BUILT_APPLICATION_IDENTIFIER" == *".$BUNDLE_ID" ]] || \\
+              die "Final signed Capture app application-identifier does not end in the exact Capture bundle identifier. Discard this candidate."''',
+              'signed application identifier check',
+          )
+
+          replace_once(
+              '''if (apple == ["Default"] and isinstance(application, str) and isinstance(entitlement_team, str)
+                  and isinstance(team_identifiers, list) and len(team_identifiers) == 1
+                  and team_identifiers[0] == entitlement_team):
+              sys.stdout.write(application + "\\t" + entitlement_team)''',
+              '''if (apple == ["Default"] and isinstance(application, str) and isinstance(entitlement_team, str)
+                  and isinstance(team_identifiers, list) and len(team_identifiers) == 1
+                  and isinstance(team_identifiers[0], str)):
+              sys.stdout.write(application + "\\t" + entitlement_team + "\\t" + team_identifiers[0])''',
+              'profile signing identity parser',
+          )
+
+          replace_once(
+              '''[[ "$PROFILE_SIGNING_IDENTITY" == *$'\\t'* ]] || \\
+              die "Embedded provisioning profile is missing required Sign in with Apple or exact application/team identity custody. Discard this candidate."
+          PROFILE_APPLICATION_IDENTIFIER="${PROFILE_SIGNING_IDENTITY%%$'\\t'*}"
+          PROFILE_TEAM_IDENTIFIER="${PROFILE_SIGNING_IDENTITY#*$'\\t'}"
+          [[ "$PROFILE_APPLICATION_IDENTIFIER" == "$EXPECTED_APPLICATION_IDENTIFIER" ]] || \\
+              die "Embedded provisioning profile application identifier does not match the selected team and Capture bundle identifier. Discard this candidate."
+          [[ "$PROFILE_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \\
+              die "Embedded provisioning profile team identity does not match the selected Apple Development team. Discard this candidate."''',
+              '''[[ "$PROFILE_SIGNING_IDENTITY" == *$'\\t'*$'\\t'* ]] || \\
+              die "Embedded provisioning profile is missing required Sign in with Apple or exact application/team identity custody. Discard this candidate."
+          PROFILE_APPLICATION_IDENTIFIER="${PROFILE_SIGNING_IDENTITY%%$'\\t'*}"
+          PROFILE_SIGNING_REMAINDER="${PROFILE_SIGNING_IDENTITY#*$'\\t'}"
+          PROFILE_TEAM_IDENTIFIER="${PROFILE_SIGNING_REMAINDER%%$'\\t'*}"
+          PROFILE_ROOT_TEAM_IDENTIFIER="${PROFILE_SIGNING_REMAINDER#*$'\\t'}"
+          [[ "$PROFILE_APPLICATION_IDENTIFIER" == "$BUILT_APPLICATION_IDENTIFIER" ]] || \\
+              die "Embedded provisioning profile application identifier does not match the exact final signed Capture app. Discard this candidate."
+          [[ "$PROFILE_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \\
+              die "Embedded provisioning profile team entitlement does not match the selected Apple Development team. Discard this candidate."
+          [[ "$PROFILE_ROOT_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \\
+              die "Embedded provisioning profile root team identity does not match the selected Apple Development team. Discard this candidate."''',
+              'profile identity rendezvous checks',
+          )
+
+          replace_once(
+              'PROFILE_SIGNING_IDENTITY PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_IDENTIFIER BUILT_PROFILE',
+              'PROFILE_SIGNING_IDENTITY PROFILE_SIGNING_REMAINDER PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_IDENTIFIER PROFILE_ROOT_TEAM_IDENTIFIER BUILT_PROFILE',
+              'identity temporary cleanup',
+          )
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Validate repaired source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/field/install_one_time_capture.command
+          python3 scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
+          python3 - <<'PY'
+          from pathlib import Path
+          installer = Path("scripts/field/install_one_time_capture.command").read_text(encoding="utf-8")
+          required = [
+              '[[ "$BUILT_APPLICATION_IDENTIFIER" == *".$BUNDLE_ID" ]]',
+              '[[ "$PROFILE_APPLICATION_IDENTIFIER" == "$BUILT_APPLICATION_IDENTIFIER" ]]',
+              '[[ "$BUILT_TEAM_IDENTIFIER" == "$TEAM_ID" ]]',
+              '[[ "$PROFILE_TEAM_IDENTIFIER" == "$TEAM_ID" ]]',
+              '[[ "$PROFILE_ROOT_TEAM_IDENTIFIER" == "$TEAM_ID" ]]',
+          ]
+          for needle in required:
+              if needle not in installer:
+                  raise SystemExit(f"missing repaired custody marker: {needle}")
+          if 'EXPECTED_APPLICATION_IDENTIFIER="${TEAM_ID}.${BUNDLE_ID}"' in installer:
+              raise SystemExit("unsafe App ID prefix == Team ID assumption remains")
+          install = installer.index('say "Installing SDK-integrated Capture on the intended iPhone"')
+          if any(installer.index(marker) > install for marker in required):
+              raise SystemExit("identity custody check occurs after install boundary")
+          PY
+          git diff --check
+
+      - name: Publish clean repair checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/materialize-capture-apple-app-prefix-truth.yml
+          git add scripts/field/install_one_time_capture.command \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSignedAppleAppIdentityCustodySourceTests.swift \
+                  scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py \
+                  .github/workflows/materialize-capture-apple-app-prefix-truth.yml
+          git diff --cached --check
+          git config user.name "nembra-v14-bot"
+          git config user.email "nembra-v14-bot@users.noreply.github.com"
+          git commit -m "fix(capture): preserve Apple App ID prefix truth"
+          git push origin HEAD:fix/v14-capture-apple-app-prefix-truth-sol
