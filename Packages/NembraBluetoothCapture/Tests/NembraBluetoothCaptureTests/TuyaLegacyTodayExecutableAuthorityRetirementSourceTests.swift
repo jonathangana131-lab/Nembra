@@ -46,7 +46,8 @@ struct TuyaLegacyTodayExecutableAuthorityRetirementSourceTests {
         #expect(identity.contains("requiredFieldProcedureIdentifier = \"\(currentProcedure)\""))
         #expect(provenance.contains("procedure='\(currentProcedure)'"))
         #expect(runbook.contains("PROCEDURE_ID: `\(currentProcedure)`"))
-        #expect(runbook.contains("scripts/field/install_one_time_capture.command"))
+        #expect(runbook.contains("standalone Capture"))
+        #expect(runbook.contains("official Tuya SDK"))
         #expect(runbook.contains("NO-GO"))
     }
 
