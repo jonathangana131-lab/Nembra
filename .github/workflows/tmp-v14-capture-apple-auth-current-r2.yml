@@ -1,0 +1,51 @@
+name: Temporary Capture Apple-account recovery R2
+
+on:
+  push:
+    branches:
+      - recovery/v14-capture-apple-auth-current-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: recovery/v14-capture-apple-auth-current-sol
+          fetch-depth: 12
+
+      - name: Guard unchanged product and transform
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor e51432168180c5b36ba8f0d0c26c0cd65fa37658 HEAD
+          test "$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)" = "b4fea4aa52bc38a1c14ba6b1e71a39216f6339f1"
+          test "$(git hash-object NembraCapture.xcodeproj/project.pbxproj)" = "0c4feb5daf70411dfc919de7efea056ebae769b9"
+          test "$(git hash-object scripts/ci/apply_capture_apple_account_auth_current_recovery.py)" = "0c973b59c3fbe8a697992cf0dcdb5f54e7091c7b"
+          test ! -e NembraCapture.entitlements
+          python3 scripts/ci/apply_capture_apple_account_auth_current_recovery.py
+
+      - name: Validate Apple auth and credential custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAppleAccountLoginSourceTests.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAppleOAuthCredentialCustodySourceTests.swift
+          git diff --check
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaApple
+
+      - name: Commit product repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-capture-bot"
+          git config user.email "nembra-capture-bot@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift NembraCapture.xcodeproj/project.pbxproj NembraCapture.entitlements Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAppleAccountLoginSourceTests.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAppleOAuthCredentialCustodySourceTests.swift docs/CAPTURE_P0_APPLE_ACCOUNT_LOGIN.md
+          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" = "6"
+          git diff --cached --check
+          git commit -m "feat(capture): add Apple-backed Tuya account transport"
+          git push origin HEAD:recovery/v14-capture-apple-auth-current-sol
