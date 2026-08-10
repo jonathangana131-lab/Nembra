@@ -758,8 +758,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func authenticate() {
-        guard let candidate = selected, candidate.likely else {
-            failLocally("A fresh repeated OFF1→ON1→OFF2→ON2 Bluetooth correlation is required before Tuya BLE ownership.", "candidate_not_authoritative")
+        guard phase == .selected,
+              targetCorrelationOperatorConfirmed,
+              let candidate = selected,
+              candidate.likely else {
+            failLocally("An explicitly confirmed fresh OFF1→ON1→OFF2→ON2 Bluetooth correlation is required before Tuya BLE ownership.", "candidate_not_authoritative")
             return
         }
         guard buildIdentity.isAuthoritativeFieldBuild else {
@@ -779,10 +782,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
         verifySDKMembership { [weak self] stillAuthorized in
             guard let self else { return }
             guard stillAuthorized,
+                  self.phase == .selected,
+                  self.targetCorrelationOperatorConfirmed,
                   self.sdkAccountLoggedIn,
                   self.accountIdentityLeaseIsAuthorized,
                   self.selectedID == candidate.id else {
-                self.failLocally("Exact scooter/account authority could not be re-verified immediately before BLE authentication.", "sdk_device_membership_recheck_failed")
+                self.failLocally("Exact selected-target confirmation and scooter/account authority could not be re-verified immediately before BLE authentication.", "sdk_device_membership_recheck_failed")
                 return
             }
             self.beginOfficialConnection(candidate: candidate)
@@ -790,8 +795,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func beginOfficialConnection(candidate: Candidate) {
-        guard phase == .selected || phase == .failed else { return }
-        guard candidate.likely,
+        guard phase == .selected else { return }
+        guard targetCorrelationOperatorConfirmed,
+              selectedID == candidate.id,
+              candidate.likely,
               sdkDeviceMembershipVerified,
               sdkAccountLoggedIn,
               accountIdentityLeaseIsAuthorized else {
