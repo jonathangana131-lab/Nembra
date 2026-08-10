@@ -1,0 +1,67 @@
+name: Apply V14 Capture final convergence R2
+
+on:
+  push:
+    branches: [agent/v14-capture-final-convergence-r2]
+    paths:
+      - '.github/workflows/apply-v14-capture-final-r2.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Assert exact reviewed composition parent
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor d7ccdf41d216288e0db4a48214b272c72634b6e0 HEAD
+          test "$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)" = "be6f3271b83a7f23172b4d7eb0bfb675d2f98545"
+          test "$(git hash-object Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift)" = "2afb2b379e109d7c52d38c6c9507b9d33a29532b"
+          test "$(git hash-object Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFreshTargetAndAcquisitionTerminalSourceTests.swift)" = "cc2963a2b7a784d7180d7638890f37c6e218f292"
+          python3 -m py_compile .ci-patches/apply-v14-capture-final-r2.py
+          python3 -m py_compile .ci-patches/harden-v14-capture-final-r2.py
+
+      - name: Apply deterministic authority convergence
+        run: |
+          set -euo pipefail
+          python3 .ci-patches/apply-v14-capture-final-r2.py
+          python3 .ci-patches/harden-v14-capture-final-r2.py
+          git diff --check
+
+          grep -Fq 'case idle, baseline, powerOn, scanning, correlated, selected' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'func confirmCorrelatedTarget' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'operator-confirmed-current-session-correlation' NembraApp/App/NembraCaptureEntrypoint.swift
+          ! grep -Fq 'selectedID = id' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'localBLESettlementToken != token' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'sdk_source_authority_lost_before_local_ble_settlement' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'markChronologyIntegrityInvalidated' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'session_auth_start_rejected' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'authenticated_application_timeout_chronology_fallback' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Confirm correlated Bluetooth target' NembraApp/App/NembraCaptureEntrypoint.swift
+
+          grep -Fq 'public func markChronologyIntegrityInvalidated' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift
+          grep -Fq 'Read-only session chronology integrity was invalidated.' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift
+
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaChronologyIntegrityTerminalTests.swift
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFinalConvergenceAuthoritySourceTests.swift
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFinalLifecycleRetirementSourceTests.swift
+
+      - name: Commit product convergence and retire patch helpers
+        run: |
+          set -euo pipefail
+          rm .ci-patches/apply-v14-capture-final-r2.py
+          rm .ci-patches/harden-v14-capture-final-r2.py
+          rm .github/workflows/apply-v14-capture-final-r2.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(capture): converge confirmed target and no-clock authority"
+          git push origin HEAD:agent/v14-capture-final-convergence-r2
