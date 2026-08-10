@@ -1,0 +1,66 @@
+name: V14 Capture Account UID Custody Repair
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-truth-convergence-1c408-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Materialize exact UID-value custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          EFFECTIVE_BASE="d678b3c2749d8b0ee1c47e42bd31faf25a4ce350"
+          mapfile -t BEFORE < <(git diff --name-only "$EFFECTIVE_BASE" HEAD)
+          [[ "${#BEFORE[@]}" -eq 1 && "${BEFORE[0]}" == ".github/workflows/v14-capture-account-uid-custody-repair.yml" ]] || { printf 'unexpected effective bootstrap delta: %s\n' "${BEFORE[*]}"; exit 2; }
+
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text()
+          anchor = "        applicationUpdateAdmissionsInFlight += 1\n        defer { applicationUpdateAdmissionsInFlight -= 1 }\n\n        do {\n"
+          custody = "        let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines)\n        let custodySafeUpdate = update.mapValues { value in\n            guard let verifiedAccountUID, !verifiedAccountUID.isEmpty else { return value }\n            return value.replacingOccurrences(\n                of: verifiedAccountUID,\n                with: \"<redacted-account-uid>\",\n                options: [.literal]\n            )\n        }\n\n" + anchor
+          if text.count(anchor) != 1:
+              raise SystemExit(f"application admission anchor count: {text.count(anchor)}")
+          text = text.replace(anchor, custody, 1)
+          old_log = '            log("tuya_application_update", update.merging([\n                "generation": String(token.diagnosticGeneration)\n            ]) { _, trusted in trusted })\n'
+          new_log = '            log("tuya_application_update", custodySafeUpdate.merging([\n                "generation": String(token.diagnosticGeneration)\n            ]) { _, trusted in trusted })\n'
+          if text.count(old_log) != 1:
+              raise SystemExit(f"raw event log anchor count: {text.count(old_log)}")
+          path.write_text(text.replace(old_log, new_log, 1))
+          PY
+
+          git show 8010d108a043fbe2ff03fa3bb0d1518aa7047c08:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          start = source.index("private func receivedApplicationUpdate(")
+          end = source.index("private func startWatchdog", start)
+          admission = source[start:end]
+          assert "verifiedAccountUID" in admission
+          assert "custodySafeUpdate" in admission
+          assert "<redacted-account-uid>" in admission
+          assert 'log("tuya_application_update", custodySafeUpdate.merging([' in admission
+          assert 'log("tuya_application_update", update.merging([' not in admission
+          PY
+
+          git config user.name "Nembra V14 Materializer"
+          git config user.email "actions@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+          git commit -m "fix(capture): scrub verified account UID from event values"
+          git push origin HEAD:agent/v14-capture-truth-convergence-1c408-sol
