@@ -91,6 +91,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         var title: String { name?.isEmpty == false ? name! : "Unnamed peripheral" }
         var likely: Bool { knownID || (fd50 && tuyaCompany) || score >= 600 }
     }
+
     enum Phase: String, Codable { case idle, baseline, powerOn, scanning, selected, authenticating, observing, accepted, failed }
     struct Event: Codable { let at: Date; let kind: String; let details: [String: String] }
     struct Export: Codable {
@@ -109,6 +110,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let secureSessionAgeSeconds: Double?
         let sdkLocalBLEOnline: Bool
         let applicationUpdateCount: Int
+        let applicationValueRepresentation: String
+        let rawFD50BytesCaptured: Bool
         let secretsRedacted: Bool
         let dpCommandsSent: Bool
         let candidates: [Candidate]
@@ -142,6 +145,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         deviceID = device.id; deviceName = device.name; productID = device.productID; tuyaUUID = device.uuid
         super.init(); central = CBCentralManager(delegate: self, queue: .main); log("controller_created")
     }
+
     deinit { watchdog?.cancel() }
     var sdkCompiled: Bool { OfficialTuyaFactory.compiled }
     var privateConfig: Bool { OfficialTuyaFactory.configured }
@@ -152,34 +156,45 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let now = DispatchTime.now().uptimeNanoseconds
         return now >= start ? Double(now - start) / 1_000_000_000 : nil
     }
-    var passed: Bool { secureSessionEstablished && sdkLocalBLEOnline && applicationUpdateCount > 0 && (secureSessionAgeSeconds ?? 0) > 45 }
+    var passed: Bool {
+        secureSessionEstablished &&
+        (phase == .observing || phase == .accepted) &&
+        sdkLocalBLEOnline &&
+        applicationUpdateCount > 0 &&
+        (secureSessionAgeSeconds ?? 0) > 45
+    }
 
     func startBaseline() {
         guard central.state == .poweredOn else { fail("Bluetooth is not ready.", "bluetooth_unavailable"); return }
         resetDiscovery(); phase = .baseline; message = "Keep the scooter OFF for a few seconds."; log("baseline_started")
         central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
     }
+
     func saveBaseline() {
         guard phase == .baseline else { return }
         central.stopScan(); baseline = Set(byID.keys); phase = .powerOn; message = "Baseline saved. Turn the scooter ON and keep it stationary."; log("baseline_saved", ["count": String(baseline.count)])
     }
+
     func scanAfterPowerOn() {
         guard central.state == .poweredOn else { fail("Bluetooth is not ready.", "bluetooth_unavailable"); return }
         phase = .scanning; message = "Ranking OFF→ON delta, known peripheral, FD50, Tuya company ID, name and RSSI."; log("power_on_scan_started")
         central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
     }
+
     func stopScan() {
         central.stopScan()
         if selectedID == nil, let first = candidates.first, first.likely { choose(first) }
         if selectedID == nil { message = "No candidate has enough scooter/Tuya evidence. Re-scan instead of guessing." }
         log("scan_stopped")
     }
+
     func choose(_ candidate: Candidate) {
         guard candidate.likely else { message = "Candidate confidence is too low. Re-scan instead of guessing."; return }
         central.stopScan(); selectedID = candidate.id; phase = .selected
         message = "Likely scooter selected. CoreBluetooth discovery is stopped before Tuya's SDK takes connection ownership."
         log("candidate_selected", ["id": candidate.id.uuidString, "score": String(candidate.score), "evidence": candidate.evidence.joined(separator: ",")])
     }
+
     func authenticate() {
         guard let candidate = selected, candidate.likely else { fail("A strongly matched scooter candidate is required.", "candidate_not_confident"); return }
         guard !deviceID.isEmpty, !tuyaUUID.isEmpty, !productID.isEmpty else { fail("Tuya device ID, UUID or product ID is missing.", "tuya_identity_incomplete"); return }
@@ -190,18 +205,25 @@ private final class SecureLinkController: NSObject, ObservableObject {
         log("official_connect_requested", ["coreBluetoothID": candidate.id.uuidString, "tuyaDeviceID": deviceID, "tuyaUUID": tuyaUUID, "productID": productID])
         newDriver.connect(deviceID: deviceID, uuid: tuyaUUID, productID: productID, onApplicationUpdate: { [weak self] update in Task { @MainActor in self?.receivedApplicationUpdate(update) } }, success: { [weak self] in Task { @MainActor in self?.authenticated() } }, failure: { [weak self] error in Task { @MainActor in self?.fail(error, "official_connect_failed") } })
     }
+
     private func authenticated() {
         guard phase == .authenticating, let driver else { return }
         secureSessionEstablished = true; sdkLocalBLEOnline = driver.isLocallyConnected(uuid: tuyaUUID); authenticatedAtUptime = DispatchTime.now().uptimeNanoseconds; phase = .observing
         message = "Secure Tuya session established. Waiting for application updates while the SDK remains the only BLE owner…"
         log("official_session_ready", ["localBLEOnline": sdkLocalBLEOnline ? "true" : "false"]); startWatchdog()
     }
+
     private func receivedApplicationUpdate(_ update: [String: String]) {
         guard secureSessionEstablished else { return }
+        guard phase == .observing || phase == .accepted else {
+            log("late_application_update_ignored", ["phase": phase.rawValue])
+            return
+        }
         applicationUpdateCount += 1; log("tuya_application_update", update)
         message = passed ? "Secure scooter link passed. Tuya delivered real application data and remained locally connected beyond 45 seconds." : "Receiving scooter application data · \(applicationUpdateCount) update(s). Keep it stationary until the 45-second gate passes."
         if passed { phase = .accepted }
     }
+
     private func startWatchdog() {
         watchdog?.cancel(); watchdog = Task { @MainActor [weak self] in
             while !Task.isCancelled {
@@ -214,15 +236,44 @@ private final class SecureLinkController: NSObject, ObservableObject {
             }
         }
     }
+
     func prepareExport() {
-        let envelope = Export(schemaVersion: 2, purpose: "Sanitized Tuya authenticated read-only preflight", exportedAt: Date(), tuyaDeviceID: deviceID, tuyaUUID: tuyaUUID, productID: productID, selectedPeripheralID: selectedID?.uuidString, phase: phase, sdkCompiled: sdkCompiled, privateConfigPresent: privateConfig, sdkAccountAuthorized: sdkAccountAuthorized, secureSessionEstablished: secureSessionEstablished, secureSessionAgeSeconds: secureSessionAgeSeconds, sdkLocalBLEOnline: sdkLocalBLEOnline, applicationUpdateCount: applicationUpdateCount, secretsRedacted: true, dpCommandsSent: false, candidates: candidates, events: events)
-        do { let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]; encoder.dateEncodingStrategy = .iso8601; exportData = try encoder.encode(envelope); exportName = "Nembra-Secure-Link-\(deviceID.prefix(8))-Diagnostics.json"; message = "Sanitized diagnostics ready. Passwords, account tokens, local_key and AppSecret are excluded." } catch { message = "Diagnostic export failed: \(error.localizedDescription)" }
+        let envelope = Export(
+            schemaVersion: 3,
+            purpose: "Sanitized Tuya authenticated read-only preflight",
+            exportedAt: Date(),
+            tuyaDeviceID: deviceID,
+            tuyaUUID: tuyaUUID,
+            productID: productID,
+            selectedPeripheralID: selectedID?.uuidString,
+            phase: phase,
+            sdkCompiled: sdkCompiled,
+            privateConfigPresent: privateConfig,
+            sdkAccountAuthorized: sdkAccountAuthorized,
+            secureSessionEstablished: secureSessionEstablished,
+            secureSessionAgeSeconds: secureSessionAgeSeconds,
+            sdkLocalBLEOnline: sdkLocalBLEOnline,
+            applicationUpdateCount: applicationUpdateCount,
+            applicationValueRepresentation: "ThingSmartDeviceDelegate dpsUpdate values projected with String(describing:); application-level SDK data, not byte-exact or raw FD50 transport",
+            rawFD50BytesCaptured: false,
+            secretsRedacted: true,
+            dpCommandsSent: false,
+            candidates: candidates,
+            events: events
+        )
+        do {
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]; encoder.dateEncodingStrategy = .iso8601
+            exportData = try encoder.encode(envelope); exportName = "Nembra-Secure-Link-\(deviceID.prefix(8))-Diagnostics.json"
+            message = "Sanitized diagnostics ready. SDK application values are string projections, not raw FD50 bytes. Passwords, account tokens, local_key and AppSecret are excluded."
+        } catch { message = "Diagnostic export failed: \(error.localizedDescription)" }
     }
+
     private func resetDiscovery() { central.stopScan(); watchdog?.cancel(); watchdog = nil; driver = nil; byID.removeAll(); candidates.removeAll(); baseline.removeAll(); selectedID = nil; secureSessionEstablished = false; sdkLocalBLEOnline = false; authenticatedAtUptime = nil; applicationUpdateCount = 0; exportData = nil }
     private func fail(_ text: String, _ kind: String) { watchdog?.cancel(); watchdog = nil; phase = .failed; message = text; log(kind, ["message": sanitize(text)]) }
     private func log(_ kind: String, _ details: [String: String] = [:]) { events.append(Event(at: Date(), kind: kind, details: details.mapValues(sanitize))) }
     private func sanitize(_ text: String) -> String { var result = text; for key in ["NEMBRA_TUYA_APP_KEY", "NEMBRA_TUYA_APP_SECRET"] { if let value = ProcessInfo.processInfo.environment[key], !value.isEmpty { result = result.replacingOccurrences(of: value, with: "<redacted>") } }; return result }
     private static func hasTuyaCompanyID(_ data: Data?) -> Bool { guard let data, data.count >= 2 else { return false }; return (UInt16(data[data.startIndex]) | UInt16(data[data.index(after: data.startIndex)]) << 8) == 0x07D0 }
+
     private func updateCandidate(_ peripheral: CBPeripheral, advertisement: [String: Any], rssi number: NSNumber) {
         let id = peripheral.identifier; if phase == .baseline { baseline.insert(id) }
         let old = byID[id]; let name = (advertisement[CBAdvertisementDataLocalNameKey] as? String) ?? peripheral.name ?? old?.name; let rssi = number.intValue == 127 ? old?.rssi : number.intValue
@@ -435,7 +486,7 @@ private struct SecureLinkView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Button("Prepare sanitized diagnostic JSON") { test.prepareExport() }.buttonStyle(.bordered)
                         if let data = test.exportData { ShareLink(item: SecureTransfer(data: data, name: test.exportName), preview: SharePreview(test.exportName)) { Label("Share diagnostic JSON", systemImage: "square.and.arrow.up") }.buttonStyle(.borderedProminent) }
-                        Text("Export includes candidate evidence, continuity, SDK-local status, failures and opaque application-update values. It excludes passwords, account tokens, local_key and AppSecret.").font(.footnote).foregroundStyle(.secondary)
+                        Text("Export includes candidate evidence, continuity, SDK-local status, failures, and opaque application-update values as a string projection. It explicitly does not claim raw FD50 bytes and excludes passwords, account tokens, local_key and AppSecret.").font(.footnote).foregroundStyle(.secondary)
                     }.card()
                 }.frame(maxWidth: 760).padding(18).frame(maxWidth: .infinity)
             }.background(Color.black.ignoresSafeArea())
@@ -463,4 +514,9 @@ private struct SecureTransfer: Transferable {
     let data: Data; let name: String
     static var transferRepresentation: some TransferRepresentation { DataRepresentation(exportedContentType: .json) { $0.data }.suggestedFileName { $0.name } }
 }
-private extension View { func card() -> some View { padding(16).frame(maxWidth: .infinity, alignment: .leading).background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 20)) } }
+
+private extension View {
+    func card() -> some View {
+        padding(16).frame(maxWidth: .infinity, alignment: .leading).background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 20))
+    }
+}
