@@ -23,10 +23,10 @@ The Simulator artifact above is software evidence only. It is **not** the signed
 
 The current accepted external pre-signing helper is also non-authorizing software tooling:
 
-- helper commit: `9b5bde849e6b8f6b76e2a15abb52d643e3616a7a`
+- helper commit: `74f4e88e4efb78bf69fe504f407ef42398e4b6ab`
 - helper path: `scripts/ci/es80_today_field_candidate_preflight.py`
-- helper blob: `fcc2243c005c5f6df2d2f5bd8b8c948e785f07d8`
-- exact focused QA run: `31340823325` — terminal success
+- helper blob: `1b0155ab8d990420c33ad4c65461e7663612f9fb`
+- exact focused QA run: `31349183788` — terminal success
 - helper authority on every report: `operator-pre-signing-readiness-not-field-authorization`
 - physical authorization on every report: `not-granted`
 
@@ -91,8 +91,8 @@ PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"
 UDID_FILE="$PRIVATE_DIR/es80-intended-device.udid"
 TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
 
-PRIVATE_INPUT_HELPER_COMMIT='05ce6d9a20487ab34aa31c5b6456910ed2ed438f'
-PRIVATE_INPUT_HELPER_BLOB='9a9f7f724ceaf895e52d6d443d326043f97645c8'
+PRIVATE_INPUT_HELPER_COMMIT='c8c706e3d67d2aeab37341035468437dc2af0491'
+PRIVATE_INPUT_HELPER_BLOB='38eb695792fb759428a98686081b883e39c3b118'
 PRIVATE_INPUT_HELPER_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-private-input.XXXXXX)"
 PRIVATE_INPUT_HELPER="$PRIVATE_INPUT_HELPER_DIR/es80_today_private_device_input.py"
 
@@ -141,13 +141,13 @@ Keep `NEMBRA_ALLOW_PROVISIONING_UPDATES=0` unless the private signing setup actu
 
 ## 3A. Run the accepted non-authorizing pre-signing preflight
 
-Do not run a moving `main` copy of the helper and do not copy the helper into the frozen source checkout. Materialize the exact accepted helper bytes from a separate local Nembra tooling repository that contains commit `9b5bde849e6b8f6b76e2a15abb52d643e3616a7a`, then run those bytes against the exact frozen `FIELD_SOURCE`.
+Do not run a moving `main` copy of the helper and do not copy the helper into the frozen source checkout. Materialize the exact accepted helper bytes from a separate local Nembra tooling repository that contains commit `74f4e88e4efb78bf69fe504f407ef42398e4b6ab`, then run those bytes against the exact frozen `FIELD_SOURCE`.
 
 The helper deliberately reads the private signing values from the environment and the intended-device value only from its mode-`0600` file. Its JSON report omits the TeamIdentifier, raw UDID, private input paths, export-options contents, and dirty-checkout text.
 
 ```bash
-PREFLIGHT_COMMIT='9b5bde849e6b8f6b76e2a15abb52d643e3616a7a'
-PREFLIGHT_BLOB='fcc2243c005c5f6df2d2f5bd8b8c948e785f07d8'
+PREFLIGHT_COMMIT='74f4e88e4efb78bf69fe504f407ef42398e4b6ab'
+PREFLIGHT_BLOB='1b0155ab8d990420c33ad4c65461e7663612f9fb'
 PREFLIGHT_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-preflight.XXXXXX)"
 PREFLIGHT="$PREFLIGHT_DIR/es80_today_field_candidate_preflight.py"
 PREFLIGHT_REPORT="$PREFLIGHT_DIR/preflight.json"
