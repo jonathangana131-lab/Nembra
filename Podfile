@@ -10,11 +10,12 @@ project 'NembraCapture.xcodeproj'
 
 target 'Nembra Capture' do
   # Tuya's current iOS integration requires the app-specific security package
-  # generated for this exact bundle identifier. Place ThingSmartCryption.podspec
-  # and its Build directory in LocalSecrets/TuyaSecuritySDK on the build Mac.
-  pod 'ThingSmartCryption', :path => './LocalSecrets/TuyaSecuritySDK'
+  # generated for this exact bundle identifier. Keep ThingSmartCryption.podspec
+  # and its Build directory under the durable ignored path documented by Capture.
+  pod 'ThingSmartCryption', :path => './LocalSecrets/TuyaSDK'
 
-  # Keep the public SmartLife dependency explicit so canImport(ThingSmartHomeKit)
-  # cannot be mistaken for a fully provisioned field build.
+  # This P0 path needs the official HomeKit/BLE API surface only. Do not pull
+  # broader business/control SDKs into the read-only experiment without a
+  # concrete consumer.
   pod 'ThingSmartHomeKit', '~> 7.8.0'
 end
