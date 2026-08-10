@@ -1,0 +1,121 @@
+name: Materialize Capture Auth Promotion Reentrancy A7A
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-auth-promotion-reentrancy-a7a-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-auth-promotion-reentrancy-a7a-sol
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact product lineage and materialize fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor a7a28ca6e744d4bad8be08fd3553a2af8c609b15 HEAD
+          test "$(git diff --name-only a7a28ca6e744d4bad8be08fd3553a2af8c609b15 HEAD | sort)" = "$(printf '%s\n' '.github/workflows/materialize-capture-auth-promotion-reentrancy-a7a-sol.yml' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticationPromotionReentrancySourceTests.swift' | sort)"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+          start = source.index('    private func authenticated(token: TuyaReadOnlyConnectionToken) async {')
+          end = source.index('    private func authenticationFailed(token: TuyaReadOnlyConnectionToken) async {', start)
+          section = source[start:end]
+
+          anchor = '''                    try await sessionLedger.markAuthenticated(for: token, method: .smartLifeAppSDK)
+                              await refreshLedgerSnapshot()
+                              phase = .observing
+          '''
+          if section.count(anchor) != 1:
+              raise SystemExit(f'expected one auth-promotion anchor, found {section.count(anchor)}')
+
+          replacement = '''                    try await sessionLedger.markAuthenticated(for: token, method: .smartLifeAppSDK)
+                              await refreshLedgerSnapshot()
+
+                              // Both actor hops above can interleave foreground/view/account retirement.
+                              // Re-earn app-visible promotion authority before publishing `.observing`.
+                              guard currentConnectionToken == token else {
+                                  log("stale_auth_promotion_after_ledger_ignored", ["generation": String(token.diagnosticGeneration)])
+                                  return
+                              }
+                              guard phase == .authenticating else {
+                                  log("auth_promotion_after_state_change_ignored", [
+                                      "generation": String(token.diagnosticGeneration),
+                                      "phase": phase.rawValue
+                                  ])
+                                  return
+                              }
+                              guard sdkAccountLoggedIn,
+                                    sdkDeviceMembershipVerified,
+                                    accountIdentityLeaseIsAuthorized else {
+                                  await invalidateSourceAuthority(
+                                      token: token,
+                                      message: "Tuya account/device source authority changed while authentication promotion was awaiting ledger state.",
+                                      kind: "sdk_source_authority_lost_during_auth_promotion"
+                                  )
+                                  return
+                              }
+
+                              phase = .observing
+          '''
+          section = section.replace(anchor, replacement, 1)
+          path.write_text(source[:start] + section + source[end:], encoding='utf-8')
+          PY
+
+      - name: Verify reentrancy contract and Swift syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          start = source.index('    private func authenticated(token: TuyaReadOnlyConnectionToken) async {')
+          end = source.index('    private func authenticationFailed(token: TuyaReadOnlyConnectionToken) async {', start)
+          authenticated = source[start:end]
+          promotion = authenticated.index('try await sessionLedger.markAuthenticated(for: token, method: .smartLifeAppSDK)')
+          refresh = authenticated.index('await refreshLedgerSnapshot()', promotion)
+          observing = authenticated.index('phase = .observing', refresh)
+          watchdog = authenticated.index('startWatchdog(token: token)', observing)
+          fence = authenticated[refresh:observing]
+          for token in [
+              'currentConnectionToken == token',
+              'phase == .authenticating',
+              'sdkAccountLoggedIn',
+              'sdkDeviceMembershipVerified',
+              'accountIdentityLeaseIsAuthorized',
+              'sdk_source_authority_lost_during_auth_promotion',
+          ]:
+              if token not in fence:
+                  raise SystemExit(f'post-await auth fence missing: {token}')
+          if not (promotion < refresh < observing < watchdog):
+              raise SystemExit('auth promotion/watchdog ordering invalid')
+          print('Capture post-await auth promotion reentrancy fence: PASS')
+          PY
+          git diff --check
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticationPromotionReentrancySourceTests.swift
+
+      - name: Collapse helper into repair commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-sol-materializer'
+          git config user.email 'actions@users.noreply.github.com'
+          git rm .github/workflows/materialize-capture-auth-promotion-reentrancy-a7a-sol.yml
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(capture): fence auth promotion after actor suspension'
+          git push origin HEAD:fix/v14-capture-auth-promotion-reentrancy-a7a-sol
