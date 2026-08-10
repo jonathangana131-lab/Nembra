@@ -32,117 +32,136 @@ jobs:
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           source = path.read_text()
 
-          revoke_old = '''        sdkDeviceMembershipVerified = false
-                  membershipAccountUID = nil
-                  membershipDeviceID = nil
-                  membershipRequestID = UUID()
-          '''
-          revoke_new = '''        sdkDeviceMembershipVerified = false
-                  membershipAccountUID = nil
-                  membershipDeviceID = nil
-                  membershipStatus = "Exact scooter membership must be verified again for this Secure Link view."
-                  membershipRequestID = UUID()
-          '''
-          if source.count(revoke_old) != 2:
-              raise SystemExit(f"expected 2 membership-revocation blocks, found {source.count(revoke_old)}")
-          source = source.replace(revoke_old, revoke_new)
+          def splice(start_token: str, end_token: str, transform):
+              global source
+              start = source.index(start_token)
+              end = source.index(end_token, start)
+              before = source[:start]
+              section = source[start:end]
+              after = source[end:]
+              changed = transform(section)
+              if changed == section:
+                  raise SystemExit(f"no change made in section {start_token}")
+              source = before + changed + after
 
-          authority_guard_old = '''        guard sdkAccountLoggedIn,
-                  sdkDeviceMembershipVerified,
-                  accountIdentityLeaseIsAuthorized,
-                  let driver else {
-          '''
-          authority_guard_new = '''        guard sdkAccountLoggedIn,
-                  sdkDeviceMembershipVerified,
-                  accountIdentityLeaseIsAuthorized,
-                  let admittedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !admittedAccountUID.isEmpty,
-                  let driver else {
-          '''
-          if source.count(authority_guard_old) != 1:
-              raise SystemExit(f"expected 1 application authority guard, found {source.count(authority_guard_old)}")
-          source = source.replace(authority_guard_old, authority_guard_new)
+          def reset_membership_status(section: str) -> str:
+              old = "        membershipDeviceID = nil\n        membershipRequestID = UUID()"
+              new = (
+                  "        membershipDeviceID = nil\n"
+                  "        membershipStatus = \"Exact scooter membership must be verified again for this Secure Link view.\"\n"
+                  "        membershipRequestID = UUID()"
+              )
+              if section.count(old) != 1:
+                  raise SystemExit(f"expected one membership status insertion point, found {section.count(old)}")
+              return section.replace(old, new, 1)
 
-          event_old = '''            log("tuya_application_update", update.merging([
-                          "generation": String(token.diagnosticGeneration)
-                      ]) { current, _ in current })
-          '''
-          event_new = '''            guard currentConnectionToken == token,
-                        phase == .observing,
-                        sdkAccountLoggedIn,
-                        sdkDeviceMembershipVerified,
-                        accountIdentityLeaseIsAuthorized,
-                        membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) == admittedAccountUID else {
-                      await invalidateSourceAuthority(
-                          token: token,
-                          message: "SDK account/device source authority changed before application evidence could enter immutable event custody.",
-                          kind: "sdk_source_authority_changed_before_application_event_custody"
-                      )
-                      return
-                  }
-                  guard driver.isLocallyConnected(uuid: tuyaUUID) else {
-                      await recordObservedTransportLoss(token: token)
-                      return
-                  }
-                  let applicationDetails = redactAccountUIDFromApplicationDetails(
-                      update,
-                      accountUID: admittedAccountUID
-                  )
-                  log("tuya_application_update", applicationDetails.merging([
-                      "generation": String(token.diagnosticGeneration)
-                  ]) { _, trusted in trusted })
-          '''
-          if source.count(event_old) != 1:
-              raise SystemExit(f"expected 1 application-event custody block, found {source.count(event_old)}")
-          source = source.replace(event_old, event_new)
+          splice(
+              "    func abandonCorrelationForViewExit() {",
+              "    func appDidLoseForeground() {",
+              reset_membership_status,
+          )
+          splice(
+              "    func appDidLoseForeground() {",
+              "    var privateConfig: Bool",
+              reset_membership_status,
+          )
 
-          watchdog_marker = '''    private func startWatchdog(token: TuyaReadOnlyConnectionToken) {
-          '''
+          def close_application_custody(section: str) -> str:
+              guard_old = (
+                  "              accountIdentityLeaseIsAuthorized,\n"
+                  "              let driver else {"
+              )
+              guard_new = (
+                  "              accountIdentityLeaseIsAuthorized,\n"
+                  "              let admittedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),\n"
+                  "              !admittedAccountUID.isEmpty,\n"
+                  "              let driver else {"
+              )
+              if section.count(guard_old) != 1:
+                  raise SystemExit(f"expected one application authority guard, found {section.count(guard_old)}")
+              section = section.replace(guard_old, guard_new, 1)
+
+              event_old = (
+                  '            log("tuya_application_update", update.merging([\n'
+                  '                "generation": String(token.diagnosticGeneration)\n'
+                  '            ]) { current, _ in current })'
+              )
+              event_new = (
+                  "            guard currentConnectionToken == token,\n"
+                  "                  phase == .observing,\n"
+                  "                  sdkAccountLoggedIn,\n"
+                  "                  sdkDeviceMembershipVerified,\n"
+                  "                  accountIdentityLeaseIsAuthorized,\n"
+                  "                  membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) == admittedAccountUID else {\n"
+                  "                await invalidateSourceAuthority(\n"
+                  "                    token: token,\n"
+                  "                    message: \"SDK account/device source authority changed before application evidence could enter immutable event custody.\",\n"
+                  "                    kind: \"sdk_source_authority_changed_before_application_event_custody\"\n"
+                  "                )\n"
+                  "                return\n"
+                  "            }\n"
+                  "            guard driver.isLocallyConnected(uuid: tuyaUUID) else {\n"
+                  "                await recordObservedTransportLoss(token: token)\n"
+                  "                return\n"
+                  "            }\n"
+                  "            let applicationDetails = redactAccountUIDFromApplicationDetails(\n"
+                  "                update,\n"
+                  "                accountUID: admittedAccountUID\n"
+                  "            )\n"
+                  '            log("tuya_application_update", applicationDetails.merging([\n'
+                  '                "generation": String(token.diagnosticGeneration)\n'
+                  '            ]) { _, trusted in trusted })'
+              )
+              if section.count(event_old) != 1:
+                  raise SystemExit(f"expected one application event custody block, found {section.count(event_old)}")
+              return section.replace(event_old, event_new, 1)
+
+          splice(
+              "    private func receivedApplicationUpdate(",
+              "    private func startWatchdog",
+              close_application_custody,
+          )
+
+          watchdog_marker = "    private func startWatchdog(token: TuyaReadOnlyConnectionToken) {\n"
           helper = '''    private func redactAccountUIDFromApplicationDetails(
-                  _ details: [String: String],
-                  accountUID: String
-              ) -> [String: String] {
-                  let exactAccountUID = accountUID.trimmingCharacters(in: .whitespacesAndNewlines)
-                  guard !exactAccountUID.isEmpty else { return details }
+              _ details: [String: String],
+              accountUID: String
+          ) -> [String: String] {
+              let exactAccountUID = accountUID.trimmingCharacters(in: .whitespacesAndNewlines)
+              guard !exactAccountUID.isEmpty else { return details }
 
-                  func redacted(_ text: String) -> String {
-                      text.replacingOccurrences(
-                          of: exactAccountUID,
-                          with: "<redacted-account-uid>",
-                          options: [.caseInsensitive, .literal]
-                      )
-                  }
-
-                  var sanitized: [String: String] = [:]
-                  for key in details.keys.sorted() {
-                      guard let value = details[key] else { continue }
-                      let baseKey = redacted(key)
-                      var admittedKey = baseKey
-                      var collisionOrdinal = 2
-                      while sanitized[admittedKey] != nil {
-                          admittedKey = "\\(baseKey)#\\(collisionOrdinal)"
-                          collisionOrdinal += 1
-                      }
-                      sanitized[admittedKey] = redacted(value)
-                  }
-                  return sanitized
+              func redacted(_ text: String) -> String {
+                  text.replacingOccurrences(
+                      of: exactAccountUID,
+                      with: "<redacted-account-uid>",
+                      options: [.caseInsensitive, .literal]
+                  )
               }
+
+              var sanitized: [String: String] = [:]
+              for key in details.keys.sorted() {
+                  guard let value = details[key] else { continue }
+                  let baseKey = redacted(key)
+                  var admittedKey = baseKey
+                  var collisionOrdinal = 2
+                  while sanitized[admittedKey] != nil {
+                      admittedKey = "\(baseKey)#\(collisionOrdinal)"
+                      collisionOrdinal += 1
+                  }
+                  sanitized[admittedKey] = redacted(value)
+              }
+              return sanitized
+          }
 
           '''
           if source.count(watchdog_marker) != 1:
-              raise SystemExit("expected one startWatchdog insertion point")
-          source = source.replace(watchdog_marker, helper + watchdog_marker)
+              raise SystemExit(f"expected one watchdog insertion point, found {source.count(watchdog_marker)}")
+          source = source.replace(watchdog_marker, helper + watchdog_marker, 1)
 
-          duplicate = '''        "refreshtoken",
-                  "sessionkey",
-                  "authkey",
-          '''
-          simplified = '''        "refreshtoken",
-                  "authkey",
-          '''
+          duplicate = '        "refreshtoken",\n        "sessionkey",\n        "authkey",'
           if source.count(duplicate) != 1:
-              raise SystemExit("expected one duplicate sessionkey classifier entry")
-          source = source.replace(duplicate, simplified)
+              raise SystemExit(f"expected one duplicate sessionkey adjacency, found {source.count(duplicate)}")
+          source = source.replace(duplicate, '        "refreshtoken",\n        "authkey",', 1)
 
           path.write_text(source)
           PY
@@ -160,7 +179,8 @@ jobs:
           assert ']) { _, trusted in trusted })' in s
           assert '<redacted-account-uid>' in s
           assert s.count('        "sessionkey",') == 1
-          assert '"uid",' not in s[s.index('@MainActor\nprivate final class SmartLifeDriver'):s.index('#endif\n\nprivate enum AppleAccountAuthorizationError')]
+          driver = s[s.index('@MainActor\nprivate final class SmartLifeDriver'):s.index('#endif\n\nprivate enum AppleAccountAuthorizationError')]
+          assert '"uid",' not in driver
           PY
           git diff --check
 
