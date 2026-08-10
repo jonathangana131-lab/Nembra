@@ -64,7 +64,9 @@ public struct PropulsionEnergyRailAccessibilityPresentation: Equatable, Sendable
     public let acceptedRevision: PropulsionEnergyRailAcceptedRevision?
     public let semanticRevision: PropulsionEnergyRailAccessibilitySemanticRevision
 
-    fileprivate init(
+    /// Module-internal construction keeps source-currentness transforms inside
+    /// NembraCore. SwiftUI may consume this state but cannot synthesize it.
+    init(
         identity: PropulsionGaugeIdentity,
         currentness: PropulsionEnergyRailCurrentness,
         acceptedWatts: Double?,
