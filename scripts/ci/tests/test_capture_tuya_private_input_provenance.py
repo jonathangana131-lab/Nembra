@@ -179,6 +179,50 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
                 provenance._tree_fingerprint(self.security_build)
         self.assertTrue(added)
 
+    def test_record_read_rejects_same_size_mutation_during_read(self) -> None:
+        self.snapshot()
+        original_read = provenance.os.read
+        mutated = False
+
+        def read_then_mutate(descriptor: int, count: int) -> bytes:
+            nonlocal mutated
+            chunk = original_read(descriptor, count)
+            if chunk and not mutated:
+                mutated = True
+                existing = self.record.read_bytes()
+                replacement = (b"X" if existing[:1] != b"X" else b"Y") + existing[1:]
+                self.record.write_bytes(replacement)
+                os.chmod(self.record, 0o600)
+            return chunk
+
+        with mock.patch.object(provenance.os, "read", side_effect=read_then_mutate):
+            with self.assertRaises(provenance.ProvenanceError):
+                provenance.read_record(self.record)
+        self.assertTrue(mutated)
+
+    def test_record_write_rejects_parent_path_replacement_during_admission(self) -> None:
+        alternate_parent = self.root / "alternate-runtime"
+        moved_parent = self.root / "moved-runtime"
+        alternate_parent.mkdir()
+        original_open = provenance.os.open
+        replaced = False
+
+        def open_then_replace(path, flags, *args, **kwargs):
+            nonlocal replaced
+            descriptor = original_open(path, flags, *args, **kwargs)
+            if Path(path) == self.identity and not replaced and kwargs.get("dir_fd") is None:
+                replaced = True
+                self.identity.rename(moved_parent)
+                alternate_parent.rename(self.identity)
+            return descriptor
+
+        with mock.patch.object(provenance.os, "open", side_effect=open_then_replace):
+            with self.assertRaises(provenance.ProvenanceError):
+                provenance.write_record(self.record, self.current())
+        self.assertTrue(replaced)
+        self.assertFalse(self.record.exists())
+        self.assertFalse((moved_parent / self.record.name).exists())
+
     def test_record_symlink_is_rejected(self) -> None:
         self.snapshot()
         alternate = self.root / "alternate-record"
