@@ -12,6 +12,11 @@ xcuserdata/
 .swiftpm/
 Package.resolved
 
+# CocoaPods / private Tuya SmartLife SDK
+Pods/
+NembraCapture.xcworkspace/
+.nembra-tuya-sdk/
+
 # Python
 __pycache__/
 
