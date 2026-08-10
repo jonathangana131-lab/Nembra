@@ -431,6 +431,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Secure Link left this view. Exact scooter membership must be verified again before Bluetooth discovery."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -488,6 +489,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Capture left the foreground. Exact scooter membership must be verified again before Bluetooth discovery."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -1414,6 +1416,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
             )
             return
         }
+        guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !verifiedAccountUID.isEmpty else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "Verified Tuya account identity disappeared before application evidence custody.",
+                kind: "sdk_account_uid_authority_missing_during_observation"
+            )
+            return
+        }
         guard driver.isLocallyConnected(uuid: tuyaUUID) else {
             await recordObservedTransportLoss(token: token)
             return
@@ -1425,9 +1436,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            let eventUpdate = scrubAccountUIDFromApplicationEvent(
+                update,
+                verifiedAccountUID: verifiedAccountUID
+            )
+            log("tuya_application_update", eventUpdate.merging([
                 "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -1452,6 +1467,21 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 kind: "application_update_lifecycle_rejected"
             )
         }
+    }
+
+    private func scrubAccountUIDFromApplicationEvent(
+        _ update: [String: String],
+        verifiedAccountUID: String
+    ) -> [String: String] {
+        let marker = "<redacted-account-uid>"
+        var sanitized: [String: String] = [:]
+        sanitized.reserveCapacity(update.count)
+        for (key, value) in update {
+            let redactedKey = key.replacingOccurrences(of: verifiedAccountUID, with: marker)
+            let redactedValue = value.replacingOccurrences(of: verifiedAccountUID, with: marker)
+            sanitized[redactedKey] = redactedValue
+        }
+        return sanitized
     }
 
     private func startWatchdog(token: TuyaReadOnlyConnectionToken) {
@@ -2241,7 +2271,6 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "accounttoken",
         "accesstoken",
         "refreshtoken",
-        "sessionkey",
         "authkey",
         "seckey",
     ]
