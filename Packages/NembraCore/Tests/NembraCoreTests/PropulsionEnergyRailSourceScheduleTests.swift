@@ -102,10 +102,9 @@ struct PropulsionEnergyRailSourceScheduleTests {
             continuityGeneration: 1
         ))
         #expect(runtime.projection(atUptimeNanoseconds: 1).currentness == .unavailable)
-        #expect(runtime.displaySchedule(atUptimeNanoseconds: 1)
-            == PropulsionEnergyRailDisplaySchedule(
-                requiresContinuousFrames: false,
-                nextTransitionUptimeNanoseconds: nil
-            ))
+
+        let schedule = runtime.displaySchedule(atUptimeNanoseconds: 1)
+        #expect(!schedule.requiresContinuousFrames)
+        #expect(schedule.nextTransitionUptimeNanoseconds == nil)
     }
 }
