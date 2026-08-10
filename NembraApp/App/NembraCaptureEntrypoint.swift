@@ -1242,10 +1242,22 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     }
                     do {
                         try await sessionLedger.sealAcceptedObservation(for: token)
+                        guard self.buildIdentity.isAuthoritativeFieldBuild,
+                              self.accountIdentityLeaseIsAuthorized else {
+                            self.currentConnectionToken = nil
+                            self.localBLESettlementToken = nil
+                            self.sdkLocalBLEOnline = false
+                            self.driver = nil
+                            self.phase = .failed
+                            self.message = "Source authority changed while canonical acceptance was sealing. Restart from OFF1; the sealed package chronology is diagnostic only."
+                            self.log("source_authority_changed_during_acceptance_seal", [
+                                "generation": String(token.diagnosticGeneration)
+                            ])
+                            return
+                        }
                         let acceptedEventPrefix = self.events
                         self.sealedAcceptedEventPrefix = acceptedEventPrefix
                         self.currentConnectionToken = nil
-                        await self.refreshLedgerSnapshot()
                         self.sealedAcceptedExport = self.makeExport(
                             exportedAt: Date(),
                             phase: .accepted,
@@ -1253,13 +1265,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
                         )
                         self.exportData = nil
                         self.phase = .accepted
-                        self.message = "Secure scooter link established. Canonical readiness was sealed before UI acceptance; delayed callbacks cannot mutate the accepted prefix."
+                        self.message = "Secure scooter link established. Canonical readiness and the complete accepted artifact were frozen before UI acceptance; delayed callbacks cannot mutate accepted evidence."
                         self.log("acceptance_sealed", [
                             "generation": String(token.diagnosticGeneration),
                             "applicationUpdates": String(self.applicationUpdateCount),
                             "buildIdentifier": self.buildIdentity.buildIdentifier,
                             "sourceCommitSHA": self.buildIdentity.sourceCommitSHA
                         ])
+                        await self.refreshLedgerSnapshot()
                     } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
                         await self.invalidateInternalLifecycle(
                             token: token,
