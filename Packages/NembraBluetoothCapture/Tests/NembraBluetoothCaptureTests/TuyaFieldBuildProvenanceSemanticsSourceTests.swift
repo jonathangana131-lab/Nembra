@@ -43,6 +43,32 @@ struct TuyaFieldBuildProvenanceSemanticsSourceTests {
         #expect(installer.contains("[[ \"$SOURCE_SHA\" == \"$EXPECTED_SOURCE_SHA\" ]]"))
     }
 
+    @Test("physical installer re-reads the built app stamp before installation")
+    func installerVerifiesBuiltPhysicalAppProvenance() throws {
+        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
+        let preinstall = try section(
+            in: installer,
+            from: "APP=\"$DERIVED/Build/Products/Debug-iphoneos/Nembra Capture.app\"",
+            to: "say \"Installing SDK-integrated Capture on $DEVICE_NAME\""
+        )
+        let body = String(preinstall)
+
+        #expect(body.contains("plutil -extract NembraCaptureBuildIdentifier"))
+        #expect(body.contains("plutil -extract NembraCaptureSourceCommitSHA"))
+        #expect(body.contains("$BUILD_LABEL"))
+        #expect(body.contains("$SOURCE_SHA"))
+        #expect(body.contains("die \""))
+    }
+
+    private func section(in source: String, from start: String, to end: String) throws -> Substring {
+        guard let startRange = source.range(of: start),
+              let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+            Issue.record("Expected source section missing: \(start) ... \(end)")
+            throw SourceContractError.sectionMissing
+        }
+        return source[startRange.lowerBound..<endRange.lowerBound]
+    }
+
     private func readRepositoryFile(_ relativePath: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -51,5 +77,9 @@ struct TuyaFieldBuildProvenanceSemanticsSourceTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+    }
+
+    private enum SourceContractError: Error {
+        case sectionMissing
     }
 }
