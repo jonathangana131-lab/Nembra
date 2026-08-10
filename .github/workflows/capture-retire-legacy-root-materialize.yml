@@ -1,0 +1,100 @@
+name: Capture Retire Legacy Root Materialize
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-retire-legacy-root-20260810
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: sol/v14-capture-retire-legacy-root-20260810
+
+      - name: Retire unreachable card root and lock the simplification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          bridge_path = Path('NembraApp/Features/Research/TuyaAccountBridge.swift')
+          bridge = bridge_path.read_text()
+          marker = '\nstruct NembraCaptureRootView: View {'
+          if bridge.count(marker) != 1:
+              raise SystemExit(f'expected exactly one legacy root marker, found {bridge.count(marker)}')
+          kept, _ = bridge.split(marker, 1)
+          kept = kept.rstrip() + '\n'
+          required = [
+              'final class TuyaAccountBridge: ObservableObject',
+              'struct TuyaQRCodeExport: Transferable',
+              'struct TuyaMetadataExport: Transferable',
+          ]
+          for token in required:
+              if token not in kept:
+                  raise SystemExit(f'required bridge/export surface missing after retirement: {token}')
+          forbidden = [
+              'struct NembraCaptureRootView: View',
+              'func captureCard() -> some View',
+              'Link Tuya first',
+              'Continue to Bluetooth Capture',
+          ]
+          for token in forbidden:
+              if token in kept:
+                  raise SystemExit(f'legacy product token survived retirement: {token}')
+          bridge_path.write_text(kept)
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift')
+          test = test_path.read_text()
+          insertion_point = '    private func section(in source: String, from start: String, to end: String) throws -> Substring {'
+          if test.count(insertion_point) != 1:
+              raise SystemExit('Capture root source-test insertion point changed')
+          addition = '''    @Test("legacy card-based Capture root is retired from the metadata bridge")
+    func legacyCardRootIsRetired() throws {
+        let bridge = try readRepositoryFile("NembraApp/Features/Research/TuyaAccountBridge.swift")
+
+        #expect(bridge.contains("final class TuyaAccountBridge: ObservableObject"))
+        #expect(bridge.contains("struct TuyaQRCodeExport: Transferable"))
+        #expect(bridge.contains("struct TuyaMetadataExport: Transferable"))
+        #expect(!bridge.contains("struct NembraCaptureRootView: View"))
+        #expect(!bridge.contains("func captureCard() -> some View"))
+        #expect(!bridge.contains("Link Tuya first"))
+        #expect(!bridge.contains("Continue to Bluetooth Capture"))
+    }
+
+'''
+          test = test.replace(insertion_point, addition + insertion_point, 1)
+          test_path.write_text(test)
+          PY
+
+          grep -Fq 'final class TuyaAccountBridge: ObservableObject' NembraApp/Features/Research/TuyaAccountBridge.swift
+          grep -Fq 'struct TuyaQRCodeExport: Transferable' NembraApp/Features/Research/TuyaAccountBridge.swift
+          grep -Fq 'struct TuyaMetadataExport: Transferable' NembraApp/Features/Research/TuyaAccountBridge.swift
+          ! grep -Fq 'struct NembraCaptureRootView: View' NembraApp/Features/Research/TuyaAccountBridge.swift
+          ! grep -Fq 'func captureCard() -> some View' NembraApp/Features/Research/TuyaAccountBridge.swift
+          swiftc -parse NembraApp/Features/Research/TuyaAccountBridge.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift
+          git diff --check
+
+      - name: Publish clean product-only checkpoint
+        shell: bash
+        env:
+          BRANCH: sol/v14-capture-retire-legacy-root-20260810
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-retire-legacy-root-materialize.yml
+          git config user.name 'nembra-v14-swarm'
+          git config user.email 'actions@users.noreply.github.com'
+          git add NembraApp/Features/Research/TuyaAccountBridge.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift \
+                  .github/workflows/capture-retire-legacy-root-materialize.yml
+          git diff --cached --check
+          git commit -m 'refactor(capture): retire legacy card root'
+          git push origin "HEAD:${BRANCH}"
