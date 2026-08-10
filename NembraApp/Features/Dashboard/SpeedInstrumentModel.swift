@@ -2,6 +2,7 @@ import Dispatch
 import Foundation
 import Observation
 import SwiftUI
+import struct NembraCore.PropulsionEnergyRailSimulatorRuntime
 
 enum SpeedInstrumentDisplayOrigin: Equatable {
     case acceptedSourceFallback
@@ -288,16 +289,49 @@ final class SpeedInstrumentModel {
     }
 }
 
+/// The only app-side source state permitted to feed the synthetic Energy Rail runtime.
+/// A physical/unverified profile produces a disabled snapshot even if a generic vehicle
+/// state happens to contain `powerWatts`; this prevents presentation plumbing from
+/// upgrading caller-constructible aggregate state into physical propulsion authority.
+struct DashboardEnergyRailSourceSnapshot: Equatable {
+    let isSimulatorRuntimeEligible: Bool
+    let isConnected: Bool
+    let watts: Double?
+    let modeKey: String?
+
+    static func resolve(profile: VehicleProfile, state: VehicleState) -> DashboardEnergyRailSourceSnapshot {
+        guard profile == .simulatorQA,
+              profile.capabilities.supportsPowerWatts else {
+            return DashboardEnergyRailSourceSnapshot(
+                isSimulatorRuntimeEligible: false,
+                isConnected: false,
+                watts: nil,
+                modeKey: nil
+            )
+        }
+
+        return DashboardEnergyRailSourceSnapshot(
+            isSimulatorRuntimeEligible: true,
+            isConnected: state.connection == .connected,
+            watts: state.powerWatts.map(Double.init),
+            modeKey: state.rideMode?.rawValue
+        )
+    }
+}
+
 /// A deliberately narrow high-frequency subtree for the landscape cockpit.
 ///
 /// Only this view redraws on SwiftUI's animation timeline. Vehicle controls,
 /// ride detection, persistence, distance, and safety continue to consume the
 /// accepted domain/source state rather than the rendered interpolation frame.
+/// The Energy Rail shares this display clock only for explicit Simulator QA;
+/// physical/unverified profiles never instantiate its synthetic runtime.
 @MainActor
 struct DashboardSpeedInstrumentView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model = SpeedInstrumentModel()
+    @State private var energyRailRuntime: PropulsionEnergyRailSimulatorRuntime? = nil
 
     let modePersonality: DashboardModePersonality
 
@@ -307,23 +341,40 @@ struct DashboardSpeedInstrumentView: View {
         let speedAvailability = rawSpeedAvailability.dashboardPresentationAvailability(
             allowsSimulatorQA: allowsSimulatorQA
         )
+        let energyRailSource = DashboardEnergyRailSourceSnapshot.resolve(
+            profile: vehicle.profile,
+            state: vehicle.state
+        )
 
         TimelineView(
             .animation(
                 minimumInterval: 1.0 / 60.0,
-                paused: reduceMotion
-                    || !model.isAnimationActive
-                    || !isLivePresentation(speedAvailability)
+                paused: displayClockPaused(
+                    speedAvailability: speedAvailability,
+                    energyRailSource: energyRailSource
+                )
             )
         ) { _ in
+            let uptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
             let frame = model.presentationFrame(
                 for: rawSpeedAvailability,
-                atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+                atUptimeNanoseconds: uptimeNanoseconds,
                 prefersReducedMotion: reduceMotion,
                 allowsSimulatorQA: allowsSimulatorQA
             )
+            let energyRailState = energyRailRuntime.map { runtime in
+                NembraEnergyRailVisualState(
+                    projection: runtime.projection(
+                        atUptimeNanoseconds: uptimeNanoseconds
+                    )
+                )
+            }
 
-            instrumentContent(frame: frame, speedAvailability: speedAvailability)
+            instrumentContent(
+                frame: frame,
+                speedAvailability: speedAvailability,
+                energyRailState: energyRailState
+            )
         }
         .task {
             model.configureInterpolationPolicy(vehicle.speedInstrumentInterpolationPolicy)
@@ -331,6 +382,7 @@ struct DashboardSpeedInstrumentView: View {
                 vehicle.speedEvidenceAvailability,
                 allowsSimulatorQA: vehicle.profile == .simulatorQA
             )
+            synchronizeEnergyRail(with: energyRailSource)
         }
         .onChange(of: vehicle.speedEvidenceAvailability) { _, availability in
             model.setSpeedEvidenceAvailability(
@@ -338,9 +390,51 @@ struct DashboardSpeedInstrumentView: View {
                 allowsSimulatorQA: vehicle.profile == .simulatorQA
             )
         }
+        .onChange(of: energyRailSource) { _, source in
+            synchronizeEnergyRail(with: source)
+        }
         .onDisappear {
             model.stop()
+            energyRailRuntime = nil
         }
+    }
+
+    private func displayClockPaused(
+        speedAvailability: SpeedEvidenceAvailability,
+        energyRailSource: DashboardEnergyRailSourceSnapshot
+    ) -> Bool {
+        let speedNeedsDisplayClock = !reduceMotion
+            && model.isAnimationActive
+            && isLivePresentation(speedAvailability)
+        let energyRailNeedsDisplayClock = !reduceMotion
+            && energyRailSource.isSimulatorRuntimeEligible
+            && energyRailSource.isConnected
+            && energyRailSource.watts.map { $0.isFinite && $0 >= 0 } == true
+        return !speedNeedsDisplayClock && !energyRailNeedsDisplayClock
+    }
+
+    private func synchronizeEnergyRail(with source: DashboardEnergyRailSourceSnapshot) {
+        guard source.isSimulatorRuntimeEligible else {
+            energyRailRuntime = nil
+            return
+        }
+
+        var runtime = energyRailRuntime
+        if runtime == nil {
+            runtime = try? PropulsionEnergyRailSimulatorRuntime()
+        }
+        guard var runtime else {
+            energyRailRuntime = nil
+            return
+        }
+
+        _ = runtime.observe(
+            connected: source.isConnected,
+            watts: source.watts,
+            modeKey: source.modeKey,
+            receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
+        )
+        energyRailRuntime = runtime
     }
 
     private func isLivePresentation(_ availability: SpeedEvidenceAvailability) -> Bool {
@@ -352,7 +446,8 @@ struct DashboardSpeedInstrumentView: View {
 
     private func instrumentContent(
         frame: SpeedInstrumentDisplayFrame?,
-        speedAvailability: SpeedEvidenceAvailability
+        speedAvailability: SpeedEvidenceAvailability,
+        energyRailState: NembraEnergyRailVisualState?
     ) -> some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
@@ -397,6 +492,14 @@ struct DashboardSpeedInstrumentView: View {
             .tracking(2.2)
             .foregroundStyle(Color.white.opacity(modePersonality.statusOpacity))
             .animation(modeAnimation, value: modePersonality.statusOpacity)
+
+            if let energyRailState {
+                NembraEnergyRailView(state: energyRailState)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 4)
+                    .accessibilityIdentifier("dashboard.energy-rail")
+            }
 
             Spacer(minLength: 0)
         }
