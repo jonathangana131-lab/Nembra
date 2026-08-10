@@ -11,46 +11,42 @@ permissions:
 
 jobs:
   capture-package:
-    name: Diagnose representative Capture source suites
+    name: Verify Capture package after lease contract repair
     runs-on: xcode-27
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 4
+          fetch-depth: 6
       - name: Verify diagnostic ancestry
         shell: bash
         run: |
           set -euo pipefail
           base='dfd3b72e54395e19efa11627499fec6355bedcd0'
           git merge-base --is-ancestor "$base" HEAD
-          changed="$(git diff --name-only "$base" HEAD)"
-          test "$changed" = ".github/workflows/capture-package-mac-diagnostics-dfd3.yml"
-      - name: Run representative source-contract suites
+          mapfile -t changed < <(git diff --name-only "$base" HEAD)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" -eq 2
+          printf '%s\n' "${changed[@]}" | grep -Fxq '.github/workflows/capture-package-mac-diagnostics-dfd3.yml'
+          printf '%s\n' "${changed[@]}" | grep -Fxq 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCrossControllerBLEOwnershipLeaseSourceTests.swift'
+      - name: Run exact Capture package
         shell: bash
         run: |
-          set -euo pipefail
-          failed=0
-          for suite in \
-            CaptureAcceptedArtifactFilenameSourceTests \
-            CaptureAccountSwitchTouchTargetSourceTests \
-            TuyaCrossControllerBLEOwnershipLeaseSourceTests
-          do
-            log="/tmp/${suite}.log"
-            set +e
-            swift test --package-path Packages/NembraBluetoothCapture --filter "$suite" > "$log" 2>&1
-            rc=$?
-            set -e
-            printf '%s\n' "--- $suite (rc=$rc) ---"
-            tail -n 80 "$log"
-            if [[ "$rc" -ne 0 ]]; then
-              failed=1
-              while IFS= read -r line; do
-                escaped="${line//'%'/'%25'}"
-                escaped="${escaped//$'\r'/'%0D'}"
-                escaped="${escaped//$'\n'/'%0A'}"
-                printf '::error file=Packages/NembraBluetoothCapture,title=%s::%s\n' "$suite" "$escaped"
-              done < <(grep -E 'Expectation failed|Issue recorded|error:|failed after|Test .* failed' "$log" | head -n 20)
-            fi
-          done
-          exit "$failed"
+          set +e
+          swift test --package-path Packages/NembraBluetoothCapture > /tmp/nembra-capture-package.log 2>&1
+          rc=$?
+          set -e
+          tail -n 100 /tmp/nembra-capture-package.log
+          if [[ "$rc" -ne 0 ]]; then
+            count=0
+            while IFS= read -r line; do
+              escaped="${line//'%'/'%25'}"
+              escaped="${escaped//$'\r'/'%0D'}"
+              escaped="${escaped//$'\n'/'%0A'}"
+              printf '::error file=Packages/NembraBluetoothCapture,title=Capture package remaining failure::%s\n' "$escaped"
+              count=$((count + 1))
+              [[ "$count" -ge 30 ]] && break
+            done < <(grep -E 'Expectation failed|Issue recorded|error:|failed after|Test .* failed' /tmp/nembra-capture-package.log)
+            exit "$rc"
+          fi
+          printf '%s\n' 'Capture package is green with only the lease source-contract repair applied.'
