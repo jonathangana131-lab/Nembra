@@ -20,9 +20,13 @@ struct TuyaCaptureForegroundTargetRevocationSourceTests {
 
         #expect(cleanup.contains("guard phase != .accepted else { return }"))
         #expect(cleanup.contains("if processCorrelationLease != nil || correlationSession != nil"))
+        #expect(cleanup.components(separatedBy: "resetDiscoverySessionOnly()").count - 1 == 1)
         #expect(cleanup.contains("if phase == .correlated || phase == .selected"))
-        #expect(cleanup.components(separatedBy: "resetDiscoverySessionOnly()").count - 1 == 2)
+        #expect(cleanup.contains("pendingCorrelatedTargetID = nil"))
+        #expect(cleanup.contains("selectedID = nil"))
+        #expect(cleanup.contains("targetCorrelationOperatorConfirmed = false"))
         #expect(cleanup.contains("foreground_integrity_lost_after_target_correlation"))
+        #expect(cleanup.contains("Completed correlation evidence remains available for diagnostics."))
         #expect(!cleanup.contains("releasePackageCorrelationLease()"))
     }
 
