@@ -1,0 +1,178 @@
+name: Capture per-window BLE ownership materializer
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-per-window-ble-owner-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/v14-capture-per-window-ble-owner-sol
+          fetch-depth: 0
+
+      - name: Apply narrow truth repair
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = source_path.read_text()
+          needle = '''        guard let session = correlationSession,
+              let progress = session.progress else {
+            failLocally("Fresh Bluetooth correlation authority is unavailable. Restart from OFF1.", "target_correlation_authority_unavailable")
+            return
+        }
+
+        let label = correlationWindowLabel
+'''
+          replacement = '''        guard let session = correlationSession,
+              let progress = session.progress else {
+            failLocally("Fresh Bluetooth correlation authority is unavailable. Restart from OFF1.", "target_correlation_authority_unavailable")
+            return
+        }
+        guard OfficialTuyaFactory.packageCorrelationMayStart else {
+            session.abandonCurrentWindow()
+            correlationSession = nil
+            failLocally(
+                "Tuya BLE ownership was attempted before this correlation window. Relaunch Capture with the scooter OFF and restart from a fresh OFF1 series.",
+                "process_tuya_ble_ownership_blocks_correlation_window"
+            )
+            return
+        }
+        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {
+            session.abandonCurrentWindow()
+            correlationSession = nil
+            failLocally(
+                "Tuya local-BLE ownership became active before this correlation window. Relaunch Capture with the scooter OFF and restart from a fresh OFF1 series; package-owned scanning will not overlap Tuya BLE ownership.",
+                "tuya_local_ble_ownership_blocks_correlation_window"
+            )
+            return
+        }
+
+        let label = correlationWindowLabel
+'''
+          if source.count(needle) != 1:
+              raise SystemExit(f'expected exactly one correlation-window insertion point, found {source.count(needle)}')
+          source_path.write_text(source.replace(needle, replacement, 1))
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationPerWindowBLEOwnershipSourceTests.swift')
+          if test_path.exists():
+              raise SystemExit('expected-red donor test path already exists on repair base')
+          test_path.write_text(r'''import Foundation
+import Testing
+@testable import NembraBluetoothCapture
+
+@Suite("Capture per-window Tuya BLE ownership")
+struct TuyaCorrelationPerWindowBLEOwnershipSourceTests {
+    @Test("every fresh correlation window rechecks global Tuya local-BLE ownership before package scan")
+    func everyWindowRechecksGlobalOwnership() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let window = try section(
+            in: app,
+            from: "private func startCurrentCorrelationWindow()",
+            to: "func finishCorrelationWindow()"
+        )
+        let body = String(window)
+
+        guard let ownershipRead = body.range(of: "OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID)"),
+              let scannerStart = body.range(of: "try session.startCurrentWindow()") else {
+            Issue.record("Each fresh OFF1/ON1/OFF2/ON2 scanner window must synchronously recheck process-global Tuya local-BLE ownership before package-owned scanning starts.")
+            throw SourceContractError.sectionMissing
+        }
+
+        #expect(ownershipRead.lowerBound < scannerStart.lowerBound)
+        #expect(body[ownershipRead.upperBound..<scannerStart.lowerBound].contains("return"))
+    }
+
+    @Test("the shared window-start path actually owns every OFF1 ON1 OFF2 ON2 scanner admission")
+    func sharedWindowStartPathOwnsSeries() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let begin = try section(
+            in: app,
+            from: "private func beginCorrelationSeries()",
+            to: "func finishCorrelationWindow()"
+        )
+        let body = String(begin)
+
+        #expect(body.contains("startCurrentCorrelationWindow()"))
+        #expect(body.contains("func startNextCorrelationWindow()"))
+        #expect(body.contains("startCurrentCorrelationWindow()\n    }"))
+    }
+
+    @Test("per-window ownership fence remains observation-only and cannot mutate scooter state")
+    func ownershipFenceIsReadOnly() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let window = try section(
+            in: app,
+            from: "private func startCurrentCorrelationWindow()",
+            to: "func finishCorrelationWindow()"
+        )
+        let body = String(window)
+
+        #expect(!body.contains("disconnectBLE"))
+        #expect(!body.contains("publishDps"))
+        #expect(!body.contains("queryDps"))
+        #expect(!body.contains("writeValue"))
+        #expect(!body.contains("sessionLedger.endConnection"))
+    }
+
+    private func section(in source: String, from start: String, to end: String) throws -> Substring {
+        guard let startRange = source.range(of: start),
+              let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+            Issue.record("Expected source section missing: \(start) ... \(end)")
+            throw SourceContractError.sectionMissing
+        }
+        return source[startRange.lowerBound..<endRange.lowerBound]
+    }
+
+    private func readRepositoryFile(_ relativePath: String) throws -> String {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+    }
+
+    private enum SourceContractError: Error { case sectionMissing }
+}
+''')
+          PY
+
+      - name: Validate repair shape
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          start = source.index('private func startCurrentCorrelationWindow()')
+          end = source.index('func finishCorrelationWindow()', start)
+          window = source[start:end]
+          ownership = window.index('OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID)')
+          scanner = window.index('try session.startCurrentWindow()')
+          assert ownership < scanner
+          assert 'return' in window[ownership:scanner]
+          assert 'OfficialTuyaFactory.packageCorrelationMayStart' in window[:scanner]
+          for forbidden in ('disconnectBLE', 'publishDps', 'queryDps', 'writeValue', 'sessionLedger.endConnection'):
+              assert forbidden not in window
+          print('per-window BLE ownership repair shape: PASS')
+          PY
+
+      - name: Commit durable repair
+        shell: bash
+        run: |
+          git config user.name 'nembra-capture-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git rm .github/workflows/_capture_per_window_ble_owner_materialize.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationPerWindowBLEOwnershipSourceTests.swift
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m 'fix(capture): fence each correlation window'
+          git push origin HEAD:agent/v14-capture-per-window-ble-owner-sol
