@@ -1,4 +1,4 @@
-name: Capture Charger Authority Diagnostic
+name: Capture Package Contract Diagnostic
 
 on:
   pull_request:
@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/capture-charger-authority-diagnostic.yml'
       - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80PhysicalRunbookChargerPreflightAcceptanceTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOneAppAuthorityWiringTests.swift'
 
 permissions:
   contents: read
@@ -28,7 +29,7 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          log="$RUNNER_TEMP/capture-charger-authority.log"
+          log="$RUNNER_TEMP/capture-package-contract.log"
           set +e
           (cd Packages/NembraBluetoothCapture && swift test) 2>&1 | tee "$log"
           status="${PIPESTATUS[0]}"
@@ -51,8 +52,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: capture-charger-authority-${{ github.event.pull_request.head.sha }}
-          path: ${{ runner.temp }}/capture-charger-authority.log
+          name: capture-package-contract-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/capture-package-contract.log
           retention-days: 7
           if-no-files-found: error
       - name: Preserve package failure truth
