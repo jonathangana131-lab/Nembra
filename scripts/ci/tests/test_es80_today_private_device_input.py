@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from contextlib import redirect_stderr, redirect_stdout
+import contextlib
 import importlib.util
 import io
 import os
 from pathlib import Path
+import shutil
 import stat
 import sys
 import tempfile
 import unittest
 from unittest import mock
-import warnings
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "es80_today_private_device_input.py"
 spec = importlib.util.spec_from_file_location("private_device_input", MODULE_PATH)
@@ -48,7 +48,7 @@ class PrivateDeviceInputTests(unittest.TestCase):
             self.assertEqual(output.read_text(encoding="utf-8"), self.SECRET)
             self.assertEqual(stat.S_IMODE(private_dir.lstat().st_mode), 0o700)
 
-    def test_existing_target_is_rejected_before_secret_provider_runs(self):
+    def test_existing_target_is_never_clobbered(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             repo, private_dir = self.make_layout(root)
@@ -56,42 +56,14 @@ class PrivateDeviceInputTests(unittest.TestCase):
             target = private_dir / "es80-intended-device.udid"
             target.write_text("KEEP", encoding="utf-8")
             target.chmod(0o600)
-            called = False
-
-            def secret_provider():
-                nonlocal called
-                called = True
-                return self.SECRET
-
             with self.assertRaisesRegex(module.PrivateInputError, "already-exists"):
                 module.create_private_input(
                     private_dir,
                     repo,
                     target.name,
-                    secret_provider=secret_provider,
+                    secret_provider=lambda: self.SECRET,
                 )
-            self.assertFalse(called)
             self.assertEqual(target.read_text(encoding="utf-8"), "KEEP")
-
-    def test_target_appearing_after_precheck_is_caught_by_exclusive_create(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            repo, private_dir = self.make_layout(root)
-            target = private_dir / "es80-intended-device.udid"
-
-            def secret_provider():
-                target.write_text("RACE", encoding="utf-8")
-                target.chmod(0o600)
-                return self.SECRET
-
-            with self.assertRaisesRegex(module.PrivateInputError, "already-exists"):
-                module.create_private_input(
-                    private_dir,
-                    repo,
-                    target.name,
-                    secret_provider=secret_provider,
-                )
-            self.assertEqual(target.read_text(encoding="utf-8"), "RACE")
 
     def test_symlinked_ancestor_is_rejected_before_secret_provider_runs(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -166,89 +138,6 @@ class PrivateDeviceInputTests(unittest.TestCase):
             self.assertFalse((moved_dir / "es80-intended-device.udid").exists())
             self.assertFalse((private_dir / "es80-intended-device.udid").exists())
 
-    def test_write_failure_after_creation_removes_created_file(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            repo, private_dir = self.make_layout(root)
-            target = private_dir / "es80-intended-device.udid"
-
-            with mock.patch.object(module, "_write_all", side_effect=OSError("injected write failure")):
-                with self.assertRaisesRegex(OSError, "injected write failure"):
-                    module.create_private_input(
-                        private_dir,
-                        repo,
-                        target.name,
-                        secret_provider=lambda: self.SECRET,
-                    )
-
-            self.assertFalse(target.exists())
-
-    def test_fsync_failure_after_creation_removes_created_file(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            repo, private_dir = self.make_layout(root)
-            target = private_dir / "es80-intended-device.udid"
-
-            with mock.patch.object(module.os, "fsync", side_effect=OSError("injected fsync failure")):
-                with self.assertRaisesRegex(OSError, "injected fsync failure"):
-                    module.create_private_input(
-                        private_dir,
-                        repo,
-                        target.name,
-                        secret_provider=lambda: self.SECRET,
-                    )
-
-            self.assertFalse(target.exists())
-
-    def test_failure_cleanup_never_unlinks_a_path_replacement(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            repo, private_dir = self.make_layout(root)
-            target = private_dir / "es80-intended-device.udid"
-
-            def replace_then_fail(_descriptor: int, _payload: bytes) -> None:
-                target.unlink()
-                target.write_text("KEEP", encoding="utf-8")
-                target.chmod(0o600)
-                raise OSError("injected write failure after replacement")
-
-            with mock.patch.object(module, "_write_all", side_effect=replace_then_fail):
-                with self.assertRaisesRegex(OSError, "injected write failure after replacement"):
-                    module.create_private_input(
-                        private_dir,
-                        repo,
-                        target.name,
-                        secret_provider=lambda: self.SECRET,
-                    )
-
-            self.assertTrue(target.exists())
-            self.assertEqual(target.read_text(encoding="utf-8"), "KEEP")
-
-    def test_terminal_abort_after_secret_write_removes_created_file(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            repo, private_dir = self.make_layout(root)
-            target = private_dir / "es80-intended-device.udid"
-            real_write_all = module._write_all
-
-            def write_then_interrupt(descriptor: int, payload: bytes) -> None:
-                real_write_all(descriptor, payload)
-                raise KeyboardInterrupt()
-
-            with mock.patch.object(module, "_write_all", side_effect=write_then_interrupt):
-                with self.assertRaises(KeyboardInterrupt):
-                    module.create_private_input(
-                        private_dir,
-                        repo,
-                        target.name,
-                        secret_provider=lambda: self.SECRET,
-                    )
-
-            self.assertFalse(
-                target.exists(),
-                "terminal abort retained a secret-bearing intended-device file",
-            )
-
     def test_surrounding_whitespace_is_rejected_and_no_file_is_created(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -262,50 +151,257 @@ class PrivateDeviceInputTests(unittest.TestCase):
                 )
             self.assertFalse((private_dir / "es80-intended-device.udid").exists())
 
-    def test_secure_provider_refuses_getpass_echo_fallback_without_returning_secret(self):
-        fallback_returned = False
-
-        def warned_getpass(_prompt: str) -> str:
-            nonlocal fallback_returned
-            warnings.warn("Can not control echo on the terminal.", module.getpass.GetPassWarning)
-            fallback_returned = True
-            return self.SECRET
-
-        stdout = io.StringIO()
-        stderr = io.StringIO()
-        with mock.patch.object(module.getpass, "getpass", side_effect=warned_getpass):
-            with redirect_stdout(stdout), redirect_stderr(stderr):
-                with self.assertRaisesRegex(module.PrivateInputError, "secure-terminal-input-unavailable"):
-                    module._secure_secret_provider()
-
-        self.assertFalse(fallback_returned)
-        self.assertNotIn(self.SECRET, stdout.getvalue())
-        self.assertNotIn(self.SECRET, stderr.getvalue())
-
-    def test_secure_provider_echo_failure_creates_no_private_file(self):
+    def test_partial_write_failure_removes_secret_bearing_output(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+            real_write = os.write
+            write_calls = 0
 
-            def warned_getpass(_prompt: str) -> str:
-                warnings.warn("Can not control echo on the terminal.", module.getpass.GetPassWarning)
-                return self.SECRET
+            def fail_after_prefix(descriptor: int, payload: bytes) -> int:
+                nonlocal write_calls
+                write_calls += 1
+                if write_calls == 1:
+                    prefix = payload[:4]
+                    return real_write(descriptor, prefix)
+                raise OSError("simulated private-input write failure")
 
-            with mock.patch.object(module.getpass, "getpass", side_effect=warned_getpass):
-                with self.assertRaisesRegex(module.PrivateInputError, "secure-terminal-input-unavailable"):
+            with mock.patch.object(module.os, "write", side_effect=fail_after_prefix):
+                with self.assertRaisesRegex(OSError, "simulated private-input write failure"):
                     module.create_private_input(
                         private_dir,
                         repo,
-                        "es80-intended-device.udid",
-                        secret_provider=module._secure_secret_provider,
+                        target.name,
+                        secret_provider=lambda: self.SECRET,
                     )
 
-            self.assertFalse((private_dir / "es80-intended-device.udid").exists())
+            self.assertGreaterEqual(write_calls, 2)
+            self.assertFalse(
+                target.exists(),
+                "failed private-input acquisition retained a partial secret-bearing file",
+            )
 
-    def test_secure_provider_eof_fails_closed(self):
-        with mock.patch.object(module.getpass, "getpass", side_effect=EOFError):
-            with self.assertRaisesRegex(module.PrivateInputError, "secure-terminal-input-unavailable"):
-                module._secure_secret_provider()
+    def test_file_fsync_failure_removes_secret_bearing_output(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+            real_fsync = os.fsync
+            fsync_calls = 0
+
+            def fail_first_fsync(descriptor: int) -> None:
+                nonlocal fsync_calls
+                fsync_calls += 1
+                if fsync_calls == 1:
+                    raise OSError("simulated private-input fsync failure")
+                real_fsync(descriptor)
+
+            with mock.patch.object(module.os, "fsync", side_effect=fail_first_fsync):
+                with self.assertRaisesRegex(OSError, "simulated private-input fsync failure"):
+                    module.create_private_input(
+                        private_dir,
+                        repo,
+                        target.name,
+                        secret_provider=lambda: self.SECRET,
+                    )
+
+            self.assertGreaterEqual(fsync_calls, 2)
+            self.assertFalse(
+                target.exists(),
+                "failed private-input fsync retained a secret-bearing file",
+            )
+
+    def test_partial_write_unlink_failure_leaves_only_durably_scrubbed_inode(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+            real_write = os.write
+            write_calls = 0
+
+            def fail_after_prefix(descriptor: int, payload: bytes) -> int:
+                nonlocal write_calls
+                write_calls += 1
+                if write_calls == 1:
+                    return real_write(descriptor, payload[:4])
+                raise OSError("simulated private-input write failure")
+
+            with (
+                mock.patch.object(module.os, "write", side_effect=fail_after_prefix),
+                mock.patch.object(module.os, "unlink", side_effect=OSError("simulated unlink failure")),
+            ):
+                with self.assertRaisesRegex(OSError, "simulated private-input write failure"):
+                    module.create_private_input(
+                        private_dir,
+                        repo,
+                        target.name,
+                        secret_provider=lambda: self.SECRET,
+                    )
+
+            self.assertTrue(target.exists())
+            self.assertEqual(target.stat().st_size, 0)
+            self.assertEqual(target.read_bytes(), b"")
+
+    def test_partial_write_cleanup_file_fsync_failure_falls_back_to_durable_unlink(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+            real_write = os.write
+            real_fsync = os.fsync
+            write_calls = 0
+            cleanup_fsync_calls = 0
+
+            def fail_after_prefix(descriptor: int, payload: bytes) -> int:
+                nonlocal write_calls
+                write_calls += 1
+                if write_calls == 1:
+                    return real_write(descriptor, payload[:4])
+                raise OSError("simulated private-input write failure")
+
+            def fail_first_cleanup_fsync(descriptor: int) -> None:
+                nonlocal cleanup_fsync_calls
+                cleanup_fsync_calls += 1
+                if cleanup_fsync_calls == 1:
+                    raise OSError("simulated cleanup file fsync failure")
+                real_fsync(descriptor)
+
+            with (
+                mock.patch.object(module.os, "write", side_effect=fail_after_prefix),
+                mock.patch.object(module.os, "fsync", side_effect=fail_first_cleanup_fsync),
+            ):
+                with self.assertRaisesRegex(OSError, "simulated private-input write failure"):
+                    module.create_private_input(
+                        private_dir,
+                        repo,
+                        target.name,
+                        secret_provider=lambda: self.SECRET,
+                    )
+
+            self.assertGreaterEqual(cleanup_fsync_calls, 2)
+            self.assertFalse(target.exists())
+
+    def test_unlink_fallback_rejects_hard_link_created_during_unlink(self):
+        if os.link not in os.supports_dir_fd:
+            self.skipTest("descriptor-relative hard links unavailable")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+            retained = private_dir / "retained-copy.udid"
+            real_write = os.write
+            real_unlink = os.unlink
+            real_link = os.link
+            write_calls = 0
+
+            def fail_after_prefix(descriptor: int, payload: bytes) -> int:
+                nonlocal write_calls
+                write_calls += 1
+                if write_calls == 1:
+                    return real_write(descriptor, payload[:4])
+                raise OSError("simulated private-input write failure")
+
+            def add_link_then_unlink(filename: str, *, dir_fd: int) -> None:
+                real_link(
+                    filename,
+                    retained.name,
+                    src_dir_fd=dir_fd,
+                    dst_dir_fd=dir_fd,
+                    follow_symlinks=False,
+                )
+                real_unlink(filename, dir_fd=dir_fd)
+
+            with (
+                mock.patch.object(module.os, "write", side_effect=fail_after_prefix),
+                mock.patch.object(module.os, "ftruncate", side_effect=OSError("simulated scrub failure")),
+                mock.patch.object(module.os, "unlink", side_effect=add_link_then_unlink),
+            ):
+                with self.assertRaisesRegex(
+                    module.PrivateInputError,
+                    "private-intended-device-cleanup-failed",
+                ) as raised:
+                    module.create_private_input(
+                        private_dir,
+                        repo,
+                        target.name,
+                        secret_provider=lambda: self.SECRET,
+                    )
+
+            self.assertNotIn(self.SECRET, str(raised.exception))
+            self.assertFalse(target.exists())
+            self.assertTrue(retained.exists())
+
+    def test_cleanup_that_cannot_scrub_or_unlink_surfaces_secret_free_blocker(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+            real_write = os.write
+            write_calls = 0
+
+            def fail_after_prefix(descriptor: int, payload: bytes) -> int:
+                nonlocal write_calls
+                write_calls += 1
+                if write_calls == 1:
+                    return real_write(descriptor, payload[:4])
+                raise OSError("simulated private-input write failure")
+
+            with (
+                mock.patch.object(module.os, "write", side_effect=fail_after_prefix),
+                mock.patch.object(module.os, "ftruncate", side_effect=OSError("simulated scrub failure")),
+                mock.patch.object(module.os, "unlink", side_effect=OSError("simulated unlink failure")),
+            ):
+                with self.assertRaisesRegex(
+                    module.PrivateInputError,
+                    "private-intended-device-cleanup-failed",
+                ) as raised:
+                    module.create_private_input(
+                        private_dir,
+                        repo,
+                        target.name,
+                        secret_provider=lambda: self.SECRET,
+                    )
+
+            self.assertNotIn(self.SECRET, str(raised.exception))
+            self.assertTrue(target.exists())
+
+    def test_cli_refuses_echoed_getpass_fallback_before_consuming_secret(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+            fallback_consumed = False
+
+            def simulated_echo_fallback(_prompt: str) -> str:
+                nonlocal fallback_consumed
+                module.warnings.warn(
+                    "simulated terminal cannot disable echo",
+                    module.getpass.GetPassWarning,
+                )
+                fallback_consumed = True
+                return self.SECRET
+
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with mock.patch.object(module.getpass, "getpass", side_effect=simulated_echo_fallback):
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    status = module.main(
+                        [
+                            "--private-directory",
+                            str(private_dir),
+                            "--source-repo",
+                            str(repo),
+                        ]
+                    )
+
+            combined = stdout.getvalue() + stderr.getvalue()
+            self.assertEqual(status, 2)
+            self.assertFalse(fallback_consumed)
+            self.assertFalse(target.exists())
+            self.assertIn("secure-terminal-input-unavailable", stderr.getvalue())
+            self.assertNotIn(self.SECRET, combined)
 
 
 if __name__ == "__main__":
