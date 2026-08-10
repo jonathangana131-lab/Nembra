@@ -1,0 +1,90 @@
+name: Materialize Capture Auth Promotion Transport 9695
+
+on:
+  push:
+    branches:
+      - "fix/v14-capture-auth-promotion-transport-9695-sol"
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 4
+
+      - name: Verify exact product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          product="9695af19c21c93b3eb4bc867613a6df0c9a3b3d4"
+          test "$(git rev-parse HEAD^)" = "$product"
+
+      - name: Apply validated two-path transport donor
+        shell: bash
+        run: |
+          set -euo pipefail
+          donor_parent="172dca56a1bc018e192feec197ceb17f81db5dab"
+          donor="83215d43c4b566c430927d53bb97f44feda176ef"
+          git fetch --no-tags origin "$donor_parent" "$donor"
+          git diff --binary "$donor_parent" "$donor" -- NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticationPromotionTransportTruthSourceTests.swift > /tmp/transport.patch
+          test -s /tmp/transport.patch
+          git apply --3way --index /tmp/transport.patch
+
+      - name: Validate exact current transport truth
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="NembraApp/App/NembraCaptureEntrypoint.swift"
+          test_file="Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticationPromotionTransportTruthSourceTests.swift"
+          swiftc -frontend -parse "$app"
+          swiftc -frontend -parse "$test_file"
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text(encoding="utf-8")
+          a = s.index("private func authenticated(token: TuyaReadOnlyConnectionToken) async")
+          b = s.index("private func authenticationFailed(token: TuyaReadOnlyConnectionToken) async", a)
+          auth = s[a:b]
+          refresh = auth.index("await refreshLedgerSnapshot()")
+          observing = auth.index("phase = .observing", refresh)
+          watchdog = auth.index("startWatchdog(token: token)", observing)
+          fence = auth[refresh:observing]
+          ordered = [
+              "currentConnectionToken == token",
+              "phase == .authenticating",
+              "accountIdentityLeaseIsAuthorized",
+              "guard let promotionDriver = self.driver else",
+              "sdk_driver_authority_lost_during_auth_promotion",
+              "promotionDriver.isLocallyConnected(uuid: tuyaUUID)",
+              "sdkLocalBLEOnline = promotionLocalBLEOnline",
+              "guard promotionLocalBLEOnline else",
+              "await recordObservedTransportLoss(token: token)",
+          ]
+          positions = [fence.index(token) for token in ordered]
+          if positions != sorted(positions):
+              raise SystemExit(f"transport ordering drifted: {positions}")
+          if not (refresh < observing < watchdog):
+              raise SystemExit("observing/watchdog ordering drifted")
+          print("current auth promotion transport truth: PASS")
+          PY
+          git diff --cached --check
+
+      - name: Commit durable clean repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          product="9695af19c21c93b3eb4bc867613a6df0c9a3b3d4"
+          rm .github/workflows/materialize-capture-auth-promotion-transport-9695-sol.yml
+          git add -A
+          git diff --cached --check
+          mapfile -t changed < <(git diff --cached --name-only "$product" | sort)
+          expected=("NembraApp/App/NembraCaptureEntrypoint.swift" "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticationPromotionTransportTruthSourceTests.swift")
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          test "${changed[*]}" = "${expected_sorted[*]}" || { printf 'Unexpected effective paths:\n' >&2; printf '  %s\n' "${changed[@]}" >&2; exit 1; }
+          git config user.name "Nembra V14 Sol"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "fix(capture): recheck transport before auth promotion"
+          git push origin HEAD:fix/v14-capture-auth-promotion-transport-9695-sol
