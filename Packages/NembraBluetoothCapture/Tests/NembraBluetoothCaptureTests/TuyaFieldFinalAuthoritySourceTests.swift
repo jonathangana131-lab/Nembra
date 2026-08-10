@@ -46,7 +46,8 @@ struct TuyaFieldFinalAuthoritySourceTests {
         #expect(start.lowerBound < membership.lowerBound)
         #expect(membership.lowerBound < scan.lowerBound)
         #expect(source.contains("maximumObservationPollGapNanoseconds"))
-        #expect(source.contains("observation_continuity_gap"))
+        #expect(source.contains("sessionLedger.markObservationContinuityInvalidated(for: token)"))
+        #expect(source.contains("Observation paused too long") || source.contains("observation_poll_gap_exceeded"))
     }
 
     private func readRepositoryFile(_ relativePath: String) throws -> String {
