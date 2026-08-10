@@ -351,7 +351,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }
     var fieldBuildIdentifier: String { buildIdentity.buildIdentifier }
     var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }
-    var fieldProcedureIdentifier: String { NembraCaptureBuildIdentity.fieldProcedureIdentifier }
+    var fieldProcedureIdentifier: String { buildIdentity.procedureIdentifier }
     var sdkAccountLoggedIn: Bool { OfficialTuyaFactory.accountLoggedIn }
     var currentAccountUID: String? { OfficialTuyaFactory.currentAccountUID }
     var selected: Candidate? { selectedID.flatMap { byID[$0] } }
@@ -1563,7 +1563,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             buildIdentifier: buildIdentity.buildIdentifier,
             sourceCommitSHA: buildIdentity.sourceCommitSHA,
             tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,
-            procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier,
+            procedureIdentifier: buildIdentity.procedureIdentifier,
             tuyaDeviceID: deviceID,
             tuyaUUID: tuyaUUID,
             productID: productID,
