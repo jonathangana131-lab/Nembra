@@ -6,6 +6,7 @@ on:
     paths:
       - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteRecoverySourceTests.swift'
       - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductSurfaceSourceTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift'
       - '.github/workflows/capture-failed-prerequisite-recovery-diagnostic.yml'
 
 permissions:
@@ -60,6 +61,7 @@ jobs:
           targets = {
               "TuyaFailedPrerequisiteRecoverySourceTests.swift",
               "TuyaSecureLinkProductSurfaceSourceTests.swift",
+              "ES80CaptureRiderLanguageAcceptanceTests.swift",
           }
           targeted_remaining = {name: failures[name] for name in sorted(targets) if failures[name]}
           total = sum(failures.values())
@@ -69,8 +71,8 @@ jobs:
 
           if targeted_remaining:
               raise SystemExit(f"targeted residual issues remain: {targeted_remaining}")
-          if total > 68:
-              raise SystemExit(f"expected no replacement regression beyond the 72 -> 68 differential, observed {total}")
+          if total > 67:
+              raise SystemExit(f"expected no replacement regression beyond the 72 -> 67 differential, observed {total}")
           PY
 
       - name: Upload exact diagnostic log
