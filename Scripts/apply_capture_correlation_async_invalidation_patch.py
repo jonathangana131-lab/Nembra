@@ -105,7 +105,7 @@ for forbidden in [
         raise SystemExit(f"terminal consumer manufactured unrelated authority: {forbidden}")
 
 view_start = source.index("private struct SecureLinkView")
-view_end = source.index("#Preview", view_start)
+view_end = source.index("private struct SecureTransfer", view_start)
 view = source[view_start:view_end]
 for forbidden in ["correlationProgressTask", "Task.sleep(for: .milliseconds(100))"]:
     if forbidden in view:
