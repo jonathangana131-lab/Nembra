@@ -12,7 +12,7 @@ import argparse
 import hashlib
 import os
 import stat
-import tempfile
+import secrets
 from pathlib import Path
 from typing import Iterable
 
@@ -40,32 +40,71 @@ def _feed(digest: "hashlib._Hash", value: bytes) -> None:
     digest.update(value)
 
 
-def _require_regular_file(path: Path) -> os.stat_result:
+def _stat_identity(metadata: os.stat_result) -> tuple[int, ...]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_uid,
+        metadata.st_gid,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _read_stable_regular_file_sha256(path: Path) -> tuple[os.stat_result, str]:
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    if nofollow is None:
+        raise ProvenanceError("private build input admission requires O_NOFOLLOW support")
+    flags = os.O_RDONLY | nofollow | getattr(os, "O_CLOEXEC", 0)
     try:
-        metadata = path.lstat()
+        descriptor = os.open(path, flags)
     except OSError as error:
-        raise ProvenanceError(f"required private build input is unavailable: {path.name}") from error
-    if not stat.S_ISREG(metadata.st_mode) or path.is_symlink():
-        raise ProvenanceError(f"required private build input is not a regular file: {path.name}")
-    return metadata
+        raise ProvenanceError(f"required private build input is unavailable or unsafe: {path.name}") from error
+
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise ProvenanceError(f"required private build input is not a regular file: {path.name}")
+
+        digest = hashlib.sha256()
+        bytes_read = 0
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            bytes_read += len(chunk)
+            digest.update(chunk)
+
+        after = os.fstat(descriptor)
+        if _stat_identity(before) != _stat_identity(after) or bytes_read != after.st_size:
+            raise ProvenanceError(f"private build input changed while it was fingerprinted: {path.name}")
+
+        try:
+            current_path = path.lstat()
+        except OSError as error:
+            raise ProvenanceError(f"private build input pathname changed during fingerprinting: {path.name}") from error
+        if (
+            stat.S_ISLNK(current_path.st_mode)
+            or not stat.S_ISREG(current_path.st_mode)
+            or current_path.st_dev != after.st_dev
+            or current_path.st_ino != after.st_ino
+        ):
+            raise ProvenanceError(f"private build input pathname changed during fingerprinting: {path.name}")
+        return after, digest.hexdigest()
+    finally:
+        os.close(descriptor)
 
 
 def _file_fingerprint(path: Path) -> str:
-    metadata = _require_regular_file(path)
+    metadata, content_sha256 = _read_stable_regular_file_sha256(path)
     digest = hashlib.sha256()
     _feed(digest, b"nembra-private-file-v1")
     _feed(digest, stat.S_IMODE(metadata.st_mode).to_bytes(4, "big"))
     _feed(digest, metadata.st_size.to_bytes(8, "big"))
-    content = hashlib.sha256()
-    try:
-        with path.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                content.update(chunk)
-    except OSError as error:
-        raise ProvenanceError(f"private build input could not be read: {path.name}") from error
-    _feed(digest, content.digest())
+    _feed(digest, bytes.fromhex(content_sha256))
     return digest.hexdigest()
-
 
 def _assert_internal_symlink(path: Path, root: Path) -> str:
     try:
@@ -77,28 +116,68 @@ def _assert_internal_symlink(path: Path, root: Path) -> str:
     return target
 
 
+def _assert_unchanged_tree_entry(
+    path: Path,
+    expected_identity: tuple[int, ...],
+    kind: str,
+) -> None:
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise ProvenanceError("private build tree changed while it was fingerprinted") from error
+
+    if _stat_identity(metadata) != expected_identity:
+        raise ProvenanceError("private build tree changed while it was fingerprinted")
+    if kind == "D" and not stat.S_ISDIR(metadata.st_mode):
+        raise ProvenanceError("private build tree changed while it was fingerprinted")
+    if kind == "F" and not stat.S_ISREG(metadata.st_mode):
+        raise ProvenanceError("private build tree changed while it was fingerprinted")
+    if kind == "L" and not stat.S_ISLNK(metadata.st_mode):
+        raise ProvenanceError("private build tree changed while it was fingerprinted")
+
+
+def _directory_member_names(path: Path) -> tuple[str, ...]:
+    try:
+        return tuple(sorted(os.listdir(path), key=os.fsencode))
+    except OSError as error:
+        raise ProvenanceError("private build tree changed while it was fingerprinted") from error
+
+
 def _tree_fingerprint(root: Path) -> str:
     try:
         root_metadata = root.lstat()
     except OSError as error:
         raise ProvenanceError(f"required private build directory is unavailable: {root.name}") from error
-    if root.is_symlink() or not stat.S_ISDIR(root_metadata.st_mode):
+    if stat.S_ISLNK(root_metadata.st_mode) or not stat.S_ISDIR(root_metadata.st_mode):
         raise ProvenanceError(f"required private build directory is not a real directory: {root.name}")
 
     entries: list[tuple[str, str, int, bytes]] = []
+    observed_states: list[tuple[Path, tuple[int, ...], str]] = [
+        (root, _stat_identity(root_metadata), "D")
+    ]
+    observed_directory_members: dict[Path, tuple[str, ...]] = {}
     root_resolved = root.resolve(strict=True)
+
     for current_text, directory_names, file_names in os.walk(root, topdown=True, followlinks=False):
         current = Path(current_text)
+        observed_directory_members[current] = tuple(
+            sorted((*directory_names, *file_names), key=os.fsencode)
+        )
         kept_directories: list[str] = []
+
         for name in sorted(directory_names, key=os.fsencode):
             path = current / name
             relative = path.relative_to(root).as_posix()
             metadata = path.lstat()
+            identity = _stat_identity(metadata)
             mode = stat.S_IMODE(metadata.st_mode)
             if stat.S_ISLNK(metadata.st_mode):
                 target = _assert_internal_symlink(path, root_resolved)
+                _assert_unchanged_tree_entry(path, identity, "L")
+                observed_states.append((path, identity, "L"))
                 entries.append(("L", relative, mode, os.fsencode(target)))
             elif stat.S_ISDIR(metadata.st_mode):
+                observed_states.append((path, identity, "D"))
                 entries.append(("D", relative, mode, b""))
                 kept_directories.append(name)
             else:
@@ -109,14 +188,29 @@ def _tree_fingerprint(root: Path) -> str:
             path = current / name
             relative = path.relative_to(root).as_posix()
             metadata = path.lstat()
+            identity = _stat_identity(metadata)
             mode = stat.S_IMODE(metadata.st_mode)
             if stat.S_ISLNK(metadata.st_mode):
                 target = _assert_internal_symlink(path, root_resolved)
+                _assert_unchanged_tree_entry(path, identity, "L")
+                observed_states.append((path, identity, "L"))
                 entries.append(("L", relative, mode, os.fsencode(target)))
             elif stat.S_ISREG(metadata.st_mode):
-                entries.append(("F", relative, mode, bytes.fromhex(_file_fingerprint(path))))
+                fingerprint = _file_fingerprint(path)
+                _assert_unchanged_tree_entry(path, identity, "F")
+                observed_states.append((path, identity, "F"))
+                entries.append(("F", relative, mode, bytes.fromhex(fingerprint)))
             else:
                 raise ProvenanceError("private build tree contains an unsupported file entry")
+
+    # A per-file descriptor proves the bytes read from that one inode. The tree
+    # record is stronger: every admitted pathname and every directory membership
+    # must still describe the same finite snapshot after the full traversal.
+    for path, identity, kind in observed_states:
+        _assert_unchanged_tree_entry(path, identity, kind)
+    for directory, members in observed_directory_members.items():
+        if _directory_member_names(directory) != members:
+            raise ProvenanceError("private build tree changed while it was fingerprinted")
 
     digest = hashlib.sha256()
     _feed(digest, b"nembra-private-tree-v1")
@@ -139,9 +233,7 @@ def build_record(
 ) -> dict[str, str]:
     return {
         "schema": SCHEMA,
-        "podfile_lock_sha256": hashlib.sha256(lockfile.read_bytes()).hexdigest()
-        if _require_regular_file(lockfile)
-        else "",
+        "podfile_lock_sha256": _read_stable_regular_file_sha256(lockfile)[1],
         "thing_smart_home_kit": THING_SMART_HOME_KIT_VERSION,
         "thing_smart_business_extension_kit": THING_SMART_BUSINESS_EXTENSION_KIT_VERSION,
         "thing_smart_cryption_podspec_sha256": _file_fingerprint(security_podspec),
@@ -157,64 +249,144 @@ def _record_text(record: dict[str, str]) -> str:
     return "".join(f"{key}={record[key]}\n" for key in _RECORD_KEYS)
 
 
-def write_record(path: Path, record: dict[str, str]) -> None:
-    parent = path.parent
-    try:
-        parent_metadata = parent.lstat()
-    except OSError as error:
-        raise ProvenanceError("private provenance directory is unavailable") from error
-    if parent.is_symlink() or not stat.S_ISDIR(parent_metadata.st_mode):
-        raise ProvenanceError("private provenance directory must be a real directory")
+def _open_bound_directory(path: Path) -> int:
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    directory = getattr(os, "O_DIRECTORY", None)
+    if nofollow is None or directory is None:
+        raise ProvenanceError("private provenance directory admission requires descriptor-safe directory support")
 
-    temporary_name: str | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=parent,
-            prefix=".nembra-tuya-provenance.",
-            delete=False,
-        ) as handle:
-            temporary_name = handle.name
-            os.chmod(temporary_name, 0o600)
-            handle.write(_record_text(record))
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary_name, path)
-        temporary_name = None
-        os.chmod(path, 0o600)
-    except OSError as error:
-        raise ProvenanceError("private provenance record could not be written") from error
-    finally:
-        if temporary_name is not None:
-            try:
-                os.unlink(temporary_name)
-            except FileNotFoundError:
-                pass
-
-
-def read_record(path: Path) -> dict[str, str]:
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    flags = os.O_RDONLY | nofollow | directory | getattr(os, "O_CLOEXEC", 0)
     try:
         descriptor = os.open(path, flags)
     except OSError as error:
-        raise ProvenanceError("private provenance record is unavailable or unsafe") from error
+        raise ProvenanceError("private provenance directory is unavailable or unsafe") from error
+
     try:
         metadata = os.fstat(descriptor)
-        if not stat.S_ISREG(metadata.st_mode):
+        if not stat.S_ISDIR(metadata.st_mode):
+            raise ProvenanceError("private provenance directory must be a real directory")
+        try:
+            current_path = path.lstat()
+        except OSError as error:
+            raise ProvenanceError("private provenance directory pathname changed during admission") from error
+        if (
+            stat.S_ISLNK(current_path.st_mode)
+            or not stat.S_ISDIR(current_path.st_mode)
+            or current_path.st_dev != metadata.st_dev
+            or current_path.st_ino != metadata.st_ino
+        ):
+            raise ProvenanceError("private provenance directory pathname changed during admission")
+        return descriptor
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
+def write_record(path: Path, record: dict[str, str]) -> None:
+    parent_descriptor = _open_bound_directory(path.parent)
+    temporary_name: str | None = None
+    temporary_descriptor: int | None = None
+    try:
+        flags = (
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_CLOEXEC", 0)
+        )
+        for _ in range(64):
+            candidate = f".nembra-tuya-provenance.{secrets.token_hex(12)}"
+            try:
+                temporary_descriptor = os.open(
+                    candidate,
+                    flags,
+                    0o600,
+                    dir_fd=parent_descriptor,
+                )
+                temporary_name = candidate
+                break
+            except FileExistsError:
+                continue
+        if temporary_descriptor is None or temporary_name is None:
+            raise ProvenanceError("private provenance record temporary file could not be allocated")
+
+        payload = _record_text(record).encode("utf-8")
+        offset = 0
+        while offset < len(payload):
+            written = os.write(temporary_descriptor, payload[offset:])
+            if written <= 0:
+                raise ProvenanceError("private provenance record could not be written")
+            offset += written
+        os.fchmod(temporary_descriptor, 0o600)
+        os.fsync(temporary_descriptor)
+
+        os.replace(
+            temporary_name,
+            path.name,
+            src_dir_fd=parent_descriptor,
+            dst_dir_fd=parent_descriptor,
+        )
+        temporary_name = None
+        os.fsync(parent_descriptor)
+    except OSError as error:
+        raise ProvenanceError("private provenance record could not be written") from error
+    finally:
+        if temporary_descriptor is not None:
+            os.close(temporary_descriptor)
+        if temporary_name is not None:
+            try:
+                os.unlink(temporary_name, dir_fd=parent_descriptor)
+            except FileNotFoundError:
+                pass
+        os.close(parent_descriptor)
+
+
+def read_record(path: Path) -> dict[str, str]:
+    parent_descriptor = _open_bound_directory(path.parent)
+    descriptor: int | None = None
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        try:
+            descriptor = os.open(path.name, flags, dir_fd=parent_descriptor)
+        except OSError as error:
+            raise ProvenanceError("private provenance record is unavailable or unsafe") from error
+
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
             raise ProvenanceError("private provenance record is not a regular file")
-        if hasattr(os, "getuid") and metadata.st_uid != os.getuid():
+        if hasattr(os, "getuid") and before.st_uid != os.getuid():
             raise ProvenanceError("private provenance record is not owned by the current user")
-        if stat.S_IMODE(metadata.st_mode) & 0o077:
+        if stat.S_IMODE(before.st_mode) & 0o077:
             raise ProvenanceError("private provenance record permissions are too broad")
+
         chunks: list[bytes] = []
+        bytes_read = 0
         while True:
             chunk = os.read(descriptor, 64 * 1024)
             if not chunk:
                 break
+            bytes_read += len(chunk)
             chunks.append(chunk)
+
+        after = os.fstat(descriptor)
+        if _stat_identity(before) != _stat_identity(after) or bytes_read != after.st_size:
+            raise ProvenanceError("private provenance record changed while it was read")
+
+        try:
+            current_path = os.stat(path.name, dir_fd=parent_descriptor, follow_symlinks=False)
+        except OSError as error:
+            raise ProvenanceError("private provenance record pathname changed while it was read") from error
+        if (
+            stat.S_ISLNK(current_path.st_mode)
+            or not stat.S_ISREG(current_path.st_mode)
+            or current_path.st_dev != after.st_dev
+            or current_path.st_ino != after.st_ino
+        ):
+            raise ProvenanceError("private provenance record pathname changed while it was read")
     finally:
-        os.close(descriptor)
+        if descriptor is not None:
+            os.close(descriptor)
+        os.close(parent_descriptor)
 
     try:
         text = b"".join(chunks).decode("utf-8")
