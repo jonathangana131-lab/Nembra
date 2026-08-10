@@ -1,0 +1,137 @@
+name: V14 Capture Compose Scanner Progress Sol
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-live-final-app-closure-sol
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    if: "${{ !startsWith(github.event.head_commit.message, 'app(capture): compose current scanner progress closure') }}"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/v14-capture-live-final-app-closure-sol
+          fetch-depth: 0
+
+      - name: Apply reviewed scanner-progress donor without stale ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          git cherry-pick --no-commit c039fcfc7e51e1e8853eee82093dc93ef801dbfd
+
+      - name: Repair current OFF1 generation custody and assert latest authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s = p.read_text()
+          old = '''        guard currentConnectionToken == nil else {
+            failLocally(
+                "A prior authenticated generation has not been terminally retired. Relaunch Capture before starting another attempt.",
+                "active_generation_blocks_discovery_reset"
+            )
+            return
+        }
+'''
+          new = '''        guard currentConnectionToken == nil else {
+            if let token = currentConnectionToken {
+                Task { @MainActor [weak self] in
+                    await self?.invalidateInternalLifecycle(
+                        token: token,
+                        message: "An active authenticated generation existed when OFF1 restart was requested. It was retired fail-closed; restart from OFF1 after relaunch if retirement cannot be proven.",
+                        kind: "active_generation_blocks_discovery_reset"
+                    )
+                }
+            }
+            return
+        }
+'''
+          if old not in s:
+              raise SystemExit('expected current OFF1 custody block not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          required = [
+              '@Published private(set) var correlationProgress: PassiveBluetoothPowerCycleObservationProgress?',
+              'private var correlationProgressTask: Task<Void, Never>?',
+              'startCorrelationProgressObservation(session: session)',
+              'stopCorrelationProgressObservation()',
+              'self.phase == .selected',
+              'self.targetCorrelationOperatorConfirmed',
+              'self.selectedID == candidate.id',
+              'guard phase == .selected else { return }',
+              'buildIdentity.isAuthoritativeFieldBuild',
+              'fieldBuildIdentifier',
+              'fieldBuildSourceCommitSHA',
+              'invalidateInternalLifecycle(',
+              'markInternalLifecycleFailure(for: token)'
+          ]
+          forbidden = [
+              '@preconcurrency import CoreBluetooth',
+              'private var central: CBCentralManager',
+              'CBCentralManager(delegate: self',
+              'CBCentralManagerDelegate',
+              'central.scanForPeripherals',
+              'central.stopScan',
+              'private func updateCandidate',
+              'didDiscover peripheral',
+              'CBAdvertisementDataServiceUUIDsKey',
+              'CBAdvertisementDataManufacturerDataKey',
+              'CBAdvertisementDataIsConnectableKey'
+          ]
+          missing = [x for x in required if x not in s]
+          present = [x for x in forbidden if x in s]
+          if missing or present:
+              raise SystemExit(f'missing={missing}; forbidden={present}')
+
+          def function(marker):
+              start = s.index(marker)
+              opening = s.index('{', start + len(marker))
+              depth = 0
+              for i in range(opening, len(s)):
+                  if s[i] == '{': depth += 1
+                  elif s[i] == '}':
+                      depth -= 1
+                      if depth == 0: return s[start:i+1]
+              raise RuntimeError(marker)
+
+          restart = function('private func beginCorrelationSeries()')
+          tail = restart[restart.index('currentConnectionToken == nil'):]
+          terminal = tail[:tail.index('return') + len('return')]
+          if 'invalidateInternalLifecycle' not in terminal or 'failLocally' in terminal:
+              raise SystemExit('OFF1 active-generation branch violates current custody contract')
+
+          authenticate = s[s.index('func authenticate()'):s.index('private func beginOfficialConnection')]
+          for needle in ['self.phase == .selected', 'self.targetCorrelationOperatorConfirmed', 'self.selectedID == candidate.id']:
+              if needle not in authenticate: raise SystemExit(f'async authority regression: {needle}')
+          begin = s[s.index('private func beginOfficialConnection'):s.index('private func authenticated')]
+          if 'guard phase == .selected else { return }' not in begin or 'phase == .selected || phase == .failed' in begin:
+              raise SystemExit('failed phase can start official connection')
+          PY
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          git diff --check
+
+      - name: Run focused portable source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors \
+            --filter 'TuyaCorrelationProgressPresentationSourceTests|TuyaPackageOwnedCorrelationSingleScannerSourceTests|TuyaFieldBuildPresentationAuthoritySourceTests|TuyaAsyncAuthenticationStartAuthoritySourceTests|TuyaCorrelationRestartLifecycleSourceTests'
+
+      - name: Commit coherent current-head app closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-sol-worker"
+          git config user.email "nembra-sol-worker@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git diff --cached --quiet && { echo 'No product diff produced'; exit 1; }
+          git commit -m "app(capture): compose current scanner progress closure"
+          git push origin HEAD:agent/v14-capture-live-final-app-closure-sol
