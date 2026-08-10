@@ -23,8 +23,9 @@ jobs:
         run: |
           set -euo pipefail
           semantic='c156bbadad5da2797d44497bf4726de95dd0f6ec'
-          test "$(git rev-parse HEAD^)" = "$semantic"
-          mapfile -t helper_delta < <(git diff --name-only "$semantic"...HEAD)
+          git merge-base --is-ancestor "$semantic" HEAD
+          mapfile -t helper_delta < <(git diff --name-only "$semantic"...HEAD | sort)
+          printf '%s\n' "${helper_delta[@]}"
           test "${#helper_delta[@]}" = 1
           test "${helper_delta[0]}" = '.github/workflows/validate-capture-legacy-research-executable-retirement.yml'
           base='6b778f2104af34dbe5b80da31ddb3ca422f9667c'
@@ -38,11 +39,25 @@ jobs:
       - name: Run focused package regression with warnings as errors
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          output="$(mktemp)"
+          set +e
           swift test \
             --package-path Packages/NembraBluetoothCapture \
             --filter TuyaLegacyTodayExecutableAuthorityRetirementSourceTests \
-            -Xswiftc -warnings-as-errors
+            -Xswiftc -warnings-as-errors >"$output" 2>&1
+          status=$?
+          set -e
+          cat "$output"
+          if [[ "$status" != 0 ]]; then
+            while IFS= read -r line; do
+              safe="${line//'%'/'%25'}"
+              safe="${safe//$'\r'/'%0D'}"
+              safe="${safe//$'\n'/'%0A'}"
+              echo "::error title=Focused SwiftPM retirement regression::$safe"
+            done < <(grep -E 'error:|failed|Issue recorded|Expectation failed|Test .* failed' "$output" | tail -n 30 || true)
+            exit "$status"
+          fi
 
       - name: Re-run executable fail-closed behavior
         shell: bash
