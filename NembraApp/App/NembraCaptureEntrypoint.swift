@@ -474,6 +474,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        if phase == .correlated || phase == .selected {
+            pendingCorrelatedTargetID = nil
+            selectedID = nil
+            targetCorrelationOperatorConfirmed = false
+            phase = .failed
+            message = "Capture left Secure Link after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the prior target cannot cross a view lifetime. Completed correlation evidence remains available for diagnostics."
+            log("target_correlation_abandoned_on_view_exit")
+            return
+        }
         guard processCorrelationLease != nil || correlationSession != nil else { return }
         // Existing helper stops package transport before releasing this controller's lease.
         abandonPackageCorrelation()
@@ -516,12 +525,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
 
         if phase == .correlated || phase == .selected {
-            // Final-window sealing already retires the package scanner/lease. These phases can
-            // therefore hold actionable target authority with no live transport object to inspect.
-            // Foreground loss must invalidate that authority explicitly before a retry.
-            resetDiscoverySessionOnly()
+            // Final-window sealing already retired the scanner/lease. Revoke target reuse authority
+            // without erasing the completed OFF1→ON1→OFF2→ON2 evidence needed for diagnostics.
+            pendingCorrelatedTargetID = nil
+            selectedID = nil
+            targetCorrelationOperatorConfirmed = false
             phase = .failed
-            message = "Capture left the foreground after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the prior correlated/selected target cannot cross a foreground-integrity break."
+            message = "Capture left the foreground after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the prior correlated/selected target cannot cross a foreground-integrity break. Completed correlation evidence remains available for diagnostics."
             log("foreground_integrity_lost_after_target_correlation")
             return
         }
@@ -1292,6 +1302,32 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 do {
                     try await sessionLedger.markAuthenticated(for: token, method: .smartLifeAppSDK)
                     await refreshLedgerSnapshot()
+
+                    // Both ledger actor hops above can interleave foreground/view/account retirement.
+                    // Never repaint an already-retired generation as authenticated observation.
+                    guard currentConnectionToken == token else {
+                        log("stale_auth_promotion_resume_ignored", [
+                            "generation": String(token.diagnosticGeneration)
+                        ])
+                        return
+                    }
+                    guard phase == .authenticating else {
+                        log("auth_promotion_resume_phase_changed_ignored", [
+                            "generation": String(token.diagnosticGeneration)
+                        ])
+                        return
+                    }
+                    guard sdkAccountLoggedIn,
+                          sdkDeviceMembershipVerified,
+                          accountIdentityLeaseIsAuthorized else {
+                        await invalidateSourceAuthority(
+                            token: token,
+                            message: "Tuya account/device source authority changed while authentication promotion was suspended.",
+                            kind: "sdk_source_authority_lost_during_auth_promotion"
+                        )
+                        return
+                    }
+
                     phase = .observing
                     message = "Authenticated generation \(token.diagnosticGeneration) is live. Waiting for a genuine application update and the canonical 45-second horizon…"
                     log("sdk_local_ble_authenticated", [
@@ -1459,6 +1495,25 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
+
+            // The ledger hops above may interleave account/view lifecycle changes. Revalidate
+            // the exact generation and account lease immediately before immutable event custody.
+            guard currentConnectionToken == token,
+                  phase == .observing,
+                  !acceptanceCutIsClosed,
+                  sdkAccountLoggedIn,
+                  sdkDeviceMembershipVerified,
+                  accountIdentityLeaseIsAuthorized,
+                  membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) == leasedAccountUID else {
+                if currentConnectionToken == token {
+                    await invalidateSourceAuthority(
+                        token: token,
+                        message: "SDK account/device authority changed before application evidence could enter event custody.",
+                        kind: "sdk_source_authority_changed_before_application_event_custody"
+                    )
+                }
+                return
+            }
             var eventDetails = custodySafeUpdate
             eventDetails["generation"] = String(token.diagnosticGeneration)
             log("tuya_application_update", eventDetails)
