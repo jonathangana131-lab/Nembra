@@ -1,0 +1,86 @@
+name: Reanchor Capture visual current product sol
+
+on:
+  push:
+    branches:
+      - validation/v14-capture-guided-visual-e7af-sol
+
+permissions:
+  contents: write
+
+jobs:
+  reanchor:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: validation/v14-capture-guided-visual-e7af-sol
+          fetch-depth: 0
+      - name: Merge exact current guided product and update procedure custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          product='502cfc43d8943bacb446f287b58d46463df3a7ca'
+          product_ref='refs/remotes/origin/product/v14-capture-guided-truth-current-sol'
+          workflow='.github/workflows/capture-standalone-visual-evidence.yml'
+          test_file='scripts/ci/tests/test_capture_standalone_visual_evidence.py'
+          helper='.github/workflows/reanchor-capture-visual-current-product-sol.yml'
+
+          git fetch origin 'refs/heads/product/v14-capture-guided-truth-current-sol:refs/remotes/origin/product/v14-capture-guided-truth-current-sol'
+          test "$(git rev-parse "$product_ref")" = "$product"
+          git config user.name 'nembra-go-bot'
+          git config user.email 'nembra-go-bot@users.noreply.github.com'
+          git merge --no-commit --no-ff "$product"
+          test -z "$(git diff --name-only --diff-filter=U)"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          workflow_path = Path('.github/workflows/capture-standalone-visual-evidence.yml')
+          workflow = workflow_path.read_text()
+          old_env = '  EXPECTED_BUNDLE_ID: com.jonathangana131.nembra.capturelearn\n'
+          new_env = old_env + '  EXPECTED_PROCEDURE_IDENTIFIER: ES80-AUTHENTICATED-STATIONARY-v1\n'
+          if workflow.count(old_env) != 1:
+              raise SystemExit('visual workflow bundle env anchor changed')
+          workflow = workflow.replace(old_env, new_env, 1)
+
+          old_build = '            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$PR_SHA" \\\n            CODE_SIGNING_ALLOWED=NO \\\n'
+          new_build = '            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$PR_SHA" \\\n            INFOPLIST_KEY_NembraCaptureProcedureIdentifier="$EXPECTED_PROCEDURE_IDENTIFIER" \\\n            CODE_SIGNING_ALLOWED=NO \\\n'
+          if workflow.count(old_build) != 1:
+              raise SystemExit('visual workflow build provenance anchor changed')
+          workflow = workflow.replace(old_build, new_build, 1)
+
+          old_readback = '          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$BUILD_PLIST")" = "$PR_SHA"\n          test "$(plutil -extract CFBundleIdentifier raw -o - "$BUILD_PLIST")" = "$EXPECTED_BUNDLE_ID"\n'
+          new_readback = '          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$BUILD_PLIST")" = "$PR_SHA"\n          test "$(plutil -extract NembraCaptureProcedureIdentifier raw -o - "$BUILD_PLIST")" = "$EXPECTED_PROCEDURE_IDENTIFIER"\n          test "$(plutil -extract CFBundleIdentifier raw -o - "$BUILD_PLIST")" = "$EXPECTED_BUNDLE_ID"\n'
+          if workflow.count(old_readback) != 1:
+              raise SystemExit('visual workflow built-app readback anchor changed')
+          workflow_path.write_text(workflow.replace(old_readback, new_readback, 1))
+
+          test_path = Path('scripts/ci/tests/test_capture_standalone_visual_evidence.py')
+          test = test_path.read_text()
+          marker = 'script = (root / "scripts/ci/capture_standalone_visual_evidence.sh").read_text(encoding="utf-8")\n'
+          replacement = marker + 'workflow = (root / ".github/workflows/capture-standalone-visual-evidence.yml").read_text(encoding="utf-8")\n'
+          if test.count(marker) != 1:
+              raise SystemExit('visual regression script anchor changed')
+          test = test.replace(marker, replacement, 1)
+          tail = 'print("capture standalone visual evidence source contract: PASS")\n'
+          checks = '''for needle in (
+    "EXPECTED_PROCEDURE_IDENTIFIER: ES80-AUTHENTICATED-STATIONARY-v1",
+    'INFOPLIST_KEY_NembraCaptureProcedureIdentifier="$EXPECTED_PROCEDURE_IDENTIFIER"',
+    'plutil -extract NembraCaptureProcedureIdentifier raw -o - "$BUILD_PLIST"',
+):
+    if needle not in workflow:
+        raise SystemExit(f"visual workflow missing procedure custody: {needle}")
+
+'''
+          if test.count(tail) != 1:
+              raise SystemExit('visual regression tail anchor changed')
+          test_path.write_text(test.replace(tail, checks + tail, 1))
+          PY
+
+          bash -n scripts/ci/capture_standalone_visual_evidence.sh
+          python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          git diff --check
+          git add -A
+          git commit -m 'merge(capture): reanchor visual gate on current product truth'
+          git push origin HEAD:validation/v14-capture-guided-visual-e7af-sol
