@@ -29,6 +29,12 @@ struct TuyaFreshTargetAndAcquisitionTerminalSourceTests {
         #expect(invalid.contains("invalidateChronologyIntegrity"))
         #expect(!invalid.contains("invalidateSourceAuthority"))
         #expect(app.contains("sessionLedger.markChronologyIntegrityInvalidated(for: token)"))
+        #expect(app.contains("session_auth_start_chronology_rejected"))
+        #expect(app.contains("application_update_clock_regressed"))
+        #expect(app.contains("observation_clock_regressed"))
+        #expect(app.contains("session_liveness_clock_regressed"))
+        #expect(app.contains("accepted_prefix_seal_clock_regressed"))
+        #expect(app.contains("application_timeout_clock_regressed"))
         #expect(app.contains("localBLESettlementToken"))
     }
 

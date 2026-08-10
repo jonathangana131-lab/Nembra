@@ -296,6 +296,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var selected: Candidate? { selectedID.flatMap { byID[$0] } }
     var applicationUpdateCount: Int { ledgerSnapshot.applicationPayloadCount }
     var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }
+    var fieldBuildIdentifier: String { buildIdentity.buildIdentifier }
     var correlationProgress: PassiveBluetoothPowerCycleObservationProgress? { correlationSession?.progress }
     var correlationWindowIsScanning: Bool { correlationProgress?.isScanning == true }
     var correlationObservedCandidateCount: Int { correlationProgress?.currentObservedCandidateCount ?? 0 }
@@ -582,6 +583,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
 #endif
         correlationSession?.abandonCurrentWindow()
         correlationSession = nil
+        pendingCorrelatedTargetID = nil
+        selectedID = nil
         central.stopScan()
         if [.baseline, .powerOn, .scanning, .correlated, .selected].contains(phase) {
             phase = .failed
@@ -737,8 +740,17 @@ private final class SecureLinkController: NSObject, ObservableObject {
             guard let self else { return }
             do {
                 let token = try await self.sessionLedger.beginConnection()
-                try await self.sessionLedger.markAuthenticationStarted(for: token)
                 self.currentConnectionToken = token
+                do {
+                    try await self.sessionLedger.markAuthenticationStarted(for: token)
+                } catch {
+                    await self.invalidateChronologyIntegrity(
+                        token: token,
+                        message: "Authentication-start chronology failed closed before Tuya BLE ownership: \(error.localizedDescription)",
+                        kind: "session_auth_start_chronology_rejected"
+                    )
+                    return
+                }
                 await self.refreshLedgerSnapshot()
                 self.log("official_connect_requested", [
                     "generation": String(token.diagnosticGeneration),
@@ -973,6 +985,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
             log("stale_application_update_ignored", ["generation": String(token.diagnosticGeneration)])
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {
             log("retired_application_update_ignored", ["generation": String(token.diagnosticGeneration)])
+        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
+            await invalidateChronologyIntegrity(
+                token: token,
+                message: "Application chronology failed closed because the monotonic clock regressed.",
+                kind: "application_update_clock_regressed"
+            )
         } catch {
             await invalidateObservationContinuity(
                 token: token,
@@ -995,23 +1013,21 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
                 let now = DispatchTime.now().uptimeNanoseconds
                 guard now >= previousPollUptime else {
-                    do {
-                        try await sessionLedger.markObservationContinuityInvalidated(for: token)
-                    } catch {}
-                    self.currentConnectionToken = nil
-                    await self.refreshLedgerSnapshot()
-                    self.failLocally("Authenticated observation continuity was interrupted by a monotonic-clock regression.", "observation_clock_regressed")
+                    await self.invalidateChronologyIntegrity(
+                        token: token,
+                        message: "Authenticated observation chronology was invalidated by a monotonic-clock regression.",
+                        kind: "observation_clock_regressed"
+                    )
                     return
                 }
 
                 let gap = now - previousPollUptime
                 guard gap <= Self.maximumObservationPollGapNanoseconds else {
-                    do {
-                        try await sessionLedger.markObservationContinuityInvalidated(for: token)
-                    } catch {}
-                    self.currentConnectionToken = nil
-                    await self.refreshLedgerSnapshot()
-                    self.failLocally("Authenticated observation continuity was interrupted; the gap is not evidence that BLE disconnected.", "observation_poll_gap_exceeded")
+                    await self.invalidateObservationContinuity(
+                        token: token,
+                        message: "Authenticated observation continuity was interrupted; the gap is not evidence that BLE disconnected.",
+                        kind: "observation_poll_gap_exceeded"
+                    )
                     return
                 }
                 previousPollUptime = now
@@ -1041,6 +1057,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     return
                 } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {
                     self.log("sealed_watchdog_generation_retired", ["generation": String(token.diagnosticGeneration)])
+                    return
+                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
+                    await self.invalidateChronologyIntegrity(
+                        token: token,
+                        message: "Authenticated-session liveness chronology failed closed because the monotonic clock regressed.",
+                        kind: "session_liveness_clock_regressed"
+                    )
                     return
                 } catch {
                     await self.invalidateObservationContinuity(
@@ -1081,6 +1104,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
                             "buildIdentifier": self.buildIdentity.buildIdentifier,
                             "sourceCommitSHA": self.buildIdentity.sourceCommitSHA
                         ])
+                    } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
+                        await self.invalidateChronologyIntegrity(
+                            token: token,
+                            message: "Canonical readiness could not be sealed because the monotonic clock regressed.",
+                            kind: "accepted_prefix_seal_clock_regressed"
+                        )
                     } catch {
                         await self.invalidateObservationContinuity(
                             token: token,
@@ -1098,8 +1127,23 @@ private final class SecureLinkController: NSObject, ObservableObject {
                    self.applicationUpdateCount == 0 {
                     do {
                         try await sessionLedger.markApplicationObservationTimedOut(for: token)
-                    } catch {}
+                    } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
+                        await self.invalidateChronologyIntegrity(
+                            token: token,
+                            message: "Application-observation deadline could not be sealed because the monotonic clock regressed.",
+                            kind: "application_timeout_clock_regressed"
+                        )
+                        return
+                    } catch {
+                        await self.invalidateObservationContinuity(
+                            token: token,
+                            message: "Application-observation deadline could not be sealed: \(error.localizedDescription)",
+                            kind: "application_timeout_terminal_rejected"
+                        )
+                        return
+                    }
                     self.currentConnectionToken = nil
+                    self.localBLESettlementToken = nil
                     self.sdkLocalBLEOnline = false
                     self.driver = nil
                     await self.refreshLedgerSnapshot()
@@ -1116,7 +1160,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken) async {
         guard currentConnectionToken == token else { return }
-        try? await sessionLedger.endConnection(for: token)
+        do {
+            try await sessionLedger.endConnection(for: token)
+        } catch {
+            try? await sessionLedger.markChronologyIntegrityInvalidated(for: token)
+        }
         currentConnectionToken = nil
         localBLESettlementToken = nil
         sdkLocalBLEOnline = false
@@ -1133,7 +1181,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
         kind: String
     ) async {
         guard currentConnectionToken == token else { return }
-        try? await sessionLedger.markSourceAuthorityInvalidated(for: token)
+        do {
+            try await sessionLedger.markSourceAuthorityInvalidated(for: token)
+        } catch {
+            try? await sessionLedger.markChronologyIntegrityInvalidated(for: token)
+        }
         currentConnectionToken = nil
         localBLESettlementToken = nil
         sdkLocalBLEOnline = false
@@ -1150,7 +1202,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
         kind: String
     ) async {
         guard currentConnectionToken == token else { return }
-        try? await sessionLedger.markObservationContinuityInvalidated(for: token)
+        do {
+            try await sessionLedger.markObservationContinuityInvalidated(for: token)
+        } catch {
+            try? await sessionLedger.markChronologyIntegrityInvalidated(for: token)
+        }
         currentConnectionToken = nil
         localBLESettlementToken = nil
         sdkLocalBLEOnline = false
@@ -1821,7 +1877,7 @@ private struct SecureLinkView: View {
     private var authorityCard: some View {
         VStack(alignment: .leading, spacing: 7) {
             Label("Official Tuya authority", systemImage: "checkmark.shield").font(.headline)
-            LabeledContent("Field build", value: test.fieldBuildIsAuthoritative ? "Authoritative" : "Not authoritative")
+            LabeledContent("Field build", value: test.fieldBuildIsAuthoritative ? test.fieldBuildIdentifier : "Not authoritative")
             LabeledContent("Private SDK config", value: test.privateConfig ? "Present" : "Missing")
             LabeledContent("SDK account logged in", value: test.sdkAccountLoggedIn ? "Yes" : "No")
             LabeledContent("Exact scooter membership", value: test.sdkDeviceMembershipVerified && test.accountIdentityLeaseIsAuthorized ? "Verified for current account" : test.membershipBusy ? "Checking…" : "Not verified")
