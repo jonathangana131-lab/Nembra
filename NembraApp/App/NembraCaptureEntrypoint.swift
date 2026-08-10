@@ -431,6 +431,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Scooter membership must be verified again for this Secure Link view."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -479,6 +480,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func appDidLoseForeground() {
+        // A sealed accepted artifact is immutable and remains shareable across scene changes.
+        guard phase != .accepted else { return }
         guard !foregroundIntegrityLossHandled else { return }
         foregroundIntegrityLossHandled = true
 
@@ -488,6 +491,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Scooter membership must be verified again for this Secure Link view."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -507,6 +511,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
 
         guard let token = currentConnectionToken else {
+            if phase == .correlated || phase == .selected {
+                resetDiscoverySessionOnly()
+                phase = .failed
+                message = "Capture left the foreground after target correlation. Re-verify this scooter and restart from OFF1; prior target authority is not reused across the interruption."
+                log("foreground_integrity_lost_after_target_correlation")
+                return
+            }
+
             if phase == .authenticating {
                 // OfficialTuyaFactory.make() permanently retires package correlation for this
                 // process, even if no package generation existed before foreground loss.
@@ -1427,7 +1439,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             await refreshLedgerSnapshot()
             log("tuya_application_update", update.merging([
                 "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
