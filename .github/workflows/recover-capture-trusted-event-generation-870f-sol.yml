@@ -1,0 +1,83 @@
+name: Recover Capture trusted event generation 870f
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-trusted-event-generation-870f-sol
+
+permissions:
+  contents: write
+
+jobs:
+  repair-event-provenance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 8
+
+      - name: Bind exact product and red regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT=870f20abe144fa7b6f9ac60bf4c0fe0a1792fb81
+          WORKFLOW=.github/workflows/recover-capture-trusted-event-generation-870f-sol.yml
+          TEST=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
+          git merge-base --is-ancestor "$PRODUCT" HEAD
+          actual="$(git diff --name-only "$PRODUCT" HEAD | sort)"
+          expected="$(printf '%s\n%s\n' "$TEST" "$WORKFLOW" | sort)"
+          test "$actual" = "$expected"
+
+      - name: Make Nembra provenance win SDK key collisions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text()
+          old = '''            log("tuya_application_update", update.merging([
+                "generation": String(token.diagnosticGeneration)
+            ]) { current, _ in current })
+'''
+          new = '''            log("tuya_application_update", update.merging([
+                "generation": String(token.diagnosticGeneration)
+            ]) { _, trusted in trusted })
+'''
+          if source.count(old) != 1:
+              raise SystemExit(f"expected exactly one untrusted application-event collision policy, found {source.count(old)}")
+          source = source.replace(old, new, 1)
+          path.write_text(source)
+
+          start = source.index("    private func receivedApplicationUpdate(")
+          end = source.index("    private func startWatchdog", start)
+          receiver = source[start:end]
+          if ') { current, _ in current })' in receiver:
+              raise SystemExit("untrusted SDK field still wins reserved provenance collision")
+          if ') { _, trusted in trusted })' not in receiver:
+              raise SystemExit("trusted Nembra generation precedence is not explicit")
+          for forbidden in ("publishDps", "queryDps", "writeValue", "disconnectBLE"):
+              if forbidden in receiver:
+                  raise SystemExit(f"metadata-only repair gained forbidden command path: {forbidden}")
+          PY
+          git diff --check
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
+
+      - name: Commit exact two-path repair and self-remove runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT=870f20abe144fa7b6f9ac60bf4c0fe0a1792fb81
+          WORKFLOW=.github/workflows/recover-capture-trusted-event-generation-870f-sol.yml
+          APP=NembraApp/App/NembraCaptureEntrypoint.swift
+          TEST=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
+          rm "$WORKFLOW"
+          git diff --check
+          actual="$(git diff --name-only "$PRODUCT" | sort)"
+          expected="$(printf '%s\n%s\n' "$APP" "$TEST" | sort)"
+          test "$actual" = "$expected"
+          git add "$APP" "$WORKFLOW"
+          git config user.name "nembra-recovery-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "fix(capture): protect application event generation provenance"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
