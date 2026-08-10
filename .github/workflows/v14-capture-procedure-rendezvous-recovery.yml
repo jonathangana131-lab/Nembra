@@ -19,7 +19,21 @@ jobs:
           fetch-depth: 0
 
       - name: Apply exact procedure rendezvous
-        run: python3 Scripts/apply_capture_procedure_rendezvous.py
+        run: |
+          set +e
+          python3 Scripts/apply_capture_procedure_rendezvous.py > /tmp/rendezvous.out 2>&1
+          rc=$?
+          set -e
+          cat /tmp/rendezvous.out
+          if [[ "$rc" != "0" ]]; then
+            cp /tmp/rendezvous.out rendezvous_failure.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add rendezvous_failure.txt
+            git commit -m "diag(capture): persist rendezvous transform failure"
+            git push origin HEAD:integration/v14-capture-procedure-rendezvous-recovery-sol
+            exit "$rc"
+          fi
 
       - name: Validate shell and final source shape
         run: |
@@ -31,6 +45,7 @@ jobs:
 
       - name: Commit only durable product contract
         run: |
+          rm -f rendezvous_failure.txt
           rm Scripts/apply_capture_procedure_rendezvous.py
           rm .github/workflows/v14-capture-procedure-rendezvous-recovery.yml
           git add -A
