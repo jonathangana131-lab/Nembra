@@ -1,0 +1,132 @@
+name: Temporary V14 Capture Post-Seal Repair
+
+on:
+  push:
+    branches:
+      - integration/v14-capture-post-seal-on-provenance-sol
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/v14-capture-post-seal-on-provenance-sol
+          fetch-depth: 0
+
+      - name: Apply exact-source repair and verify contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_ACTOR" = "github-actions[bot]" ]; then
+            exit 0
+          fi
+
+          BASE_SHA='8d6ac2d94adfc9096129e7abf94701d4ac3b366a'
+          EXPECTED_ENTRYPOINT_BLOB='21560f929a6c5177b15ec4b60e7271a2e9c0a0d1'
+          git merge-base --is-ancestor "$BASE_SHA" HEAD
+          test "$(git rev-parse HEAD:NembraApp/App/NembraCaptureEntrypoint.swift)" = "$EXPECTED_ENTRYPOINT_BLOB"
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPostSealTransportAuthoritySourceTests.swift
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text()
+          old = '''                        guard self.buildIdentity.isAuthoritativeFieldBuild,
+                              self.accountIdentityLeaseIsAuthorized else {
+                            self.currentConnectionToken = nil
+                            self.localBLESettlementToken = nil
+                            self.sdkLocalBLEOnline = false
+                            self.driver = nil
+                            self.phase = .failed
+                            self.message = "Source authority changed while canonical acceptance was sealing. Restart from OFF1; the sealed package chronology is diagnostic only."
+                            self.log("source_authority_changed_during_acceptance_seal", [
+                                "generation": String(token.diagnosticGeneration)
+                            ])
+                            return
+                        }
+                        self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut
+'''
+          new = '''                        guard self.buildIdentity.isAuthoritativeFieldBuild,
+                              self.accountIdentityLeaseIsAuthorized else {
+                            self.currentConnectionToken = nil
+                            self.localBLESettlementToken = nil
+                            self.sdkLocalBLEOnline = false
+                            self.driver = nil
+                            self.phase = .failed
+                            self.message = "Source authority changed while canonical acceptance was sealing. Restart from OFF1; the sealed package chronology is diagnostic only."
+                            self.log("source_authority_changed_during_acceptance_seal", [
+                                "generation": String(token.diagnosticGeneration)
+                            ])
+                            return
+                        }
+                        guard let driver = self.driver else {
+                            self.currentConnectionToken = nil
+                            self.localBLESettlementToken = nil
+                            self.sdkLocalBLEOnline = false
+                            self.phase = .failed
+                            self.message = "Tuya local-BLE authority became unavailable after canonical acceptance sealed. Restart from OFF1; no disconnect time is inferred."
+                            self.log("sdk_local_ble_authority_missing_after_acceptance_seal", [
+                                "generation": String(token.diagnosticGeneration)
+                            ])
+                            return
+                        }
+                        let postSealLocalBLEOnline = driver.isLocallyConnected(uuid: self.tuyaUUID)
+                        self.sdkLocalBLEOnline = postSealLocalBLEOnline
+                        guard postSealLocalBLEOnline else {
+                            self.currentConnectionToken = nil
+                            self.localBLESettlementToken = nil
+                            self.driver = nil
+                            self.phase = .failed
+                            self.message = "Tuya local-BLE authority was no longer current after canonical acceptance sealed. Restart from OFF1; no disconnect time is inferred."
+                            self.log("sdk_local_ble_not_current_after_acceptance_seal", [
+                                "generation": String(token.diagnosticGeneration)
+                            ])
+                            return
+                        }
+                        self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut
+'''
+          if source.count(old) != 1:
+              raise SystemExit(f"expected exactly one post-seal authority anchor, found {source.count(old)}")
+          source = source.replace(old, new, 1)
+          path.write_text(source)
+
+          start = source.index("private func startWatchdog")
+          end = source.index("private func recordObservedTransportLoss", start)
+          body = source[start:end]
+          seal_text = "try await sessionLedger.sealAcceptedObservation(for: token)"
+          seal = body.index(seal_text)
+          recheck = body.index("driver.isLocallyConnected(uuid: self.tuyaUUID)", seal)
+          freeze = body.index("self.sealedAcceptedExport = self.makeExport(", recheck)
+          accepted = body.index("self.phase = .accepted", freeze)
+          between = body[seal + len(seal_text):recheck]
+          if "await " in between:
+              raise SystemExit("unexpected suspension between package seal and local-BLE recheck")
+          if not (seal < recheck < freeze < accepted):
+              raise SystemExit("post-seal recheck ordering is not fail-closed")
+          post = body[seal:freeze]
+          for forbidden in (
+              "sessionLedger.endConnection",
+              "markAuthenticationFailed",
+              "markSourceAuthorityInvalidated",
+              "markObservationContinuityInvalidated",
+              "markInternalLifecycleFailure",
+          ):
+              if forbidden in post:
+                  raise SystemExit(f"forbidden second terminal after seal: {forbidden}")
+          if "self.sdkLocalBLEOnline = postSealLocalBLEOnline" not in post:
+              raise SystemExit("post-seal SDK currentness is not mirrored")
+          PY
+
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPostSealTransportAuthoritySourceTests.swift
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git diff --cached --check
+          git commit -m 'fix(capture): recheck local BLE after canonical seal'
+          git push origin HEAD:integration/v14-capture-post-seal-on-provenance-sol
