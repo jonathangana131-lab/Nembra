@@ -21,13 +21,16 @@ struct TuyaCrossControllerBLEOwnershipLeaseSourceTests {
 
         let makeStart = try #require(factory.range(of: "static func make() -> OfficialTuyaDriver?"))
         let make = factory[makeStart.lowerBound...]
-        let noPackageOwner = make.range(of: "guard activePackageCorrelationOwner == nil,")
+        let retirementGuard = make.range(of: "guard !packageCorrelationRetiredForProcess,")
+        let noPackageOwner = make.range(of: "activePackageCorrelationOwner == nil,")
         let retirePackageForever = make.range(of: "packageCorrelationRetiredForProcess = true")
         let driver = make.range(of: "return SmartLifeDriver()")
+        #expect(retirementGuard != nil)
         #expect(noPackageOwner != nil)
         #expect(retirePackageForever != nil)
         #expect(driver != nil)
-        if let noPackageOwner, let retirePackageForever, let driver {
+        if let retirementGuard, let noPackageOwner, let retirePackageForever, let driver {
+            #expect(retirementGuard.lowerBound < noPackageOwner.lowerBound)
             #expect(noPackageOwner.lowerBound < retirePackageForever.lowerBound)
             #expect(retirePackageForever.lowerBound < driver.lowerBound)
         }
