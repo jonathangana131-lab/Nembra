@@ -196,6 +196,7 @@ fi
 DERIVED="${TMPDIR:-/tmp}/NembraAuthenticatedCaptureDerived"
 rm -rf "$DERIVED"
 BUNDLE_ID="com.jonathangana131.nembra.capturelearn"
+EXPECTED_APPLICATION_IDENTIFIER="${TEAM_ID}.${BUNDLE_ID}"
 PROCEDURE_ID="ES80-AUTHENTICATED-STATIONARY-v1"
 BUILD_LABEL="capture-v14-${SOURCE_SHA:0:12}"
 verify_private_tuya_inputs
@@ -243,7 +244,7 @@ say "Built app provenance matched exact requested source, reviewed Tuya dependen
 # Apple verifiers with a closed startup environment and parse an XML plist from either display stream.
 SIGNED_ENTITLEMENTS_OUTPUT="$(/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/codesign -d --entitlements :- --xml "$APP" 2>&1)" || \
     die "Could not read effective entitlements from the final signed Capture app. Discard this candidate."
-BUILT_APPLE_SIGNIN_ENTITLEMENT="$(printf '%s' "$SIGNED_ENTITLEMENTS_OUTPUT" | /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c '
+BUILT_SIGNING_IDENTITY="$(printf '%s' "$SIGNED_ENTITLEMENTS_OUTPUT" | /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c '
 import plistlib, sys
 payload = sys.stdin.buffer.read()
 start = payload.find(b"<?xml")
@@ -251,33 +252,54 @@ end = payload.rfind(b"</plist>")
 if start < 0 or end < start:
     raise SystemExit(2)
 try:
-    value = plistlib.loads(payload[start:end + len(b"</plist>")]).get("com.apple.developer.applesignin")
+    entitlements = plistlib.loads(payload[start:end + len(b"</plist>")])
+    apple = entitlements.get("com.apple.developer.applesignin")
+    application = entitlements.get("application-identifier")
+    team = entitlements.get("com.apple.developer.team-identifier")
 except Exception:
     raise SystemExit(2)
-if value == ["Default"]:
-    sys.stdout.write("Default")
+if apple == ["Default"] and isinstance(application, str) and isinstance(team, str):
+    sys.stdout.write(application + "\t" + team)
 ' || true)"
-[[ "$BUILT_APPLE_SIGNIN_ENTITLEMENT" == "Default" ]] || \
-    die "Final signed Capture app does not carry the required Sign in with Apple entitlement. Enable the capability for this App ID/team and rebuild; do not install this candidate."
+[[ "$BUILT_SIGNING_IDENTITY" == *$'\t'* ]] || \
+    die "Final signed Capture app is missing required Sign in with Apple or exact application/team identity entitlements. Discard this candidate."
+BUILT_APPLICATION_IDENTIFIER="${BUILT_SIGNING_IDENTITY%%$'\t'*}"
+BUILT_TEAM_IDENTIFIER="${BUILT_SIGNING_IDENTITY#*$'\t'}"
+[[ "$BUILT_APPLICATION_IDENTIFIER" == "$EXPECTED_APPLICATION_IDENTIFIER" ]] || \
+    die "Final signed Capture app application-identifier does not match the selected team and Capture bundle identifier. Discard this candidate."
+[[ "$BUILT_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \
+    die "Final signed Capture app team identifier does not match the selected Apple Development team. Discard this candidate."
 
 BUILT_PROFILE="$APP/embedded.mobileprovision"
 [[ -f "$BUILT_PROFILE" ]] || die "Final signed Capture app is missing embedded.mobileprovision. Discard this candidate."
 PROFILE_PLIST_XML="$(/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/security cms -D -i "$BUILT_PROFILE" 2>/dev/null)" || \
     die "Could not decode the exact provisioning profile embedded in the final signed Capture app. Discard this candidate."
-PROFILE_APPLE_SIGNIN_ENTITLEMENT="$(printf '%s' "$PROFILE_PLIST_XML" | /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c '
+PROFILE_SIGNING_IDENTITY="$(printf '%s' "$PROFILE_PLIST_XML" | /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c '
 import plistlib, sys
 try:
     root = plistlib.loads(sys.stdin.buffer.read())
-    value = root.get("Entitlements", {}).get("com.apple.developer.applesignin")
+    entitlements = root.get("Entitlements", {})
+    apple = entitlements.get("com.apple.developer.applesignin")
+    application = entitlements.get("application-identifier")
+    entitlement_team = entitlements.get("com.apple.developer.team-identifier")
+    team_identifiers = root.get("TeamIdentifier")
 except Exception:
     raise SystemExit(2)
-if value == ["Default"]:
-    sys.stdout.write("Default")
+if (apple == ["Default"] and isinstance(application, str) and isinstance(entitlement_team, str)
+        and isinstance(team_identifiers, list) and len(team_identifiers) == 1
+        and team_identifiers[0] == entitlement_team):
+    sys.stdout.write(application + "\t" + entitlement_team)
 ' || true)"
-[[ "$PROFILE_APPLE_SIGNIN_ENTITLEMENT" == "Default" ]] || \
-    die "Embedded provisioning profile does not authorize Sign in with Apple for the final Capture app. Enable the capability for this App ID/team and rebuild; do not install this candidate."
-say "Final signed app and embedded provisioning profile both authorize Sign in with Apple"
-unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_APPLE_SIGNIN_ENTITLEMENT PROFILE_PLIST_XML PROFILE_APPLE_SIGNIN_ENTITLEMENT BUILT_PROFILE
+[[ "$PROFILE_SIGNING_IDENTITY" == *$'\t'* ]] || \
+    die "Embedded provisioning profile is missing required Sign in with Apple or exact application/team identity custody. Discard this candidate."
+PROFILE_APPLICATION_IDENTIFIER="${PROFILE_SIGNING_IDENTITY%%$'\t'*}"
+PROFILE_TEAM_IDENTIFIER="${PROFILE_SIGNING_IDENTITY#*$'\t'}"
+[[ "$PROFILE_APPLICATION_IDENTIFIER" == "$EXPECTED_APPLICATION_IDENTIFIER" ]] || \
+    die "Embedded provisioning profile application identifier does not match the selected team and Capture bundle identifier. Discard this candidate."
+[[ "$PROFILE_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \
+    die "Embedded provisioning profile team identity does not match the selected Apple Development team. Discard this candidate."
+say "Final signed app and embedded provisioning profile authorize Sign in with Apple for the exact selected App ID and team"
+unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_SIGNING_IDENTITY BUILT_APPLICATION_IDENTIFIER BUILT_TEAM_IDENTIFIER PROFILE_PLIST_XML PROFILE_SIGNING_IDENTITY PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_IDENTIFIER BUILT_PROFILE
 unset BUILT_BUILD_IDENTIFIER BUILT_SOURCE_SHA BUILT_TUYA_DEPENDENCY_LOCK_SHA256 BUILT_PROCEDURE_IDENTIFIER BUILT_BUNDLE_ID APP_INFO_PLIST
 
 say "Installing SDK-integrated Capture on the intended iPhone"
