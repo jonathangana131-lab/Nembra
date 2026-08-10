@@ -1427,9 +1427,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            let exportSafeUpdate = redactedApplicationUpdateForEventCustody(update)
+            log("tuya_application_update", exportSafeUpdate.merging([
                 "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -1454,6 +1455,36 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 kind: "application_update_lifecycle_rejected"
             )
         }
+    }
+
+    private func redactedApplicationUpdateForEventCustody(_ update: [String: String]) -> [String: String] {
+        guard let rawAccountUID = membershipAccountUID else { return [:] }
+        let accountUID = rawAccountUID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !accountUID.isEmpty else { return [:] }
+
+        var redacted: [String: String] = [:]
+        for (key, value) in update {
+            var redactedKey = key.replacingOccurrences(
+                of: accountUID,
+                with: "<redacted-account-uid>",
+                options: [.caseInsensitive, .literal]
+            )
+            let redactedValue = value.replacingOccurrences(
+                of: accountUID,
+                with: "<redacted-account-uid>",
+                options: [.caseInsensitive, .literal]
+            )
+
+            if redacted[redactedKey] != nil {
+                var suffix = 2
+                while redacted["\(redactedKey)#\(suffix)"] != nil {
+                    suffix += 1
+                }
+                redactedKey = "\(redactedKey)#\(suffix)"
+            }
+            redacted[redactedKey] = redactedValue
+        }
+        return redacted
     }
 
     private func startWatchdog(token: TuyaReadOnlyConnectionToken) {
