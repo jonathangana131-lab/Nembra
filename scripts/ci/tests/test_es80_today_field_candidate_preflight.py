@@ -264,7 +264,7 @@ class FieldCandidatePreflightTests(unittest.TestCase):
     def test_production_handoff_creates_private_input_descriptor_relative(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
         home_resolution = 'HOME_PHYSICAL="$(cd -P -- "$HOME" && /bin/pwd -P)"'
-        isolated_python = '/usr/bin/python3 -I - "$HOME_PHYSICAL" <<\'PY\''
+        isolated_python = "/usr/bin/python3 -I - \"$HOME_PHYSICAL\" <<'PY'"
         root_open = 'root_fd = os.open("/", walk_flags)'
         walk_open = 'os.open(component, walk_flags, dir_fd=current_fd)'
         private_open = 'private_fd = os.open(".nembra-private", walk_flags, dir_fd=current_fd)'
@@ -292,7 +292,7 @@ class FieldCandidatePreflightTests(unittest.TestCase):
     def test_production_handoff_private_input_python_is_syntactically_valid(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
         matches = re.findall(
-            r'/usr/bin/python3 -I - "\$HOME_PHYSICAL" <<\'PY\'\n(.*?)\nPY',
+            r"/usr/bin/python3 -I - \"\$HOME_PHYSICAL\" <<'PY'\n(.*?)\nPY",
             handoff,
             flags=re.DOTALL,
         )
