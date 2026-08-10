@@ -1,0 +1,93 @@
+name: Capture Standalone Visual Evidence
+
+on:
+  pull_request:
+    paths:
+      - NembraApp/App/NembraCaptureBuildIdentity.swift
+      - NembraApp/App/NembraCaptureEntrypoint.swift
+      - NembraCapture.xcodeproj/project.pbxproj
+      - scripts/ci/capture_standalone_visual_evidence.sh
+      - scripts/ci/tests/test_capture_standalone_visual_evidence.py
+      - .github/workflows/capture-standalone-visual-evidence.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  standalone-visual:
+    name: Exact iPhone 12 standalone Capture evidence
+    runs-on: xcode-27
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify exact checked-out subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_SHA="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            test "$SOURCE_SHA" = "${{ github.event.pull_request.head.sha }}"
+          fi
+          printf 'NEMBRA_VISUAL_SOURCE_SHA=%s\n' "$SOURCE_SHA" >> "$GITHUB_ENV"
+
+      - name: Validate standalone visual authority contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ci/capture_standalone_visual_evidence.sh
+          /usr/bin/python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          grep -Fq 'static let fieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"' NembraApp/App/NembraCaptureBuildIdentity.swift
+          grep -Fq 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'schemaVersion: 10' NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Build exact stamped standalone Capture app
+        shell: bash
+        run: |
+          set -euo pipefail
+          dependency_sha='abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'
+          label="capture-v14-${NEMBRA_VISUAL_SOURCE_SHA:0:12}"
+          rm -rf /tmp/NembraCaptureProvenanceDerived
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/NembraCaptureProvenanceDerived \
+            CODE_SIGNING_ALLOWED=NO \
+            NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
+            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$NEMBRA_VISUAL_SOURCE_SHA" \
+            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$dependency_sha" \
+            build
+
+          plist='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
+          test -f "$plist"
+          test "$(/usr/bin/plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
+          test "$(/usr/bin/plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$NEMBRA_VISUAL_SOURCE_SHA"
+          test "$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist")" = "$dependency_sha"
+
+      - name: Capture real standalone fail-closed presentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app' \
+          ARTIFACTS_DIR="$RUNNER_TEMP/NembraCaptureStandaloneVisualEvidence" \
+            scripts/ci/capture_standalone_visual_evidence.sh
+          test "$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')" = "$NEMBRA_VISUAL_SOURCE_SHA"
+          test -s "$RUNNER_TEMP/NembraCaptureStandaloneVisualEvidence/NembraCaptureStandaloneVisualEvidence.json"
+          test -s "$RUNNER_TEMP/NembraCaptureStandaloneVisualEvidence/screenshots/standalone-unprovisioned-dark-iphone12.png"
+
+      - name: Upload standalone Capture visual evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-capture-standalone-visual-${{ github.event.pull_request.number || github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/NembraCaptureStandaloneVisualEvidence
+          if-no-files-found: error
+          retention-days: 14
