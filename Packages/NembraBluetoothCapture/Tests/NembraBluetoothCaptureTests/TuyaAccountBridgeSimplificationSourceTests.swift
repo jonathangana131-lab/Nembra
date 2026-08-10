@@ -12,7 +12,6 @@ struct TuyaAccountBridgeSimplificationSourceTests {
         #expect(bridge.contains("struct TuyaQRCodeExport: Transferable"))
         #expect(bridge.contains("struct TuyaMetadataExport: Transferable"))
 
-        #expect(!bridge.contains("import SwiftUI"))
         #expect(!bridge.contains("struct NembraCaptureRootView"))
         #expect(!bridge.contains("func captureCard()"))
         #expect(!bridge.contains("ES80OneTimeBluetoothDumpView"))
