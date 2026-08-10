@@ -1,0 +1,36 @@
+name: Capture Already-Terminal Continuity Patch
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-already-terminal-continuity-sol
+    paths:
+      - .github/workflows/capture-already-terminal-continuity-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-already-terminal-continuity-sol
+          fetch-depth: 0
+      - name: Apply repair and self-retire
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile Scripts/apply_capture_already_terminal_continuity_patch.py
+          python3 Scripts/apply_capture_already_terminal_continuity_patch.py
+          rm Scripts/apply_capture_already_terminal_continuity_patch.py
+          rm .github/workflows/capture-already-terminal-continuity-patch.yml
+          git config user.name nembra-v14-integration
+          git config user.email actions@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git diff --cached -- NembraApp/App/NembraCaptureEntrypoint.swift | grep -q 'mirrorAlreadyTerminalObservationContinuity'
+          git diff --cached -- Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAlreadyTerminalObservationContinuitySourceTests.swift | grep -q 'package continuity error retires token before it throws'
+          git commit -m "fix(capture): mirror package-terminal continuity once"
+          git push origin HEAD:fix/v14-capture-already-terminal-continuity-sol
