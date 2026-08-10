@@ -55,9 +55,25 @@ struct TuyaSessionTerminalRetirementSourceTests {
         }
 
         let branch = String(app[observedOnline.lowerBound..<keepWaiting.lowerBound])
-        #expect(branch.contains("sessionLedger.markAuthenticated(for: token"))
-        #expect(branch.contains("invalidateInternalLifecycle"))
-        #expect(!branch.contains("invalidateSourceAuthority"))
+        let promotion = try #require(branch.range(of: "sessionLedger.markAuthenticated(for: token"))
+        let mutationCatch = try #require(branch.range(
+            of: "catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed",
+            range: promotion.upperBound..<branch.endIndex
+        ))
+        let promotionSuccess = String(branch[promotion.lowerBound..<mutationCatch.lowerBound])
+        let promotionFailure = String(branch[mutationCatch.lowerBound..<branch.endIndex])
+
+        // Successful promotion crosses actor hops, so current Tuya authority must be revalidated.
+        #expect(promotionSuccess.contains("sdk_source_authority_lost_during_auth_promotion"))
+        #expect(promotionSuccess.contains("sdk_driver_authority_lost_during_auth_promotion"))
+        #expect(promotionSuccess.contains("invalidateSourceAuthority"))
+
+        // The mutation rejection itself is an internal chronology/lifecycle terminal, never a
+        // fabricated claim that Tuya source authority drifted.
+        #expect(promotionFailure.contains("invalidateInternalLifecycle"))
+        #expect(promotionFailure.contains("session_auth_promotion_clock_regressed"))
+        #expect(promotionFailure.contains("session_auth_promotion_rejected"))
+        #expect(!promotionFailure.contains("invalidateSourceAuthority"))
     }
 
     @Test("watchdog monotonic regression cannot silently drop app ownership")
