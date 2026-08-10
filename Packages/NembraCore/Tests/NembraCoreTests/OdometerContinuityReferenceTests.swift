@@ -18,6 +18,16 @@ struct OdometerContinuityReferenceTests {
         #expect(abs(reference.totalKilometers - (2_164.8 * 1.609_344)) < 0.000_001)
     }
 
+    @Test("user continuity cannot become device-reported odometer truth")
+    func continuityCannotMintDeviceOdometer() throws {
+        let reference = try OdometerContinuityReference.physicalCaptureC7D09A22Reference(
+            recordedAt: Date(timeIntervalSince1970: 1_775_000_000)
+        )
+
+        #expect(reference.authorizesDeviceReportedOdometer == false)
+        #expect(reference.mayProjectIntoVehicleStateOdometer == false)
+    }
+
     @Test("reference rejects impossible mileage")
     func invalidMileageFailsClosed() throws {
         #expect(throws: OdometerContinuityReference.ValidationError.invalidMiles) {
