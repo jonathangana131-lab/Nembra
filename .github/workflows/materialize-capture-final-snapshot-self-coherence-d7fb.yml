@@ -1,0 +1,100 @@
+name: Materialize Capture final provenance snapshot self-coherence
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-final-snapshot-self-coherence-d7fb
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 5
+
+      - name: Verify exact product ancestry and construction scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor d7fbec98107098d7aa70f33c3ce0cb6555dab9e0 HEAD
+          test "$(git diff --name-only d7fbec98107098d7aa70f33c3ce0cb6555dab9e0..HEAD | sort)" = "$(printf '%s\n' \
+            '.github/workflows/materialize-capture-final-snapshot-self-coherence-d7fb.yml' \
+            'scripts/ci/tests/test_capture_tuya_private_input_record_final_snapshot_coherence.py' \
+            'tools/materialize_capture_final_snapshot_self_coherence_d7fb.py' | sort)"
+
+      - name: Apply self-coherent record witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/materialize_capture_final_snapshot_self_coherence_d7fb.py
+
+      - name: Validate provenance source and adversarial chronology
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            Scripts/capture_tuya_private_input_provenance.py \
+            scripts/ci/tests/test_capture_tuya_private_input_provenance.py \
+            scripts/ci/tests/test_capture_tuya_private_input_record_snapshot_coherence.py \
+            scripts/ci/tests/test_capture_tuya_private_input_record_tree_generation.py \
+            scripts/ci/tests/test_capture_tuya_private_input_record_final_snapshot_coherence.py
+          python scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          python scripts/ci/tests/test_capture_tuya_private_input_record_snapshot_coherence.py
+          python scripts/ci/tests/test_capture_tuya_private_input_record_tree_generation.py
+          python scripts/ci/tests/test_capture_tuya_private_input_record_final_snapshot_coherence.py
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('Scripts/capture_tuya_private_input_provenance.py').read_text()
+          tree_start = source.index('def _tree_identity_snapshot(')
+          record_start = source.index('def _record_identity_snapshot(', tree_start)
+          build_start = source.index('def build_record(', record_start)
+          tree = source[tree_start:record_start]
+          record = source[record_start:build_start]
+          required_tree = [
+              'observed_states',
+              'observed_directory_members',
+              '_assert_unchanged_tree_entry',
+              '_directory_member_names',
+              '_assert_internal_symlink(path, root_resolved)',
+          ]
+          required_record = [
+              'lockfile_identity = _regular_file_identity_snapshot(lockfile)',
+              'identity_sources_snapshot = _tree_identity_snapshot(identity_sources)',
+              '_tree_identity_snapshot(security_build) != security_build_snapshot',
+              '_tree_identity_snapshot(identity_sources) != identity_sources_snapshot',
+              '_regular_file_identity_snapshot(lockfile) != lockfile_identity',
+              'private build input set changed while record identity was captured',
+          ]
+          missing = [x for x in required_tree if x not in tree] + [x for x in required_record if x not in record]
+          if missing:
+              raise SystemExit(f'missing final-snapshot self-coherence invariants: {missing}')
+          for preserved in [
+              '_stat_identity(current_path) != _stat_identity(after)',
+              'record_snapshot_confirmed = _record_identity_snapshot',
+              'private Tuya build inputs changed while the complete provenance record was constructed',
+          ]:
+              if preserved not in source:
+                  raise SystemExit(f'prior provenance hardening regressed: {preserved}')
+          PY
+          test "$(git diff --name-only)" = "Scripts/capture_tuya_private_input_provenance.py"
+          git diff --check
+
+      - name: Publish clean two-path repair and retire construction helpers
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-final-snapshot-self-coherence-d7fb.yml
+          rm tools/materialize_capture_final_snapshot_self_coherence_d7fb.py
+          git config user.name "nembra-sol-worker"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n' \
+            '.github/workflows/materialize-capture-final-snapshot-self-coherence-d7fb.yml' \
+            'Scripts/capture_tuya_private_input_provenance.py' \
+            'tools/materialize_capture_final_snapshot_self_coherence_d7fb.py' | sort)"
+          git commit -m "fix(capture): make final private snapshot self-coherent"
+          git push origin HEAD:sol/v14-capture-final-snapshot-self-coherence-d7fb
