@@ -1,6 +1,102 @@
 import Dispatch
 import Foundation
 
+fileprivate enum SimulatorPowerObservationError: Error, Equatable, Sendable {
+    case invalidWatts
+    case invalidReceiptSequence
+    case invalidReceiptUptime
+    case invalidContinuityGeneration
+}
+
+/// One source-owned synthetic propulsion-power observation.
+///
+/// This type is intentionally Simulator-only. It is not verified scooter power,
+/// cannot authorize physical ES80 watts/current semantics, and must never be
+/// promoted merely from cached `VehicleState.powerWatts`, a view lifecycle, or a
+/// display/render clock. Repeated equal-valued observations remain distinct when
+/// the Simulator source actually produced them because receipt identity advances.
+public struct SimulatorPowerObservation: Equatable, Sendable {
+    public let watts: Double
+    public let receiptSequenceNumber: UInt64
+    public let receivedAtUptimeNanoseconds: UInt64
+    public let continuityGeneration: UInt64
+
+    /// Receipt construction is source-file sealed. The app target directly compiles
+    /// selected NembraCore vehicle sources, so module-internal access is not enough:
+    /// only code in this exact synthetic source file may mint positive authority.
+    fileprivate init(
+        watts: Double,
+        receiptSequenceNumber: UInt64,
+        receivedAtUptimeNanoseconds: UInt64,
+        continuityGeneration: UInt64
+    ) throws {
+        guard watts.isFinite, watts >= 0 else {
+            throw SimulatorPowerObservationError.invalidWatts
+        }
+        guard receiptSequenceNumber > 0 else {
+            throw SimulatorPowerObservationError.invalidReceiptSequence
+        }
+        guard receivedAtUptimeNanoseconds > 0 else {
+            throw SimulatorPowerObservationError.invalidReceiptUptime
+        }
+        guard continuityGeneration > 0 else {
+            throw SimulatorPowerObservationError.invalidContinuityGeneration
+        }
+
+        self.watts = watts
+        self.receiptSequenceNumber = receiptSequenceNumber
+        self.receivedAtUptimeNanoseconds = receivedAtUptimeNanoseconds
+        self.continuityGeneration = continuityGeneration
+    }
+}
+
+/// Source-owned currentness for Simulator propulsion power. The positive states
+/// are source-file sealed just like the receipt itself: neighboring app-module code
+/// may inspect currentness and receipt identity, but cannot relabel retained evidence
+/// as live. The public unavailable value is intentionally constructible because it
+/// can only remove authority.
+public struct SimulatorPowerEvidenceAvailability: Equatable, Sendable {
+    public enum Currentness: Equatable, Sendable {
+        case unavailable
+        case retained
+        case live
+    }
+
+    public let currentness: Currentness
+    public let observation: SimulatorPowerObservation?
+
+    public static let unavailable = SimulatorPowerEvidenceAvailability(
+        currentness: .unavailable,
+        observation: nil
+    )
+
+    private init(
+        currentness: Currentness,
+        observation: SimulatorPowerObservation?
+    ) {
+        self.currentness = currentness
+        self.observation = observation
+    }
+
+    fileprivate static func retained(
+        _ observation: SimulatorPowerObservation
+    ) -> SimulatorPowerEvidenceAvailability {
+        SimulatorPowerEvidenceAvailability(
+            currentness: .retained,
+            observation: observation
+        )
+    }
+
+    fileprivate static func live(
+        _ observation: SimulatorPowerObservation
+    ) -> SimulatorPowerEvidenceAvailability {
+        SimulatorPowerEvidenceAvailability(
+            currentness: .live,
+            observation: observation
+        )
+    }
+}
+
 public enum ScooterSimulationScenario: String, CaseIterable, Sendable {
     case coldDisconnected = "cold-disconnected"
     case reconnecting

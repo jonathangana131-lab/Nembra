@@ -13,61 +13,6 @@ public enum ScooterCommandError: Error, Equatable, Sendable {
     case commandInProgress
 }
 
-public enum SimulatorPowerObservationError: Error, Equatable, Sendable {
-    case invalidWatts
-    case invalidReceiptSequence
-    case invalidContinuityGeneration
-}
-
-/// One source-owned synthetic propulsion-power observation.
-///
-/// This type is intentionally Simulator-only. It is not verified scooter power,
-/// cannot authorize physical ES80 watts/current semantics, and must never be
-/// promoted merely from cached `VehicleState.powerWatts`, a view lifecycle, or a
-/// display/render clock. Repeated equal-valued observations remain distinct when
-/// the Simulator source actually produced them because receipt identity advances.
-public struct SimulatorPowerObservation: Equatable, Sendable {
-    public let watts: Double
-    public let receiptSequenceNumber: UInt64
-    public let receivedAtUptimeNanoseconds: UInt64
-    public let continuityGeneration: UInt64
-
-    /// Construction is intentionally module-internal. External consumers may read
-    /// source-issued observations but cannot manufacture one and wrap it in a
-    /// caller-created `.live` availability value. `@testable` package tests still
-    /// exercise the fail-closed numeric/identity guards directly.
-    init(
-        watts: Double,
-        receiptSequenceNumber: UInt64,
-        receivedAtUptimeNanoseconds: UInt64,
-        continuityGeneration: UInt64
-    ) throws {
-        guard watts.isFinite, watts >= 0 else {
-            throw SimulatorPowerObservationError.invalidWatts
-        }
-        guard receiptSequenceNumber > 0 else {
-            throw SimulatorPowerObservationError.invalidReceiptSequence
-        }
-        guard continuityGeneration > 0 else {
-            throw SimulatorPowerObservationError.invalidContinuityGeneration
-        }
-
-        self.watts = watts
-        self.receiptSequenceNumber = receiptSequenceNumber
-        self.receivedAtUptimeNanoseconds = receivedAtUptimeNanoseconds
-        self.continuityGeneration = continuityGeneration
-    }
-}
-
-/// Source-owned currentness for Simulator propulsion power. A disconnect can
-/// retain the last legitimate observation for explicit last-known presentation,
-/// but reconnect alone never promotes that retained value back to `.live`.
-public enum SimulatorPowerEvidenceAvailability: Equatable, Sendable {
-    case unavailable
-    case retained(SimulatorPowerObservation)
-    case live(SimulatorPowerObservation)
-}
-
 /// Optional Simulator-only source boundary for consumers that need propulsion
 /// receipt/currentness truth rather than aggregate `VehicleState.powerWatts`.
 ///
@@ -86,6 +31,106 @@ public extension SimulatorPowerEvidenceProvider {
         let stream = await simulatorPowerEvidenceUpdates()
         var iterator = stream.makeAsyncIterator()
         return await iterator.next() ?? .unavailable
+    }
+}
+
+/// App-session currentness for one exact source-issued Simulator power receipt.
+/// This is deliberately distinct from source currentness: transport is allowed to
+/// demote a legitimate LIVE receipt to RETAINED immediately, but the app layer can
+/// never create a receipt or promote retained evidence back to live.
+enum SimulatorPowerStoreCurrentness: Equatable, Sendable {
+    case unavailable
+    case retained
+    case live
+}
+
+struct SimulatorPowerStoreProjection: Equatable, Sendable {
+    let currentness: SimulatorPowerStoreCurrentness
+    let observation: SimulatorPowerObservation?
+
+    static let unavailable = SimulatorPowerStoreProjection(
+        currentness: .unavailable,
+        observation: nil
+    )
+
+    fileprivate static func retained(
+        _ observation: SimulatorPowerObservation
+    ) -> SimulatorPowerStoreProjection {
+        SimulatorPowerStoreProjection(
+            currentness: .retained,
+            observation: observation
+        )
+    }
+
+    fileprivate static func live(
+        _ observation: SimulatorPowerObservation
+    ) -> SimulatorPowerStoreProjection {
+        SimulatorPowerStoreProjection(
+            currentness: .live,
+            observation: observation
+        )
+    }
+
+    private init(
+        currentness: SimulatorPowerStoreCurrentness,
+        observation: SimulatorPowerObservation?
+    ) {
+        self.currentness = currentness
+        self.observation = observation
+    }
+}
+
+/// Consumer-side custody for sealed Simulator propulsion evidence.
+///
+/// Positive authority can enter only through a source-file-sealed availability.
+/// Aggregate connection is a one-way negative veto: it may synchronously demote
+/// LIVE -> RETAINED while preserving the exact immutable source receipt, but can
+/// never promote RETAINED -> LIVE. Source/provider loss fails completely closed.
+struct SimulatorPowerEvidenceConsumerAuthority: Sendable {
+    private(set) var projection: SimulatorPowerStoreProjection = .unavailable
+
+    mutating func applySource(
+        _ sourceAvailability: SimulatorPowerEvidenceAvailability,
+        connectionIsConnected: Bool
+    ) {
+        switch sourceAvailability.currentness {
+        case .unavailable:
+            guard sourceAvailability.observation == nil else {
+                projection = .unavailable
+                return
+            }
+            projection = .unavailable
+
+        case .retained:
+            guard let observation = sourceAvailability.observation else {
+                projection = .unavailable
+                return
+            }
+            projection = .retained(observation)
+
+        case .live:
+            guard let observation = sourceAvailability.observation else {
+                projection = .unavailable
+                return
+            }
+            projection = connectionIsConnected
+                ? .live(observation)
+                : .retained(observation)
+        }
+    }
+
+    /// Must be called before publishing aggregate non-connected state. This keeps
+    /// last-known presentation available without ever exposing OFFLINE + LIVE.
+    mutating func transportBecameUnavailable() {
+        guard projection.currentness == .live,
+              let observation = projection.observation else {
+            return
+        }
+        projection = .retained(observation)
+    }
+
+    mutating func sourceBecameUnavailable() {
+        projection = .unavailable
     }
 }
 
