@@ -1383,6 +1383,36 @@ private final class SecureLinkController: NSObject, ObservableObject {
         log(kind, ["generation": String(token.diagnosticGeneration)])
     }
 
+    private func applicationUpdateForEventCustody(_ update: [String: String]) -> [String: String] {
+        guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !verifiedAccountUID.isEmpty else { return update }
+
+        var redacted: [String: String] = [:]
+        for (key, value) in update {
+            let safeKey = key.replacingOccurrences(
+                of: verifiedAccountUID,
+                with: "<redacted-account-uid>",
+                options: [.caseInsensitive, .literal]
+            )
+            let safeValue = value.replacingOccurrences(
+                of: verifiedAccountUID,
+                with: "<redacted-account-uid>",
+                options: [.caseInsensitive, .literal]
+            )
+
+            // Redacting an account UID embedded in a malformed key must not silently erase a
+            // second legitimate application field that collapses to the same sanitized key.
+            var uniqueKey = safeKey
+            var collisionSuffix = 2
+            while redacted[uniqueKey] != nil {
+                uniqueKey = "\(safeKey)#\(collisionSuffix)"
+                collisionSuffix += 1
+            }
+            redacted[uniqueKey] = safeValue
+        }
+        return redacted
+    }
+
     private func receivedApplicationUpdate(
         _ update: [String: String],
         token: TuyaReadOnlyConnectionToken
@@ -1427,7 +1457,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            let custodySafeUpdate = applicationUpdateForEventCustody(update)
+            log("tuya_application_update", custodySafeUpdate.merging([
                 "generation": String(token.diagnosticGeneration)
             ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
@@ -2243,7 +2274,6 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "accounttoken",
         "accesstoken",
         "refreshtoken",
-        "sessionkey",
         "authkey",
         "seckey",
     ]
