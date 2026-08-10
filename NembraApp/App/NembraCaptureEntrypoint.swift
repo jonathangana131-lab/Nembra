@@ -2319,17 +2319,17 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         failure: @escaping () -> Void
     ) {
         guard OfficialTuyaFactory.bootstrap() else {
-            failure()
-            return
+  failure()
+  return
         }
         self.onApplicationUpdate = onApplicationUpdate
         device = ThingSmartDevice(deviceId: deviceID)
         device?.delegate = self
         ThingSmartBLEManager.sharedInstance().connectBLE(
-            withUUID: uuid,
-            productKey: productID,
-            success: success,
-            failure: failure
+  withUUID: uuid,
+  productKey: productID,
+  success: success,
+  failure: failure
         )
     }
 
@@ -2341,13 +2341,20 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         guard let dps, !dps.isEmpty else { return }
         var sanitized: [String: String] = [:]
         for (key, value) in dps {
-            let keyString = String(describing: key)
-            let normalizedKey = keyString.lowercased().filter { $0.isLetter || $0.isNumber }
-            if Self.secretKeyFragments.contains(where: { normalizedKey.contains($0) }) {
-                sanitized[keyString] = "<redacted>"
-            } else {
-                sanitized[keyString] = String(describing: Self.redactApplicationSecrets(value))
-            }
+  let keyString = String(describing: key)
+  let normalizedKey = keyString.lowercased().filter { $0.isLetter || $0.isNumber }
+  let baseCustodyKey = Self.redactKnownSecretValues(in: keyString)
+  var custodyKey = baseCustodyKey
+  var collisionIndex = 2
+  while sanitized[custodyKey] != nil {
+      custodyKey = "\(baseCustodyKey)#\(collisionIndex)"
+      collisionIndex += 1
+  }
+  if Self.secretKeyFragments.contains(where: { normalizedKey.contains($0) }) {
+      sanitized[custodyKey] = "<redacted>"
+  } else {
+      sanitized[custodyKey] = Self.redactedApplicationDescription(value)
+  }
         }
         onApplicationUpdate?(sanitized)
     }
@@ -2365,24 +2372,54 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "seckey",
     ]
 
+    private static var exactSecretValues: [String] {
+#if canImport(NembraTuyaPrivateConfig)
+        [NembraTuyaPrivateIdentity.appKey, NembraTuyaPrivateIdentity.appSecret]
+  .filter { !$0.isEmpty }
+#else
+        []
+#endif
+    }
+
+    private static func redactKnownSecretValues(in text: String) -> String {
+        var redacted = text
+        for secret in exactSecretValues {
+  redacted = redacted.replacingOccurrences(of: secret, with: "<redacted>")
+        }
+        return redacted
+    }
+
+    private static func redactedApplicationDescription(_ object: Any) -> String {
+        redactKnownSecretValues(in: String(describing: redactApplicationSecrets(object)))
+    }
+
     private static func redactApplicationSecrets(_ object: Any) -> Any {
         if let dictionary = object as? [AnyHashable: Any] {
-            var sanitized: [String: Any] = [:]
-            for (key, value) in dictionary {
-                let keyString = String(describing: key)
-                let normalizedKey = keyString.lowercased().filter { $0.isLetter || $0.isNumber }
-                if secretKeyFragments.contains(where: { normalizedKey.contains($0) }) {
-                    sanitized[keyString] = "<redacted>"
-                } else {
-                    sanitized[keyString] = redactApplicationSecrets(value)
-                }
-            }
-            return sanitized
+  var sanitized: [String: Any] = [:]
+  for (key, value) in dictionary {
+      let keyString = String(describing: key)
+      let normalizedKey = keyString.lowercased().filter { $0.isLetter || $0.isNumber }
+      let baseCustodyKey = redactKnownSecretValues(in: keyString)
+      var custodyKey = baseCustodyKey
+      var collisionIndex = 2
+      while sanitized[custodyKey] != nil {
+          custodyKey = "\(baseCustodyKey)#\(collisionIndex)"
+          collisionIndex += 1
+      }
+      if secretKeyFragments.contains(where: { normalizedKey.contains($0) }) {
+          sanitized[custodyKey] = "<redacted>"
+      } else {
+          sanitized[custodyKey] = redactApplicationSecrets(value)
+      }
+  }
+  return sanitized
         }
         if let array = object as? [Any] {
-            return array.map(redactApplicationSecrets)
+  return array.map(redactApplicationSecrets)
         }
-        return object
+        let description = String(describing: object)
+        let redactedDescription = redactKnownSecretValues(in: description)
+        return redactedDescription == description ? object : redactedDescription
     }
 }
 #endif
