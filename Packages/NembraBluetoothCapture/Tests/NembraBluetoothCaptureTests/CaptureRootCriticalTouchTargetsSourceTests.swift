@@ -32,7 +32,7 @@ struct CaptureRootCriticalTouchTargetsSourceTests {
             Issue.record("Expected control token missing: \(token)")
             throw SourceContractError.sectionMissing
         }
-        let end = source.index(range.lowerBound, offsetBy: 260, limitedBy: source.endIndex) ?? source.endIndex
+        let end = source.index(range.lowerBound, offsetBy: 640, limitedBy: source.endIndex) ?? source.endIndex
         return String(source[range.lowerBound..<end])
     }
 
