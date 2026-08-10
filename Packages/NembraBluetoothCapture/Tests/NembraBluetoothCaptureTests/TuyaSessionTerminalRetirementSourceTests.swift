@@ -70,7 +70,7 @@ struct TuyaSessionTerminalRetirementSourceTests {
         // The ledger's own monotonic/lifecycle rejection remains an internal-lifecycle terminal.
         #expect(branch.contains("invalidateInternalLifecycle("))
         #expect(branch.contains("session_auth_promotion_clock_regressed"))
-        #expect(branch.contains("session_auth_promotion_invalid_lifecycle"))
+        #expect(branch.contains("session_auth_promotion_rejected"))
     }
 
     @Test("watchdog monotonic regression cannot silently drop app ownership")
