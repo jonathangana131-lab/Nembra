@@ -29,14 +29,20 @@ jobs:
       - name: Apply App ID prefix correction
         run: python3 scripts/ci/materialize_capture_signed_apple_prefix_correction.py apply
 
-      - name: Verify App ID prefix correction
-        run: |
-          set -euo pipefail
-          python3 scripts/ci/materialize_capture_signed_apple_prefix_correction.py verify
-          python3 -m py_compile scripts/ci/materialize_capture_signed_apple_prefix_correction.py
-          bash -n scripts/field/install_one_time_capture.command
-          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSignedAppleAppIdentityCustodySourceTests.swift
-          git diff --check
+      - name: Verify corrected authority contract
+        run: python3 scripts/ci/materialize_capture_signed_apple_prefix_correction.py verify
+
+      - name: Parse materializer
+        run: python3 -m py_compile scripts/ci/materialize_capture_signed_apple_prefix_correction.py
+
+      - name: Parse field installer
+        run: bash -n scripts/field/install_one_time_capture.command
+
+      - name: Parse corrected Swift regression
+        run: swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSignedAppleAppIdentityCustodySourceTests.swift
+
+      - name: Check diff whitespace
+        run: git diff --check
 
       - name: Publish clean correction
         run: |
