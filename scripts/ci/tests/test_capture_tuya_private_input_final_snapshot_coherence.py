@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import importlib.util
-import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -82,27 +81,38 @@ class CaptureTuyaPrivateInputFinalSnapshotCoherenceTests(unittest.TestCase):
         self.assertTrue(mutated_and_restored)
         self.assertEqual(tree_generation_calls, 4)
 
-    def test_final_after_snapshot_rejects_earlier_tree_file_mutate_restore(self) -> None:
+    def test_tail_after_both_tree_rechecks_rejects_earlier_tree_file_mutate_restore(self) -> None:
         original_tree_snapshot = provenance._tree_generation_snapshot
+        original_regular_identity = provenance._regular_file_generation_identity
         tree_generation_calls = 0
+        final_tree_collected = False
         mutated_and_restored = False
         target = self.security_build / "ThingSmartCryption.bin"
         original = target.read_bytes()
 
-        def snapshot_then_mutate_restore(path: Path):
-            nonlocal tree_generation_calls, mutated_and_restored
+        def track_final_tree(path: Path):
+            nonlocal tree_generation_calls, final_tree_collected
             result = original_tree_snapshot(path)
             tree_generation_calls += 1
-            if tree_generation_calls == 4 and not mutated_and_restored:
+            if tree_generation_calls == 4:
+                final_tree_collected = True
+            return result
+
+        def mutate_after_tree_rechecks(path: Path):
+            nonlocal mutated_and_restored
+            result = original_regular_identity(path)
+            if final_tree_collected and path == self.security_podspec and not mutated_and_restored:
+                # `_private_input_record_generation_snapshot` has already revalidated both
+                # tree witnesses before it begins these trailing standalone-file checks.
                 target.write_bytes(b"Z" * len(original))
                 target.write_bytes(original)
                 mutated_and_restored = True
             return result
 
-        with mock.patch.object(
+        with mock.patch.object(provenance, "_tree_generation_snapshot", side_effect=track_final_tree), mock.patch.object(
             provenance,
-            "_tree_generation_snapshot",
-            side_effect=snapshot_then_mutate_restore,
+            "_regular_file_generation_identity",
+            side_effect=mutate_after_tree_rechecks,
         ):
             with self.assertRaises(provenance.ProvenanceError):
                 self.build_record()
@@ -110,26 +120,35 @@ class CaptureTuyaPrivateInputFinalSnapshotCoherenceTests(unittest.TestCase):
         self.assertTrue(mutated_and_restored)
         self.assertEqual(tree_generation_calls, 4)
 
-    def test_final_after_snapshot_rejects_earlier_tree_membership_mutate_restore(self) -> None:
+    def test_tail_after_both_tree_rechecks_rejects_membership_mutate_restore(self) -> None:
         original_tree_snapshot = provenance._tree_generation_snapshot
+        original_regular_identity = provenance._regular_file_generation_identity
         tree_generation_calls = 0
+        final_tree_collected = False
         mutated_and_restored = False
         transient = self.security_build / "transient.bin"
 
-        def snapshot_then_mutate_restore(path: Path):
-            nonlocal tree_generation_calls, mutated_and_restored
+        def track_final_tree(path: Path):
+            nonlocal tree_generation_calls, final_tree_collected
             result = original_tree_snapshot(path)
             tree_generation_calls += 1
-            if tree_generation_calls == 4 and not mutated_and_restored:
+            if tree_generation_calls == 4:
+                final_tree_collected = True
+            return result
+
+        def mutate_after_tree_rechecks(path: Path):
+            nonlocal mutated_and_restored
+            result = original_regular_identity(path)
+            if final_tree_collected and path == self.security_podspec and not mutated_and_restored:
                 transient.write_bytes(b"transient")
                 transient.unlink()
                 mutated_and_restored = True
             return result
 
-        with mock.patch.object(
+        with mock.patch.object(provenance, "_tree_generation_snapshot", side_effect=track_final_tree), mock.patch.object(
             provenance,
-            "_tree_generation_snapshot",
-            side_effect=snapshot_then_mutate_restore,
+            "_regular_file_generation_identity",
+            side_effect=mutate_after_tree_rechecks,
         ):
             with self.assertRaises(provenance.ProvenanceError):
                 self.build_record()
