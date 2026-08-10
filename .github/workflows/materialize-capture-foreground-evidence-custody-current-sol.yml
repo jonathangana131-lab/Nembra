@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 10
+          fetch-depth: 12
 
       - name: Verify exact current-product ancestry and prerequisite scope
         shell: bash
@@ -42,41 +42,42 @@ jobs:
           path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           source = path.read_text()
 
-          # 1. Accepted evidence is already immutable; scene loss must not mutate its authority state.
-          old = '''    func appDidLoseForeground() {
-              guard !foregroundIntegrityLossHandled else { return }
-              foregroundIntegrityLossHandled = true
-          '''
-          new = '''    func appDidLoseForeground() {
-              guard phase != .accepted else { return }
-              guard !foregroundIntegrityLossHandled else { return }
-              foregroundIntegrityLossHandled = true
-          '''
-          if source.count(old) != 1:
-              raise SystemExit(f'foreground entry shape changed: {source.count(old)} matches')
-          source = source.replace(old, new, 1)
+          # Foreground entry: preserve immutable accepted evidence before mutating mutable authority.
+          fn = 'func appDidLoseForeground() {'
+          fn_start = source.index(fn)
+          fn_end = source.index('\n    var privateConfig:', fn_start)
+          cleanup = source[fn_start:fn_end]
+          if 'guard phase != .accepted else { return }' in cleanup:
+              raise SystemExit('accepted foreground guard unexpectedly already present')
+          if 'guard !foregroundIntegrityLossHandled else { return }' not in cleanup:
+              raise SystemExit('foreground duplicate-retirement guard missing')
+          line_end = source.index('\n', fn_start) + 1
+          source = source[:line_end] + '        guard phase != .accepted else { return }\n' + source[line_end:]
 
-          # 2. Fully sealed target correlation is still attempt-local foreground evidence.
-          anchor = '''        guard let token = currentConnectionToken else {
-              if phase == .authenticating {
-          '''
-          insertion = '''        if currentConnectionToken == nil,
-             phase == .correlated || phase == .selected {
-              resetDiscoverySessionOnly()
-              phase = .failed
-              message = "Capture left the foreground after target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; correlated or selected target authority never crosses a foreground interruption."
-              log("foreground_integrity_lost_after_target_correlation")
-              return
-          }
+          # Correlated/selected authority is attempt-local and cannot cross scene interruption.
+          fn_start = source.index(fn)
+          fn_end = source.index('\n    var privateConfig:', fn_start)
+          cleanup = source[fn_start:fn_end]
+          token_marker = '        guard let token = currentConnectionToken else {'
+          if cleanup.count(token_marker) != 1:
+              raise SystemExit(f'foreground token marker count changed: {cleanup.count(token_marker)}')
+          if 'foreground_integrity_lost_after_target_correlation' in cleanup:
+              raise SystemExit('post-correlation foreground retirement unexpectedly already present')
+          correlated_block = '\n'.join([
+              '        if currentConnectionToken == nil,',
+              '           phase == .correlated || phase == .selected {',
+              '            resetDiscoverySessionOnly()',
+              '            phase = .failed',
+              '            message = "Capture left the foreground after target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; correlated or selected target authority never crosses a foreground interruption."',
+              '            log("foreground_integrity_lost_after_target_correlation")',
+              '            return',
+              '        }',
+              '',
+          ])
+          token_abs = fn_start + cleanup.index(token_marker)
+          source = source[:token_abs] + correlated_block + source[token_abs:]
 
-          guard let token = currentConnectionToken else {
-              if phase == .authenticating {
-          '''
-          if source.count(anchor) != 1:
-              raise SystemExit(f'foreground post-correlation anchor changed: {source.count(anchor)} matches')
-          source = source.replace(anchor, insertion, 1)
-
-          # 3. The shipping SDK callback delegates all key/nested projection to one package authority.
+          # Replace duplicated SmartLife inline policy with package-owned projection custody.
           class_marker = '@MainActor\nprivate final class SmartLifeDriver'
           method_marker = '    func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {'
           class_start = source.index(class_marker)
@@ -90,60 +91,56 @@ jobs:
           ):
               if needle not in current_tail:
                   raise SystemExit(f'current inline sanitizer changed; missing {needle}')
-          replacement = '''    func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {
-              guard let dps, !dps.isEmpty else { return }
-              onApplicationUpdate?(
-                  TuyaApplicationUpdateSecretSanitizer.sanitizeForStringProjection(dps)
-              )
-          }
-          '''
+          replacement = '\n'.join([
+              '    func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {',
+              '        guard let dps, !dps.isEmpty else { return }',
+              '        onApplicationUpdate?(',
+              '            TuyaApplicationUpdateSecretSanitizer.sanitizeForStringProjection(dps)',
+              '        )',
+              '    }',
+          ])
           source = source[:method_start] + replacement + source[class_end:]
 
-          # 4. Exact verified account UID is private authority, never application event payload.
-          authority_anchor = '''        guard driver.isLocallyConnected(uuid: tuyaUUID) else {
-              await recordObservedTransportLoss(token: token)
-              return
-          }
+          # Application-event custody: require the already-earned exact account UID lease and scrub it.
+          receiver_start = source.index('    private func receivedApplicationUpdate(')
+          receiver_end = source.index('\n    private func startWatchdog', receiver_start)
+          receiver = source[receiver_start:receiver_end]
+          admission_marker = '        applicationUpdateAdmissionsInFlight += 1'
+          if receiver.count(admission_marker) != 1:
+              raise SystemExit(f'application admission marker count changed: {receiver.count(admission_marker)}')
+          if 'guard let verifiedAccountUID = membershipAccountUID' in receiver:
+              raise SystemExit('account UID custody unexpectedly already present')
+          custody_block = '\n'.join([
+              '        guard let verifiedAccountUID = membershipAccountUID,',
+              '              !verifiedAccountUID.isEmpty,',
+              '              accountIdentityLeaseIsAuthorized else {',
+              '            await invalidateSourceAuthority(',
+              '                token: token,',
+              '                message: "Verified Tuya account identity lease became unavailable before application evidence custody.",',
+              '                kind: "sdk_account_identity_lease_missing_before_application_custody"',
+              '            )',
+              '            return',
+              '        }',
+              '        let custodySafeUpdate = TuyaApplicationUpdateSecretSanitizer.redactingAccountUID(',
+              '            in: update,',
+              '            verifiedAccountUID: verifiedAccountUID',
+              '        )',
+              '',
+          ])
+          admission_abs = receiver_start + receiver.index(admission_marker)
+          source = source[:admission_abs] + custody_block + source[admission_abs:]
 
-          applicationUpdateAdmissionsInFlight += 1
-          '''
-          authority_replacement = '''        guard driver.isLocallyConnected(uuid: tuyaUUID) else {
-              await recordObservedTransportLoss(token: token)
-              return
-          }
-          guard let verifiedAccountUID = membershipAccountUID,
-                !verifiedAccountUID.isEmpty,
-                accountIdentityLeaseIsAuthorized else {
-              await invalidateSourceAuthority(
-                  token: token,
-                  message: "Verified Tuya account identity lease became unavailable before application evidence custody.",
-                  kind: "sdk_account_identity_lease_missing_before_application_custody"
-              )
-              return
-          }
-          let custodySafeUpdate = TuyaApplicationUpdateSecretSanitizer.redactingAccountUID(
-              in: update,
-              verifiedAccountUID: verifiedAccountUID
-          )
-
-          applicationUpdateAdmissionsInFlight += 1
-          '''
-          if source.count(authority_anchor) != 1:
-              raise SystemExit(f'application authority anchor changed: {source.count(authority_anchor)} matches')
-          source = source.replace(authority_anchor, authority_replacement, 1)
-
-          # 5. SDK payload can never override Nembra-owned generation provenance.
-          log_old = '''            log("tuya_application_update", update.merging([
-                  "generation": String(token.diagnosticGeneration)
-              ]) { current, _ in current })
-          '''
-          log_new = '''            log("tuya_application_update", custodySafeUpdate.merging([
-                  "generation": String(token.diagnosticGeneration)
-              ]) { _, trusted in trusted })
-          '''
-          if source.count(log_old) != 1:
-              raise SystemExit(f'application event merge shape changed: {source.count(log_old)} matches')
-          source = source.replace(log_old, log_new, 1)
+          # Reserved generation provenance is Nembra-owned and wins any SDK collision.
+          receiver_start = source.index('    private func receivedApplicationUpdate(')
+          receiver_end = source.index('\n    private func startWatchdog', receiver_start)
+          receiver = source[receiver_start:receiver_end]
+          old_start = 'log("tuya_application_update", update.merging(['
+          old_close = ']) { current, _ in current })'
+          if receiver.count(old_start) != 1 or receiver.count(old_close) != 1:
+              raise SystemExit('application event merge shape changed')
+          receiver = receiver.replace(old_start, 'log("tuya_application_update", custodySafeUpdate.merging([', 1)
+          receiver = receiver.replace(old_close, ']) { _, trusted in trusted })', 1)
+          source = source[:receiver_start] + receiver + source[receiver_end:]
 
           path.write_text(source)
           PY
