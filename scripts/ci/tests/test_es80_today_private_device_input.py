@@ -282,6 +282,57 @@ class PrivateDeviceInputTests(unittest.TestCase):
             self.assertGreaterEqual(cleanup_fsync_calls, 2)
             self.assertFalse(target.exists())
 
+    def test_unlink_fallback_rejects_hard_link_created_during_unlink(self):
+        if os.link not in os.supports_dir_fd:
+            self.skipTest("descriptor-relative hard links unavailable")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+            retained = private_dir / "retained-copy.udid"
+            real_write = os.write
+            real_unlink = os.unlink
+            real_link = os.link
+            write_calls = 0
+
+            def fail_after_prefix(descriptor: int, payload: bytes) -> int:
+                nonlocal write_calls
+                write_calls += 1
+                if write_calls == 1:
+                    return real_write(descriptor, payload[:4])
+                raise OSError("simulated private-input write failure")
+
+            def add_link_then_unlink(filename: str, *, dir_fd: int) -> None:
+                real_link(
+                    filename,
+                    retained.name,
+                    src_dir_fd=dir_fd,
+                    dst_dir_fd=dir_fd,
+                    follow_symlinks=False,
+                )
+                real_unlink(filename, dir_fd=dir_fd)
+
+            with (
+                mock.patch.object(module.os, "write", side_effect=fail_after_prefix),
+                mock.patch.object(module.os, "ftruncate", side_effect=OSError("simulated scrub failure")),
+                mock.patch.object(module.os, "unlink", side_effect=add_link_then_unlink),
+            ):
+                with self.assertRaisesRegex(
+                    module.PrivateInputError,
+                    "private-intended-device-cleanup-failed",
+                ) as raised:
+                    module.create_private_input(
+                        private_dir,
+                        repo,
+                        target.name,
+                        secret_provider=lambda: self.SECRET,
+                    )
+
+            self.assertNotIn(self.SECRET, str(raised.exception))
+            self.assertFalse(target.exists())
+            self.assertTrue(retained.exists())
+
     def test_cleanup_that_cannot_scrub_or_unlink_surfaces_secret_free_blocker(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
