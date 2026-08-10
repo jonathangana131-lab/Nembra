@@ -401,6 +401,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var membershipProbe: OfficialTuyaMembershipProbe?
 #endif
     private var membershipRequestID = UUID()
+    private var acceptsViewScopedMembershipRequests = false
     private var officialConnectionRequestID = UUID()
 
     init(device: TuyaAccountBridge.LinkedDevice) {
@@ -414,9 +415,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     deinit { watchdog?.cancel() }
 
+    func activateMembershipRequestsForView() {
+        acceptsViewScopedMembershipRequests = true
+    }
+
     func abandonCorrelationForViewExit() {
-        // Revoke every pre-radio asynchronous grant before inspecting current transport state.
-        // Late membership or ledger-generation work must not start OFF1/authentication off-screen.
+        // Close the screen-lifetime admission boundary before revoking every already-issued grant.
+        // A later SwiftUI/account callback must not mint a replacement membership probe off-screen.
+        acceptsViewScopedMembershipRequests = false
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -430,8 +436,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             phase = .failed
             message = "Authenticated observation stopped because Capture left Secure Link. Relaunch before another authenticated attempt; no BLE disconnect is claimed."
             log("authenticated_session_abandoned_on_view_exit", ["generation": String(token.diagnosticGeneration)])
-            Task { @MainActor [weak self] in
-                guard let self else { return }
+            Task { @MainActor [self] in
                 await self.invalidateInternalLifecycle(
                     token: token,
                     message: "Authenticated observation stopped because Capture left Secure Link. Relaunch before another authenticated attempt; no BLE disconnect is claimed.",
@@ -874,6 +879,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func verifySDKMembership(completion: ((Bool) -> Void)? = nil) {
+        guard acceptsViewScopedMembershipRequests else {
+            completion?(false)
+            return
+        }
         membershipAccountUID = nil
         membershipDeviceID = nil
         guard privateConfig else {
@@ -2465,6 +2474,7 @@ private struct SecureLinkView: View {
         .navigationTitle("Capture")
         .navigationBarTitleDisplayMode(.inline)
         .task {
+            test.activateMembershipRequestsForView()
             sdkAccount.bootstrap()
             if sdkAccount.loggedIn { test.verifySDKMembership() }
             while !Task.isCancelled {
