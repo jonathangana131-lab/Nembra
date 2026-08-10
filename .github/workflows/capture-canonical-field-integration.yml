@@ -1,0 +1,61 @@
+name: Capture Canonical Field Integration
+
+on:
+  push:
+    branches:
+      - capture/v14-sdk-ledger-membership-field-gpt56sol
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-canonical-field-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  canonical-field:
+    name: Canonical field auth integration
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test canonical field source contract
+        run: |
+          set -euo pipefail
+          swift test \
+            --package-path Packages/NembraBluetoothCapture \
+            --filter TuyaFieldAppCanonicalPreflightSourceTests
+
+      - name: Test authenticated session authorities
+        run: |
+          set -euo pipefail
+          swift test \
+            --package-path Packages/NembraBluetoothCapture \
+            --filter TuyaAuthenticatedReadOnlyPreflightTests
+          swift test \
+            --package-path Packages/NembraBluetoothCapture \
+            --filter TuyaSDKAccountDeviceMembershipGateTests
+
+      - name: Build exact standalone Capture fallback
+        run: |
+          set -o pipefail
+          rm -rf /tmp/NembraCanonicalFieldDerived
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/NembraCanonicalFieldDerived \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tee /tmp/nembra-canonical-field-build.log
+
+      - name: Upload focused log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canonical-field-build-log
+          path: /tmp/nembra-canonical-field-build.log
+          if-no-files-found: ignore
