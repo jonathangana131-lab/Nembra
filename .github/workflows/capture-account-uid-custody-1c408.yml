@@ -1,0 +1,42 @@
+name: Capture Account UID Custody 1C408
+on:
+  push:
+    branches: [sol/v14-capture-redteam-convergence-1c408-sol]
+permissions:
+  contents: write
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]' && github.actor != 'github-actions'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sol/v14-capture-redteam-convergence-1c408-sol
+          fetch-depth: 0
+      - name: Guard materialized convergence parent
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor d03560a0242e2a009174d9093f4139236794fbbe HEAD
+          git diff --quiet d03560a0242e2a009174d9093f4139236794fbbe HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+      - name: Apply and verify account UID custody
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/materialize_capture_account_uid_custody_1c408.py apply
+          python3 scripts/ci/materialize_capture_account_uid_custody_1c408.py verify
+          python3 -m py_compile scripts/ci/materialize_capture_account_uid_custody_1c408.py
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRedTeamConvergenceSourceTests.swift
+          git diff --check
+      - name: Commit clean convergence
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-account-uid-custody-1c408.yml
+          rm scripts/ci/materialize_capture_account_uid_custody_1c408.py
+          git add -A
+          test "$(git diff --name-only 1c40853f6991b4d09206df1d25ecff021458b7eb | wc -l | tr -d ' ')" = 2
+          git diff --cached --check
+          git config user.name github-actions
+          git config user.email github-actions@users.noreply.github.com
+          git commit -m 'fix(capture): bind account UID export custody'
+          git push origin HEAD:sol/v14-capture-redteam-convergence-1c408-sol
