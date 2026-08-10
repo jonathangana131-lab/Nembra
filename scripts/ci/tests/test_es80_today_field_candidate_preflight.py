@@ -261,34 +261,57 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertNotIn(self.PRIVATE_UDID, json.dumps(report))
         self.assertNotIn(str(symlink_parent), json.dumps(report))
 
-    def test_production_handoff_refuses_private_path_clobber_before_secret_write(self):
+    def test_production_handoff_materializes_accepted_private_input_helper_exactly(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
-        directory_guard = 'if [[ -L "$PRIVATE_DIR" ]]; then'
-        target_guard = 'if [[ -e "$UDID_FILE" || -L "$UDID_FILE" ]]; then'
-        secret_read = "IFS= read -r -s INTENDED_UDID"
-        raw_write = 'printf \'%s\' "$INTENDED_UDID" > "$UDID_FILE"'
-        guarded_write = f"( set -o noclobber; {raw_write} )"
+        helper_commit = "5006b99133bf26b8ac40a29106beee6c5ab2a6a6"
+        helper_blob = "9a9f7f724ceaf895e52d6d443d326043f97645c8"
+        helper_path = "scripts/ci/es80_today_private_device_input.py"
+        helper_invocation = '/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER"'
+        source_argument = '--source-repo "$FIELD_SOURCE"'
+        private_argument = '--private-directory "$PRIVATE_DIR"'
 
-        self.assertIn(directory_guard, handoff)
-        self.assertIn(target_guard, handoff)
-        self.assertIn(guarded_write, handoff)
-        self.assertLess(handoff.index(directory_guard), handoff.index(secret_read))
-        self.assertLess(handoff.index(target_guard), handoff.index(secret_read))
-        self.assertLess(handoff.index(target_guard), handoff.index(guarded_write))
-        self.assertEqual(handoff.count(raw_write), 1)
-        self.assertNotIn('printf \'%s\\n\' "$INTENDED_UDID" > "$UDID_FILE"', handoff)
+        self.assertIn(helper_commit, handoff)
+        self.assertIn(helper_blob, handoff)
+        self.assertIn(helper_path, handoff)
+        self.assertIn(
+            'test "$(/usr/bin/git rev-parse --verify "$PRIVATE_INPUT_COMMIT:scripts/ci/es80_today_private_device_input.py")" = "$PRIVATE_INPUT_BLOB"',
+            handoff,
+        )
+        self.assertIn(
+            '/usr/bin/git show "$PRIVATE_INPUT_COMMIT:scripts/ci/es80_today_private_device_input.py" > "$PRIVATE_INPUT_HELPER"',
+            handoff,
+        )
+        self.assertIn(helper_invocation, handoff)
+        self.assertIn(private_argument, handoff)
+        self.assertIn(source_argument, handoff)
+        self.assertLess(handoff.index(helper_blob), handoff.index(helper_invocation))
+        self.assertLess(handoff.index(helper_invocation), handoff.index('NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE="$UDID_FILE"'))
 
-    def test_production_handoff_resolves_physical_home_before_private_path_and_secret(self):
+    def test_production_handoff_never_acquires_or_writes_raw_udid_in_shell(self):
+        handoff = HANDOFF_PATH.read_text(encoding="utf-8")
+        forbidden = (
+            "IFS= read -r -s INTENDED_UDID",
+            'printf \'%s\' "$INTENDED_UDID" > "$UDID_FILE"',
+            'printf \'%s\\n\' "$INTENDED_UDID" > "$UDID_FILE"',
+            "set -o noclobber",
+        )
+        for value in forbidden:
+            with self.subTest(value=value):
+                self.assertNotIn(value, handoff)
+        self.assertIn("getpass", handoff)
+        self.assertIn("never placed in shell argv/environment/output", handoff)
+
+    def test_production_handoff_resolves_physical_home_before_private_helper_invocation(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
         home_resolution = 'HOME_PHYSICAL="$(cd -P -- "$HOME" && /bin/pwd -P)"'
         private_dir = 'PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"'
-        secret_read = "IFS= read -r -s INTENDED_UDID"
+        helper_invocation = '/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER"'
 
         self.assertIn(home_resolution, handoff)
         self.assertIn(private_dir, handoff)
         self.assertNotIn('PRIVATE_DIR="$HOME/.nembra-private"', handoff)
         self.assertLess(handoff.index(home_resolution), handoff.index(private_dir))
-        self.assertLess(handoff.index(private_dir), handoff.index(secret_read))
+        self.assertLess(handoff.index(private_dir), handoff.index(helper_invocation))
 
     def test_non_xcode_27_selection_fails_closed(self):
         with tempfile.TemporaryDirectory() as temporary:
