@@ -1,0 +1,60 @@
+name: Materialize Current Capture Hidden-Start Retirement
+
+on:
+  push:
+    branches: [agent/capture-view-exit-membership-current-b59]
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/capture-view-exit-membership-current-b59
+          fetch-depth: 0
+      - name: Apply exact-current lifecycle repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='b59cd71272b465bcad70fcc3425382bb29541b2e'
+          test "$(git rev-parse HEAD^)" = "$parent"
+          python3 - <<'PY'
+          from pathlib import Path
+          appp=Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          app=appp.read_text()
+          old='''    func abandonCorrelationForViewExit() {\n        guard processCorrelationLease != nil || correlationSession != nil else { return }\n        abandonPackageCorrelation()\n        phase = .failed\n        message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."\n        log("target_correlation_abandoned_on_view_exit")\n    }\n'''
+          new='''    func abandonCorrelationForViewExit() {\n        // Revoke an in-flight membership request before checking scanner ownership. A late\n        // authorized callback must never begin OFF1 after Secure Link has left the screen.\n        membershipRequestID = UUID()\n        membershipBusy = false\n#if canImport(ThingSmartHomeKit)\n        membershipProbe = nil\n#endif\n\n        guard processCorrelationLease != nil || correlationSession != nil else { return }\n        // Existing helper stops package transport before releasing this controller's lease.\n        abandonPackageCorrelation()\n        phase = .failed\n        message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."\n        log("target_correlation_abandoned_on_view_exit")\n    }\n'''
+          if app.count(old)!=1: raise SystemExit('current cleanup anchor drifted')
+          appp.write_text(app.replace(old,new,1))
+
+          tp=Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift')
+          t=tp.read_text()
+          t=t.replace('@Test("leaving Secure Link deterministically retires package correlation before controller loss")','@Test("leaving Secure Link revokes pending start authority and retires active package correlation")',1)
+          anchor='''        #expect(controller.contains("func abandonCorrelationForViewExit()"))\n        #expect(controller.contains("guard processCorrelationLease != nil || correlationSession != nil else { return }"))\n        #expect(controller.contains("abandonPackageCorrelation()"))\n        #expect(controller.contains("target_correlation_abandoned_on_view_exit"))\n'''
+          repl='''        let cleanup = String(try section(\n            in: controller,\n            from: "func abandonCorrelationForViewExit()",\n            to: "var privateConfig: Bool"\n        ))\n        #expect(cleanup.contains("membershipRequestID = UUID()"))\n        #expect(cleanup.contains("membershipBusy = false"))\n        #expect(cleanup.contains("membershipProbe = nil"))\n        #expect(cleanup.contains("guard processCorrelationLease != nil || correlationSession != nil else { return }"))\n        #expect(cleanup.contains("abandonPackageCorrelation()"))\n        #expect(cleanup.contains("target_correlation_abandoned_on_view_exit"))\n        #expect(!cleanup.contains("releasePackageCorrelationLease()"))\n'''
+          if t.count(anchor)!=1: raise SystemExit('test anchor drifted')
+          tp.write_text(t.replace(anchor,repl,1))
+          PY
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          a=s.index('func abandonCorrelationForViewExit()'); b=s.index('var privateConfig: Bool',a); x=s[a:b]
+          for q in ['membershipRequestID = UUID()','membershipBusy = false','membershipProbe = nil','abandonPackageCorrelation()']:
+              assert q in x
+          assert x.index('membershipRequestID = UUID()') < x.index('guard processCorrelationLease')
+          assert 'releasePackageCorrelationLease()' not in x
+          for q in ['connectBLE(','publishDps','writeValue','disconnectBLE']:
+              assert q not in x
+          print('hidden-start retirement: PASS')
+          PY
+          git diff --check
+          rm .github/workflows/materialize-capture-view-exit-membership-current-b59.yml
+          git config user.name nembra-v14-bot
+          git config user.email nembra-v14-bot@users.noreply.github.com
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift .github/workflows/materialize-capture-view-exit-membership-current-b59.yml
+          git diff --cached --check
+          git commit -m 'fix(capture): revoke hidden correlation start on exit'
+          git push origin HEAD:agent/capture-view-exit-membership-current-b59
