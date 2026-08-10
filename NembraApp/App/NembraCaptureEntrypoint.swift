@@ -2089,6 +2089,49 @@ private final class OfficialTuyaAccountAuthorizer: ObservableObject {
 #endif
     }
 
+    func signOut() {
+        guard !busy else { return }
+        guard loggedIn || OfficialTuyaFactory.accountLoggedIn else {
+            bootstrap()
+            return
+        }
+#if canImport(ThingSmartHomeKit)
+        guard let user = ThingSmartUser.sharedInstance() else {
+            loggedIn = false
+            status = "Tuya SDK user session is unavailable. Restart account setup before Capture."
+            return
+        }
+        busy = true
+        status = "Signing out of the current Tuya SDK account…"
+        user.loginOut({ [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.busy = false
+                self.verificationCode = ""
+                self.codeSent = false
+                self.loggedIn = OfficialTuyaFactory.accountLoggedIn
+                if self.loggedIn {
+                    self.status = "Tuya returned logout success, but the SDK still reports a current account. Capture remains locked; try again or relaunch Capture."
+                } else {
+                    self.account = ""
+                    self.status = "Signed out. Use the Tuya account that owns this scooter."
+                }
+            }
+        }, failure: { [weak self] error in
+            Task { @MainActor in
+                guard let self else { return }
+                let submittedIdentity = self.account
+                self.busy = false
+                self.loggedIn = OfficialTuyaFactory.accountLoggedIn
+                self.status = "Tuya could not sign out of the current SDK account: \(Self.redactedError(error, submittedIdentity: submittedIdentity))"
+            }
+        })
+#else
+        loggedIn = false
+        status = "Official Tuya SmartLife SDK is not compiled into this build."
+#endif
+    }
+
     private func finishLoginSuccess() {
         busy = false
         verificationCode = ""
@@ -2309,12 +2352,28 @@ private struct SecureLinkView: View {
                 }
 
                 if test.sdkAccountLoggedIn && (!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized) {
-                    Button(test.membershipBusy ? "Checking scooter…" : "Verify this scooter") {
-                        test.verifySDKMembership()
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(test.membershipStatus)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Button(test.membershipBusy ? "Checking scooter…" : "Verify this scooter") {
+                            test.verifySDKMembership()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                        .disabled(test.membershipBusy || sdkAccount.busy)
+
+                        Button("Use a different Tuya account") {
+                            sdkAccount.signOut()
+                        }
+                        .buttonStyle(.plain)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.cyan)
+                        .disabled(test.membershipBusy || sdkAccount.busy)
+                        .accessibilityHint("Signs out of the official Tuya SDK account so you can log in with the account that owns this scooter.")
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .disabled(test.membershipBusy)
                 }
 
                 if authorityReady {
