@@ -1401,6 +1401,35 @@ private final class SecureLinkController: NSObject, ObservableObject {
         log(kind, ["generation": String(token.diagnosticGeneration)])
     }
 
+    private static let redactedAccountUIDMarker = "<redacted-account-uid>"
+    private static let redactedAccountUIDKeyCollisionMarker = "<redacted-account-uid-key-collision>"
+
+    private static func redactVerifiedAccountUID(
+        from update: [String: String],
+        verifiedAccountUID: String
+    ) -> [String: String] {
+        guard !verifiedAccountUID.isEmpty else { return [:] }
+        var redacted: [String: String] = [:]
+        for (key, value) in update {
+            let safeKey = key.replacingOccurrences(
+                of: verifiedAccountUID,
+                with: redactedAccountUIDMarker
+            )
+            let safeValue = value.replacingOccurrences(
+                of: verifiedAccountUID,
+                with: redactedAccountUIDMarker
+            )
+            if redacted[safeKey] == nil {
+                redacted[safeKey] = safeValue
+            } else {
+                // Redacting a malformed UID-bearing key can collapse two distinct original keys.
+                // Preserve the fact that evidence collided without retaining either identity-bearing key.
+                redacted[safeKey] = redactedAccountUIDKeyCollisionMarker
+            }
+        }
+        return redacted
+    }
+
     private func receivedApplicationUpdate(
         _ update: [String: String],
         token: TuyaReadOnlyConnectionToken
@@ -1426,6 +1455,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
         guard sdkAccountLoggedIn,
               sdkDeviceMembershipVerified,
               accountIdentityLeaseIsAuthorized,
+              let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !verifiedAccountUID.isEmpty,
               let driver else {
             await invalidateSourceAuthority(
                 token: token,
@@ -1439,15 +1470,20 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        let acceptedApplicationUpdate = Self.redactVerifiedAccountUID(
+            from: update,
+            verifiedAccountUID: verifiedAccountUID
+        )
+
         applicationUpdateAdmissionsInFlight += 1
         defer { applicationUpdateAdmissionsInFlight -= 1 }
 
         do {
-            try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
+            try await sessionLedger.recordApplicationUpdate(isNonEmpty: !acceptedApplicationUpdate.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            log("tuya_application_update", acceptedApplicationUpdate.merging([
                 "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -2261,7 +2297,6 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "accounttoken",
         "accesstoken",
         "refreshtoken",
-        "sessionkey",
         "authkey",
         "seckey",
     ]
