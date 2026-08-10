@@ -1,45 +1,4 @@
-#!/usr/bin/env python3
-from pathlib import Path
-
-app_path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
-test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationPerWindowBLEOwnershipSourceTests.swift")
-text = app_path.read_text(encoding="utf-8")
-
-old = '''        guard sdkAccountLoggedIn,
-              sdkDeviceMembershipVerified,
-              accountIdentityLeaseIsAuthorized else {
-            correlationSession?.abandonCurrentWindow()
-            correlationSession = nil
-            failLocally("SDK account/device authority changed before the next correlation window.", "sdk_authority_changed_during_target_correlation")
-            return
-        }
-        guard let session = correlationSession,
-'''
-new = '''        guard sdkAccountLoggedIn,
-              sdkDeviceMembershipVerified,
-              accountIdentityLeaseIsAuthorized else {
-            correlationSession?.abandonCurrentWindow()
-            correlationSession = nil
-            failLocally("SDK account/device authority changed before the next correlation window.", "sdk_authority_changed_during_target_correlation")
-            return
-        }
-        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {
-            correlationSession?.abandonCurrentWindow()
-            correlationSession = nil
-            failLocally(
-                "Tuya reacquired local-BLE ownership before this correlation window could start. Restart the complete OFF1→ON1→OFF2→ON2 series from a fresh OFF1 attempt; Capture will not run a package-owned scanner while Tuya owns this scooter.",
-                "sdk_local_ble_ownership_changed_during_target_correlation"
-            )
-            return
-        }
-        guard let session = correlationSession,
-'''
-if text.count(old) != 1:
-    raise SystemExit(f"expected one startCurrentCorrelationWindow admission block, found {text.count(old)}")
-text = text.replace(old, new, 1)
-app_path.write_text(text, encoding="utf-8")
-
-test_path.write_text(r'''import Foundation
+import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
@@ -114,16 +73,3 @@ struct TuyaCorrelationPerWindowBLEOwnershipSourceTests {
 
     private enum SourceContractError: Error { case sectionMissing }
 }
-''', encoding="utf-8")
-
-window = text[text.index("    private func startCurrentCorrelationWindow()") : text.index("    func finishCorrelationWindow()")]
-required = [
-    "OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID)",
-    "sdk_local_ble_ownership_changed_during_target_correlation",
-    "try session.startCurrentWindow()",
-]
-for needle in required:
-    if needle not in window:
-        raise SystemExit(f"missing per-window ownership contract: {needle}")
-if window.index("OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID)") > window.index("try session.startCurrentWindow()"):
-    raise SystemExit("Tuya ownership read must precede package scanner start")
