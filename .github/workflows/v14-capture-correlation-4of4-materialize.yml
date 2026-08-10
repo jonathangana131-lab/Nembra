@@ -1,0 +1,125 @@
+name: V14 Capture Correlation 4of4 Materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-correlation-4of4-current-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-correlation-4of4-current-sol
+          fetch-depth: 0
+
+      - name: Apply guarded presentation-truth repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text()
+
+          old_text = 'Text("\\(min(test.correlationCompletedWindowCount + 1, 4))/4")'
+          new_text = 'Text("\\(correlationDisplayedWindowOrdinal)/4")'
+          if source.count(old_text) != 1:
+              raise SystemExit(f'expected exactly one stale ordinal expression, found {source.count(old_text)}')
+          source = source.replace(old_text, new_text, 1)
+
+          marker = '    private var correlationPanel: some View {\n'
+          if source.count(marker) != 1:
+              raise SystemExit(f'expected exactly one correlationPanel marker, found {source.count(marker)}')
+          helper = '''    private var correlationDisplayedWindowOrdinal: Int {\n        test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)\n    }\n\n'''
+          source = source.replace(marker, helper + marker, 1)
+          path.write_text(source)
+          PY
+
+          cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationTruthSourceTests.swift <<'SWIFT'
+          import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Capture correlation progress presentation truth")
+          struct TuyaCorrelationProgressPresentationTruthSourceTests {
+              @Test("completed OFF1 ON1 OFF2 ON2 correlation presents four of four")
+              func completedCorrelationDoesNotFallBackToOneOfFour() throws {
+                  let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let surface = try section(in: app, from: "private struct SecureLinkView: View", to: "private struct SecureTransfer: Transferable")
+                  let body = String(surface)
+
+                  #expect(!body.contains("Text(\"\\(min(test.correlationCompletedWindowCount + 1, 4))/4\")"))
+                  #expect(body.contains("correlationDisplayedWindowOrdinal"))
+                  #expect(body.contains("test.phase == .correlated ? 4"))
+                  #expect(body.contains("Text(\"\\(correlationDisplayedWindowOrdinal)/4\")"))
+              }
+
+              @Test("in-progress correlation still derives its ordinal from package-owned completed windows")
+              func activeCorrelationProgressRemainsEvidenceBacked() throws {
+                  let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let surface = try section(in: app, from: "private struct SecureLinkView: View", to: "private struct SecureTransfer: Transferable")
+                  let body = String(surface)
+
+                  #expect(body.contains("min(test.correlationCompletedWindowCount + 1, 4)"))
+                  #expect(!body.localizedCaseInsensitiveContains("rssi progress"))
+                  #expect(!body.localizedCaseInsensitiveContains("name progress"))
+                  #expect(!body.localizedCaseInsensitiveContains("tuya hint progress"))
+              }
+
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let startRange = source.range(of: start),
+                        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+                      Issue.record("Expected source section missing: \(start) ... \(end)")
+                      throw SourceContractError.sectionMissing
+                  }
+                  return source[startRange.lowerBound..<endRange.lowerBound]
+              }
+
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  let repositoryRoot = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+              }
+
+              private enum SourceContractError: Error { case sectionMissing }
+          }
+          SWIFT
+
+      - name: Validate exact repair source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          assert 'Text("\\(correlationDisplayedWindowOrdinal)/4")' in source
+          assert 'test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)' in source
+          assert 'Text("\\(min(test.correlationCompletedWindowCount + 1, 4))/4")' not in source
+          assert 'Historical UUID, name, RSSI, FD50, and Tuya hints never authorize the target.' in source
+          PY
+          git diff --check
+
+      - name: Commit durable repair and remove materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/v14-capture-correlation-4of4-materialize.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationTruthSourceTests.swift \
+            .github/workflows/v14-capture-correlation-4of4-materialize.yml
+          git diff --cached --check
+          git commit -m 'fix(capture): show completed correlation as 4 of 4'
+          git push origin HEAD:repair/v14-capture-correlation-4of4-current-sol
