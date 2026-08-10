@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Tuya authenticated read-only session ledger")
 struct TuyaAuthenticatedReadOnlySessionLedgerTests {
-    @Test("reconnect clears provenance and prior payload authority")
+    @Test("reconnect clears provenance and prior application authority")
     func reconnectClearsPriorEvidence() async throws {
         let clock = TestUptimeClock(1_000)
         let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
@@ -13,7 +13,7 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
         clock.advance(to: 2_000)
         try await ledger.markAuthenticated(for: first, method: .smartLifeAppSDK)
         clock.advance(to: 3_000)
-        try await ledger.recordApplicationPayload(Data([0x01]), for: first)
+        try await ledger.recordApplicationObservation(fieldCount: 1, for: first)
 
         clock.advance(to: 4_000)
         let second = try await ledger.beginConnection()
@@ -41,7 +41,7 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
 
         clock.advance(to: 40)
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection) {
-            try await ledger.recordApplicationPayload(Data([0xAA]), for: first)
+            try await ledger.recordApplicationObservation(fieldCount: 1, for: first)
         }
 
         let snapshot = await ledger.currentPreflightSnapshot()
@@ -73,15 +73,15 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
         #expect(secondSnapshot.applicationPayloadCount == 0)
     }
 
-    @Test("payload admission is post-auth and non-empty")
-    func payloadAdmissionIsFailClosed() async throws {
+    @Test("application observation admission is post-auth and non-empty")
+    func applicationObservationAdmissionIsFailClosed() async throws {
         let clock = TestUptimeClock(100)
         let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
         let token = try await ledger.beginConnection()
 
         clock.advance(to: 110)
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.authenticationRequired) {
-            try await ledger.recordApplicationPayload(Data([0x01]), for: token)
+            try await ledger.recordApplicationObservation(fieldCount: 1, for: token)
         }
 
         clock.advance(to: 120)
@@ -89,12 +89,12 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
         clock.advance(to: 130)
         try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
         clock.advance(to: 140)
-        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.emptyApplicationPayload) {
-            try await ledger.recordApplicationPayload(Data(), for: token)
+        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.emptyApplicationObservation) {
+            try await ledger.recordApplicationObservation(fieldCount: 0, for: token)
         }
     }
 
-    @Test("official provenance plus payload and exact stability window earns gate")
+    @Test("official provenance plus application observation and exact stability window earns gate")
     func acceptedGateUsesSealedChronology() async throws {
         let clock = TestUptimeClock(1_000)
         let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
@@ -103,7 +103,7 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
         clock.advance(to: 2_000)
         try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
         clock.advance(to: 3_000)
-        try await ledger.recordApplicationPayload(Data([0x10, 0x20]), for: token)
+        try await ledger.recordApplicationObservation(fieldCount: 2, for: token)
         clock.advance(to: 2_000 + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds)
         try await ledger.observeCurrentConnection(for: token)
 
@@ -112,6 +112,33 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
         #expect(snapshot.applicationPayloadCount == 1)
         #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == 3_000)
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .readyForStationaryMapping)
+    }
+
+    @Test("SDK field count is admission-only, never a fabricated payload count")
+    func fieldCountDoesNotBecomePayloadCount() async throws {
+        let clock = TestUptimeClock(1_000)
+        let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
+        let token = try await ledger.beginConnection()
+
+        clock.advance(to: 2_000)
+        try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
+        clock.advance(to: 3_000)
+        try await ledger.recordApplicationObservation(fieldCount: 99, for: token)
+
+        let snapshot = await ledger.currentPreflightSnapshot()
+        #expect(snapshot.applicationPayloadCount == 1)
+    }
+
+    @Test("current-connection liveness cannot be advanced before authentication")
+    func preAuthenticationLivenessFailsClosed() async throws {
+        let clock = TestUptimeClock(100)
+        let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
+        let token = try await ledger.beginConnection()
+        clock.advance(to: 200)
+
+        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.authenticationRequired) {
+            try await ledger.observeCurrentConnection(for: token)
+        }
     }
 
     @Test("clock regression cannot rewrite accepted chronology")
@@ -132,7 +159,28 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
         #expect(await ledger.currentPreflightSnapshot() == before)
     }
 
-    @Test("disconnect retires auth provenance and payload authority")
+    @Test("terminal authentication failure after local auth retires all accepted authority")
+    func authenticationFailureRetiresAuthority() async throws {
+        let clock = TestUptimeClock(100)
+        let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
+        let token = try await ledger.beginConnection()
+        clock.advance(to: 200)
+        try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
+        clock.advance(to: 300)
+        try await ledger.recordApplicationObservation(fieldCount: 1, for: token)
+        clock.advance(to: 400)
+        try await ledger.markAuthenticationFailed(for: token)
+
+        let snapshot = await ledger.currentPreflightSnapshot()
+        #expect(snapshot.authenticationState == .failed(reason: "Tuya authentication failed."))
+        #expect(snapshot.authenticationMethod == nil)
+        #expect(snapshot.applicationPayloadCount == 0)
+        #expect(snapshot.authenticatedAtUptimeNanoseconds == nil)
+        #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == nil)
+        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Tuya authentication failed."))
+    }
+
+    @Test("disconnect retires auth provenance and application authority")
     func disconnectRetiresAuthority() async throws {
         let clock = TestUptimeClock(100)
         let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
@@ -140,7 +188,7 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
         clock.advance(to: 200)
         try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
         clock.advance(to: 300)
-        try await ledger.recordApplicationPayload(Data([0x7F]), for: token)
+        try await ledger.recordApplicationObservation(fieldCount: 1, for: token)
         clock.advance(to: 400)
         try await ledger.endConnection(for: token)
 
