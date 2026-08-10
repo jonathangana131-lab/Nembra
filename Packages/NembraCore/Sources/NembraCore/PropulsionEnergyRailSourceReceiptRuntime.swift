@@ -1,5 +1,27 @@
 import Foundation
 
+/// Display-clock scheduling metadata owned by the source-receipt Energy Rail adapter.
+///
+/// This is presentation state only. It never creates source receipts, changes accepted
+/// chronology, refreshes measurement currentness, or becomes telemetry/history evidence.
+public struct PropulsionEnergyRailSourceReceiptDisplaySchedule: Equatable, Sendable {
+    public let requiresContinuousFrames: Bool
+    public let nextTransitionUptimeNanoseconds: UInt64?
+
+    public init(
+        requiresContinuousFrames: Bool,
+        nextTransitionUptimeNanoseconds: UInt64?
+    ) {
+        self.requiresContinuousFrames = requiresContinuousFrames
+        self.nextTransitionUptimeNanoseconds = nextTransitionUptimeNanoseconds
+    }
+
+    public static let inactive = Self(
+        requiresContinuousFrames: false,
+        nextTransitionUptimeNanoseconds: nil
+    )
+}
+
 /// Receipt-aware Simulator presentation runtime for the Energy Rail.
 ///
 /// This type is deliberately a **presentation sink**, not a source of propulsion
@@ -194,7 +216,7 @@ public struct PropulsionEnergyRailSourceReceiptRuntime: Sendable {
     /// Retained/unavailable source state is intentionally quiescent.
     public func displaySchedule(
         atUptimeNanoseconds now: UInt64
-    ) -> PropulsionEnergyRailDisplaySchedule {
+    ) -> PropulsionEnergyRailSourceReceiptDisplaySchedule {
         guard sourceCurrentness == .live else { return .inactive }
 
         let frame = session.frame(
@@ -240,7 +262,7 @@ public struct PropulsionEnergyRailSourceReceiptRuntime: Sendable {
             )
         }
 
-        return PropulsionEnergyRailDisplaySchedule(
+        return PropulsionEnergyRailSourceReceiptDisplaySchedule(
             requiresContinuousFrames: requiresContinuousFrames,
             nextTransitionUptimeNanoseconds: nextTransition
         )
