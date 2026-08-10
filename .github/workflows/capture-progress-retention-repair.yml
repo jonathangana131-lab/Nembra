@@ -1,0 +1,67 @@
+name: Capture progress retention repair
+
+on:
+  push:
+    branches:
+      - recovery/v14-capture-correlation-progress-current-sol
+
+permissions:
+  contents: write
+
+jobs:
+  apply-repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Remove strong controller retention across progress sleeps
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s = path.read_text()
+          old = '''        correlationProgressTask = Task { @MainActor [weak self] in
+              while !Task.isCancelled {
+                  guard let self, self.correlationSession === session else { return }
+                  if let progress = session.progress {
+                      self.correlationProgress = progress
+                  }
+                  try? await Task.sleep(for: .milliseconds(100))
+              }
+          }
+'''
+          new = '''        correlationProgressTask = Task { @MainActor [weak self] in
+              while !Task.isCancelled {
+                  guard self?.correlationSession === session else { return }
+                  if let progress = session.progress {
+                      self?.correlationProgress = progress
+                  }
+                  try? await Task.sleep(for: .milliseconds(100))
+              }
+          }
+'''
+          if s.count(old) != 1:
+              raise SystemExit(f'observer anchor count={s.count(old)}, expected 1')
+          s = s.replace(old, new, 1)
+          if 'guard let self, self.correlationSession === session' in s:
+              raise SystemExit('strong self observer remains')
+          path.write_text(s)
+          PY
+          git diff --check
+          grep -F 'guard self?.correlationSession === session else { return }' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -F 'self?.correlationProgress = progress' NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Commit repair and self-retire workflow
+        shell: bash
+        run: |
+          git config user.name 'nembra-v14-integration'
+          git config user.email 'actions@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationSourceTests.swift
+          git rm .github/workflows/capture-progress-retention-repair.yml
+          git commit -m 'fix(capture): keep progress observer weak across sleeps'
+          git push origin HEAD:recovery/v14-capture-correlation-progress-current-sol
