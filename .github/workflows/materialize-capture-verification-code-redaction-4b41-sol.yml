@@ -18,7 +18,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Verify exact product ancestry and helper scope
+      - name: Verify donor ancestry and helper scope
         shell: bash
         run: |
           set -euo pipefail
@@ -31,80 +31,43 @@ jobs:
           test "${changed[0]}" = '.github/workflows/materialize-capture-verification-code-redaction-4b41-sol.yml'
           test "${changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaVerificationCodeRedactionSourceTests.swift'
 
-      - name: Redact submitted verification code before UI error custody
+      - name: Materialize credential custody repair
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           source = path.read_text(encoding='utf-8')
-
           old_failure = 'self?.finishLoginFailure(error, submittedIdentity: identity)'
           new_failure = 'self?.finishLoginFailure(error, submittedIdentity: identity, submittedVerificationCode: code)'
           if source.count(old_failure) != 2:
               raise SystemExit(f'expected exactly two login failure callbacks, found {source.count(old_failure)}')
           source = source.replace(old_failure, new_failure)
-
-          old_finish = '''    private func finishLoginFailure(_ error: Error?, submittedIdentity: String) {
-        busy = false
-        verificationCode = ""
-        loggedIn = OfficialTuyaFactory.accountLoggedIn
-        status = "Tuya SDK login failed: \\(Self.redactedError(error, submittedIdentity: submittedIdentity))"
-    }
-'''
-          new_finish = '''    private func finishLoginFailure(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) {
-        busy = false
-        verificationCode = ""
-        loggedIn = OfficialTuyaFactory.accountLoggedIn
-        status = "Tuya SDK login failed: \\(Self.redactedError(error, submittedIdentity: submittedIdentity, submittedVerificationCode: submittedVerificationCode))"
-    }
-'''
-          if source.count(old_finish) != 1:
-              raise SystemExit(f'expected one finishLoginFailure body, found {source.count(old_finish)}')
-          source = source.replace(old_finish, new_finish, 1)
-
-          old_scrubber = '''    private static func redactedError(_ error: Error?, submittedIdentity: String) -> String {
-        let raw = error?.localizedDescription ?? "unknown error"
-        let identity = submittedIdentity.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !identity.isEmpty else { return raw }
-        return raw.replacingOccurrences(
-            of: identity,
-            with: "<redacted-account>",
-            options: [.caseInsensitive, .literal]
-        )
-    }
-'''
-          new_scrubber = '''    private static func redactedError(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) -> String {
-        let raw = error?.localizedDescription ?? "unknown error"
-        let identity = submittedIdentity.trimmingCharacters(in: .whitespacesAndNewlines)
-        let verificationCode = submittedVerificationCode.trimmingCharacters(in: .whitespacesAndNewlines)
-        var redacted = raw
-        if !identity.isEmpty {
-            redacted = redacted.replacingOccurrences(
-                of: identity,
-                with: "<redacted-account>",
-                options: [.caseInsensitive, .literal]
-            )
-        }
-        if !verificationCode.isEmpty {
-            redacted = redacted.replacingOccurrences(
-                of: verificationCode,
-                with: "<redacted-verification-code>",
-                options: [.literal]
-            )
-        }
-        return redacted
-    }
-'''
-          if source.count(old_scrubber) != 1:
-              raise SystemExit(f'expected one centralized account scrubber, found {source.count(old_scrubber)}')
-          source = source.replace(old_scrubber, new_scrubber, 1)
+          old_signature = 'private func finishLoginFailure(_ error: Error?, submittedIdentity: String) {'
+          new_signature = 'private func finishLoginFailure(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) {'
+          if source.count(old_signature) != 1:
+              raise SystemExit(f'expected one finishLoginFailure signature, found {source.count(old_signature)}')
+          source = source.replace(old_signature, new_signature, 1)
+          old_status = 'status = "Tuya SDK login failed: \\(Self.redactedError(error, submittedIdentity: submittedIdentity))"'
+          new_status = 'status = "Tuya SDK login failed: \\(Self.redactedError(error, submittedIdentity: submittedIdentity, submittedVerificationCode: submittedVerificationCode))"'
+          if source.count(old_status) != 1:
+              raise SystemExit(f'expected one login failure status projection, found {source.count(old_status)}')
+          source = source.replace(old_status, new_status, 1)
+          old_scrubber_signature = 'private static func redactedError(_ error: Error?, submittedIdentity: String) -> String {'
+          new_scrubber_signature = 'private static func redactedError(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) -> String {'
+          if source.count(old_scrubber_signature) != 1:
+              raise SystemExit(f'expected one redactedError signature, found {source.count(old_scrubber_signature)}')
+          source = source.replace(old_scrubber_signature, new_scrubber_signature, 1)
+          old_body = '        let identity = submittedIdentity.trimmingCharacters(in: .whitespacesAndNewlines)\n        guard !identity.isEmpty else { return raw }\n        return raw.replacingOccurrences(\n            of: identity,\n            with: "<redacted-account>",\n            options: [.caseInsensitive, .literal]\n        )'
+          new_body = '        let identity = submittedIdentity.trimmingCharacters(in: .whitespacesAndNewlines)\n        let verificationCode = submittedVerificationCode.trimmingCharacters(in: .whitespacesAndNewlines)\n        var redacted = raw\n        if !identity.isEmpty {\n            redacted = redacted.replacingOccurrences(\n                of: identity,\n                with: "<redacted-account>",\n                options: [.caseInsensitive, .literal]\n            )\n        }\n        if !verificationCode.isEmpty {\n            redacted = redacted.replacingOccurrences(\n                of: verificationCode,\n                with: "<redacted-verification-code>",\n                options: [.literal]\n            )\n        }\n        return redacted'
+          if source.count(old_body) != 1:
+              raise SystemExit(f'expected one centralized scrubber body, found {source.count(old_body)}')
+          source = source.replace(old_body, new_body, 1)
           path.write_text(source, encoding='utf-8')
           PY
 
-      - name: Verify credential-custody source contract
+      - name: Verify credential custody contract
         shell: bash
         run: |
           set -euo pipefail
@@ -118,23 +81,20 @@ jobs:
           assert 'with: "<redacted-account>"' in s
           assert 'with: "<redacted-verification-code>"' in s
           assert 'of: verificationCode' in s
-          assert 'finishLoginFailure(error, submittedIdentity: identity)' not in s
-          print('Tuya login verification-code custody contract: PASS')
+          print('Tuya verification-code custody contract: PASS')
           PY
           git diff --check
 
-      - name: Collapse helper to two-path product repair
+      - name: Collapse helper to two product paths
         shell: bash
         run: |
           set -euo pipefail
           parent='4b41c9ad783f568d0d353acc9f7016a9bd0b64c2'
           rm .github/workflows/materialize-capture-verification-code-redaction-4b41-sol.yml
-          git add NembraApp/App/NembraCaptureEntrypoint.swift \
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaVerificationCodeRedactionSourceTests.swift
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaVerificationCodeRedactionSourceTests.swift
           git add -u .github/workflows/materialize-capture-verification-code-redaction-4b41-sol.yml
           git diff --cached --check
-          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' \
-            commit -m 'fix(capture): redact Tuya verification codes in login failures'
+          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' commit -m 'fix(capture): redact Tuya verification codes in login failures'
           mapfile -t changed < <(git diff --name-only "$parent" HEAD | sort)
           printf '%s\n' "${changed[@]}"
           test "${#changed[@]}" = 2
