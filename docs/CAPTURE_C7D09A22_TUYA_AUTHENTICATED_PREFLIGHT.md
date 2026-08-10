@@ -71,7 +71,7 @@ If App SDK setup is not used, an official Tuya device-sharing / QR authorization
 
 6. `accepted`
    - At least one real application notification payload is observed; AND
-   - the secure connection remains alive past `35 s` (comfortably past the previous ~29.93 s rejection window); AND
+   - the secure connection remains alive for at least `45 s` after authentication; AND
    - no unbind/reset/pair/activation/control action occurred.
 
 7. `failed`
@@ -95,6 +95,6 @@ The next JSON should add:
 Do not repeat the full outside run until BOTH are true:
 
 1. `applicationNotificationCount > 0`
-2. secure BLE stays connected for `> 35 s`
+2. secure BLE stays authenticated/connected for at least `45 s`
 
 Once that passes, the next experiment is stationary only: idle -> mode changes -> light -> brake -> optional charger plug/unplug. Only after those DPs are repeatable should speed/power correlation use another short outdoor ride.
