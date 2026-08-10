@@ -318,6 +318,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var targetCorrelationOperatorConfirmed = false
     private var driver: OfficialTuyaDriver?
     private var events: [Event] = []
+    private var sealedAcceptedEventPrefix: [Event]?
     private var watchdog: Task<Void, Never>?
     private let sessionLedger = TuyaAuthenticatedReadOnlySessionLedger()
     private var currentConnectionToken: TuyaReadOnlyConnectionToken?
@@ -1230,6 +1231,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     }
                     do {
                         try await sessionLedger.sealAcceptedObservation(for: token)
+                        self.sealedAcceptedEventPrefix = self.events
                         self.currentConnectionToken = nil
                         await self.refreshLedgerSnapshot()
                         self.phase = .accepted
@@ -1465,6 +1467,18 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func prepareExport() {
+        let exportEvents: [Event]
+        if phase == .accepted {
+            guard let sealedAcceptedEventPrefix else {
+                exportData = nil
+                message = "Accepted diagnostic export unavailable: immutable accepted application evidence prefix is missing."
+                return
+            }
+            exportEvents = sealedAcceptedEventPrefix
+        } else {
+            exportEvents = events
+        }
+
         let envelope = Export(
             schemaVersion: 8,
             purpose: "Sanitized Tuya authenticated read-only stationary preflight",
@@ -1496,7 +1510,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             dpQueriesSent: false,
             dpCommandsSent: false,
             candidates: candidates,
-            events: events
+            events: exportEvents
         )
 
         do {
@@ -1518,6 +1532,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         targetCorrelationMethod = nil
         targetCorrelationWindowCount = nil
         targetCorrelationOperatorConfirmed = false
+        sealedAcceptedEventPrefix = nil
         watchdog?.cancel()
         watchdog = nil
         driver = nil
