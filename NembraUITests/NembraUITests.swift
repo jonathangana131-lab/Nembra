@@ -94,6 +94,12 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(speed.waitForExistence(timeout: 3))
         XCTAssertFalse((speed.value as? String ?? "").isEmpty)
 
+        assertEnergyRailValue(
+            containing: "356 watts",
+            in: app,
+            message: "Simulator riding power must reach the mounted Energy Rail as simulator-only semantic truth."
+        )
+
         XCTAssertTrue(app.staticTexts["Controls available when stopped"].waitForExistence(timeout: 2))
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
@@ -133,6 +139,16 @@ final class NembraUITests: XCTestCase {
                 .waitForExistence(timeout: 2),
             "A connected speed gap must retire stopped-control authority while preserving retained presentation."
         )
+
+        // Speed currentness is deliberately independent from propulsion currentness.
+        // This fixture opens only the source-owned speed evidence gap, so connected
+        // Simulator power remains a separately admitted live zero measurement.
+        assertEnergyRailValue(
+            containing: "0 watts",
+            in: app,
+            message: "A retained speed sample must not falsely demote a still-connected Simulator power source."
+        )
+
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
 
@@ -160,6 +176,13 @@ final class NembraUITests: XCTestCase {
             app.staticTexts["NO LIVE SPEED"].waitForExistence(timeout: 2),
             "Disconnected transport must fail the field-specific speed projection closed."
         )
+
+        assertEnergyRailValue(
+            containing: "Unavailable",
+            in: app,
+            message: "Disconnected cached power must fail closed instead of manufacturing a live zero-watt reading."
+        )
+
         XCTAssertFalse(app.staticTexts["READY"].exists)
         XCTAssertFalse(app.staticTexts["RIDING"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
@@ -190,6 +213,12 @@ final class NembraUITests: XCTestCase {
             "The Cockpit must not manufacture a numeric speed before any accepted source evidence exists."
         )
         XCTAssertFalse(app.staticTexts["LAST KNOWN"].exists)
+
+        assertEnergyRailValue(
+            containing: "Unavailable",
+            in: app,
+            message: "No observed power evidence must keep the Energy Rail explicitly unavailable."
+        )
 
         let vehicleStatus = app.descendants(matching: .any)["dashboard.vehicle-status"]
         XCTAssertTrue(vehicleStatus.waitForExistence(timeout: 2))
@@ -323,6 +352,29 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    private func assertEnergyRailValue(
+        containing expectedFragment: String,
+        in app: XCUIApplication,
+        message: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
+        XCTAssertTrue(
+            energyRail.waitForExistence(timeout: 2),
+            "The Energy Rail accessibility surface must be mounted in the real Dashboard cockpit.",
+            file: file,
+            line: line
+        )
+        XCTAssertTrue(
+            waitForValueContaining(expectedFragment, element: energyRail),
+            message,
+            file: file,
+            line: line
+        )
+    }
+
+    @MainActor
     private func launch(
         scenario: String,
         orientation: UIDeviceOrientation,
@@ -354,6 +406,17 @@ final class NembraUITests: XCTestCase {
     @MainActor
     private func waitForValue(_ value: String, element: XCUIElement, timeout: TimeInterval = 3) -> Bool {
         let predicate = NSPredicate(format: "value == %@", value)
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func waitForValueContaining(
+        _ fragment: String,
+        element: XCUIElement,
+        timeout: TimeInterval = 3
+    ) -> Bool {
+        let predicate = NSPredicate(format: "value CONTAINS[c] %@", fragment)
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
