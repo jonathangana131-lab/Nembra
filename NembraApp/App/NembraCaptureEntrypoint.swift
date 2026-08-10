@@ -534,6 +534,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
             failLocally("SDK account/device authority changed before Bluetooth correlation began.", "sdk_authority_changed_before_scan")
             return
         }
+        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {
+            failLocally(
+                "Tuya still reports a current local-BLE session for this scooter. Power the scooter OFF and wait for that session to clear, or relaunch Capture. Package-owned correlation will not scan while Tuya still owns local BLE.",
+                "existing_sdk_local_ble_ownership_blocks_scan"
+            )
+            return
+        }
         guard currentConnectionToken == nil else {
             if let token = currentConnectionToken {
                 Task { @MainActor [weak self] in
@@ -1795,6 +1802,15 @@ private enum OfficialTuyaFactory {
         return uid.isEmpty ? nil : uid
 #else
         return nil
+#endif
+    }
+
+    static func isLocallyConnected(uuid: String) -> Bool {
+#if canImport(ThingSmartHomeKit) && canImport(NembraTuyaPrivateConfig)
+        guard bootstrap(), !uuid.isEmpty else { return false }
+        return ThingSmartBLEManager.sharedInstance().deviceStatue(withUUID: uuid)
+#else
+        return false
 #endif
     }
 
