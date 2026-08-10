@@ -40,6 +40,7 @@ BUNDLE_ID="$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$INFO_PLIST")
 BUILD_IDENTIFIER="$(/usr/bin/plutil -extract NembraCaptureBuildIdentifier raw -o - "$INFO_PLIST")"
 SOURCE_SHA="$(/usr/bin/plutil -extract NembraCaptureSourceCommitSHA raw -o - "$INFO_PLIST")"
 TUYA_DEPENDENCY_LOCK_SHA256="$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$INFO_PLIST" 2>/dev/null || true)"
+PROCEDURE_IDENTIFIER="$(/usr/bin/plutil -extract NembraCaptureProcedureIdentifier raw -o - "$INFO_PLIST" 2>/dev/null || true)"
 if [[ "$BUNDLE_ID" != "$EXPECTED_BUNDLE_ID" ]]; then
   echo "Unexpected standalone Capture bundle identifier: $BUNDLE_ID" >&2
   exit 7
@@ -54,6 +55,10 @@ fi
 if [[ -n "$TUYA_DEPENDENCY_LOCK_SHA256" ]]; then
   echo "Public standalone visual evidence must not carry Tuya dependency authority: $TUYA_DEPENDENCY_LOCK_SHA256" >&2
   exit 9
+fi
+if [[ "$PROCEDURE_IDENTIFIER" != "$EXPECTED_PROCEDURE_IDENTIFIER" ]]; then
+  echo "Standalone Capture built procedure does not rendezvous with the canonical stationary procedure: $PROCEDURE_IDENTIFIER" >&2
+  exit 23
 fi
 EXPECTED_BUILD_IDENTIFIER="capture-v14-${SOURCE_SHA:0:12}"
 if [[ "$BUILD_IDENTIFIER" != "$EXPECTED_BUILD_IDENTIFIER" ]]; then
@@ -181,7 +186,7 @@ done
   "$ARTIFACTS_DIR/NembraCaptureStandaloneVisualEvidence.json" \
   "$BUILD_IDENTIFIER" \
   "$SOURCE_SHA" \
-  "$EXPECTED_PROCEDURE_IDENTIFIER" \
+  "$PROCEDURE_IDENTIFIER" \
   "$BUNDLE_ID" \
   "$RUNTIME_ID" \
   "$DEVICE_TYPE" \
@@ -205,7 +210,7 @@ import sys
 ) = sys.argv[1:]
 
 record = {
-    "schemaVersion": 4,
+    "schemaVersion": 5,
     "authority": "standalone-capture-simulator-presentation-only",
     "buildIdentifier": build_identifier,
     "sourceCommitSHA": source_sha,
@@ -214,12 +219,13 @@ record = {
     "expectedFieldBuildAuthority": False,
     "procedureIdentifier": procedure_identifier,
     "procedureSourceRendezvousVerified": True,
+    "procedureBuildRendezvousVerified": True,
     "bundleIdentifier": bundle_id,
     "baselineDevice": "iPhone 12",
     "baselineOS": "iOS 27",
     "simulatorRuntime": runtime_id,
     "simulatorDeviceType": device_type,
-    "launchContext": "real standalone bundle; private dependency provenance absent; inherited SIMCTL_CHILD/NEMBRA_SIMULATION authority rejected before launch",
+    "launchContext": "real standalone bundle; canonical procedure stamped; private dependency provenance absent; inherited SIMCTL_CHILD/NEMBRA_SIMULATION authority rejected before launch",
     "syntheticAuthorityEnvironmentRejected": True,
     "expectedReviewState": "public/unprovisioned root presentation; reviewer must verify fail-closed messaging visually",
     "visualAcceptanceRequiresHumanReview": True,
@@ -248,7 +254,7 @@ printf '%s\n' \
   "Standalone Nembra Capture visual evidence captured on exact V14 baseline." \
   "Build: $BUILD_IDENTIFIER" \
   "Source: $SOURCE_SHA" \
-  "Procedure: $EXPECTED_PROCEDURE_IDENTIFIER" \
+  "Procedure: $PROCEDURE_IDENTIFIER" \
   "Tuya dependency authority: deliberately absent in public CI" \
   "Baseline: $EXPECTED_DEVICE_NAME / iOS 27 Simulator" \
   "Standard screenshot: $STANDARD_SCREENSHOT" \
