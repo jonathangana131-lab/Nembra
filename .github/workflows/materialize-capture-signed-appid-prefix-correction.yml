@@ -1,0 +1,65 @@
+name: Materialize Capture Corrected App ID Custody
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-signed-appid-custody-current-20260810
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact current product ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 1b12dc56ec20a7dad30760b57a81106644ffc263 HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Apply corrected signed identity contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 Scripts/materialize_capture_signed_appid_prefix_correction.py
+          python3 -m py_compile Scripts/materialize_capture_signed_appid_prefix_correction.py
+          bash -n scripts/field/install_one_time_capture.command
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('scripts/field/install_one_time_capture.command').read_text()
+          install = source.index('say "Installing SDK-integrated Capture on the intended iPhone"')
+          checks = [
+              '[[ "$BUILT_APPLICATION_IDENTIFIER" == *".$BUNDLE_ID" ]]',
+              '[[ "$PROFILE_APPLICATION_IDENTIFIER" == "$BUILT_APPLICATION_IDENTIFIER" ]]',
+              '[[ "$BUILT_TEAM_IDENTIFIER" == "$TEAM_ID" ]]',
+              '[[ "$PROFILE_TEAM_IDENTIFIER" == "$TEAM_ID" ]]',
+              '[[ "$PROFILE_ROOT_TEAM_IDENTIFIER" == "$TEAM_ID" ]]',
+          ]
+          for check in checks:
+              assert source.index(check) < install, check
+          assert 'EXPECTED_APPLICATION_IDENTIFIER="${TEAM_ID}.${BUNDLE_ID}"' not in source
+          assert '[[ "$BUILT_APPLICATION_IDENTIFIER" != *"*"* ]]' in source
+          test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSignedAppleAppIdentityCustodySourceTests.swift').read_text()
+          assert 'EXPECTED_APPLICATION_IDENTIFIER' in test
+          assert '#expect(!installer.contains(' in test
+          PY
+          git diff --check
+
+      - name: Publish clean current-product repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-signed-appid-prefix-correction.yml
+          rm Scripts/materialize_capture_signed_appid_prefix_correction.py
+          git diff --check
+          git config user.name 'Nembra V14 Materializer'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(capture): preserve Apple App ID prefix truth'
+          git push origin HEAD:sol/v14-capture-signed-appid-custody-current-20260810
