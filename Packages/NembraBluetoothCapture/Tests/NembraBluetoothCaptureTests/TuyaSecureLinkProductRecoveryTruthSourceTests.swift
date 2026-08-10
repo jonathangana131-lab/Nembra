@@ -24,7 +24,7 @@ struct TuyaSecureLinkProductRecoveryTruthSourceTests {
         #expect(controllerBody.contains("var failedAttemptCanRestartFromOFF1: Bool"))
         #expect(controllerBody.contains("phase == .failed"))
         #expect(controllerBody.contains("currentConnectionToken == nil"))
-        #expect(surfaceBody.contains("test.failedAttemptCanRestartFromOFF1"))
+        #expect(surfaceBody.contains("test.canRestartFromFreshOFF1"))
         #expect(surfaceBody.contains("Restart from scooter OFF"))
         #expect(surfaceBody.contains("Relaunch Capture"))
     }
