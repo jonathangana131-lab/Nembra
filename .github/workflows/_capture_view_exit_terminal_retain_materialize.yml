@@ -1,0 +1,88 @@
+name: Capture view-exit terminal-retain materializer
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-view-exit-terminal-retain-8e4
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sol/v14-capture-view-exit-terminal-retain-8e4
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact parent and scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='8e4d28c9bd1c3ba6dd3a9c9292bd9f1ff27a40ac'
+          git merge-base --is-ancestor "$parent" HEAD
+          git diff --quiet "$parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+          mapfile -t unexpected < <(git diff --name-only "$parent"...HEAD | grep -Ev '^(.github/workflows/_capture_view_exit_terminal_retain_materialize.yml|Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaViewExitTerminalRetirementLifetimeSourceTests.swift)$' || true)
+          test "${#unexpected[@]}" = 0
+
+      - name: Retain controller through exact terminal retirement
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          weak = '            Task { @MainActor [weak self] in'
+          guard = '                guard let self else { return }'
+          matches = [i for i, line in enumerate(lines) if line == weak and i + 1 < len(lines) and lines[i + 1] == guard]
+          if len(matches) != 1:
+              raise SystemExit(f'expected exactly one active-token weak retirement task, found {len(matches)}')
+          i = matches[0]
+          lines[i] = '            Task { @MainActor [self] in'
+          del lines[i + 1]
+          path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          PY
+
+      - name: Verify deterministic lifetime contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          start = source.index('if let token = currentConnectionToken {')
+          end = source.index('if phase == .authenticating {', start)
+          cleanup = source[start:end]
+          assert 'Task { @MainActor [self] in' in cleanup
+          assert 'await self.invalidateInternalLifecycle(' in cleanup
+          assert '[weak self]' not in cleanup
+          assert 'guard let self else { return }' not in cleanup
+          for forbidden in ('disconnectBLE', 'publishDps', 'queryDps', 'writeValue', 'endConnection(for:'):
+              assert forbidden not in cleanup, forbidden
+          print('deterministic view-exit terminal retirement lifetime: PASS')
+          PY
+          git diff --check
+
+      - name: Run focused source regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaViewExitTerminalRetirementLifetimeSourceTests
+
+      - name: Publish clean two-path repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='8e4d28c9bd1c3ba6dd3a9c9292bd9f1ff27a40ac'
+          git config user.name 'nembra-sol'
+          git config user.email 'nembra-sol@users.noreply.github.com'
+          git rm .github/workflows/_capture_view_exit_terminal_retain_materialize.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaViewExitTerminalRetirementLifetimeSourceTests.swift
+          git diff --cached --check
+          git commit -m 'fix(capture): guarantee view-exit terminal retirement'
+          test "$(git diff --name-only "$parent" HEAD | sort)" = "$(printf '%s\n' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaViewExitTerminalRetirementLifetimeSourceTests.swift' | sort)"
+          git push origin HEAD:sol/v14-capture-view-exit-terminal-retain-8e4
