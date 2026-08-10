@@ -33,6 +33,7 @@ jobs:
           from pathlib import Path
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           source = path.read_text()
+
           controller_anchor = "    private func abandonPackageCorrelation() {\n"
           controller_insert = (
               "    func abandonCorrelationForViewExit() {\n"
@@ -48,27 +49,26 @@ jobs:
           if source.count(controller_anchor) != 1:
               raise SystemExit(f"expected one package-abandonment seam, found {source.count(controller_anchor)}")
           source = source.replace(controller_anchor, controller_insert + controller_anchor, 1)
+
           view_anchor = (
               "        .onChange(of: sdkAccount.loggedIn) { _, loggedIn in\n"
               "            if loggedIn { test.verifySDKMembership() }\n"
               "            else { test.invalidateSDKMembership() }\n"
               "        }\n"
           )
-          view_replacement = view_anchor + (
+          view_insert = (
               "        .onDisappear {\n"
               "            test.abandonCorrelationForViewExit()\n"
               "        }\n"
           )
           if source.count(view_anchor) != 1:
               raise SystemExit(f"expected one Secure Link lifecycle seam, found {source.count(view_anchor)}")
-          source = source.replace(view_anchor, view_replacement, 1)
+          source = source.replace(view_anchor, view_anchor + view_insert, 1)
           path.write_text(source)
-          controller_start = source.index("private final class SecureLinkController")
-          controller_end = source.index("@MainActor\nprivate protocol OfficialTuyaDriver", controller_start)
-          controller = source[controller_start:controller_end]
-          method_start = controller.index("func abandonCorrelationForViewExit()")
-          method_end = controller.index("private func abandonPackageCorrelation()", method_start)
-          method = controller[method_start:method_end]
+
+          method_start = source.index("    func abandonCorrelationForViewExit()")
+          method_end = source.index("    private func abandonPackageCorrelation()", method_start)
+          method = source[method_start:method_end]
           for required in (
               "guard correlationSession != nil || processCorrelationLease != nil else { return }",
               "abandonPackageCorrelation()",
@@ -81,13 +81,11 @@ jobs:
               "sessionLedger.endConnection", "driver = nil", "currentConnectionToken = nil",
           ):
               if forbidden in method:
-                  raise SystemExit(f"view-exit cleanup gained forbidden authenticated/protocol mutation: {forbidden}")
-          view_start = source.index("private struct SecureLinkView: View")
-          view_end = source.index("private extension SecureLinkView", view_start)
-          view = source[view_start:view_end]
-          if ".onDisappear" not in view or "test.abandonCorrelationForViewExit()" not in view:
-              raise SystemExit("Secure Link view does not invoke package-correlation retirement")
+                  raise SystemExit(f"view-exit cleanup gained forbidden mutation: {forbidden}")
+          if source.count(".onDisappear {\n            test.abandonCorrelationForViewExit()\n        }") != 1:
+              raise SystemExit("Secure Link view-exit hook is missing or duplicated")
           PY
+
           git diff --check
           python3 <<'PY'
           from pathlib import Path
@@ -97,8 +95,10 @@ jobs:
           for needle in ("func abandonCorrelationForViewExit()", ".onDisappear", "test.abandonCorrelationForViewExit()"):
               if needle not in source:
                   raise SystemExit(f"expected RED contract is not satisfied: {needle}")
-          if "public func abandonCurrentWindow()" not in transport or "manager.stopScan()" not in transport:
+          if "public func abandonCurrentWindow()" not in transport:
               raise SystemExit("package explicit abandonment API disappeared")
+          if "manager.stopScan()" not in transport:
+              raise SystemExit("package scanner-retirement primitive disappeared")
           if "TuyaNavigationBLELeaseRetirementSourceTests" not in regression:
               raise SystemExit("expected RED regression is missing")
           PY
