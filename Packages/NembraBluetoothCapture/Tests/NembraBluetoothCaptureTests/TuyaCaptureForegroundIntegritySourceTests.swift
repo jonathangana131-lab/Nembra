@@ -44,7 +44,11 @@ struct TuyaCaptureForegroundIntegritySourceTests {
         // generation is still being terminally retired. Otherwise an active transition can reset
         // the duplicate-retirement fence before a following onDisappear arrives.
         let retiredGenerationGate = try requiredOffset(
-            containing: "guard currentConnectionToken == nil else { return }",
+            containing: "guard currentConnectionToken == nil,",
+            in: activation
+        )
+        let processHandoffGate = try requiredOffset(
+            containing: "OfficialTuyaFactory.packageCorrelationMayStart",
             in: activation
         )
         let resetForegroundFence = try requiredOffset(
@@ -55,7 +59,8 @@ struct TuyaCaptureForegroundIntegritySourceTests {
             containing: "acceptsViewScopedMembershipRequests = true",
             in: activation
         )
-        #expect(retiredGenerationGate < resetForegroundFence)
+        #expect(retiredGenerationGate < processHandoffGate)
+        #expect(processHandoffGate < resetForegroundFence)
         #expect(resetForegroundFence < reopenAdmission)
         #expect(viewExit.contains("if foregroundIntegrityLossHandled { return }"))
 
@@ -87,6 +92,10 @@ struct TuyaCaptureForegroundIntegritySourceTests {
             containing: "if processCorrelationLease != nil || correlationSession != nil",
             in: cleanup
         )
+        let sealedCorrelationCheck = try requiredOffset(
+            containing: "if phase == .correlated || phase == .selected",
+            in: cleanup
+        )
         let tokenCheck = try requiredOffset(
             containing: "guard let token = currentConnectionToken else",
             in: cleanup
@@ -98,11 +107,22 @@ struct TuyaCaptureForegroundIntegritySourceTests {
         #expect(clearDeviceLease < membershipRevoke)
         #expect(membershipRevoke < officialRevoke)
         #expect(officialRevoke < correlationCheck)
-        #expect(officialRevoke < tokenCheck)
+        #expect(correlationCheck < sealedCorrelationCheck)
+        #expect(sealedCorrelationCheck < tokenCheck)
         #expect(cleanup.contains("membershipBusy = false"))
         #expect(cleanup.contains("membershipProbe = nil"))
         #expect(cleanup.contains("watchdog?.cancel()"))
-        #expect(cleanup.contains("foregroundIntegrityLossHandled = true"))
+        let acceptedPreservationGate = try requiredOffset(
+            containing: "guard phase != .accepted else { return }",
+            in: cleanup
+        )
+        let markForegroundLossHandled = try requiredOffset(
+            containing: "foregroundIntegrityLossHandled = true",
+            in: cleanup
+        )
+        #expect(acceptedPreservationGate < markForegroundLossHandled)
+        #expect(cleanup.contains("resetDiscoverySessionOnly()"))
+        #expect(cleanup.contains("foreground_integrity_lost_after_target_correlation"))
 
         // Package target correlation is abandoned through the existing scanner-first owner path.
         #expect(cleanup.contains("abandonPackageCorrelation()"))

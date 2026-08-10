@@ -418,8 +418,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     func activateMembershipRequestsForView() {
         // A fast inactive -> active transition must not reset the duplicate-retirement fence
-        // while the exact authenticated generation from foreground loss is still terminalizing.
-        guard currentConnectionToken == nil else { return }
+        // while an authenticated generation is terminalizing or after the one-shot official Tuya
+        // handoff has retired package correlation for this process. Post-handoff recovery is relaunch.
+        guard currentConnectionToken == nil,
+              OfficialTuyaFactory.packageCorrelationMayStart else { return }
         foregroundIntegrityLossHandled = false
         acceptsViewScopedMembershipRequests = true
     }
@@ -479,6 +481,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func appDidLoseForeground() {
+        // A sealed accepted artifact is immutable historical evidence. Foreground loss after seal
+        // must not revoke or rewrite the already-accepted subject merely for presentation lifecycle.
+        guard phase != .accepted else { return }
         guard !foregroundIntegrityLossHandled else { return }
         foregroundIntegrityLossHandled = true
 
@@ -503,6 +508,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
             phase = .failed
             message = "Capture left the foreground during Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; interrupted windows are never reusable evidence."
             log("foreground_integrity_lost_during_target_correlation")
+            return
+        }
+
+        if phase == .correlated || phase == .selected {
+            // The finite scanners are already retired by this point, but their correlation result
+            // is still mutable current-attempt authority. It may not cross a foreground boundary.
+            resetDiscoverySessionOnly()
+            phase = .failed
+            message = "Capture left the foreground after Bluetooth target correlation. Return to Capture, re-verify this scooter in the current Tuya account, and restart from OFF1; prior correlation/selection is not reusable evidence."
+            log("foreground_integrity_lost_after_target_correlation")
             return
         }
 
