@@ -140,8 +140,9 @@ struct PropulsionEnergyRailSimulatorRuntimeTests {
         #expect(retained.acceptedPeakMarkerFraction == nil)
         #expect(retained.scaleOrigin == nil)
         #expect(retained.allowsLiveMotion == false)
-        #expect(runtime.displaySchedule(atUptimeNanoseconds: 1_001)
-            == PropulsionEnergyRailDisplaySchedule.inactive)
+        let schedule = runtime.displaySchedule(atUptimeNanoseconds: 1_001)
+        #expect(schedule.requiresContinuousFrames == false)
+        #expect(schedule.nextTransitionUptimeNanoseconds == nil)
     }
 
     @Test("exact replay cannot promote a retained source receipt")
