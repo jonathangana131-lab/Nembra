@@ -1,0 +1,95 @@
+name: Reanchor Capture Legacy TODAY Field Retirement 870f
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-retire-today-fingerprint-870f
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact current product and unchanged donor subjects
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='870f20abe144fa7b6f9ac60bf4c0fe0a1792fb81'
+          test "$(git rev-parse HEAD^)" = "$parent"
+          mapfile -t changed < <(git diff --name-only "$parent"...HEAD | sort)
+          test "${#changed[@]}" = 1
+          test "${changed[0]}" = '.github/workflows/materialize-capture-retire-today-fingerprint-870f.yml'
+          test "$(git rev-parse "$parent:CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md")" = '67b904cde2d2a9527ac4fbc5e242354d41885871'
+          test "$(git rev-parse "$parent:scripts/ci/xcode27_today_research_field_candidate.sh")" = 'b42ab38b98609c14f7b8cdcc46d653a7a3468cc6'
+          test "$(git rev-parse "$parent:scripts/ci/xcode27_signed_field_candidate.sh")" = 'd9a3621ef5b0b3cdd2a70163ca71b35a1ce28b50'
+          if git cat-file -e "$parent:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayFieldAuthorityRetirementSourceTests.swift" 2>/dev/null; then
+            echo 'retirement regression unexpectedly already exists on current product' >&2
+            exit 1
+          fi
+
+      - name: Materialize exact proven semantic donor
+        shell: bash
+        run: |
+          set -euo pipefail
+          donor='b305d4487bb2ac31e99df994a64f494eed2c4bf9'
+          git fetch --no-tags origin sol/v14-capture-retire-today-fingerprint-3f269
+          test "$(git rev-parse FETCH_HEAD)" = "$donor"
+          git checkout "$donor" -- \
+            CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md \
+            scripts/ci/xcode27_today_research_field_candidate.sh \
+            scripts/ci/xcode27_signed_field_candidate.sh \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayFieldAuthorityRetirementSourceTests.swift
+          git diff --check
+
+      - name: Revalidate current-product authority boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ci/xcode27_today_research_field_candidate.sh
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          set +e
+          legacy_output="$(bash -p scripts/ci/xcode27_today_research_field_candidate.sh 2>&1)"
+          legacy_status=$?
+          producer_output="$(bash -p scripts/ci/xcode27_signed_field_candidate.sh --nembra-today-research-build 2>&1)"
+          producer_status=$?
+          set -e
+          test "$legacy_status" = 64
+          test "$producer_status" = 64
+          grep -Fq 'SUPERSEDED:' <<< "$legacy_output"
+          grep -Fq 'ES80-AUTHENTICATED-STATIONARY-v1' <<< "$legacy_output"
+          grep -Fq 'SUPERSEDED: --nembra-today-research-build' <<< "$producer_output"
+          grep -Fq 'PROCEDURE_ID="ES80-AUTHENTICATED-STATIONARY-v1"' scripts/field/install_one_time_capture.command
+          grep -Fq 'static let requiredFieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"' NembraApp/App/NembraCaptureBuildIdentity.swift
+          grep -Fq "procedure='ES80-AUTHENTICATED-STATIONARY-v1'" .github/workflows/capture-field-build-provenance.yml
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayFieldAuthorityRetirementSourceTests.swift
+
+      - name: Collapse helper and publish clean current-product donor
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='870f20abe144fa7b6f9ac60bf4c0fe0a1792fb81'
+          rm .github/workflows/materialize-capture-retire-today-fingerprint-870f.yml
+          git add CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md \
+            scripts/ci/xcode27_today_research_field_candidate.sh \
+            scripts/ci/xcode27_signed_field_candidate.sh \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayFieldAuthorityRetirementSourceTests.swift
+          git add -u .github/workflows/materialize-capture-retire-today-fingerprint-870f.yml
+          git diff --cached --check
+          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' commit -m 'fix(capture): retire legacy TODAY fingerprint authority'
+          mapfile -t changed < <(git diff --name-only "$parent" HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 4
+          test "${changed[0]}" = 'CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md'
+          test "${changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayFieldAuthorityRetirementSourceTests.swift'
+          test "${changed[2]}" = 'scripts/ci/xcode27_signed_field_candidate.sh'
+          test "${changed[3]}" = 'scripts/ci/xcode27_today_research_field_candidate.sh'
+          git diff --check "$parent" HEAD
+          git push origin HEAD:sol/v14-capture-retire-today-fingerprint-870f
