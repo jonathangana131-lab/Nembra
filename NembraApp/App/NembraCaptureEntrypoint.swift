@@ -474,6 +474,18 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        if phase == .correlated || phase == .selected {
+            // Final-window sealing already retired the package scanner/lease. Revoke only the
+            // reusable target grant here; keep the sealed four-window receipts for diagnostics.
+            pendingCorrelatedTargetID = nil
+            selectedID = nil
+            targetCorrelationOperatorConfirmed = false
+            phase = .failed
+            message = "Capture left Secure Link after Bluetooth target correlation. Restart from OFF1; the prior correlated/selected target cannot cross a view-authority boundary, but its sealed correlation receipts remain diagnostic evidence."
+            log("target_correlation_abandoned_on_view_exit")
+            return
+        }
+
         guard processCorrelationLease != nil || correlationSession != nil else { return }
         // Existing helper stops package transport before releasing this controller's lease.
         abandonPackageCorrelation()
@@ -516,12 +528,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
 
         if phase == .correlated || phase == .selected {
-            // Final-window sealing already retires the package scanner/lease. These phases can
-            // therefore hold actionable target authority with no live transport object to inspect.
-            // Foreground loss must invalidate that authority explicitly before a retry.
-            resetDiscoverySessionOnly()
+            // Final-window sealing already retires the package scanner/lease. Revoke only the
+            // actionable target grant; the sealed correlation receipts remain legitimate failed-
+            // attempt diagnostics until a fresh OFF1 explicitly clears them.
+            pendingCorrelatedTargetID = nil
+            selectedID = nil
+            targetCorrelationOperatorConfirmed = false
             phase = .failed
-            message = "Capture left the foreground after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the prior correlated/selected target cannot cross a foreground-integrity break."
+            message = "Capture left the foreground after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the prior target cannot cross a foreground-integrity break, but its sealed correlation receipts remain diagnostic evidence."
             log("foreground_integrity_lost_after_target_correlation")
             return
         }
@@ -958,6 +972,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
         membershipAccountUID = nil
         membershipDeviceID = nil
         pendingCorrelatedTargetID = nil
+        if phase == .correlated || phase == .selected {
+            // Account authority loss revokes target reuse without deleting the completed physical
+            // correlation receipts. A later fresh OFF1 is the only allowed evidence-reset boundary.
+            pendingCorrelatedTargetID = nil
+            selectedID = nil
+            targetCorrelationOperatorConfirmed = false
+            phase = .failed
+            message = "SDK account authority changed after Bluetooth target correlation. Restart from OFF1 after re-verifying exact scooter membership; prior sealed correlation receipts remain diagnostic evidence only."
+            log("sdk_membership_invalidated_after_target_correlation")
+        }
         if phase == .baseline || phase == .powerOn || phase == .scanning || phase == .correlated {
             abandonPackageCorrelation()
         }
