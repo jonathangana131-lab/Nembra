@@ -24,32 +24,30 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           text = path.read_text()
           function_marker = "    private func startCurrentCorrelationWindow() {"
           next_function_marker = "    func finishCorrelationWindow()"
           insertion_marker = "        guard let session = correlationSession,"
           ownership_read = "OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID)"
-
           start = text.index(function_marker)
           end = text.index(next_function_marker, start)
           body = text[start:end]
           if ownership_read in body:
               raise SystemExit("ownership fence already present; refusing duplicate materialization")
           marker = text.index(insertion_marker, start, end)
-          fence = '''        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {
-              correlationSession?.abandonCurrentWindow()
-              correlationSession = nil
-              failLocally(
-                  "Tuya already owns local BLE for this scooter before the next correlation window. Relaunch Capture with the scooter OFF before another OFF1→ON1→OFF2→ON2 series. Package-owned scanning remains blocked while Tuya owns local BLE.",
-                  "sdk_local_ble_ownership_blocks_correlation_window"
-              )
-              return
-          }
-'''
-          text = text[:marker] + fence + text[marker:]
-          path.write_text(text)
+          fence = (
+              "        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {\n"
+              "            correlationSession?.abandonCurrentWindow()\n"
+              "            correlationSession = nil\n"
+              "            failLocally(\n"
+              "                \"Tuya already owns local BLE for this scooter before the next correlation window. Relaunch Capture with the scooter OFF before another OFF1→ON1→OFF2→ON2 series. Package-owned scanning remains blocked while Tuya owns local BLE.\",\n"
+              "                \"sdk_local_ble_ownership_blocks_correlation_window\"\n"
+              "            )\n"
+              "            return\n"
+              "        }\n"
+          )
+          path.write_text(text[:marker] + fence + text[marker:])
           PY
 
       - name: Verify source contract shape
