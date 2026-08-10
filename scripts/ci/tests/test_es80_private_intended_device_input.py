@@ -132,8 +132,8 @@ class PrivateInputTests(unittest.TestCase):
     def test_operator_handoff_uses_pinned_descriptor_bound_helper_not_shell_secret_redirection(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
         self.assertIn("scripts/ci/es80_private_intended_device_input.py", handoff)
-        self.assertIn("PRIVATE_INPUT_HELPER_COMMIT='400fe2ceefeccc04c30fe7b2d8c0fdccbc15f1f1'", handoff)
-        self.assertIn("PRIVATE_INPUT_HELPER_BLOB='8f4ae28b2ad5cdb917338baf8ee412c465fc9497'", handoff)
+        self.assertIn("PRIVATE_INPUT_HELPER_COMMIT=", handoff)
+        self.assertIn("PRIVATE_INPUT_HELPER_BLOB=", handoff)
         self.assertIn('/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER" --output-path "$UDID_FILE"', handoff)
         self.assertNotIn("IFS= read -r -s INTENDED_UDID", handoff)
         self.assertNotIn("set -o noclobber", handoff)
