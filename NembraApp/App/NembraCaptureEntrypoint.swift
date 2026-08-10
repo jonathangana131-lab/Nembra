@@ -34,7 +34,7 @@ private struct CaptureP0Root: View {
                         .foregroundStyle(.green)
                     Text("Prove the secure scooter link first.")
                         .font(.largeTitle.bold())
-                    Text("The next physical run is stationary. It proves current SDK account authority, exact scooter membership, the accepted physical Bluetooth target, Tuya-owned authentication, genuine same-generation application updates, and a sealed 45-second observation prefix.")
+                    Text("The next physical run is stationary. It proves current SDK account authority, exact scooter membership, a fresh repeated OFF1→ON1→OFF2→ON2 Bluetooth correlation with explicit confirmation, Tuya-owned authentication, genuine same-generation application updates, and a sealed 45-second observation prefix.")
                         .foregroundStyle(.secondary)
 
                     VStack(alignment: .leading, spacing: 8) {
@@ -146,19 +146,51 @@ private final class SecureLinkController: NSObject, ObservableObject {
         var newAfterPowerOn: Bool
         var fd50: Bool
         var tuyaCompany: Bool
-        var knownID: Bool
+        var historicalCaptureID: Bool
+        var freshlyCorrelated: Bool
         var expectedName: Bool
         var score: Int
         var evidence: [String]
 
-        var title: String { name?.isEmpty == false ? name! : "Unnamed peripheral" }
-        // C7D09A22 physically established this iPhone/CoreBluetooth peripheral UUID.
-        // Other hints can rank display order but cannot mint target authority.
-        var likely: Bool { knownID }
+        var title: String { name?.isEmpty == false ? name! : "Correlated Bluetooth target" }
+        // Only this attempt's package-owned repeated power-cycle result can make a
+        // candidate eligible for explicit operator confirmation. C7D09A22 remains
+        // descriptive historical evidence, never durable scooter identity.
+        var likely: Bool { freshlyCorrelated }
     }
 
     enum Phase: String, Codable {
-        case idle, baseline, powerOn, scanning, selected, authenticating, observing, accepted, failed
+        case idle, baseline, powerOn, scanning, correlated, selected, authenticating, observing, accepted, failed
+    }
+
+    struct CorrelationCandidateExport: Codable {
+        let id: String
+        let isConnectable: Bool?
+    }
+
+    struct CorrelationSnapshotExport: Codable {
+        let phase: String
+        let observationSeriesIdentity: String
+        let windowSequence: UInt64
+        let candidates: [CorrelationCandidateExport]
+    }
+
+    struct CorrelationWindowExport: Codable {
+        let phase: String
+        let windowSequence: UInt64
+        let startedAtUptimeNanoseconds: UInt64
+        let endedAtUptimeNanoseconds: UInt64
+        let observedCandidateCount: Int
+    }
+
+    struct CorrelationExport: Codable {
+        let method: String
+        let disposition: String
+        let operatorConfirmed: Bool
+        let repeatableCandidateIDs: [String]
+        let observationSeriesIdentities: [String]
+        let windows: [CorrelationWindowExport]
+        let snapshots: [CorrelationSnapshotExport]
     }
 
     struct Export: Codable {
@@ -171,6 +203,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let tuyaUUID: String
         let productID: String
         let selectedPeripheralID: String?
+        let targetCorrelation: CorrelationExport?
         let phase: Phase
         let privateConfigPresent: Bool
         let sdkAccountLoggedIn: Bool
@@ -197,7 +230,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let details: [String: String]
     }
 
-    static let knownPeripheral = UUID(uuidString: "6815A5F5-4D1E-E004-BAE8-6DF924123907")!
+    static let historicalCapturePeripheral = UUID(uuidString: "6815A5F5-4D1E-E004-BAE8-6DF924123907")!
     static let fd50 = CBUUID(string: "FD50")
     private static let maximumObservationPollGapNanoseconds = TuyaAuthenticatedReadOnlySessionLedger.maximumContinuousObservationGapNanoseconds
 
@@ -229,6 +262,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var central: CBCentralManager!
     private var byID: [UUID: Candidate] = [:]
     private var baseline = Set<UUID>()
+    private var correlationSession: PassiveBluetoothPowerCycleObservationSession?
+    private var correlationResult: PassiveBluetoothPowerCycleObservationResult?
+    private var pendingCorrelatedTargetID: UUID?
     private var driver: OfficialTuyaDriver?
     private var events: [Event] = []
     private var watchdog: Task<Void, Never>?
@@ -259,6 +295,23 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var currentAccountUID: String? { OfficialTuyaFactory.currentAccountUID }
     var selected: Candidate? { selectedID.flatMap { byID[$0] } }
     var applicationUpdateCount: Int { ledgerSnapshot.applicationPayloadCount }
+    var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }
+    var correlationProgress: PassiveBluetoothPowerCycleObservationProgress? { correlationSession?.progress }
+    var correlationWindowIsScanning: Bool { correlationProgress?.isScanning == true }
+    var correlationObservedCandidateCount: Int { correlationProgress?.currentObservedCandidateCount ?? 0 }
+    var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }
+
+    var correlationWindowLabel: String {
+        guard let phase = correlationProgress?.phase else { return "OFF1" }
+        return Self.correlationPhaseLabel(phase)
+    }
+
+    var correlationWindowInstruction: String {
+        guard let phase = correlationProgress?.phase else { return "Keep the scooter OFF and stationary." }
+        return phase.operatorExpectedPowerOn
+            ? "Turn the scooter ON and keep it stationary."
+            : "Turn the scooter OFF and keep it stationary."
+    }
 
     private var accountIdentityLeaseSnapshot: TuyaSDKAccountIdentityLeaseGate.Snapshot {
         .init(
@@ -309,18 +362,19 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
         guard privateConfig, sdkAccountLoggedIn else {
-            failLocally("Private Tuya app identity and a current SDK login are required before any scooter scan.", "sdk_authority_required_before_scan")
+            failLocally("Private Tuya app identity and a current SDK login are required before any scooter correlation scan.", "sdk_authority_required_before_scan")
             return
         }
 
-        // Every physical attempt receives a fresh complete current-account membership verdict.
+        // Every physical attempt earns a fresh complete same-account exact-device membership
+        // verdict before the package-owned four-window producer is allowed to scan.
         verifySDKMembership { [weak self] authorized in
             guard let self else { return }
             let leaseVerdict = TuyaSDKAccountIdentityLeaseGate.verdict(for: self.accountIdentityLeaseSnapshot)
             guard authorized,
                   self.sdkAccountLoggedIn,
                   leaseVerdict == .authorized else {
-                self.failLocally("Exact scooter membership could not be proven for this same current SDK account. Bluetooth discovery remains disabled.", "sdk_device_membership_required_before_scan")
+                self.failLocally("Exact scooter membership could not be proven for this same current SDK account. Bluetooth correlation remains disabled.", "sdk_device_membership_required_before_scan")
                 return
             }
             self.beginBaselineScan()
@@ -328,12 +382,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func beginBaselineScan() {
-        guard central.state == .poweredOn,
-              privateConfig,
+        guard privateConfig,
               sdkAccountLoggedIn,
               sdkDeviceMembershipVerified,
               accountIdentityLeaseIsAuthorized else {
-            failLocally("SDK account/device authority changed before discovery began.", "sdk_authority_changed_before_scan")
+            failLocally("SDK account/device authority changed before correlation began.", "sdk_authority_changed_before_scan")
             return
         }
         guard currentConnectionToken == nil else {
@@ -343,69 +396,176 @@ private final class SecureLinkController: NSObject, ObservableObject {
             )
             return
         }
+
         resetDiscoverySessionOnly()
-        phase = .baseline
-        message = "Keep the scooter OFF for a few seconds. Exact same-account SDK device membership is already verified."
-        log("baseline_started_after_membership")
-        central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
+        do {
+            correlationSession = try PassiveBluetoothPowerCycleObservationSession(minimumWindowDuration: 10)
+            log("target_correlation_series_created", [
+                "method": "package-owned-fresh-manager-off1-on1-off2-on2",
+                "minimumWindowSeconds": "10"
+            ])
+            startCurrentCorrelationWindow()
+        } catch {
+            failLocally("Could not create the bounded Bluetooth correlation series: \(error.localizedDescription)", "target_correlation_series_create_failed")
+        }
     }
 
-    func saveBaseline() {
-        guard phase == .baseline else { return }
-        guard sdkAccountLoggedIn, sdkDeviceMembershipVerified, accountIdentityLeaseIsAuthorized else {
-            failLocally("SDK account/device authority changed during the OFF baseline.", "sdk_authority_changed_during_baseline")
-            return
-        }
-        central.stopScan()
-        baseline = Set(byID.keys)
-        phase = .powerOn
-        message = "Baseline saved. Turn the scooter ON and keep it stationary."
-        log("baseline_saved", ["count": String(baseline.count)])
+    func startNextCorrelationWindow() {
+        guard phase == .powerOn else { return }
+        startCurrentCorrelationWindow()
     }
 
-    func scanAfterPowerOn() {
-        guard central.state == .poweredOn else {
-            failLocally("Bluetooth is not ready.", "bluetooth_unavailable")
+    private func startCurrentCorrelationWindow() {
+        guard sdkAccountLoggedIn,
+              sdkDeviceMembershipVerified,
+              accountIdentityLeaseIsAuthorized else {
+            correlationSession?.abandonCurrentWindow()
+            correlationSession = nil
+            failLocally("SDK account/device authority changed before the next correlation window.", "sdk_authority_changed_during_target_correlation")
             return
         }
-        guard sdkAccountLoggedIn, sdkDeviceMembershipVerified, accountIdentityLeaseIsAuthorized else {
-            failLocally("SDK account/device authority changed before the power-on scan.", "sdk_authority_changed_before_power_on_scan")
+        guard let session = correlationSession,
+              let progress = session.progress else {
+            failLocally("Fresh Bluetooth correlation authority is unavailable. Restart from OFF1.", "target_correlation_authority_unavailable")
             return
         }
-        phase = .scanning
-        message = "Looking only for the accepted prior physical UUID. FD50, Tuya company ID, name, RSSI and OFF→ON appearance are descriptive hints."
-        log("power_on_scan_started")
-        central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
+
+        let label = Self.correlationPhaseLabel(progress.phase)
+        do {
+            try session.startCurrentWindow()
+            phase = progress.phase.operatorExpectedPowerOn ? .scanning : .baseline
+            message = "\(label) requested with a fresh CoreBluetooth manager. Wait for scanner liveness, then keep this state for at least 10 receipt-bounded seconds before sealing it."
+            log("target_correlation_window_started", [
+                "window": label,
+                "operatorExpectedPowerOn": String(progress.phase.operatorExpectedPowerOn),
+                "completedWindows": String(progress.completedWindowCount)
+            ])
+        } catch {
+            session.abandonCurrentWindow()
+            correlationSession = nil
+            failLocally("The \(label) correlation window failed closed: \(error.localizedDescription). Restart from OFF1.", "target_correlation_window_start_failed")
+        }
     }
 
-    func stopScan() {
-        central.stopScan()
-        if selectedID == nil, let exact = candidates.first(where: { $0.likely }) {
-            choose(exact)
+    func finishCorrelationWindow() {
+        guard phase == .baseline || phase == .scanning,
+              let session = correlationSession else { return }
+        guard sdkAccountLoggedIn,
+              sdkDeviceMembershipVerified,
+              accountIdentityLeaseIsAuthorized else {
+            session.abandonCurrentWindow()
+            correlationSession = nil
+            failLocally("SDK account/device authority changed during Bluetooth correlation. Restart from OFF1 after re-verifying membership.", "sdk_authority_changed_during_target_correlation")
+            return
         }
-        if selectedID == nil {
-            message = "The accepted prior physical UUID was not observed. Do not guess from name/RSSI/FD50; run a fresh deterministic identity-correlation experiment instead."
+
+        let sealedLabel = correlationWindowLabel
+        do {
+            let final = try session.finishCurrentWindow()
+            if let final {
+                finishCorrelationSeries(final)
+                return
+            }
+
+            phase = .powerOn
+            message = "\(sealedLabel) sealed. \(correlationWindowInstruction) When the scooter has settled, start \(correlationWindowLabel)."
+            log("target_correlation_window_sealed", [
+                "window": sealedLabel,
+                "completedWindows": String(correlationCompletedWindowCount)
+            ])
+        } catch let error as PassiveBluetoothPowerCycleObservationSessionError {
+            switch error {
+            case .minimumWindowDurationNotReached:
+                message = "Keep \(sealedLabel) unchanged a little longer. The package has not yet earned the required 10 receipt-bounded seconds."
+            case .scanReadinessPending:
+                message = "\(sealedLabel) is still waiting for confirmed CoreBluetooth scan liveness. Do not advance the physical state yet."
+            default:
+                session.abandonCurrentWindow()
+                correlationSession = nil
+                failLocally("\(sealedLabel) failed closed (\(String(describing: error))). Restart the complete OFF1→ON1→OFF2→ON2 series.", "target_correlation_window_failed")
+            }
+        } catch {
+            session.abandonCurrentWindow()
+            correlationSession = nil
+            failLocally("\(sealedLabel) failed closed: \(error.localizedDescription). Restart the complete correlation series.", "target_correlation_window_failed")
         }
-        log("scan_stopped")
     }
 
-    func choose(_ candidate: Candidate) {
-        guard accountIdentityLeaseIsAuthorized else {
-            failLocally("Current Tuya account/device authority changed before target selection.", "sdk_authority_changed_before_target_selection")
+    private func finishCorrelationSeries(_ result: PassiveBluetoothPowerCycleObservationResult) {
+        correlationResult = result
+        correlationSession = nil
+
+        switch result.correlation.disposition {
+        case let .singleRepeatableCandidate(id):
+            let historicalCaptureID = id == Self.historicalCapturePeripheral
+            var evidence = ["fresh OFF1→ON1→OFF2→ON2 full-UUID correlation"]
+            if historicalCaptureID {
+                evidence.append("matches C7D09A22 capture-local UUID descriptive")
+            }
+            let candidate = Candidate(
+                id: id,
+                name: nil,
+                rssi: nil,
+                advertisements: 0,
+                newAfterPowerOn: true,
+                fd50: false,
+                tuyaCompany: false,
+                historicalCaptureID: historicalCaptureID,
+                freshlyCorrelated: true,
+                expectedName: false,
+                score: 0,
+                evidence: evidence
+            )
+            byID = [id: candidate]
+            candidates = [candidate]
+            pendingCorrelatedTargetID = id
+            selectedID = nil
+            phase = .correlated
+            message = "One full CoreBluetooth UUID repeated the complete fresh correlation series. Confirm this correlated Bluetooth target explicitly before authentication. This is current-session correlation evidence, not permanent scooter identity."
+            log("target_correlation_ready_for_confirmation", [
+                "id": id.uuidString,
+                "authority": "fresh-repeated-off-on-full-corebluetooth-id",
+                "historicalCaptureUUIDMatch": String(historicalCaptureID),
+                "windows": String(result.windows.count)
+            ])
+
+        case let .ambiguousRepeatableCandidates(ids):
+            pendingCorrelatedTargetID = nil
+            failLocally("Fresh correlation remained ambiguous across \(ids.count) repeatable full UUIDs. Do not guess from name, RSSI, FD50, Tuya hints, or the historical capture UUID; restart from OFF1 after reducing nearby-device ambiguity.", "target_correlation_ambiguous")
+
+        case .noRepeatableCandidate:
+            pendingCorrelatedTargetID = nil
+            failLocally("No full UUID repeated the required OFF1→ON1→OFF2→ON2 pattern. Do not fall back to the historical capture UUID; restart the fresh correlation series.", "target_correlation_no_repeatable_candidate")
+
+        case .invalidObservationAuthority, .invalidObservationWindowOrder:
+            pendingCorrelatedTargetID = nil
+            failLocally("The package rejected correlation provenance/chronology. Restart from OFF1; prior windows cannot be spliced into a new attempt.", "target_correlation_provenance_rejected")
+        }
+    }
+
+    func confirmCorrelatedTarget() {
+        guard phase == .correlated,
+              let id = pendingCorrelatedTargetID,
+              let candidate = byID[id],
+              candidate.freshlyCorrelated else {
+            message = "A fresh correlated Bluetooth target must be available before confirmation."
             return
         }
-        guard candidate.likely else {
-            message = "This candidate is not the accepted prior physical UUID. Descriptive hints cannot authorize it."
+        guard sdkAccountLoggedIn,
+              sdkDeviceMembershipVerified,
+              accountIdentityLeaseIsAuthorized else {
+            failLocally("Current Tuya account/device authority changed before correlated-target confirmation.", "sdk_authority_changed_before_target_confirmation")
             return
         }
-        central.stopScan()
-        selectedID = candidate.id
+
+        selectedID = id
         phase = .selected
-        message = "Accepted prior physical UUID matched. CoreBluetooth discovery is stopped before Tuya's SDK takes BLE ownership."
+        message = "Correlated Bluetooth target confirmed for this attempt. Correlation scanning is retired before Tuya's SDK takes BLE ownership. This does not create permanent scooter identity."
         log("candidate_selected", [
-            "id": candidate.id.uuidString,
-            "authority": "accepted-prior-physical-corebluetooth-uuid",
-            "evidence": candidate.evidence.joined(separator: ",")
+            "id": id.uuidString,
+            "authority": "operator-confirmed-fresh-power-cycle-correlation",
+            "correlation": "OFF1-ON1-OFF2-ON2",
+            "historicalCaptureUUIDMatch": String(candidate.historicalCaptureID)
         ])
     }
 
@@ -420,8 +580,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
 #if canImport(ThingSmartHomeKit)
         membershipProbe = nil
 #endif
+        correlationSession?.abandonCurrentWindow()
+        correlationSession = nil
         central.stopScan()
-        if [.baseline, .powerOn, .scanning, .selected].contains(phase) {
+        if [.baseline, .powerOn, .scanning, .correlated, .selected].contains(phase) {
             phase = .failed
             message = "SDK account authority changed. Discovery stopped before any authenticated BLE attempt."
         }
@@ -518,7 +680,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     func authenticate() {
         guard let candidate = selected, candidate.likely else {
-            failLocally("The accepted prior physical scooter identity is required.", "candidate_not_authoritative")
+            failLocally("An explicitly confirmed fresh correlated Bluetooth target is required.", "candidate_not_authoritative")
             return
         }
         guard buildIdentity.isAuthoritativeFieldBuild else {
@@ -686,7 +848,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     ])
                     startWatchdog(token: token)
                 } catch {
-                    await invalidateSourceAuthority(
+                    await invalidateChronologyIntegrity(
                         token: token,
                         message: "Authenticated-session chronology rejected the SDK success callback: \(error.localizedDescription)",
                         kind: "session_auth_callback_rejected"
@@ -698,7 +860,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 try? await Task.sleep(for: .milliseconds(200))
 
             case .timedOut:
-                await invalidateSourceAuthority(
+                await authenticationAcquisitionFailed(
                     token: token,
                     message: "Tuya reported transport success, but current local-BLE status did not become authoritative within the bounded settlement window.",
                     kind: "sdk_local_ble_settlement_timed_out"
@@ -706,7 +868,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 return
 
             case .invalidClock:
-                await invalidateSourceAuthority(
+                await invalidateChronologyIntegrity(
                     token: token,
                     message: "Local-BLE settlement failed closed because the monotonic clock regressed.",
                     kind: "sdk_local_ble_settlement_clock_invalid"
@@ -721,13 +883,51 @@ private final class SecureLinkController: NSObject, ObservableObject {
             log("stale_connect_failure_ignored", ["generation": String(token.diagnosticGeneration)])
             return
         }
-        try? await sessionLedger.markAuthenticationFailed(for: token)
+        await authenticationAcquisitionFailed(
+            token: token,
+            message: "Tuya SmartLife SDK did not establish the supported BLE session.",
+            kind: "official_connect_failed"
+        )
+    }
+
+    private func authenticationAcquisitionFailed(
+        token: TuyaReadOnlyConnectionToken,
+        message: String,
+        kind: String
+    ) async {
+        guard currentConnectionToken == token else { return }
+        do {
+            try await sessionLedger.markAuthenticationFailed(for: token)
+        } catch {
+            // A failed monotonic sample must still retire callback authority without
+            // taking another clock receipt.
+            try? await sessionLedger.markChronologyIntegrityInvalidated(for: token)
+        }
         currentConnectionToken = nil
         localBLESettlementToken = nil
         sdkLocalBLEOnline = false
         driver = nil
         await refreshLedgerSnapshot()
-        failLocally("Tuya SmartLife SDK did not establish the supported BLE session.", "official_connect_failed")
+        phase = .failed
+        self.message = message
+        log(kind, ["generation": String(token.diagnosticGeneration)])
+    }
+
+    private func invalidateChronologyIntegrity(
+        token: TuyaReadOnlyConnectionToken,
+        message: String,
+        kind: String
+    ) async {
+        guard currentConnectionToken == token else { return }
+        try? await sessionLedger.markChronologyIntegrityInvalidated(for: token)
+        currentConnectionToken = nil
+        localBLESettlementToken = nil
+        sdkLocalBLEOnline = false
+        driver = nil
+        await refreshLedgerSnapshot()
+        phase = .failed
+        self.message = message
+        log(kind, ["generation": String(token.diagnosticGeneration)])
     }
 
     private func receivedApplicationUpdate(
@@ -965,9 +1165,63 @@ private final class SecureLinkController: NSObject, ObservableObject {
         ledgerSnapshot = await sessionLedger.currentPreflightSnapshot()
     }
 
+    private static func correlationPhaseLabel(_ phase: PassiveBluetoothPowerCycleObservationPhase) -> String {
+        switch phase {
+        case .firstPoweredOff: return "OFF1"
+        case .firstPoweredOn: return "ON1"
+        case .secondPoweredOff: return "OFF2"
+        case .secondPoweredOn: return "ON2"
+        }
+    }
+
+    private static func correlationDispositionLabel(_ disposition: PassiveBluetoothPowerCycleTargetCorrelationReport.Disposition) -> String {
+        switch disposition {
+        case .invalidObservationAuthority: return "invalid-observation-authority"
+        case .invalidObservationWindowOrder: return "invalid-observation-window-order"
+        case .noRepeatableCandidate: return "no-repeatable-candidate"
+        case .ambiguousRepeatableCandidates: return "ambiguous-repeatable-candidates"
+        case .singleRepeatableCandidate: return "single-repeatable-candidate"
+        }
+    }
+
+    private func makeCorrelationExport() -> CorrelationExport? {
+        guard let result = correlationResult else { return nil }
+        let windows = result.windows.map { receipt in
+            CorrelationWindowExport(
+                phase: Self.correlationPhaseLabel(receipt.phase),
+                windowSequence: receipt.windowSequence.rawValue,
+                startedAtUptimeNanoseconds: receipt.startedAtUptimeNanoseconds,
+                endedAtUptimeNanoseconds: receipt.endedAtUptimeNanoseconds,
+                observedCandidateCount: receipt.observedCandidateCount
+            )
+        }
+        let phaseLabels = ["OFF1", "ON1", "OFF2", "ON2"]
+        let snapshots = result.observationSnapshots.enumerated().map { pair in
+            let index = pair.offset
+            let snapshot = pair.element
+            return CorrelationSnapshotExport(
+                phase: index < phaseLabels.count ? phaseLabels[index] : "UNKNOWN",
+                observationSeriesIdentity: snapshot.observationSeriesIdentity.rawValue.uuidString,
+                windowSequence: snapshot.windowSequence.rawValue,
+                candidates: snapshot.candidates.map {
+                    CorrelationCandidateExport(id: $0.id.uuidString, isConnectable: $0.isConnectable)
+                }
+            )
+        }
+        return CorrelationExport(
+            method: "package-owned-fresh-manager-off1-on1-off2-on2",
+            disposition: Self.correlationDispositionLabel(result.correlation.disposition),
+            operatorConfirmed: selectedID != nil && selectedID == pendingCorrelatedTargetID,
+            repeatableCandidateIDs: result.correlation.repeatableCandidateIdentifiers.map(\.uuidString),
+            observationSeriesIdentities: result.correlation.observationSeriesIdentities.map { $0.rawValue.uuidString },
+            windows: windows,
+            snapshots: snapshots
+        )
+    }
+
     func prepareExport() {
         let envelope = Export(
-            schemaVersion: 7,
+            schemaVersion: 8,
             purpose: "Sanitized Tuya authenticated read-only stationary preflight",
             exportedAt: Date(),
             buildIdentifier: buildIdentity.buildIdentifier,
@@ -976,6 +1230,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             tuyaUUID: tuyaUUID,
             productID: productID,
             selectedPeripheralID: selectedID?.uuidString,
+            targetCorrelation: makeCorrelationExport(),
             phase: phase,
             privateConfigPresent: privateConfig,
             sdkAccountLoggedIn: sdkAccountLoggedIn,
@@ -1009,6 +1264,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func resetDiscoverySessionOnly() {
+        correlationSession?.abandonCurrentWindow()
+        correlationSession = nil
+        correlationResult = nil
+        pendingCorrelatedTargetID = nil
         central.stopScan()
         watchdog?.cancel()
         watchdog = nil
@@ -1027,6 +1286,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func failLocally(_ text: String, _ kind: String) {
+        if phase == .baseline || phase == .powerOn || phase == .scanning {
+            correlationSession?.abandonCurrentWindow()
+            correlationSession = nil
+        }
         watchdog?.cancel()
         watchdog = nil
         central.stopScan()
@@ -1059,7 +1322,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             || old?.fd50 == true
         let tuyaCompany = Self.hasTuyaCompanyID(advertisement[CBAdvertisementDataManufacturerDataKey] as? Data)
             || old?.tuyaCompany == true
-        let knownID = id == Self.knownPeripheral
+        let historicalCaptureID = id == Self.historicalCapturePeripheral
         let newAfterPowerOn = (phase == .scanning && !baseline.contains(id)) || old?.newAfterPowerOn == true
         let expectedName = name?.localizedCaseInsensitiveContains("demo") == true
             || name?.localizedCaseInsensitiveContains("tuya") == true
@@ -1067,7 +1330,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
         var score = 0
         var evidence: [String] = []
-        if knownID { score += 1000; evidence.append("accepted prior physical UUID") }
+        if historicalCaptureID { evidence.append("matches C7D09A22 capture-local UUID descriptive") }
         if fd50 { score += 500; evidence.append("FD50 descriptive") }
         if tuyaCompany { score += 350; evidence.append("Tuya company 0x07D0 descriptive") }
         if newAfterPowerOn { score += 180; evidence.append("appeared after power-on descriptive") }
@@ -1086,7 +1349,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
             newAfterPowerOn: newAfterPowerOn,
             fd50: fd50,
             tuyaCompany: tuyaCompany,
-            knownID: knownID,
+            historicalCaptureID: historicalCaptureID,
+            freshlyCorrelated: false,
             expectedName: expectedName,
             score: score,
             evidence: evidence
@@ -1507,7 +1771,7 @@ private struct SecureLinkView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("SMALLEST INDOOR TEST").font(.caption.monospaced().bold()).foregroundStyle(.green)
-                    Text("Authenticate. Wait. Seal.").font(.largeTitle.bold())
+                    Text("Correlate. Confirm. Authenticate. Seal.").font(.largeTitle.bold())
                     Text("Keep the scooter stationary. Do not run the old 17-step sequence.").foregroundStyle(.secondary)
                     statusCard
                     authorityCard
@@ -1557,7 +1821,7 @@ private struct SecureLinkView: View {
     private var authorityCard: some View {
         VStack(alignment: .leading, spacing: 7) {
             Label("Official Tuya authority", systemImage: "checkmark.shield").font(.headline)
-            LabeledContent("Field build", value: test.accountIdentityLeaseIsAuthorized && test.sdkDeviceMembershipVerified ? "Authority checked" : "Not ready")
+            LabeledContent("Field build", value: test.fieldBuildIsAuthoritative ? "Authoritative" : "Not authoritative")
             LabeledContent("Private SDK config", value: test.privateConfig ? "Present" : "Missing")
             LabeledContent("SDK account logged in", value: test.sdkAccountLoggedIn ? "Yes" : "No")
             LabeledContent("Exact scooter membership", value: test.sdkDeviceMembershipVerified && test.accountIdentityLeaseIsAuthorized ? "Verified for current account" : test.membershipBusy ? "Checking…" : "Not verified")
@@ -1567,8 +1831,8 @@ private struct SecureLinkView: View {
                     .buttonStyle(.bordered)
                     .disabled(test.membershipBusy)
             }
-            if !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized {
-                Text("NO PHYSICAL BLE TEST YET: the private exact field build, current SDK account identity, and exact scooter membership must all be proven before even the OFF baseline scan can start.")
+            if !test.fieldBuildIsAuthoritative || !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized {
+                Text("NO PHYSICAL BLE TEST YET: the private exact field build, current SDK account identity, and exact scooter membership must all be proven before OFF1 can start.")
                     .font(.footnote.bold())
                     .foregroundStyle(.orange)
             }
@@ -1578,46 +1842,63 @@ private struct SecureLinkView: View {
 
     private var discoveryCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Find the accepted physical scooter", systemImage: "scope").font(.headline)
+            Label("Correlate this-session Bluetooth target", systemImage: "scope").font(.headline)
+            Text("Authority requires one package-owned OFF1→ON1→OFF2→ON2 series and explicit confirmation. Each window uses a fresh CoreBluetooth manager. Name, RSSI, FD50, Tuya company ID, and the C7D09A22 UUID are non-authoritative hints only.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
             switch test.phase {
             case .idle, .failed:
                 Button("Start scooter-OFF baseline") { test.startBaseline() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(!test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized || test.membershipBusy)
-            case .baseline:
-                Button("Save OFF baseline") { test.saveBaseline() }.buttonStyle(.borderedProminent)
+                    .disabled(!test.fieldBuildIsAuthoritative || !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized || test.membershipBusy)
+
+            case .baseline, .scanning:
+                Text("\(test.correlationWindowLabel) · \(test.correlationWindowInstruction)")
+                    .font(.headline)
+                LabeledContent("Fresh manager scan", value: test.correlationWindowIsScanning ? "Live" : "Starting…")
+                LabeledContent("Completed windows", value: "\(test.correlationCompletedWindowCount) / 4")
+                LabeledContent("Unique candidates this window", value: String(test.correlationObservedCandidateCount))
+                Button("Seal \(test.correlationWindowLabel) window") { test.finishCorrelationWindow() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!test.correlationWindowIsScanning)
+
             case .powerOn:
-                Text("Turn scooter ON, keep it still.").foregroundStyle(.secondary)
-                Button("Scan after power-on") { test.scanAfterPowerOn() }.buttonStyle(.borderedProminent)
-            case .scanning:
-                Button("Stop scan / require accepted UUID") { test.stopScan() }.buttonStyle(.bordered)
+                Text("Next: \(test.correlationWindowLabel) · \(test.correlationWindowInstruction)")
+                    .foregroundStyle(.secondary)
+                Button("Start \(test.correlationWindowLabel) window") { test.startNextCorrelationWindow() }
+                    .buttonStyle(.borderedProminent)
+
+            case .correlated:
+                Text("Correlation found one repeatable full UUID. Confirm it only as this attempt's correlated Bluetooth target.")
+                    .foregroundStyle(.secondary)
+                Button("Confirm correlated Bluetooth target") { test.confirmCorrelatedTarget() }
+                    .buttonStyle(.borderedProminent)
+
             default:
                 EmptyView()
             }
+
             ForEach(test.candidates.prefix(8)) { candidate in
-                Button { test.choose(candidate) } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text(candidate.title).bold()
-                            if candidate.likely {
-                                Text("PRIOR PHYSICAL UUID")
-                                    .font(.caption2.bold())
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(.green, in: Capsule())
-                                    .foregroundStyle(.black)
-                            }
-                            Spacer()
-                            Text("\(candidate.score)").monospacedDigit()
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(candidate.title).bold()
+                        if candidate.likely {
+                            Text("FRESH CORRELATION")
+                                .font(.caption2.bold())
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(.green, in: Capsule())
+                                .foregroundStyle(.black)
                         }
-                        Text("\(candidate.rssi.map { String($0) + " dBm" } ?? "RSSI ?") · \(candidate.id.uuidString)")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                        Text(candidate.evidence.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                        Spacer()
                     }
+                    Text(candidate.id.uuidString)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Text(candidate.evidence.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
             }
         }
         .card()
@@ -1669,7 +1950,7 @@ private struct SecureLinkView: View {
                 }
                 .buttonStyle(.borderedProminent)
             }
-            Text("Export includes exact build identity, physical target ID, SDK membership state, canonical generation/chronology, local-BLE status, terminal state, and opaque application-value projections. Account UID remains process-local and is not exported. It explicitly records rawFD50BytesCaptured=false, dpQueriesSent=false, and dpCommandsSent=false.")
+            Text("Export includes exact build identity, current-session correlation windows/catalogs + operator-confirmation state, selected target ID, SDK membership state, canonical generation/chronology, local-BLE status, terminal state, and opaque application-value projections. Account UID remains process-local and is not exported. It explicitly records rawFD50BytesCaptured=false, dpQueriesSent=false, and dpCommandsSent=false.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

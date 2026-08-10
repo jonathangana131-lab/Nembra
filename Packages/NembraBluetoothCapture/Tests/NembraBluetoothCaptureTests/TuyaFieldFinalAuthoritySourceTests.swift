@@ -23,24 +23,29 @@ struct TuyaFieldFinalAuthoritySourceTests {
     func scanCannotStartFromUIStateAlone() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let start = try section(in: source, from: "func startBaseline()", to: "private func beginBaselineScan()")
-        let begin = try section(in: source, from: "private func beginBaselineScan()", to: "func saveBaseline()")
+        let begin = try section(in: source, from: "private func beginBaselineScan()", to: "func startNextCorrelationWindow()")
 
         #expect(start.contains("guard privateConfig, sdkAccountLoggedIn"))
         #expect(start.contains("verifySDKMembership"))
         #expect(start.contains("beginBaselineScan()"))
         #expect(begin.contains("sdkAccountLoggedIn"))
         #expect(begin.contains("sdkDeviceMembershipVerified"))
-        #expect(begin.contains("scanForPeripherals"))
+        #expect(begin.contains("PassiveBluetoothPowerCycleObservationSession(minimumWindowDuration: 10)"))
+        #expect(begin.contains("startCurrentCorrelationWindow"))
     }
 
-    @Test("only the accepted prior physical identity can authorize a local candidate")
+    @Test("only fresh repeated correlation plus explicit confirmation can authorize a local candidate")
     func descriptiveRadioHintsCannotAuthorizeTarget() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        #expect(source.contains("var likely: Bool { knownID }"))
-        #expect(source.contains("knownID:"))
-        #expect(source.contains("knownPeripheral"))
+        #expect(source.contains("var likely: Bool { freshlyCorrelated }"))
+        #expect(source.contains("historicalCapturePeripheral"))
+        #expect(source.contains("matches C7D09A22 capture-local UUID descriptive"))
+        #expect(source.contains("case let .singleRepeatableCandidate(id):"))
+        #expect(source.contains("func confirmCorrelatedTarget"))
+        #expect(source.contains("operator-confirmed-fresh-power-cycle-correlation"))
+        #expect(!source.contains("var likely: Bool { knownID }"))
+        #expect(!source.contains("accepted-prior-physical-corebluetooth-uuid"))
         #expect(!source.contains("fd50 && tuyaCompany"))
-        #expect(source.contains("Descriptive hints cannot authorize"))
     }
 
     @Test("login success re-reads SDK authority and account errors redact the submitted identifier")

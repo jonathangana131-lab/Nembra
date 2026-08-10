@@ -28,14 +28,15 @@ struct TuyaFieldGoPrerequisiteSourceTests {
         #expect(app.contains("membershipDeviceID"))
         #expect(app.contains("ThingSmartUser.sharedInstance()?.uid"))
 
+        #expect(app.contains("PassiveBluetoothPowerCycleObservationSession(minimumWindowDuration: 10)"))
         guard let baseline = app.range(of: "func startBaseline()"),
-              let baselineScan = app.range(of: "scanForPeripherals", range: baseline.upperBound..<app.endIndex),
-              let baselineLease = app.range(of: "TuyaSDKAccountIdentityLeaseGate.verdict", range: baseline.upperBound..<baselineScan.lowerBound) else {
-            Issue.record("OFF-baseline discovery must revalidate the account-bound membership lease before scanning.")
+              let begin = app.range(of: "self.beginBaselineScan()", range: baseline.upperBound..<app.endIndex),
+              let baselineLease = app.range(of: "TuyaSDKAccountIdentityLeaseGate.verdict", range: baseline.upperBound..<begin.lowerBound) else {
+            Issue.record("OFF1 correlation must revalidate the account-bound membership lease before the package-owned producer starts.")
             return
         }
         #expect(baseline.lowerBound < baselineLease.lowerBound)
-        #expect(baselineLease.lowerBound < baselineScan.lowerBound)
+        #expect(baselineLease.lowerBound < begin.lowerBound)
     }
 
     @Test("account authority loss has a dedicated terminal instead of masquerading as continuity or disconnect")

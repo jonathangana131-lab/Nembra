@@ -29,7 +29,7 @@ struct TuyaTransportSuccessAuthoritySourceTests {
         #expect(sourceTerminal.lowerBound < settlement.lowerBound)
     }
 
-    @Test("duplicate success callbacks share one local-BLE settlement owner and auth rejection retires authority")
+    @Test("duplicate success callbacks share one local-BLE settlement owner and auth rejection retires chronology authority")
     func duplicateSuccessCannotStartParallelSettlement() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
@@ -49,11 +49,12 @@ struct TuyaTransportSuccessAuthoritySourceTests {
         #expect(handler.contains("session_auth_callback_rejected"))
 
         guard let rejected = handler.range(of: "session_auth_callback_rejected") else {
-            Issue.record("Authentication chronology rejection needs a terminal source-authority route.")
+            Issue.record("Authentication chronology rejection needs a terminal chronology-integrity route.")
             return
         }
         let prefix = String(handler[..<rejected.lowerBound])
-        #expect(prefix.contains("invalidateSourceAuthority"))
+        #expect(prefix.contains("invalidateChronologyIntegrity"))
+        #expect(app.contains("markChronologyIntegrityInvalidated"))
         #expect(!handler.contains("failLocally(\"Authenticated-session chronology rejected"))
     }
 
