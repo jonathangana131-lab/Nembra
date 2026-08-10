@@ -1,0 +1,142 @@
+name: V14 Capture Apple OAuth Failure Custody
+
+on:
+  push:
+    branches:
+      - recovery/v14-capture-apple-auth-e618-sol
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: recovery/v14-capture-apple-auth-e618-sol
+          fetch-depth: 0
+
+      - name: Guard Apple product successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'func loginWithApple(credential: ASAuthorizationAppleIDCredential)' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'redactedAppleOAuthError' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'submittedIdentityToken:' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Apple OAuth error presentation scrubs every submitted credential-shaped value' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAppleOAuthCredentialCustodySourceTests.swift
+
+      - name: Remove raw SDK error text and sensitive failure captures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          app = app_path.read_text()
+
+          old_failure = '''            failure: { [weak self] error in
+                Task { @MainActor in
+                    self?.finishAppleLoginFailure(
+                        error,
+                        submittedIdentityToken: identityToken,
+                        appleUserIdentifier: appleUserIdentifier,
+                        appleEmail: appleEmail
+                    )
+                }
+            }
+'''
+          new_failure = '''            failure: { [weak self] error in
+                Task { @MainActor in self?.finishAppleLoginFailure(error) }
+            }
+'''
+          if app.count(old_failure) != 1:
+              raise SystemExit('Apple OAuth failure callback guard did not match exactly once')
+          app = app.replace(old_failure, new_failure, 1)
+
+          start = app.index('    private func finishAppleLoginFailure(')
+          end = app.index('    private static func redactedError(', start)
+          old_block = app[start:end]
+          new_block = '''    private func finishAppleLoginFailure(_ error: Error?) {
+        busy = false
+        loggedIn = OfficialTuyaFactory.accountLoggedIn
+        let code = (error as NSError?)?.code ?? -1
+        status = "Tuya rejected the Apple-account login (code \\(code)). Exact scooter membership remains locked."
+    }
+
+'''
+          app = app[:start] + new_block + app[end:]
+          app_path.write_text(app)
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAppleOAuthCredentialCustodySourceTests.swift')
+          test_path.write_text('''import Foundation
+import Testing
+@testable import NembraBluetoothCapture
+
+@Suite("Capture Apple OAuth credential custody source boundary")
+struct TuyaAppleOAuthCredentialCustodySourceTests {
+    @Test("Apple OAuth failure presentation never consumes credential-shaped values or raw SDK error text")
+    func oauthCredentialMaterialCannotReachPresentation() throws {
+        let source = try read("NembraApp/App/NembraCaptureEntrypoint.swift")
+
+        #expect(source.contains("finishAppleLoginFailure(error)"))
+        #expect(source.contains("let code = (error as NSError?)?.code ?? -1"))
+        #expect(source.contains("Tuya rejected the Apple-account login (code \\(code))"))
+        #expect(!source.contains("submittedIdentityToken:"))
+        #expect(!source.contains("redactedAppleOAuthError"))
+        #expect(!source.contains("<redacted-apple-oauth>"))
+        #expect(!source.contains("Tuya rejected the Apple-account login: \\(error?.localizedDescription"))
+        #expect(!source.contains("log(\\\"apple_identity_token"))
+        #expect(!source.contains("UserDefaults.standard.set(identityToken"))
+        #expect(source.contains("loggedIn = OfficialTuyaFactory.accountLoggedIn"))
+        #expect(source.contains("if loggedIn { test.verifySDKMembership() }"))
+        #expect(source.contains("accountIdentityLeaseIsAuthorized"))
+        #expect(source.contains("sdkDeviceMembershipVerified"))
+        #expect(!source.contains("loggedIn = true"))
+    }
+
+    private func read(_ path: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+    }
+}
+''')
+          PY
+
+      - name: Verify custody and current truth
+        shell: bash
+        run: |
+          set -euo pipefail
+          app='NembraApp/App/NembraCaptureEntrypoint.swift'
+          test='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAppleOAuthCredentialCustodySourceTests.swift'
+          grep -Fq 'Task { @MainActor in self?.finishAppleLoginFailure(error) }' "$app"
+          grep -Fq 'let code = (error as NSError?)?.code ?? -1' "$app"
+          ! grep -Fq 'submittedIdentityToken:' "$app"
+          ! grep -Fq 'redactedAppleOAuthError' "$app"
+          grep -Fq 'func signOut()' "$app"
+          grep -Fq '.onChange(of: sdkAccount.loggedIn)' "$app"
+          grep -Fq 'failureRecoveryContextPanel' "$app"
+          grep -Fq 'SignInWithAppleButton(.signIn)' "$app"
+          swiftc -frontend -parse "$app"
+          swiftc -frontend -parse "$test"
+          git diff --check
+
+      - name: Commit clean custody hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow='.github/workflows/v14-capture-apple-oauth-error-custody.yml'
+          git rm "$workflow"
+          git add -A
+          git diff --cached --check
+          git config user.name 'nembra-v14-bot'
+          git config user.email 'nembra-v14-bot@users.noreply.github.com'
+          git commit -m 'harden(capture): keep Apple OAuth credentials out of error presentation'
+          git push origin HEAD:recovery/v14-capture-apple-auth-e618-sol
