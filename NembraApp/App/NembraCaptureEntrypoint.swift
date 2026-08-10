@@ -383,6 +383,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
         )
     }
 
+    var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }
+
     var accountIdentityLeaseIsAuthorized: Bool {
         TuyaSDKAccountIdentityLeaseGate.verdict(for: accountIdentityLeaseSnapshot) == .authorized
     }
@@ -446,10 +448,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
         guard currentConnectionToken == nil else {
-            failLocally(
-                "A prior authenticated generation has not been terminally retired. Relaunch Capture before starting another attempt.",
-                "active_generation_blocks_discovery_reset"
-            )
+            if let token = currentConnectionToken {
+                Task { @MainActor [weak self] in
+                    await self?.invalidateInternalLifecycle(
+                        token: token,
+                        message: "A prior authenticated generation was still active when a new correlation attempt was requested. The old generation was retired without manufacturing transport evidence.",
+                        kind: "active_generation_blocks_discovery_reset"
+                    )
+                }
+            }
             return
         }
 
@@ -621,7 +628,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
         guard currentConnectionToken == nil else {
             pendingCorrelatedTargetID = nil
-            failLocally("An authenticated generation already owns session authority. Relaunch Capture before confirming another target.", "active_generation_blocks_target_confirmation")
+            if let token = currentConnectionToken {
+                Task { @MainActor [weak self] in
+                    await self?.invalidateInternalLifecycle(
+                        token: token,
+                        message: "An authenticated generation unexpectedly still owned session authority during target confirmation. It was retired before any new target could be selected.",
+                        kind: "active_generation_blocks_target_confirmation"
+                    )
+                }
+            }
             return
         }
 
@@ -790,6 +805,18 @@ private final class SecureLinkController: NSObject, ObservableObject {
             failLocally("Tuya account/device authority changed before connection start.", "sdk_authority_changed")
             return
         }
+        guard currentConnectionToken == nil else {
+            if let token = currentConnectionToken {
+                Task { @MainActor [weak self] in
+                    await self?.invalidateInternalLifecycle(
+                        token: token,
+                        message: "A previous authenticated generation still owned session authority when a new Tuya connection was requested.",
+                        kind: "active_generation_blocks_authentication_start"
+                    )
+                }
+            }
+            return
+        }
         guard let newDriver = OfficialTuyaFactory.make() else {
             failLocally("Official Tuya provider is unavailable.", "sdk_provider_unavailable")
             return
@@ -806,37 +833,77 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
         Task { @MainActor [weak self] in
             guard let self else { return }
+
+            let token: TuyaReadOnlyConnectionToken
             do {
-                let token = try await self.sessionLedger.beginConnection()
-                try await self.sessionLedger.markAuthenticationStarted(for: token)
-                self.currentConnectionToken = token
-                await self.refreshLedgerSnapshot()
-                self.log("official_connect_requested", [
-                    "generation": String(token.diagnosticGeneration),
-                    "coreBluetoothID": candidate.id.uuidString,
-                    "tuyaDeviceID": self.deviceID,
-                    "tuyaUUID": self.tuyaUUID,
-                    "productID": self.productID
-                ])
-                newDriver.connect(
-                    deviceID: self.deviceID,
-                    uuid: self.tuyaUUID,
-                    productID: self.productID,
-                    onApplicationUpdate: { [weak self] update in
-                        Task { @MainActor in
-                            await self?.receivedApplicationUpdate(update, token: token)
-                        }
-                    },
-                    success: { [weak self] in
-                        Task { @MainActor in await self?.authenticated(token: token) }
-                    },
-                    failure: { [weak self] in
-                        Task { @MainActor in await self?.authenticationFailed(token: token) }
-                    }
-                )
+                token = try await self.sessionLedger.beginConnection()
             } catch {
                 self.failLocally("Could not create a fresh authenticated-session generation: \(error.localizedDescription)", "session_generation_failed")
+                return
             }
+
+            // App ownership begins as soon as the package mints the generation. A failure in the
+            // next sampled mutation therefore cannot strand a package token the app never knew.
+            self.currentConnectionToken = token
+            do {
+                try await self.sessionLedger.markAuthenticationStarted(for: token)
+            } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
+                do {
+                    try await self.sessionLedger.markInternalLifecycleFailure(for: token)
+                } catch {
+                    await self.refreshLedgerSnapshot()
+                    self.phase = .failed
+                    self.message = "Authentication-start chronology regressed and the no-clock terminal itself could not retire the generation. Relaunch Capture before another attempt."
+                    self.log("authentication_start_internal_terminal_failed", [
+                        "generation": String(token.diagnosticGeneration),
+                        "error": error.localizedDescription
+                    ])
+                    return
+                }
+                if self.currentConnectionToken == token {
+                    self.currentConnectionToken = nil
+                    self.localBLESettlementToken = nil
+                    self.sdkLocalBLEOnline = false
+                    self.driver = nil
+                }
+                await self.refreshLedgerSnapshot()
+                self.phase = .failed
+                self.message = "Authentication-start chronology regressed. The generation was retired without inventing a later timestamp."
+                self.log("authentication_start_clock_regressed", ["generation": String(token.diagnosticGeneration)])
+                return
+            } catch {
+                await self.invalidateInternalLifecycle(
+                    token: token,
+                    message: "Authentication-start lifecycle was rejected before the Tuya driver could own the session.",
+                    kind: "authentication_start_lifecycle_rejected"
+                )
+                return
+            }
+
+            await self.refreshLedgerSnapshot()
+            self.log("official_connect_requested", [
+                "generation": String(token.diagnosticGeneration),
+                "coreBluetoothID": candidate.id.uuidString,
+                "tuyaDeviceID": self.deviceID,
+                "tuyaUUID": self.tuyaUUID,
+                "productID": self.productID
+            ])
+            newDriver.connect(
+                deviceID: self.deviceID,
+                uuid: self.tuyaUUID,
+                productID: self.productID,
+                onApplicationUpdate: { [weak self] update in
+                    Task { @MainActor in
+                        await self?.receivedApplicationUpdate(update, token: token)
+                    }
+                },
+                success: { [weak self] in
+                    Task { @MainActor in await self?.authenticated(token: token) }
+                },
+                failure: { [weak self] in
+                    Task { @MainActor in await self?.authenticationFailed(token: token) }
+                }
+            )
         }
     }
 
@@ -889,7 +956,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
         let acquisitionStarted = DispatchTime.now().uptimeNanoseconds
         while currentConnectionToken == token, phase == .authenticating {
-            guard accountIdentityLeaseIsAuthorized else {
+            guard sdkAccountLoggedIn,
+                  sdkDeviceMembershipVerified,
+                  accountIdentityLeaseIsAuthorized else {
                 await invalidateSourceAuthority(
                     token: token,
                     message: "Tuya account/device source authority changed while local BLE status was settling.",
@@ -918,10 +987,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
                         "localBLEOnline": "true"
                     ])
                     startWatchdog(token: token)
-                } catch {
-                    await invalidateSourceAuthority(
+                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
+                    await invalidateInternalLifecycle(
                         token: token,
-                        message: "Authenticated-session chronology rejected the SDK success callback: \(error.localizedDescription)",
+                        message: "Authenticated-session chronology regressed while promoting Tuya transport success. The generation was retired without manufacturing source or continuity evidence.",
+                        kind: "session_auth_clock_regressed"
+                    )
+                } catch {
+                    await invalidateInternalLifecycle(
+                        token: token,
+                        message: "Authenticated-session lifecycle rejected the SDK success callback: \(error.localizedDescription)",
                         kind: "session_auth_callback_rejected"
                     )
                 }
@@ -939,9 +1014,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 return
 
             case .invalidClock:
-                await authenticationAcquisitionFailed(
+                await invalidateInternalLifecycle(
                     token: token,
-                    message: "Local-BLE settlement failed closed because the monotonic clock regressed.",
+                    message: "Local-BLE settlement failed closed because the monotonic clock regressed. No authentication or source-authority fact was manufactured.",
                     kind: "sdk_local_ble_settlement_clock_invalid"
                 )
                 return
@@ -952,6 +1027,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private func authenticationFailed(token: TuyaReadOnlyConnectionToken) async {
         guard currentConnectionToken == token else {
             log("stale_connect_failure_ignored", ["generation": String(token.diagnosticGeneration)])
+            return
+        }
+        guard sdkAccountLoggedIn,
+              sdkDeviceMembershipVerified,
+              accountIdentityLeaseIsAuthorized else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "Tuya account/device source authority had already changed when the SDK failure callback arrived.",
+                kind: "sdk_source_authority_lost_before_failure_callback"
+            )
             return
         }
         await authenticationAcquisitionFailed(
@@ -967,7 +1052,33 @@ private final class SecureLinkController: NSObject, ObservableObject {
         kind: String
     ) async {
         guard currentConnectionToken == token else { return }
-        try? await sessionLedger.markAuthenticationFailed(for: token)
+        do {
+            try await sessionLedger.markAuthenticationFailed(for: token)
+        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
+            do {
+                try await sessionLedger.markInternalLifecycleFailure(for: token)
+            } catch {
+                await refreshLedgerSnapshot()
+                log("authentication_failure_internal_terminal_failed", [
+                    "generation": String(token.diagnosticGeneration),
+                    "error": error.localizedDescription
+                ])
+                return
+            }
+        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
+            log("stale_authentication_failure_terminal_ignored", ["generation": String(token.diagnosticGeneration)])
+            return
+        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {
+            log("retired_authentication_failure_terminal_ignored", ["generation": String(token.diagnosticGeneration)])
+            return
+        } catch {
+            await invalidateInternalLifecycle(
+                token: token,
+                message: "Authentication-failure lifecycle could not be recorded cleanly: \(error.localizedDescription)",
+                kind: "authentication_failure_terminal_rejected"
+            )
+            return
+        }
         currentConnectionToken = nil
         localBLESettlementToken = nil
         sdkLocalBLEOnline = false
@@ -1017,6 +1128,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 "generation": String(token.diagnosticGeneration)
             ]) { current, _ in current })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
+        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
+            await invalidateInternalLifecycle(
+                token: token,
+                message: "Application-receipt chronology regressed. The generation was retired without relabeling the failure as an observation gap.",
+                kind: "application_update_clock_regressed"
+            )
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
             log("stale_application_update_ignored", ["generation": String(token.diagnosticGeneration)])
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {
@@ -1043,23 +1160,21 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
                 let now = DispatchTime.now().uptimeNanoseconds
                 guard now >= previousPollUptime else {
-                    do {
-                        try await sessionLedger.markObservationContinuityInvalidated(for: token)
-                    } catch {}
-                    self.currentConnectionToken = nil
-                    await self.refreshLedgerSnapshot()
-                    self.failLocally("Authenticated observation continuity was interrupted by a monotonic-clock regression.", "observation_clock_regressed")
+                    await self.invalidateInternalLifecycle(
+                        token: token,
+                        message: "Authenticated observation chronology regressed. The generation was retired through the no-clock lifecycle terminal.",
+                        kind: "observation_clock_regressed"
+                    )
                     return
                 }
 
                 let gap = now - previousPollUptime
                 guard gap <= Self.maximumObservationPollGapNanoseconds else {
-                    do {
-                        try await sessionLedger.markObservationContinuityInvalidated(for: token)
-                    } catch {}
-                    self.currentConnectionToken = nil
-                    await self.refreshLedgerSnapshot()
-                    self.failLocally("Authenticated observation continuity was interrupted; the gap is not evidence that BLE disconnected.", "observation_poll_gap_exceeded")
+                    await self.invalidateObservationContinuity(
+                        token: token,
+                        message: "Authenticated observation continuity was interrupted; the scheduling gap is not evidence that BLE disconnected.",
+                        kind: "observation_poll_gap_exceeded"
+                    )
                     return
                 }
                 previousPollUptime = now
@@ -1084,6 +1199,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 do {
                     try await self.sessionLedger.observeCurrentConnection(for: token)
                     await self.refreshLedgerSnapshot()
+                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
+                    await self.invalidateInternalLifecycle(
+                        token: token,
+                        message: "Authenticated liveness chronology regressed while observing the current connection.",
+                        kind: "session_liveness_clock_regressed"
+                    )
+                    return
                 } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
                     self.log("stale_watchdog_generation_retired", ["generation": String(token.diagnosticGeneration)])
                     return
@@ -1118,7 +1240,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                         return
                     }
                     do {
-                        try await sessionLedger.sealAcceptedObservation(for: token)
+                        try await self.sessionLedger.sealAcceptedObservation(for: token)
                         self.currentConnectionToken = nil
                         await self.refreshLedgerSnapshot()
                         self.phase = .accepted
@@ -1129,6 +1251,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
                             "buildIdentifier": self.buildIdentity.buildIdentifier,
                             "sourceCommitSHA": self.buildIdentity.sourceCommitSHA
                         ])
+                    } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
+                        await self.invalidateInternalLifecycle(
+                            token: token,
+                            message: "Canonical acceptance could not be sealed because monotonic chronology regressed.",
+                            kind: "accepted_prefix_seal_clock_regressed"
+                        )
                     } catch {
                         await self.invalidateObservationContinuity(
                             token: token,
@@ -1145,9 +1273,30 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 if (self.canonicalObservedAgeSeconds ?? 0) > 60,
                    self.applicationUpdateCount == 0 {
                     do {
-                        try await sessionLedger.markApplicationObservationTimedOut(for: token)
-                    } catch {}
+                        try await self.sessionLedger.markApplicationObservationTimedOut(for: token)
+                    } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
+                        await self.invalidateInternalLifecycle(
+                            token: token,
+                            message: "The no-application observation deadline encountered a monotonic-clock regression.",
+                            kind: "authenticated_application_timeout_clock_regressed"
+                        )
+                        return
+                    } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
+                        self.log("stale_application_timeout_ignored", ["generation": String(token.diagnosticGeneration)])
+                        return
+                    } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {
+                        self.log("retired_application_timeout_ignored", ["generation": String(token.diagnosticGeneration)])
+                        return
+                    } catch {
+                        await self.invalidateInternalLifecycle(
+                            token: token,
+                            message: "The no-application observation terminal was rejected: \(error.localizedDescription)",
+                            kind: "authenticated_application_timeout_terminal_rejected"
+                        )
+                        return
+                    }
                     self.currentConnectionToken = nil
+                    self.localBLESettlementToken = nil
                     self.sdkLocalBLEOnline = false
                     self.driver = nil
                     await self.refreshLedgerSnapshot()
@@ -1164,7 +1313,42 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken) async {
         guard currentConnectionToken == token else { return }
-        try? await sessionLedger.endConnection(for: token)
+        do {
+            try await sessionLedger.endConnection(for: token)
+        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
+            do {
+                try await sessionLedger.markInternalLifecycleFailure(for: token)
+            } catch {
+                await refreshLedgerSnapshot()
+                log("transport_loss_internal_terminal_failed", [
+                    "generation": String(token.diagnosticGeneration),
+                    "error": error.localizedDescription
+                ])
+                return
+            }
+            currentConnectionToken = nil
+            localBLESettlementToken = nil
+            sdkLocalBLEOnline = false
+            driver = nil
+            await refreshLedgerSnapshot()
+            phase = .failed
+            message = "Tuya local BLE was observed offline, but ledger chronology regressed while retiring the session. Treat this as an internal lifecycle failure."
+            log("sdk_local_ble_drop_clock_regressed", ["generation": String(token.diagnosticGeneration)])
+            return
+        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
+            log("stale_transport_loss_ignored", ["generation": String(token.diagnosticGeneration)])
+            return
+        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {
+            log("retired_transport_loss_ignored", ["generation": String(token.diagnosticGeneration)])
+            return
+        } catch {
+            await invalidateInternalLifecycle(
+                token: token,
+                message: "Observed local-BLE loss could not be committed to the session ledger: \(error.localizedDescription)",
+                kind: "sdk_local_ble_drop_terminal_rejected"
+            )
+            return
+        }
         currentConnectionToken = nil
         localBLESettlementToken = nil
         sdkLocalBLEOnline = false
@@ -1181,7 +1365,42 @@ private final class SecureLinkController: NSObject, ObservableObject {
         kind: String
     ) async {
         guard currentConnectionToken == token else { return }
-        try? await sessionLedger.markSourceAuthorityInvalidated(for: token)
+        do {
+            try await sessionLedger.markSourceAuthorityInvalidated(for: token)
+        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
+            do {
+                try await sessionLedger.markInternalLifecycleFailure(for: token)
+            } catch {
+                await refreshLedgerSnapshot()
+                log("source_authority_internal_terminal_failed", [
+                    "generation": String(token.diagnosticGeneration),
+                    "error": error.localizedDescription
+                ])
+                return
+            }
+            currentConnectionToken = nil
+            localBLESettlementToken = nil
+            sdkLocalBLEOnline = false
+            driver = nil
+            await refreshLedgerSnapshot()
+            phase = .failed
+            self.message = "Source authority changed, but the ledger clock regressed while recording that terminal. The generation was retired as an internal lifecycle failure."
+            log("source_authority_clock_regressed", ["generation": String(token.diagnosticGeneration)])
+            return
+        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
+            log("stale_source_authority_terminal_ignored", ["generation": String(token.diagnosticGeneration)])
+            return
+        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {
+            log("retired_source_authority_terminal_ignored", ["generation": String(token.diagnosticGeneration)])
+            return
+        } catch {
+            await invalidateInternalLifecycle(
+                token: token,
+                message: "Source-authority terminal failed closed: \(error.localizedDescription)",
+                kind: "source_authority_terminal_rejected"
+            )
+            return
+        }
         currentConnectionToken = nil
         localBLESettlementToken = nil
         sdkLocalBLEOnline = false
@@ -1198,7 +1417,78 @@ private final class SecureLinkController: NSObject, ObservableObject {
         kind: String
     ) async {
         guard currentConnectionToken == token else { return }
-        try? await sessionLedger.markObservationContinuityInvalidated(for: token)
+        do {
+            try await sessionLedger.markObservationContinuityInvalidated(for: token)
+        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
+            do {
+                try await sessionLedger.markInternalLifecycleFailure(for: token)
+            } catch {
+                await refreshLedgerSnapshot()
+                log("continuity_internal_terminal_failed", [
+                    "generation": String(token.diagnosticGeneration),
+                    "error": error.localizedDescription
+                ])
+                return
+            }
+            currentConnectionToken = nil
+            localBLESettlementToken = nil
+            sdkLocalBLEOnline = false
+            driver = nil
+            await refreshLedgerSnapshot()
+            phase = .failed
+            self.message = "Observation continuity was invalid, but ledger chronology regressed while recording that terminal. The generation was retired as an internal lifecycle failure."
+            log("observation_continuity_clock_regressed", ["generation": String(token.diagnosticGeneration)])
+            return
+        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
+            log("stale_continuity_terminal_ignored", ["generation": String(token.diagnosticGeneration)])
+            return
+        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {
+            log("retired_continuity_terminal_ignored", ["generation": String(token.diagnosticGeneration)])
+            return
+        } catch {
+            await invalidateInternalLifecycle(
+                token: token,
+                message: "Observation-continuity terminal failed closed: \(error.localizedDescription)",
+                kind: "observation_continuity_terminal_rejected"
+            )
+            return
+        }
+        currentConnectionToken = nil
+        localBLESettlementToken = nil
+        sdkLocalBLEOnline = false
+        driver = nil
+        await refreshLedgerSnapshot()
+        phase = .failed
+        self.message = message
+        log(kind, ["generation": String(token.diagnosticGeneration)])
+    }
+
+    private func invalidateInternalLifecycle(
+        token: TuyaReadOnlyConnectionToken,
+        message: String,
+        kind: String
+    ) async {
+        guard currentConnectionToken == token else { return }
+        do {
+            try await sessionLedger.markInternalLifecycleFailure(for: token)
+        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
+            await refreshLedgerSnapshot()
+            log("stale_internal_lifecycle_terminal_ignored", ["generation": String(token.diagnosticGeneration)])
+            return
+        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {
+            await refreshLedgerSnapshot()
+            log("retired_internal_lifecycle_terminal_ignored", ["generation": String(token.diagnosticGeneration)])
+            return
+        } catch {
+            await refreshLedgerSnapshot()
+            phase = .failed
+            self.message = "Internal lifecycle retirement failed closed. Relaunch Capture before another attempt."
+            log("internal_lifecycle_terminal_failed", [
+                "generation": String(token.diagnosticGeneration),
+                "error": error.localizedDescription
+            ])
+            return
+        }
         currentConnectionToken = nil
         localBLESettlementToken = nil
         sdkLocalBLEOnline = false
@@ -1822,7 +2112,7 @@ private struct SecureLinkView: View {
     private var authorityCard: some View {
         VStack(alignment: .leading, spacing: 7) {
             Label("Official Tuya authority", systemImage: "checkmark.shield").font(.headline)
-            LabeledContent("Field build", value: test.accountIdentityLeaseIsAuthorized && test.sdkDeviceMembershipVerified ? "Authority checked" : "Not ready")
+            LabeledContent("Field build", value: test.fieldBuildIsAuthoritative ? "Exact provenance" : "Not authoritative")
             LabeledContent("Private SDK config", value: test.privateConfig ? "Present" : "Missing")
             LabeledContent("SDK account logged in", value: test.sdkAccountLoggedIn ? "Yes" : "No")
             LabeledContent("Exact scooter membership", value: test.sdkDeviceMembershipVerified && test.accountIdentityLeaseIsAuthorized ? "Verified for current account" : test.membershipBusy ? "Checking…" : "Not verified")
@@ -1832,8 +2122,8 @@ private struct SecureLinkView: View {
                     .buttonStyle(.bordered)
                     .disabled(test.membershipBusy)
             }
-            if !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized {
-                Text("NO PHYSICAL BLE TEST YET: the private exact field build, current SDK account identity, and exact scooter membership must all be proven before even the OFF baseline scan can start.")
+            if !test.fieldBuildIsAuthoritative || !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized {
+                Text("NO PHYSICAL BLE TEST YET: exact compiled field-build provenance, private SDK configuration, current SDK account identity, and exact scooter membership must all be proven before OFF1 correlation can start.")
                     .font(.footnote.bold())
                     .foregroundStyle(.orange)
             }
@@ -1852,7 +2142,7 @@ private struct SecureLinkView: View {
             case .idle, .failed:
                 Button("Start OFF1 correlation") { test.startBaseline() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(!test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized || test.membershipBusy)
+                    .disabled(!test.fieldBuildIsAuthoritative || !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized || test.membershipBusy)
 
             case .baseline, .scanning:
                 Text("\(test.correlationWindowLabel) · \(test.correlationWindowInstruction)")
