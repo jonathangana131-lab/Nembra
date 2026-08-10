@@ -14,7 +14,9 @@ struct TuyaMetadataStatusSecretRedactionSourceTests {
         )
         let body = String(load)
 
-        #expect(body.contains("selectedDeviceStatus = Self.redactSecrets(statusMap) as? [String: Any] ?? [:]"))
+        #expect(body.contains("selectedDeviceStatus = Self.redactAccountUID("))
+        #expect(body.contains("Self.redactSecrets(statusMap),"))
+        #expect(body.contains("accountUID: accountUID"))
         #expect(!body.contains("selectedDeviceStatus = statusMap"))
     }
 
@@ -29,6 +31,7 @@ struct TuyaMetadataStatusSecretRedactionSourceTests {
         let body = String(export)
 
         #expect(body.contains("\"status\": Self.redactSecrets(selectedDeviceStatus ?? [:])"))
+        #expect(body.contains("Self.redactAccountUID(envelope, accountUID: accountUID)"))
         #expect(!body.contains("\"status\": selectedDeviceStatus ?? [:]"))
     }
 
