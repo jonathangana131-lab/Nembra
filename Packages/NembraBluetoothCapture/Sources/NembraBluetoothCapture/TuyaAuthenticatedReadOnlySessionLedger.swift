@@ -96,10 +96,10 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         method: TuyaReadOnlyAuthenticationMethod
     ) throws {
         try requireCurrent(token)
-        switch authenticationState {
-        case .waitingForAuthentication, .authenticating:
-            break
-        case .unavailable, .authenticated, .failed:
+        // The current generation must contain an explicit authentication-start event.
+        // A success callback cannot jump directly from a newly minted connection into
+        // authenticated state merely by carrying an accepted method label.
+        guard case .authenticating = authenticationState else {
             throw MutationError.invalidAuthenticationTransition
         }
 
@@ -118,9 +118,9 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     public func markAuthenticationFailed(for token: TuyaReadOnlyConnectionToken) throws {
         try requireCurrent(token)
         switch authenticationState {
-        case .waitingForAuthentication, .authenticating, .authenticated:
+        case .authenticating, .authenticated:
             break
-        case .unavailable, .failed:
+        case .waitingForAuthentication, .unavailable, .failed:
             throw MutationError.invalidAuthenticationTransition
         }
 
