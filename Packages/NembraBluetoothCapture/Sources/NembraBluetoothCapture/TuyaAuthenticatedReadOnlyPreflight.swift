@@ -1,5 +1,15 @@
 import Foundation
 
+/// The only authentication routes currently allowed to mint authenticated-session provenance.
+///
+/// `cloud local_key` is deliberately absent. Tuya cloud metadata can retain that secret for
+/// future supported use, but it is not mechanically equivalent to documented FD50 BLE
+/// authentication material and must never unlock the physical preflight by itself.
+public enum TuyaReadOnlyAuthenticationMethod: String, Codable, Equatable, Sendable {
+    case smartLifeAppSDK = "tuya-smartlife-sdk"
+    case documentedDeviceSharing = "tuya-device-sharing"
+}
+
 /// Non-secret milestones for the physical Tuya authentication gate.
 /// No token, device key, session key, nonce, password, or plaintext credential belongs here.
 public struct TuyaAuthenticatedReadOnlyPreflightSnapshot: Equatable, Sendable {
@@ -12,6 +22,7 @@ public struct TuyaAuthenticatedReadOnlyPreflightSnapshot: Equatable, Sendable {
     }
 
     public let authenticationState: AuthenticationState
+    public let authenticationMethod: TuyaReadOnlyAuthenticationMethod?
     public let connectionStartedAtUptimeNanoseconds: UInt64?
     public let authenticatedAtUptimeNanoseconds: UInt64?
     public let latestObservedUptimeNanoseconds: UInt64?
@@ -20,6 +31,7 @@ public struct TuyaAuthenticatedReadOnlyPreflightSnapshot: Equatable, Sendable {
 
     public init(
         authenticationState: AuthenticationState,
+        authenticationMethod: TuyaReadOnlyAuthenticationMethod? = nil,
         connectionStartedAtUptimeNanoseconds: UInt64?,
         authenticatedAtUptimeNanoseconds: UInt64?,
         latestObservedUptimeNanoseconds: UInt64?,
@@ -27,6 +39,7 @@ public struct TuyaAuthenticatedReadOnlyPreflightSnapshot: Equatable, Sendable {
         connectionGeneration: UInt64
     ) {
         self.authenticationState = authenticationState
+        self.authenticationMethod = authenticationMethod
         self.connectionStartedAtUptimeNanoseconds = connectionStartedAtUptimeNanoseconds
         self.authenticatedAtUptimeNanoseconds = authenticatedAtUptimeNanoseconds
         self.latestObservedUptimeNanoseconds = latestObservedUptimeNanoseconds
@@ -64,6 +77,9 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
                 break
             }
         }
+        guard snapshot.authenticationMethod != nil else {
+            return .blocked(reason: "Authenticated state has no accepted Tuya authentication provenance.")
+        }
         guard snapshot.applicationPayloadCount > 0 else {
             return .blocked(reason: "Authenticated session has not produced an application payload yet.")
         }
@@ -83,7 +99,9 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
 ///
 /// Implementations may perform only documented authentication/session-establishment transport
 /// writes and authenticated reads/notification decryption. They must not expose generic GATT
-/// writes or DP control through this protocol.
+/// writes or DP control through this protocol. An implementation must also report which accepted
+/// authentication method actually established the current generation; possession of a cloud
+/// `local_key` alone is not accepted authentication provenance.
 public protocol TuyaReadOnlyAuthenticationSessionProvider: Sendable {
     func currentPreflightSnapshot() async -> TuyaAuthenticatedReadOnlyPreflightSnapshot
 }
