@@ -93,9 +93,31 @@ jobs:
           raise SystemExit(int(status))
           PY
           fi
+
           plist='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
-          test -f "$plist"
-          test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
-          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$sha"
-          test "$(plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist")" = "$dependency_sha"
-          test "$(plutil -extract NembraCaptureProcedureIdentifier raw -o - "$plist")" = "$procedure"
+          if [[ ! -f "$plist" ]]; then
+            echo '::error title=Stamped Simulator provenance::built app Info.plist is missing'
+            exit 1
+          fi
+
+          failures=0
+          check_plist() {
+            local key="$1" expected="$2" actual=''
+            if ! actual="$(plutil -extract "$key" raw -o - "$plist" 2>/dev/null)"; then
+              echo "::error title=Stamped Simulator provenance::$key is missing from built Info.plist"
+              failures=$((failures + 1))
+              return
+            fi
+            if [[ "$actual" != "$expected" ]]; then
+              echo "::error title=Stamped Simulator provenance::$key mismatch: expected '$expected', got '$actual'"
+              failures=$((failures + 1))
+            else
+              echo "$key=$actual"
+            fi
+          }
+
+          check_plist NembraCaptureBuildIdentifier "$label"
+          check_plist NembraCaptureSourceCommitSHA "$sha"
+          check_plist NembraCaptureTuyaDependencyLockSHA256 "$dependency_sha"
+          check_plist NembraCaptureProcedureIdentifier "$procedure"
+          test "$failures" = '0'
