@@ -25,18 +25,13 @@ say "Validating official Tuya SDK provisioning"
 "$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"
 [[ -d "$ROOT/NembraCapture.xcworkspace" ]] || die "NembraCapture.xcworkspace was not generated. Do not use NembraCapture.xcodeproj for the authenticated field build."
 
-# AppKey/AppSecret are private launch material. Prefer caller-provided shell
-# variables; otherwise collect them without echoing or writing them to disk.
-if [[ -z "${NEMBRA_TUYA_APP_KEY:-}" ]]; then
-    read -r -p "Tuya SmartLife SDK AppKey for com.jonathangana131.nembra.capturelearn: " NEMBRA_TUYA_APP_KEY
-fi
-if [[ -z "${NEMBRA_TUYA_APP_SECRET:-}" ]]; then
-    read -r -s -p "Tuya SmartLife SDK AppSecret (input hidden): " NEMBRA_TUYA_APP_SECRET
-    printf '\n'
-fi
-[[ -n "$NEMBRA_TUYA_APP_KEY" ]] || die "Tuya AppKey is required."
-[[ -n "$NEMBRA_TUYA_APP_SECRET" ]] || die "Tuya AppSecret is required."
-export NEMBRA_TUYA_APP_KEY NEMBRA_TUYA_APP_SECRET
+# IMPORTANT: AppKey/AppSecret are intentionally NOT accepted by this installer.
+# The previous launcher serialized those values into a literal devicectl
+# --environment-variables argument, exposing private material through the host
+# process argument vector during launch. Until a separately reviewed private
+# runtime-provisioning boundary exists, this helper may build/install the exact
+# SDK-integrated app but must not claim to launch an authenticated field subject.
+unset NEMBRA_TUYA_APP_KEY NEMBRA_TUYA_APP_SECRET || true
 
 say "Finding connected iPhone"
 DEVICE_ROWS="$(xcrun xctrace list devices 2>/dev/null | /usr/bin/python3 -c '
@@ -142,35 +137,15 @@ if [[ "$INSTALLED" != "1" ]]; then
     die "The app built successfully, but the iPhone never became ready for installation. Keep it unlocked and connected, wait for Xcode to finish Preparing/Connecting, then run this installer again."
 fi
 
-# ProcessInfo.environment only contains launch-time values. Launch this exact
-# field process with the private app credentials without writing them to Git or
-# the diagnostic artifact. If the process is later killed, rerun this installer
-# (or launch from Xcode with the same private environment) before testing.
-LAUNCH_ENV_JSON="$(/usr/bin/python3 - <<'PY'
-import json, os
-print(json.dumps({
-    "NEMBRA_TUYA_APP_KEY": os.environ["NEMBRA_TUYA_APP_KEY"],
-    "NEMBRA_TUYA_APP_SECRET": os.environ["NEMBRA_TUYA_APP_SECRET"],
-}, separators=(",", ":")))
-PY
-)"
-
-say "Launching the privately provisioned stationary candidate"
-if ! xcrun devicectl device process launch \
-    --device "$DEVICE_UDID" \
-    --activate \
-    --environment-variables "$LAUNCH_ENV_JSON" \
-    "$BUNDLE_ID" >/dev/null; then
-    unset LAUNCH_ENV_JSON NEMBRA_TUYA_APP_KEY NEMBRA_TUYA_APP_SECRET
-    die "Capture installed, but devicectl could not launch it with private Tuya app credentials. Do not run the physical test from a manual launch."
-fi
-unset LAUNCH_ENV_JSON NEMBRA_TUYA_APP_KEY NEMBRA_TUYA_APP_SECRET
-
-say "AUTHENTICATED CAPTURE CANDIDATE LAUNCHED"
+say "SDK-INTEGRATED CAPTURE INSTALLED — PHYSICAL NO-GO"
 printf '%s\n' \
-    "Keep the iPhone connected/unlocked for this first preflight." \
+    "The exact SDK-integrated app is installed, but this helper deliberately did NOT launch it with Tuya AppKey/AppSecret." \
+    "The former devicectl launch path exposed those private values through host process arguments and is not an accepted field-provisioning boundary." \
     "Do NOT repeat the old 17-step ride capture." \
-    "If Capture says SDK account authorized = No, STOP: account authorization is still an external blocker." \
-    "Only if the app itself shows the official Tuya gate ready: keep the scooter stationary, run OFF→ON identification, then Start secure read-only test." \
-    "PASS requires Tuya local BLE online, at least one genuine DP/application update, and more than 45 seconds of authenticated continuity." \
-    "If any gate fails, prepare/share the sanitized diagnostic JSON and stop. No outdoor ride is authorized by this installer."
+    "Do NOT treat a manual Home Screen launch as the authenticated test; without accepted private runtime provisioning the app must remain fail-closed." \
+    "Next engineering gate: provide the Tuya app identity through a separately reviewed private runtime/build channel that puts no secret value in Git, logs, host argv, or the diagnostic export." \
+    "After that exact field build is accepted, the first physical action remains one stationary secure-link test only."
+
+# Nonzero is intentional: installation is a useful software checkpoint, but
+# this script no longer reaches a field-authorizing launch state.
+exit 3
