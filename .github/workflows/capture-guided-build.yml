@@ -40,6 +40,13 @@ jobs:
             exit 1
           fi
 
+      - name: Test Tuya authenticated preflight authority
+        run: |
+          set -euo pipefail
+          swift test \
+            --package-path Packages/NembraBluetoothCapture \
+            --filter TuyaAuthenticatedReadOnlyPreflightTests
+
       - name: Build iOS Simulator app
         run: |
           set -o pipefail
