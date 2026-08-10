@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - fix/v14-capture-correlation-progress-truth-current-sol
+  pull_request:
+    branches:
+      - product/v14-capture-guided-truth-current-sol
 
 permissions:
   contents: write
