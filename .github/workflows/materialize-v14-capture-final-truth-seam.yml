@@ -6,6 +6,12 @@ on:
       - agent/v14-capture-final-truth-seam-sol
     paths:
       - .github/workflows/materialize-v14-capture-final-truth-seam.yml
+  pull_request:
+    branches:
+      - product/v14-capture-guided-truth-current-sol
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - .github/workflows/materialize-v14-capture-final-truth-seam.yml
 
 permissions:
   contents: write
