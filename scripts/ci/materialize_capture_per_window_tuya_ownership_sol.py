@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+from pathlib import Path
+
+app_path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationPerWindowBLEOwnershipSourceTests.swift")
+text = app_path.read_text(encoding="utf-8")
+
+old = '''        guard sdkAccountLoggedIn,
+              sdkDeviceMembershipVerified,
+              accountIdentityLeaseIsAuthorized else {
+            correlationSession?.abandonCurrentWindow()
+            correlationSession = nil
+            failLocally("SDK account/device authority changed before the next correlation window.", "sdk_authority_changed_during_target_correlation")
+            return
+        }
+        guard let session = correlationSession,
+'''
+new = '''        guard sdkAccountLoggedIn,
+              sdkDeviceMembershipVerified,
+              accountIdentityLeaseIsAuthorized else {
+            correlationSession?.abandonCurrentWindow()
+            correlationSession = nil
+            failLocally("SDK account/device authority changed before the next correlation window.", "sdk_authority_changed_during_target_correlation")
+            return
+        }
+        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {
+            correlationSession?.abandonCurrentWindow()
+            correlationSession = nil
+            failLocally(
+                "Tuya reacquired local-BLE ownership before this correlation window could start. Restart the complete OFF1→ON1→OFF2→ON2 series from a fresh OFF1 attempt; Capture will not run a package-owned scanner while Tuya owns this scooter.",
+                "sdk_local_ble_ownership_changed_during_target_correlation"
+            )
+            return
+        }
+        guard let session = correlationSession,
+'''
+if text.count(old) != 1:
+    raise SystemExit(f"expected one startCurrentCorrelationWindow admission block, found {text.count(old)}")
+text = text.replace(old, new, 1)
+app_path.write_text(text, encoding="utf-8")
+
+test_path.write_text(r'''import Foundation
+import Testing
+@testable import NembraBluetoothCapture
+
+@Suite("Capture per-window Tuya BLE ownership")
+struct TuyaCorrelationPerWindowBLEOwnershipSourceTests {
+    @Test("every fresh correlation window rechecks global Tuya local-BLE ownership before package scan")
+    func everyWindowRechecksGlobalOwnership() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let window = try section(
+            in: app,
+            from: "private func startCurrentCorrelationWindow()",
+            to: "func finishCorrelationWindow()"
+        )
+        let body = String(window)
+
+        guard let ownershipRead = body.range(of: "OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID)"),
+              let scannerStart = body.range(of: "try session.startCurrentWindow()") else {
+            Issue.record("Each fresh OFF1/ON1/OFF2/ON2 scanner window must synchronously recheck process-global Tuya local-BLE ownership before package-owned scanning starts.")
+            throw SourceContractError.sectionMissing
+        }
+
+        #expect(ownershipRead.lowerBound < scannerStart.lowerBound)
+        #expect(body[ownershipRead.upperBound..<scannerStart.lowerBound].contains("return"))
+        #expect(body.contains("sdk_local_ble_ownership_changed_during_target_correlation"))
+        #expect(body.contains("correlationSession?.abandonCurrentWindow()"))
+        #expect(body.contains("correlationSession = nil"))
+    }
+
+    @Test("the shared window-start path owns every OFF1 ON1 OFF2 ON2 scanner admission")
+    func sharedWindowStartPathOwnsSeries() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let begin = try section(
+            in: app,
+            from: "private func beginCorrelationSeries()",
+            to: "func finishCorrelationWindow()"
+        )
+        let body = String(begin)
+        #expect(body.contains("startCurrentCorrelationWindow()"))
+        #expect(body.contains("func startNextCorrelationWindow()"))
+    }
+
+    @Test("per-window ownership fence remains observation-only and cannot mutate scooter state")
+    func ownershipFenceIsReadOnly() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let window = try section(
+            in: app,
+            from: "private func startCurrentCorrelationWindow()",
+            to: "func finishCorrelationWindow()"
+        )
+        let body = String(window)
+        #expect(!body.contains("disconnectBLE"))
+        #expect(!body.contains("publishDps"))
+        #expect(!body.contains("queryDps"))
+        #expect(!body.contains("writeValue"))
+        #expect(!body.contains("sessionLedger.endConnection"))
+    }
+
+    private func section(in source: String, from start: String, to end: String) throws -> Substring {
+        guard let startRange = source.range(of: start),
+              let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+            throw SourceContractError.sectionMissing
+        }
+        return source[startRange.lowerBound..<endRange.lowerBound]
+    }
+
+    private func readRepositoryFile(_ relativePath: String) throws -> String {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+    }
+
+    private enum SourceContractError: Error { case sectionMissing }
+}
+''', encoding="utf-8")
+
+window = text[text.index("    private func startCurrentCorrelationWindow()") : text.index("    func finishCorrelationWindow()")]
+required = [
+    "OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID)",
+    "sdk_local_ble_ownership_changed_during_target_correlation",
+    "try session.startCurrentWindow()",
+]
+for needle in required:
+    if needle not in window:
+        raise SystemExit(f"missing per-window ownership contract: {needle}")
+if window.index("OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID)") > window.index("try session.startCurrentWindow()"):
+    raise SystemExit("Tuya ownership read must precede package scanner start")
