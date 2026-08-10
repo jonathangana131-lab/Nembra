@@ -1,0 +1,61 @@
+name: V14 transplant premium Secure Link current
+
+on:
+  push:
+    branches:
+      - product/v14-capture-premium-secure-link-current-sol
+
+permissions:
+  contents: write
+
+jobs:
+  transplant:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Verify exact current flagship parent
+        run: test "$(git rev-parse HEAD^^)" = "a3b6eff7289b1725e171b3325bbd7bd0ca404144"
+      - name: Transplant only reviewed presentation tail
+        run: |
+          python3 scripts/ci/v14_transplant_premium_secure_link_current.py
+          git diff --check
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductSurfaceSourceTests.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          marker = "@MainActor\nprivate struct SecureLinkView: View {"
+          prefix = app[:app.index(marker)]
+          for anchor in (
+              "captureAttemptEventStartIndex",
+              "applicationUpdateAdmissionsInFlight",
+              "acceptanceCutIsClosed",
+              "sealedAcceptedExport",
+              "sessionLedger.sealAcceptedObservation",
+              "consumeCorrelationAsyncInvalidation",
+          ):
+              assert anchor in prefix
+          assert "NEMBRA CAPTURE" in app
+          assert "CAPTURE COMPLETE" in app
+          assert 'Label("Share Capture"' in app
+          assert "func inputSurface() -> some View" in app
+          PY
+      - name: Commit clean product delta and retire materializer
+        env:
+          BRANCH: product/v14-capture-premium-secure-link-current-sol
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin "refs/heads/$BRANCH" | awk '{print $1}')" = "$EVENT_SHA"
+          rm scripts/ci/v14_transplant_premium_secure_link_current.py
+          rm .github/workflows/v14-transplant-premium-secure-link-current.yml
+          git config user.name "nembra-v14-product"
+          git config user.email "actions@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductSurfaceSourceTests.swift scripts/ci/v14_transplant_premium_secure_link_current.py .github/workflows/v14-transplant-premium-secure-link-current.yml
+          git commit -m "feat(capture): compose guided Secure Link on current truth head"
+          git push origin "HEAD:$BRANCH"
