@@ -243,7 +243,7 @@ say "Built app provenance matched exact requested source, reviewed Tuya dependen
 # Apple verifiers with a closed startup environment and parse an XML plist from either display stream.
 SIGNED_ENTITLEMENTS_OUTPUT="$(/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/codesign -d --entitlements :- --xml "$APP" 2>&1)" || \
     die "Could not read effective entitlements from the final signed Capture app. Discard this candidate."
-BUILT_APPLE_SIGNIN_ENTITLEMENT="$(printf '%s' "$SIGNED_ENTITLEMENTS_OUTPUT" | /usr/bin/python3 -I -c '
+BUILT_APPLE_SIGNIN_ENTITLEMENT="$(printf '%s' "$SIGNED_ENTITLEMENTS_OUTPUT" | /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c '
 import plistlib, sys
 payload = sys.stdin.buffer.read()
 start = payload.find(b"<?xml")
@@ -264,7 +264,7 @@ BUILT_PROFILE="$APP/embedded.mobileprovision"
 [[ -f "$BUILT_PROFILE" ]] || die "Final signed Capture app is missing embedded.mobileprovision. Discard this candidate."
 PROFILE_PLIST_XML="$(/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/security cms -D -i "$BUILT_PROFILE" 2>/dev/null)" || \
     die "Could not decode the exact provisioning profile embedded in the final signed Capture app. Discard this candidate."
-PROFILE_APPLE_SIGNIN_ENTITLEMENT="$(printf '%s' "$PROFILE_PLIST_XML" | /usr/bin/python3 -I -c '
+PROFILE_APPLE_SIGNIN_ENTITLEMENT="$(printf '%s' "$PROFILE_PLIST_XML" | /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c '
 import plistlib, sys
 try:
     root = plistlib.loads(sys.stdin.buffer.read())

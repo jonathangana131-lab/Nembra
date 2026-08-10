@@ -16,6 +16,7 @@ required_installer = [
     '[[ "$BUILT_APPLE_SIGNIN_ENTITLEMENT" == "Default" ]]',
     'BUILT_PROFILE="$APP/embedded.mobileprovision"',
     '/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/security cms -D -i "$BUILT_PROFILE"',
+    "| /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c '",
     'root.get("Entitlements", {}).get("com.apple.developer.applesignin")',
     '[[ "$PROFILE_APPLE_SIGNIN_ENTITLEMENT" == "Default" ]]',
     'Final signed app and embedded provisioning profile both authorize Sign in with Apple',
@@ -47,7 +48,14 @@ for forbidden in (
 print("capture Apple Sign-In signed-entitlement custody source contract: PASS")
 
 
-# Apple verification processes must not inherit caller-controlled startup/configuration state.
+# Every external process in the Apple entitlement custody block runs from a closed startup environment.
+custody = INSTALLER[INSTALLER.index("SIGNED_ENTITLEMENTS_OUTPUT="):INSTALLER.index('say "Installing SDK-integrated Capture on the intended iPhone"')]
+if custody.count("/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c '") != 2:
+    raise SystemExit("both Apple plist parsers must run under a closed startup environment")
+if custody.count("/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/codesign") != 1:
+    raise SystemExit("codesign entitlement inspection must run under a closed startup environment")
+if custody.count("/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/security") != 1:
+    raise SystemExit("profile inspection must run under a closed startup environment")
 for poisoned in ("DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "PYTHONPATH", "CODESIGN_ALLOCATE"):
-    if poisoned in INSTALLER[INSTALLER.index("SIGNED_ENTITLEMENTS_OUTPUT="):INSTALLER.index('say "Installing SDK-integrated Capture on the intended iPhone"')]:
+    if poisoned in custody:
         raise SystemExit(f"caller-controlled Apple verifier state leaked into custody block: {poisoned}")
