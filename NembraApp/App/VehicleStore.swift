@@ -43,6 +43,11 @@ final class VehicleStore {
 
     let profile: VehicleProfile
     let speedInstrumentInterpolationPolicy: SpeedInstrumentInterpolationPolicy
+    /// True only when the app owns the explicit Simulator QA profile, that profile
+    /// declares synthetic power support, and the injected service provides the
+    /// source-owned Simulator power-evidence contract. This is app capability
+    /// authority for mounting Simulator QA instrumentation, not physical ES80 proof.
+    let hasSimulatorPowerEvidenceSource: Bool
     private let service: any ScooterService
     private let retainedBatteryStorage: (any RetainedBatterySnapshotStorage)?
     private let batteryObservationAuthority: BatteryObservationAuthority?
@@ -51,9 +56,9 @@ final class VehicleStore {
     /// Source-owned currentness for speed. Cached `VehicleState` speed never
     /// promotes this value by itself.
     private(set) var speedEvidenceAvailability: SpeedEvidenceAvailability = .unavailable
-    /// Source-owned Simulator propulsion currentness. This is intentionally
-    /// independent from aggregate `VehicleState.powerWatts`: reconnects, command
-    /// publications, and cached state cannot promote retained watts back to live.
+    /// Source-owned Simulator propulsion currentness. The immutable observation
+    /// receipt survives SwiftUI view lifetime changes; aggregate `state.powerWatts`
+    /// and view/render clocks never promote this value.
     private(set) var simulatorPowerEvidenceAvailability: SimulatorPowerEvidenceAvailability = .unavailable
     var pendingCommands: Set<PendingCommand> = []
     var pendingRideMode: RideMode?
@@ -130,7 +135,6 @@ final class VehicleStore {
     @ObservationIgnored private var speedEvidenceTask: Task<Void, Never>?
     @ObservationIgnored private var simulatorPowerEvidenceTask: Task<Void, Never>?
     @ObservationIgnored private var speedEvidenceConsumerAuthority = SpeedEvidenceConsumerAuthority()
-    @ObservationIgnored private var simulatorPowerEvidenceRefreshIdentity = UUID()
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private let shouldAutoConnectOnStart: Bool
 
@@ -146,6 +150,9 @@ final class VehicleStore {
         self.profile = service.profile
         self.shouldAutoConnectOnStart = shouldAutoConnectOnStart
         self.speedInstrumentInterpolationPolicy = speedInstrumentInterpolationPolicy
+        self.hasSimulatorPowerEvidenceSource = service.profile == .simulatorQA
+            && service.profile.capabilities.supportsPowerWatts
+            && service is any SimulatorPowerEvidenceProvider
         self.retainedBatteryStorage = retainedBatteryStorage
         self.batteryObservationAuthority = batteryObservationAuthority
 
@@ -230,43 +237,36 @@ final class VehicleStore {
         didStart = true
 
         let speedEvidenceProvider = service as? any SpeedEvidenceProvider
-        let simulatorPowerEvidenceProvider: (any SimulatorPowerEvidenceProvider)? = profile == .simulatorQA
-            ? service as? any SimulatorPowerEvidenceProvider
-            : nil
+        let simulatorPowerEvidenceProvider: (any SimulatorPowerEvidenceProvider)?
+        if hasSimulatorPowerEvidenceSource {
+            simulatorPowerEvidenceProvider = service as? any SimulatorPowerEvidenceProvider
+        } else {
+            simulatorPowerEvidenceProvider = nil
+        }
 
-        updatesTask = Task { [weak self, service, speedEvidenceProvider, simulatorPowerEvidenceProvider] in
+        updatesTask = Task { [weak self, service, speedEvidenceProvider] in
             let stream = await service.stateUpdates()
             for await incomingState in stream {
                 guard let self, !Task.isCancelled else { break }
                 let previousConnection = self.state.connection
                 self.apply(incomingState)
 
-                if let speedEvidenceProvider {
-                    // Transport transitions revoke projected field authority first.
-                    // Revalidation samples current service state and then the current
-                    // source-owned speed snapshot; connection alone never revives a
-                    // cached pre-gap speed.
-                    if incomingState.connection != previousConnection {
-                        self.invalidateSpeedEvidenceAuthority()
-                        await self.refreshSpeedEvidenceAuthority(using: speedEvidenceProvider)
-                    } else if incomingState.connection != .connected {
+                guard let speedEvidenceProvider else {
+                    if incomingState.connection != .connected {
                         self.invalidateSpeedEvidenceAuthority()
                     }
-                } else if incomingState.connection != .connected {
-                    self.invalidateSpeedEvidenceAuthority()
+                    continue
                 }
 
-                if let simulatorPowerEvidenceProvider {
-                    // Power currentness is source-owned. A transport transition is
-                    // only a wake-up/revalidation boundary; it cannot turn aggregate
-                    // cached watts into a live observation.
-                    if incomingState.connection != previousConnection {
-                        await self.refreshSimulatorPowerEvidenceAuthority(
-                            using: simulatorPowerEvidenceProvider
-                        )
-                    }
-                } else {
-                    self.invalidateSimulatorPowerEvidenceAuthority()
+                // Transport transitions revoke projected field authority first.
+                // Revalidation samples current service state and then the current
+                // source-owned speed snapshot; connection alone never revives a
+                // cached pre-gap speed.
+                if incomingState.connection != previousConnection {
+                    self.invalidateSpeedEvidenceAuthority()
+                    await self.refreshSpeedEvidenceAuthority(using: speedEvidenceProvider)
+                } else if incomingState.connection != .connected {
+                    self.invalidateSpeedEvidenceAuthority()
                 }
             }
         }
@@ -296,16 +296,16 @@ final class VehicleStore {
                 for await _ in stream {
                     guard let self, !Task.isCancelled else { return }
 
-                    // As with speed, stream values are wake-up triggers only. Read
-                    // the provider's current source-owned state after waking so a
-                    // slow consumer cannot replay obsolete live authority.
-                    await self.refreshSimulatorPowerEvidenceAuthority(
-                        using: simulatorPowerEvidenceProvider
-                    )
+                    // Availability events are wake-ups only. Re-read current source
+                    // state so a slow consumer cannot publish an obsolete queued
+                    // `.live` receipt after the source has already demoted it.
+                    let current = await simulatorPowerEvidenceProvider.simulatorPowerEvidenceSnapshot()
+                    guard !Task.isCancelled else { return }
+                    self.simulatorPowerEvidenceAvailability = current
                 }
 
                 guard let self, !Task.isCancelled else { return }
-                self.invalidateSimulatorPowerEvidenceAuthority()
+                self.simulatorPowerEvidenceAvailability = .unavailable
             }
         } else {
             simulatorPowerEvidenceAvailability = .unavailable
@@ -484,48 +484,6 @@ final class VehicleStore {
             return
         }
         speedEvidenceAvailability = speedEvidenceConsumerAuthority.availability
-    }
-
-    /// Invalidates every suspended power refresh. The accepted observation itself
-    /// remains source-owned; this only retires the app projection when no qualified
-    /// provider exists or its stream terminates.
-    private func invalidateSimulatorPowerEvidenceAuthority() {
-        simulatorPowerEvidenceRefreshIdentity = UUID()
-        simulatorPowerEvidenceAvailability = .unavailable
-    }
-
-    /// Rebuilds current app power authority from a fresh provider snapshot.
-    ///
-    /// The source enum is caller-constructible, but its observation subject is
-    /// module-sealed and this consumer only reads from the concrete provider. A
-    /// transport-disconnected snapshot can only demote a source `.live` receipt to
-    /// retained; the app never performs the opposite promotion. Reconnect therefore
-    /// cannot revive cached watts unless the source itself mints a newer live receipt.
-    private func refreshSimulatorPowerEvidenceAuthority(
-        using simulatorPowerEvidenceProvider: any SimulatorPowerEvidenceProvider
-    ) async {
-        let refreshIdentity = UUID()
-        simulatorPowerEvidenceRefreshIdentity = refreshIdentity
-
-        let connection = await service.snapshot().connection
-        let currentAvailability = await simulatorPowerEvidenceProvider.simulatorPowerEvidenceSnapshot()
-
-        guard !Task.isCancelled,
-              simulatorPowerEvidenceRefreshIdentity == refreshIdentity,
-              profile == .simulatorQA else {
-            return
-        }
-
-        switch currentAvailability {
-        case .unavailable:
-            simulatorPowerEvidenceAvailability = .unavailable
-        case let .retained(observation):
-            simulatorPowerEvidenceAvailability = .retained(observation)
-        case let .live(observation):
-            simulatorPowerEvidenceAvailability = connection == .connected
-                ? .live(observation)
-                : .retained(observation)
-        }
     }
 
     private func perform(_ command: PendingCommand, operation: () async throws -> Void) async {
