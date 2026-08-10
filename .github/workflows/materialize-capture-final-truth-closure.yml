@@ -1,0 +1,66 @@
+name: Materialize Capture Final Truth Closure
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-final-truth-closure-1c408-20260810
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sol/v14-capture-final-truth-closure-1c408-20260810
+          fetch-depth: 0
+
+      - name: Guard exact current product parent and owned paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='1c40853f6991b4d09206df1d25ecff021458b7eb'
+          test "$(git merge-base "$parent" HEAD)" = "$parent"
+          git diff --quiet "$parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+          git diff --quiet "$parent" HEAD -- NembraApp/Features/Research/TuyaAccountBridge.swift
+          git diff --quiet "$parent" HEAD -- Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaMetadataSecretRedactionSourceTests.swift
+          for p in \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift; do
+            test ! -e "$p"
+          done
+
+      - name: Apply truth closure
+        run: python3 scripts/ci/materialize_capture_final_truth_closure.py apply
+
+      - name: Verify truth closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/materialize_capture_final_truth_closure.py verify
+          python3 -m py_compile scripts/ci/materialize_capture_final_truth_closure.py
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse NembraApp/Features/Research/TuyaAccountBridge.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaMetadataSecretRedactionSourceTests.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
+          git diff --check
+
+      - name: Publish clean product checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-final-truth-closure.yml
+          rm scripts/ci/materialize_capture_final_truth_closure.py
+          git add -A
+          git diff --cached --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'fix(capture): close accepted event and membership truth gaps'
+          git push origin HEAD:sol/v14-capture-final-truth-closure-1c408-20260810
