@@ -1,0 +1,180 @@
+name: Materialize Capture Correlation Proof Retention 1558 Sol
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-correlation-proof-retention-1558-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact parent and red-only helper scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='1558e1bf38c2aad809887a77a3bc4cabe1704e39'
+          test "$(git merge-base HEAD "$parent")" = "$parent"
+          git diff --quiet "$parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+          mapfile -t changed < <(git diff --name-only "$parent"...HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 2
+          test "${changed[0]}" = '.github/workflows/materialize-capture-correlation-proof-retention-1558-sol.yml'
+          test "${changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureAuthorityLossCorrelationEvidenceRetentionSourceTests.swift'
+
+      - name: Materialize proof-preserving authority revocation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+
+          def mutate_section(text, start_marker, end_marker, mutation):
+              start = text.index(start_marker)
+              end = text.index(end_marker, start)
+              section = text[start:end]
+              changed = mutation(section)
+              return text[:start] + changed + text[end:]
+
+          def add_view_exit_completed_branch(section):
+              needle = '        guard processCorrelationLease != nil || correlationSession != nil else { return }\n'
+              if section.count(needle) != 1:
+                  raise SystemExit(f'expected one view-exit transport guard, found {section.count(needle)}')
+              lines = [
+                  '        if phase == .correlated || phase == .selected {',
+                  '            revokeCompletedCorrelationReuseAuthority()',
+                  '            phase = .failed',
+                  '            message = "Capture left Secure Link after Bluetooth target correlation. Restart from OFF1 before target reuse; completed correlation proof is retained for diagnostics."',
+                  '            log("target_correlation_abandoned_on_view_exit")',
+                  '            return',
+                  '        }',
+                  '',
+              ]
+              return section.replace(needle, '\n'.join(lines) + '\n' + needle, 1)
+
+          source = mutate_section(
+              source,
+              '    func abandonCorrelationForViewExit() {',
+              '    func appDidLoseForeground() {',
+              add_view_exit_completed_branch,
+          )
+
+          def replace_foreground_completed_branch(section):
+              start_marker = '        if phase == .correlated || phase == .selected {\n'
+              end_marker = '        guard let token = currentConnectionToken else {\n'
+              start = section.index(start_marker)
+              end = section.index(end_marker, start)
+              lines = [
+                  '        if phase == .correlated || phase == .selected {',
+                  '            // Completed OFF1→ON1→OFF2→ON2 receipts are legitimate diagnostic proof.',
+                  '            // Revoke only target-reuse authority here; a fresh OFF1 attempt owns proof reset.',
+                  '            revokeCompletedCorrelationReuseAuthority()',
+                  '            phase = .failed',
+                  '            message = "Capture left the foreground after Bluetooth target correlation. Restart from OFF1 before target reuse; completed correlation proof is retained for diagnostics."',
+                  '            log("foreground_integrity_lost_after_target_correlation")',
+                  '            return',
+                  '        }',
+                  '',
+              ]
+              replacement = '\n'.join(lines) + '\n'
+              return section[:start] + replacement + section[end:]
+
+          source = mutate_section(
+              source,
+              '    func appDidLoseForeground() {',
+              '    var privateConfig: Bool',
+              replace_foreground_completed_branch,
+          )
+
+          helper_marker = '    private func abandonPackageCorrelation() {\n'
+          if source.count(helper_marker) != 1:
+              raise SystemExit(f'expected one package-correlation helper marker, found {source.count(helper_marker)}')
+          helper_lines = [
+              '    private func revokeCompletedCorrelationReuseAuthority() {',
+              '        // Completed correlation has already retired its package scanner/session. Preserve the',
+              '        // sealed proof/catalog for failed diagnostics while removing every direct reuse grant.',
+              '        pendingCorrelatedTargetID = nil',
+              '        selectedID = nil',
+              '        targetCorrelationOperatorConfirmed = false',
+              '        invalidatePreparedMutableExport()',
+              '    }',
+              '',
+          ]
+          source = source.replace(helper_marker, '\n'.join(helper_lines) + '\n' + helper_marker, 1)
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Verify proof/reuse boundary and parse
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          exit_start = s.index('    func abandonCorrelationForViewExit() {')
+          fg_start = s.index('    func appDidLoseForeground() {', exit_start)
+          private_start = s.index('    var privateConfig: Bool', fg_start)
+          exit = s[exit_start:fg_start]
+          fg = s[fg_start:private_start]
+          exit_completed = exit[exit.index('if phase == .correlated || phase == .selected'):exit.index('guard processCorrelationLease != nil || correlationSession != nil')]
+          fg_completed = fg[fg.index('if phase == .correlated || phase == .selected'):fg.index('guard let token = currentConnectionToken else')]
+          for block in (exit_completed, fg_completed):
+              assert 'revokeCompletedCorrelationReuseAuthority()' in block
+              assert 'phase = .failed' in block
+              assert 'resetDiscoverySessionOnly()' not in block
+          helper_start = s.index('    private func revokeCompletedCorrelationReuseAuthority() {')
+          helper_end = s.index('    private func abandonPackageCorrelation()', helper_start)
+          helper = s[helper_start:helper_end]
+          for required in ('pendingCorrelatedTargetID = nil','selectedID = nil','targetCorrelationOperatorConfirmed = false'):
+              assert required in helper, required
+          for forbidden in ('correlationProvenance = nil','targetCorrelationMethod = nil','targetCorrelationWindowCount = nil','byID.removeAll()','candidates.removeAll()','resetDiscoverySessionOnly()','abandonPackageCorrelation()'):
+              assert forbidden not in helper, forbidden
+          begin_start = s.index('    private func beginCorrelationSeries() {')
+          begin_end = s.index('    func startNextCorrelationWindow()', begin_start)
+          assert 'resetDiscoverySessionOnly()' in s[begin_start:begin_end]
+          export_start = s.index('    private func makeExport(exportedAt:')
+          export_end = s.index('    func prepareExport()', export_start)
+          export = s[export_start:export_end]
+          for retained in ('targetCorrelationMethod: targetCorrelationMethod','targetCorrelationWindowCount: targetCorrelationWindowCount','targetCorrelationProvenance: correlationProvenance','candidates: candidates'):
+              assert retained in export, retained
+          print('Capture completed-correlation proof retention: PASS')
+          PY
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureAuthorityLossCorrelationEvidenceRetentionSourceTests.swift
+          git diff --check
+
+      - name: Run focused SwiftPM regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaCaptureAuthorityLossCorrelationEvidenceRetentionSourceTests
+
+      - name: Collapse helper to two product paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='1558e1bf38c2aad809887a77a3bc4cabe1704e39'
+          rm .github/workflows/materialize-capture-correlation-proof-retention-1558-sol.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureAuthorityLossCorrelationEvidenceRetentionSourceTests.swift
+          git add -u .github/workflows/materialize-capture-correlation-proof-retention-1558-sol.yml
+          git diff --cached --check
+          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' commit -m 'fix(capture): preserve completed correlation proof on authority loss'
+          mapfile -t changed < <(git diff --name-only "$parent" HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 2
+          test "${changed[0]}" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          test "${changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureAuthorityLossCorrelationEvidenceRetentionSourceTests.swift'
+          git diff --check "$parent" HEAD
+          git push origin HEAD:fix/v14-capture-correlation-proof-retention-1558-sol
