@@ -271,6 +271,7 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         secret_read = 'value = getpass.getpass("Intended iPhone UDID: ")'
         exclusive_create = 'os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC'
         descriptor_create = 'dir_fd=private_fd,'
+        legacy_secret_write = 'printf \'%s\' "$INTENDED_UDID" > "$UDID_FILE"'
 
         self.assertIn(home_resolution, handoff)
         self.assertIn(isolated_python, handoff)
@@ -286,7 +287,7 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertLess(handoff.index(private_open), handoff.index(secret_read))
         self.assertLess(handoff.index(secret_read), handoff.index(exclusive_create))
         self.assertNotIn("IFS= read -r -s INTENDED_UDID", handoff)
-        self.assertNotIn('> "$UDID_FILE"', handoff)
+        self.assertNotIn(legacy_secret_write, handoff)
         self.assertNotIn("INTENDED_UDID=", handoff)
 
     def test_production_handoff_private_input_python_is_syntactically_valid(self):
