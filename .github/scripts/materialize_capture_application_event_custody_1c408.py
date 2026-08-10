@@ -17,7 +17,7 @@ if source.count(old_log) != 1:
     )
 source = source.replace(old_log, new_log, 1)
 
-marker = "    private func startWatchdog(for token: TuyaReadOnlyConnectionToken) {"
+marker = "    private func startWatchdog(token: TuyaReadOnlyConnectionToken) {"
 if source.count(marker) != 1:
     raise SystemExit(f"expected one startWatchdog insertion marker, found {source.count(marker)}")
 
