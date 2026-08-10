@@ -24,6 +24,7 @@ jobs:
         run: |
           set -euo pipefail
           /usr/bin/python3 scripts/ci/patch_capture_premium_product_r2.py
+          /usr/bin/python3 scripts/ci/patch_capture_premium_product_r2_followup.py
 
       - name: Verify source and adversarial product contracts
         shell: bash
@@ -33,6 +34,7 @@ jobs:
           swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductSurfaceSourceTests.swift
           swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift
           swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductRecoveryTruthSourceTests.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkRestartAuthoritySourceTests.swift
           bash -n scripts/ci/capture_standalone_visual_evidence.sh
           /usr/bin/python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
           git diff --check
@@ -40,14 +42,23 @@ jobs:
       - name: Run Capture package regression suite
         shell: bash
         run: |
-          set -euo pipefail
-          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+          set -o pipefail
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors 2>&1 | tee /tmp/capture-package-test.log
+          status=${PIPESTATUS[0]}
+          {
+            echo '### Capture package regression tail'
+            echo '```text'
+            tail -n 220 /tmp/capture-package-test.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
 
       - name: Commit clean product candidate and retire convergence tooling
         shell: bash
         run: |
           set -euo pipefail
           rm scripts/ci/patch_capture_premium_product_r2.py
+          rm scripts/ci/patch_capture_premium_product_r2_followup.py
           rm .github/workflows/v14-capture-premium-product-r2-converge.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
