@@ -1,0 +1,83 @@
+name: Materialize Capture accepted artifact filename b615
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-accepted-artifact-name-b615-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 4
+
+      - name: Guard exact product lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='b615375e12e43abc55e111deb5dc36f3790c7506'
+          git merge-base --is-ancestor "$expected" HEAD^
+          mapfile -t changed < <(git diff --name-only "$expected"..HEAD^)
+          if [[ "${#changed[@]}" -ne 1 || "${changed[0]}" != 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureAcceptedArtifactFilenameSourceTests.swift' ]]; then
+            printf 'Unexpected pre-materialization scope:\n%s\n' "${changed[*]}" >&2
+            exit 78
+          fi
+
+      - name: Split accepted Capture and failed-diagnostic filenames
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text()
+          old = '            exportName = "Nembra-Secure-Link-\\(deviceID.prefix(8))-Diagnostics.json"\n'
+          new = '''            if phase == .accepted {
+                exportName = "Nembra-Capture-\\(deviceID.prefix(8)).json"
+            } else {
+                exportName = "Nembra-Secure-Link-\\(deviceID.prefix(8))-Diagnostics.json"
+            }
+          '''
+          if source.count(old) != 1:
+              raise SystemExit(f'expected export-name seam once; observed {source.count(old)}')
+          path.write_text(source.replace(old, new, 1))
+          PY
+          git diff --check
+
+      - name: Verify product semantics and Swift syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureAcceptedArtifactFilenameSourceTests.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          start = s.index('func prepareExport()')
+          end = s.index('private func abandonPackageCorrelation()', start)
+          prepare = s[start:end]
+          assert 'if phase == .accepted {' in prepare
+          assert 'Nembra-Capture-\\(deviceID.prefix(8)).json' in prepare
+          assert 'Nembra-Secure-Link-\\(deviceID.prefix(8))-Diagnostics.json' in prepare
+          assert prepare.index('if phase == .accepted {') < prepare.index('Nembra-Capture-\\(deviceID.prefix(8)).json')
+          PY
+
+      - name: Publish clean app-visible repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-accepted-artifact-name-b615.yml
+          git config user.name 'nembra-sol'
+          git config user.email 'nembra-sol@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureAcceptedArtifactFilenameSourceTests.swift \
+                  .github/workflows/materialize-capture-accepted-artifact-name-b615.yml
+          git diff --cached --check
+          git commit -m 'fix(capture): name accepted artifact as Capture'
+          git push origin HEAD:fix/v14-capture-accepted-artifact-name-b615-sol
