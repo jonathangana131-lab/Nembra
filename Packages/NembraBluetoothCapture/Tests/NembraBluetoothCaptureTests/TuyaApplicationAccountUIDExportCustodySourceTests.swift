@@ -22,7 +22,7 @@ struct TuyaApplicationAccountUIDExportCustodySourceTests {
         let firstSuspension = try #require(receiver.range(of: "await "))
         #expect(uidSnapshot.lowerBound < firstSuspension.lowerBound)
 
-        let helper = String(try section(in: receiver, from: "private func redactedApplicationEventDetails(", to: "private func startWatchdog"))
+        let helper = String(try section(in: source, from: "private func redactedApplicationEventDetails(", to: "private func startWatchdog"))
         #expect(!helper.contains("membershipAccountUID"))
         #expect(!helper.contains("return update"))
     }
