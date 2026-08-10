@@ -114,6 +114,27 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
                 provenance._file_fingerprint(target)
         self.assertTrue(mutated)
 
+    def test_file_fingerprint_rejects_same_inode_metadata_drift_before_path_rendezvous(self) -> None:
+        target = self.security_podspec
+        original_fstat = provenance.os.fstat
+        fstat_calls = 0
+        mutated = False
+
+        def fstat_then_chmod(descriptor: int) -> os.stat_result:
+            nonlocal fstat_calls, mutated
+            metadata = original_fstat(descriptor)
+            fstat_calls += 1
+            if fstat_calls == 2 and not mutated:
+                current_mode = stat.S_IMODE(target.stat().st_mode)
+                target.chmod(0o600 if current_mode != 0o600 else 0o640)
+                mutated = True
+            return metadata
+
+        with mock.patch.object(provenance.os, "fstat", side_effect=fstat_then_chmod):
+            with self.assertRaises(provenance.ProvenanceError):
+                provenance._file_fingerprint(target)
+        self.assertTrue(mutated)
+
     def test_lockfile_digest_rejects_same_size_mutation_during_read(self) -> None:
         target = self.lockfile
         original_read = provenance.os.read
