@@ -58,11 +58,41 @@ struct PropulsionEnergyRailPresentationTests {
         #expect(presentation.acceptedWatts == 800)
         #expect(presentation.railFraction != nil)
         #expect((presentation.railFraction ?? 0) < 0.8)
+        #expect(presentation.acceptedTargetFraction == 0.8)
         #expect(presentation.scaleOrigin == .simulator)
         #expect(presentation.allowsLiveMotion)
     }
 
-    @Test("accepted watts above presentation scale remain exact while rail clamps canonically")
+    @Test("accepted target stays fixed while display-clock rail frames move")
+    func acceptedTargetDoesNotInterpolate() throws {
+        let identity = try makeIdentity()
+        var model = try displayModel(identity: identity)
+        let scale = try PropulsionGaugeScale.simulator(identity: identity, ceilingWatts: 1_000)
+
+        try model.accept(sample(identity: identity, watts: 100, receipt: 10, uptime: 1_000_000_000))
+        try model.accept(sample(identity: identity, watts: 800, receipt: 11, uptime: 1_100_000_000))
+
+        let early = model.cockpitSnapshot(
+            atUptimeNanoseconds: 1_200_000_000,
+            scale: scale
+        ).energyRailPresentation
+        let later = model.cockpitSnapshot(
+            atUptimeNanoseconds: 1_500_000_000,
+            scale: scale
+        ).energyRailPresentation
+
+        #expect(early.currentness == .live)
+        #expect(later.currentness == .live)
+        #expect(early.railFraction != nil)
+        #expect(later.railFraction != nil)
+        #expect(early.railFraction != later.railFraction)
+        #expect(early.acceptedTargetFraction == 0.8)
+        #expect(later.acceptedTargetFraction == 0.8)
+        #expect(early.acceptedWatts == 800)
+        #expect(later.acceptedWatts == 800)
+    }
+
+    @Test("accepted watts above presentation scale remain exact while rail and target clamp canonically")
     func acceptedWattsAreNotReconstructedFromRailFraction() throws {
         let identity = try makeIdentity()
         var model = try displayModel(identity: identity)
@@ -78,11 +108,12 @@ struct PropulsionEnergyRailPresentationTests {
         #expect(presentation.currentness == .live)
         #expect(presentation.acceptedWatts == 1_200)
         #expect(presentation.railFraction == 1)
+        #expect(presentation.acceptedTargetFraction == 1)
         #expect(presentation.acceptedPeakMarkerFraction == 1)
         #expect(presentation.allowsLiveMotion)
     }
 
-    @Test("retained accepted watts stay visible but live rail motion stops")
+    @Test("retained accepted watts stay visible but all live rail geometry stops")
     func retainedMeasurementSettlesRail() throws {
         let identity = try makeIdentity()
         var model = try displayModel(identity: identity, staleAfterNanoseconds: 1_000_000_000)
@@ -98,12 +129,13 @@ struct PropulsionEnergyRailPresentationTests {
         #expect(presentation.currentness == .retained)
         #expect(presentation.acceptedWatts == 640)
         #expect(presentation.railFraction == nil)
+        #expect(presentation.acceptedTargetFraction == nil)
         #expect(presentation.acceptedPeakMarkerFraction == nil)
         #expect(presentation.scaleOrigin == nil)
         #expect(!presentation.allowsLiveMotion)
     }
 
-    @Test("unavailable evidence never manufactures zero watts or moving rail geometry")
+    @Test("unavailable evidence never manufactures zero watts or rail geometry")
     func unavailableDoesNotManufactureMeasurement() throws {
         let identity = try makeIdentity()
         let model = try displayModel(identity: identity)
@@ -117,12 +149,13 @@ struct PropulsionEnergyRailPresentationTests {
         #expect(presentation.currentness == .unavailable)
         #expect(presentation.acceptedWatts == nil)
         #expect(presentation.railFraction == nil)
+        #expect(presentation.acceptedTargetFraction == nil)
         #expect(presentation.acceptedPeakMarkerFraction == nil)
         #expect(presentation.scaleOrigin == nil)
         #expect(!presentation.allowsLiveMotion)
     }
 
-    @Test("foreign normalization scale keeps live accepted watts but fails rail motion closed")
+    @Test("foreign normalization scale keeps live accepted watts but fails all rail geometry closed")
     func incompatibleScaleDoesNotHideAcceptedNumericTruth() throws {
         let identity = try makeIdentity()
         let foreignIdentity = try makeIdentity("different-es80")
@@ -138,6 +171,7 @@ struct PropulsionEnergyRailPresentationTests {
         #expect(presentation.currentness == .live)
         #expect(presentation.acceptedWatts == 500)
         #expect(presentation.railFraction == nil)
+        #expect(presentation.acceptedTargetFraction == nil)
         #expect(presentation.acceptedPeakMarkerFraction == nil)
         #expect(presentation.scaleOrigin == nil)
         #expect(!presentation.allowsLiveMotion)
