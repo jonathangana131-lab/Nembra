@@ -30,15 +30,19 @@ struct TuyaApplicationSecretValueCustodySourceTests {
         #expect(driver.contains("NembraTuyaPrivateIdentity.appKey"))
         #expect(driver.contains("NembraTuyaPrivateIdentity.appSecret"))
         #expect(sanitizer.contains("replacingOccurrences"))
-        #expect(
-            sanitizer.contains("exactSecretValues")
-                || sanitizer.contains("knownSecretValues")
-                || sanitizer.contains("secretValues")
-        )
+        #expect(sanitizer.contains("exactSecretValues"))
+        #expect(sanitizer.contains(".filter { !$0.isEmpty }"))
+
+        // If AppKey is a prefix of AppSecret, redacting AppKey first could leave a suffix of
+        // AppSecret visible. Exact secrets therefore have a deterministic longest-first order.
+        #expect(sanitizer.contains(".sorted"))
+        #expect(sanitizer.contains("$0.count > $1.count"))
 
         // Lock out the currently unsafe shape where recursive key-only sanitization is stringified
         // directly into custody with no exact-value scrub at the callback boundary.
         #expect(!callback.contains("String(describing: Self.redactApplicationSecrets(value))"))
+        #expect(callback.contains("redactingExactApplicationSecrets"))
+        #expect(callback.contains("collisionSafeRedactedKey"))
     }
 
     @Test("credential-shaped keys remain redacted in addition to exact-value custody")
