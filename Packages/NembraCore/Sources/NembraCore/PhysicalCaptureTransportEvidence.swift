@@ -9,6 +9,18 @@ public struct PhysicalCaptureTransportEvidence: Codable, Equatable, Sendable {
         case physicalCapture
     }
 
+    /// Transport-family identity is intentionally separate from telemetry/data-point meaning.
+    public enum TransportFamily: String, Codable, Equatable, Sendable {
+        case unknown
+        case tuyaFD50
+    }
+
+    /// How strongly the capture itself establishes the transport-family classification.
+    public enum TransportFamilyCertainty: String, Codable, Equatable, Sendable {
+        case unclassified
+        case verifiedPhysicalTransport
+    }
+
     public let captureID: String
     public let observedPeripheralID: String
     public let advertisedLocalName: String
@@ -20,6 +32,8 @@ public struct PhysicalCaptureTransportEvidence: Codable, Equatable, Sendable {
     public let peripheralInitiatedDisconnectCount: Int
     public let meanConnectedIntervalSeconds: Double
     public let provenance: Provenance
+    public let transportFamily: TransportFamily
+    public let transportFamilyCertainty: TransportFamilyCertainty
 
     public init(
         captureID: String,
@@ -32,7 +46,9 @@ public struct PhysicalCaptureTransportEvidence: Codable, Equatable, Sendable {
         characteristicValueEventCount: Int,
         peripheralInitiatedDisconnectCount: Int,
         meanConnectedIntervalSeconds: Double,
-        provenance: Provenance = .physicalCapture
+        provenance: Provenance = .physicalCapture,
+        transportFamily: TransportFamily = .unknown,
+        transportFamilyCertainty: TransportFamilyCertainty = .unclassified
     ) {
         self.captureID = captureID
         self.observedPeripheralID = observedPeripheralID
@@ -45,6 +61,8 @@ public struct PhysicalCaptureTransportEvidence: Codable, Equatable, Sendable {
         self.peripheralInitiatedDisconnectCount = peripheralInitiatedDisconnectCount
         self.meanConnectedIntervalSeconds = meanConnectedIntervalSeconds
         self.provenance = provenance
+        self.transportFamily = transportFamily
+        self.transportFamilyCertainty = transportFamilyCertainty
     }
 
     /// A CoreBluetooth peripheral UUID is capture-local evidence, not a durable scooter identity.
@@ -61,9 +79,9 @@ public struct PhysicalCaptureTransportEvidence: Codable, Equatable, Sendable {
 public extension PhysicalCaptureTransportEvidence {
     /// First accepted physical ES80 transport artifact.
     ///
-    /// Verified by capture C7D09A22. The GATT identifiers match Tuya FD50 transport,
-    /// while telemetry/data-point semantics remain unknown because the capture received
-    /// zero application characteristic payloads.
+    /// Verified by capture C7D09A22. The service/characteristic identifiers establish the
+    /// Tuya FD50 transport family, while telemetry/data-point semantics remain unknown because
+    /// the capture received zero application characteristic payloads.
     static let c7d09a22 = Self(
         captureID: "C7D09A22-96DA-4E46-9BEF-E36F670ADB0E",
         observedPeripheralID: "6815A5F5-4D1E-E004-BAE8-6DF924123907",
@@ -74,6 +92,8 @@ public extension PhysicalCaptureTransportEvidence {
         completedScenarioCount: 17,
         characteristicValueEventCount: 0,
         peripheralInitiatedDisconnectCount: 15,
-        meanConnectedIntervalSeconds: 29.930
+        meanConnectedIntervalSeconds: 29.930,
+        transportFamily: .tuyaFD50,
+        transportFamilyCertainty: .verifiedPhysicalTransport
     )
 }
