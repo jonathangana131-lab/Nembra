@@ -1,0 +1,150 @@
+name: Materialize Capture Account UID Export Custody
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-account-uid-export-current-1c408
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: sol/v14-capture-account-uid-export-current-1c408
+
+      - name: Apply exact current-product repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text()
+
+          old_guard = '''        guard sdkAccountLoggedIn,
+                    sdkDeviceMembershipVerified,
+                    accountIdentityLeaseIsAuthorized,
+                    let driver else {
+          '''
+          new_guard = '''        guard sdkAccountLoggedIn,
+                    sdkDeviceMembershipVerified,
+                    accountIdentityLeaseIsAuthorized,
+                    let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                    !verifiedAccountUID.isEmpty,
+                    let driver else {
+          '''
+          if source.count(old_guard) != 1:
+              raise SystemExit(f"expected exactly one application-admission guard, found {source.count(old_guard)}")
+          source = source.replace(old_guard, new_guard, 1)
+
+          old_log = '''            log("tuya_application_update", update.merging([
+                        "generation": String(token.diagnosticGeneration)
+                    ]) { current, _ in current })
+          '''
+          new_log = '''            let accountUIDRedactedUpdate = Self.redactVerifiedAccountUID(
+                        verifiedAccountUID,
+                        from: update
+                    )
+                    log("tuya_application_update", accountUIDRedactedUpdate.merging([
+                        "generation": String(token.diagnosticGeneration)
+                    ]) { current, _ in current })
+          '''
+          if source.count(old_log) != 1:
+              raise SystemExit(f"expected exactly one raw application-event log, found {source.count(old_log)}")
+          source = source.replace(old_log, new_log, 1)
+
+          anchor = '''    private func startWatchdog(token: TuyaReadOnlyConnectionToken) {
+          '''
+          helper = '''    private static func redactVerifiedAccountUID(
+                  _ verifiedAccountUID: String,
+                  from update: [String: String]
+              ) -> [String: String] {
+                  let marker = "<redacted-account-uid>"
+                  var sanitized: [String: String] = [:]
+                  sanitized.reserveCapacity(update.count)
+
+                  // Sort only to make the collision-preserving redaction deterministic. The raw
+                  // account UID remains process-local authority and is never emitted by this helper.
+                  for (sourceKey, sourceValue) in update.sorted(by: { $0.key < $1.key }) {
+                      let redactedKeyBase = sourceKey.replacingOccurrences(
+                          of: verifiedAccountUID,
+                          with: marker,
+                          options: [.caseInsensitive]
+                      )
+                      let redactedValue = sourceValue.replacingOccurrences(
+                          of: verifiedAccountUID,
+                          with: marker,
+                          options: [.caseInsensitive]
+                      )
+
+                      var redactedKey = redactedKeyBase
+                      var collisionIndex = 2
+                      while sanitized[redactedKey] != nil {
+                          redactedKey = "\(redactedKeyBase)#\(collisionIndex)"
+                          collisionIndex += 1
+                      }
+                      sanitized[redactedKey] = redactedValue
+                  }
+                  return sanitized
+              }
+
+          '''
+          if source.count(anchor) != 1:
+              raise SystemExit(f"expected exactly one watchdog anchor, found {source.count(anchor)}")
+          if "<redacted-account-uid>" in source:
+              raise SystemExit("account UID redaction marker unexpectedly already present")
+          source = source.replace(anchor, helper + anchor, 1)
+
+          duplicate = '''        "refreshtoken",
+                  "sessionkey",
+                  "authkey",
+          '''
+          simplified = '''        "refreshtoken",
+                  "authkey",
+          '''
+          if source.count(duplicate) != 1:
+              raise SystemExit(f"expected exactly one duplicated session-key classifier tail, found {source.count(duplicate)}")
+          source = source.replace(duplicate, simplified, 1)
+
+          path.write_text(source)
+          PY
+
+      - name: Verify custody source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          start = source.index("private func receivedApplicationUpdate(")
+          end = source.index("private func startWatchdog", start)
+          admission = source[start:end]
+          assert "<redacted-account-uid>" in source
+          assert "verifiedAccountUID = membershipAccountUID" in admission
+          assert "accountUIDRedactedUpdate" in admission
+          assert 'log("tuya_application_update", update.merging([' not in admission
+          assert source.count('"sessionkey",') == 1
+          driver_start = source.index("@MainActor\nprivate final class SmartLifeDriver")
+          driver_end = source.index("#endif\n\nprivate enum AppleAccountAuthorizationError", driver_start)
+          driver = source[driver_start:driver_end]
+          assert '"uid",' not in driver
+          assert '"uid"\n' not in driver
+          PY
+          git diff --check
+
+      - name: Commit durable repair and retire materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/materialize-capture-account-uid-export-current.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git config user.name "nembra-sol-worker"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "fix(capture): scrub verified account UID from application evidence"
+          git push origin HEAD:sol/v14-capture-account-uid-export-current-1c408
