@@ -11,9 +11,9 @@
 		A10000000000000000000005 /* TuyaAccountBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000005 /* TuyaAccountBridge.swift */; };
 		A10000000000000000000006 /* TuyaAuthenticatedStationaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000006 /* TuyaAuthenticatedStationaryView.swift */; };
 		A10000000000000000000007 /* TuyaCaptureCredentialVault.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* TuyaCaptureCredentialVault.swift */; };
-		A10000000000000000000008 /* TuyaSecureLinkCredentialAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* TuyaSecureLinkCredentialAdapter.swift */; };
 		A10000000000000000000009 /* NembraTuyaSDKBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* NembraTuyaSDKBridge.m */; };
 		A1000000000000000000000A /* TuyaAuthenticatedReadOnlyPreflight.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000A /* TuyaAuthenticatedReadOnlyPreflight.swift */; };
+		A1000000000000000000000C /* TuyaFD50RawObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000C /* TuyaFD50RawObserver.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -23,10 +23,10 @@
 		B10000000000000000000005 /* TuyaAccountBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TuyaAccountBridge.swift; path = NembraApp/Features/Research/TuyaAccountBridge.swift; sourceTree = SOURCE_ROOT; };
 		B10000000000000000000006 /* TuyaAuthenticatedStationaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TuyaAuthenticatedStationaryView.swift; path = NembraApp/Features/Research/TuyaAuthenticatedStationaryView.swift; sourceTree = SOURCE_ROOT; };
 		B10000000000000000000007 /* TuyaCaptureCredentialVault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TuyaCaptureCredentialVault.swift; path = NembraApp/Features/Research/TuyaCaptureCredentialVault.swift; sourceTree = SOURCE_ROOT; };
-		B10000000000000000000008 /* TuyaSecureLinkCredentialAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TuyaSecureLinkCredentialAdapter.swift; path = NembraApp/Features/Research/TuyaSecureLinkCredentialAdapter.swift; sourceTree = SOURCE_ROOT; };
 		B10000000000000000000009 /* NembraTuyaSDKBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = NembraTuyaSDKBridge.m; path = NembraApp/Features/Research/NembraTuyaSDKBridge.m; sourceTree = SOURCE_ROOT; };
 		B1000000000000000000000A /* TuyaAuthenticatedReadOnlyPreflight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TuyaAuthenticatedReadOnlyPreflight.swift; path = Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlyPreflight.swift; sourceTree = SOURCE_ROOT; };
 		B1000000000000000000000B /* NembraTuyaSDKBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = NembraTuyaSDKBridge.h; path = NembraApp/Features/Research/NembraTuyaSDKBridge.h; sourceTree = SOURCE_ROOT; };
+		B1000000000000000000000C /* TuyaFD50RawObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TuyaFD50RawObserver.swift; path = NembraApp/Features/Research/TuyaFD50RawObserver.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -53,8 +53,8 @@
 				B10000000000000000000004 /* NembraCaptureEntrypoint.swift */,
 				B10000000000000000000005 /* TuyaAccountBridge.swift */,
 				B10000000000000000000007 /* TuyaCaptureCredentialVault.swift */,
-				B10000000000000000000008 /* TuyaSecureLinkCredentialAdapter.swift */,
 				B10000000000000000000006 /* TuyaAuthenticatedStationaryView.swift */,
+				B1000000000000000000000C /* TuyaFD50RawObserver.swift */,
 				B1000000000000000000000A /* TuyaAuthenticatedReadOnlyPreflight.swift */,
 				B1000000000000000000000B /* NembraTuyaSDKBridge.h */,
 				B10000000000000000000009 /* NembraTuyaSDKBridge.m */,
@@ -136,8 +136,8 @@
 				A10000000000000000000004 /* NembraCaptureEntrypoint.swift in Sources */,
 				A10000000000000000000005 /* TuyaAccountBridge.swift in Sources */,
 				A10000000000000000000007 /* TuyaCaptureCredentialVault.swift in Sources */,
-				A10000000000000000000008 /* TuyaSecureLinkCredentialAdapter.swift in Sources */,
 				A10000000000000000000006 /* TuyaAuthenticatedStationaryView.swift in Sources */,
+				A1000000000000000000000C /* TuyaFD50RawObserver.swift in Sources */,
 				A1000000000000000000000A /* TuyaAuthenticatedReadOnlyPreflight.swift in Sources */,
 				A10000000000000000000009 /* NembraTuyaSDKBridge.m in Sources */,
 				A10000000000000000000002 /* ES80CaptureShellView.swift in Sources */,
@@ -189,9 +189,9 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Nembra Capture";
 				INFOPLIST_KEY_NEMBRA_TUYA_APP_KEY = "$(NEMBRA_TUYA_APP_KEY)";
 				INFOPLIST_KEY_NEMBRA_TUYA_APP_SECRET = "$(NEMBRA_TUYA_APP_SECRET)";
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Nembra Capture uses Bluetooth to learn this scooter's advertised and GATT data during a guided calibration.";
-				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Nembra Capture uses Bluetooth to learn this scooter's advertised and GATT data during a guided calibration.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Nembra Capture can use iPhone location speed as a reference while learning which Bluetooth values represent scooter speed.";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Nembra Capture uses Bluetooth to observe this scooter's already-verified FD50 notify channel during a stationary authenticated capture.";
+				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Nembra Capture uses Bluetooth to observe this scooter's already-verified FD50 notify channel during a stationary authenticated capture.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Nembra Capture can use iPhone location speed as a reference during later evidence-gated scooter correlation experiments.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -217,9 +217,9 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Nembra Capture";
 				INFOPLIST_KEY_NEMBRA_TUYA_APP_KEY = "$(NEMBRA_TUYA_APP_KEY)";
 				INFOPLIST_KEY_NEMBRA_TUYA_APP_SECRET = "$(NEMBRA_TUYA_APP_SECRET)";
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Nembra Capture uses Bluetooth to learn this scooter's advertised and GATT data during a guided calibration.";
-				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Nembra Capture uses Bluetooth to learn this scooter's advertised and GATT data during a guided calibration.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Nembra Capture can use iPhone location speed as a reference while learning which Bluetooth values represent scooter speed.";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Nembra Capture uses Bluetooth to observe this scooter's already-verified FD50 notify channel during a stationary authenticated capture.";
+				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Nembra Capture uses Bluetooth to observe this scooter's already-verified FD50 notify channel during a stationary authenticated capture.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Nembra Capture can use iPhone location speed as a reference during later evidence-gated scooter correlation experiments.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
