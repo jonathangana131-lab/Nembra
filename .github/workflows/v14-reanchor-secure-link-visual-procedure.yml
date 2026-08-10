@@ -1,0 +1,61 @@
+name: V14 reanchor Secure Link visual to procedure current
+
+on:
+  push:
+    branches:
+      - product/v14-capture-premium-secure-link-procedure-current-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Verify exact procedure-current parent
+        run: test "$(git rev-parse HEAD^^)" = "8b9c1cabeeffdec7cb12f9a74f53320c11e7eae0"
+      - name: Reanchor reviewed presentation and standalone evidence harness
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/v14_reanchor_secure_link_visual_procedure.py
+          git diff --check
+          bash -n scripts/ci/capture_standalone_visual_evidence.sh
+          python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductSurfaceSourceTests.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          app=Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          assert 'schemaVersion: 10' in app
+          assert 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier' in app
+          assert 'LabeledContent("Procedure", value: test.fieldProcedureIdentifier)' in app
+          assert 'CAPTURE COMPLETE' in app and 'Ready for analysis' in app and 'Label("Share Capture"' in app
+          workflow=Path('.github/workflows/capture-standalone-visual-acceptance.yml').read_text()
+          assert 'product/v14-capture-premium-secure-link-procedure-current-sol' in workflow
+          PY
+      - name: Commit clean current candidate and retire materializer
+        env:
+          BRANCH: product/v14-capture-premium-secure-link-procedure-current-sol
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin "refs/heads/$BRANCH" | awk '{print $1}')" = "$EVENT_SHA"
+          rm scripts/ci/v14_reanchor_secure_link_visual_procedure.py
+          rm .github/workflows/v14-reanchor-secure-link-visual-procedure.yml
+          git config user.name "nembra-v14-product"
+          git config user.email "actions@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductSurfaceSourceTests.swift \
+            scripts/ci/capture_standalone_visual_evidence.sh \
+            scripts/ci/tests/test_capture_standalone_visual_evidence.py \
+            .github/workflows/capture-standalone-visual-acceptance.yml \
+            scripts/ci/v14_reanchor_secure_link_visual_procedure.py \
+            .github/workflows/v14-reanchor-secure-link-visual-procedure.yml
+          git commit -m "feat(capture): reanchor guided Secure Link on procedure authority"
+          git push origin "HEAD:$BRANCH"
