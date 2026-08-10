@@ -1,0 +1,97 @@
+name: Capture Field Provenance Readback Diagnostic
+
+on:
+  push:
+    branches:
+      - recovery/v14-capture-field-readback-sol
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  readback:
+    name: Diagnose stamped Capture product readback
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Bind diagnostic to exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          expected="$(printf '%s' '${{ github.sha }}' | tr '[:upper:]' '[:lower:]')"
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'CAPTURE_DIAGNOSTIC_SOURCE_SHA=%s\n' "$actual" >> "$GITHUB_ENV"
+
+      - name: Build and inspect stamped standalone Simulator app
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="${CAPTURE_DIAGNOSTIC_SOURCE_SHA:?exact source was not established}"
+          dependency_sha='abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'
+          procedure='ES80-AUTHENTICATED-STATIONARY-v1'
+          label="capture-v14-${sha:0:12}"
+          derived="$RUNNER_TEMP/NembraCaptureFieldReadbackDerived"
+          rm -rf "$derived"
+
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$derived" \
+            CODE_SIGNING_ALLOWED=NO \
+            NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
+            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" \
+            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$dependency_sha" \
+            INFOPLIST_KEY_NembraCaptureProcedureIdentifier="$procedure" \
+            build
+
+          mapfile -t plists < <(find "$derived/Build/Products" -type f -path '*.app/Info.plist' -print | sort)
+          if [[ "${#plists[@]}" -ne 1 ]]; then
+            printf '::error title=Capture product discovery::expected one app Info.plist, found %s\n' "${#plists[@]}"
+            find "$derived/Build/Products" -maxdepth 4 -print | sort
+            exit 1
+          fi
+
+          plist="${plists[0]}"
+          printf 'Resolved Capture product plist: %s\n' "$plist"
+
+          read_key() {
+            local key="$1"
+            /usr/bin/plutil -extract "$key" raw -o - "$plist" 2>/dev/null || true
+          }
+
+          built_label="$(read_key NembraCaptureBuildIdentifier)"
+          built_sha="$(read_key NembraCaptureSourceCommitSHA)"
+          built_dependency_sha="$(read_key NembraCaptureTuyaDependencyLockSHA256)"
+          built_procedure="$(read_key NembraCaptureProcedureIdentifier)"
+
+          printf 'NembraCaptureBuildIdentifier=%q\n' "$built_label"
+          printf 'NembraCaptureSourceCommitSHA=%q\n' "$built_sha"
+          printf 'NembraCaptureTuyaDependencyLockSHA256=%q\n' "$built_dependency_sha"
+          printf 'NembraCaptureProcedureIdentifier=%q\n' "$built_procedure"
+
+          failures=0
+          check_equal() {
+            local key="$1"
+            local actual="$2"
+            local expected="$3"
+            if [[ "$actual" != "$expected" ]]; then
+              printf '::error title=Capture provenance readback::%s expected %q but read %q\n' "$key" "$expected" "$actual"
+              failures=$((failures + 1))
+            fi
+          }
+
+          check_equal NembraCaptureBuildIdentifier "$built_label" "$label"
+          check_equal NembraCaptureSourceCommitSHA "$built_sha" "$sha"
+          check_equal NembraCaptureTuyaDependencyLockSHA256 "$built_dependency_sha" "$dependency_sha"
+          check_equal NembraCaptureProcedureIdentifier "$built_procedure" "$procedure"
+          test "$failures" -eq 0
