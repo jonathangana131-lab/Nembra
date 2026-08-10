@@ -261,34 +261,43 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertNotIn(self.PRIVATE_UDID, json.dumps(report))
         self.assertNotIn(str(symlink_parent), json.dumps(report))
 
-    def test_production_handoff_refuses_private_path_clobber_before_secret_write(self):
-        handoff = HANDOFF_PATH.read_text(encoding="utf-8")
-        directory_guard = 'if [[ -L "$PRIVATE_DIR" ]]; then'
-        target_guard = 'if [[ -e "$UDID_FILE" || -L "$UDID_FILE" ]]; then'
-        secret_read = "IFS= read -r -s INTENDED_UDID"
-        raw_write = 'printf \'%s\' "$INTENDED_UDID" > "$UDID_FILE"'
-        guarded_write = f"( set -o noclobber; {raw_write} )"
-
-        self.assertIn(directory_guard, handoff)
-        self.assertIn(target_guard, handoff)
-        self.assertIn(guarded_write, handoff)
-        self.assertLess(handoff.index(directory_guard), handoff.index(secret_read))
-        self.assertLess(handoff.index(target_guard), handoff.index(secret_read))
-        self.assertLess(handoff.index(target_guard), handoff.index(guarded_write))
-        self.assertEqual(handoff.count(raw_write), 1)
-        self.assertNotIn('printf \'%s\\n\' "$INTENDED_UDID" > "$UDID_FILE"', handoff)
-
-    def test_production_handoff_resolves_physical_home_before_private_path_and_secret(self):
+    def test_production_handoff_creates_private_input_descriptor_relative(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
         home_resolution = 'HOME_PHYSICAL="$(cd -P -- "$HOME" && /bin/pwd -P)"'
-        private_dir = 'PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"'
-        secret_read = "IFS= read -r -s INTENDED_UDID"
+        isolated_python = '/usr/bin/python3 -I - "$HOME_PHYSICAL" <<\'PY\''
+        root_open = 'root_fd = os.open("/", walk_flags)'
+        walk_open = 'os.open(component, walk_flags, dir_fd=current_fd)'
+        private_open = 'private_fd = os.open(".nembra-private", walk_flags, dir_fd=current_fd)'
+        secret_read = 'value = getpass.getpass("Intended iPhone UDID: ")'
+        exclusive_create = 'os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC'
+        descriptor_create = 'dir_fd=private_fd,'
 
         self.assertIn(home_resolution, handoff)
-        self.assertIn(private_dir, handoff)
-        self.assertNotIn('PRIVATE_DIR="$HOME/.nembra-private"', handoff)
-        self.assertLess(handoff.index(home_resolution), handoff.index(private_dir))
-        self.assertLess(handoff.index(private_dir), handoff.index(secret_read))
+        self.assertIn(isolated_python, handoff)
+        self.assertIn(root_open, handoff)
+        self.assertIn(walk_open, handoff)
+        self.assertIn(private_open, handoff)
+        self.assertIn(secret_read, handoff)
+        self.assertIn(exclusive_create, handoff)
+        self.assertIn(descriptor_create, handoff)
+        self.assertIn("os.fsync(file_fd)", handoff)
+        self.assertIn('os.unlink("es80-intended-device.udid", dir_fd=private_fd)', handoff)
+        self.assertLess(handoff.index(home_resolution), handoff.index(root_open))
+        self.assertLess(handoff.index(private_open), handoff.index(secret_read))
+        self.assertLess(handoff.index(secret_read), handoff.index(exclusive_create))
+        self.assertNotIn("IFS= read -r -s INTENDED_UDID", handoff)
+        self.assertNotIn('> "$UDID_FILE"', handoff)
+        self.assertNotIn("INTENDED_UDID=", handoff)
+
+    def test_production_handoff_private_input_python_is_syntactically_valid(self):
+        handoff = HANDOFF_PATH.read_text(encoding="utf-8")
+        matches = re.findall(
+            r'/usr/bin/python3 -I - "\$HOME_PHYSICAL" <<\'PY\'\n(.*?)\nPY',
+            handoff,
+            flags=re.DOTALL,
+        )
+        self.assertEqual(len(matches), 1)
+        compile(matches[0], "private-intended-device-handoff", "exec")
 
     def test_non_xcode_27_selection_fails_closed(self):
         with tempfile.TemporaryDirectory() as temporary:
