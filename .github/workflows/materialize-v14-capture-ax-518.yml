@@ -48,7 +48,7 @@ jobs:
           grep -Fq '.accessibilityLabel("Correlation progress")' NembraApp/App/NembraCaptureEntrypoint.swift
           grep -Fq '.accessibilityLabel("Read-only observation progress")' NembraApp/App/NembraCaptureEntrypoint.swift
           grep -Fq 'packageCorrelationMayStart' NembraApp/App/NembraCaptureEntrypoint.swift
-          grep -Fq 'packageCorrelationLease' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'acquirePackageCorrelationLease()' NembraApp/App/NembraCaptureEntrypoint.swift
           grep -Fq 'extraInfo["snsNickname"] = appleNickname' NembraApp/App/NembraCaptureEntrypoint.swift
           test "$(grep -Fc 'test.canRestartFromFreshOFF1 && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn)' NembraApp/App/NembraCaptureEntrypoint.swift)" = 1
           swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
