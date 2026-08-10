@@ -81,7 +81,7 @@ Choose a private path outside the repository. The producer requires an absolute 
 
 Do not acquire the raw identifier through ordinary shell redirection. Even with `noclobber`, a checked parent directory pathname can be renamed and replaced before `> "$UDID_FILE"` re-resolves it. Use the accepted descriptor-bound private-input helper instead. It opens directory components with no-follow descriptors, creates the final file relative to the pinned directory descriptor, rebinds the pathname after creation, verifies directory/file identity and exact readback, and fails closed if the path was retargeted.
 
-The accepted helper identity is fixed below. These helper bytes are operator-custody tooling only; they do not alter the frozen `a0f4…` app subject and do not authorize signing acceptance or Bluetooth activity.
+The accepted helper identity is fixed below. These helper bytes are operator-custody tooling only; they do not alter the frozen `a0f4…` app subject and do not authorize signing acceptance or Bluetooth activity. The helper also refuses Python's potentially echoed `getpass` fallback when terminal echo suppression cannot be guaranteed.
 
 ```bash
 umask 077
@@ -91,8 +91,8 @@ PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"
 UDID_FILE="$PRIVATE_DIR/es80-intended-device.udid"
 TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
 
-PRIVATE_INPUT_HELPER_COMMIT='05ce6d9a20487ab34aa31c5b6456910ed2ed438f'
-PRIVATE_INPUT_HELPER_BLOB='9a9f7f724ceaf895e52d6d443d326043f97645c8'
+PRIVATE_INPUT_HELPER_COMMIT='fa5025e2bb14e7de610421bed23cd4943dfef8f1'
+PRIVATE_INPUT_HELPER_BLOB='42454c0c7cb7300d03b57e93aafd4040aa7da9f0'
 PRIVATE_INPUT_HELPER_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-private-input.XXXXXX)"
 PRIVATE_INPUT_HELPER="$PRIVATE_INPUT_HELPER_DIR/es80_today_private_device_input.py"
 
