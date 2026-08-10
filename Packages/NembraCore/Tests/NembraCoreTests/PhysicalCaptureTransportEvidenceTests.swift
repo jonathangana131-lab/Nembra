@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import NembraCore
 
@@ -28,23 +29,51 @@ struct PhysicalCaptureTransportEvidenceTests {
         #expect(evidence.isStablePhysicalDeviceIdentity == false)
     }
 
-    @Test("opaque application payload receipt still cannot mint telemetry semantics")
-    func opaqueApplicationPayloadStillCannotMintTelemetry() {
-        let evidence = PhysicalCaptureTransportEvidence(
-            captureID: "future-opaque-capture",
-            observedPeripheralID: "capture-local-peripheral",
-            advertisedLocalName: "demo",
-            serviceUUID: "FD50",
-            writeCharacteristicUUID: "00000001-0000-1001-8001-00805F9B07D0",
-            notifyCharacteristicUUID: "00000002-0000-1001-8001-00805F9B07D0",
-            completedScenarioCount: 1,
-            characteristicValueEventCount: 1,
-            peripheralInitiatedDisconnectCount: 0,
-            meanConnectedIntervalSeconds: 45
+    @Test("accepted physical ledger remains exportable without becoming decodable authority")
+    func acceptedLedgerCanBeEncoded() throws {
+        let encoded = try JSONEncoder().encode(PhysicalCaptureTransportEvidence.c7d09a22)
+        #expect(!encoded.isEmpty)
+    }
+
+    @Test("physical-capture provenance is repository-owned rather than caller-constructible")
+    func physicalProvenanceCannotBeForgedByPublicConstructionOrDecoding() throws {
+        let source = try readRepositoryFile(
+            "Packages/NembraCore/Sources/NembraCore/PhysicalCaptureTransportEvidence.swift"
+        )
+        let declaration = try section(
+            in: source,
+            from: "public struct PhysicalCaptureTransportEvidence",
+            to: "public extension PhysicalCaptureTransportEvidence"
         )
 
-        #expect(evidence.characteristicValueEventCount == 1)
-        #expect(evidence.authorizesTelemetrySemantics == false)
-        #expect(evidence.isStablePhysicalDeviceIdentity == false)
+        #expect(declaration.contains("PhysicalCaptureTransportEvidence: Encodable, Equatable, Sendable"))
+        #expect(!declaration.contains("Codable"))
+        #expect(!declaration.contains("Decodable"))
+        #expect(declaration.contains("private init("))
+        #expect(!declaration.contains("public init("))
+        #expect(source.contains("static let c7d09a22 = Self("))
+    }
+
+    private func section(in source: String, from start: String, to end: String) throws -> Substring {
+        guard let startRange = source.range(of: start),
+              let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+            Issue.record("Expected source section missing: \(start) ... \(end)")
+            throw SourceContractError.sectionMissing
+        }
+        return source[startRange.lowerBound..<endRange.lowerBound]
+    }
+
+    private func readRepositoryFile(_ relativePath: String) throws -> String {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+    }
+
+    private enum SourceContractError: Error {
+        case sectionMissing
     }
 }
