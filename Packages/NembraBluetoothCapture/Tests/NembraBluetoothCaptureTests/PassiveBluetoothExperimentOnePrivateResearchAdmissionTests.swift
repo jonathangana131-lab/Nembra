@@ -28,7 +28,6 @@ struct PassiveBluetoothExperimentOnePrivateResearchAdmissionTests {
                 .permitsPhysicalProcedure(status: admission.status)
         )
 
-        // TODAY research authority is instance-bound. It must not mutate the default/release gate.
         #expect(
             PassiveBluetoothExperimentOneFieldExecutionGate.status
                 == .noGo(.finalComposedBuildNotAuthorized)
@@ -141,8 +140,8 @@ struct PassiveBluetoothExperimentOnePrivateResearchAdmissionTests {
         #expect(source.contains("static var hasCompiledTodayResearchCapability: Bool"))
     }
 
-    @Test("TODAY wrapper delegates one explicit research mode and canonical producer owns compile capability")
-    func todaySignedFieldWrapperDelegatesCompileAuthorityToCanonicalProducer() throws {
+    @Test("retired TODAY build wrappers cannot authorize the current Capture procedure")
+    func retiredTodayBuildPathFailsClosed() throws {
         let wrapper = try repositorySourceFile(
             "scripts/ci/xcode27_today_research_field_candidate.sh"
         )
@@ -150,35 +149,28 @@ struct PassiveBluetoothExperimentOnePrivateResearchAdmissionTests {
             "scripts/ci/xcode27_signed_field_candidate.sh"
         )
 
-        #expect(
-            wrapper.contains(
-                "unset SWIFT_ACTIVE_COMPILATION_CONDITIONS OTHER_SWIFT_FLAGS XCODE_XCCONFIG_FILE"
-            )
-        )
-        #expect(wrapper.contains("CANONICAL_PRODUCER=\"$SCRIPT_DIR/xcode27_signed_field_candidate.sh\""))
-        #expect(
-            wrapper.contains(
-                "exec \"$CANONICAL_PRODUCER\" --nembra-today-research-build \"$@\""
-            )
-        )
+        #expect(wrapper.contains("SUPERSEDED: the private TODAY ES80-FINGERPRINT-v1 Research candidate path is retired."))
+        #expect(wrapper.contains("Current Capture field procedure is ES80-AUTHENTICATED-STATIONARY-v1."))
+        #expect(wrapper.contains("PHYSICAL NO-GO: this legacy wrapper cannot authorize scanning or an ES80 experiment."))
+        #expect(wrapper.contains("exit 64"))
+        #expect(!wrapper.contains("CANONICAL_PRODUCER="))
+        #expect(!wrapper.contains("--nembra-today-research-build \"$@\""))
         #expect(!wrapper.contains("OTHER_SWIFT_FLAGS ="))
         #expect(!wrapper.contains("XCODE_XCCONFIG_FILE="))
-        #expect(!wrapper.contains("export OTHER_SWIFT_FLAGS="))
-        #expect(!wrapper.contains("export SWIFT_ACTIVE_COMPILATION_CONDITIONS="))
         #expect(!wrapper.contains("INFOPLIST_KEY_NembraCaptureFieldRecipe"))
 
         #expect(producer.contains("if [[ \"${1:-}\" == \"--nembra-today-research-build\" ]]; then"))
-        #expect(producer.contains("TODAY_RESEARCH_BUILD_MODE=1"))
+        #expect(producer.contains("SUPERSEDED: --nembra-today-research-build cannot authorize the current Capture procedure."))
+        #expect(producer.contains("Use scripts/field/install_one_time_capture.command for ES80-AUTHENTICATED-STATIONARY-v1"))
+        #expect(producer.contains("TODAY_RESEARCH_BUILD_MODE=0"))
         #expect(producer.contains("unset XCODE_XCCONFIG_FILE OTHER_SWIFT_FLAGS SWIFT_ACTIVE_COMPILATION_CONDITIONS"))
-        #expect(producer.contains("RESEARCH_COMPILE_MODE=\"private-today-v1\""))
-        #expect(producer.contains("RESEARCH_COMPILE_AUTHORITY=\"canonical-producer-explicit-mode\""))
-        #expect(producer.contains("RESEARCH_COMPILE_CONDITION=\"NEMBRA_ES80_TODAY_RESEARCH\""))
-        #expect(producer.contains("if [[ \"$TODAY_RESEARCH_BUILD_MODE\" == \"1\" ]]; then"))
-        #expect(
-            producer.contains(
-                "run_xcodebuild \"$@\" 'OTHER_SWIFT_FLAGS=$(inherited) -DNEMBRA_ES80_TODAY_RESEARCH' archive"
-            )
-        )
+        #expect(producer.contains("RESEARCH_COMPILE_MODE=\"standard\""))
+        #expect(producer.contains("RESEARCH_COMPILE_AUTHORITY=\"none\""))
+        #expect(producer.contains("RESEARCH_COMPILE_CONDITION=\"none\""))
+        #expect(!producer.contains("TODAY_RESEARCH_BUILD_MODE=1"))
+        #expect(!producer.contains("RESEARCH_COMPILE_MODE=\"private-today-v1\""))
+        #expect(!producer.contains("RESEARCH_COMPILE_AUTHORITY=\"canonical-producer-explicit-mode\""))
+        #expect(!producer.contains("RESEARCH_COMPILE_CONDITION=\"NEMBRA_ES80_TODAY_RESEARCH\""))
         #expect(!producer.contains("INFOPLIST_KEY_NembraCaptureFieldRecipe"))
     }
 
