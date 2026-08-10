@@ -15,9 +15,6 @@ def apply():
     s = APP.read_text()
     s = once(s, SNAPSHOT_OLD, SNAPSHOT_NEW, "snapshot")
     s = once(s, LOG_OLD, LOG_NEW, "log")
-    helper_start = s.index("\n    private func redactedApplicationEventDetails(")
-    helper_end = s.index("\n    private func startWatchdog", helper_start)
-    s = s[:helper_start] + s[helper_end:]
     APP.write_text(s)
 
 def verify():
@@ -38,9 +35,9 @@ def verify():
     p = [r.index(x) for x in ordered]
     if p != sorted(p):
         raise SystemExit("custody ordering regressed")
-    for x in ('redactedApplicationEventDetails(', 'eventDetails["generation"] =', 'update.merging(['):
+    for x in ('redactedApplicationEventDetails(update, accountUID:', 'eventDetails["generation"] =', 'update.merging(['):
         if x in r:
-            raise SystemExit(f"lossy path remains: {x}")
+            raise SystemExit(f"lossy path remains in accepted receiver: {x}")
     for x in ('redactedApplicationDescription', 'NembraTuyaPrivateIdentity.appSecret', 'liveTransportDriver.isLocallyConnected'):
         if x not in s:
             raise SystemExit(f"current dependency missing: {x}")
