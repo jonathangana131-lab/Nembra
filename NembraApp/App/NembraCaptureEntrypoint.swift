@@ -146,7 +146,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         var score: Int
         var evidence: [String]
         var title: String { name?.isEmpty == false ? name! : "Unnamed peripheral" }
-        var likely: Bool { knownID || (fd50 && tuyaCompany) || score >= 600 }
+        var likely: Bool { knownID || (fd50 && tuyaCompany) }
     }
 
     enum Phase: String, Codable {
@@ -299,27 +299,27 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
         phase = .scanning
-        message = "Ranking the OFF→ON delta against the previously observed CoreBluetooth identity and Tuya/FD50 evidence."
+        message = "Ranking the OFF→ON delta against the previously observed CoreBluetooth identity and Tuya/FD50 evidence. Name and RSSI are descriptive only."
         log("power_on_scan_started")
         central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
     }
 
     func stopScan() {
         central.stopScan()
-        if selectedID == nil, let first = candidates.first, first.likely { choose(first) }
-        if selectedID == nil { message = "No candidate has enough scooter/Tuya evidence. Re-scan instead of guessing." }
+        if selectedID == nil, let first = candidates.first(where: { $0.likely }) { choose(first) }
+        if selectedID == nil { message = "No candidate has enough deterministic scooter/Tuya evidence. Re-scan instead of guessing." }
         log("scan_stopped")
     }
 
     func choose(_ candidate: Candidate) {
         guard candidate.likely else {
-            message = "Candidate confidence is too low. Re-scan instead of guessing."
+            message = "Candidate lacks deterministic target evidence. Name, RSSI, and ranking score alone cannot authorize it."
             return
         }
         central.stopScan()
         selectedID = candidate.id
         phase = .selected
-        message = "Likely scooter selected. CoreBluetooth discovery is stopped before Tuya's SDK takes connection ownership."
+        message = "Scooter target selected from deterministic evidence. CoreBluetooth discovery is stopped before Tuya's SDK takes connection ownership."
         log("candidate_selected", [
             "id": candidate.id.uuidString,
             "score": String(candidate.score),
@@ -422,8 +422,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
-        // Re-check membership immediately before every BLE attempt so a stale result from a prior
-        // account session cannot authorize the current physical connection.
         verifySDKMembership { [weak self] stillAuthorized in
             guard let self else { return }
             guard stillAuthorized else {
@@ -534,10 +532,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
         do {
-            // The ledger needs only non-empty application evidence. These are bytes of the real
-            // SDK dpsUpdate projection, not claimed raw FD50 transport bytes, and are not retained.
-            let evidenceBytes = try JSONSerialization.data(withJSONObject: update, options: [.sortedKeys])
-            try await sessionLedger.recordApplicationPayload(evidenceBytes, for: token)
+            try await sessionLedger.recordApplicationUpdate(isNonEmpty: true, for: token)
             await refreshLedgerSnapshot()
             log("tuya_application_update", update.merging([
                 "generation": String(token.diagnosticGeneration)
@@ -715,14 +710,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let expectedName = name?.localizedCaseInsensitiveContains("demo") == true || name?.localizedCaseInsensitiveContains("tuya") == true || old?.expectedName == true
         var score = 0
         var evidence: [String] = []
-        if knownID { score += 1000; evidence.append("known previous UUID") }
+        if knownID { score += 1000; evidence.append("prior physical CoreBluetooth UUID") }
         if fd50 { score += 500; evidence.append("FD50") }
         if tuyaCompany { score += 350; evidence.append("Tuya company 0x07D0") }
         if newAfterPowerOn { score += 180; evidence.append("appeared after power-on") }
-        if expectedName { score += 100; evidence.append("expected name") }
+        if expectedName { score += 100; evidence.append("name hint (descriptive only)") }
         if let rssi {
-            if rssi >= -50 { score += 80; evidence.append("very close RSSI") }
-            else if rssi >= -65 { score += 50; evidence.append("nearby RSSI") }
+            if rssi >= -50 { score += 80; evidence.append("very close RSSI (descriptive only)") }
+            else if rssi >= -65 { score += 50; evidence.append("nearby RSSI (descriptive only)") }
             else if rssi >= -80 { score += 20 }
         }
         byID[id] = Candidate(
@@ -951,9 +946,7 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
             withUUID: uuid,
             productKey: productID,
             success: success,
-            failure: { error in
-                failure("Tuya SmartLife SDK did not establish the BLE session: \(error?.localizedDescription ?? "unknown error")")
-            }
+            failure: { failure("Tuya SmartLife SDK did not establish the BLE session.") }
         )
     }
 
@@ -1211,7 +1204,7 @@ private struct SecureLinkView: View {
                             Button("Scan after power-on") { test.scanAfterPowerOn() }
                                 .buttonStyle(.borderedProminent)
                         case .scanning:
-                            Button("Stop scan / use best evidence") { test.stopScan() }
+                            Button("Stop scan / use deterministic evidence") { test.stopScan() }
                                 .buttonStyle(.bordered)
                         default:
                             EmptyView()
@@ -1222,7 +1215,7 @@ private struct SecureLinkView: View {
                                     HStack {
                                         Text(candidate.title).bold()
                                         if candidate.likely {
-                                            Text("LIKELY SCOOTER")
+                                            Text("STRONG MATCH")
                                                 .font(.caption2.bold())
                                                 .padding(.horizontal, 6)
                                                 .padding(.vertical, 2)
