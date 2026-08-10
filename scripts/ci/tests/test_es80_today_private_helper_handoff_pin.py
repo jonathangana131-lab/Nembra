@@ -55,6 +55,21 @@ class PrivateHelperHandoffPinTests(unittest.TestCase):
         self.assertIn("never unlinks a pathname", production)
         self.assertIn("never performs pathname deletion", custody)
 
+    def test_both_handoffs_make_fresh_leaf_retry_mechanically_executable(self):
+        production, custody = self.documents()
+        filename_assignment = "UDID_FILENAME='es80-intended-device.udid'"
+        derived_path = 'UDID_FILE="$PRIVATE_DIR/$UDID_FILENAME"'
+        helper_filename_argument = '--filename "$UDID_FILENAME"'
+
+        for document in (production, custody):
+            with self.subTest(document=document[:48]):
+                self.assertEqual(document.count(filename_assignment), 1)
+                self.assertEqual(document.count(derived_path), 1)
+                self.assertIn(helper_filename_argument, document)
+                self.assertIn("set `UDID_FILENAME` to a fresh leaf name", document)
+                self.assertLess(document.index(filename_assignment), document.index(helper_filename_argument))
+                self.assertLess(document.index(derived_path), document.index(helper_filename_argument))
+
 
 if __name__ == "__main__":
     unittest.main()
