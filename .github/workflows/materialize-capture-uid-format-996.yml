@@ -14,32 +14,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 4
 
-      - name: Guard exact reviewed parent
+      - name: Guard reviewed lineage and helper-only pre-scope
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = '996cf64500be2a32c55227f4dbcdefad8049a284'
+          expected='996cf64500be2a32c55227f4dbcdefad8049a284'
+          git merge-base --is-ancestor "$expected" HEAD^
+          mapfile -t changed < <(git diff --name-only "$expected"..HEAD^)
+          if [[ "${#changed[@]}" -ne 1 || "${changed[0]}" != '.github/workflows/materialize-capture-uid-format-996.yml' ]]; then
+            printf 'Unexpected pre-normalization scope:\n%s\n' "${changed[*]}" >&2
+            exit 78
+          fi
 
       - name: Normalize fail-closed guard formatting
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          import re
           from pathlib import Path
+
           path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           source = path.read_text()
-          old = '''        guard let custodySafeUpdate = applicationUpdateForEventCustody(update) else {
-          await invalidateSourceAuthority(
-              token: token,
-              message: "Verified account UID custody became unavailable before application evidence admission.",
-              kind: "application_account_uid_custody_unavailable"
+          pattern = re.compile(
+              r'        guard let custodySafeUpdate = applicationUpdateForEventCustody\(update\) else \{\n'
+              r'.*?'
+              r'        applicationUpdateAdmissionsInFlight \+= 1\n',
+              re.DOTALL,
           )
-          return
-          }
-          '''
-          new = '''        guard let custodySafeUpdate = applicationUpdateForEventCustody(update) else {
+          replacement = '''        guard let custodySafeUpdate = applicationUpdateForEventCustody(update) else {
               await invalidateSourceAuthority(
                   token: token,
                   message: "Verified account UID custody became unavailable before application evidence admission.",
@@ -47,10 +52,13 @@ jobs:
               )
               return
           }
+
+          applicationUpdateAdmissionsInFlight += 1
           '''
-          if source.count(old) != 1:
-              raise SystemExit(f'expected malformed guard once; observed {source.count(old)}')
-          path.write_text(source.replace(old, new))
+          matches = list(pattern.finditer(source))
+          if len(matches) != 1:
+              raise SystemExit(f'expected bounded custody/admission range once; observed {len(matches)}')
+          path.write_text(pattern.sub(replacement, source, count=1))
           PY
           git diff --check
 
@@ -62,8 +70,16 @@ jobs:
           from pathlib import Path
           s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
           receiver = s[s.index('private func receivedApplicationUpdate('):s.index('private func startWatchdog')]
-          assert 'guard let custodySafeUpdate = applicationUpdateForEventCustody(update) else {' in receiver
-          assert 'application_account_uid_custody_unavailable' in receiver
+          expected = '''        guard let custodySafeUpdate = applicationUpdateForEventCustody(update) else {
+              await invalidateSourceAuthority(
+                  token: token,
+                  message: "Verified account UID custody became unavailable before application evidence admission.",
+                  kind: "application_account_uid_custody_unavailable"
+              )
+              return
+          }
+          '''
+          assert expected in receiver
           assert receiver.index('guard let custodySafeUpdate = applicationUpdateForEventCustody(update)') < receiver.index('sessionLedger.recordApplicationUpdate')
           assert ') { _, trusted in trusted })' in receiver
           PY
