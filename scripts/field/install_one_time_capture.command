@@ -11,6 +11,7 @@ die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 command -v xcodebuild >/dev/null || die "Xcode command-line tools are not available."
 command -v xcrun >/dev/null || die "xcrun is not available."
 command -v security >/dev/null || die "macOS security tool is not available."
+command -v plutil >/dev/null || die "macOS plutil is not available."
 command -v pod >/dev/null || die "CocoaPods is required for the official Tuya SDK field build."
 
 EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"
@@ -115,6 +116,17 @@ xcodebuild \
 
 APP="$DERIVED/Build/Products/Debug-iphoneos/Nembra Capture.app"
 [[ -d "$APP" ]] || die "Build finished but the standalone Nembra Capture.app was not found at $APP"
+
+# Re-read the exact bytes that the physical app will consume. CI proves the
+# project wiring on a Simulator product; the private iPhone build must also
+# prove its own embedded provenance before those bytes cross the install gate.
+APP_PLIST="$APP/Info.plist"
+[[ -f "$APP_PLIST" ]] || die "Built Capture app is missing Info.plist; refusing to install an unverifiable field build."
+BUILT_BUILD_LABEL="$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$APP_PLIST" 2>/dev/null || true)"
+BUILT_SOURCE_SHA="$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$APP_PLIST" 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)"
+[[ "$BUILT_BUILD_LABEL" == "$BUILD_LABEL" ]] || die "Built Capture label '$BUILT_BUILD_LABEL' does not match expected field label '$BUILD_LABEL'. Refusing installation."
+[[ "$BUILT_SOURCE_SHA" == "$SOURCE_SHA" ]] || die "Built Capture source '$BUILT_SOURCE_SHA' does not match expected source '$SOURCE_SHA'. Refusing installation."
+say "Verified built app provenance: $BUILT_BUILD_LABEL @ $BUILT_SOURCE_SHA"
 
 say "Installing SDK-integrated Capture on $DEVICE_NAME"
 open -a Xcode "$ROOT/NembraCapture.xcworkspace" >/dev/null 2>&1 || true
