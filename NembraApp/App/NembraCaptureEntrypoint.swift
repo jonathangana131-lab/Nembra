@@ -414,6 +414,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
     deinit { watchdog?.cancel() }
 
     func abandonCorrelationForViewExit() {
+        // A current-account membership result can still be in flight before OFF1 exists
+        // or during the final pre-authentication recheck. Revoke that callback generation
+        // before any no-scanner/no-lease early return so leaving Secure Link cannot start
+        // hidden package correlation or official Tuya ownership after navigation exit.
+        membershipRequestID = UUID()
+        membershipBusy = false
+#if canImport(ThingSmartHomeKit)
+        membershipProbe = nil
+#endif
         guard processCorrelationLease != nil || correlationSession != nil else { return }
         abandonPackageCorrelation()
         phase = .failed
