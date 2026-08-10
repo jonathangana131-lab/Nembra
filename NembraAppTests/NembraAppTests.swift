@@ -591,6 +591,103 @@ final class NembraAppTests: XCTestCase {
         XCTAssertFalse(model.isAnimationActive)
     }
 
+    func testEnergyRailAuthorityGateAllowsOnlySameReceiptAtOrBelowStoreAuthority() {
+        let receipt = energyRailGateReceipt()
+        let liveStore = DashboardEnergyRailGateState(currentness: .live, receipt: receipt)
+        let retainedStore = DashboardEnergyRailGateState(currentness: .retained, receipt: receipt)
+        let unavailable = DashboardEnergyRailGateState(currentness: .unavailable, receipt: nil)
+
+        XCTAssertTrue(DashboardEnergyRailAuthorityGate.admits(
+            package: DashboardEnergyRailGateState(currentness: .live, receipt: receipt),
+            under: liveStore
+        ))
+        XCTAssertTrue(DashboardEnergyRailAuthorityGate.admits(
+            package: DashboardEnergyRailGateState(currentness: .retained, receipt: receipt),
+            under: liveStore
+        ), "Package freshness may conservatively demote the exact Store-live receipt to retained.")
+        XCTAssertTrue(DashboardEnergyRailAuthorityGate.admits(package: unavailable, under: liveStore))
+
+        XCTAssertTrue(DashboardEnergyRailAuthorityGate.admits(
+            package: DashboardEnergyRailGateState(currentness: .retained, receipt: receipt),
+            under: retainedStore
+        ))
+        XCTAssertTrue(DashboardEnergyRailAuthorityGate.admits(package: unavailable, under: retainedStore))
+        XCTAssertFalse(DashboardEnergyRailAuthorityGate.admits(
+            package: DashboardEnergyRailGateState(currentness: .live, receipt: receipt),
+            under: retainedStore
+        ), "A Store demotion must synchronously veto one stale package-live frame.")
+
+        XCTAssertTrue(DashboardEnergyRailAuthorityGate.admits(package: unavailable, under: unavailable))
+        XCTAssertFalse(DashboardEnergyRailAuthorityGate.admits(
+            package: DashboardEnergyRailGateState(currentness: .retained, receipt: receipt),
+            under: unavailable
+        ))
+        XCTAssertFalse(DashboardEnergyRailAuthorityGate.admits(
+            package: DashboardEnergyRailGateState(currentness: .live, receipt: receipt),
+            under: unavailable
+        ))
+    }
+
+    func testEnergyRailAuthorityGateRejectsEveryReceiptIdentityMismatch() {
+        let receipt = energyRailGateReceipt()
+        let store = DashboardEnergyRailGateState(currentness: .live, receipt: receipt)
+        let mismatches = [
+            energyRailGateReceipt(watts: 355),
+            energyRailGateReceipt(receiptSequenceNumber: 8),
+            energyRailGateReceipt(receivedAtUptimeNanoseconds: 8_001),
+            energyRailGateReceipt(continuityGeneration: 4)
+        ]
+
+        for mismatchedReceipt in mismatches {
+            XCTAssertFalse(DashboardEnergyRailAuthorityGate.admits(
+                package: DashboardEnergyRailGateState(
+                    currentness: .live,
+                    receipt: mismatchedReceipt
+                ),
+                under: store
+            ))
+            XCTAssertFalse(DashboardEnergyRailAuthorityGate.admits(
+                package: DashboardEnergyRailGateState(
+                    currentness: .retained,
+                    receipt: mismatchedReceipt
+                ),
+                under: store
+            ))
+        }
+    }
+
+    func testEnergyRailAuthorityGateRejectsMalformedCallerConstructedStates() {
+        let receipt = energyRailGateReceipt()
+        let validLive = DashboardEnergyRailGateState(currentness: .live, receipt: receipt)
+        let malformedLive = DashboardEnergyRailGateState(currentness: .live, receipt: nil)
+        let malformedRetained = DashboardEnergyRailGateState(currentness: .retained, receipt: nil)
+        let malformedUnavailable = DashboardEnergyRailGateState(
+            currentness: .unavailable,
+            receipt: receipt
+        )
+
+        XCTAssertFalse(DashboardEnergyRailAuthorityGate.admits(
+            package: malformedLive,
+            under: validLive
+        ))
+        XCTAssertFalse(DashboardEnergyRailAuthorityGate.admits(
+            package: malformedRetained,
+            under: validLive
+        ))
+        XCTAssertFalse(DashboardEnergyRailAuthorityGate.admits(
+            package: malformedUnavailable,
+            under: validLive
+        ))
+        XCTAssertFalse(DashboardEnergyRailAuthorityGate.admits(
+            package: validLive,
+            under: malformedLive
+        ))
+        XCTAssertFalse(DashboardEnergyRailAuthorityGate.admits(
+            package: validLive,
+            under: malformedUnavailable
+        ))
+    }
+
     private func speedSample(
         kilometersPerHour: Double,
         uptimeNanoseconds: UInt64
@@ -601,6 +698,20 @@ final class NembraAppTests: XCTestCase {
             metersPerSecond: kilometersPerHour / 3.6,
             receivedAtUptimeNanoseconds: uptimeNanoseconds,
             receivedAtDate: Date(timeIntervalSince1970: 0)
+        )
+    }
+
+    private func energyRailGateReceipt(
+        watts: Double = 356,
+        receiptSequenceNumber: UInt64 = 7,
+        receivedAtUptimeNanoseconds: UInt64 = 8_000,
+        continuityGeneration: UInt64 = 3
+    ) -> DashboardEnergyRailGateReceipt {
+        DashboardEnergyRailGateReceipt(
+            watts: watts,
+            receiptSequenceNumber: receiptSequenceNumber,
+            receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
+            continuityGeneration: continuityGeneration
         )
     }
 }
