@@ -4,6 +4,7 @@ import Testing
 
 @Suite("Capture field authenticated-preflight integration")
 struct TuyaFieldAppPreflightIntegrationSourceTests {
+    // These are token/ordering contracts on purpose: harmless Swift formatting must not make the field gate red.
     @Test("field app uses structured application-update chronology without invented bytes")
     func structuredSDKUpdateIsNotFabricatedIntoTransportBytes() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
