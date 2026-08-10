@@ -50,11 +50,19 @@ public struct PhysicalCaptureTransportEvidence: Codable, Equatable, Sendable {
     /// A CoreBluetooth peripheral UUID is capture-local evidence, not a durable scooter identity.
     public var isStablePhysicalDeviceIdentity: Bool { false }
 
+    /// This transport summary does not, by itself, prove byte-exact FD50 notification contents.
+    ///
+    /// In particular, a structured SmartLife SDK application update must not be re-described as
+    /// raw characteristic bytes merely because it arrived during an authenticated BLE session.
+    /// Byte authority requires a separately preserved byte-exact observation artifact.
+    public var authorizesRawFD50NotificationBytes: Bool { false }
+
     /// Transport evidence never authorizes vehicle telemetry semantics by itself.
     ///
-    /// Even a real non-empty application payload proves only that application-layer bytes were
-    /// observed. Speed, battery, voltage, current, power, mode, odometer, command acknowledgement,
-    /// or any other field meaning requires a separately accepted decoding/correlation contract.
+    /// Even a real non-empty application-level update proves only that an application value/update
+    /// was observed at that boundary. Speed, battery, voltage, current, power, mode, odometer,
+    /// command acknowledgement, or any other field meaning requires a separately accepted
+    /// decoding/correlation contract.
     public var authorizesTelemetrySemantics: Bool { false }
 }
 
