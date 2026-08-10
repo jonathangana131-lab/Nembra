@@ -33,6 +33,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Validate private Tuya input provenance helper
         shell: bash
@@ -162,12 +164,15 @@ jobs:
 
       - name: Build exact-source stamped standalone Simulator app
         shell: bash
+        env:
+          EXACT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          sha="${GITHUB_SHA,,}"
+          sha="${EXACT_SOURCE_SHA,,}"
           dependency_sha='abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'
           label="capture-v14-${sha:0:12}"
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')" = "$sha"
           rm -rf /tmp/NembraCaptureProvenanceDerived
           xcodebuild \
             -project NembraCapture.xcodeproj \
@@ -193,6 +198,7 @@ jobs:
         env:
           APP_PATH: /tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app
           ARTIFACTS_DIR: ${{ runner.temp }}/NembraCaptureStandaloneVisualEvidence
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           TUYA_DEPENDENCY_PROVENANCE_AUTHORITY: simulator-placeholder-only
         run: |
           set -euo pipefail
@@ -202,7 +208,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: capture-standalone-visual-${{ github.sha }}
+          name: capture-standalone-visual-${{ github.event.pull_request.head.sha || github.sha }}
           path: ${{ runner.temp }}/NembraCaptureStandaloneVisualEvidence
           if-no-files-found: warn
           retention-days: 14
