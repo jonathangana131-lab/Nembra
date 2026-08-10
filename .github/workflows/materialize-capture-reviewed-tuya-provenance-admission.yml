@@ -58,6 +58,10 @@ jobs:
         run: |
           set -euo pipefail
           parent=4b41c9ad783f568d0d353acc9f7016a9bd0b64c2
+          # The new regression is intentionally untracked until the final clean
+          # checkpoint. Intent-to-add makes it visible to the exact scope proof
+          # without staging product bytes early.
+          git add -N scripts/ci/tests/test_capture_tuya_reviewed_provenance_admission.py
           mapfile -t semantic < <(git diff --name-only "$parent" -- \
             ':(exclude).github/workflows/materialize-capture-reviewed-tuya-provenance-admission.yml' \
             ':(exclude)scripts/ci/materialize_capture_reviewed_tuya_provenance_admission.py' | sort)
