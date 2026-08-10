@@ -1426,6 +1426,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
         guard sdkAccountLoggedIn,
               sdkDeviceMembershipVerified,
               accountIdentityLeaseIsAuthorized,
+              let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !verifiedAccountUID.isEmpty,
               let driver else {
             await invalidateSourceAuthority(
                 token: token,
@@ -1438,6 +1440,18 @@ private final class SecureLinkController: NSObject, ObservableObject {
             await recordObservedTransportLoss(token: token)
             return
         }
+        guard let eventDetails = TuyaApplicationEventCustody.admittedDetails(
+            applicationUpdate: update,
+            verifiedAccountUID: verifiedAccountUID,
+            connectionGeneration: String(token.diagnosticGeneration)
+        ) else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "Verified account identity custody was unavailable before application evidence could enter the accepted event log.",
+                kind: "application_event_custody_authority_unavailable"
+            )
+            return
+        }
 
         applicationUpdateAdmissionsInFlight += 1
         defer { applicationUpdateAdmissionsInFlight -= 1 }
@@ -1445,9 +1459,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
-                "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            log("tuya_application_update", eventDetails)
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -2261,7 +2273,6 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "accounttoken",
         "accesstoken",
         "refreshtoken",
-        "sessionkey",
         "authkey",
         "seckey",
     ]
