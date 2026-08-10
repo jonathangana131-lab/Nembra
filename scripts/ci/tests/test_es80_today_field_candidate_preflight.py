@@ -328,9 +328,9 @@ class FieldCandidatePreflightTests(unittest.TestCase):
 
     def test_signed_field_handoff_pins_accepted_preflight_and_non_authorization(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
-        self.assertIn("4a6dbdd9e6a987804d48544dd61f424dfc743340", handoff)
-        self.assertIn("f8ab407df9b18f61418e8807dd8f4646442e88de", handoff)
-        self.assertIn("31349190917", handoff)
+        self.assertIn("74f4e88e4efb78bf69fe504f407ef42398e4b6ab", handoff)
+        self.assertIn("1b0155ab8d990420c33ad4c65461e7663612f9fb", handoff)
+        self.assertIn("31349183788", handoff)
         self.assertIn("scripts/ci/es80_today_field_candidate_preflight.py", handoff)
         self.assertIn("READY_TO_INVOKE_SIGNED_FIELD_PRODUCER", handoff)
         self.assertIn("operator-pre-signing-readiness-not-field-authorization", handoff)
