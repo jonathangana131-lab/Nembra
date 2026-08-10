@@ -1438,6 +1438,22 @@ private final class SecureLinkController: NSObject, ObservableObject {
             await recordObservedTransportLoss(token: token)
             return
         }
+        guard let leasedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !leasedAccountUID.isEmpty else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "The exact account identity lease was unavailable before application evidence entered event custody.",
+                kind: "application_event_account_identity_unavailable"
+            )
+            return
+        }
+        // Freeze the privacy projection before the first suspension point. Foreground/account
+        // revocation may clear the live lease while package chronology is awaiting actor work;
+        // that must never turn an already-admitted SDK dictionary back into raw export content.
+        let eventDetailsAtAdmission = redactedApplicationEventDetails(
+            update,
+            leasedAccountUID: leasedAccountUID
+        )
 
         applicationUpdateAdmissionsInFlight += 1
         defer { applicationUpdateAdmissionsInFlight -= 1 }
@@ -1445,7 +1461,21 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            var eventDetails = redactedApplicationEventDetails(update)
+            let currentLeasedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard currentConnectionToken == token,
+                  phase == .observing,
+                  sdkAccountLoggedIn,
+                  sdkDeviceMembershipVerified,
+                  accountIdentityLeaseIsAuthorized,
+                  currentLeasedAccountUID == leasedAccountUID else {
+                await invalidateSourceAuthority(
+                    token: token,
+                    message: "Account/device authority changed while an application receipt was awaiting event custody. The stale callback was not admitted to event history.",
+                    kind: "application_event_authority_changed_before_custody"
+                )
+                return
+            }
+            var eventDetails = eventDetailsAtAdmission
             eventDetails["generation"] = String(token.diagnosticGeneration)
             log("tuya_application_update", eventDetails)
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
@@ -1474,23 +1504,31 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
     }
 
-    private func redactedApplicationEventDetails(_ update: [String: String]) -> [String: String] {
-        guard let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !accountUID.isEmpty else {
-            return update
-        }
-
+    private func redactedApplicationEventDetails(
+        _ update: [String: String],
+        leasedAccountUID: String
+    ) -> [String: String] {
+        let marker = "<redacted-account-uid>"
         var redacted: [String: String] = [:]
         redacted.reserveCapacity(update.count)
-        for (key, value) in update {
-            let redactedKey = key.replacingOccurrences(
-                of: accountUID,
-                with: "<redacted-account-uid>",
+        for (key, value) in update.sorted(by: { $0.key < $1.key }) {
+            let baseKey = key.replacingOccurrences(
+                of: leasedAccountUID,
+                with: marker,
                 options: [.caseInsensitive, .literal]
             )
+            // Redaction can collapse two distinct SDK keys onto the same visible spelling.
+            // Preserve both pieces of untrusted evidence deterministically instead of silently
+            // dropping whichever dictionary element happens to be visited later.
+            var redactedKey = baseKey
+            var collisionIndex = 2
+            while redacted[redactedKey] != nil {
+                redactedKey = "\(baseKey)#\(collisionIndex)"
+                collisionIndex += 1
+            }
             redacted[redactedKey] = value.replacingOccurrences(
-                of: accountUID,
-                with: "<redacted-account-uid>",
+                of: leasedAccountUID,
+                with: marker,
                 options: [.caseInsensitive, .literal]
             )
         }
