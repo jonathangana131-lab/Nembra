@@ -1,0 +1,61 @@
+name: Capture private kernel sentinel diagnostics
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-private-kernel-generation-sentinel-sol
+    paths:
+      - .github/workflows/capture-private-kernel-generation-sentinel-diagnose.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/v14-capture-private-kernel-generation-sentinel-sol
+
+      - name: Reuse the materializer source transformation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('.github/workflows/capture-private-kernel-generation-sentinel-materialize.yml').read_text()
+          step = text.index('      - name: Add kernel mutation sentinel around whole record custody')
+          run = text.index('        run: |\n', step) + len('        run: |\n')
+          end = text.index('\n      - name: Run all private provenance adversarial suites on Linux backend', run)
+          lines = text[run:end].splitlines()
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines) + '\n'
+          Path('/tmp/materialize-source.sh').write_text(script)
+          PY
+          bash /tmp/materialize-source.sh
+
+      - name: Run provenance suites with durable failure annotation
+        shell: bash
+        run: |
+          set -euo pipefail
+          suites=(
+            scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+            scripts/ci/tests/test_capture_tuya_private_input_record_snapshot_coherence.py
+            scripts/ci/tests/test_capture_tuya_private_input_final_snapshot_coherence.py
+          )
+          for suite in "${suites[@]}"; do
+            log="/tmp/$(basename "$suite").log"
+            if ! python3 "$suite" >"$log" 2>&1; then
+              cat "$log"
+              encoded="$(python3 - "$log" <<'PY'
+          import pathlib, sys, urllib.parse
+          text = pathlib.Path(sys.argv[1]).read_text(errors='replace')[-3500:]
+          print(urllib.parse.quote(text, safe=''))
+          PY
+          )"
+              echo "::error title=$(basename "$suite")::$encoded"
+              exit 1
+            fi
+            cat "$log"
+          done
