@@ -1,0 +1,43 @@
+name: V14 Capture Guided Materializer Repair
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-guided-simulator-qa-sol
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Repair workflow-only bootstrap and explicit QA marker
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/v14-capture-guided-simulator-qa-materializer.yml')
+          text = path.read_text()
+          old_guard = '          [[ "$(git rev-parse HEAD^)" == "$EXPECTED_PARENT" ]] || { echo "materializer already consumed or branch moved; no-op"; exit 0; }\n'
+          if text.count(old_guard) != 1:
+              raise SystemExit('exact-parent bootstrap guard drifted')
+          text = text.replace(old_guard, '', 1)
+          old_label = '                      Text(snapshot.evidenceLabel)\n'
+          if text.count(old_label) != 1:
+              raise SystemExit('QA banner label anchor drifted')
+          text = text.replace(old_label, '                      Text("SIMULATOR / QA")\n', 1)
+          path.write_text(text)
+          PY
+          rm .github/workflows/v14-capture-guided-materializer-repair.yml
+          git diff --check
+          git config user.name "Nembra V14 Materializer"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "ci(capture): repair guided QA materializer bootstrap"
+          git push origin HEAD:agent/v14-capture-guided-simulator-qa-sol
