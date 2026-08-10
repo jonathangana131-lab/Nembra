@@ -1,0 +1,129 @@
+name: Temporary Capture Failed-Prerequisite Recovery
+
+on:
+  push:
+    branches:
+      - product/v14-capture-premium-secure-link-current-sol
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: product/v14-capture-premium-secure-link-current-sol
+          fetch-depth: 3
+
+      - name: Guard exact reviewed helper parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "91e7b31eb8686eb57c2e7f3af752cf7363708294"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/tmp-capture-failed-prerequisite-recovery.yml"
+          test "$(git rev-parse HEAD^^)" = "73dc29d83f0c537d2f9fbbecc4c5416addac077a"
+          test "$(git rev-parse HEAD^^^)" = "9a25002e58d351d9db952caa7cc5f4961c03a4fb" || true
+
+      - name: Restore actionable failed prerequisites
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text()
+          old = "        case .failed:\n            failurePanel"
+          new = "        case .failed:\n            if test.privateConfig && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn) {\n                VStack(spacing: 16) {\n                    failureRecoveryContextPanel\n                    sdkAuthorizationPanel\n                }\n            } else if test.sdkAccountLoggedIn && (!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized) {\n                VStack(spacing: 16) {\n                    failureRecoveryContextPanel\n                    preflightPanel\n                }\n            } else {\n                failurePanel\n            }"
+          if text.count(old) != 1:
+              raise SystemExit(f"failed-state routing anchor count: {text.count(old)}")
+          text = text.replace(old, new, 1)
+          anchor = "    private var failurePanel: some View {\n"
+          context = "    private var failureRecoveryContextPanel: some View {\n        panel {\n            VStack(alignment: .leading, spacing: 10) {\n                Label(\"Capture paused\", systemImage: \"exclamationmark.circle\")\n                    .font(.title2.bold())\n                    .foregroundStyle(.orange)\n                Text(test.message)\n                    .foregroundStyle(.secondary)\n                    .fixedSize(horizontal: false, vertical: true)\n                Text(\"Restore the missing prerequisite below. Capture does not reuse the failed attempt as evidence.\")\n                    .font(.footnote)\n                    .foregroundStyle(.secondary)\n            }\n        }\n    }\n\n"
+          if text.count(anchor) != 1:
+              raise SystemExit(f"failure panel anchor count: {text.count(anchor)}")
+          path.write_text(text.replace(anchor, context + anchor, 1))
+
+      - name: Add failed-prerequisite recovery regression
+        shell: bash
+        run: |
+          cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteRecoverySourceTests.swift <<'SWIFT'
+          import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Capture failed-prerequisite product recovery")
+          struct TuyaFailedPrerequisiteRecoverySourceTests {
+              @Test("failed state exposes the control that can restore missing account or membership authority")
+              func failedStateRoutesToRestorablePrerequisite() throws {
+                  let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let surface = try section(in: app, from: "private var primarySurface: some View", to: "private var preflightPanel: some View")
+                  let body = String(surface)
+                  #expect(body.contains("case .failed:"))
+                  #expect(body.contains("!sdkAccount.loggedIn || !test.sdkAccountLoggedIn"))
+                  #expect(body.contains("sdkAuthorizationPanel"))
+                  #expect(body.contains("!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized"))
+                  #expect(body.contains("preflightPanel"))
+                  #expect(body.contains("failureRecoveryContextPanel"))
+              }
+
+              @Test("recovery context preserves the exact blocker and failed-attempt boundary")
+              func recoveryContextPreservesFailureReason() throws {
+                  let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let context = try section(in: app, from: "private var failureRecoveryContextPanel: some View", to: "private var failurePanel: some View")
+                  #expect(context.contains("Text(test.message)"))
+                  #expect(context.contains("Capture does not reuse the failed attempt as evidence."))
+              }
+
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let startRange = source.range(of: start),
+                        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+                      throw SourceContractError.sectionMissing
+                  }
+                  return source[startRange.lowerBound..<endRange.lowerBound]
+              }
+
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  let repositoryRoot = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+              }
+
+              private enum SourceContractError: Error { case sectionMissing }
+          }
+          SWIFT
+
+      - name: Verify recovery without weakening authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          entrypoint='NembraApp/App/NembraCaptureEntrypoint.swift'
+          grep -Fq '!sdkAccount.loggedIn || !test.sdkAccountLoggedIn' "$entrypoint"
+          grep -Fq '!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized' "$entrypoint"
+          grep -Fq 'failureRecoveryContextPanel' "$entrypoint"
+          grep -Fq 'sdkAuthorizationPanel' "$entrypoint"
+          grep -Fq 'preflightPanel' "$entrypoint"
+          grep -Fq 'failedAttemptCanRestartFromOFF1' "$entrypoint"
+          grep -Fq 'currentConnectionToken == nil' "$entrypoint"
+          grep -Fq 'self.sdkLocalBLEOnline = driver.isLocallyConnected(uuid: self.tuyaUUID)' "$entrypoint"
+          grep -Fq 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier' "$entrypoint"
+          grep -Fq 'schemaVersion: 10' "$entrypoint"
+          swiftc -parse "$entrypoint"
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteRecoverySourceTests.swift
+          git diff --check
+
+      - name: Commit clean product repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -- .github/workflows/tmp-capture-failed-prerequisite-recovery.yml
+          git config user.name 'nembra-go-bot'
+          git config user.email 'nembra-go-bot@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(capture): restore failed prerequisite recovery'
+          git push origin HEAD:product/v14-capture-premium-secure-link-current-sol
