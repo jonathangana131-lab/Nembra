@@ -474,6 +474,17 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        if phase == .correlated || phase == .selected {
+            // Final-window sealing can retire the scanner/lease before the view leaves. The
+            // already-earned target remains mutable current-attempt authority and must not cross
+            // a Secure Link view lifetime without a fresh OFF1→ON1→OFF2→ON2 correlation.
+            resetDiscoverySessionOnly()
+            phase = .failed
+            message = "Capture left Secure Link after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the prior target cannot cross a view lifetime."
+            log("target_correlation_abandoned_on_view_exit")
+            return
+        }
+
         guard processCorrelationLease != nil || correlationSession != nil else { return }
         // Existing helper stops package transport before releasing this controller's lease.
         abandonPackageCorrelation()
