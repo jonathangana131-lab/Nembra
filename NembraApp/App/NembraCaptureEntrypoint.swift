@@ -353,6 +353,24 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var correlationWindowIsScanning: Bool { correlationProgress?.isScanning == true }
     var correlationObservedCandidateCount: Int { correlationProgress?.currentObservedCandidateCount ?? 0 }
     var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }
+    var correlationSeriesIsInvalidated: Bool { correlationProgress?.isSeriesInvalidated == true }
+
+    func reconcileCorrelationLifecycle() {
+        guard phase == .baseline || phase == .scanning,
+              correlationSeriesIsInvalidated else { return }
+
+        // The package has already terminally invalidated its own scanner/evidence series.
+        // Mirror that terminal into app-local presentation only; do not mint another
+        // scanner receipt, candidate, timestamp, disconnect claim, or evidence event.
+        correlationSession = nil
+        pendingCorrelatedTargetID = nil
+        phase = .failed
+        message = "Bluetooth correlation ended before this window could be sealed. Restart from OFF1; no target evidence was promoted."
+        log("target_correlation_async_invalidated", [
+            "restart": "OFF1",
+            "evidencePromoted": "false"
+        ])
+    }
 
     var correlationWindowLabel: String {
         guard let phase = correlationProgress?.phase else { return "OFF1" }
@@ -1977,6 +1995,9 @@ private struct SecureLinkView: View {
                 .frame(maxWidth: .infinity)
             }
             .background(Color.black.ignoresSafeArea())
+            .onChange(of: test.correlationSeriesIsInvalidated) { _, invalidated in
+                if invalidated { test.reconcileCorrelationLifecycle() }
+            }
         }
         .navigationTitle("Secure Link")
         .task {
