@@ -20,9 +20,8 @@ struct TuyaMetadataSecretRedactionSourceTests {
         #expect(body.contains("refreshtoken"))
         #expect(body.contains("authkey"))
         #expect(body.contains("seckey"))
-        #expect(body.contains("unicode.scalars.filter"))
-        #expect(body.contains("characterproperties.isalphabetic"))
-        #expect(body.contains("characterproperties.numericvalue"))
+        #expect(body.contains("key.lowercased().filter"))
+        #expect(body.contains("$0.isletter || $0.isnumber"))
         #expect(body.contains("redactsecrets(value)"))
         #expect(body.contains("array.map(redactsecrets)"))
 
