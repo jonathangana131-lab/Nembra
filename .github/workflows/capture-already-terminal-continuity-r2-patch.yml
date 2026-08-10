@@ -1,0 +1,35 @@
+name: Capture Already-Terminal Continuity R2 Patch
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-already-terminal-continuity-r2-sol
+    paths:
+      - .github/workflows/capture-already-terminal-continuity-r2-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-already-terminal-continuity-r2-sol
+          fetch-depth: 0
+      - name: Apply repair and self-retire
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile Scripts/apply_capture_already_terminal_continuity_r2_patch.py
+          python3 Scripts/apply_capture_already_terminal_continuity_r2_patch.py
+          rm Scripts/apply_capture_already_terminal_continuity_r2_patch.py
+          rm .github/workflows/capture-already-terminal-continuity-r2-patch.yml
+          git config user.name nembra-v14-integration
+          git config user.email actions@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git diff --cached -- NembraApp/App/NembraCaptureEntrypoint.swift | grep -q 'mirrorAlreadyTerminalObservationContinuity'
+          git commit -m "fix(capture): mirror package-terminal continuity once"
+          git push origin HEAD:fix/v14-capture-already-terminal-continuity-r2-sol
