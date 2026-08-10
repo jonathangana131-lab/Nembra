@@ -1,0 +1,224 @@
+name: Materialize Capture View Exit Membership Current2
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-view-exit-membership-race-current2-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-view-exit-membership-race-current2-sol
+          fetch-depth: 0
+
+      - name: Guard exact product and apply hidden-start retirement
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='b59cd71272b465bcad70fcc3425382bb29541b2e'
+          git merge-base --is-ancestor "$parent" HEAD
+          git diff --quiet "$parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift
+          python3 - <<'PY'
+          from pathlib import Path
+
+          entry = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = entry.read_text(encoding='utf-8')
+          old = '''    func abandonCorrelationForViewExit() {
+              guard processCorrelationLease != nil || correlationSession != nil else { return }
+              abandonPackageCorrelation()
+              phase = .failed
+              message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
+              log("target_correlation_abandoned_on_view_exit")
+          }
+          '''
+          new = '''    func abandonCorrelationForViewExit() {
+              // A current-account membership request may still be in flight before OFF1 owns a
+              // scanner/lease or while the selected target is being re-proven before Tuya BLE.
+              // Revoke that callback authority before any early return so a late success cannot
+              // start hidden package correlation or hidden official BLE after this view exits.
+              membershipRequestID = UUID()
+              membershipBusy = false
+          #if canImport(ThingSmartHomeKit)
+              membershipProbe = nil
+          #endif
+
+              guard processCorrelationLease != nil || correlationSession != nil else { return }
+              // Preserve radio ordering: package transport retires first, then its owner-token lease.
+              abandonPackageCorrelation()
+              phase = .failed
+              message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
+              log("target_correlation_abandoned_on_view_exit")
+          }
+          '''
+          if source.count(old) != 1:
+              raise SystemExit(f'expected exactly one current lifecycle hook, found {source.count(old)}')
+          source = source.replace(old, new, 1)
+          entry.write_text(source, encoding='utf-8')
+
+          test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift')
+          test.write_text(r'''import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Capture navigation BLE lease retirement source contract")
+          struct TuyaNavigationBLELeaseRetirementSourceTests {
+              @Test("leaving Secure Link revokes both pending membership starts before retiring active correlation")
+              func secureLinkNavigationExitRevokesHiddenStartAuthority() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let controller = String(try section(
+                      in: source,
+                      from: "private final class SecureLinkController",
+                      to: "@MainActor\nprivate protocol OfficialTuyaDriver"
+                  ))
+                  let cleanup = String(try section(
+                      in: controller,
+                      from: "func abandonCorrelationForViewExit()",
+                      to: "var privateConfig: Bool"
+                  ))
+                  let baseline = String(try section(
+                      in: controller,
+                      from: "func startBaseline()",
+                      to: "private func beginCorrelationSeries()"
+                  ))
+                  let authenticate = String(try section(
+                      in: controller,
+                      from: "func authenticate()",
+                      to: "private func beginOfficialConnection(candidate: Candidate)"
+                  ))
+                  let view = String(try section(
+                      in: source,
+                      from: "private struct SecureLinkView: View",
+                      to: "private extension SecureLinkView"
+                  ))
+
+                  let invalidate = try requiredOffset(of: "membershipRequestID = UUID()", in: cleanup)
+                  let busyClear = try requiredOffset(of: "membershipBusy = false", in: cleanup)
+                  let probeClear = try requiredOffset(of: "membershipProbe = nil", in: cleanup)
+                  let activeGuard = try requiredOffset(of: "guard processCorrelationLease != nil || correlationSession != nil else { return }", in: cleanup)
+                  let abandon = try requiredOffset(of: "abandonPackageCorrelation()", in: cleanup)
+
+                  #expect(invalidate < activeGuard)
+                  #expect(busyClear < activeGuard)
+                  #expect(probeClear < activeGuard)
+                  #expect(activeGuard < abandon)
+                  #expect(!cleanup.contains("releasePackageCorrelationLease()"))
+                  #expect(view.contains(".onDisappear"))
+                  #expect(view.contains("test.abandonCorrelationForViewExit()"))
+
+                  // The same request-generation fence guards both asynchronous paths that may otherwise
+                  // start radio work after the screen is gone: pre-OFF1 correlation and selected-target auth.
+                  #expect(baseline.contains("verifySDKMembership"))
+                  #expect(baseline.contains("self.beginCorrelationSeries()"))
+                  #expect(authenticate.contains("verifySDKMembership"))
+                  #expect(authenticate.contains("self.phase == .selected"))
+                  #expect(authenticate.contains("self.beginOfficialConnection(candidate: candidate)"))
+              }
+
+              @Test("membership completion itself is generation fenced")
+              func membershipCompletionRejectsRetiredRequestGeneration() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let verify = String(try section(
+                      in: source,
+                      from: "func verifySDKMembership(completion:",
+                      to: "func retry()"
+                  ))
+                  #expect(verify.contains("let requestID = UUID()"))
+                  #expect(verify.contains("membershipRequestID = requestID"))
+                  #expect(verify.contains("guard let self, self.membershipRequestID == requestID else { return }"))
+              }
+
+              @Test("active cleanup reuses transport-first package abandonment path")
+              func packageTransportRetirementPrecedesLeaseRelease() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let abandon = String(try section(
+                      in: source,
+                      from: "private func abandonPackageCorrelation()",
+                      to: "private func releasePackageCorrelationLease()"
+                  ))
+                  let transport = try requiredOffset(of: "correlationSession?.abandonCurrentWindow()", in: abandon)
+                  let release = try requiredOffset(of: "releasePackageCorrelationLease()", in: abandon)
+                  #expect(transport < release)
+              }
+
+              private func requiredOffset(of token: String, in source: String) throws -> String.Index {
+                  guard let range = source.range(of: token) else {
+                      Issue.record("Expected source token missing: \(token)")
+                      throw SourceContractError.sectionMissing
+                  }
+                  return range.lowerBound
+              }
+
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let startRange = source.range(of: start),
+                        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+                      Issue.record("Expected source section missing: \(start) ... \(end)")
+                      throw SourceContractError.sectionMissing
+                  }
+                  return source[startRange.lowerBound..<endRange.lowerBound]
+              }
+
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  let repositoryRoot = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+              }
+
+              private enum SourceContractError: Error { case sectionMissing }
+          }
+          '''.replace('\n          ', '\n').lstrip(), encoding='utf-8')
+          PY
+
+      - name: Verify bounded truth repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          a=s.index('func abandonCorrelationForViewExit()')
+          b=s.index('var privateConfig: Bool',a)
+          c=s[a:b]
+          order=[c.index(x) for x in (
+            'membershipRequestID = UUID()',
+            'membershipBusy = false',
+            'membershipProbe = nil',
+            'guard processCorrelationLease != nil || correlationSession != nil else { return }',
+            'abandonPackageCorrelation()',
+          )]
+          assert order == sorted(order), order
+          assert 'releasePackageCorrelationLease()' not in c
+          assert 'connectBLE(' not in c and 'publishDps' not in c and 'writeValue' not in c and 'disconnect' not in c
+          assert 'guard !packageCorrelationRetiredForProcess,' in s
+          t=Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift').read_text(encoding='utf-8')
+          for token in ('membershipCompletionRejectsRetiredRequestGeneration','self.beginCorrelationSeries()','self.beginOfficialConnection(candidate: candidate)','transport < release'):
+              assert token in t, token
+          print('capture view-exit hidden-start retirement contract: PASS')
+          PY
+          git diff --check
+
+      - name: Publish clean two-path repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-view-exit-membership-current2.yml
+          git add -A
+          changed="$(git diff --cached --name-only | sort)"
+          expected="$(printf '%s\n' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift' | sort)"
+          test "$changed" = "$expected"
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): revoke hidden membership starts on view exit'
+          git push origin HEAD:fix/v14-capture-view-exit-membership-race-current2-sol
