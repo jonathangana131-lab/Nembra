@@ -47,8 +47,8 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         "Authenticated observation continuity was invalidated by a long observation gap."
     private static let sourceAuthorityFailureReason =
         "Tuya SDK source authority was invalidated."
-    private static let chronologyIntegrityFailureReason =
-        "Read-only session chronology integrity was invalidated."
+    private static let internalLifecycleFailureReason =
+        "Session authority was retired after an internal lifecycle or chronology failure."
 
     private let ledgerID: UUID
     private let nowUptimeNanoseconds: @Sendable () -> UInt64
@@ -150,15 +150,17 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         currentToken = nil
     }
 
-    /// Fail-closed retirement for a session whose chronology machinery itself can no longer be
-    /// trusted to take another monotonic sample.
+    /// Fail-closed terminal for an exact current generation when an internal lifecycle mutation
+    /// cannot complete because chronology or another ledger invariant is no longer trustworthy.
     ///
-    /// This is deliberately not source-authority loss, observation-gap evidence, SDK failure, or a
-    /// transport disconnect. It never advances `latestObserved...`. Pre-authentication evidence is
-    /// cleared; genuinely earned post-authentication chronology remains diagnostic-only. The exact
-    /// current token is always retired so a failed clock cannot leave hidden callback authority.
-    public func markChronologyIntegrityInvalidated(for token: TuyaReadOnlyConnectionToken) throws {
+    /// Unlike the ordinary lifecycle terminals, this method deliberately does not sample the
+    /// monotonic clock. It exists so a clock/invariant failure cannot strand private callback
+    /// authority merely because terminal cleanup would otherwise need the same failing clock.
+    /// No liveness timestamp is advanced and already-earned authenticated chronology remains only
+    /// diagnostic. This terminal is not evidence of Tuya account/membership source-authority loss.
+    public func markInternalLifecycleFailure(for token: TuyaReadOnlyConnectionToken) throws {
         try requireCurrent(token)
+
         switch authenticationState {
         case .waitingForAuthentication, .authenticating:
             authenticationMethod = nil
@@ -171,7 +173,7 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
             throw MutationError.invalidAuthenticationTransition
         }
 
-        authenticationState = .failed(reason: Self.chronologyIntegrityFailureReason)
+        authenticationState = .failed(reason: Self.internalLifecycleFailureReason)
         currentToken = nil
     }
 
