@@ -46,52 +46,39 @@ jobs:
           from pathlib import Path
           p = Path('scripts/ci/tests/test_capture_tuya_private_input_provenance.py')
           s = p.read_text(encoding='utf-8')
-          old = '''        original_lstat = provenance.os.lstat
-          mutated = False
+          start_token = '    def test_file_fingerprint_rejects_same_inode_mutation_during_pathname_check(self) -> None:\n'
+          end_token = '    def test_tree_rejects_file_replacement_after_individual_fingerprint(self) -> None:\n'
+          start = s.index(start_token)
+          end = s.index(end_token, start)
+          replacement = '''    def test_file_fingerprint_rejects_same_inode_mutation_during_pathname_check(self) -> None:
+              target = self.security_podspec
+              original_stat = provenance.os.stat
+              mutated = False
 
-          def lstat_then_mutate(path: os.PathLike[str] | str, *args: object, **kwargs: object) -> os.stat_result:
-              nonlocal mutated
-              metadata = original_lstat(path, *args, **kwargs)
-              if Path(path) == target and not mutated:
-                  mutated = True
-                  original_inode = metadata.st_ino
-                  size = metadata.st_size
-                  target.write_bytes(b"R" * size)
-                  os.utime(
-                      target,
-                      ns=(target.stat().st_atime_ns, metadata.st_mtime_ns + 1_000_000_000),
-                  )
-                  self.assertEqual(target.stat().st_ino, original_inode)
-                  self.assertEqual(target.stat().st_size, size)
-              return metadata
+              def stat_then_mutate(path: os.PathLike[str] | str, *args: object, **kwargs: object) -> os.stat_result:
+                  nonlocal mutated
+                  metadata = original_stat(path, *args, **kwargs)
+                  if kwargs.get("follow_symlinks") is False and Path(path) == target and not mutated:
+                      mutated = True
+                      original_inode = metadata.st_ino
+                      size = metadata.st_size
+                      target.write_bytes(b"R" * size)
+                      os.utime(
+                          target,
+                          ns=(metadata.st_atime_ns, metadata.st_mtime_ns + 1_000_000_000),
+                      )
+                      final_metadata = original_stat(target)
+                      self.assertEqual(final_metadata.st_ino, original_inode)
+                      self.assertEqual(final_metadata.st_size, size)
+                  return metadata
 
-          with mock.patch.object(provenance.os, "lstat", side_effect=lstat_then_mutate):
+              with mock.patch.object(provenance.os, "stat", side_effect=stat_then_mutate):
+                  with self.assertRaises(provenance.ProvenanceError):
+                      provenance._file_fingerprint(target)
+              self.assertTrue(mutated)
+
           '''
-          new = '''        original_stat = provenance.os.stat
-          mutated = False
-
-          def stat_then_mutate(path: os.PathLike[str] | str, *args: object, **kwargs: object) -> os.stat_result:
-              nonlocal mutated
-              metadata = original_stat(path, *args, **kwargs)
-              if kwargs.get("follow_symlinks") is False and Path(path) == target and not mutated:
-                  mutated = True
-                  original_inode = metadata.st_ino
-                  size = metadata.st_size
-                  target.write_bytes(b"R" * size)
-                  os.utime(
-                      target,
-                      ns=(metadata.st_atime_ns, metadata.st_mtime_ns + 1_000_000_000),
-                  )
-                  final_metadata = original_stat(target)
-                  self.assertEqual(final_metadata.st_ino, original_inode)
-                  self.assertEqual(final_metadata.st_size, size)
-              return metadata
-
-          with mock.patch.object(provenance.os, "stat", side_effect=stat_then_mutate):
-          '''
-          if s.count(old) != 1:
-              raise SystemExit(f'pathname test seam drifted: {s.count(old)}')
-          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          p.write_text(s[:start] + replacement + s[end:], encoding='utf-8')
           PY
 
       - name: Parse provenance helper and tests
