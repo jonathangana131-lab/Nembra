@@ -1798,6 +1798,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
                    self.applicationUpdateCount == 0 {
                     do {
                         try await sessionLedger.markApplicationObservationTimedOut(for: token)
+                    guard self.currentConnectionToken == token,
+                          self.phase == .observing else {
+                        self.log("stale_application_timeout_completion_ignored", [
+                            "generation": String(token.diagnosticGeneration),
+                            "phase": self.phase.rawValue
+                        ])
+                        return
+                    }
                     } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
                         await self.invalidateInternalLifecycle(
                             token: token,
