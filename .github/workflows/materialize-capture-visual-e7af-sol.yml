@@ -43,15 +43,16 @@ jobs:
             scripts/ci/capture_standalone_visual_evidence.sh \
             scripts/ci/tests/test_capture_standalone_visual_evidence.py
           changed="$(git diff --name-only --cached)"
-          printf '%s\n' "$changed"
           test "$(printf '%s\n' "$changed" | wc -l | tr -d ' ')" = 3
-      - name: Validate imported authority contract
+      - name: Validate harness shell syntax
         shell: bash
-        run: |
-          set -euo pipefail
-          bash -n scripts/ci/capture_standalone_visual_evidence.sh
-          python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
-          git diff --check
+        run: bash -n scripts/ci/capture_standalone_visual_evidence.sh
+      - name: Validate harness source contract
+        shell: bash
+        run: python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+      - name: Validate imported diff hygiene
+        shell: bash
+        run: git diff --check
       - name: Publish clean donor bytes
         shell: bash
         run: |
