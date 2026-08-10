@@ -1426,6 +1426,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
         guard sdkAccountLoggedIn,
               sdkDeviceMembershipVerified,
               accountIdentityLeaseIsAuthorized,
+              let admittedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !admittedAccountUID.isEmpty,
               let driver else {
             await invalidateSourceAuthority(
                 token: token,
@@ -1445,7 +1447,27 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            var eventDetails = redactedApplicationEventDetails(update)
+            guard currentConnectionToken == token,
+                  phase == .observing,
+                  sdkAccountLoggedIn,
+                  sdkDeviceMembershipVerified,
+                  accountIdentityLeaseIsAuthorized,
+                  membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) == admittedAccountUID else {
+                log("application_update_source_authority_changed_before_event_custody", [
+                    "generation": String(token.diagnosticGeneration)
+                ])
+                return
+            }
+            guard driver.isLocallyConnected(uuid: tuyaUUID) else {
+                log("application_update_transport_not_current_before_event_custody", [
+                    "generation": String(token.diagnosticGeneration)
+                ])
+                return
+            }
+            var eventDetails = redactedApplicationEventDetails(
+                update,
+                accountUID: admittedAccountUID
+            )
             eventDetails["generation"] = String(token.diagnosticGeneration)
             log("tuya_application_update", eventDetails)
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
@@ -1474,25 +1496,33 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
     }
 
-    private func redactedApplicationEventDetails(_ update: [String: String]) -> [String: String] {
-        guard let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !accountUID.isEmpty else {
-            return update
+    private func redactedApplicationEventDetails(
+        _ update: [String: String],
+        accountUID: String
+    ) -> [String: String] {
+        let exactAccountUID = accountUID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !exactAccountUID.isEmpty else { return [:] }
+
+        func redactedText(_ text: String) -> String {
+            text.replacingOccurrences(
+                of: exactAccountUID,
+                with: "<redacted-account-uid>",
+                options: [.caseInsensitive, .literal]
+            )
         }
 
         var redacted: [String: String] = [:]
         redacted.reserveCapacity(update.count)
-        for (key, value) in update {
-            let redactedKey = key.replacingOccurrences(
-                of: accountUID,
-                with: "<redacted-account-uid>",
-                options: [.caseInsensitive, .literal]
-            )
-            redacted[redactedKey] = value.replacingOccurrences(
-                of: accountUID,
-                with: "<redacted-account-uid>",
-                options: [.caseInsensitive, .literal]
-            )
+        for key in update.keys.sorted() {
+            guard let value = update[key] else { continue }
+            let baseKey = redactedText(key)
+            var admittedKey = baseKey
+            var collisionOrdinal = 2
+            while redacted[admittedKey] != nil {
+                admittedKey = "\(baseKey)#\(collisionOrdinal)"
+                collisionOrdinal += 1
+            }
+            redacted[admittedKey] = redactedText(value)
         }
         return redacted
     }
