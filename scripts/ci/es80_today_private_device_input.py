@@ -15,6 +15,7 @@ from pathlib import Path
 import stat
 import sys
 from typing import Callable
+import warnings
 
 MAX_PRIVATE_IDENTIFIER_BYTES = 128
 READY_MARKER = "CREATED_PRIVATE_INTENDED_DEVICE_INPUT"
@@ -151,6 +152,17 @@ def _validated_secret(secret: str, output_path: Path) -> bytes:
     return encoded
 
 
+def _secure_secret_prompt() -> str:
+    # getpass may warn and fall back to potentially echoed stdin when terminal echo suppression is
+    # unavailable. Make that warning fatal at the warning point so fallback input is never consumed.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", getpass.GetPassWarning)
+        try:
+            return getpass.getpass("Intended iPhone UDID: ")
+        except getpass.GetPassWarning as error:
+            raise PrivateInputError("secure-terminal-input-unavailable") from error
+
+
 def _write_all(descriptor: int, payload: bytes) -> None:
     offset = 0
     while offset < len(payload):
@@ -251,7 +263,9 @@ def create_private_input(
 
         os.fsync(directory_descriptor)
         return output_path
-    except Exception:
+    except BaseException:
+        # Cleanup is part of secret custody even for cancellation/terminal aborts such as Ctrl-C.
+        # Re-raise the original exception after removing only the exact fresh inode we created.
         if created_object_identity is not None:
             try:
                 current = os.stat(filename, dir_fd=directory_descriptor, follow_symlinks=False)
@@ -290,7 +304,7 @@ def main(argv: list[str] | None = None) -> int:
             args.private_directory,
             args.source_repo,
             args.filename,
-            secret_provider=lambda: getpass.getpass("Intended iPhone UDID: "),
+            secret_provider=_secure_secret_prompt,
         )
     except PrivateInputError as error:
         print(f"NOT_READY: {error}", file=sys.stderr)
