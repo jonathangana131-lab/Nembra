@@ -15,23 +15,21 @@ struct TuyaApplicationSecretValueCustodySourceTests {
         let callback = String(try section(
             in: driver,
             from: "func device(_ device: ThingSmartDevice?, dpsUpdate",
-            to: "private static let secretKeyFragments"
+            to: "private static func sortedApplicationEntries("
         ))
         let sanitizer = String(try section(
             in: driver,
             from: "private static let secretKeyFragments",
-            to: "}\n#endif"
+            to: "private static func redactApplicationSecrets("
         ))
 
         #expect(driver.contains("NembraTuyaPrivateIdentity.appKey"))
         #expect(driver.contains("NembraTuyaPrivateIdentity.appSecret"))
-        #expect(sanitizer.contains("replacingOccurrences"))
-        #expect(
-            sanitizer.contains("exactSecretValues")
-                || sanitizer.contains("knownSecretValues")
-                || sanitizer.contains("secretValues")
-        )
-        #expect(!callback.contains("String(describing: Self.redactApplicationSecrets(value))"))
+        #expect(sanitizer.contains("exactSecretValues"))
+        #expect(sanitizer.contains("redactKnownSecretValues"))
+        #expect(sanitizer.contains("replacingOccurrences(of: secret, with: \"<redacted>\")"))
+        #expect(callback.contains("Self.redactedApplicationDescription(value)"))
+        #expect(!callback.contains("String(describing: value)"))
     }
 
     @Test("credential-shaped keys remain redacted in addition to exact-value custody")
@@ -50,6 +48,7 @@ struct TuyaApplicationSecretValueCustodySourceTests {
             #expect(driver.contains("\"\(fragment)\""))
         }
         #expect(driver.contains("secretKeyFragments.contains"))
+        #expect(driver.contains("sanitized[custodyKey] = \"<redacted>\""))
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
