@@ -1,0 +1,94 @@
+name: Reanchor V14 Capture premium root
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-premium-root-sol
+
+permissions:
+  contents: write
+
+jobs:
+  reanchor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-premium-root-sol
+          fetch-depth: 0
+
+      - name: Transplant reviewed root onto live product truth and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_ACTOR" = "github-actions[bot]" ]; then
+            exit 0
+          fi
+          test "$(git rev-parse HEAD^)" = "707511e073866704887f12a7164a1ad093fe660b"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          donor = "0d60e4a6a5ab0c4e55c51b41a6d287425b16f4c1"
+          app_path = "NembraApp/App/NembraCaptureEntrypoint.swift"
+          start_marker = "@MainActor\nprivate struct CaptureP0Root: View {\n"
+          end_marker = "@MainActor\nprivate final class SecureLinkController: NSObject, ObservableObject {\n"
+
+          current = Path(app_path).read_text()
+          reviewed = subprocess.check_output(
+              ["git", "show", f"{donor}:{app_path}"],
+              text=True,
+          )
+
+          current_start = current.index(start_marker)
+          current_end = current.index(end_marker, current_start)
+          donor_start = reviewed.index(start_marker)
+          donor_end = reviewed.index(end_marker, donor_start)
+          reviewed_root = reviewed[donor_start:donor_end]
+
+          required = [
+              "NEMBRA CAPTURE",
+              "Engineering details",
+              "tuya.requestApproval()",
+              "tuya.checkApprovalNow()",
+              "tuya.refreshDevices()",
+              "tuya.selectDevice(device)",
+              "SecureLinkView(device: device)",
+          ]
+          forbidden = [
+              "P0 · TUYA AUTHENTICATION",
+              "Prove the secure scooter link first.",
+              "Read-only control boundary",
+              "local_key",
+              "No DP query",
+              ".card()",
+          ]
+          for token in required:
+              if token not in reviewed_root:
+                  raise SystemExit(f"reviewed root missing required token: {token}")
+          for token in forbidden:
+              if token in reviewed_root:
+                  raise SystemExit(f"reviewed root retained forbidden token: {token}")
+
+          merged = current[:current_start] + reviewed_root + current[current_end:]
+          # Preserve live truth outside the root byte-for-byte.
+          if merged[:current_start] != current[:current_start]:
+              raise SystemExit("prefix truth changed during root transplant")
+          merged_end = current_start + len(reviewed_root)
+          if merged[merged_end:] != current[current_end:]:
+              raise SystemExit("suffix truth changed during root transplant")
+          Path(app_path).write_text(merged)
+          PY
+
+          git show 0d60e4a6a5ab0c4e55c51b41a6d287425b16f4c1:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift \
+            > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift
+
+          rm .github/workflows/reanchor-v14-capture-premium-root.yml
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'feat(capture): reanchor premium standalone root'
+          git push origin HEAD:fix/v14-capture-premium-root-sol
