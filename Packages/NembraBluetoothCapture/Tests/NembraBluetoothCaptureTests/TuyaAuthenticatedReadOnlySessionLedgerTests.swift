@@ -114,6 +114,42 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .readyForStationaryMapping)
     }
 
+    @Test("liveness cannot advance before authentication")
+    func preAuthLivenessIsRejected() async throws {
+        let clock = TestUptimeClock(100)
+        let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
+        let token = try await ledger.beginConnection()
+        let before = await ledger.currentPreflightSnapshot()
+
+        clock.advance(to: 200)
+        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.authenticationRequired) {
+            try await ledger.observeCurrentConnection(for: token)
+        }
+
+        #expect(await ledger.currentPreflightSnapshot() == before)
+    }
+
+    @Test("late SDK failure after authentication retires provenance and application authority")
+    func lateAuthenticationFailureRetiresAuthority() async throws {
+        let clock = TestUptimeClock(100)
+        let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
+        let token = try await ledger.beginConnection()
+        clock.advance(to: 200)
+        try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
+        clock.advance(to: 300)
+        try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
+        clock.advance(to: 400)
+        try await ledger.markAuthenticationFailed(for: token)
+
+        let snapshot = await ledger.currentPreflightSnapshot()
+        #expect(snapshot.authenticationState == .failed(reason: "Tuya authentication failed."))
+        #expect(snapshot.authenticationMethod == nil)
+        #expect(snapshot.applicationPayloadCount == 0)
+        #expect(snapshot.authenticatedAtUptimeNanoseconds == nil)
+        #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == nil)
+        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Tuya authentication failed."))
+    }
+
     @Test("clock regression cannot rewrite accepted chronology")
     func clockRegressionFailsClosed() async throws {
         let clock = TestUptimeClock(5_000)
