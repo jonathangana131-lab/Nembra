@@ -1,0 +1,205 @@
+name: Materialize Capture Auth Promotion Fence 38c
+
+on:
+  push:
+    branches:
+      - "fix/v14-capture-auth-promotion-resume-38c-sol"
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-auth-promotion-resume-38c-sol
+          fetch-depth: 2
+          persist-credentials: true
+
+      - name: Verify exact product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          product='38c69bcf6660f42468c954a9196f35d3bdff2680'
+          test "$(git rev-parse HEAD^)" = "$product"
+          test "$(git diff --name-only "$product" HEAD)" = '.github/workflows/materialize-capture-auth-promotion-resume-38c.yml'
+
+      - name: Materialize post-await authority fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          app_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          app = app_path.read_text(encoding='utf-8')
+          start = app.index('    private func authenticated(token: TuyaReadOnlyConnectionToken) async {')
+          end = app.index('    private func authenticationFailed(token: TuyaReadOnlyConnectionToken) async {', start)
+          handler = app[start:end]
+          anchor = '''                    await refreshLedgerSnapshot()
+                    phase = .observing'''
+          replacement = '''                    await refreshLedgerSnapshot()
+
+                    // Ledger actor hops can interleave foreground/view/account retirement.
+                    // Never repaint a retired generation as authenticated observation.
+                    guard currentConnectionToken == token else {
+                        log("stale_auth_promotion_resume_ignored", [
+                            "generation": String(token.diagnosticGeneration)
+                        ])
+                        return
+                    }
+                    guard phase == .authenticating else {
+                        log("auth_promotion_resume_phase_changed_ignored", [
+                            "generation": String(token.diagnosticGeneration)
+                        ])
+                        return
+                    }
+                    guard sdkAccountLoggedIn,
+                          sdkDeviceMembershipVerified,
+                          accountIdentityLeaseIsAuthorized else {
+                        await invalidateSourceAuthority(
+                            token: token,
+                            message: "Tuya account/device source authority changed while authentication promotion was suspended.",
+                            kind: "sdk_source_authority_lost_during_auth_promotion"
+                        )
+                        return
+                    }
+
+                    phase = .observing'''
+          if handler.count(anchor) != 1:
+              raise SystemExit(f'expected one auth promotion anchor, found {handler.count(anchor)}')
+          handler = handler.replace(anchor, replacement, 1)
+          app_path.write_text(app[:start] + handler + app[end:], encoding='utf-8')
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticationPromotionReentrancySourceTests.swift')
+          if test_path.exists():
+              raise SystemExit('auth promotion regression already exists; refresh current product')
+          test_path.write_text(textwrap.dedent(r'''\
+          import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Tuya authentication promotion reentrancy")
+          struct TuyaAuthenticationPromotionReentrancySourceTests {
+              @Test("post-await auth promotion cannot resurrect a retired generation")
+              func authenticatedPromotionRevalidatesAuthorityAfterActorHops() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let authenticated = String(try section(
+                      in: source,
+                      from: "private func authenticated(token: TuyaReadOnlyConnectionToken) async",
+                      to: "private func authenticationFailed(token: TuyaReadOnlyConnectionToken) async"
+                  ))
+                  let promotion = try #require(authenticated.range(of: "try await sessionLedger.markAuthenticated(for: token, method: .smartLifeAppSDK)"))
+                  let refresh = try #require(authenticated.range(of: "await refreshLedgerSnapshot()", range: promotion.upperBound..<authenticated.endIndex))
+                  let observing = try #require(authenticated.range(of: "phase = .observing", range: refresh.upperBound..<authenticated.endIndex))
+                  let fence = String(authenticated[refresh.upperBound..<observing.lowerBound])
+                  #expect(fence.contains("currentConnectionToken == token"))
+                  #expect(fence.contains("phase == .authenticating"))
+                  #expect(fence.contains("sdkAccountLoggedIn"))
+                  #expect(fence.contains("sdkDeviceMembershipVerified"))
+                  #expect(fence.contains("accountIdentityLeaseIsAuthorized"))
+                  #expect(fence.contains("sdk_source_authority_lost_during_auth_promotion"))
+              }
+
+              @Test("watchdog starts only after the post-await authority fence")
+              func watchdogCannotStartForRetiredPromotion() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let authenticated = String(try section(
+                      in: source,
+                      from: "private func authenticated(token: TuyaReadOnlyConnectionToken) async",
+                      to: "private func authenticationFailed(token: TuyaReadOnlyConnectionToken) async"
+                  ))
+                  let refresh = try #require(authenticated.range(of: "await refreshLedgerSnapshot()"))
+                  let observing = try #require(authenticated.range(of: "phase = .observing", range: refresh.upperBound..<authenticated.endIndex))
+                  let watchdog = try #require(authenticated.range(of: "startWatchdog(token: token)", range: observing.upperBound..<authenticated.endIndex))
+                  let fence = String(authenticated[refresh.upperBound..<observing.lowerBound])
+                  #expect(fence.contains("currentConnectionToken == token"))
+                  #expect(fence.contains("phase == .authenticating"))
+                  #expect(fence.contains("accountIdentityLeaseIsAuthorized"))
+                  #expect(observing.lowerBound < watchdog.lowerBound)
+              }
+
+              @Test("retired token and phase drift do not double-terminalize")
+              func alreadyRetiredResumePathsOnlyIgnore() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let authenticated = String(try section(
+                      in: source,
+                      from: "private func authenticated(token: TuyaReadOnlyConnectionToken) async",
+                      to: "private func authenticationFailed(token: TuyaReadOnlyConnectionToken) async"
+                  ))
+                  let refresh = try #require(authenticated.range(of: "await refreshLedgerSnapshot()"))
+                  let observing = try #require(authenticated.range(of: "phase = .observing", range: refresh.upperBound..<authenticated.endIndex))
+                  let fence = String(authenticated[refresh.upperBound..<observing.lowerBound])
+                  #expect(fence.contains("stale_auth_promotion_resume_ignored"))
+                  #expect(fence.contains("auth_promotion_resume_phase_changed_ignored"))
+                  #expect(fence.components(separatedBy: "await invalidateSourceAuthority(").count - 1 == 1)
+              }
+
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let a = source.range(of: start),
+                        let b = source.range(of: end, range: a.upperBound..<source.endIndex) else {
+                      Issue.record("Expected source section missing: \(start) ... \(end)")
+                      throw SourceContractError.sectionMissing
+                  }
+                  return source[a.lowerBound..<b.lowerBound]
+              }
+
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  let root = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)
+              }
+
+              private enum SourceContractError: Error { case sectionMissing }
+          }
+          '''), encoding='utf-8')
+          PY
+
+      - name: Validate focused source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticationPromotionReentrancySourceTests.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          a=s.index('    private func authenticated(token: TuyaReadOnlyConnectionToken) async {')
+          b=s.index('    private func authenticationFailed(token: TuyaReadOnlyConnectionToken) async {',a)
+          h=s[a:b]
+          refresh=h.index('await refreshLedgerSnapshot()')
+          observing=h.index('phase = .observing',refresh)
+          watchdog=h.index('startWatchdog(token: token)',observing)
+          fence=h[refresh:observing]
+          for token in ('currentConnectionToken == token','phase == .authenticating','sdkAccountLoggedIn','sdkDeviceMembershipVerified','accountIdentityLeaseIsAuthorized','sdk_source_authority_lost_during_auth_promotion'):
+              assert token in fence, token
+          assert refresh < observing < watchdog
+          print('auth promotion resume fence: PASS')
+          PY
+          git diff --check
+
+      - name: Commit clean exact-current repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          product='38c69bcf6660f42468c954a9196f35d3bdff2680'
+          rm .github/workflows/materialize-capture-auth-promotion-resume-38c.yml
+          git add -A
+          git diff --cached --check
+          mapfile -t changed < <(git diff --cached --name-only "$product" | sort)
+          test "${#changed[@]}" = 2
+          test "${changed[0]}" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          test "${changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticationPromotionReentrancySourceTests.swift'
+          git config user.name 'Nembra V14 Sol'
+          git config user.email 'actions@users.noreply.github.com'
+          git commit -m 'fix(capture): fence auth promotion after actor hops'
+          git push origin HEAD:fix/v14-capture-auth-promotion-resume-38c-sol
