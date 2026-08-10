@@ -1,0 +1,84 @@
+from pathlib import Path
+import re
+
+root = Path(__file__).resolve().parents[3]
+script = (root / "scripts/ci/capture_standalone_visual_evidence.sh").read_text(encoding="utf-8")
+workflow_path = root / ".github/workflows/capture-standalone-visual-evidence.yml"
+workflow = workflow_path.read_text(encoding="utf-8") if workflow_path.exists() else ""
+
+required = [
+    'EXPECTED_BUNDLE_ID="com.jonathangana131.nembra.capturelearn"',
+    'EXPECTED_PROCEDURE_IDENTIFIER="ES80-AUTHENTICATED-STATIONARY-v1"',
+    'IDENTITY_SOURCE="NembraApp/App/NembraCaptureBuildIdentity.swift"',
+    'requiredFieldProcedureIdentifier',
+    'static var fieldProcedureIdentifier: String',
+    'current.procedureIdentifier',
+    'plutil -extract NembraCaptureProcedureIdentifier',
+    'PROCEDURE_IDENTIFIER',
+    'startswith("com.apple.CoreSimulator.SimRuntime.iOS-27")',
+    'if x.get("name") == "iPhone 12"',
+    'EXPECTED_DEVICE_TYPE="com.apple.CoreSimulator.SimDeviceType.iPhone-12"',
+    'no newer-device fallback may satisfy the V14 baseline',
+    'Public visual evidence must not carry private Tuya dependency authority',
+    'EXPECTED_BUILD_IDENTIFIER="capture-v14-${SOURCE_SHA:0:12}"',
+    'CHECKOUT_SHA="$(git rev-parse HEAD',
+    'SIMCTL_CHILD_*|NEMBRA_SIMULATION_*)',
+    'done < <(compgen -v)',
+    'xcrun simctl ui "$UDID" appearance dark',
+    'xcrun simctl ui "$UDID" content_size accessibility-extra-extra-extra-large',
+    'standalone-unprovisioned-dark-iphone12.png',
+    'standalone-unprovisioned-dark-iphone12-ax5.png',
+    '"tuyaDependencyProvenanceClass":"deliberately-absent-public-ci"',
+    '"expectedFieldBuildAuthority":False',
+    '"baselineDevice":"iPhone 12"',
+    '"baselineOS":"iOS 27"',
+    '"procedureBuiltAppRendezvousVerified":True',
+    '"syntheticAuthorityEnvironmentRejected":True',
+    '"visualAcceptanceRequiresHumanReview":True',
+    '"physicalAuthorityCreated":False',
+    '"protocolAuthorityCreated":False',
+]
+for needle in required:
+    if needle not in script:
+        raise SystemExit(f"missing standalone visual-evidence contract: {needle}")
+
+for forbidden_fallback in ('"iPhone 17"', '"iPhone 17 Pro"', '"iPhone 16"', '"iPhone 16 Plus"'):
+    if forbidden_fallback in script:
+        raise SystemExit(f"newer-device fallback cannot satisfy iPhone 12 baseline: {forbidden_fallback}")
+
+if re.search(r"dependency_sha=['\"][0-9a-f]{64}['\"]", script):
+    raise SystemExit("public visual harness must not synthesize a Tuya dependency fingerprint")
+
+active = [line.strip() for line in script.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+for line in active:
+    if re.match(r"^(SIMCTL_CHILD_|NEMBRA_SIMULATION_)[A-Za-z0-9_]*=", line):
+        raise SystemExit(f"visual evidence must not assign synthetic app authority: {line}")
+
+launches = [line for line in active if "xcrun simctl launch" in line]
+if len(launches) != 1:
+    raise SystemExit(f"expected exactly one real standalone launch, found {len(launches)}")
+if "--args" in launches[0] or "SIMCTL_CHILD_" in launches[0] or "NEMBRA_SIMULATION_" in launches[0]:
+    raise SystemExit("standalone launch must not inject synthetic authority")
+
+screenshots = [line for line in active if 'xcrun simctl io "$UDID" screenshot' in line]
+if len(screenshots) != 2:
+    raise SystemExit(f"expected standard + Accessibility XXXL screenshots, found {len(screenshots)}")
+
+for forbidden in ("connectBLE", "writeValue", "publishDps", "publishDpsWithSuccess", "local_key"):
+    if re.search(rf"\b{re.escape(forbidden)}\b", "\n".join(active)):
+        raise SystemExit(f"visual harness must not contain scooter/protocol action: {forbidden}")
+
+if workflow:
+    for needle in (
+        "EXPECTED_PROCEDURE_IDENTIFIER: ES80-AUTHENTICATED-STATIONARY-v1",
+        'INFOPLIST_KEY_NembraCaptureProcedureIdentifier="$EXPECTED_PROCEDURE_IDENTIFIER"',
+        'plutil -extract NembraCaptureProcedureIdentifier raw -o - "$plist"',
+        'NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=""',
+        'static let requiredFieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"',
+        'static var fieldProcedureIdentifier: String',
+        "validation/v14-capture-guided-visual-e618-sol",
+    ):
+        if needle not in workflow:
+            raise SystemExit(f"visual workflow missing exact authority contract: {needle}")
+
+print("capture standalone visual evidence source contract: PASS")
