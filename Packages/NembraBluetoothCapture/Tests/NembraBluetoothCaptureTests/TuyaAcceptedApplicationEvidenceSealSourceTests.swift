@@ -20,20 +20,18 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         let body = String(seal)
 
         guard let packageSeal = body.range(of: "try await sessionLedger.sealAcceptedObservation(for: token)"),
-              let frozenPrefix = body.range(of: "sealedAcceptedEventPrefix = events", range: packageSeal.upperBound..<body.endIndex) else {
+              let frozenPrefix = body.range(of: "sealedAcceptedEventPrefix =", range: packageSeal.upperBound..<body.endIndex) else {
             Issue.record("Successful package seal must synchronously snapshot the exportable accepted event prefix.")
             throw SourceContractError.sectionMissing
         }
 
-        // A delayed callback task can resume at the next await. Freeze the app-side accepted
-        // evidence immediately after the package seal returns, before refresh/suspension lets any
-        // stale callback append diagnostic events to the live controller log.
+        #expect(body[frozenPrefix.upperBound...].contains("events"))
         if let nextAwait = body.range(of: "await ", range: packageSeal.upperBound..<body.endIndex) {
             #expect(frozenPrefix.lowerBound < nextAwait.lowerBound)
         }
     }
 
-    @Test("accepted export uses the frozen prefix instead of the mutable live event log")
+    @Test("accepted export fails closed onto the frozen prefix instead of the mutable live event log")
     func acceptedExportUsesFrozenEventPrefix() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
@@ -46,7 +44,10 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         )
         let body = String(export)
 
-        #expect(body.contains("events: sealedAcceptedEventPrefix"))
+        #expect(body.contains("if phase == .accepted"))
+        #expect(body.contains("guard let sealedAcceptedEventPrefix"))
+        #expect(body.contains("exportEvents = sealedAcceptedEventPrefix"))
+        #expect(body.contains("events: exportEvents"))
         #expect(!body.contains("events: events\n"))
     }
 
