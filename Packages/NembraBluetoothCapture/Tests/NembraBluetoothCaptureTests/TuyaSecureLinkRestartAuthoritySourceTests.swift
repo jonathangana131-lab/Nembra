@@ -43,6 +43,20 @@ struct TuyaSecureLinkRestartAuthoritySourceTests {
         #expect(failurePanel.contains("canRestartFromFreshOFF1"))
     }
 
+    @Test("standalone root cannot reference a removed view modifier")
+    func rootModifierReferencesRemainTypeCheckable() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let root = try section(
+            in: app,
+            from: "private struct CaptureP0Root: View",
+            to: "private final class SecureLinkController: NSObject, ObservableObject"
+        )
+
+        let rootUsesCard = root.contains(".card()")
+        let cardHelperExists = app.contains("func card() -> some View")
+        #expect(!rootUsesCard || cardHelperExists)
+    }
+
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
         guard let startRange = source.range(of: start),
               let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
