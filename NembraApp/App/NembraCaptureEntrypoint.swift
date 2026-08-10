@@ -205,11 +205,11 @@ struct NembraTuyaMetadataTestView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 if credentialSaved {
-                    Label("Private scooter credential saved in this iPhone's Keychain for the next Nembra test", systemImage: "lock.shield.fill")
+                    Label("Tuya cloud local_key saved securely. Nembra has not yet proven that it is the FD50 Bluetooth authentication key.", systemImage: "lock.shield.fill")
                         .font(.footnote)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(.secondary)
                 } else if device.localKey.isEmpty {
-                    Label("Tuya did not provide a private local key for this device; the JSON is still useful", systemImage: "info.circle")
+                    Label("Tuya did not provide a private local_key for this device; the JSON is still useful", systemImage: "info.circle")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -266,6 +266,7 @@ private enum TuyaCaptureCredentialStore {
     static func save(device: TuyaAccountBridge.LinkedDevice) -> Bool {
         guard !device.localKey.isEmpty else { return false }
         let payload: [String: String] = [
+            "credentialKind": "tuyaCloudLocalKey",
             "deviceID": device.id,
             "productID": device.productID,
             "uuid": device.uuid,
@@ -306,7 +307,7 @@ struct TuyaSecureLinkPreflightView: View {
                 .foregroundStyle(.green)
             Text("Metadata first")
                 .font(.largeTitle.bold())
-            Text("Send the redacted metadata JSON first. The secure Bluetooth test stays locked until Nembra can build it from your actual bound-device information instead of guessing.")
+            Text("Send the redacted metadata JSON first. The secure Bluetooth test stays locked until Nembra can use a documented Tuya authentication path for your actual bound device; a cloud local_key alone is not treated as proof of FD50 BLE authentication material.")
                 .foregroundStyle(.secondary)
             Spacer()
         }
