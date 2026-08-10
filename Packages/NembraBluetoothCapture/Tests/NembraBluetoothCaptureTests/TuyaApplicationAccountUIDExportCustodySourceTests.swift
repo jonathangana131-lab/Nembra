@@ -15,6 +15,15 @@ struct TuyaApplicationAccountUIDExportCustodySourceTests {
         #expect(receiver.contains("<redacted-account-uid>"))
         #expect(receiver.contains("options: [.caseInsensitive, .literal]"))
         #expect(!receiver.contains("log(\"tuya_application_update\", update"))
+        #expect(!receiver.contains("return update"))
+        #expect(receiver.contains("return nil"))
+        #expect(receiver.contains("guard var eventDetails = redactedApplicationEventDetails(update) else"))
+        #expect(receiver.contains("application_account_uid_custody_unavailable"))
+        #expect(receiver.contains("while redacted[uniqueKey] != nil"))
+        #expect(receiver.contains("collisionSuffix"))
+        let custody = try #require(receiver.range(of: "guard var eventDetails = redactedApplicationEventDetails(update) else"))
+        let ledger = try #require(receiver.range(of: "sessionLedger.recordApplicationUpdate"))
+        #expect(custody.lowerBound < ledger.lowerBound)
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
