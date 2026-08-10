@@ -257,6 +257,11 @@ private struct NembraRollingPowerValueView: View {
         return try? RollingNumberModel(layout: layout)
     }()
 
+    /// Compact fallback capacity only. This is a presentation limit, not a physical
+    /// motor/controller maximum. Larger finite values remain truthful in semantics
+    /// but fail closed visually rather than expanding the cockpit without bound.
+    private static let maximumFallbackDisplayInteger = 99_999.0
+
     var body: some View {
         if let numberModel = Self.numberModel,
            let snapshot = try? numberModel.snapshot(for: value) {
@@ -273,11 +278,23 @@ private struct NembraRollingPowerValueView: View {
                         .clipped()
                 }
             }
-        } else {
-            Text(value.formatted(.number.precision(.fractionLength(0))))
+        } else if let fallbackText {
+            Text(fallbackText)
                 .font(.system(size: fontSize, weight: .semibold, design: .rounded))
                 .monospacedDigit()
+                .contentTransition(reduceMotion ? .identity : .numericText(value: value))
+                .animation(reduceMotion ? nil : .snappy(duration: 0.10), value: fallbackText)
+        } else {
+            Text("—")
+                .font(.system(size: fontSize, weight: .semibold, design: .rounded))
         }
+    }
+
+    private var fallbackText: String? {
+        guard value.isFinite, value >= 0 else { return nil }
+        let rounded = value.rounded(.toNearestOrAwayFromZero)
+        guard rounded <= Self.maximumFallbackDisplayInteger else { return nil }
+        return String(Int(rounded))
     }
 }
 
