@@ -11,14 +11,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 3
+          fetch-depth: 0
           ref: red/v14-capture-cross-tree-revalidation-4c1b-sol
-      - name: Assert exact repair parent and test-only scope
+      - name: Assert exact repair ancestry and test-only scope
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD~2)" = '4c1b90bb1b3ffd850a6ebd8ee8498a0037d388f1'
-          git diff --name-only 4c1b90bb1b3ffd850a6ebd8ee8498a0037d388f1 HEAD | sort > /tmp/actual
+          BASE='4c1b90bb1b3ffd850a6ebd8ee8498a0037d388f1'
+          test "$(git merge-base "$BASE" HEAD)" = "$BASE"
+          git diff --name-only "$BASE" HEAD | sort > /tmp/actual
           cat > /tmp/expected <<'EOF'
           .github/workflows/v14-capture-cross-tree-revalidation-red-4c1b.yml
           scripts/ci/tests/test_capture_tuya_private_input_cross_tree_revalidation_red.py
