@@ -88,7 +88,7 @@ class TodayResearchFieldCandidateProcessStartupCustodyTests(unittest.TestCase):
     def setUp(self):
         self.source = TODAY_WRAPPER.read_text()
 
-    def test_shell_starts_privileged_and_closes_path_before_directory_resolution(self):
+    def test_retired_wrapper_starts_privileged_and_closes_path_before_any_body_action(self):
         self.assertEqual(self.source.splitlines()[0], "#!/bin/bash -p")
         expected = (
             'set -euo pipefail\n'
@@ -97,41 +97,38 @@ class TodayResearchFieldCandidateProcessStartupCustodyTests(unittest.TestCase):
             'unset BASH_ENV ENV\n'
         )
         self.assertIn(expected, self.source)
+        self.assertNotIn("SCRIPT_DIR=", self.source)
+        self.assertNotIn("CANONICAL_PRODUCER=", self.source)
+        self.assertNotIn('exec "$CANONICAL_PRODUCER"', self.source)
+        self.assertIn("SUPERSEDED:", self.source)
+        self.assertIn("PHYSICAL NO-GO", self.source)
+        self.assertIn("exit 64", self.source)
 
-        path_index = self.source.index(f'PATH="{CLOSED_PATH}"')
-        script_dir_index = self.source.index('SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"')
-        producer_index = self.source.index('CANONICAL_PRODUCER="$SCRIPT_DIR/xcode27_signed_field_candidate.sh"')
-        self.assertLess(path_index, script_dir_index)
-        self.assertLess(path_index, producer_index)
-
-    def test_hostile_caller_path_cannot_redirect_canonical_producer_resolution(self):
+    def test_hostile_caller_path_and_bash_env_cannot_execute_before_retirement(self):
         with tempfile.TemporaryDirectory(prefix="nembra-today-wrapper-path-custody-") as temporary:
             directory = Path(temporary)
             hostile_bin = directory / "bin"
-            hostile_producer_dir = directory / "producer"
             hostile_bin.mkdir()
-            hostile_producer_dir.mkdir()
 
             dirname_marker = directory / "hostile-dirname-ran"
-            producer_marker = directory / "hostile-producer-ran"
+            startup_marker = directory / "hostile-startup-ran"
             hostile_dirname = hostile_bin / "dirname"
             hostile_dirname.write_text(
                 "#!/bin/sh\n"
                 f"printf 'hostile dirname executed\\n' > '{dirname_marker}'\n"
-                f"printf '%s\\n' '{hostile_producer_dir}'\n"
+                "printf '%s\\n' /tmp\n"
             )
             hostile_dirname.chmod(0o755)
-
-            hostile_producer = hostile_producer_dir / "xcode27_signed_field_candidate.sh"
-            hostile_producer.write_text(
-                "#!/bin/sh\n"
-                f"printf 'hostile producer executed\\n' > '{producer_marker}'\n"
-                "exit 0\n"
+            hostile_hook = directory / "hostile-bash-env.sh"
+            hostile_hook.write_text(
+                f"/usr/bin/printf 'hostile startup executed\\n' > '{startup_marker}'\n",
+                encoding="utf-8",
             )
-            hostile_producer.chmod(0o755)
 
             environment = os.environ.copy()
             environment["PATH"] = f"{hostile_bin}:{environment.get('PATH', '')}"
+            environment["BASH_ENV"] = str(hostile_hook)
+            environment["ENV"] = str(hostile_hook)
             completed = subprocess.run(
                 [str(TODAY_WRAPPER)],
                 cwd=TODAY_WRAPPER.parents[2],
@@ -141,13 +138,9 @@ class TodayResearchFieldCandidateProcessStartupCustodyTests(unittest.TestCase):
                 check=False,
             )
 
-            self.assertNotEqual(
-                completed.returncode,
-                0,
-                "The real canonical producer should fail closed in this non-field test environment.",
-            )
-            self.assertFalse(dirname_marker.exists(), "Caller PATH selected a hostile dirname before custody closed.")
-            self.assertFalse(producer_marker.exists(), "Caller PATH redirected the TODAY wrapper to a hostile producer.")
+            self.assertEqual(completed.returncode, 64)
+            self.assertFalse(dirname_marker.exists(), "Caller PATH selected a hostile dirname before retirement.")
+            self.assertFalse(startup_marker.exists(), "Caller startup environment executed before retirement.")
 
     def test_wrapper_never_restores_caller_path(self):
         assignments = re.findall(r'(?m)^\s*(?:export\s+)?PATH\s*=', self.source)
