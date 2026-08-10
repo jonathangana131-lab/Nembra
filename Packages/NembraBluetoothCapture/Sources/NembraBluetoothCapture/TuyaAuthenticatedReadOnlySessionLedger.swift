@@ -47,6 +47,8 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         "Authenticated observation continuity was invalidated by a long observation gap."
     private static let sourceAuthorityFailureReason =
         "Tuya SDK source authority was invalidated."
+    private static let chronologyIntegrityFailureReason =
+        "Read-only session chronology integrity was invalidated."
 
     private let ledgerID: UUID
     private let nowUptimeNanoseconds: @Sendable () -> UInt64
@@ -145,6 +147,31 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
 
         _ = try nextMonotonicObservation()
         authenticationState = .failed(reason: "Tuya SDK session failed.")
+        currentToken = nil
+    }
+
+    /// Fail-closed retirement for a session whose chronology machinery itself can no longer be
+    /// trusted to take another monotonic sample.
+    ///
+    /// This is deliberately not source-authority loss, observation-gap evidence, SDK failure, or a
+    /// transport disconnect. It never advances `latestObserved...`. Pre-authentication evidence is
+    /// cleared; genuinely earned post-authentication chronology remains diagnostic-only. The exact
+    /// current token is always retired so a failed clock cannot leave hidden callback authority.
+    public func markChronologyIntegrityInvalidated(for token: TuyaReadOnlyConnectionToken) throws {
+        try requireCurrent(token)
+        switch authenticationState {
+        case .waitingForAuthentication, .authenticating:
+            authenticationMethod = nil
+            authenticatedAtUptimeNanoseconds = nil
+            applicationPayloadCount = 0
+            latestApplicationPayloadUptimeNanoseconds = nil
+        case .authenticated:
+            break
+        case .unavailable, .failed:
+            throw MutationError.invalidAuthenticationTransition
+        }
+
+        authenticationState = .failed(reason: Self.chronologyIntegrityFailureReason)
         currentToken = nil
     }
 
