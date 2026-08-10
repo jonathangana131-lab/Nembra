@@ -1,0 +1,68 @@
+name: Diagnose Capture package 8c2
+
+on:
+  push:
+    branches:
+      - diagnostic/v14-capture-package-8c2-sol
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: 8c2e4baefb36d304662e84c9dcf78ef04e48437e
+      - name: Run Capture package and surface exact failures
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/nembra-capture-package.log"
+          set +e
+          swift test --package-path Packages/NembraBluetoothCapture >"$log" 2>&1
+          status=$?
+          set -e
+          if [[ $status -eq 0 ]]; then
+            echo 'Capture package is green at exact 8c2e4bae.'
+            exit 0
+          fi
+          python3 - "$log" "$status" <<'PY'
+          import pathlib, re, sys
+          path = pathlib.Path(sys.argv[1])
+          status = int(sys.argv[2])
+          lines = path.read_text(errors='replace').splitlines()
+          patterns = [
+              r'\berror:',
+              r'Expectation failed',
+              r'Issue recorded',
+              r'^✘ ',
+              r'^Test Case .* failed',
+              r'^Test Suite .* failed',
+          ]
+          chunks = []
+          for idx, line in enumerate(lines):
+              if any(re.search(p, line) for p in patterns):
+                  start = max(0, idx - 3)
+                  end = min(len(lines), idx + 5)
+                  chunks.append(' | '.join(x.strip() for x in lines[start:end] if x.strip()))
+          tail = ' | '.join(x.strip() for x in lines[-120:] if x.strip())
+          if tail:
+              chunks.append('TERMINAL OUTPUT: ' + tail)
+          seen = set()
+          emitted = 0
+          for chunk in chunks:
+              if not chunk or chunk in seen:
+                  continue
+              seen.add(chunk)
+              safe = chunk.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::error title=Capture package exact failure::{safe[:5000]}')
+              emitted += 1
+              if emitted >= 20:
+                  break
+          if emitted == 0:
+              print('::error title=Capture package exact failure::swift test exited nonzero without a recognized failure marker')
+          raise SystemExit(status)
+          PY
