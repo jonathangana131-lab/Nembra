@@ -70,7 +70,7 @@ jobs:
           set -euo pipefail
           APP_PATH='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app' \
           ARTIFACTS_DIR="$RUNNER_TEMP/NembraCaptureStandaloneVisualEvidence" \
-            scripts/ci/capture_standalone_visual_evidence.sh
+            bash scripts/ci/capture_standalone_visual_evidence.sh
           manifest="$RUNNER_TEMP/NembraCaptureStandaloneVisualEvidence/NembraCaptureStandaloneVisualEvidence.json"
           /usr/bin/python3 - "$manifest" "$NEMBRA_VISUAL_SOURCE_SHA" <<'PY'
           import json, sys
