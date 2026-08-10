@@ -17,12 +17,12 @@ jobs:
           ref: fix/v14-capture-apple-app-prefix-custody-1b12-sol
           fetch-depth: 0
 
-      - name: Verify exact construction parent
+      - name: Verify exact construction base
         shell: bash
         run: |
           set -euo pipefail
           BASE=1b12dc56ec20a7dad30760b57a81106644ffc263
-          test "$(git rev-parse HEAD^)" = "$BASE"
+          test "$(git merge-base HEAD "$BASE")" = "$BASE"
           test "$(git diff --name-only "$BASE" HEAD)" = ".github/workflows/materialize-capture-apple-app-prefix-custody.yml"
 
       - name: Apply corrected Apple application identity custody
@@ -37,44 +37,51 @@ jobs:
           source = installer_path.read_text(encoding="utf-8")
 
           derived = 'EXPECTED_APPLICATION_IDENTIFIER="${TEAM_ID}.${BUNDLE_ID}"\n'
-          old_built = '''[[ "$BUILT_APPLICATION_IDENTIFIER" == "$EXPECTED_APPLICATION_IDENTIFIER" ]] || \\
-    die "Final signed Capture app application-identifier does not match the selected team and Capture bundle identifier. Discard this candidate."'''
-          new_built = '''[[ "$BUILT_APPLICATION_IDENTIFIER" == *".$BUNDLE_ID" ]] || \\
-    die "Final signed Capture app application-identifier does not end in the exact Capture bundle identifier. Discard this candidate."'''
+          old_built = "\n".join([
+              '[[ "$BUILT_APPLICATION_IDENTIFIER" == "$EXPECTED_APPLICATION_IDENTIFIER" ]] || \\',
+              '    die "Final signed Capture app application-identifier does not match the selected team and Capture bundle identifier. Discard this candidate."',
+          ])
+          new_built = "\n".join([
+              '[[ "$BUILT_APPLICATION_IDENTIFIER" == *".$BUNDLE_ID" ]] || \\',
+              '    die "Final signed Capture app application-identifier does not end in the exact Capture bundle identifier. Discard this candidate."',
+          ])
           old_profile_output = '    sys.stdout.write(application + "\\t" + entitlement_team)'
           new_profile_output = '    sys.stdout.write(application + "\\t" + entitlement_team + "\\t" + team_identifiers[0])'
-          old_profile = '''[[ "$PROFILE_SIGNING_IDENTITY" == *$'\\t'* ]] || \\
-    die "Embedded provisioning profile is missing required Sign in with Apple or exact application/team identity custody. Discard this candidate."
-PROFILE_APPLICATION_IDENTIFIER="${PROFILE_SIGNING_IDENTITY%%$'\\t'*}"
-PROFILE_TEAM_IDENTIFIER="${PROFILE_SIGNING_IDENTITY#*$'\\t'}"
-[[ "$PROFILE_APPLICATION_IDENTIFIER" == "$EXPECTED_APPLICATION_IDENTIFIER" ]] || \\
-    die "Embedded provisioning profile application identifier does not match the selected team and Capture bundle identifier. Discard this candidate."
-[[ "$PROFILE_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \\
-    die "Embedded provisioning profile team identity does not match the selected Apple Development team. Discard this candidate."
-say "Final signed app and embedded provisioning profile authorize Sign in with Apple for the exact selected App ID and team"
-unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_SIGNING_IDENTITY BUILT_APPLICATION_IDENTIFIER BUILT_TEAM_IDENTIFIER PROFILE_PLIST_XML PROFILE_SIGNING_IDENTITY PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_IDENTIFIER BUILT_PROFILE'''
-          new_profile = '''[[ "$PROFILE_SIGNING_IDENTITY" == *$'\\t'*$'\\t'* ]] || \\
-    die "Embedded provisioning profile is missing required Sign in with Apple or exact application/team identity custody. Discard this candidate."
-IFS=$'\\t' read -r PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_IDENTIFIER PROFILE_ROOT_TEAM_IDENTIFIER <<< "$PROFILE_SIGNING_IDENTITY"
-[[ "$PROFILE_APPLICATION_IDENTIFIER" == "$BUILT_APPLICATION_IDENTIFIER" ]] || \\
-    die "Embedded provisioning profile application identifier does not exactly match the final signed Capture app. Discard this candidate."
-[[ "$PROFILE_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \\
-    die "Embedded provisioning profile team identity does not match the selected Apple Development team. Discard this candidate."
-[[ "$PROFILE_ROOT_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \\
-    die "Embedded provisioning profile root TeamIdentifier does not match the selected Apple Development team. Discard this candidate."
-say "Final signed app and embedded provisioning profile authorize Sign in with Apple for one exact App ID and the selected team"
-unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_SIGNING_IDENTITY BUILT_APPLICATION_IDENTIFIER BUILT_TEAM_IDENTIFIER PROFILE_PLIST_XML PROFILE_SIGNING_IDENTITY PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_IDENTIFIER PROFILE_ROOT_TEAM_IDENTIFIER BUILT_PROFILE'''
+          old_profile = "\n".join([
+              '[[ "$PROFILE_SIGNING_IDENTITY" == *$\'\\t\'* ]] || \\',
+              '    die "Embedded provisioning profile is missing required Sign in with Apple or exact application/team identity custody. Discard this candidate."',
+              'PROFILE_APPLICATION_IDENTIFIER="${PROFILE_SIGNING_IDENTITY%%$\'\\t\'*}"',
+              'PROFILE_TEAM_IDENTIFIER="${PROFILE_SIGNING_IDENTITY#*$\'\\t\'}"',
+              '[[ "$PROFILE_APPLICATION_IDENTIFIER" == "$EXPECTED_APPLICATION_IDENTIFIER" ]] || \\',
+              '    die "Embedded provisioning profile application identifier does not match the selected team and Capture bundle identifier. Discard this candidate."',
+              '[[ "$PROFILE_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \\',
+              '    die "Embedded provisioning profile team identity does not match the selected Apple Development team. Discard this candidate."',
+              'say "Final signed app and embedded provisioning profile authorize Sign in with Apple for the exact selected App ID and team"',
+              'unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_SIGNING_IDENTITY BUILT_APPLICATION_IDENTIFIER BUILT_TEAM_IDENTIFIER PROFILE_PLIST_XML PROFILE_SIGNING_IDENTITY PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_IDENTIFIER BUILT_PROFILE',
+          ])
+          new_profile = "\n".join([
+              '[[ "$PROFILE_SIGNING_IDENTITY" == *$\'\\t\'*$\'\\t\'* ]] || \\',
+              '    die "Embedded provisioning profile is missing required Sign in with Apple or exact application/team identity custody. Discard this candidate."',
+              'IFS=$\'\\t\' read -r PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_IDENTIFIER PROFILE_ROOT_TEAM_IDENTIFIER <<< "$PROFILE_SIGNING_IDENTITY"',
+              '[[ "$PROFILE_APPLICATION_IDENTIFIER" == "$BUILT_APPLICATION_IDENTIFIER" ]] || \\',
+              '    die "Embedded provisioning profile application identifier does not exactly match the final signed Capture app. Discard this candidate."',
+              '[[ "$PROFILE_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \\',
+              '    die "Embedded provisioning profile team identity does not match the selected Apple Development team. Discard this candidate."',
+              '[[ "$PROFILE_ROOT_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \\',
+              '    die "Embedded provisioning profile root TeamIdentifier does not match the selected Apple Development team. Discard this candidate."',
+              'say "Final signed app and embedded provisioning profile authorize Sign in with Apple for one exact App ID and the selected team"',
+              'unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_SIGNING_IDENTITY BUILT_APPLICATION_IDENTIFIER BUILT_TEAM_IDENTIFIER PROFILE_PLIST_XML PROFILE_SIGNING_IDENTITY PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_IDENTIFIER PROFILE_ROOT_TEAM_IDENTIFIER BUILT_PROFILE',
+          ])
 
-          expected = {
-              "derived Team-ID App-ID assumption": (derived, 1),
-              "signed-app derived identifier equality": (old_built, 1),
-              "profile tuple output": (old_profile_output, 1),
-              "profile derived identifier block": (old_profile, 1),
-          }
-          for label, (needle, count) in expected.items():
+          for label, needle in [
+              ("derived Team-ID App-ID assumption", derived),
+              ("signed-app derived identifier equality", old_built),
+              ("profile tuple output", old_profile_output),
+              ("profile derived identifier block", old_profile),
+          ]:
               actual = source.count(needle)
-              if actual != count:
-                  raise SystemExit(f"{label}: expected {count} exact anchor, found {actual}")
+              if actual != 1:
+                  raise SystemExit(f"{label}: expected 1 exact anchor, found {actual}")
 
           source = source.replace(derived, "", 1)
           source = source.replace(old_built, new_built, 1)
@@ -127,9 +134,6 @@ unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_SIGNING_IDENTITY BUILT_APPLICATION_IDENTI
                       #expect(range.lowerBound < installMarker.lowerBound, "signed Apple identity must be proven before installation: \(check)")
                   }
 
-                  // Deliberately do not require the App ID prefix to equal TEAM_ID. Apple
-                  // supports legacy/unique App ID prefixes; exact app/profile agreement and
-                  // the separate team-identifier checks are the authority rendezvous.
                   #expect(!installer.contains("EXPECTED_APPLICATION_IDENTIFIER=\"${TEAM_ID}.${BUNDLE_ID}\""))
               }
 
@@ -175,12 +179,11 @@ unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_SIGNING_IDENTITY BUILT_APPLICATION_IDENTI
           for needle in required:
               if needle not in repaired:
                   raise SystemExit(f"corrected Apple identity custody invariant missing: {needle}")
-          forbidden = [
+          for needle in [
               'EXPECTED_APPLICATION_IDENTIFIER="${TEAM_ID}.${BUNDLE_ID}"',
               '[[ "$BUILT_APPLICATION_IDENTIFIER" == "$EXPECTED_APPLICATION_IDENTIFIER" ]]',
               '[[ "$PROFILE_APPLICATION_IDENTIFIER" == "$EXPECTED_APPLICATION_IDENTIFIER" ]]',
-          ]
-          for needle in forbidden:
+          ]:
               if needle in repaired:
                   raise SystemExit(f"invalid Team-ID/App-ID-prefix assumption survived: {needle}")
           print("corrected Apple App ID prefix custody materialization: PASS")
