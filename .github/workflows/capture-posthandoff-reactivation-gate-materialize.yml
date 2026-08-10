@@ -1,0 +1,58 @@
+name: Capture Post-Handoff Reactivation Gate Materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-posthandoff-reactivation-gate-1c40-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: repair/v14-capture-posthandoff-reactivation-gate-1c40-sol
+
+      - name: Verify exact product ancestry and untouched app source
+        run: |
+          set -euo pipefail
+          product=1c40853f6991b4d09206df1d25ecff021458b7eb
+          test "$(git merge-base "$product" HEAD)" = "$product"
+          git diff --exit-code "$product" -- NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Materialize repair
+        run: python3 scripts/materialize_capture_posthandoff_reactivation_gate.py
+
+      - name: Validate narrow gate
+        run: |
+          set -euo pipefail
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          c = s[s.index('private final class SecureLinkController'):s.index('@MainActor\nprivate protocol OfficialTuyaDriver')]
+          a = c[c.index('func activateMembershipRequestsForView()'):c.index('func abandonCorrelationForViewExit()')]
+          assert 'OfficialTuyaFactory.packageCorrelationMayStart' in a
+          assert a.index('OfficialTuyaFactory.packageCorrelationMayStart') < a.index('foregroundIntegrityLossHandled = false')
+          assert a.index('currentConnectionToken == nil') < a.index('foregroundIntegrityLossHandled = false')
+          PY
+
+      - name: Publish clean two-path repair
+        run: |
+          set -euo pipefail
+          product=1c40853f6991b4d09206df1d25ecff021458b7eb
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git rm scripts/materialize_capture_posthandoff_reactivation_gate.py .github/workflows/capture-posthandoff-reactivation-gate-materialize.yml
+          git commit -m 'Capture: keep foreground reactivation closed after Tuya handoff'
+          expected=$(printf '%s\n' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCapturePostHandoffReactivationSourceTests.swift' | sort)
+          actual=$(git diff --name-only "$product" HEAD | sort)
+          test "$actual" = "$expected"
+          git diff --check "$product" HEAD
+          git push origin HEAD:repair/v14-capture-posthandoff-reactivation-gate-1c40-sol
