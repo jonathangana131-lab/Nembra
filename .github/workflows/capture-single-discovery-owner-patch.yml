@@ -1,0 +1,36 @@
+name: Capture Single Discovery Owner Patch
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-single-discovery-owner-sol
+    paths:
+      - .github/workflows/capture-single-discovery-owner-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/v14-capture-single-discovery-owner-sol
+          fetch-depth: 0
+      - name: Apply production repair and self-retire
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 Scripts/apply_capture_single_discovery_owner_patch.py
+          rm Scripts/apply_capture_single_discovery_owner_patch.py
+          rm .github/workflows/capture-single-discovery-owner-patch.yml
+          git config user.name nembra-v14-integration
+          git config user.email actions@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          ! grep -q 'CBCentralManager' NembraApp/App/NembraCaptureEntrypoint.swift
+          ! grep -q 'CBAdvertisementData' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -q 'PassiveBluetoothPowerCycleObservationSession' NembraApp/App/NembraCaptureEntrypoint.swift
+          git commit -m "fix(capture): keep package correlation as sole discovery owner"
+          git push origin HEAD:agent/v14-capture-single-discovery-owner-sol
