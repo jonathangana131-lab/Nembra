@@ -2350,19 +2350,33 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
     }
 
     func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {
-        guard let dps, !dps.isEmpty else { return }
-        var sanitized: [String: String] = [:]
-        for (key, value) in dps {
-            let keyString = String(describing: key)
-            let normalizedKey = keyString.lowercased().filter { $0.isLetter || $0.isNumber }
-            if Self.secretKeyFragments.contains(where: { normalizedKey.contains($0) }) {
-                sanitized[keyString] = "<redacted>"
-            } else {
-                sanitized[keyString] = String(describing: Self.redactApplicationSecrets(value))
-            }
+    guard let dps, !dps.isEmpty else { return }
+    let exactSecretValues = Self.exactSecretValues
+    var sanitized: [String: String] = [:]
+    sanitized.reserveCapacity(dps.count)
+    for (key, value) in dps {
+        let keyString = String(describing: key)
+        let normalizedKey = keyString.lowercased().filter { $0.isLetter || $0.isNumber }
+        let baseCustodyKey = Self.redactExactApplicationSecretValues(
+            in: keyString,
+            exactSecretValues: exactSecretValues
+        )
+        let custodyKey = Self.uniqueCustodyKey(baseCustodyKey, existing: sanitized)
+        if Self.secretKeyFragments.contains(where: { normalizedKey.contains($0) }) {
+            sanitized[custodyKey] = "<redacted>"
+        } else {
+            let keySanitizedValue = Self.redactApplicationSecrets(
+                value,
+                exactSecretValues: exactSecretValues
+            )
+            sanitized[custodyKey] = Self.redactExactApplicationSecretValues(
+                in: String(describing: keySanitizedValue),
+                exactSecretValues: exactSecretValues
+            )
         }
-        onApplicationUpdate?(sanitized)
     }
+    onApplicationUpdate?(sanitized)
+}
 
     private static let secretKeyFragments = [
         "localkey",
@@ -2377,25 +2391,90 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "seckey",
     ]
 
-    private static func redactApplicationSecrets(_ object: Any) -> Any {
-        if let dictionary = object as? [AnyHashable: Any] {
-            var sanitized: [String: Any] = [:]
-            for (key, value) in dictionary {
-                let keyString = String(describing: key)
-                let normalizedKey = keyString.lowercased().filter { $0.isLetter || $0.isNumber }
-                if secretKeyFragments.contains(where: { normalizedKey.contains($0) }) {
-                    sanitized[keyString] = "<redacted>"
-                } else {
-                    sanitized[keyString] = redactApplicationSecrets(value)
-                }
-            }
-            return sanitized
-        }
-        if let array = object as? [Any] {
-            return array.map(redactApplicationSecrets)
-        }
-        return object
+    private static var exactSecretValues: [String] {
+#if canImport(NembraTuyaPrivateConfig)
+    return [
+        NembraTuyaPrivateIdentity.appKey,
+        NembraTuyaPrivateIdentity.appSecret,
+    ]
+    .filter { !$0.isEmpty }
+    .sorted {
+        if $0.count != $1.count { return $0.count > $1.count }
+        return $0 < $1
     }
+#else
+    return []
+#endif
+}
+
+private static func redactExactApplicationSecretValues(
+    in rendered: String,
+    exactSecretValues: [String]
+) -> String {
+    exactSecretValues.reduce(rendered) { partial, secret in
+        partial.replacingOccurrences(
+            of: secret,
+            with: "<redacted-private-application-secret>",
+            options: [.literal]
+        )
+    }
+}
+
+private static func uniqueCustodyKey(
+    _ baseKey: String,
+    existing: [String: String]
+) -> String {
+    guard existing[baseKey] != nil else { return baseKey }
+    var ordinal = 2
+    while existing["\(baseKey)#\(ordinal)"] != nil {
+        ordinal += 1
+    }
+    return "\(baseKey)#\(ordinal)"
+}
+
+private static func redactApplicationSecrets(
+    _ object: Any,
+    exactSecretValues: [String]
+) -> Any {
+    if let dictionary = object as? [AnyHashable: Any] {
+        var sanitized: [String: Any] = [:]
+        sanitized.reserveCapacity(dictionary.count)
+        for (key, value) in dictionary {
+            let keyString = String(describing: key)
+            let normalizedKey = keyString.lowercased().filter { $0.isLetter || $0.isNumber }
+            let baseCustodyKey = redactExactApplicationSecretValues(
+                in: keyString,
+                exactSecretValues: exactSecretValues
+            )
+            var custodyKey = baseCustodyKey
+            var collisionOrdinal = 2
+            while sanitized[custodyKey] != nil {
+                custodyKey = "\(baseCustodyKey)#\(collisionOrdinal)"
+                collisionOrdinal += 1
+            }
+            if secretKeyFragments.contains(where: { normalizedKey.contains($0) }) {
+                sanitized[custodyKey] = "<redacted>"
+            } else {
+                sanitized[custodyKey] = redactApplicationSecrets(
+                    value,
+                    exactSecretValues: exactSecretValues
+                )
+            }
+        }
+        return sanitized
+    }
+    if let array = object as? [Any] {
+        return array.map {
+            redactApplicationSecrets($0, exactSecretValues: exactSecretValues)
+        }
+    }
+    let rendered = String(describing: object)
+    let redacted = redactExactApplicationSecretValues(
+        in: rendered,
+        exactSecretValues: exactSecretValues
+    )
+    return redacted == rendered ? object : redacted
+}
 }
 #endif
 
