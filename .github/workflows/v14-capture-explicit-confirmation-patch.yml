@@ -6,20 +6,24 @@ permissions:
   contents: write
 jobs:
   patch:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: repair/v14-capture-explicit-target-confirmation-sol
+          ref: integration/v14-capture-final-stationary-convergence-sol
           fetch-depth: 0
+      - name: Fetch deterministic repair helper
+        run: git show origin/repair/v14-capture-explicit-target-confirmation-sol:scripts/ci/v14_capture_explicit_confirmation_patch.py > /tmp/v14_capture_explicit_confirmation_patch.py
       - name: Apply deterministic repair
-        run: python3 scripts/ci/v14_capture_explicit_confirmation_patch.py
+        run: python3 /tmp/v14_capture_explicit_confirmation_patch.py
       - name: Run focused regression
         run: swift test --package-path Packages/NembraBluetoothCapture --filter TuyaExplicitCorrelatedTargetConfirmationSourceTests
-      - name: Commit durable repair
+      - name: Commit durable repair to convergence
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaExplicitCorrelatedTargetConfirmationSourceTests.swift
+          git diff --cached --quiet && { echo "No product delta to commit"; exit 1; }
           git commit -m "Capture: require explicit target confirmation"
-          git push origin HEAD:repair/v14-capture-explicit-target-confirmation-sol
+          git push origin HEAD:integration/v14-capture-final-stationary-convergence-sol
