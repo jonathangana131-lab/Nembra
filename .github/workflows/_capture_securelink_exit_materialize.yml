@@ -1,0 +1,90 @@
+name: Capture Secure Link exit materializer
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-securelink-exit-retirement-20260810
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sol/v14-capture-securelink-exit-retirement-20260810
+          fetch-depth: 0
+
+      - name: Apply deterministic view-exit retirement
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          def exact_index(value):
+              matches = [i for i, line in enumerate(lines) if line == value]
+              if len(matches) != 1:
+                  raise SystemExit(f'expected one exact line, found {len(matches)}: {value!r}')
+              return matches[0]
+          if any('func abandonCorrelationForViewExit()' in line for line in lines):
+              raise SystemExit('view-exit cleanup already exists on exact parent')
+          abandon = exact_index('    private func abandonPackageCorrelation() {')
+          lines[abandon:abandon] = [
+              '    func abandonCorrelationForViewExit() {',
+              '        abandonPackageCorrelation()',
+              '    }',
+              '',
+          ]
+          login_change = exact_index('        .onChange(of: sdkAccount.loggedIn) { _, loggedIn in')
+          lines[login_change:login_change] = [
+              '        .onDisappear {',
+              '            test.abandonCorrelationForViewExit()',
+              '        }',
+          ]
+          path.write_text("\n".join(lines) + "\n", encoding='utf-8')
+          PY
+
+      - name: Validate lifecycle and authority shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          controller_start = source.index('private final class SecureLinkController')
+          protocol_start = source.index('@MainActor\nprivate protocol OfficialTuyaDriver', controller_start)
+          controller = source[controller_start:protocol_start]
+          cleanup_start = controller.index('func abandonCorrelationForViewExit()')
+          cleanup_end = controller.index('private func abandonPackageCorrelation()', cleanup_start)
+          cleanup = controller[cleanup_start:cleanup_end]
+          view_start = source.index('private struct SecureLinkView: View')
+          view_end = source.index('private extension SecureLinkView', view_start)
+          view = source[view_start:view_end]
+          assert 'abandonPackageCorrelation()' in cleanup
+          for forbidden in ('releasePackageCorrelationLease', 'disconnectBLE', 'publishDps', 'queryDps', 'writeValue'):
+              assert forbidden not in cleanup, forbidden
+          assert '.onDisappear' in view
+          assert 'test.abandonCorrelationForViewExit()' in view
+          package = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothPowerCycleObservationSession.swift').read_text(encoding='utf-8')
+          assert 'public func abandonCurrentWindow()' in package
+          assert 'manager.stopScan()' in package
+          print('Secure Link navigation retirement contract: PASS')
+          PY
+          git diff --check
+
+      - name: Publish clean two-path repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-capture-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git rm .github/workflows/_capture_securelink_exit_materialize.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m 'fix(capture): retire correlation on Secure Link exit'
+          git push origin HEAD:sol/v14-capture-securelink-exit-retirement-20260810
