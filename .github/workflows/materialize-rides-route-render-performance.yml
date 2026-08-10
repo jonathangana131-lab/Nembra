@@ -1,0 +1,196 @@
+name: Materialize Rides Route Render Performance
+
+on:
+  push:
+    branches:
+      - agent/v14-rides-route-render-performance-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply guarded production repair
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/AppRootView.swift')
+          source = path.read_text()
+
+          old = r'''private struct RideRouteMapView: View {
+    let geometry: RideRouteGeometry
+
+    var body: some View {
+        Map(initialPosition: .region(routeRegion)) {
+            ForEach(geometry.segments, id: \.index) { segment in
+                if segment.points.count >= 2 {
+                    MapPolyline(coordinates: coordinates(for: segment))
+                        .stroke(Color(uiColor: .systemBackground), lineWidth: 8)
+                    MapPolyline(coordinates: coordinates(for: segment))
+                        .stroke(.primary, lineWidth: 4)
+                }
+            }
+        }
+        .mapStyle(
+            .standard(
+                elevation: .flat,
+                emphasis: .muted,
+                pointsOfInterest: .excludingAll,
+                showsTraffic: false
+            )
+        )
+    }
+
+    private func coordinates(for segment: RideRouteSegment) -> [CLLocationCoordinate2D] {
+        segment.points.map {
+            CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+        }
+    }
+
+    private var routeRegion: MKCoordinateRegion {
+        let allPoints = geometry.segments.flatMap(\.points)
+        guard let first = allPoints.first else {
+            return MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: 0, longitude: 0),
+                span: MKCoordinateSpan(latitudeDelta: 1, longitudeDelta: 1)
+            )
+        }
+
+        var minimumLatitude = first.latitude
+        var maximumLatitude = first.latitude
+        var minimumLongitude = first.longitude
+        var maximumLongitude = first.longitude
+        for point in allPoints.dropFirst() {
+            minimumLatitude = min(minimumLatitude, point.latitude)
+            maximumLatitude = max(maximumLatitude, point.latitude)
+            minimumLongitude = min(minimumLongitude, point.longitude)
+            maximumLongitude = max(maximumLongitude, point.longitude)
+        }
+
+        let center = CLLocationCoordinate2D(
+            latitude: (minimumLatitude + maximumLatitude) / 2,
+            longitude: (minimumLongitude + maximumLongitude) / 2
+        )
+        let span = MKCoordinateSpan(
+            latitudeDelta: max((maximumLatitude - minimumLatitude) * 1.6, 0.002),
+            longitudeDelta: max((maximumLongitude - minimumLongitude) * 1.6, 0.002)
+        )
+        return MKCoordinateRegion(center: center, span: span)
+    }
+}'''
+
+          new = r'''private struct RideRouteMapView: View {
+    private let presentation: RideRouteMapPresentation
+
+    init(geometry: RideRouteGeometry) {
+        presentation = RideRouteMapPresentation(geometry: geometry)
+    }
+
+    var body: some View {
+        Map(initialPosition: .region(presentation.region)) {
+            ForEach(presentation.segments) { segment in
+                MapPolyline(coordinates: segment.coordinates)
+                    .stroke(Color(uiColor: .systemBackground), lineWidth: 8)
+                MapPolyline(coordinates: segment.coordinates)
+                    .stroke(.primary, lineWidth: 4)
+            }
+        }
+        .mapStyle(
+            .standard(
+                elevation: .flat,
+                emphasis: .muted,
+                pointsOfInterest: .excludingAll,
+                showsTraffic: false
+            )
+        )
+    }
+}
+
+private struct RideRouteMapPresentation {
+    struct Segment: Identifiable {
+        let id: Int
+        let coordinates: [CLLocationCoordinate2D]
+    }
+
+    let segments: [Segment]
+    let region: MKCoordinateRegion
+
+    init(geometry: RideRouteGeometry) {
+        var projectedSegments: [Segment] = []
+        projectedSegments.reserveCapacity(geometry.segments.count)
+
+        var minimumLatitude: Double?
+        var maximumLatitude: Double?
+        var minimumLongitude: Double?
+        var maximumLongitude: Double?
+
+        for segment in geometry.segments {
+            let coordinates = segment.points.map {
+                CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+            }
+
+            if coordinates.count >= 2 {
+                projectedSegments.append(Segment(id: segment.index, coordinates: coordinates))
+            }
+
+            for point in segment.points {
+                minimumLatitude = min(minimumLatitude ?? point.latitude, point.latitude)
+                maximumLatitude = max(maximumLatitude ?? point.latitude, point.latitude)
+                minimumLongitude = min(minimumLongitude ?? point.longitude, point.longitude)
+                maximumLongitude = max(maximumLongitude ?? point.longitude, point.longitude)
+            }
+        }
+
+        segments = projectedSegments
+
+        guard let minimumLatitude,
+              let maximumLatitude,
+              let minimumLongitude,
+              let maximumLongitude else {
+            region = MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: 0, longitude: 0),
+                span: MKCoordinateSpan(latitudeDelta: 1, longitudeDelta: 1)
+            )
+            return
+        }
+
+        let center = CLLocationCoordinate2D(
+            latitude: (minimumLatitude + maximumLatitude) / 2,
+            longitude: (minimumLongitude + maximumLongitude) / 2
+        )
+        let span = MKCoordinateSpan(
+            latitudeDelta: max((maximumLatitude - minimumLatitude) * 1.6, 0.002),
+            longitudeDelta: max((maximumLongitude - minimumLongitude) * 1.6, 0.002)
+        )
+        region = MKCoordinateRegion(center: center, span: span)
+    }
+}'''
+
+          if old not in source:
+              raise SystemExit('guard failed: expected RideRouteMapView source block not found')
+          if source.count(old) != 1:
+              raise SystemExit('guard failed: RideRouteMapView source block is not unique')
+
+          path.write_text(source.replace(old, new, 1))
+          PY
+
+      - name: Remove one-shot materializer
+        run: rm .github/workflows/materialize-rides-route-render-performance.yml
+
+      - name: Commit production repair and self-delete
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add NembraApp/App/AppRootView.swift .github/workflows/materialize-rides-route-render-performance.yml
+          git commit -m 'fix(rides): precompute route map presentation geometry'
+          git push origin HEAD:agent/v14-rides-route-render-performance-sol
