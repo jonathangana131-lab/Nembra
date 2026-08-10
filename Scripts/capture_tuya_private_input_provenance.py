@@ -332,6 +332,62 @@ def _tree_generation_snapshot(root: Path) -> tuple[tuple[object, ...], ...]:
     return tuple(sorted(states, key=lambda item: os.fsencode(str(item[1]))))
 
 
+def _revalidate_tree_generation_snapshot(
+    root: Path,
+    snapshot: tuple[tuple[object, ...], ...],
+) -> None:
+    observed_directories: dict[str, Path] = {}
+    expected_members: dict[str, list[str]] = {}
+
+    for state in snapshot:
+        if len(state) != 4:
+            raise ProvenanceError("private build tree generation snapshot is malformed")
+        kind, relative, identity, symlink_target = state
+        if not isinstance(kind, str) or not isinstance(relative, str) or not isinstance(identity, tuple):
+            raise ProvenanceError("private build tree generation snapshot is malformed")
+        if kind not in {"D", "F", "L"}:
+            raise ProvenanceError("private build tree generation snapshot is malformed")
+
+        candidate = root if relative == "." else root / relative
+        _assert_unchanged_tree_entry(candidate, identity, kind)
+        if kind == "L":
+            if not isinstance(symlink_target, str):
+                raise ProvenanceError("private build tree generation snapshot is malformed")
+            try:
+                current_target = os.readlink(candidate)
+            except OSError as error:
+                raise ProvenanceError(
+                    "private build tree changed after its record generation was collected"
+                ) from error
+            if current_target != symlink_target:
+                raise ProvenanceError(
+                    "private build tree changed after its record generation was collected"
+                )
+        elif kind == "D":
+            observed_directories[relative] = candidate
+            expected_members[relative] = []
+
+    if "." not in observed_directories:
+        raise ProvenanceError("private build tree generation snapshot is malformed")
+
+    for state in snapshot:
+        _, relative, _, _ = state
+        if relative == ".":
+            continue
+        parent, _, name = relative.rpartition("/")
+        parent = parent or "."
+        if parent not in expected_members or not name:
+            raise ProvenanceError("private build tree generation snapshot is malformed")
+        expected_members[parent].append(name)
+
+    for relative, directory in observed_directories.items():
+        members = tuple(sorted(expected_members[relative], key=os.fsencode))
+        if _directory_member_names(directory) != members:
+            raise ProvenanceError(
+                "private build tree changed after its record generation was collected"
+            )
+
+
 def _private_input_record_generation_snapshot(
     *,
     lockfile: Path,
@@ -340,13 +396,33 @@ def _private_input_record_generation_snapshot(
     identity_podspec: Path,
     identity_sources: Path,
 ) -> tuple[object, ...]:
-    return (
-        ("podfile_lock", _regular_file_generation_identity(lockfile)),
-        ("security_podspec", _regular_file_generation_identity(security_podspec)),
-        ("security_build", _tree_generation_snapshot(security_build)),
-        ("identity_podspec", _regular_file_generation_identity(identity_podspec)),
-        ("identity_sources", _tree_generation_snapshot(identity_sources)),
+    lockfile_identity = _regular_file_generation_identity(lockfile)
+    security_podspec_identity = _regular_file_generation_identity(security_podspec)
+    security_build_snapshot = _tree_generation_snapshot(security_build)
+    identity_podspec_identity = _regular_file_generation_identity(identity_podspec)
+    identity_sources_snapshot = _tree_generation_snapshot(identity_sources)
+
+    snapshot: tuple[object, ...] = (
+        ("podfile_lock", lockfile_identity),
+        ("security_podspec", security_podspec_identity),
+        ("security_build", security_build_snapshot),
+        ("identity_podspec", identity_podspec_identity),
+        ("identity_sources", identity_sources_snapshot),
     )
+
+    # The five authorities above are collected sequentially. Revalidate every
+    # earlier pathname and tree membership only after the last tree walk so the
+    # returned tuple is one coherent whole-record generation witness.
+    if _regular_file_generation_identity(lockfile) != lockfile_identity:
+        raise ProvenanceError("private build inputs changed while their generation snapshot was collected")
+    if _regular_file_generation_identity(security_podspec) != security_podspec_identity:
+        raise ProvenanceError("private build inputs changed while their generation snapshot was collected")
+    _revalidate_tree_generation_snapshot(security_build, security_build_snapshot)
+    if _regular_file_generation_identity(identity_podspec) != identity_podspec_identity:
+        raise ProvenanceError("private build inputs changed while their generation snapshot was collected")
+    _revalidate_tree_generation_snapshot(identity_sources, identity_sources_snapshot)
+
+    return snapshot
 
 
 def build_record(
