@@ -1,9 +1,9 @@
 import Foundation
 import Testing
 
-@Suite("ES80 Capture Simulator preflight snapshot handoff")
+@Suite("ES80 Capture Simulator preflight snapshot retirement")
 struct ES80CaptureSimulatorPreflightSnapshotHandoffTests {
-    private static func appSource() throws -> String {
+    private static func captureSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let repositoryRoot = testFile
             .deletingLastPathComponent()
@@ -16,65 +16,55 @@ struct ES80CaptureSimulatorPreflightSnapshotHandoffTests {
             contentsOf: repositoryRoot
                 .appendingPathComponent("NembraApp")
                 .appendingPathComponent("App")
-                .appendingPathComponent("NembraApp.swift"),
+                .appendingPathComponent("NembraCaptureEntrypoint.swift"),
             encoding: .utf8
         )
     }
 
-    private static func section(
-        _ source: String,
-        from startMarker: String,
-        to endMarker: String
-    ) throws -> Substring {
-        let start = try #require(source.range(of: startMarker)?.lowerBound)
-        let end = try #require(
-            source.range(of: endMarker, range: start..<source.endIndex)?.lowerBound
-        )
-        return source[start..<end]
+    @Test("authenticated Capture target carries no synthetic Simulator preflight authority")
+    func authenticatedTargetRejectsSyntheticSnapshotAuthority() throws {
+        let source = try Self.captureSource()
+
+        #expect(source.contains("@main @MainActor\nstruct NembraCaptureApp: App"))
+        #expect(source.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
+        #expect(!source.contains("PassiveBluetoothExperimentOneSimulatorQAFixture"))
+        #expect(!source.contains("simulatorQASnapshot"))
+        #expect(!source.contains("simulatorQAEvidenceLabel"))
+        #expect(!source.contains("es80PassiveCaptureSimulatorQA"))
     }
 
-    @Test("stationary Simulator QA passes the package-owned snapshot into preflight")
-    func launchRetainsExactFixtureAuthority() throws {
-        let source = try Self.appSource()
-        let launch = try Self.section(
-            source,
-            from: "case let .es80PassiveCaptureSimulatorQA(rawScenario):",
-            to: "    /// Routes the exact field-build recipe marker"
-        )
+    @Test("OFF1 admission remains exact-build and current-account gated rather than fixture gated")
+    func off1AdmissionUsesRealFieldAuthority() throws {
+        let source = try Self.captureSource()
+        guard let startRange = source.range(of: "func startBaseline()"),
+              let endRange = source.range(
+                of: "private func beginCorrelationSeries",
+                range: startRange.upperBound..<source.endIndex
+              ) else {
+            Issue.record("Could not isolate current OFF1 admission.")
+            return
+        }
+        let start = String(source[startRange.lowerBound..<endRange.lowerBound])
 
-        #expect(launch.contains("let snapshot = PassiveBluetoothExperimentOneSimulatorQAFixture.snapshot(for: scenario)"))
-        #expect(launch.contains("if scenario == .stationaryPreflight"))
-        #expect(launch.contains("ES80ExperimentOneStationaryPreflightView("))
-        #expect(launch.contains("simulatorQASnapshot: snapshot"))
+        #expect(start.contains("guard buildIdentity.isAuthoritativeFieldBuild else"))
+        #expect(start.contains("field_build_identity_unavailable"))
+        #expect(start.contains("guard privateConfig, sdkAccountLoggedIn else"))
+        #expect(start.contains("verifySDKMembership"))
+        #expect(start.contains("TuyaSDKAccountIdentityLeaseGate.verdict"))
+        #expect(start.contains("self.beginCorrelationSeries()"))
+        #expect(!start.contains("#if DEBUG"))
+        #expect(!start.contains("targetEnvironment(simulator)"))
     }
 
-    @Test("preflight stores synthetic authority only in DEBUG Simulator builds")
-    func preflightKeepsSyntheticStateOutOfProductionInitializer() throws {
-        let source = try Self.appSource()
-        let preflight = try Self.section(
-            source,
-            from: "private struct ES80ExperimentOneStationaryPreflightView: View",
-            to: "private struct ES80ExperimentOneFieldNoGoView: View"
-        )
+    @Test("accepted export handoff comes from the immutable accepted artifact, never a synthetic snapshot")
+    func acceptedHandoffUsesSealedArtifactOnly() throws {
+        let source = try Self.captureSource()
 
-        #expect(preflight.contains("#if DEBUG && targetEnvironment(simulator)"))
-        #expect(preflight.contains("private let simulatorQASnapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot?"))
-        #expect(preflight.contains("simulatorQASnapshot = nil"))
-        #expect(preflight.contains("simulatorQAEvidenceLabel = simulatorQASnapshot.evidenceLabel"))
-    }
-
-    @Test("accepted charger preflight forwards the same snapshot into the Capture shell")
-    func acceptedPreflightDoesNotDropSyntheticScenario() throws {
-        let source = try Self.appSource()
-        let preflight = try Self.section(
-            source,
-            from: "private struct ES80ExperimentOneStationaryPreflightView: View",
-            to: "private struct ES80ExperimentOneFieldNoGoView: View"
-        )
-
-        #expect(preflight.contains("if disconnectedDeclarationAccepted"))
-        #expect(preflight.contains("if let simulatorQASnapshot"))
-        #expect(preflight.contains("simulatorQASnapshot: simulatorQASnapshot"))
-        #expect(preflight.contains("onFreshExperimentRequested: makeFreshExperimentCoordinator"))
+        #expect(source.contains("sealedAcceptedExport = self.makeExport("))
+        #expect(source.contains("if phase == .accepted"))
+        #expect(source.contains("guard let sealedAcceptedExport else"))
+        #expect(source.contains("envelope = sealedAcceptedExport"))
+        #expect(source.contains("Accepted diagnostics cannot be exported because the immutable accepted artifact is unavailable."))
+        #expect(!source.contains("simulatorQASnapshot"))
     }
 }
