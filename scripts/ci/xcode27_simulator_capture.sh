@@ -10,9 +10,16 @@ RESULT_BUNDLE="$ARTIFACTS_DIR/NembraTests.xcresult"
 ATTACHMENTS_DIR="$ARTIFACTS_DIR/test-attachments"
 REDUCE_MOTION_RESULT_BUNDLE="$ARTIFACTS_DIR/NembraReduceMotionTests.xcresult"
 REDUCE_MOTION_ATTACHMENTS_DIR="$ARTIFACTS_DIR/reduce-motion-test-attachments"
+AX5_RESULT_BUNDLE="$ARTIFACTS_DIR/NembraAX5Tests.xcresult"
+AX5_ATTACHMENTS_DIR="$ARTIFACTS_DIR/ax5-test-attachments"
 BUNDLE_ID="com.jonathangana131.nembra"
 mkdir -p "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs" "$ATTACHMENTS_DIR"
-rm -rf "$RESULT_BUNDLE" "$REDUCE_MOTION_RESULT_BUNDLE" "$REDUCE_MOTION_ATTACHMENTS_DIR"
+rm -rf \
+  "$RESULT_BUNDLE" \
+  "$REDUCE_MOTION_RESULT_BUNDLE" \
+  "$REDUCE_MOTION_ATTACHMENTS_DIR" \
+  "$AX5_RESULT_BUNDLE" \
+  "$AX5_ATTACHMENTS_DIR"
 
 {
   echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -156,6 +163,76 @@ fi
 if [[ "$REDUCE_MOTION_TEST_STATUS" -ne 0 ]]; then
   echo "Reduce Motion exact-head UI acceptance failed with status $REDUCE_MOTION_TEST_STATUS." >&2
   exit "$REDUCE_MOTION_TEST_STATUS"
+fi
+
+# Large Dynamic Type acceptance is also a real system-state test. Do not rely on a
+# SwiftUI environment/test hook: set the Simulator to the maximum accessibility
+# content-size category, then let the existing landscape XCUITests own orientation,
+# product assertions, and keep-always screenshot capture. This avoids the older
+# standalone-capture hazard where a portrait simulator could be mislabeled as a
+# Dashboard AX5 screenshot.
+AX5_CONTENT_SIZE="accessibility-extra-extra-extra-large"
+echo "dynamic_type_runtime_qa=$AX5_CONTENT_SIZE" >> "$ARTIFACTS_DIR/environment.txt"
+if ! xcrun simctl ui "$UDID" content_size "$AX5_CONTENT_SIZE" \
+    > "$ARTIFACTS_DIR/logs/simctl-content-size-ax5.log" 2>&1; then
+  {
+    echo "Could not set Simulator content size to $AX5_CONTENT_SIZE."
+    echo "Exact simctl UI help follows; do not claim AX5 evidence from this run:"
+    xcrun simctl help ui || true
+  } >> "$ARTIFACTS_DIR/logs/simctl-content-size-ax5.log" 2>&1
+  exit 31
+fi
+
+set +e
+set -o pipefail
+xcodebuild \
+  -project Nembra.xcodeproj \
+  -scheme Nembra \
+  -configuration Debug \
+  -destination "platform=iOS Simulator,id=$UDID" \
+  -derivedDataPath "$DERIVED_DATA" \
+  -resultBundlePath "$AX5_RESULT_BUNDLE" \
+  -test-timeouts-enabled YES \
+  -default-test-execution-time-allowance 120 \
+  -maximum-test-execution-time-allowance 120 \
+  -collect-test-diagnostics never \
+  -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls \
+  -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardRetainedPowerAfterReconnectIsExplicitLastKnown \
+  -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardStoppedControlsConfirmEveryModePersonality \
+  CODE_SIGNING_ALLOWED=NO \
+  ONLY_ACTIVE_ARCH=YES \
+  test \
+  | tee "$ARTIFACTS_DIR/logs/xcodebuild-ax5-test.log"
+AX5_TEST_STATUS=${PIPESTATUS[0]}
+set -e
+
+# Baseline standalone captures must remain at the ordinary system text size even if
+# AX5 validation failed. The Simulator is ephemeral, but restoring here prevents an
+# AX5 run from being mislabeled as baseline visual evidence.
+if ! xcrun simctl ui "$UDID" content_size large \
+    > "$ARTIFACTS_DIR/logs/simctl-content-size-large.log" 2>&1; then
+  echo "Could not restore Simulator content size to Large after AX5 validation." >&2
+  exit 32
+fi
+
+if [[ -d "$AX5_RESULT_BUNDLE" ]]; then
+  if xcrun xcresulttool export attachments \
+    --path "$AX5_RESULT_BUNDLE" \
+    --output-path "$AX5_ATTACHMENTS_DIR" \
+    > "$ARTIFACTS_DIR/logs/xcresult-ax5-attachments.log" 2>&1; then
+    find "$AX5_ATTACHMENTS_DIR" -type f -maxdepth 2 -print | sort \
+      > "$ARTIFACTS_DIR/ax5-test-attachments.txt" || true
+  else
+    {
+      echo "AX5 attachment export failed; the complete xcresult is still preserved."
+      xcrun xcresulttool help export attachments || true
+    } >> "$ARTIFACTS_DIR/logs/xcresult-ax5-attachments.log" 2>&1
+  fi
+fi
+
+if [[ "$AX5_TEST_STATUS" -ne 0 ]]; then
+  echo "AX5 exact-head Dashboard UI acceptance failed with status $AX5_TEST_STATUS." >&2
+  exit "$AX5_TEST_STATUS"
 fi
 
 APP_PATH="$DERIVED_DATA/Build/Products/Debug-iphonesimulator/Nembra.app"
