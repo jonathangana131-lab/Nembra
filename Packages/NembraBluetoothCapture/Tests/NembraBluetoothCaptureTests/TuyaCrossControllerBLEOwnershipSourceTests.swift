@@ -53,7 +53,7 @@ struct TuyaCrossControllerBLEOwnershipSourceTests {
         #expect(!begin[reset.lowerBound..<scanner.lowerBound].contains("await "))
     }
 
-    @Test("all four correlation windows retain the same process claim until final series result")
+    @Test("all four correlation windows retain the same process claim and reject Tuya overlap")
     func fourWindowSeriesRetainsClaim() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let start = String(try section(
@@ -79,6 +79,10 @@ struct TuyaCrossControllerBLEOwnershipSourceTests {
 
         #expect(start.contains("OfficialTuyaFactory.ownsPackageCorrelation(ownerID: controllerOwnershipID)"))
         #expect(finish.contains("OfficialTuyaFactory.ownsPackageCorrelation(ownerID: controllerOwnershipID)"))
+        #expect(start.contains("OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID)"))
+        #expect(finish.contains("OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID)"))
+        #expect(start.contains("sdk_local_ble_ownership_appeared_during_correlation"))
+        #expect(finish.contains("sdk_local_ble_ownership_appeared_during_correlation"))
         #expect(final.contains("OfficialTuyaFactory.releasePackageCorrelation(ownerID: controllerOwnershipID)"))
         #expect(fail.contains("OfficialTuyaFactory.releasePackageCorrelation(ownerID: controllerOwnershipID)"))
 
