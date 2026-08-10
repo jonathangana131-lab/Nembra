@@ -4,6 +4,19 @@ on:
   push:
     branches:
       - capture/one-time-ble-dump-gpt56
+  pull_request:
+    branches:
+      - capture/one-time-ble-dump-gpt56
+    paths:
+      - 'NembraApp/App/NembraCaptureEntrypoint.swift'
+      - 'NembraApp/Features/Research/**'
+      - 'Packages/NembraBluetoothCapture/**'
+      - 'NembraCapture.xcodeproj/**'
+      - 'Nembra.xcodeproj/**'
+      - 'Podfile'
+      - 'Scripts/bootstrap_capture_tuya_sdk.sh'
+      - 'scripts/field/install_one_time_capture.command'
+      - '.github/workflows/capture-guided-build.yml'
   workflow_dispatch:
 
 permissions:
@@ -36,14 +49,24 @@ jobs:
           grep -Fq "pod 'ThingSmartHomeKit', '~> 7.8.0'" Podfile
           grep -Fq "pod 'ThingSmartBusinessExtensionKit', '~> 7.8.0'" Podfile
           grep -Fq 'LocalSecrets/' .gitignore
+          grep -Fq 'TuyaAuthenticatedReadOnlyPreflight.swift' NembraCapture.xcodeproj/project.pbxproj
+          grep -Fq 'TuyaAuthenticatedReadOnlySessionLedger.swift' NembraCapture.xcodeproj/project.pbxproj
 
-      - name: Enforce no application characteristic writes
+      - name: Enforce Capture read-only and single-BLE-owner boundary
         shell: bash
         run: |
           set -euo pipefail
-          file='NembraApp/Features/Research/ES80CaptureShellView.swift'
-          if grep -En '(^|[^A-Za-z])writeValue[[:space:]]*\(' "$file"; then
-            echo 'ERROR: guided Capture utility must not call CoreBluetooth writeValue(...)'
+          files=(
+            'NembraApp/Features/Research/ES80CaptureShellView.swift'
+            'NembraApp/App/NembraCaptureEntrypoint.swift'
+          )
+          banned='writeValue[[:space:]]*\(|publishDps[[:space:]]*\(|publishDps[[:space:]]*:|setDps[[:space:]]*\(|removeDevice[[:space:]]*\(|resetFactory[[:space:]]*\(|unbind[[:space:]]*\('
+          if grep -En "$banned" "${files[@]}"; then
+            echo 'ERROR: Capture must not expose CoreBluetooth writes or Tuya DP/control/reset/unbind calls.'
+            exit 1
+          fi
+          if grep -En 'central[[:space:]]*\.[[:space:]]*connect[[:space:]]*\(' NembraApp/App/NembraCaptureEntrypoint.swift; then
+            echo 'ERROR: the official Tuya SDK must remain the sole authenticated BLE connection owner.'
             exit 1
           fi
 
@@ -53,6 +76,9 @@ jobs:
           swift test \
             --package-path Packages/NembraBluetoothCapture \
             --filter TuyaAuthenticatedReadOnlyPreflightTests
+          swift test \
+            --package-path Packages/NembraBluetoothCapture \
+            --filter TuyaAuthenticatedReadOnlySessionLedgerTests
 
       # This is the exact standalone project Joey installs for field learning.
       # CI intentionally compiles it without the private Tuya security package;
