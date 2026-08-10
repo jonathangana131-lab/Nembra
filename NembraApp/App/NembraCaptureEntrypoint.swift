@@ -2352,11 +2352,13 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         var sanitized: [String: String] = [:]
         for (key, value) in dps {
             let keyString = String(describing: key)
+            let exportSafeKey = Self.redactKnownSecretValues(in: keyString)
             let normalizedKey = keyString.lowercased().filter { $0.isLetter || $0.isNumber }
             if Self.secretKeyFragments.contains(where: { normalizedKey.contains($0) }) {
-                sanitized[keyString] = "<redacted>"
+                sanitized[exportSafeKey] = "<redacted>"
             } else {
-                sanitized[keyString] = String(describing: Self.redactApplicationSecrets(value))
+                let sanitizedValue = Self.redactApplicationSecrets(value)
+                sanitized[exportSafeKey] = Self.redactKnownSecretValues(in: String(describing: sanitizedValue))
             }
         }
         onApplicationUpdate?(sanitized)
@@ -2375,6 +2377,22 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "seckey",
     ]
 
+    private static var exactSecretValues: [String] {
+#if canImport(NembraTuyaPrivateConfig)
+        [NembraTuyaPrivateIdentity.appKey, NembraTuyaPrivateIdentity.appSecret]
+            .filter { !$0.isEmpty }
+            .sorted { $0.count > $1.count }
+#else
+        []
+#endif
+    }
+
+    private static func redactKnownSecretValues(in value: String) -> String {
+        exactSecretValues.reduce(value) { partial, secret in
+            partial.replacingOccurrences(of: secret, with: "<redacted>", options: [.literal])
+        }
+    }
+
     private static func redactApplicationSecrets(_ object: Any) -> Any {
         if let dictionary = object as? [AnyHashable: Any] {
             var sanitized: [String: Any] = [:]
@@ -2391,6 +2409,9 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         }
         if let array = object as? [Any] {
             return array.map(redactApplicationSecrets)
+        }
+        if let string = object as? String {
+            return redactKnownSecretValues(in: string)
         }
         return object
     }
