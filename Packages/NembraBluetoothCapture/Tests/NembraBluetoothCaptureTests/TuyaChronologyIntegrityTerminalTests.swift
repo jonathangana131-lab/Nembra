@@ -2,8 +2,11 @@ import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
-@Suite("Tuya chronology-integrity terminal")
+@Suite("Tuya internal-lifecycle no-clock terminal")
 struct TuyaChronologyIntegrityTerminalTests {
+    private static let failureReason =
+        "Session authority was retired after an internal lifecycle or chronology failure."
+
     @Test("authentication clock regression can retire the generation without another clock sample")
     func authenticationRegressionCannotStrandCallbackAuthority() async throws {
         let clock = MutableUptimeClock(1_000)
@@ -20,10 +23,10 @@ struct TuyaChronologyIntegrityTerminalTests {
         }
 
         // The emergency terminal deliberately does not read the still-regressed clock.
-        try await ledger.markChronologyIntegrityInvalidated(for: token)
+        try await ledger.markInternalLifecycleFailure(for: token)
         let failed = await ledger.currentPreflightSnapshot()
 
-        #expect(failed.authenticationState == .failed(reason: "Read-only session chronology integrity was invalidated."))
+        #expect(failed.authenticationState == .failed(reason: Self.failureReason))
         #expect(failed.authenticationMethod == nil)
         #expect(failed.authenticatedAtUptimeNanoseconds == nil)
         #expect(failed.applicationPayloadCount == 0)
@@ -57,10 +60,10 @@ struct TuyaChronologyIntegrityTerminalTests {
             try await ledger.observeCurrentConnection(for: token)
         }
 
-        try await ledger.markChronologyIntegrityInvalidated(for: token)
+        try await ledger.markInternalLifecycleFailure(for: token)
         let failed = await ledger.currentPreflightSnapshot()
 
-        #expect(failed.authenticationState == .failed(reason: "Read-only session chronology integrity was invalidated."))
+        #expect(failed.authenticationState == .failed(reason: Self.failureReason))
         #expect(failed.authenticationMethod == earned.authenticationMethod)
         #expect(failed.authenticatedAtUptimeNanoseconds == earned.authenticatedAtUptimeNanoseconds)
         #expect(failed.applicationPayloadCount == earned.applicationPayloadCount)
