@@ -26,7 +26,7 @@ if [[ ! -d NembraCapture.xcodeproj ]]; then
   exit 4
 fi
 
-TUYA_SECURITY_DIR="$REPO_ROOT/LocalSecrets/TuyaSecuritySDK"
+TUYA_SECURITY_DIR="$REPO_ROOT/LocalSecrets/TuyaSDK"
 if [[ ! -f "$TUYA_SECURITY_DIR/ThingSmartCryption.podspec" ]]; then
   cat >&2 <<EOF
 ERROR: Tuya's app-specific iOS security SDK is not provisioned.
