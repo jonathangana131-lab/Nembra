@@ -2155,6 +2155,7 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "localkey",
         "accesstoken",
         "refreshtoken",
+        "sessionkey",
         "authkey",
         "seckey",
     ]
