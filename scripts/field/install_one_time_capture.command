@@ -201,6 +201,7 @@ BUNDLE_ID="com.jonathangana131.nembra.capturelearn"
 APP_ID_SUFFIX=".${BUNDLE_ID}"
 PROCEDURE_ID="ES80-AUTHENTICATED-STATIONARY-v1"
 BUILD_LABEL="capture-v14-${SOURCE_SHA:0:12}"
+say "Field procedure: $PROCEDURE_ID"
 verify_private_tuya_inputs
 
 say "Building SDK-integrated Nembra Capture for the intended iPhone"
