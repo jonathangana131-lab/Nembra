@@ -32,11 +32,6 @@ struct TuyaCaptureForegroundIntegritySourceTests {
             from: "func appDidLoseForeground()",
             to: "var privateConfig: Bool"
         ))
-        let activeCorrelation = String(try section(
-            in: cleanup,
-            from: "if processCorrelationLease != nil || correlationSession != nil",
-            to: "if phase == .correlated || phase == .selected"
-        ))
 
         #expect(view.contains("@Environment(\\.scenePhase) private var scenePhase"))
         #expect(view.contains(".onChange(of: scenePhase)"))
@@ -114,13 +109,10 @@ struct TuyaCaptureForegroundIntegritySourceTests {
         #expect(cleanup.contains("watchdog?.cancel()"))
         #expect(cleanup.contains("foregroundIntegrityLossHandled = true"))
 
-        // Active package correlation is retired through the full scanner-first discovery owner path.
-        // That helper also erases actionable target-selection bits from the interrupted correlation.
-        #expect(activeCorrelation.contains("resetDiscoverySessionOnly()"))
-        #expect(activeCorrelation.contains("phase = .failed"))
-        #expect(activeCorrelation.contains("foreground_integrity_lost_during_target_correlation"))
-        #expect(activeCorrelation.contains("return"))
-        #expect(!activeCorrelation.contains("releasePackageCorrelationLease("))
+        // Package target correlation is abandoned through the existing scanner-first owner path.
+        #expect(cleanup.contains("abandonPackageCorrelation()"))
+        #expect(cleanup.contains("foreground_integrity_lost_during_target_correlation"))
+        #expect(!cleanup.contains("releasePackageCorrelationLease("))
 
         // Any authenticated-generation terminal task must outlive StateObject teardown just like
         // the accepted view-exit retirement. Exact-token fencing still rejects stale generations.
