@@ -1,0 +1,93 @@
+name: V14 Secure Link standalone QA
+
+on:
+  push:
+    branches:
+      - qa/v14-secure-link-standalone-3090-sol
+
+permissions:
+  contents: read
+
+jobs:
+  standalone-capture:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    env:
+      SUBJECT_SHA: 3090b08e4bc273548c8c3de604d255e098d49539
+    steps:
+      - name: Checkout exact visual subject
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.SUBJECT_SHA }}
+      - name: Verify immutable visual subject
+        run: test "$(git rev-parse HEAD)" = "$SUBJECT_SHA"
+      - name: Build standalone Nembra Capture target
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -target "Nembra Capture" \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            CODE_SIGNING_ALLOWED=NO \
+            SYMROOT="$RUNNER_TEMP/NembraCaptureProducts" \
+            OBJROOT="$RUNNER_TEMP/NembraCaptureObjects" \
+            build | tee "$RUNNER_TEMP/nembra-capture-build.log"
+          app="$(find "$RUNNER_TEMP/NembraCaptureProducts" -type d -name 'Nembra Capture.app' -print -quit)"
+          test -n "$app"
+          test -f "$app/Info.plist"
+          printf '%s' "$app" > "$RUNNER_TEMP/capture-app-path.txt"
+      - name: Boot iOS 27 simulator and capture honest preflight states
+        run: |
+          set -euo pipefail
+          runtime="$(xcrun simctl list runtimes -j | python3 -c '
+          import json,sys
+          xs=[x for x in json.load(sys.stdin)["runtimes"] if x.get("isAvailable",True) and str(x.get("identifier","")).startswith("com.apple.CoreSimulator.SimRuntime.iOS-27")]
+          xs.sort(key=lambda x: tuple(int(p) for p in str(x.get("version","0")).split(".") if p.isdigit()), reverse=True)
+          print(xs[0]["identifier"] if xs else "")
+          ')"
+          test -n "$runtime"
+          device="$(xcrun simctl list devicetypes -j | python3 -c '
+          import json,sys
+          xs=json.load(sys.stdin)["devicetypes"]
+          preferred=["iPhone 12","iPhone 17","iPhone 17 Pro","iPhone 16"]
+          for name in preferred:
+              for x in xs:
+                  if x.get("name")==name:
+                      print(x["identifier"]); raise SystemExit
+          raise SystemExit(1)
+          ')"
+          udid="$(xcrun simctl create "Nembra Capture Secure Link QA ${GITHUB_RUN_ID}" "$device" "$runtime")"
+          cleanup() {
+            xcrun simctl shutdown "$udid" >/dev/null 2>&1 || true
+            xcrun simctl delete "$udid" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT INT TERM
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          app="$(cat "$RUNNER_TEMP/capture-app-path.txt")"
+          xcrun simctl install "$udid" "$app"
+          mkdir -p "$RUNNER_TEMP/secure-link-evidence"
+          for appearance in light dark; do
+            xcrun simctl ui "$udid" appearance "$appearance"
+            xcrun simctl terminate "$udid" com.jonathangana131.nembra.capturelearn >/dev/null 2>&1 || true
+            launch="$(xcrun simctl launch "$udid" com.jonathangana131.nembra.capturelearn)"
+            echo "$launch"
+            sleep 2
+            xcrun simctl io "$udid" screenshot "$RUNNER_TEMP/secure-link-evidence/preflight-${appearance}.png"
+            test -s "$RUNNER_TEMP/secure-link-evidence/preflight-${appearance}.png"
+          done
+          cp "$RUNNER_TEMP/nembra-capture-build.log" "$RUNNER_TEMP/secure-link-evidence/build.log"
+          printf '%s\n' \
+            "subject_sha=$SUBJECT_SHA" \
+            "authority=simulator-product-visual-only-not-physical-proof" \
+            "state=honest-unprovisioned-preflight" \
+            > "$RUNNER_TEMP/secure-link-evidence/README.txt"
+      - name: Upload standalone Capture visual evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: secure-link-standalone-${{ env.SUBJECT_SHA }}
+          path: ${{ runner.temp }}/secure-link-evidence
+          if-no-files-found: error
+          retention-days: 14
