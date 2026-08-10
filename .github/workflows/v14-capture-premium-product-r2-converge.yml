@@ -1,0 +1,57 @@
+name: V14 Capture Premium Product R2 Converge
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-premium-root-recovery-r2-sol
+
+permissions:
+  contents: write
+
+jobs:
+  converge:
+    if: "${{ github.actor != 'github-actions[bot]' }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-premium-root-recovery-r2-sol
+          fetch-depth: 0
+
+      - name: Patch current-spine product surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/patch_capture_premium_product_r2.py
+
+      - name: Verify source and adversarial product contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductSurfaceSourceTests.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductRecoveryTruthSourceTests.swift
+          bash -n scripts/ci/capture_standalone_visual_evidence.sh
+          /usr/bin/python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          git diff --check
+
+      - name: Run Capture package regression suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+
+      - name: Commit clean product candidate and retire convergence tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm scripts/ci/patch_capture_premium_product_r2.py
+          rm .github/workflows/v14-capture-premium-product-r2-converge.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'feat(capture): close premium root and recovery truth'
+          git push origin HEAD:repair/v14-capture-premium-root-recovery-r2-sol
