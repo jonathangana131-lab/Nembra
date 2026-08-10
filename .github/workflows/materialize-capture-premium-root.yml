@@ -1,0 +1,454 @@
+name: Materialize Capture Premium Root
+
+on:
+  push:
+    branches:
+      - product/v14-capture-premium-root-preflight-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: product/v14-capture-premium-root-preflight-sol
+          fetch-depth: 0
+
+      - name: Guard current product ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='9a25002e58d351d9db952caa7cc5f4961c03a4fb'
+          git merge-base --is-ancestor "$base" HEAD
+          unexpected="$(git diff --name-only "$base"..HEAD | grep -v '^.github/workflows/materialize-capture-premium-root.yml$' || true)"
+          test -z "$unexpected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Replace engineering root with guided preflight
+        shell: python
+        run: |
+          from pathlib import Path
+          from textwrap import dedent
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text(encoding="utf-8")
+          start_marker = "@MainActor\nprivate struct CaptureP0Root: View {"
+          end_marker = "@MainActor\nprivate final class SecureLinkController"
+          start = text.index(start_marker)
+          end = text.index(end_marker, start)
+
+          truth_copy = dedent('''\
+          private enum CaptureRootTruthCopy {
+              static let commandBoundary = "No DP query or scooter command is authorized by this surface."
+          }
+
+          ''')
+
+          replacement = dedent('''\
+          @MainActor
+          private struct CaptureP0Root: View {
+              @StateObject private var tuya = TuyaAccountBridge()
+              @State private var showEngineeringDetails = false
+
+              var body: some View {
+                  NavigationStack {
+                      ScrollView {
+                          VStack(alignment: .leading, spacing: 24) {
+                              hero
+                              accountPreflight
+                              if tuya.isLinked { scooterSelection }
+                              engineeringDetails
+                          }
+                          .frame(maxWidth: 760)
+                          .padding(.horizontal, 20)
+                          .padding(.top, 18)
+                          .padding(.bottom, 40)
+                          .frame(maxWidth: .infinity)
+                      }
+                      .background(
+                          LinearGradient(
+                              colors: [Color.black, Color(red: 0.035, green: 0.055, blue: 0.075), Color.black],
+                              startPoint: .topLeading,
+                              endPoint: .bottomTrailing
+                          )
+                          .ignoresSafeArea()
+                      )
+                      .navigationTitle("Capture")
+                      .navigationBarTitleDisplayMode(.inline)
+                  }
+                  .tint(.cyan)
+              }
+
+              private var hero: some View {
+                  VStack(alignment: .leading, spacing: 14) {
+                      HStack(spacing: 8) {
+                          Circle()
+                              .fill(tuya.isLinked ? Color.green : Color.cyan)
+                              .frame(width: 8, height: 8)
+                              .accessibilityHidden(true)
+                          Text("NEMBRA CAPTURE")
+                              .font(.caption.monospaced().weight(.semibold))
+                              .tracking(1.6)
+                              .foregroundStyle(.secondary)
+                      }
+
+                      Text(tuya.isLinked ? "Choose the machine to measure." : "Prepare a trusted capture.")
+                          .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                          .fixedSize(horizontal: false, vertical: true)
+
+                      Text(tuya.isLinked
+                           ? "Your account link is ready. Select the scooter that will enter the stationary, read-only evidence flow."
+                           : "Link the account that already owns the scooter. Capture will verify the exact device before Bluetooth discovery begins.")
+                          .font(.body)
+                          .foregroundStyle(.secondary)
+                          .fixedSize(horizontal: false, vertical: true)
+
+                      ViewThatFits(in: .horizontal) {
+                          HStack(spacing: 10) {
+                              statusPill("STATIONARY", systemImage: "parkingsign.circle")
+                              statusPill("READ ONLY", systemImage: "eye")
+                              statusPill("EVIDENCE FIRST", systemImage: "checkmark.seal")
+                          }
+                          VStack(alignment: .leading, spacing: 8) {
+                              statusPill("STATIONARY", systemImage: "parkingsign.circle")
+                              statusPill("READ ONLY", systemImage: "eye")
+                              statusPill("EVIDENCE FIRST", systemImage: "checkmark.seal")
+                          }
+                      }
+                  }
+                  .padding(.vertical, 10)
+              }
+
+              private func statusPill(_ title: String, systemImage: String) -> some View {
+                  Label(title, systemImage: systemImage)
+                      .font(.caption2.monospaced().weight(.semibold))
+                      .foregroundStyle(.secondary)
+                      .padding(.horizontal, 10)
+                      .padding(.vertical, 7)
+                      .background(Color.white.opacity(0.055), in: Capsule())
+                      .overlay { Capsule().stroke(Color.white.opacity(0.09), lineWidth: 1) }
+              }
+
+              private var accountPreflight: some View {
+                  VStack(alignment: .leading, spacing: 16) {
+                      HStack(alignment: .firstTextBaseline) {
+                          VStack(alignment: .leading, spacing: 4) {
+                              Text("ACCOUNT")
+                                  .font(.caption2.monospaced().weight(.semibold))
+                                  .tracking(1.3)
+                                  .foregroundStyle(.secondary)
+                              Text(tuya.isLinked ? "Account ready" : "Link your Tuya account")
+                                  .font(.title2.bold())
+                          }
+                          Spacer(minLength: 12)
+                          Image(systemName: tuya.isLinked ? "checkmark.circle.fill" : "person.crop.circle.badge.key")
+                              .font(.title2)
+                              .foregroundStyle(tuya.isLinked ? Color.green : Color.cyan)
+                              .accessibilityHidden(true)
+                      }
+
+                      Text(tuya.statusMessage)
+                          .font(.subheadline)
+                          .foregroundStyle(.secondary)
+                          .fixedSize(horizontal: false, vertical: true)
+
+                      if !tuya.isLinked {
+                          TextField("Tuya Smart User Code", text: $tuya.userCode)
+                              .textInputAutocapitalization(.never)
+                              .autocorrectionDisabled()
+                              .padding(.horizontal, 14)
+                              .frame(minHeight: 52)
+                              .background(Color.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                              .overlay {
+                                  RoundedRectangle(cornerRadius: 15, style: .continuous)
+                                      .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                              }
+
+                          Button {
+                              tuya.requestApproval()
+                          } label: {
+                              Label("Create approval QR", systemImage: "qrcode")
+                                  .frame(maxWidth: .infinity)
+                          }
+                          .buttonStyle(.borderedProminent)
+                          .controlSize(.large)
+                          .disabled(tuya.phase == .requestingApproval)
+                          .accessibilityHint("Creates the account approval code required before Capture can list your scooter.")
+                      }
+
+                      if let data = tuya.qrPNGData,
+                         let image = UIImage(data: data),
+                         !tuya.isLinked {
+                          VStack(alignment: .leading, spacing: 14) {
+                              Image(uiImage: image)
+                                  .interpolation(.none)
+                                  .resizable()
+                                  .scaledToFit()
+                                  .frame(maxWidth: 240)
+                                  .padding(12)
+                                  .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                                  .accessibilityLabel("Tuya account approval QR code")
+
+                              Button {
+                                  tuya.checkApprovalNow()
+                              } label: {
+                                  Label("I approved it · check now", systemImage: "arrow.clockwise")
+                                      .frame(maxWidth: .infinity)
+                              }
+                              .buttonStyle(.bordered)
+                              .controlSize(.large)
+                          }
+                      }
+
+                      if tuya.phase == .failed {
+                          Button {
+                              tuya.resetLink()
+                          } label: {
+                              Label("Reset account link", systemImage: "arrow.counterclockwise")
+                          }
+                          .buttonStyle(.bordered)
+                      }
+                  }
+                  .padding(20)
+                  .background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                  .overlay {
+                      RoundedRectangle(cornerRadius: 24, style: .continuous)
+                          .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                  }
+              }
+
+              private var scooterSelection: some View {
+                  VStack(alignment: .leading, spacing: 16) {
+                      VStack(alignment: .leading, spacing: 4) {
+                          Text("SCOOTER")
+                              .font(.caption2.monospaced().weight(.semibold))
+                              .tracking(1.3)
+                              .foregroundStyle(.secondary)
+                          Text("Choose the scooter")
+                              .font(.title2.bold())
+                          Text("Capture will use the selected account device as the identity it must re-prove before the stationary Bluetooth sequence.")
+                              .font(.subheadline)
+                              .foregroundStyle(.secondary)
+                              .fixedSize(horizontal: false, vertical: true)
+                      }
+
+                      if tuya.devices.isEmpty {
+                          Button {
+                              tuya.refreshDevices()
+                          } label: {
+                              Label("Refresh scooters", systemImage: "arrow.clockwise")
+                                  .frame(maxWidth: .infinity)
+                          }
+                          .buttonStyle(.bordered)
+                          .controlSize(.large)
+                      }
+
+                      ForEach(tuya.devices) { device in
+                          VStack(alignment: .leading, spacing: 12) {
+                              HStack(alignment: .top, spacing: 12) {
+                                  Image(systemName: "bolt.horizontal.circle")
+                                      .font(.title3)
+                                      .foregroundStyle(.cyan)
+                                      .frame(width: 34, height: 34)
+                                      .background(Color.cyan.opacity(0.10), in: Circle())
+                                      .accessibilityHidden(true)
+
+                                  VStack(alignment: .leading, spacing: 3) {
+                                      Text(device.name.isEmpty ? "Unnamed scooter" : device.name)
+                                          .font(.headline)
+                                      let detail = [device.productName, device.category].filter { !$0.isEmpty }.joined(separator: " · ")
+                                      if !detail.isEmpty {
+                                          Text(detail)
+                                              .font(.caption)
+                                              .foregroundStyle(.secondary)
+                                      }
+                                  }
+                                  Spacer(minLength: 8)
+                                  if tuya.selectedDeviceID == device.id {
+                                      Image(systemName: "checkmark.circle.fill")
+                                          .foregroundStyle(.green)
+                                          .accessibilityLabel("Selected")
+                                  }
+                              }
+
+                              Button(tuya.selectedDeviceID == device.id ? "Refresh device details" : "Use this scooter") {
+                                  tuya.selectDevice(device)
+                              }
+                              .buttonStyle(.bordered)
+
+                              if tuya.selectedDeviceID == device.id,
+                                 tuya.phase == .ready,
+                                 !device.productID.isEmpty,
+                                 !device.uuid.isEmpty {
+                                  NavigationLink {
+                                      SecureLinkView(device: device)
+                                  } label: {
+                                      Label("Continue to Capture", systemImage: "arrow.right")
+                                          .frame(maxWidth: .infinity)
+                                  }
+                                  .buttonStyle(.borderedProminent)
+                                  .controlSize(.large)
+                                  .accessibilityHint("Opens the guided stationary Capture flow for this selected scooter.")
+                              }
+                          }
+                          .padding(16)
+                          .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                          .overlay {
+                              RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                  .stroke(tuya.selectedDeviceID == device.id ? Color.cyan.opacity(0.45) : Color.white.opacity(0.07), lineWidth: 1)
+                          }
+                      }
+                  }
+              }
+
+              private var engineeringDetails: some View {
+                  DisclosureGroup(isExpanded: $showEngineeringDetails) {
+                      VStack(alignment: .leading, spacing: 8) {
+                          Text("This screen establishes account and device context. Bluetooth correlation and the stationary evidence run begin on the next screen.")
+                          Text(CaptureRootTruthCopy.commandBoundary)
+                              .fontWeight(.semibold)
+                      }
+                      .font(.footnote)
+                      .foregroundStyle(.secondary)
+                      .padding(.top, 8)
+                  } label: {
+                      Label("Engineering details", systemImage: "wrench.and.screwdriver")
+                          .font(.subheadline.weight(.semibold))
+                  }
+                  .padding(.horizontal, 4)
+              }
+          }
+
+          ''')
+
+          path.write_text(text[:start] + truth_copy + replacement + text[end:], encoding="utf-8")
+
+      - name: Add root product contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test_path='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift'
+          cat > "$test_path" <<'SWIFT'
+          import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Capture root product surface")
+          struct TuyaCaptureRootProductSurfaceSourceTests {
+              @Test("public unprovisioned launch is guided Capture preflight, not an engineering console")
+              func publicRootIsGuidedPreflight() throws {
+                  let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let root = try section(in: app, from: "private struct CaptureP0Root: View", to: "@MainActor\nprivate final class SecureLinkController")
+                  let body = String(root)
+
+                  #expect(body.contains("NEMBRA CAPTURE"))
+                  #expect(body.contains("Engineering details"))
+                  #expect(!body.contains("P0 · TUYA AUTHENTICATION"))
+                  #expect(!body.contains("Prove the secure scooter link first."))
+                  #expect(!body.contains("Read-only control boundary"))
+                  #expect(!body.contains("local_key"))
+                  #expect(!body.contains("No DP query"))
+                  #expect(!body.contains(".card()"))
+              }
+
+              @Test("premium root preserves real account and device authority actions")
+              func authorityActionsRemainReachable() throws {
+                  let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let root = try section(in: app, from: "private struct CaptureP0Root: View", to: "@MainActor\nprivate final class SecureLinkController")
+                  let body = String(root)
+
+                  #expect(body.contains("tuya.requestApproval()"))
+                  #expect(body.contains("tuya.checkApprovalNow()"))
+                  #expect(body.contains("tuya.refreshDevices()"))
+                  #expect(body.contains("tuya.selectDevice(device)"))
+                  #expect(body.contains("SecureLinkView(device: device)"))
+                  #expect(app.contains("No DP query or scooter command is authorized by this surface."))
+              }
+
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let startRange = source.range(of: start),
+                        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+                      Issue.record("Expected source section missing: \(start) ... \(end)")
+                      throw SourceContractError.sectionMissing
+                  }
+                  return source[startRange.lowerBound..<endRange.lowerBound]
+              }
+
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  let repositoryRoot = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+              }
+
+              private enum SourceContractError: Error { case sectionMissing }
+          }
+          SWIFT
+
+      - name: Source and parse validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          start = source.index('private struct CaptureP0Root: View')
+          end = source.index('@MainActor\nprivate final class SecureLinkController', start)
+          root = source[start:end]
+          required = [
+              'NEMBRA CAPTURE',
+              'Engineering details',
+              'tuya.requestApproval()',
+              'tuya.checkApprovalNow()',
+              'tuya.refreshDevices()',
+              'tuya.selectDevice(device)',
+              'SecureLinkView(device: device)',
+          ]
+          forbidden = [
+              'P0 · TUYA AUTHENTICATION',
+              'Prove the secure scooter link first.',
+              'Read-only control boundary',
+              'local_key',
+              'No DP query',
+              '.card()',
+          ]
+          for needle in required:
+              if needle not in root:
+                  raise SystemExit(f'missing premium root contract: {needle}')
+          for needle in forbidden:
+              if needle in root:
+                  raise SystemExit(f'legacy engineering-root content remains: {needle}')
+          if 'No DP query or scooter command is authorized by this surface.' not in source:
+              raise SystemExit('global read-only truth copy was lost')
+          print('premium standalone Capture root source contract: PASS')
+          PY
+          if command -v swiftc >/dev/null 2>&1; then
+            swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+            swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift
+          fi
+          git diff --check
+
+      - name: Commit product result and retire materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='9a25002e58d351d9db952caa7cc5f4961c03a4fb'
+          rm -f .github/workflows/materialize-capture-premium-root.yml
+          git config user.name 'nembra-v14-product-worker'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          expected=$'.github/workflows/materialize-capture-premium-root.yml\nNembraApp/App/NembraCaptureEntrypoint.swift\nPackages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift'
+          test "$(git diff --cached --name-only | sort)" = "$expected"
+          git commit -m 'feat(capture): replace standalone engineering root with guided preflight'
+          final_names="$(git diff --name-only "$base"..HEAD | sort)"
+          expected_final=$'NembraApp/App/NembraCaptureEntrypoint.swift\nPackages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift'
+          test "$final_names" = "$expected_final"
+          git push origin HEAD:product/v14-capture-premium-root-preflight-sol
