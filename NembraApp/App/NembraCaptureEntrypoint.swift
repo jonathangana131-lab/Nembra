@@ -1442,10 +1442,24 @@ private final class SecureLinkController: NSObject, ObservableObject {
         applicationUpdateAdmissionsInFlight += 1
         defer { applicationUpdateAdmissionsInFlight -= 1 }
 
+        // Snapshot the exact account identity while the admission checks above are still
+        // synchronously true. The actor hops below may interleave foreground/account teardown;
+        // export custody must never re-read mutable membership state after that suspension.
+        guard let leasedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !leasedAccountUID.isEmpty else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "Verified Tuya account identity disappeared before application evidence could enter export custody.",
+                kind: "sdk_account_identity_missing_before_application_custody"
+            )
+            return
+        }
+        let custodySafeUpdate = redactedApplicationEventDetails(update, accountUID: leasedAccountUID)
+
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            var eventDetails = redactedApplicationEventDetails(update)
+            var eventDetails = custodySafeUpdate
             eventDetails["generation"] = String(token.diagnosticGeneration)
             log("tuya_application_update", eventDetails)
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
@@ -1474,25 +1488,33 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
     }
 
-    private func redactedApplicationEventDetails(_ update: [String: String]) -> [String: String] {
-        guard let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !accountUID.isEmpty else {
-            return update
-        }
-
+    private func redactedApplicationEventDetails(
+        _ update: [String: String],
+        accountUID: String
+    ) -> [String: String] {
         var redacted: [String: String] = [:]
         redacted.reserveCapacity(update.count)
-        for (key, value) in update {
+        for (key, value) in update.sorted(by: { $0.key < $1.key }) {
             let redactedKey = key.replacingOccurrences(
                 of: accountUID,
                 with: "<redacted-account-uid>",
                 options: [.caseInsensitive, .literal]
             )
-            redacted[redactedKey] = value.replacingOccurrences(
+            let redactedValue = value.replacingOccurrences(
                 of: accountUID,
                 with: "<redacted-account-uid>",
                 options: [.caseInsensitive, .literal]
             )
+
+            // Redacting malformed keys can collapse two distinct SDK entries onto one key.
+            // Preserve every admitted opaque value under a deterministic redaction-safe suffix.
+            var custodyKey = redactedKey
+            var collisionOrdinal = 2
+            while redacted[custodyKey] != nil {
+                custodyKey = "\(redactedKey)#\(collisionOrdinal)"
+                collisionOrdinal += 1
+            }
+            redacted[custodyKey] = redactedValue
         }
         return redacted
     }
