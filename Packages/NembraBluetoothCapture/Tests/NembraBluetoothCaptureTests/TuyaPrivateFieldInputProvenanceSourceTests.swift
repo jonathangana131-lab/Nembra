@@ -10,7 +10,7 @@ struct TuyaPrivateFieldInputProvenanceSourceTests {
         let helper = try readRepositoryFile("Scripts/capture_tuya_private_input_provenance.py")
 
         #expect(bootstrap.contains("capture_tuya_private_input_provenance.py"))
-        #expect(bootstrap.contains(" snapshot \\\".replacingOccurrences(of: "\\\"", with: "\\")))
+        #expect(bootstrap.contains("\"$PROVENANCE_HELPER\" snapshot"))
         #expect(bootstrap.contains("--lockfile \"$REPO_ROOT/Podfile.lock\""))
         #expect(bootstrap.contains("--security-podspec \"$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec\""))
         #expect(bootstrap.contains("--security-build \"$TUYA_PRIVATE_SDK/Build\""))
