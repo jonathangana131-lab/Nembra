@@ -257,38 +257,44 @@ struct DashboardView: View {
         Button {
             batteryReadout = batteryReadout == .charge ? .range : .charge
         } label: {
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 5) {
-                    Image(systemName: batteryReadout == .charge ? batteryIcon : "location.fill")
-                    Text(batteryReadout == .charge ? "BATTERY" : "RANGE")
-                    Image(systemName: "arrow.left.arrow.right")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(.tertiary)
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(alignment: .center, spacing: 10) {
+                    batterySilhouette
+                        .frame(width: 62, height: 30)
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(batteryReadout == .charge ? "CHARGE" : "LEARNED RANGE")
+                            .font(.caption2.weight(.bold))
+                            .tracking(batteryReadout == .charge ? 1.2 : 0.55)
+                            .foregroundStyle(batteryInstrumentWarning ? Color.red : Color.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.68)
+
+                        Text(batteryPrimaryText)
+                            .font(.title3.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(batteryPrimaryColor)
+                            .contentTransition(reduceMotion ? .identity : .numericText())
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.72)
+                    }
+                    .layoutPriority(1)
                 }
-                .font(.caption2.weight(.bold))
-                .tracking(1.1)
-                .foregroundStyle(batteryInstrumentWarning ? Color.red : Color.secondary)
-
-                Text(batteryPrimaryText)
-                    .font(.title3.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(batteryPrimaryColor)
-                    .contentTransition(reduceMotion ? .identity : .numericText())
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-
-                batteryChargeBar
-                    .frame(width: 82)
 
                 if isRetainedBatteryData, batteryPercent != nil {
-                    Text("LAST KNOWN")
+                    Text("LAST KNOWN CHARGE")
                         .font(.caption2.weight(.bold))
-                        .tracking(1.0)
+                        .tracking(0.75)
                         .foregroundStyle(.orange)
                 } else if batteryReadout == .range {
                     Text("NOT CALIBRATED")
                         .font(.caption2.weight(.bold))
                         .tracking(0.8)
                         .foregroundStyle(.secondary)
+                } else {
+                    Text("TAP FOR LEARNED RANGE")
+                        .font(.caption2.weight(.semibold))
+                        .tracking(0.45)
+                        .foregroundStyle(.tertiary)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -298,27 +304,55 @@ struct DashboardView: View {
         .frame(minWidth: 44, minHeight: 44, alignment: .leading)
         .sensoryFeedback(.selection, trigger: batteryReadout)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(batteryReadout == .charge ? "Battery" : "Estimated range")
+        .accessibilityLabel(batteryReadout == .charge ? "Battery" : "Learned range")
         .accessibilityValue(batteryAccessibilityValue)
-        .accessibilityHint("Double tap to switch between battery charge and range. Range remains unavailable until Nembra has verified battery evidence and a learned range model.")
+        .accessibilityHint(
+            batteryReadout == .charge
+                ? "Double tap to show learned range."
+                : "Double tap to show battery charge."
+        )
         .accessibilityIdentifier("dashboard.battery-range")
     }
 
-    private var batteryChargeBar: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                Capsule(style: .continuous)
-                    .fill(Color.white.opacity(colorSchemeContrast == .increased ? 0.22 : 0.10))
+    /// The battery body is the direct control affordance. Its fill always represents
+    /// charge, even while the adjacent readout is toggled to learned range.
+    private var batterySilhouette: some View {
+        HStack(spacing: 3) {
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .stroke(
+                            batterySilhouetteOutlineColor,
+                            lineWidth: colorSchemeContrast == .increased ? 2 : 1.25
+                        )
 
-                if let fill = batteryFillFraction {
-                    Capsule(style: .continuous)
-                        .fill(batteryInstrumentWarning ? Color.red : Color.white.opacity(isRetainedBatteryData ? 0.48 : 0.92))
-                        .frame(width: max(2, proxy.size.width * fill))
+                    if let fill = batteryFillFraction {
+                        RoundedRectangle(cornerRadius: 4.5, style: .continuous)
+                            .fill(batterySilhouetteFillColor)
+                            .frame(width: max(3, (proxy.size.width - 6) * fill))
+                            .padding(3)
+                    }
                 }
             }
+
+            Capsule(style: .continuous)
+                .fill(batterySilhouetteOutlineColor)
+                .frame(width: 3, height: 12)
         }
-        .frame(height: colorSchemeContrast == .increased ? 5 : 3)
         .accessibilityHidden(true)
+    }
+
+    private var batterySilhouetteOutlineColor: Color {
+        if batteryInstrumentWarning { return .red }
+        if isRetainedBatteryData { return Color.white.opacity(0.52) }
+        if batteryPercent == nil { return Color.white.opacity(0.28) }
+        return Color.white.opacity(colorSchemeContrast == .increased ? 1.0 : 0.82)
+    }
+
+    private var batterySilhouetteFillColor: Color {
+        if batteryInstrumentWarning { return .red }
+        if isRetainedBatteryData { return Color.white.opacity(0.42) }
+        return Color.white.opacity(colorSchemeContrast == .increased ? 1.0 : 0.90)
     }
 
     @ViewBuilder
@@ -638,17 +672,6 @@ struct DashboardView: View {
     private var isBatteryLow: Bool {
         guard let battery = batteryPercent else { return false }
         return battery <= 15
-    }
-
-    private var batteryIcon: String {
-        guard let battery = batteryPercent else { return "battery.0percent" }
-        return switch battery {
-        case ...15: "battery.0percent"
-        case ...35: "battery.25percent"
-        case ...60: "battery.50percent"
-        case ...85: "battery.75percent"
-        default: "battery.100percent"
-        }
     }
 
     private var connectionText: String {
