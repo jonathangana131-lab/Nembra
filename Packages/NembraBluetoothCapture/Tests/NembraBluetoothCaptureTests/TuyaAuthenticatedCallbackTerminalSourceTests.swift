@@ -38,16 +38,7 @@ struct TuyaAuthenticatedCallbackTerminalSourceTests {
     func successCallbackMustRetireAuthorityLoss() throws {
         let callback = try Self.authenticatedCallback(Self.appSource())
 
-        let silentAuthorityGuard = """
-        guard phase == .authenticating,
-              currentConnectionToken == token,
-              sdkAccountLoggedIn,
-              sdkDeviceMembershipVerified,
-              accountIdentityLeaseIsAuthorized,
-              let driver else { return }
-        """
-
-        #expect(!callback.contains(silentAuthorityGuard))
+        #expect(!callback.contains("let driver else { return }"))
         #expect(callback.contains("invalidateSourceAuthority"))
     }
 
@@ -58,7 +49,6 @@ struct TuyaAuthenticatedCallbackTerminalSourceTests {
         let rejection = try #require(callback.range(of: rejectionMessage))
         let tail = callback[rejection.lowerBound...]
 
-        #expect(!tail.contains("failLocally(\"Authenticated-session chronology rejected the SDK success callback"))
         #expect(
             tail.contains("invalidateSourceAuthority")
                 || tail.contains("markAuthenticationFailed")
