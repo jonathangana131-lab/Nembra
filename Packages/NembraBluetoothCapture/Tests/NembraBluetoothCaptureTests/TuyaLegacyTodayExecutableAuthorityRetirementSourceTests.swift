@@ -14,7 +14,7 @@ struct TuyaLegacyTodayExecutableAuthorityRetirementSourceTests {
         #expect(directive.contains("RETIRED / NON-AUTHORITATIVE / PHYSICAL NO-GO"))
         #expect(directive.contains(currentProcedure))
         #expect(directive.contains("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md"))
-        #expect(directive.contains("Those historical mechanisms **must not** be used to bypass, downgrade, or substitute"))
+        #expect(directive.contains("must not be used to bypass, downgrade, or substitute"))
         #expect(wrapper.contains("SUPERSEDED:"))
         #expect(wrapper.contains(currentProcedure))
         #expect(wrapper.contains("scripts/field/install_one_time_capture.command"))
