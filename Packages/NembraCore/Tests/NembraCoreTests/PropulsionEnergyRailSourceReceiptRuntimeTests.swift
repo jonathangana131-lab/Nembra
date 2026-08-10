@@ -6,13 +6,13 @@ struct PropulsionEnergyRailSourceReceiptRuntimeTests {
     @Test("live projection preserves exact source receipt identity")
     func liveProjectionPreservesExactReceipt() throws {
         var runtime = try PropulsionEnergyRailSourceReceiptRuntime()
-
-        #expect(runtime.ingestLive(
+        let admitted = runtime.ingestLive(
             watts: 356,
             receiptSequenceNumber: 7,
             receivedAtUptimeNanoseconds: 10_000,
             continuityGeneration: 3
-        ))
+        )
+        #expect(admitted)
 
         let projection = runtime.projection(atUptimeNanoseconds: 10_000)
         #expect(projection.currentness == .live)
@@ -26,21 +26,22 @@ struct PropulsionEnergyRailSourceReceiptRuntimeTests {
     @Test("equal watts with a newer source receipt advances accepted chronology")
     func equalWattsNewReceiptAdvancesChronology() throws {
         var runtime = try PropulsionEnergyRailSourceReceiptRuntime()
-
-        #expect(runtime.ingestLive(
+        let firstAdmission = runtime.ingestLive(
             watts: 356,
             receiptSequenceNumber: 7,
             receivedAtUptimeNanoseconds: 10_000,
             continuityGeneration: 3
-        ))
+        )
+        #expect(firstAdmission)
         let first = runtime.projection(atUptimeNanoseconds: 10_000)
 
-        #expect(runtime.ingestLive(
+        let secondAdmission = runtime.ingestLive(
             watts: 356,
             receiptSequenceNumber: 8,
             receivedAtUptimeNanoseconds: 11_000,
             continuityGeneration: 3
-        ))
+        )
+        #expect(secondAdmission)
         let second = runtime.projection(atUptimeNanoseconds: 11_000)
 
         #expect(second.currentness == .live)
@@ -54,21 +55,22 @@ struct PropulsionEnergyRailSourceReceiptRuntimeTests {
     @Test("exact live replay is idempotent and does not mint a replacement receipt")
     func exactLiveReplayIsIdempotent() throws {
         var runtime = try PropulsionEnergyRailSourceReceiptRuntime()
-
-        #expect(runtime.ingestLive(
+        let firstAdmission = runtime.ingestLive(
             watts: 200,
             receiptSequenceNumber: 4,
             receivedAtUptimeNanoseconds: 5_000,
             continuityGeneration: 2
-        ))
+        )
+        #expect(firstAdmission)
         let first = runtime.projection(atUptimeNanoseconds: 5_000)
 
-        #expect(runtime.ingestLive(
+        let replayAdmission = runtime.ingestLive(
             watts: 200,
             receiptSequenceNumber: 4,
             receivedAtUptimeNanoseconds: 5_000,
             continuityGeneration: 2
-        ))
+        )
+        #expect(replayAdmission)
         let replay = runtime.projection(atUptimeNanoseconds: 5_100)
 
         #expect(replay.acceptedMeasurement == first.acceptedMeasurement)
@@ -78,22 +80,21 @@ struct PropulsionEnergyRailSourceReceiptRuntimeTests {
 
     @Test("source retained currentness preserves exact watts and disables live motion")
     func liveThenRetainedIsStaticLastKnown() throws {
-        var runtime = try PropulsionEnergyRailSourceReceiptRuntime(
-            freshnessNanoseconds: 1_000
+        var runtime = try PropulsionEnergyRailSourceReceiptRuntime(freshnessNanoseconds: 1_000)
+        let liveAdmission = runtime.ingestLive(
+            watts: 356,
+            receiptSequenceNumber: 7,
+            receivedAtUptimeNanoseconds: 10_000,
+            continuityGeneration: 3
         )
-
-        #expect(runtime.ingestLive(
+        #expect(liveAdmission)
+        let retainedAdmission = runtime.ingestRetained(
             watts: 356,
             receiptSequenceNumber: 7,
             receivedAtUptimeNanoseconds: 10_000,
             continuityGeneration: 3
-        ))
-        #expect(runtime.ingestRetained(
-            watts: 356,
-            receiptSequenceNumber: 7,
-            receivedAtUptimeNanoseconds: 10_000,
-            continuityGeneration: 3
-        ))
+        )
+        #expect(retainedAdmission)
 
         let retained = runtime.projection(atUptimeNanoseconds: 10_050)
         #expect(retained.currentness == .retained)
@@ -110,16 +111,14 @@ struct PropulsionEnergyRailSourceReceiptRuntimeTests {
 
     @Test("fresh runtime receiving retained-only input never exposes a transient live frame")
     func retainedRemountStartsRetained() throws {
-        var runtime = try PropulsionEnergyRailSourceReceiptRuntime(
-            freshnessNanoseconds: 1_000
-        )
-
-        #expect(runtime.ingestRetained(
+        var runtime = try PropulsionEnergyRailSourceReceiptRuntime(freshnessNanoseconds: 1_000)
+        let admitted = runtime.ingestRetained(
             watts: 356,
             receiptSequenceNumber: 7,
             receivedAtUptimeNanoseconds: 10_000,
             continuityGeneration: 3
-        ))
+        )
+        #expect(admitted)
 
         let firstVisible = runtime.projection(atUptimeNanoseconds: 10_000)
         #expect(firstVisible.currentness == .retained)
@@ -134,23 +133,22 @@ struct PropulsionEnergyRailSourceReceiptRuntimeTests {
 
     @Test("same retained receipt cannot be relabeled live after reconnect")
     func sameReceiptCannotRepromoteRetained() throws {
-        var runtime = try PropulsionEnergyRailSourceReceiptRuntime(
-            freshnessNanoseconds: 1_000
+        var runtime = try PropulsionEnergyRailSourceReceiptRuntime(freshnessNanoseconds: 1_000)
+        let retainedAdmission = runtime.ingestRetained(
+            watts: 356,
+            receiptSequenceNumber: 7,
+            receivedAtUptimeNanoseconds: 10_000,
+            continuityGeneration: 3
         )
+        #expect(retainedAdmission)
 
-        #expect(runtime.ingestRetained(
+        let replayAsLive = runtime.ingestLive(
             watts: 356,
             receiptSequenceNumber: 7,
             receivedAtUptimeNanoseconds: 10_000,
             continuityGeneration: 3
-        ))
-
-        #expect(runtime.ingestLive(
-            watts: 356,
-            receiptSequenceNumber: 7,
-            receivedAtUptimeNanoseconds: 10_000,
-            continuityGeneration: 3
-        ) == false)
+        )
+        #expect(replayAsLive == false)
 
         let stillRetained = runtime.projection(atUptimeNanoseconds: 10_100)
         #expect(stillRetained.currentness == .retained)
@@ -159,22 +157,21 @@ struct PropulsionEnergyRailSourceReceiptRuntimeTests {
 
     @Test("new source receipt in a newer continuity generation can recover retained power")
     func newerSourceGenerationRecoversRetained() throws {
-        var runtime = try PropulsionEnergyRailSourceReceiptRuntime(
-            freshnessNanoseconds: 1_000
-        )
-
-        #expect(runtime.ingestRetained(
+        var runtime = try PropulsionEnergyRailSourceReceiptRuntime(freshnessNanoseconds: 1_000)
+        let retainedAdmission = runtime.ingestRetained(
             watts: 356,
             receiptSequenceNumber: 7,
             receivedAtUptimeNanoseconds: 10_000,
             continuityGeneration: 3
-        ))
-        #expect(runtime.ingestLive(
+        )
+        #expect(retainedAdmission)
+        let recoveredAdmission = runtime.ingestLive(
             watts: 356,
             receiptSequenceNumber: 1,
             receivedAtUptimeNanoseconds: 20_000,
             continuityGeneration: 4
-        ))
+        )
+        #expect(recoveredAdmission)
 
         let recovered = runtime.projection(atUptimeNanoseconds: 20_000)
         #expect(recovered.currentness == .live)
@@ -187,13 +184,13 @@ struct PropulsionEnergyRailSourceReceiptRuntimeTests {
     @Test("source unavailable removes numeric power without manufacturing zero")
     func unavailableHasNoNumericPower() throws {
         var runtime = try PropulsionEnergyRailSourceReceiptRuntime()
-
-        #expect(runtime.ingestLive(
+        let admitted = runtime.ingestLive(
             watts: 356,
             receiptSequenceNumber: 7,
             receivedAtUptimeNanoseconds: 10_000,
             continuityGeneration: 3
-        ))
+        )
+        #expect(admitted)
         runtime.ingestUnavailable()
 
         let unavailable = runtime.projection(atUptimeNanoseconds: 10_001)
@@ -209,19 +206,20 @@ struct PropulsionEnergyRailSourceReceiptRuntimeTests {
     @Test("stale receipt inside the same generation fails closed")
     func outOfOrderReceiptFailsClosed() throws {
         var runtime = try PropulsionEnergyRailSourceReceiptRuntime()
-
-        #expect(runtime.ingestLive(
+        let firstAdmission = runtime.ingestLive(
             watts: 250,
             receiptSequenceNumber: 8,
             receivedAtUptimeNanoseconds: 11_000,
             continuityGeneration: 3
-        ))
-        #expect(runtime.ingestLive(
+        )
+        #expect(firstAdmission)
+        let staleAdmission = runtime.ingestLive(
             watts: 300,
             receiptSequenceNumber: 7,
             receivedAtUptimeNanoseconds: 10_000,
             continuityGeneration: 3
-        ) == false)
+        )
+        #expect(staleAdmission == false)
 
         let unavailable = runtime.projection(atUptimeNanoseconds: 11_001)
         #expect(unavailable.currentness == .unavailable)
@@ -238,12 +236,13 @@ struct PropulsionEnergyRailSourceReceiptRuntimeTests {
 
         for (sequence, uptime, generation) in invalidCases {
             var runtime = try PropulsionEnergyRailSourceReceiptRuntime()
-            #expect(runtime.ingestLive(
+            let admitted = runtime.ingestLive(
                 watts: 356,
                 receiptSequenceNumber: sequence,
                 receivedAtUptimeNanoseconds: uptime,
                 continuityGeneration: generation
-            ) == false)
+            )
+            #expect(admitted == false)
             #expect(runtime.projection(atUptimeNanoseconds: 20_000).currentness == .unavailable)
         }
     }
@@ -255,29 +254,32 @@ struct PropulsionEnergyRailSourceReceiptRuntimeTests {
         )
 
         #expect(runtime.displaySchedule(atUptimeNanoseconds: 1_000) == .inactive)
-        #expect(runtime.ingestLive(
+        let firstAdmission = runtime.ingestLive(
             watts: 100,
             receiptSequenceNumber: 1,
             receivedAtUptimeNanoseconds: 1_000,
             continuityGeneration: 1
-        ))
-        #expect(runtime.ingestLive(
+        )
+        #expect(firstAdmission)
+        let secondAdmission = runtime.ingestLive(
             watts: 500,
             receiptSequenceNumber: 2,
             receivedAtUptimeNanoseconds: 2_000,
             continuityGeneration: 1
-        ))
+        )
+        #expect(secondAdmission)
 
         let liveSchedule = runtime.displaySchedule(atUptimeNanoseconds: 2_000)
         #expect(liveSchedule.requiresContinuousFrames)
         #expect(liveSchedule.nextTransitionUptimeNanoseconds != nil)
 
-        #expect(runtime.ingestRetained(
+        let retainedAdmission = runtime.ingestRetained(
             watts: 500,
             receiptSequenceNumber: 2,
             receivedAtUptimeNanoseconds: 2_000,
             continuityGeneration: 1
-        ))
+        )
+        #expect(retainedAdmission)
         #expect(runtime.displaySchedule(atUptimeNanoseconds: 2_100) == .inactive)
     }
 }
