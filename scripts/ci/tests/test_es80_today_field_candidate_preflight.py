@@ -328,14 +328,17 @@ class FieldCandidatePreflightTests(unittest.TestCase):
 
     def test_signed_field_handoff_pins_accepted_preflight_and_non_authorization(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
-        self.assertIn("9b5bde849e6b8f6b76e2a15abb52d643e3616a7a", handoff)
-        self.assertIn("fcc2243c005c5f6df2d2f5bd8b8c948e785f07d8", handoff)
+        self.assertIn("4a6dbdd9e6a987804d48544dd61f424dfc743340", handoff)
+        self.assertIn("f8ab407df9b18f61418e8807dd8f4646442e88de", handoff)
+        self.assertIn("31349190917", handoff)
         self.assertIn("scripts/ci/es80_today_field_candidate_preflight.py", handoff)
         self.assertIn("READY_TO_INVOKE_SIGNED_FIELD_PRODUCER", handoff)
         self.assertIn("operator-pre-signing-readiness-not-field-authorization", handoff)
         self.assertIn('report["physicalExperimentAuthorization"] == "not-granted"', handoff)
         self.assertIn("a0f4a33451f61411d6e0541f2e70edea5438342d", handoff)
         self.assertIn("stop before invoking the signed-field producer", handoff)
+        self.assertIn("no symlinked ancestor", handoff)
+        self.assertIn("teamID", handoff)
 
     def test_signed_field_handoff_bash_blocks_are_syntactically_valid(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
