@@ -21,7 +21,7 @@ struct NembraCaptureApp: App {
 /// prepares a redacted JSON, and then stops. It does not launch the old 17-step ride capture.
 struct NembraTuyaMetadataTestView: View {
     @StateObject private var tuya = TuyaAccountBridge()
-    @State private var credentialSaved = false
+    @State private var candidateCredentialSaved = false
 
     var body: some View {
         NavigationStack {
@@ -51,7 +51,7 @@ struct NembraTuyaMetadataTestView: View {
                 .foregroundStyle(.green)
             Text("Teach Nembra the Tuya identity")
                 .font(.system(size: 32, weight: .bold, design: .rounded))
-            Text("No riding this time. Link Tuya Smart, choose the scooter, then send me the JSON this app makes. After that I can build the authenticated Bluetooth test instead of making you repeat the long ride capture.")
+            Text("No riding this time. Link Tuya Smart, choose the scooter, then send me the JSON this app makes. After that I can build the authenticated Bluetooth test from the device evidence instead of making you repeat the long ride capture.")
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -163,7 +163,7 @@ struct NembraTuyaMetadataTestView: View {
             } else {
                 ForEach(tuya.devices) { device in
                     Button {
-                        credentialSaved = TuyaCaptureCredentialStore.save(device: device)
+                        candidateCredentialSaved = TuyaCaptureCredentialCandidateStore.save(device: device)
                         tuya.selectDevice(device)
                     } label: {
                         HStack(spacing: 12) {
@@ -201,15 +201,15 @@ struct NembraTuyaMetadataTestView: View {
             if let device = tuya.selectedDevice {
                 Label(device.name, systemImage: "scooter")
                     .font(.headline)
-                Text("Nembra reads the device identity, current Tuya status, DP specifications, and local strategy. Secret account tokens and local_key are excluded from the file you share.")
+                Text("Nembra reads the device identity, current Tuya status, DP specifications, and local strategy. Secret account tokens and the cloud local_key candidate are excluded from the file you share.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                if credentialSaved {
-                    Label("Private scooter credential saved in this iPhone's Keychain for the next Nembra test", systemImage: "lock.shield.fill")
+                if candidateCredentialSaved {
+                    Label("Tuya cloud local_key candidate saved securely on this iPhone. Its BLE-authentication role is NOT verified yet.", systemImage: "lock.shield.fill")
                         .font(.footnote)
                         .foregroundStyle(.green)
                 } else if device.localKey.isEmpty {
-                    Label("Tuya did not provide a private local key for this device; the JSON is still useful", systemImage: "info.circle")
+                    Label("Tuya did not provide a cloud local_key candidate for this device; the JSON is still useful", systemImage: "info.circle")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -259,19 +259,33 @@ struct NembraTuyaMetadataTestView: View {
     }
 }
 
-private enum TuyaCaptureCredentialStore {
+private enum TuyaCaptureCredentialCandidateStore {
     private static let service = "com.jonathangana131.nembra.capturelearn.tuya"
     private static let account = "selected-scooter"
 
+    struct StoredCandidate: Codable, Equatable {
+        let schemaVersion: Int
+        let credentialKind: String
+        let sourceField: String
+        let deviceID: String
+        let productID: String
+        let uuid: String
+        let localKey: String
+
+        init(device: TuyaAccountBridge.LinkedDevice) {
+            schemaVersion = 1
+            credentialKind = "tuya_cloud_local_key_candidate_unverified_for_ble_auth"
+            sourceField = "local_key"
+            deviceID = device.id
+            productID = device.productID
+            uuid = device.uuid
+            localKey = device.localKey
+        }
+    }
+
     static func save(device: TuyaAccountBridge.LinkedDevice) -> Bool {
         guard !device.localKey.isEmpty else { return false }
-        let payload: [String: String] = [
-            "deviceID": device.id,
-            "productID": device.productID,
-            "uuid": device.uuid,
-            "localKey": device.localKey
-        ]
-        guard let data = try? JSONEncoder().encode(payload) else { return false }
+        guard let data = try? JSONEncoder().encode(StoredCandidate(device: device)) else { return false }
 
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -284,6 +298,20 @@ private enum TuyaCaptureCredentialStore {
         insert[kSecValueData as String] = data
         insert[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         return SecItemAdd(insert as CFDictionary, nil) == errSecSuccess
+    }
+
+    static func load() -> StoredCandidate? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data else { return nil }
+        return try? JSONDecoder().decode(StoredCandidate.self, from: data)
     }
 }
 
@@ -306,7 +334,7 @@ struct TuyaSecureLinkPreflightView: View {
                 .foregroundStyle(.green)
             Text("Metadata first")
                 .font(.largeTitle.bold())
-            Text("Send the redacted metadata JSON first. The secure Bluetooth test stays locked until Nembra can build it from your actual bound-device information instead of guessing.")
+            Text("Send the redacted metadata JSON first. Nembra can retain the cloud local_key candidate privately, but its BLE-authentication role remains unverified. The secure Bluetooth test stays locked until the protocol evidence supports the exact handshake.")
                 .foregroundStyle(.secondary)
             Spacer()
         }
