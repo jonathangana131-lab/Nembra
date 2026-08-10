@@ -423,6 +423,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
         // Close the screen-lifetime admission boundary before revoking every already-issued grant.
         // A later SwiftUI/account callback must not mint a replacement membership probe off-screen.
         acceptsViewScopedMembershipRequests = false
+        sdkDeviceMembershipVerified = false
+        membershipAccountUID = nil
+        membershipDeviceID = nil
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -2137,9 +2140,43 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         guard let dps, !dps.isEmpty else { return }
         var sanitized: [String: String] = [:]
         for (key, value) in dps {
-            sanitized[String(describing: key)] = String(describing: value)
+            let keyString = String(describing: key)
+            let normalizedKey = keyString.lowercased().filter { $0.isLetter || $0.isNumber }
+            if Self.secretKeyFragments.contains(where: { normalizedKey.contains($0) }) {
+                sanitized[keyString] = "<redacted>"
+            } else {
+                sanitized[keyString] = String(describing: Self.redactApplicationSecrets(value))
+            }
         }
         onApplicationUpdate?(sanitized)
+    }
+
+    private static let secretKeyFragments = [
+        "localkey",
+        "accesstoken",
+        "refreshtoken",
+        "authkey",
+        "seckey",
+    ]
+
+    private static func redactApplicationSecrets(_ object: Any) -> Any {
+        if let dictionary = object as? [AnyHashable: Any] {
+            var sanitized: [String: Any] = [:]
+            for (key, value) in dictionary {
+                let keyString = String(describing: key)
+                let normalizedKey = keyString.lowercased().filter { $0.isLetter || $0.isNumber }
+                if secretKeyFragments.contains(where: { normalizedKey.contains($0) }) {
+                    sanitized[keyString] = "<redacted>"
+                } else {
+                    sanitized[keyString] = redactApplicationSecrets(value)
+                }
+            }
+            return sanitized
+        }
+        if let array = object as? [Any] {
+            return array.map(redactApplicationSecrets)
+        }
+        return object
     }
 }
 #endif
