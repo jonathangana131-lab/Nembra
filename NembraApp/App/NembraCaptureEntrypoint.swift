@@ -1439,13 +1439,37 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !verifiedAccountUID.isEmpty else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "The verified Tuya account UID lease became unavailable before application evidence custody.",
+                kind: "sdk_account_uid_lease_missing_during_observation"
+            )
+            return
+        }
+
         applicationUpdateAdmissionsInFlight += 1
         defer { applicationUpdateAdmissionsInFlight -= 1 }
 
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            var eventDetails = redactedApplicationEventDetails(update)
+            guard sdkAccountLoggedIn,
+                  sdkDeviceMembershipVerified,
+                  accountIdentityLeaseIsAuthorized,
+                  membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) == verifiedAccountUID else {
+                await invalidateSourceAuthority(
+                    token: token,
+                    message: "SDK account/device source authority changed before application evidence could enter immutable event custody.",
+                    kind: "sdk_source_authority_changed_before_application_event_custody"
+                )
+                return
+            }
+            var eventDetails = redactedApplicationEventDetails(
+                update,
+                verifiedAccountUID: verifiedAccountUID
+            )
             eventDetails["generation"] = String(token.diagnosticGeneration)
             log("tuya_application_update", eventDetails)
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
@@ -1474,11 +1498,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
     }
 
-    private func redactedApplicationEventDetails(_ update: [String: String]) -> [String: String] {
-        guard let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !accountUID.isEmpty else {
-            return update
-        }
+    private func redactedApplicationEventDetails(
+        _ update: [String: String],
+        verifiedAccountUID: String
+    ) -> [String: String] {
+        let accountUID = verifiedAccountUID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !accountUID.isEmpty else { return [:] }
 
         var redacted: [String: String] = [:]
         redacted.reserveCapacity(update.count)
