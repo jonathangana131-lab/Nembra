@@ -1,0 +1,53 @@
+name: Validate Capture Account UID Await Race BF49 Sol
+
+on:
+  push:
+    branches:
+      - review/v14-capture-account-uid-await-race-bf49-sol
+
+permissions:
+  contents: write
+
+jobs:
+  portable-acceptance:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind validation to exact candidate bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate='bf49276e1419898aedfc7a4a376c401a4c032b13'
+          test "$(git merge-base HEAD "$candidate")" = "$candidate"
+          git diff --quiet "$candidate" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+          git diff --quiet "$candidate" HEAD -- Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+          git diff --check "$candidate" HEAD
+
+      - name: Run focused UID custody contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors --filter TuyaApplicationAccountUIDExportCustodySourceTests
+
+      - name: Run full Bluetooth Capture package
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+
+      - name: Restore clean candidate tree after validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate='bf49276e1419898aedfc7a4a376c401a4c032b13'
+          rm .github/workflows/validate-capture-account-uid-await-race-bf49-sol.yml
+          git add -u .github/workflows/validate-capture-account-uid-await-race-bf49-sol.yml
+          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' commit -m 'ci(capture): record portable UID-custody acceptance'
+          test -z "$(git diff --name-only "$candidate" HEAD)"
+          git push origin HEAD:review/v14-capture-account-uid-await-race-bf49-sol
