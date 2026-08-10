@@ -1,0 +1,166 @@
+name: Materialize V14 Capture final truth seam
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-final-truth-seam-sol
+    paths:
+      - .github/workflows/materialize-v14-capture-final-truth-seam.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/v14-capture-final-truth-seam-sol
+          fetch-depth: 0
+
+      - name: Bind exact construction parent and patch source
+        shell: bash
+        env:
+          EXPECTED_PARENT: 1c40853f6991b4d09206df1d25ecff021458b7eb
+          EXPECTED_ENTRYPOINT_BLOB: c58be3f6bc0cf33a9f6d0d950b7d011ff8aa1d25
+        run: |
+          set -euo pipefail
+          test "$(git merge-base "$EXPECTED_PARENT" HEAD)" = "$EXPECTED_PARENT"
+          test "$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)" = "$EXPECTED_ENTRYPOINT_BLOB"
+
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text()
+
+          def replace_once_in_section(text, start, end, old, new):
+              start_i = text.index(start)
+              end_i = text.index(end, start_i + len(start))
+              section = text[start_i:end_i]
+              if section.count(old) != 1:
+                  raise SystemExit(f"expected exactly one target in {start} section, found {section.count(old)}")
+              section = section.replace(old, new, 1)
+              return text[:start_i] + section + text[end_i:]
+
+          revocation_old = '''        sdkDeviceMembershipVerified = false
+                  membershipAccountUID = nil
+                  membershipDeviceID = nil
+                  membershipRequestID = UUID()
+          '''
+          revocation_new = '''        sdkDeviceMembershipVerified = false
+                  membershipAccountUID = nil
+                  membershipDeviceID = nil
+                  membershipStatus = "Scooter membership must be verified again for this Secure Link session."
+                  membershipRequestID = UUID()
+          '''
+
+          source = replace_once_in_section(
+              source,
+              "    func abandonCorrelationForViewExit() {",
+              "    func appDidLoseForeground() {",
+              revocation_old,
+              revocation_new,
+          )
+          source = replace_once_in_section(
+              source,
+              "    func appDidLoseForeground() {",
+              "    var privateConfig: Bool",
+              revocation_old,
+              revocation_new,
+          )
+
+          guard_old = '''        guard driver.isLocallyConnected(uuid: tuyaUUID) else {
+                  await recordObservedTransportLoss(token: token)
+                  return
+              }
+
+              applicationUpdateAdmissionsInFlight += 1
+          '''
+          guard_new = '''        guard driver.isLocallyConnected(uuid: tuyaUUID) else {
+                  await recordObservedTransportLoss(token: token)
+                  return
+              }
+              guard let acceptedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                    !acceptedAccountUID.isEmpty else {
+                  await invalidateSourceAuthority(
+                      token: token,
+                      message: "Verified Tuya account identity disappeared before application evidence custody.",
+                      kind: "sdk_account_uid_authority_missing_during_observation"
+                  )
+                  return
+              }
+
+              applicationUpdateAdmissionsInFlight += 1
+          '''
+          if source.count(guard_old) != 1:
+              raise SystemExit(f"expected one application custody guard, found {source.count(guard_old)}")
+          source = source.replace(guard_old, guard_new, 1)
+
+          log_old = '''            log("tuya_application_update", update.merging([
+                      "generation": String(token.diagnosticGeneration)
+                  ]) { current, _ in current })
+          '''
+          log_new = '''            let exportSafeUpdate = update.mapValues { value in
+                      value.replacingOccurrences(
+                          of: acceptedAccountUID,
+                          with: "<redacted-account-uid>",
+                          options: [.literal]
+                      )
+                  }
+                  log("tuya_application_update", exportSafeUpdate.merging([
+                      "generation": String(token.diagnosticGeneration)
+                  ]) { _, trusted in trusted })
+          '''
+          if source.count(log_old) != 1:
+              raise SystemExit(f"expected one application event log target, found {source.count(log_old)}")
+          source = source.replace(log_old, log_new, 1)
+
+          duplicate_old = '''        "accounttoken",
+                  "accesstoken",
+                  "refreshtoken",
+                  "sessionkey",
+                  "authkey",
+          '''
+          duplicate_new = '''        "accounttoken",
+                  "accesstoken",
+                  "refreshtoken",
+                  "authkey",
+          '''
+          if source.count(duplicate_old) != 1:
+              raise SystemExit(f"expected one duplicate sessionkey block, found {source.count(duplicate_old)}")
+          source = source.replace(duplicate_old, duplicate_new, 1)
+
+          path.write_text(source)
+          PY
+
+          git diff --check
+
+      - name: Run Capture authority package
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+
+      - name: Seal effective product diff and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/materialize-v14-capture-final-truth-seam.yml
+          git diff --check
+
+          mapfile -t paths < <(git diff --name-only 1c40853f6991b4d09206df1d25ecff021458b7eb -- \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift)
+          test "${#paths[@]}" -eq 4
+
+          git config user.name "nembra-sol-worker"
+          git config user.email "nembra-sol-worker@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git add -u .github/workflows/materialize-v14-capture-final-truth-seam.yml
+          git commit -m "fix(capture): close final app truth seam"
+          git push origin HEAD:agent/v14-capture-final-truth-seam-sol
