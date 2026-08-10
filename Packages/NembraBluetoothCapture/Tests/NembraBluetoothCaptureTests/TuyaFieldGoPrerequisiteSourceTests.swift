@@ -38,6 +38,26 @@ struct TuyaFieldGoPrerequisiteSourceTests {
         #expect(baselineLease.lowerBound < baselineScan.lowerBound)
     }
 
+    @Test("account authority loss has a dedicated terminal instead of masquerading as continuity or disconnect")
+    func sourceAuthorityLossIsConsumedTruthfully() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let ledger = try readRepositoryFile("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift")
+
+        #expect(ledger.contains("markSourceAuthorityInvalidated"))
+        #expect(ledger.contains("Tuya SDK source authority was invalidated."))
+        #expect(app.contains("markSourceAuthorityInvalidated"))
+
+        guard let invalidationHelper = app.range(of: "invalidateSourceAuthority"),
+              let terminalCall = app.range(
+                of: "markSourceAuthorityInvalidated",
+                range: invalidationHelper.lowerBound..<app.endIndex
+              ) else {
+            Issue.record("Field app needs an explicit source-authority invalidation path backed by the package terminal.")
+            return
+        }
+        #expect(invalidationHelper.lowerBound < terminalCall.lowerBound)
+    }
+
     @Test("account UID remains source authority only and is excluded from export")
     func accountUIDIsNotArtifactContent() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
