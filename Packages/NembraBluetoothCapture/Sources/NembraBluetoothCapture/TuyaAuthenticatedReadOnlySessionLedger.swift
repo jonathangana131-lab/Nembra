@@ -3,13 +3,15 @@ import Foundation
 
 /// Process-local connection identity minted by the read-only Tuya session ledger.
 /// Callers may retain a token for callback attribution, but cannot construct a token for a
-/// different connection generation.
+/// different ledger instance or connection generation.
 public struct TuyaReadOnlyConnectionToken: Hashable, Sendable {
+    fileprivate let ledgerID: UUID
     fileprivate let generation: UInt64
 
     public var diagnosticGeneration: UInt64 { generation }
 
-    fileprivate init(generation: UInt64) {
+    fileprivate init(ledgerID: UUID, generation: UInt64) {
+        self.ledgerID = ledgerID
         self.generation = generation
     }
 }
@@ -19,8 +21,8 @@ public struct TuyaReadOnlyConnectionToken: Hashable, Sendable {
 /// The official Tuya adapter reports lifecycle events here rather than assembling preflight
 /// snapshots itself. The ledger samples monotonic uptime at the mutation boundary, resets
 /// authentication/payload evidence on every new connection, and rejects callbacks attributed to
-/// an older connection token. Payload bytes are inspected only for non-emptiness and are never
-/// retained by this type.
+/// an older connection token or a different ledger instance. Payload bytes are inspected only for
+/// non-emptiness and are never retained by this type.
 public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationSessionProvider {
     public enum MutationError: Error, Equatable, Sendable {
         case noActiveConnection
@@ -33,6 +35,7 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         case connectionGenerationExhausted
     }
 
+    private let ledgerID: UUID
     private let nowUptimeNanoseconds: @Sendable () -> UInt64
 
     private var generation: UInt64 = 0
@@ -47,10 +50,12 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     private var latestApplicationPayloadUptimeNanoseconds: UInt64?
 
     public init() {
+        self.ledgerID = UUID()
         self.nowUptimeNanoseconds = { DispatchTime.now().uptimeNanoseconds }
     }
 
     init(nowUptimeNanoseconds: @escaping @Sendable () -> UInt64) {
+        self.ledgerID = UUID()
         self.nowUptimeNanoseconds = nowUptimeNanoseconds
     }
 
@@ -61,7 +66,7 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         }
 
         generation += 1
-        let token = TuyaReadOnlyConnectionToken(generation: generation)
+        let token = TuyaReadOnlyConnectionToken(ledgerID: ledgerID, generation: generation)
         let now = nowUptimeNanoseconds()
 
         currentToken = token
