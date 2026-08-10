@@ -21,7 +21,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_parent='999d0f9a8b8841af7b7334b19ead4907e2b0e21c'
+          expected_parent='d949c95ca2eaf74af3b2f2003f821006409a106d'
           product='502cfc43d8943bacb446f287b58d46463df3a7ca'
           workflow='.github/workflows/materialize-v14-visual-procedure-custody-502cfc4.yml'
           test "$(git rev-parse HEAD^)" = "$expected_parent"
@@ -40,11 +40,7 @@ jobs:
                   raise SystemExit('visual shell procedure readback anchor changed')
               shell = shell.replace(anchor, anchor + addition, 1)
           guard_anchor = 'if [[ "$BUNDLE_ID" != "$EXPECTED_BUNDLE_ID" ]]; then\n'
-          procedure_guard = '''if [[ "$BUILT_PROCEDURE_IDENTIFIER" != "$EXPECTED_PROCEDURE_IDENTIFIER" ]]; then
-  echo "Standalone Capture embedded procedure does not match the canonical stationary procedure: $BUILT_PROCEDURE_IDENTIFIER" >&2
-  exit 23
-fi
-'''
+          procedure_guard = 'if [[ "$BUILT_PROCEDURE_IDENTIFIER" != "$EXPECTED_PROCEDURE_IDENTIFIER" ]]; then\n  echo "Standalone Capture embedded procedure does not match the canonical stationary procedure: $BUILT_PROCEDURE_IDENTIFIER" >&2\n  exit 23\nfi\n'
           if procedure_guard not in shell:
               if shell.count(guard_anchor) != 1:
                   raise SystemExit('visual shell bundle guard anchor changed')
@@ -82,11 +78,7 @@ fi
           test_path = Path('scripts/ci/tests/test_capture_standalone_visual_evidence.py')
           test = test_path.read_text(encoding='utf-8')
           required_anchor = '    \'TUYA_DEPENDENCY_LOCK_SHA256="$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$INFO_PLIST" 2>/dev/null || true)"\',\n'
-          required_addition = (
-              '    \'BUILT_PROCEDURE_IDENTIFIER="$(/usr/bin/plutil -extract NembraCaptureProcedureIdentifier raw -o - "$INFO_PLIST" 2>/dev/null || true)"\',\n'
-              '    \'[[ "$BUILT_PROCEDURE_IDENTIFIER" != "$EXPECTED_PROCEDURE_IDENTIFIER" ]]\',\n'
-              '    \'Standalone Capture embedded procedure does not match the canonical stationary procedure\',\n'
-          )
+          required_addition = '    \'BUILT_PROCEDURE_IDENTIFIER="$(/usr/bin/plutil -extract NembraCaptureProcedureIdentifier raw -o - "$INFO_PLIST" 2>/dev/null || true)"\',\n    \'[[ "$BUILT_PROCEDURE_IDENTIFIER" != "$EXPECTED_PROCEDURE_IDENTIFIER" ]]\',\n    \'Standalone Capture embedded procedure does not match the canonical stationary procedure\',\n'
           if required_addition not in test:
               if test.count(required_anchor) != 1:
                   raise SystemExit('visual source-test readback anchor changed')
