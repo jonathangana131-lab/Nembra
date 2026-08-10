@@ -1,0 +1,182 @@
+name: Materialize Capture Failed Rail 9695
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-failed-rail-9695-r1
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Guard exact current product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='9695af19c21c93b3eb4bc867613a6df0c9a3b3d4'
+          test "$(git rev-parse HEAD^)" = "$expected"
+          test "$(git diff --name-only "$expected"..HEAD)" = '.github/workflows/materialize-capture-failed-rail-9695.yml'
+
+      - name: Repair terminal failed-state product semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = app.read_text()
+
+          old_open = '''    @ViewBuilder
+              private var stageRail: some View {
+                  if dynamicTypeSize.isAccessibilitySize {
+          '''
+          new_open = '''    @ViewBuilder
+              private var stageRail: some View {
+                  if test.phase == .failed {
+                      HStack(spacing: 12) {
+                          ZStack {
+                              Circle()
+                                  .fill(heroAccent.opacity(0.16))
+                                  .frame(width: 30, height: 30)
+                              Image(systemName: "stop.fill")
+                                  .font(.caption.bold())
+                                  .foregroundStyle(heroAccent)
+                          }
+                          .accessibilityHidden(true)
+
+                          VStack(alignment: .leading, spacing: 2) {
+                              Text("ATTEMPT STOPPED")
+                                  .font(.caption2.bold())
+                                  .tracking(1.1)
+                                  .foregroundStyle(heroAccent)
+                              Text("No step is current")
+                                  .font(.headline)
+                          }
+                          Spacer(minLength: 0)
+                      }
+                      .accessibilityElement(children: .combine)
+                      .accessibilityLabel("Capture stopped. No procedure step is current. Start a fresh attempt from Target.")
+                  } else if dynamicTypeSize.isAccessibilitySize {
+          '''
+          if source.count(old_open) != 1:
+              raise SystemExit('stageRail opening anchor drifted')
+          source = source.replace(old_open, new_open)
+
+          old_title = '        case .failed: return "Capture paused"\n'
+          new_title = '        case .failed: return "Capture stopped"\n'
+          if source.count(old_title) != 1:
+              raise SystemExit('failed hero title anchor drifted')
+          source = source.replace(old_title, new_title)
+          app.write_text(source)
+
+          test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureFailedStageRailAccessibilitySourceTests.swift')
+          if test.exists():
+              raise SystemExit('failed rail regression unexpectedly already exists')
+          test.write_text(textwrap.dedent(r'''
+              import Foundation
+              import Testing
+              @testable import NembraBluetoothCapture
+
+              @Suite("Capture failed stage-rail accessibility truth")
+              struct CaptureFailedStageRailAccessibilitySourceTests {
+                  @Test("failed Capture uses an explicit stopped rail before normal procedure stages")
+                  func failedRailDoesNotPresentTargetAsCurrent() throws {
+                      let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                      let stageRail = String(try section(
+                          in: source,
+                          from: "private var stageRail: some View",
+                          to: "private var primarySurface: some View"
+                      ))
+
+                      guard let failedMarker = stageRail.range(of: "test.phase == .failed"),
+                            let normalRailMarker = stageRail.range(of: "dynamicTypeSize.isAccessibilitySize") else {
+                          Issue.record("Failed Capture must have explicit stage-rail semantics before the normal stage rail")
+                          throw SourceContractError.sectionMissing
+                      }
+
+                      #expect(failedMarker.lowerBound < normalRailMarker.lowerBound)
+                      let failedPrefix = String(stageRail[..<normalRailMarker.lowerBound])
+                      #expect(failedPrefix.contains("ATTEMPT STOPPED"))
+                      #expect(failedPrefix.contains("No step is current"))
+                      #expect(failedPrefix.contains("accessibilityLabel(\"Capture stopped. No procedure step is current. Start a fresh attempt from Target.\")"))
+                      #expect(!failedPrefix.contains("stageLabels[currentStageIndex]"))
+                  }
+
+                  @Test("failed phase copy cannot imply that the stopped attempt is resumable")
+                  func failedHeroUsesTerminalLanguage() throws {
+                      let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                      let phaseTitle = String(try section(
+                          in: source,
+                          from: "private var phaseTitle: String",
+                          to: "private var phaseSubtitle: String"
+                      ))
+
+                      #expect(!phaseTitle.contains("case .failed: return \"Capture paused\""))
+                      #expect(phaseTitle.contains("case .failed: return \"Capture stopped\""))
+                  }
+
+                  private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                      guard let startRange = source.range(of: start),
+                            let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+                          Issue.record("Expected source section missing: \(start) ... \(end)")
+                          throw SourceContractError.sectionMissing
+                      }
+                      return source[startRange.lowerBound..<endRange.lowerBound]
+                  }
+
+                  private func readRepositoryFile(_ relativePath: String) throws -> String {
+                      let repositoryRoot = URL(fileURLWithPath: #filePath)
+                          .deletingLastPathComponent()
+                          .deletingLastPathComponent()
+                          .deletingLastPathComponent()
+                          .deletingLastPathComponent()
+                          .deletingLastPathComponent()
+                      return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+                  }
+
+                  private enum SourceContractError: Error { case sectionMissing }
+              }
+          ''').lstrip())
+          PY
+
+      - name: Validate product/source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureFailedStageRailAccessibilitySourceTests.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          rail=s[s.index('    private var stageRail: some View'):s.index('    private var primarySurface: some View')]
+          assert rail.index('test.phase == .failed') < rail.index('dynamicTypeSize.isAccessibilitySize')
+          failed=rail[:rail.index('dynamicTypeSize.isAccessibilitySize')]
+          assert 'ATTEMPT STOPPED' in failed and 'No step is current' in failed
+          assert 'Capture stopped. No procedure step is current. Start a fresh attempt from Target.' in failed
+          assert 'stageLabels[currentStageIndex]' not in failed
+          assert 'case .failed: return "Capture stopped"' in s
+          assert 'case .failed: return "Capture paused"' not in s
+          PY
+          git diff --check
+
+      - name: Commit durable exact-parent checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-failed-rail-9695.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureFailedStageRailAccessibilitySourceTests.swift \
+            .github/workflows/materialize-capture-failed-rail-9695.yml
+          git commit -m 'fix(capture): stop failed stage rail from claiming Target'
+          git push origin HEAD:sol/v14-capture-failed-rail-9695-r1
