@@ -4,15 +4,19 @@ import Testing
 
 @Suite("Tuya accepted application-event provenance")
 struct TuyaApplicationEventMetadataPrecedenceSourceTests {
-    @Test("trusted generation is stamped after untrusted event redaction")
-    func trustedGenerationWinsReservedCollision() throws {
+    @Test("trusted generation is package-owned without discarding colliding SDK evidence")
+    func trustedGenerationWinsReservedCollisionLosslessly() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let receiver = String(try section(in: source, from: "private func receivedApplicationUpdate(", to: "private func startWatchdog"))
-        let redaction = try #require(receiver.range(of: "var eventDetails = redactedApplicationEventDetails(update)"))
-        let generation = try #require(receiver.range(of: "eventDetails[\"generation\"] = String(token.diagnosticGeneration)"))
-        let log = try #require(receiver.range(of: "log(\"tuya_application_update\", eventDetails)"))
-        #expect(redaction.lowerBound < generation.lowerBound)
-        #expect(generation.lowerBound < log.lowerBound)
+
+        let custody = try #require(receiver.range(of: "TuyaAuthenticatedApplicationEventCustody.eventDetails("))
+        let generation = try #require(receiver.range(of: "trustedGeneration: String(token.diagnosticGeneration)", range: custody.upperBound..<receiver.endIndex))
+        let ledger = try #require(receiver.range(of: "try await sessionLedger.recordApplicationUpdate", range: generation.upperBound..<receiver.endIndex))
+        let log = try #require(receiver.range(of: "log(\"tuya_application_update\", custodySafeEventDetails)", range: ledger.upperBound..<receiver.endIndex))
+        #expect(custody.lowerBound < generation.lowerBound)
+        #expect(generation.lowerBound < ledger.lowerBound)
+        #expect(ledger.lowerBound < log.lowerBound)
+        #expect(!receiver.contains("eventDetails[\"generation\"] ="))
         #expect(!receiver.contains("update.merging(["))
     }
 
