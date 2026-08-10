@@ -1442,12 +1442,43 @@ private final class SecureLinkController: NSObject, ObservableObject {
         applicationUpdateAdmissionsInFlight += 1
         defer { applicationUpdateAdmissionsInFlight -= 1 }
 
+        guard let leasedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !leasedAccountUID.isEmpty else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "Verified Tuya account identity disappeared before application evidence could enter export custody.",
+                kind: "sdk_account_identity_missing_before_application_custody"
+            )
+            return
+        }
+        let accountUIDRedactionMarker = "<redacted-account-uid>"
+        var custodySafeUpdate: [String: String] = [:]
+        for (key, value) in update.sorted(by: { $0.key < $1.key }) {
+            let redactedKey = key.replacingOccurrences(
+                of: leasedAccountUID,
+                with: accountUIDRedactionMarker,
+                options: [.caseInsensitive, .literal]
+            )
+            let redactedValue = value.replacingOccurrences(
+                of: leasedAccountUID,
+                with: accountUIDRedactionMarker,
+                options: [.caseInsensitive, .literal]
+            )
+            var custodyKey = redactedKey
+            var collisionOrdinal = 2
+            while custodySafeUpdate[custodyKey] != nil {
+                custodyKey = "\(redactedKey)#\(collisionOrdinal)"
+                collisionOrdinal += 1
+            }
+            custodySafeUpdate[custodyKey] = redactedValue
+        }
+
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            log("tuya_application_update", custodySafeUpdate.merging([
                 "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -2261,7 +2292,6 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "accounttoken",
         "accesstoken",
         "refreshtoken",
-        "sessionkey",
         "authkey",
         "seckey",
     ]
