@@ -35,44 +35,30 @@ jobs:
 
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           source = path.read_text()
-          old = '''        guard let session = correlationSession,
-              let progress = session.progress else {
-            failLocally("Fresh Bluetooth correlation authority is unavailable. Restart from OFF1.", "target_correlation_authority_unavailable")
-            return
-        }
-
-        let label = correlationWindowLabel
-'''
-          new = '''        guard OfficialTuyaFactory.packageCorrelationMayStart else {
-            correlationSession?.abandonCurrentWindow()
-            correlationSession = nil
-            failLocally(
-                "Tuya BLE ownership was handed to the official SDK while target correlation was in progress. Relaunch Capture with the scooter OFF before a fresh OFF1→ON1→OFF2→ON2 series.",
-                "process_tuya_ble_ownership_changed_during_target_correlation"
-            )
-            return
-        }
-        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {
-            correlationSession?.abandonCurrentWindow()
-            correlationSession = nil
-            failLocally(
-                "Tuya acquired current local-BLE ownership while target correlation was in progress. Wait for that session to clear or relaunch Capture, then restart from OFF1. Package-owned correlation will not start another scanner window while Tuya owns local BLE.",
-                "sdk_local_ble_ownership_changed_during_target_correlation"
-            )
-            return
-        }
-        guard let session = correlationSession,
-              let progress = session.progress else {
-            failLocally("Fresh Bluetooth correlation authority is unavailable. Restart from OFF1.", "target_correlation_authority_unavailable")
-            return
-        }
-
-        let label = correlationWindowLabel
-'''
-          count = source.count(old)
-          if count != 1:
-              raise SystemExit(f"expected exactly one per-window admission seam, found {count}")
-          source = source.replace(old, new, 1)
+          anchor = "        guard let session = correlationSession,\n"
+          insertion = (
+              "        guard OfficialTuyaFactory.packageCorrelationMayStart else {\n"
+              "            correlationSession?.abandonCurrentWindow()\n"
+              "            correlationSession = nil\n"
+              "            failLocally(\n"
+              "                \"Tuya BLE ownership was handed to the official SDK while target correlation was in progress. Relaunch Capture with the scooter OFF before a fresh OFF1→ON1→OFF2→ON2 series.\",\n"
+              "                \"process_tuya_ble_ownership_changed_during_target_correlation\"\n"
+              "            )\n"
+              "            return\n"
+              "        }\n"
+              "        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {\n"
+              "            correlationSession?.abandonCurrentWindow()\n"
+              "            correlationSession = nil\n"
+              "            failLocally(\n"
+              "                \"Tuya acquired current local-BLE ownership while target correlation was in progress. Wait for that session to clear or relaunch Capture, then restart from OFF1. Package-owned correlation will not start another scanner window while Tuya owns local BLE.\",\n"
+              "                \"sdk_local_ble_ownership_changed_during_target_correlation\"\n"
+              "            )\n"
+              "            return\n"
+              "        }\n"
+          )
+          if source.count(anchor) != 1:
+              raise SystemExit(f"expected exactly one per-window admission seam, found {source.count(anchor)}")
+          source = source.replace(anchor, insertion + anchor, 1)
           path.write_text(source)
 
           start = source.index("    private func startCurrentCorrelationWindow()")
