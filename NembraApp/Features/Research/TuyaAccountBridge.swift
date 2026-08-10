@@ -224,8 +224,8 @@ final class TuyaAccountBridge: ObservableObject {
                 "online": device.online
             ],
             "status": Self.redactSecrets(selectedDeviceStatus ?? [:]),
-            "specifications": selectedDeviceSpecifications ?? [:],
-            "localStrategy": selectedDeviceLocalStrategy ?? [:],
+            "specifications": Self.redactSecrets(selectedDeviceSpecifications ?? [:]),
+            "localStrategy": Self.redactSecrets(selectedDeviceLocalStrategy ?? [:]),
             "safety": [
                 "readOnlyCloudCalls": true,
                 "localKeyRetained": false,
@@ -639,7 +639,18 @@ final class TuyaAccountBridge: ObservableObject {
     private static func redactSecrets(_ object: Any) -> Any {
         if let dictionary = object as? [String: Any] {
             var output: [String: Any] = [:]
-            let secretKeyFragments = ["localkey", "accesstoken", "refreshtoken", "sessionkey", "seckey", "authkey"]
+            let secretKeyFragments = [
+                "localkey",
+                "sessionkey",
+                "appkey",
+                "appsecret",
+                "password",
+                "accounttoken",
+                "accesstoken",
+                "refreshtoken",
+                "seckey",
+                "authkey",
+            ]
             for (key, value) in dictionary {
                 let normalized = String(key.lowercased().filter { $0.isLetter || $0.isNumber })
                 if secretKeyFragments.contains(where: normalized.contains) {

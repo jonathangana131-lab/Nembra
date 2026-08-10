@@ -16,6 +16,10 @@ struct TuyaMetadataSecretRedactionSourceTests {
 
         #expect(body.contains("secretkeyfragments"))
         #expect(body.contains("localkey"))
+        #expect(body.contains("appkey"))
+        #expect(body.contains("appsecret"))
+        #expect(body.contains("password"))
+        #expect(body.contains("accounttoken"))
         #expect(body.contains("accesstoken"))
         #expect(body.contains("refreshtoken"))
         #expect(body.contains("sessionkey"))
@@ -28,6 +32,17 @@ struct TuyaMetadataSecretRedactionSourceTests {
         #expect(!body.contains("normalized.contains(\"access_token\")"))
         #expect(!body.contains("normalized.contains(\"refresh_token\")"))
         #expect(!body.contains("normalized.contains(\"session_key\")"))
+    }
+
+    @Test("final metadata export re-sanitizes every opaque payload")
+    func finalExportReSanitizesAllOpaquePayloads() throws {
+        let bridge = try readRepositoryFile("NembraApp/Features/Research/TuyaAccountBridge.swift")
+        let export = String(try section(in: bridge, from: "func prepareRedactedExport()", to: "func resetLink()"))
+
+        #expect(export.contains("\"status\": Self.redactSecrets(selectedDeviceStatus ?? [:])"))
+        #expect(export.contains("\"specifications\": Self.redactSecrets(selectedDeviceSpecifications ?? [:])"))
+        #expect(export.contains("\"localStrategy\": Self.redactSecrets(selectedDeviceLocalStrategy ?? [:])"))
+        #expect(export.contains("envelope[\"deviceDetailRedacted\"] = Self.redactSecrets(selectedDeviceMetadata)"))
     }
 
     @Test("linked device UI state does not retain raw device dictionaries or local key")
