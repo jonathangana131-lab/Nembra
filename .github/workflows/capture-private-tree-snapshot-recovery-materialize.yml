@@ -47,23 +47,13 @@ jobs:
 
           helper = Path("Scripts/capture_tuya_private_input_provenance.py")
           source = helper.read_text()
-          old = '''        if (
-              stat.S_ISLNK(current_path.st_mode)
-              or not stat.S_ISREG(current_path.st_mode)
-              or current_path.st_dev != after.st_dev
-              or current_path.st_ino != after.st_ino
-          ):
-              raise ProvenanceError(f"private build input pathname changed during fingerprinting: {path.name}")
-          '''
-          new = '''        if (
-              stat.S_ISLNK(current_path.st_mode)
-              or not stat.S_ISREG(current_path.st_mode)
-              or _stat_identity(current_path) != _stat_identity(after)
-          ):
-              raise ProvenanceError(f"private build input pathname changed during fingerprinting: {path.name}")
-          '''
+          old = (
+              "            or current_path.st_dev != after.st_dev\n"
+              "            or current_path.st_ino != after.st_ino\n"
+          )
+          new = "            or _stat_identity(current_path) != _stat_identity(after)\n"
           if source.count(old) != 1:
-              raise SystemExit(f"stable-file pathname fence changed; matches={source.count(old)}")
+              raise SystemExit(f"stable-file pathname identity fence changed; matches={source.count(old)}")
           helper.write_text(source.replace(old, new, 1))
 
           tests = Path("scripts/ci/tests/test_capture_tuya_private_input_provenance.py")
@@ -71,28 +61,31 @@ jobs:
           marker = "    def test_tree_rejects_file_replacement_after_individual_fingerprint(self) -> None:\n"
           if test_source.count(marker) != 1:
               raise SystemExit("tree race test insertion marker changed")
-          regression = '''    def test_file_fingerprint_rejects_same_inode_mutation_after_final_descriptor_stat(self) -> None:
-              target = self.security_podspec
-              size = target.stat().st_size
-              inode = target.stat().st_ino
-              original_lstat = Path.lstat
-              mutated = False
-
-              def mutate_then_lstat(path: Path) -> os.stat_result:
-                  nonlocal mutated
-                  if path == target and not mutated:
-                      mutated = True
-                      target.write_bytes(b"Q" * size)
-                  return original_lstat(path)
-
-              with mock.patch.object(Path, "lstat", autospec=True, side_effect=mutate_then_lstat):
-                  with self.assertRaises(provenance.ProvenanceError):
-                      provenance._file_fingerprint(target)
-
-              self.assertTrue(mutated)
-              self.assertEqual(target.stat().st_ino, inode)
-
-          '''
+          regression_lines = [
+              "    def test_file_fingerprint_rejects_same_inode_mutation_after_final_descriptor_stat(self) -> None:",
+              "        target = self.security_podspec",
+              "        size = target.stat().st_size",
+              "        inode = target.stat().st_ino",
+              "        original_lstat = Path.lstat",
+              "        mutated = False",
+              "",
+              "        def mutate_then_lstat(path: Path) -> os.stat_result:",
+              "            nonlocal mutated",
+              "            if path == target and not mutated:",
+              "                mutated = True",
+              "                target.write_bytes(b\"Q\" * size)",
+              "            return original_lstat(path)",
+              "",
+              "        with mock.patch.object(Path, \"lstat\", autospec=True, side_effect=mutate_then_lstat):",
+              "            with self.assertRaises(provenance.ProvenanceError):",
+              "                provenance._file_fingerprint(target)",
+              "",
+              "        self.assertTrue(mutated)",
+              "        self.assertEqual(target.stat().st_ino, inode)",
+              "",
+              "",
+          ]
+          regression = "\n".join(regression_lines)
           tests.write_text(test_source.replace(marker, regression + marker, 1))
           PY
           git diff --check
