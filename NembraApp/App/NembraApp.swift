@@ -112,6 +112,7 @@ private struct NembraNavigationView: View {
     @State private var cameraPosition: MapCameraPosition = .automatic
     @State private var isSearching = false
     @State private var searchError: String?
+    @State private var isClearRecentsConfirmationPresented = false
 
     private var recentDestinations: [NembraRecentDestination] {
         guard let data = recentDestinationsJSON.data(using: .utf8),
@@ -146,6 +147,18 @@ private struct NembraNavigationView: View {
         }
         .task(id: query) {
             await searchDestinations()
+        }
+        .confirmationDialog(
+            "Clear all recent destinations?",
+            isPresented: $isClearRecentsConfirmationPresented,
+            titleVisibility: .visible
+        ) {
+            Button("Clear Recent Destinations", role: .destructive) {
+                clearRecentDestinations()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes all recent destinations stored on this device.")
         }
         .accessibilityIdentifier("navigation.root")
     }
@@ -256,7 +269,7 @@ private struct NembraNavigationView: View {
                 .onDelete(perform: deleteRecentDestinations)
 
                 Button(role: .destructive) {
-                    clearRecentDestinations()
+                    isClearRecentsConfirmationPresented = true
                 } label: {
                     Label("Clear Recent Destinations", systemImage: "trash")
                 }
