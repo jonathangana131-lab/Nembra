@@ -1,0 +1,64 @@
+name: Apply Capture procedure rendezvous sol5
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-procedure-rendezvous-sol5
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-procedure-rendezvous-sol5
+          fetch-depth: 0
+
+      - name: Verify exact materializer ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='dee52e17577d25dd6d928378b2fb530f321923bb'
+          test "$(git merge-base HEAD "$expected")" = "$expected"
+          test "$(git rev-list --count "$expected"..HEAD)" = '2'
+          actual="$(git diff --name-only "$expected"..HEAD | sort)"
+          expected_paths="$(printf '%s\n' '.github/workflows/apply-capture-procedure-rendezvous-sol5.yml' 'scripts/ci/apply_capture_procedure_rendezvous_sol5.py' | sort)"
+          test "$actual" = "$expected_paths"
+
+      - name: Materialize exact field procedure rendezvous
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/apply_capture_procedure_rendezvous_sol5.py
+          python3 scripts/ci/apply_capture_procedure_rendezvous_sol5.py
+          bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+          swiftc -parse NembraApp/App/NembraCaptureBuildIdentity.swift NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'ES80-AUTHENTICATED-STATIONARY-v1' NembraApp/App/NembraCaptureBuildIdentity.swift
+          grep -Fq 'schemaVersion: 10' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'LabeledContent("Procedure"' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'PROCEDURE_ID: `ES80-AUTHENTICATED-STATIONARY-v1`' docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md
+          grep -Fq 'PROCEDURE_ID="ES80-AUTHENTICATED-STATIONARY-v1"' scripts/field/install_one_time_capture.command
+
+      - name: Publish clean product checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow='.github/workflows/apply-capture-procedure-rendezvous-sol5.yml'
+          helper='scripts/ci/apply_capture_procedure_rendezvous_sol5.py'
+          git rm "$workflow" "$helper"
+          git config user.name 'nembra-go-bot'
+          git config user.email 'nembra-go-bot@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureBuildIdentity.swift \
+                  NembraApp/App/NembraCaptureEntrypoint.swift \
+                  NembraCapture.xcodeproj/project.pbxproj \
+                  docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md \
+                  scripts/field/install_one_time_capture.command \
+                  .github/workflows/capture-field-build-provenance.yml \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift
+          git diff --cached --check
+          git commit -m 'feat(capture): bind exact field procedure identity'
+          git push origin HEAD:repair/v14-capture-procedure-rendezvous-sol5
