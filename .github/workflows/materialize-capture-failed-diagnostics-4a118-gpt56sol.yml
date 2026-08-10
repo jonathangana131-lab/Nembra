@@ -25,107 +25,107 @@ jobs:
           set -euo pipefail
           PRODUCT=4a11865c4b16b778aa03634e7ca3bdbc50b0432e
           WORKFLOW=.github/workflows/materialize-capture-failed-diagnostics-4a118-gpt56sol.yml
-          test "$(git rev-parse HEAD^)" = "$PRODUCT"
+          test "$(git merge-base "$PRODUCT" HEAD)" = "$PRODUCT"
           test "$(git diff --name-only "$PRODUCT" HEAD)" = "$WORKFLOW"
 
       - name: Materialize failed-attempt diagnostic product path
         shell: bash
         run: |
           set -euo pipefail
-          APP=NembraApp/App/NembraCaptureEntrypoint.swift
           TEST=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureFailedDiagnosticsProductSourceTests.swift
           RED=869eb07ed2faa66b53da8644d65caa1a7b4b8f93
           git fetch --no-tags origin "$RED"
           git checkout "$RED" -- "$TEST"
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           s = path.read_text(encoding='utf-8')
-
-          recovery_old = '''                Text("Restore the missing requirement below. This stopped attempt will not be reused.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-'''
-          recovery_new = recovery_old + '''                failureDiagnosticsControls
-'''
+          recovery_old = "\n".join([
+              '                Text("Restore the missing requirement below. This stopped attempt will not be reused.")',
+              '                    .font(.footnote)',
+              '                    .foregroundStyle(.secondary)',
+              '',
+          ])
+          recovery_new = recovery_old + '                failureDiagnosticsControls\n'
           if s.count(recovery_old) != 1:
               raise SystemExit('failed-recovery panel anchor drifted')
           s = s.replace(recovery_old, recovery_new, 1)
-
-          failure_anchor = '''                Text(test.message)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if test.canRestartFromFreshOFF1 {
-'''
-          failure_replacement = '''                Text(test.message)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                failureDiagnosticsControls
-
-                if test.canRestartFromFreshOFF1 {
-'''
+          failure_anchor = "\n".join([
+              '                Text(test.message)',
+              '                    .foregroundStyle(.secondary)',
+              '                    .fixedSize(horizontal: false, vertical: true)',
+              '',
+              '                if test.canRestartFromFreshOFF1 {',
+              '',
+          ])
+          failure_replacement = "\n".join([
+              '                Text(test.message)',
+              '                    .foregroundStyle(.secondary)',
+              '                    .fixedSize(horizontal: false, vertical: true)',
+              '',
+              '                failureDiagnosticsControls',
+              '',
+              '                if test.canRestartFromFreshOFF1 {',
+              '',
+          ])
           if s.count(failure_anchor) != 1:
               raise SystemExit('terminal failure panel anchor drifted')
           s = s.replace(failure_anchor, failure_replacement, 1)
-
-          completion_anchor = '''    private var completionPanel: some View {
-'''
-          diagnostics = '''    private var failureDiagnosticsControls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Divider()
-                .overlay(Color.white.opacity(0.08))
-
-            if let data = test.exportData {
-                Text("Sanitized diagnostics ready")
-                    .font(.subheadline.weight(.semibold))
-                ShareLink(item: SecureTransfer(data: data, name: test.exportName), preview: SharePreview(test.exportName)) {
-                    Label("Share diagnostics", systemImage: "square.and.arrow.up")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .accessibilityHint("Shares only sanitized failed-attempt diagnostic evidence. It is not an accepted Capture artifact.")
-            } else {
-                Button {
-                    test.prepareExport()
-                } label: {
-                    Label("Prepare diagnostics", systemImage: "doc.badge.gearshape")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .accessibilityHint("Prepares sanitized evidence from this stopped attempt for troubleshooting. It does not accept the Capture.")
-            }
-
-            Text("Diagnostics preserve legitimate failed-attempt evidence for analysis. They never turn this stopped attempt into an accepted Capture.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .accessibilityElement(children: .contain)
-    }
-
-'''
+          completion_anchor = '    private var completionPanel: some View {\n'
+          diagnostics = "\n".join([
+              '    private var failureDiagnosticsControls: some View {',
+              '        VStack(alignment: .leading, spacing: 10) {',
+              '            Divider()',
+              '                .overlay(Color.white.opacity(0.08))',
+              '',
+              '            if let data = test.exportData {',
+              '                Text("Sanitized diagnostics ready")',
+              '                    .font(.subheadline.weight(.semibold))',
+              '                ShareLink(item: SecureTransfer(data: data, name: test.exportName), preview: SharePreview(test.exportName)) {',
+              '                    Label("Share diagnostics", systemImage: "square.and.arrow.up")',
+              '                        .frame(maxWidth: .infinity)',
+              '                }',
+              '                .buttonStyle(.bordered)',
+              '                .controlSize(.large)',
+              '                .accessibilityHint("Shares only sanitized failed-attempt diagnostic evidence. It is not an accepted Capture artifact.")',
+              '            } else {',
+              '                Button {',
+              '                    test.prepareExport()',
+              '                } label: {',
+              '                    Label("Prepare diagnostics", systemImage: "doc.badge.gearshape")',
+              '                        .frame(maxWidth: .infinity)',
+              '                }',
+              '                .buttonStyle(.bordered)',
+              '                .controlSize(.large)',
+              '                .accessibilityHint("Prepares sanitized evidence from this stopped attempt for troubleshooting. It does not accept the Capture.")',
+              '            }',
+              '',
+              '            Text("Diagnostics preserve legitimate failed-attempt evidence for analysis. They never turn this stopped attempt into an accepted Capture.")',
+              '                .font(.caption)',
+              '                .foregroundStyle(.secondary)',
+              '                .fixedSize(horizontal: false, vertical: true)',
+              '        }',
+              '        .accessibilityElement(children: .contain)',
+              '    }',
+              '',
+              '',
+          ])
           if s.count(completion_anchor) != 1:
               raise SystemExit('completion panel insertion anchor drifted')
           if 'private var failureDiagnosticsControls: some View' in s:
               raise SystemExit('failed diagnostics controls already exist; refresh product')
           s = s.replace(completion_anchor, diagnostics + completion_anchor, 1)
-
-          success_message = '''            message = "Sanitized diagnostics ready with exact compiled source + reviewed Tuya dependency-lock provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."
-'''
-          guarded_message = '''            if phase != .failed {
-                message = "Sanitized diagnostics ready with exact compiled source + reviewed Tuya dependency-lock provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."
-            }
-'''
+          success_message = '            message = "Sanitized diagnostics ready with exact compiled source + reviewed Tuya dependency-lock provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."\n'
+          guarded_message = "\n".join([
+              '            if phase != .failed {',
+              '                message = "Sanitized diagnostics ready with exact compiled source + reviewed Tuya dependency-lock provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."',
+              '            }',
+              '',
+          ])
           if s.count(success_message) != 1:
               raise SystemExit('export success-message anchor drifted')
           s = s.replace(success_message, guarded_message, 1)
           path.write_text(s, encoding='utf-8')
-
           test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureFailedDiagnosticsProductSourceTests.swift')
           t = test.read_text(encoding='utf-8')
           needle = '        #expect(prepareExport.contains("phase: phase"))\n'
