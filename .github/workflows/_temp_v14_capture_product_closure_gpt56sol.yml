@@ -1,0 +1,139 @@
+name: Temporary V14 Capture product closure GPT56 Sol
+
+on:
+  push:
+    branches:
+      - integration/v14-capture-product-closure-gpt56sol
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/v14-capture-product-closure-gpt56sol
+          fetch-depth: 0
+
+      - name: Compose guided product, visual harness, and product truth onto exact flagship
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-go-bot'
+          git config user.email 'nembra-go-bot@users.noreply.github.com'
+
+          FLAGSHIP='8b9c1cabeeffdec7cb12f9a74f53320c11e7eae0'
+          PRODUCT='3d96865457a4dbdd22aed11d25e61c8a4de0af3b'
+          VISUAL='d5915a97c1359846b103f08602db78eac815a47f'
+          RECOVERY='5cbb9b9237f7c57777656d7df71772c7c168d109'
+          RECOVERY_TEST='578063097b55346285e86a5bf64a749652f58f4b'
+          BRANCH='integration/v14-capture-product-closure-gpt56sol'
+
+          test "$(git rev-parse HEAD^)" = "$FLAGSHIP" || {
+            echo "ERROR: helper was not created directly on the exact flagship subject." >&2
+            exit 1
+          }
+
+          # Take the already-reviewed guided Secure Link product surface exactly, then the
+          # already-reviewed standalone visual evidence harness. Truth/procedure files outside
+          # Entrypoint remain inherited directly from the current flagship.
+          git checkout "$PRODUCT" -- \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductSurfaceSourceTests.swift
+          git checkout "$VISUAL" -- \
+            .github/workflows/capture-standalone-visual-acceptance.yml \
+            scripts/ci/capture_standalone_visual_evidence.sh \
+            scripts/ci/tests/test_capture_standalone_visual_evidence.py
+
+          # Reapply the current flagship's canonical procedure rendezvous to the guided product
+          # source after the product transplant. This is deliberately mechanical and exact-count
+          # checked so the transplant cannot silently drop procedure authority.
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one anchor, found {count}')
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              '        let tuyaDependencyLockSHA256: String\n        let tuyaDeviceID: String\n',
+              '        let tuyaDependencyLockSHA256: String\n        let procedureIdentifier: String\n        let tuyaDeviceID: String\n',
+              'accepted export procedure field'
+          )
+          replace_once(
+              '    var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }\n    var sdkAccountLoggedIn: Bool',
+              '    var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }\n    var fieldProcedureIdentifier: String { NembraCaptureBuildIdentity.fieldProcedureIdentifier }\n    var sdkAccountLoggedIn: Bool',
+              'procedure presentation property'
+          )
+          replace_once(
+              '            schemaVersion: 9,\n',
+              '            schemaVersion: 10,\n',
+              'accepted export schema'
+          )
+          replace_once(
+              '            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,\n            tuyaDeviceID: deviceID,\n',
+              '            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,\n            procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier,\n            tuyaDeviceID: deviceID,\n',
+              'accepted export procedure value'
+          )
+          replace_once(
+              '                LabeledContent("Source commit", value: test.fieldBuildSourceCommitSHA)\n                LabeledContent("SDK account", value: test.sdkAccountLoggedIn ? "Logged in" : "Not logged in")\n',
+              '                LabeledContent("Source commit", value: test.fieldBuildSourceCommitSHA)\n                LabeledContent("Procedure", value: test.fieldProcedureIdentifier)\n                LabeledContent("SDK account", value: test.sdkAccountLoggedIn ? "Logged in" : "Not logged in")\n',
+              'guided engineering procedure row'
+          )
+          path.write_text(source, encoding='utf-8')
+          PY
+
+          # Layer the accepted product-truth repair over the exact guided product source. The
+          # selected diff changes only Entrypoint; procedure additions above are disjoint.
+          git diff "$VISUAL" "$RECOVERY" -- NembraApp/App/NembraCaptureEntrypoint.swift | git apply --3way
+          git checkout "$RECOVERY_TEST" -- \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductRecoveryTruthSourceTests.swift
+
+          # Run standalone visual evidence on this exact convergence branch. The harness still
+          # produces presentation evidence only; it cannot create physical/protocol authority.
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/capture-standalone-visual-acceptance.yml')
+          source = path.read_text(encoding='utf-8')
+          old = '      - product/v14-capture-premium-secure-link-current-sol\n'
+          new = '      - integration/v14-capture-product-closure-gpt56sol\n'
+          if source.count(old) != 1:
+              raise SystemExit('visual workflow branch anchor drifted')
+          path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          PY
+
+          # Mechanical source truth checks before the expensive Mac gates.
+          grep -Fq 'static let fieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"' NembraApp/App/NembraCaptureBuildIdentity.swift
+          grep -Fq 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'schemaVersion: 10' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Text("CAPTURE COMPLETE")' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Text("Ready for analysis")' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'var failedAttemptCanRestartFromOFF1: Bool' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'phase == .failed && currentConnectionToken == nil' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Text("CAPTURE SEALED")' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Label("Relaunch Capture"' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Label("Engineering details"' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'physicalAuthorityCreated' scripts/ci/capture_standalone_visual_evidence.sh
+          bash -n scripts/ci/capture_standalone_visual_evidence.sh
+          python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          git diff --check
+
+          # The helper is construction-only and may not survive into the product candidate.
+          rm -f .github/workflows/_temp_v14_capture_product_closure_gpt56sol.yml
+
+          git add -A
+          git diff --cached --exit-code && {
+            echo 'ERROR: convergence produced no product delta.' >&2
+            exit 1
+          }
+          git commit -m 'feat(capture): converge guided product on exact truth head'
+          git push origin HEAD:"$BRANCH"
