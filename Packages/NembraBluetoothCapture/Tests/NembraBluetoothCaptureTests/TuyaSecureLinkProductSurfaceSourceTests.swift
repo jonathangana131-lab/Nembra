@@ -24,20 +24,16 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         #expect(!app.contains("func card() -> some View"))
     }
 
-    @Test("accepted experience distinguishes sealed preparation from share-ready completion")
+    @Test("accepted experience prepares the sealed artifact and makes Share Capture primary")
     func acceptedExperienceIsCaptureCompleteShareFlow() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let completion = try section(in: app, from: "private var completionPanel: some View", to: "private var sdkAuthorizationPanel: some View")
-        let body = String(completion)
+        let surface = try section(in: app, from: "private struct SecureLinkView: View", to: "private struct SecureTransfer: Transferable")
+        let body = String(surface)
 
-        #expect(body.contains("if let data = test.exportData"))
         #expect(body.contains("CAPTURE COMPLETE"))
         #expect(body.contains("Ready for analysis"))
         #expect(body.contains("Label(\"Share Capture\""))
-        #expect(body.contains("CAPTURE SEALED"))
-        #expect(body.contains("Artifact preparation needed"))
-        #expect(body.contains("Label(\"Retry sealed Capture preparation\""))
-        #expect(body.contains("test.prepareExport()"))
+        #expect(body.contains("if accepted && test.exportData == nil { test.prepareExport() }"))
         #expect(body.contains("Button(showEngineeringDetails ? \"Hide details\" : \"View details\")"))
         #expect(body.contains("accepted artifact is sealed"))
     }
@@ -55,7 +51,7 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         #expect(body.contains("test.authenticate()"))
         #expect(body.contains("test.sdkLocalBLEOnline"))
         #expect(body.contains("test.applicationUpdateCount > 0"))
-        #expect(body.contains("Only the full OFF → ON → OFF → ON pattern can authorize the nearby signal for this attempt."))
+        #expect(body.contains("Historical UUID, name, RSSI, FD50, and Tuya hints never authorize the target."))
         #expect(body.contains("No DP query or scooter command is authorized by this surface."))
     }
 
