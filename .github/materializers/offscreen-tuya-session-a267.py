@@ -272,7 +272,7 @@ struct TuyaSecureLinkOffscreenAuthoritySourceTests {
 
         #expect(begin.contains("let viewGeneration = secureLinkViewGeneration"))
         #expect(begin.contains("self.secureLinkViewGeneration == viewGeneration"))
-        let lastFence = try #require(begin.ranges(of: "self.secureLinkViewGeneration == viewGeneration").last)
+        let lastFence = try #require(begin.offscreenRanges(of: "self.secureLinkViewGeneration == viewGeneration").last)
         let connect = try #require(begin.range(of: "newDriver.connect("))
         #expect(lastFence.lowerBound < connect.lowerBound)
         #expect(begin.contains("view_exit_before_official_connect"))
@@ -319,7 +319,7 @@ struct TuyaSecureLinkOffscreenAuthoritySourceTests {
 }
 
 private extension String {
-    func ranges(of needle: String) -> [Range<String.Index>] {
+    func offscreenRanges(of needle: String) -> [Range<String.Index>] {
         var result: [Range<String.Index>] = []
         var cursor = startIndex
         while cursor < endIndex,
