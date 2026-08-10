@@ -1,0 +1,272 @@
+name: Temporary materialize Capture procedure rendezvous
+
+on:
+  pull_request:
+    branches:
+      - integration/v14-capture-final-stationary-convergence-sol
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.event.pull_request.head.ref == 'repair/v14-capture-procedure-rendezvous-exact-sol'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+
+      - name: Verify exact materialization parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "dee52e17577d25dd6d928378b2fb530f321923bb"
+          test "$(git hash-object NembraApp/App/NembraCaptureBuildIdentity.swift)" = "8b75cc92ccdcf0328f301183dc7e246b4ec66255"
+          test "$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)" = "a9afe42d7104a392475844d8f3866ada46e3664d"
+          test "$(git hash-object scripts/field/install_one_time_capture.command)" = "8cdd40f1baa0b8e49315cfaac7b879d46c1daebe"
+
+      - name: Apply canonical procedure rendezvous
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          P = "ES80-AUTHENTICATED-STATIONARY-v1"
+
+          def once(path, old, new):
+              p = Path(path)
+              s = p.read_text(encoding="utf-8")
+              n = s.count(old)
+              if n != 1:
+                  raise SystemExit(f"{path}: expected one anchor, found {n}: {old[:100]!r}")
+              p.write_text(s.replace(old, new, 1), encoding="utf-8")
+
+          identity = "NembraApp/App/NembraCaptureBuildIdentity.swift"
+          once(identity,
+               '    static let tuyaDependencyLockSHA256InfoKey = "NembraCaptureTuyaDependencyLockSHA256"\n',
+               '    static let tuyaDependencyLockSHA256InfoKey = "NembraCaptureTuyaDependencyLockSHA256"\n    static let procedureIdentifierInfoKey = "NembraCaptureProcedureIdentifier"\n    static let fieldProcedureIdentifier = "' + P + '"\n')
+          once(identity,
+               '    let tuyaDependencyLockSHA256: String\n',
+               '    let tuyaDependencyLockSHA256: String\n    let procedureIdentifier: String\n')
+          once(identity,
+               '            tuyaDependencyLockSHA256: ((infoDictionary[tuyaDependencyLockSHA256InfoKey] as? String) ?? "").lowercased()\n',
+               '            tuyaDependencyLockSHA256: ((infoDictionary[tuyaDependencyLockSHA256InfoKey] as? String) ?? "").lowercased(),\n            procedureIdentifier: (infoDictionary[procedureIdentifierInfoKey] as? String) ?? ""\n')
+          once(identity,
+               '              tuyaDependencyLockSHA256.utf8.allSatisfy({ byte in\n                  (byte >= 48 && byte <= 57) || (byte >= 97 && byte <= 102)\n              }) else { return false }\n',
+               '              tuyaDependencyLockSHA256.utf8.allSatisfy({ byte in\n                  (byte >= 48 && byte <= 57) || (byte >= 97 && byte <= 102)\n              }),\n              procedureIdentifier == Self.fieldProcedureIdentifier else { return false }\n')
+          once(identity,
+               '            return "This build has no valid exact Git + reviewed Tuya dependency provenance. Install Capture through the repository field installer before physical evidence collection."\n',
+               '            return "This build has no valid exact Git + reviewed Tuya dependency + canonical stationary procedure provenance. Install Capture through the repository field installer before physical evidence collection."\n')
+
+          app = "NembraApp/App/NembraCaptureEntrypoint.swift"
+          once(app,
+               '        let tuyaDependencyLockSHA256: String\n        let tuyaDeviceID: String\n',
+               '        let tuyaDependencyLockSHA256: String\n        let procedureIdentifier: String\n        let tuyaDeviceID: String\n')
+          once(app,
+               '    var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }\n    var sdkAccountLoggedIn: Bool',
+               '    var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }\n    var fieldProcedureIdentifier: String { buildIdentity.procedureIdentifier }\n    var sdkAccountLoggedIn: Bool')
+          once(app,
+               '            schemaVersion: 9,\n            purpose: "Sanitized Tuya authenticated read-only stationary preflight",\n',
+               '            schemaVersion: 10,\n            purpose: "Sanitized Tuya authenticated read-only stationary preflight",\n')
+          once(app,
+               '            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,\n            tuyaDeviceID: deviceID,\n',
+               '            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,\n            procedureIdentifier: buildIdentity.procedureIdentifier,\n            tuyaDeviceID: deviceID,\n')
+          once(app,
+               '            LabeledContent("Source commit", value: test.fieldBuildSourceCommitSHA)\n            LabeledContent("Private SDK config", value: test.privateConfig ? "Present" : "Missing")\n',
+               '            LabeledContent("Source commit", value: test.fieldBuildSourceCommitSHA)\n            LabeledContent("Procedure", value: test.fieldProcedureIdentifier)\n            LabeledContent("Private SDK config", value: test.privateConfig ? "Present" : "Missing")\n')
+          once(app,
+               '            message = "Sanitized diagnostics ready with exact compiled source + reviewed Tuya dependency-lock provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."\n',
+               '            message = "Sanitized diagnostics ready with exact compiled source + reviewed Tuya dependency-lock + canonical stationary procedure provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."\n')
+
+          project = Path("NembraCapture.xcodeproj/project.pbxproj")
+          ps = project.read_text(encoding="utf-8")
+          anchor = '\t\t\t\tINFOPLIST_KEY_NembraCaptureTuyaDependencyLockSHA256 = "$(NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256)";\n'
+          if ps.count(anchor) != 2:
+              raise SystemExit(f"project provenance anchor count {ps.count(anchor)}")
+          project.write_text(ps.replace(anchor, anchor + '\t\t\t\tINFOPLIST_KEY_NembraCaptureProcedureIdentifier = "$(NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER)";\n'), encoding="utf-8")
+
+          runbook = "docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md"
+          once(runbook,
+               '# Nembra Capture P0 — secure-link gate\n\n',
+               '# Nembra Capture P0 — secure-link gate\n\nPROCEDURE_ID: `' + P + '`\n\n')
+
+          installer = "scripts/field/install_one_time_capture.command"
+          once(installer,
+               'EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"\n',
+               'PROCEDURE_ID="' + P + '"\nEXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"\n')
+          once(installer,
+               '    "NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256" \\\n    build\n',
+               '    "NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256" \\\n    "NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER=$PROCEDURE_ID" \\\n    build\n')
+          once(installer,
+               'BUILT_TUYA_DEPENDENCY_LOCK_SHA256="$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"\nBUILT_BUNDLE_ID=',
+               'BUILT_TUYA_DEPENDENCY_LOCK_SHA256="$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"\nBUILT_PROCEDURE_IDENTIFIER="$(/usr/bin/plutil -extract NembraCaptureProcedureIdentifier raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"\nBUILT_BUNDLE_ID=')
+          once(installer,
+               '[[ "$BUILT_TUYA_DEPENDENCY_LOCK_SHA256" == "$TUYA_DEPENDENCY_LOCK_SHA256" ]] || die "Built Capture app Tuya dependency-lock fingerprint does not match the exact resolved private workspace. Discard this candidate."\n[[ "$BUILT_BUNDLE_ID" == "$BUNDLE_ID" ]]',
+               '[[ "$BUILT_TUYA_DEPENDENCY_LOCK_SHA256" == "$TUYA_DEPENDENCY_LOCK_SHA256" ]] || die "Built Capture app Tuya dependency-lock fingerprint does not match the exact resolved private workspace. Discard this candidate."\n[[ "$BUILT_PROCEDURE_IDENTIFIER" == "$PROCEDURE_ID" ]] || die "Built Capture app procedure identity does not match the canonical stationary procedure. Discard this candidate."\n[[ "$BUILT_BUNDLE_ID" == "$BUNDLE_ID" ]]')
+          once(installer,
+               'say "Built app provenance matched exact requested source, reviewed Tuya dependency lock, and field product"\nunset BUILT_BUILD_IDENTIFIER BUILT_SOURCE_SHA BUILT_TUYA_DEPENDENCY_LOCK_SHA256 BUILT_BUNDLE_ID APP_INFO_PLIST\n',
+               'say "Built app provenance matched exact requested source, reviewed Tuya dependency lock, canonical stationary procedure, and field product"\nunset BUILT_BUILD_IDENTIFIER BUILT_SOURCE_SHA BUILT_TUYA_DEPENDENCY_LOCK_SHA256 BUILT_PROCEDURE_IDENTIFIER BUILT_BUNDLE_ID APP_INFO_PLIST\n')
+          once(installer,
+               '    "The exact built device app was read back before installation and matched the requested source SHA, field-build identifier, and standalone bundle identifier." \\\n',
+               '    "The exact built device app was read back before installation and matched the requested source SHA, field-build identifier, canonical stationary procedure, and standalone bundle identifier." \\\n    "Field procedure: $PROCEDURE_ID" \\\n')
+
+          dep_test = "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift"
+          once(dep_test,
+               '#expect(app.contains("schemaVersion: 9"))\n',
+               '#expect(app.contains("schemaVersion: 10"))\n')
+
+          procedure_test = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift")
+          procedure_test.write_text(r'''import Foundation
+import Testing
+@testable import NembraBluetoothCapture
+
+@Suite("Capture field procedure rendezvous")
+struct TuyaFieldProcedureRendezvousSourceTests {
+    private static let procedure = "ES80-AUTHENTICATED-STATIONARY-v1"
+
+    @Test("field build authority requires the exact compiled procedure identity")
+    func buildIdentityFailsClosedWithoutCanonicalProcedure() throws {
+        let identity = try read("NembraApp/App/NembraCaptureBuildIdentity.swift")
+        let project = try read("NembraCapture.xcodeproj/project.pbxproj")
+        #expect(identity.contains("static let procedureIdentifierInfoKey = \"NembraCaptureProcedureIdentifier\""))
+        #expect(identity.contains("static let fieldProcedureIdentifier = \"\(Self.procedure)\""))
+        #expect(identity.contains("procedureIdentifier == Self.fieldProcedureIdentifier"))
+        #expect(project.contains("INFOPLIST_KEY_NembraCaptureProcedureIdentifier = \"$(NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER)\";"))
+    }
+
+    @Test("immutable accepted export records the built procedure and advances schema")
+    func acceptedExportCarriesBuiltProcedure() throws {
+        let app = try read("NembraApp/App/NembraCaptureEntrypoint.swift")
+        #expect(app.contains("let procedureIdentifier: String"))
+        #expect(app.contains("procedureIdentifier: buildIdentity.procedureIdentifier"))
+        #expect(app.contains("LabeledContent(\"Procedure\", value: test.fieldProcedureIdentifier)"))
+        #expect(app.contains("schemaVersion: 10"))
+        #expect(!app.contains("schemaVersion: 9"))
+        #expect(app.contains("self.sealedAcceptedExport = self.makeExport("))
+        #expect(app.contains("envelope = sealedAcceptedExport"))
+    }
+
+    @Test("installer stamps and reads back exact procedure before installation")
+    func installerRendezvousPrecedesInstall() throws {
+        let installer = try read("scripts/field/install_one_time_capture.command")
+        #expect(installer.contains("PROCEDURE_ID=\"\(Self.procedure)\""))
+        #expect(installer.contains("NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER=$PROCEDURE_ID"))
+        #expect(installer.contains("plutil -extract NembraCaptureProcedureIdentifier"))
+        #expect(installer.contains("BUILT_PROCEDURE_IDENTIFIER\" == \"$PROCEDURE_ID"))
+        let readback = try #require(installer.range(of: "BUILT_PROCEDURE_IDENTIFIER=\"$(/usr/bin/plutil"))
+        let check = try #require(installer.range(of: "[[ \"$BUILT_PROCEDURE_IDENTIFIER\" == \"$PROCEDURE_ID\" ]]"))
+        let install = try #require(installer.range(of: "Installing SDK-integrated Capture on the intended iPhone"))
+        #expect(readback.lowerBound < check.lowerBound)
+        #expect(check.lowerBound < install.lowerBound)
+    }
+
+    @Test("runbook and field installer share one canonical procedure")
+    func fieldSurfacesShareCanonicalProcedure() throws {
+        let runbook = try read("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
+        let installer = try read("scripts/field/install_one_time_capture.command")
+        #expect(runbook.contains("PROCEDURE_ID: `\(Self.procedure)`"))
+        #expect(installer.contains("Field procedure: $PROCEDURE_ID"))
+    }
+
+    private func read(_ path: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+    }
+}
+''', encoding="utf-8")
+
+          wf = Path(".github/workflows/capture-field-build-provenance.yml")
+          ws = wf.read_text(encoding="utf-8")
+          path_anchor = '      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift\n'
+          if ws.count(path_anchor) != 1:
+              raise SystemExit("field workflow path anchor changed")
+          ws = ws.replace(path_anchor, path_anchor + '      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift\n', 1)
+          ws = ws.replace(
+              "          grep -Fq 'INFOPLIST_KEY_NembraCaptureTuyaDependencyLockSHA256 = \"$(NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256)\";' \"$project\"\n",
+              "          grep -Fq 'INFOPLIST_KEY_NembraCaptureTuyaDependencyLockSHA256 = \"$(NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256)\";' \"$project\"\n          grep -Fq 'INFOPLIST_KEY_NembraCaptureProcedureIdentifier = \"$(NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER)\";' \"$project\"\n",
+              1,
+          )
+          ws = ws.replace(
+              "          grep -Fq 'static let tuyaDependencyLockSHA256InfoKey = \"NembraCaptureTuyaDependencyLockSHA256\"' \"$identity\"\n",
+              "          grep -Fq 'static let tuyaDependencyLockSHA256InfoKey = \"NembraCaptureTuyaDependencyLockSHA256\"' \"$identity\"\n          grep -Fq 'static let procedureIdentifierInfoKey = \"NembraCaptureProcedureIdentifier\"' \"$identity\"\n          grep -Fq 'static let fieldProcedureIdentifier = \"" + P + "\"' \"$identity\"\n          grep -Fq 'procedureIdentifier == Self.fieldProcedureIdentifier' \"$identity\"\n",
+              1,
+          )
+          ws = ws.replace(
+              "          grep -Fq 'tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256' \"$entrypoint\"\n",
+              "          grep -Fq 'tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256' \"$entrypoint\"\n          grep -Fq 'procedureIdentifier: buildIdentity.procedureIdentifier' \"$entrypoint\"\n          grep -Fq 'schemaVersion: 10' \"$entrypoint\"\n",
+              1,
+          )
+          ws = ws.replace(
+              "          grep -Fq '[[ \"$BUILT_TUYA_DEPENDENCY_LOCK_SHA256\" == \"$TUYA_DEPENDENCY_LOCK_SHA256\" ]]' \"$installer\"\n",
+              "          grep -Fq '[[ \"$BUILT_TUYA_DEPENDENCY_LOCK_SHA256\" == \"$TUYA_DEPENDENCY_LOCK_SHA256\" ]]' \"$installer\"\n          grep -Fq 'PROCEDURE_ID=\"" + P + "\"' \"$installer\"\n          grep -Fq 'NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER=$PROCEDURE_ID' \"$installer\"\n          grep -Fq 'plutil -extract NembraCaptureProcedureIdentifier raw -o - \"$APP_INFO_PLIST\"' \"$installer\"\n          grep -Fq '[[ \"$BUILT_PROCEDURE_IDENTIFIER\" == \"$PROCEDURE_ID\" ]]' \"$installer\"\n",
+              1,
+          )
+          build_anchor = '            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$dependency_sha" \\\n            build\n'
+          if ws.count(build_anchor) != 1:
+              raise SystemExit("stamped build anchor changed")
+          ws = ws.replace(build_anchor,
+              '            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$dependency_sha" \\\n            NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER="' + P + '" \\\n            build\n', 1)
+          read_anchor = '          test "$(plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist")" = "$dependency_sha"\n'
+          if ws.count(read_anchor) != 1:
+              raise SystemExit("stamped readback anchor changed")
+          ws = ws.replace(read_anchor, read_anchor + '          test "$(plutil -extract NembraCaptureProcedureIdentifier raw -o - "$plist")" = "' + P + '"\n', 1)
+          wf.write_text(ws, encoding="utf-8")
+          PY
+
+          bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+
+      - name: Validate materialized source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -parse NembraApp/App/NembraCaptureBuildIdentity.swift
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          P = "ES80-AUTHENTICATED-STATIONARY-v1"
+          identity = Path("NembraApp/App/NembraCaptureBuildIdentity.swift").read_text()
+          app = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          project = Path("NembraCapture.xcodeproj/project.pbxproj").read_text()
+          installer = Path("scripts/field/install_one_time_capture.command").read_text()
+          runbook = Path("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md").read_text()
+          workflow = Path(".github/workflows/capture-field-build-provenance.yml").read_text()
+          assert identity.count(P) == 1
+          assert "procedureIdentifier == Self.fieldProcedureIdentifier" in identity
+          assert app.count("schemaVersion: 10") == 1 and "schemaVersion: 9" not in app
+          assert "procedureIdentifier: buildIdentity.procedureIdentifier" in app
+          assert project.count("INFOPLIST_KEY_NembraCaptureProcedureIdentifier") == 2
+          assert installer.count(f'PROCEDURE_ID="{P}"') == 1
+          assert "NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER=$PROCEDURE_ID" in installer
+          assert "plutil -extract NembraCaptureProcedureIdentifier" in installer
+          assert installer.index("BUILT_PROCEDURE_IDENTIFIER=") < installer.index("Installing SDK-integrated Capture")
+          assert f"PROCEDURE_ID: `{P}`" in runbook
+          assert "TuyaFieldProcedureRendezvousSourceTests.swift" in workflow
+          assert "NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER" in workflow
+          PY
+
+      - name: Commit materialized product tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-capture-bot"
+          git config user.email "nembra-capture-bot@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureBuildIdentity.swift \
+                  NembraApp/App/NembraCaptureEntrypoint.swift \
+                  NembraCapture.xcodeproj/project.pbxproj \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift \
+                  docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md \
+                  scripts/field/install_one_time_capture.command \
+                  .github/workflows/capture-field-build-provenance.yml
+          git diff --cached --check
+          git commit -m "fix(capture): bind canonical stationary procedure"
+          git push origin HEAD:repair/v14-capture-procedure-rendezvous-exact-sol
