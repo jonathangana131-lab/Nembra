@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from contextlib import redirect_stderr, redirect_stdout
 import importlib.util
+import io
 import os
 from pathlib import Path
 import shutil
@@ -9,6 +11,8 @@ import stat
 import sys
 import tempfile
 import unittest
+from unittest import mock
+import warnings
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "es80_today_private_device_input.py"
 spec = importlib.util.spec_from_file_location("private_device_input", MODULE_PATH)
@@ -147,6 +151,51 @@ class PrivateDeviceInputTests(unittest.TestCase):
                     secret_provider=lambda: self.SECRET + "\n",
                 )
             self.assertFalse((private_dir / "es80-intended-device.udid").exists())
+
+    def test_secure_provider_refuses_getpass_echo_fallback_without_returning_secret(self):
+        fallback_returned = False
+
+        def warned_getpass(_prompt: str) -> str:
+            nonlocal fallback_returned
+            warnings.warn("Can not control echo on the terminal.", module.getpass.GetPassWarning)
+            fallback_returned = True
+            return self.SECRET
+
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with mock.patch.object(module.getpass, "getpass", side_effect=warned_getpass):
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                with self.assertRaisesRegex(module.PrivateInputError, "secure-terminal-input-unavailable"):
+                    module._secure_secret_provider()
+
+        self.assertFalse(fallback_returned)
+        self.assertNotIn(self.SECRET, stdout.getvalue())
+        self.assertNotIn(self.SECRET, stderr.getvalue())
+
+    def test_secure_provider_echo_failure_creates_no_private_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+
+            def warned_getpass(_prompt: str) -> str:
+                warnings.warn("Can not control echo on the terminal.", module.getpass.GetPassWarning)
+                return self.SECRET
+
+            with mock.patch.object(module.getpass, "getpass", side_effect=warned_getpass):
+                with self.assertRaisesRegex(module.PrivateInputError, "secure-terminal-input-unavailable"):
+                    module.create_private_input(
+                        private_dir,
+                        repo,
+                        "es80-intended-device.udid",
+                        secret_provider=module._secure_secret_provider,
+                    )
+
+            self.assertFalse((private_dir / "es80-intended-device.udid").exists())
+
+    def test_secure_provider_eof_fails_closed(self):
+        with mock.patch.object(module.getpass, "getpass", side_effect=EOFError):
+            with self.assertRaisesRegex(module.PrivateInputError, "secure-terminal-input-unavailable"):
+                module._secure_secret_provider()
 
 
 if __name__ == "__main__":
