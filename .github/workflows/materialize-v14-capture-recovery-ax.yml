@@ -1,0 +1,58 @@
+name: V14 Capture Recovery + AX Materializer
+
+on:
+  push:
+    branches:
+      - product/v14-capture-guided-final-truth-gpt56sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply recovery and Accessibility XXXL product patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/apply_v14_capture_recovery_ax.py
+          python3 scripts/ci/apply_v14_capture_recovery_ax.py
+
+      - name: Verify focused truth and accessibility contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteRecoverySourceTests.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureAccessibilityXXXLSourceTests.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationTruthSourceTests.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAccountBridgeSecretRetentionSourceTests.swift
+          grep -Fq 'func retry()' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'guard phase == .failed, canRestartFromFreshOFF1 else' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'failureRecoveryContextPanel' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'test.retry()' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq '.disabled(!authorityReady || test.membershipBusy)' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'accessibilityLabel("Correlation progress")' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'accessibilityLabel("Authenticated observation progress")' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'procedureIdentifier == Self.fieldProcedureIdentifier' NembraApp/App/NembraCaptureBuildIdentity.swift
+          ! grep -Fq 'let localKey:' NembraApp/Features/Research/TuyaAccountBridge.swift
+          git diff --check
+
+      - name: Publish clean product bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm scripts/ci/apply_v14_capture_recovery_ax.py
+          rm .github/workflows/materialize-v14-capture-recovery-ax.yml
+          git add -A
+          git diff --cached --check
+          git diff --cached --quiet && { echo 'ERROR: recovery/AX materializer produced no product delta' >&2; exit 1; }
+          git config user.name 'nembra-v14-agent'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): recover prerequisites and reflow AX progress'
+          git push origin HEAD:product/v14-capture-guided-final-truth-gpt56sol
