@@ -20,8 +20,12 @@ for required in (
     "private var correlationDisplayedWindowOrdinal: Int",
     "test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)",
     'Text("\\(correlationDisplayedWindowOrdinal)/4")',
-    "ES80-AUTHENTICATED-STATIONARY-v1",
     "schemaVersion: 10",
+    "sealedAcceptedExport",
 ):
     if required not in source:
         raise SystemExit(f"required current-spine contract missing: {required}")
+
+identity = Path("NembraApp/App/NembraCaptureBuildIdentity.swift").read_text(encoding="utf-8")
+if "ES80-AUTHENTICATED-STATIONARY-v1" not in identity:
+    raise SystemExit("canonical procedure identity missing from compiled build identity")
