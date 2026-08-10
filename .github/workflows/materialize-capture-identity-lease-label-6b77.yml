@@ -14,29 +14,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Repair exact current call-site and prove source contract
         shell: bash
         run: |
           set -euo pipefail
-          expected_parent='6b778f2104af34dbe5b80da31ddb3ca422f9667c'
-          test "$(git rev-parse HEAD^)" = "$expected_parent"
+          expected_base='6b778f2104af34dbe5b80da31ddb3ca422f9667c'
+          workflow='.github/workflows/materialize-capture-identity-lease-label-6b77.yml'
+          git merge-base --is-ancestor "$expected_base" HEAD
+          test "$(git diff --name-only "$expected_base"...HEAD)" = "$workflow"
 
           python3 - <<'PY'
           from pathlib import Path
-          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
-          source = path.read_text(encoding='utf-8')
+
+          app_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          gate_path = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaSDKAccountIdentityLeaseGate.swift')
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAccountIdentityLeaseAppSourceIntegrationTests.swift')
+
+          app = app_path.read_text(encoding='utf-8')
+          gate = gate_path.read_text(encoding='utf-8')
           old = '            sdkIsLoggedIn: sdkAccountLoggedIn,'
           new = '            isLoggedIn: sdkAccountLoggedIn,'
-          if source.count(old) != 1:
-              raise SystemExit(f'expected exactly one stale identity-lease label, found {source.count(old)}')
-          source = source.replace(old, new, 1)
-          path.write_text(source, encoding='utf-8')
-          PY
+          if app.count(old) != 1:
+              raise SystemExit(f'expected exactly one stale identity-lease label, found {app.count(old)}')
+          if 'public init(\n            isLoggedIn: Bool,' not in gate:
+              raise SystemExit('package identity-lease public initializer contract changed')
+          app = app.replace(old, new, 1)
+          app_path.write_text(app, encoding='utf-8')
 
-          cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAccountIdentityLeaseAppSourceIntegrationTests.swift <<'SWIFT'
-          import Foundation
+          test_path.write_text(r'''import Foundation
           import Testing
           @testable import NembraBluetoothCapture
 
@@ -80,16 +87,25 @@ jobs:
                   case sectionMissing
               }
           }
-          SWIFT
+          '''.replace('          ', ''), encoding='utf-8')
 
-          grep -Fq '            isLoggedIn: sdkAccountLoggedIn,' NembraApp/App/NembraCaptureEntrypoint.swift
-          test "$(grep -Fc 'sdkIsLoggedIn:' NembraApp/App/NembraCaptureEntrypoint.swift)" = 0
-          git diff --check
-          swift test --package-path Packages/NembraBluetoothCapture
+          repaired = app_path.read_text(encoding='utf-8')
+          regression = test_path.read_text(encoding='utf-8')
+          if repaired.count(new) != 1 or old in repaired:
+              raise SystemExit('app call-site repair did not converge exactly once')
+          for needle in (
+              'isLoggedIn: sdkAccountLoggedIn',
+              '!snapshot.contains("sdkIsLoggedIn:")',
+              'public init(\\n            isLoggedIn: Bool,'
+          ):
+              if needle not in regression:
+                  raise SystemExit(f'missing source-regression contract: {needle}')
+          PY
 
-          rm .github/workflows/materialize-capture-identity-lease-label-6b77.yml
           git diff --check
-          git status --short
+          rm "$workflow"
+          git diff --check
+          test "$(git diff --name-only "$expected_base")" = $'NembraApp/App/NembraCaptureEntrypoint.swift\nPackages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAccountIdentityLeaseAppSourceIntegrationTests.swift'
 
       - name: Commit clean two-path repair
         shell: bash
@@ -97,7 +113,7 @@ jobs:
           set -euo pipefail
           git config user.name 'nembra-sol'
           git config user.email 'actions@users.noreply.github.com'
-          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+          git add -A NembraApp/App/NembraCaptureEntrypoint.swift \
             Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAccountIdentityLeaseAppSourceIntegrationTests.swift \
             .github/workflows/materialize-capture-identity-lease-label-6b77.yml
           git commit -m '[Capture P0] Match identity-lease snapshot initializer label'
