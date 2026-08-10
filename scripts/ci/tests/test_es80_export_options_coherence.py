@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 import plistlib
 import sys
@@ -49,6 +50,51 @@ class ExportOptionsCoherenceTests(unittest.TestCase):
     def test_non_dictionary_plist_fails_closed(self):
         with tempfile.TemporaryDirectory() as temp:
             path = self.plist(Path(temp), ["development"])
+            self.assertFalse(preflight._export_options_are_ready(path, self.TEAM))
+
+    def test_export_options_path_must_be_absolute(self):
+        self.assertFalse(
+            preflight._export_options_are_ready(Path("ExportOptions.plist"), self.TEAM)
+        )
+
+    def test_symlinked_parent_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            real_parent = root / "real"
+            real_parent.mkdir()
+            path = self.plist(real_parent, {"teamID": self.TEAM, "method": "development"})
+            alias = root / "alias"
+            try:
+                alias.symlink_to(real_parent, target_is_directory=True)
+            except (OSError, NotImplementedError) as error:
+                self.skipTest(f"symlink creation unavailable: {error}")
+            self.assertFalse(preflight._export_options_are_ready(alias / path.name, self.TEAM))
+
+    def test_symlinked_final_subject_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            real = root / "real.plist"
+            with real.open("wb") as handle:
+                plistlib.dump({"teamID": self.TEAM, "method": "development"}, handle)
+            alias = root / "ExportOptions.plist"
+            try:
+                alias.symlink_to(real)
+            except (OSError, NotImplementedError) as error:
+                self.skipTest(f"symlink creation unavailable: {error}")
+            self.assertFalse(preflight._export_options_are_ready(alias, self.TEAM))
+
+    def test_fifo_subject_fails_closed_without_waiting_for_writer(self):
+        if not hasattr(os, "mkfifo"):
+            self.skipTest("FIFO creation unavailable")
+        with tempfile.TemporaryDirectory() as temp:
+            fifo = Path(temp) / "ExportOptions.plist"
+            os.mkfifo(fifo, 0o600)
+            self.assertFalse(preflight._export_options_are_ready(fifo, self.TEAM))
+
+    def test_empty_file_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "ExportOptions.plist"
+            path.touch()
             self.assertFalse(preflight._export_options_are_ready(path, self.TEAM))
 
 
