@@ -1,0 +1,87 @@
+name: V14 sealed application export prefix repair
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-sealed-application-export-prefix-sol
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact repair trigger
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 3
+
+      - name: Verify exact repair ancestry
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^^)" = "0b3ab8c58ebfb1332cbb46d9f1f145fdfca8b17f"
+
+      - name: Apply immutable accepted-event-prefix repair
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text()
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one anchor, found {count}")
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              "    private var events: [Event] = []\n    private var watchdog: Task<Void, Never>?\n",
+              "    private var events: [Event] = []\n    private var sealedAcceptedEventPrefix: [Event]?\n    private var watchdog: Task<Void, Never>?\n",
+              "sealed-prefix storage",
+          )
+          replace_once(
+              "                        try await sessionLedger.sealAcceptedObservation(for: token)\n                        self.currentConnectionToken = nil\n",
+              "                        try await sessionLedger.sealAcceptedObservation(for: token)\n                        self.sealedAcceptedEventPrefix = events\n                        self.currentConnectionToken = nil\n",
+              "successful acceptance seal",
+          )
+          replace_once(
+              "            events: events\n        )\n",
+              "            events: sealedAcceptedEventPrefix ?? events\n        )\n",
+              "export event source",
+          )
+          replace_once(
+              "    private func resetDiscoverySessionOnly() {\n        correlationSession?.abandonCurrentWindow()\n",
+              "    private func resetDiscoverySessionOnly() {\n        sealedAcceptedEventPrefix = nil\n        correlationSession?.abandonCurrentWindow()\n",
+              "fresh correlation reset",
+          )
+
+          if "events: events\n" in source:
+              raise SystemExit("mutable live event log still directly feeds Export.events")
+
+          path.write_text(source)
+          PY
+          git diff --check
+
+      - name: Run focused accepted-export source contract
+        run: swift test --package-path Packages/NembraBluetoothCapture --filter TuyaAcceptedApplicationEvidenceSealSourceTests
+
+      - name: Commit repair and retire one-shot workflow
+        env:
+          BRANCH: repair/v14-capture-sealed-application-export-prefix-sol
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote origin "refs/heads/$BRANCH" | awk '{print $1}')"
+          test "$remote_head" = "$EVENT_SHA"
+          rm .github/workflows/v14-sealed-export-prefix-repair.yml
+          git config user.name "nembra-v14-integration"
+          git config user.email "actions@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift .github/workflows/v14-sealed-export-prefix-repair.yml
+          git commit -m "fix(capture): freeze accepted application export prefix"
+          git push origin "HEAD:$BRANCH"
