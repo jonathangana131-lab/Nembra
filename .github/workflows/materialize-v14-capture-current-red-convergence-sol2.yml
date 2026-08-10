@@ -1,0 +1,22 @@
+name: Materialize Capture Current Red Convergence Sol2
+
+on:
+  push:
+    branches:
+      - integration/v14-capture-current-red-convergence-sol2
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/v14-capture-current-red-convergence-sol2
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Build clean exact-current Capture repair
+        run: python3 scripts/ci/materialize_v14_capture_current_red_convergence_sol2.py
