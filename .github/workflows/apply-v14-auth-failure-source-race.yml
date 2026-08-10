@@ -1,0 +1,43 @@
+name: Apply V14 auth failure source-race fix
+
+on:
+  push:
+    branches: [repair/v14-capture-auth-failure-source-race-sol]
+    paths:
+      - '.github/workflows/apply-v14-auth-failure-source-race.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Assert exact convergence app
+        run: |
+          set -euo pipefail
+          test "$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)" = "20909f767c9151a77eea4426ddce31aa532145c6"
+          python3 -m py_compile .ci-patches/apply-v14-auth-failure-source-race.py
+
+      - name: Apply exact source-race repair
+        run: |
+          set -euo pipefail
+          python3 .ci-patches/apply-v14-auth-failure-source-race.py
+          git diff --check
+          grep -Fq 'sdk_source_authority_lost_before_auth_failure' NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Commit product and retire patch machinery
+        run: |
+          set -euo pipefail
+          rm .ci-patches/apply-v14-auth-failure-source-race.py
+          rm .github/workflows/apply-v14-auth-failure-source-race.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(capture): preserve source drift on SDK failure"
+          git push origin HEAD:repair/v14-capture-auth-failure-source-race-sol
