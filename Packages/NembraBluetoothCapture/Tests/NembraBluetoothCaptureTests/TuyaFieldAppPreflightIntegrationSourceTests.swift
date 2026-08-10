@@ -27,7 +27,7 @@ struct TuyaFieldAppPreflightIntegrationSourceTests {
             "The field app must obtain the verdict snapshot through the accepted session-provider boundary so authentication provenance and connection generation stay attached to the payload chronology."
         )
         #expect(
-            !entrypoint.contains("var passed: Bool { secure && packetCount > 0"),
+            !entrypoint.contains("var passed: Bool { secure &&"),
             "Do not duplicate the physical acceptance authority with a local secure/payload/timer boolean."
         )
     }
