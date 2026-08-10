@@ -289,6 +289,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     @Published private(set) var candidates: [Candidate] = []
     @Published private(set) var selectedID: UUID?
     @Published private(set) var pendingCorrelatedTargetID: UUID?
+    @Published private(set) var correlationProgress: PassiveBluetoothPowerCycleObservationProgress?
     @Published private(set) var sdkLocalBLEOnline = false
     @Published private(set) var sdkDeviceMembershipVerified = false
     @Published private(set) var membershipStatus = "Exact scooter membership has not been checked in the official SDK account yet."
@@ -312,12 +313,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private let buildIdentity = NembraCaptureBuildIdentity.current
     private var byID: [UUID: Candidate] = [:]
     private var correlationSession: PassiveBluetoothPowerCycleObservationSession?
+    private var correlationProgressTask: Task<Void, Never>?
     private var correlationProvenance: CorrelationProvenance?
     private var targetCorrelationMethod: String?
     private var targetCorrelationWindowCount: Int?
     private var targetCorrelationOperatorConfirmed = false
     private var driver: OfficialTuyaDriver?
     private var events: [Event] = []
+    private var sealedAcceptedEventPrefix: [Event]?
     private var watchdog: Task<Void, Never>?
     private let sessionLedger = TuyaAuthenticatedReadOnlySessionLedger()
     private var currentConnectionToken: TuyaReadOnlyConnectionToken?
@@ -338,7 +341,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
         log("controller_created")
     }
 
-    deinit { watchdog?.cancel() }
+    deinit {
+        watchdog?.cancel()
+        correlationProgressTask?.cancel()
+    }
 
     var privateConfig: Bool { OfficialTuyaFactory.configured }
     var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }
@@ -348,7 +354,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var currentAccountUID: String? { OfficialTuyaFactory.currentAccountUID }
     var selected: Candidate? { selectedID.flatMap { byID[$0] } }
     var applicationUpdateCount: Int { ledgerSnapshot.applicationPayloadCount }
-    var correlationProgress: PassiveBluetoothPowerCycleObservationProgress? { correlationSession?.progress }
     var correlationWindowIsScanning: Bool { correlationProgress?.isScanning == true }
     var correlationObservedCandidateCount: Int { correlationProgress?.currentObservedCandidateCount ?? 0 }
     var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }
@@ -491,6 +496,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let label = correlationWindowLabel
         do {
             try session.startCurrentWindow()
+            startCorrelationProgressObservation(session: session)
             phase = progress.phase.operatorExpectedPowerOn ? .scanning : .baseline
             message = "\(label) requested with a fresh CoreBluetooth manager. Wait for scanner liveness, then keep this state for at least 10 receipt-bounded seconds before sealing it."
             log("target_correlation_window_started", [
@@ -503,6 +509,25 @@ private final class SecureLinkController: NSObject, ObservableObject {
             correlationSession = nil
             failLocally("The \(label) correlation window failed closed: \(error.localizedDescription). Restart from OFF1.", "target_correlation_window_start_failed")
         }
+    }
+
+    private func startCorrelationProgressObservation(session: PassiveBluetoothPowerCycleObservationSession) {
+        stopCorrelationProgressObservation()
+        correlationProgress = session.progress
+        correlationProgressTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard self?.correlationSession === session else { return }
+                if let progress = session.progress {
+                    self?.correlationProgress = progress
+                }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+    }
+
+    private func stopCorrelationProgressObservation() {
+        correlationProgressTask?.cancel()
+        correlationProgressTask = nil
     }
 
     func finishCorrelationWindow() {
@@ -520,6 +545,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let sealedLabel = correlationWindowLabel
         do {
             let final = try session.finishCurrentWindow()
+            stopCorrelationProgressObservation()
+            correlationProgress = session.progress
             if let final {
                 finishCorrelationSeries(final)
                 return
@@ -538,11 +565,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
             case .scanReadinessPending:
                 message = "\(sealedLabel) is still waiting for confirmed CoreBluetooth scan liveness. Do not advance the physical state yet."
             default:
+                stopCorrelationProgressObservation()
                 session.abandonCurrentWindow()
                 correlationSession = nil
                 failLocally("\(sealedLabel) failed closed (\(String(describing: error))). Restart the complete OFF1→ON1→OFF2→ON2 series.", "target_correlation_window_failed")
             }
         } catch {
+            stopCorrelationProgressObservation()
             session.abandonCurrentWindow()
             correlationSession = nil
             failLocally("\(sealedLabel) failed closed: \(error.localizedDescription). Restart the complete correlation series.", "target_correlation_window_failed")
@@ -1230,6 +1259,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     }
                     do {
                         try await sessionLedger.sealAcceptedObservation(for: token)
+                        sealedAcceptedEventPrefix = events
                         self.currentConnectionToken = nil
                         await self.refreshLedgerSnapshot()
                         self.phase = .accepted
@@ -1465,6 +1495,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func prepareExport() {
+        if phase == .accepted, sealedAcceptedEventPrefix == nil {
+            exportData = nil
+            message = "Accepted evidence export is unavailable because the app-side event prefix was not sealed. Restart from a fresh OFF1 attempt; do not export mutable post-acceptance diagnostics as accepted evidence."
+            return
+        }
+
         let envelope = Export(
             schemaVersion: 8,
             purpose: "Sanitized Tuya authenticated read-only stationary preflight",
@@ -1496,7 +1532,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             dpQueriesSent: false,
             dpCommandsSent: false,
             candidates: candidates,
-            events: events
+            events: sealedAcceptedEventPrefix ?? events
         )
 
         do {
@@ -1505,19 +1541,22 @@ private final class SecureLinkController: NSObject, ObservableObject {
             encoder.dateEncodingStrategy = .iso8601
             exportData = try encoder.encode(envelope)
             exportName = "Nembra-Secure-Link-\(deviceID.prefix(8))-Diagnostics.json"
-            message = "Sanitized diagnostics ready with exact compiled build provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."
+            message = "Sanitized diagnostics ready with exact compiled build provenance. Accepted sessions use the frozen app-side evidence prefix; post-seal callbacks cannot mutate those exported events. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."
         } catch {
             message = "Diagnostic export failed: \(error.localizedDescription)"
         }
     }
 
     private func resetDiscoverySessionOnly() {
+        stopCorrelationProgressObservation()
         correlationSession?.abandonCurrentWindow()
         correlationSession = nil
+        correlationProgress = nil
         correlationProvenance = nil
         targetCorrelationMethod = nil
         targetCorrelationWindowCount = nil
         targetCorrelationOperatorConfirmed = false
+        sealedAcceptedEventPrefix = nil
         watchdog?.cancel()
         watchdog = nil
         driver = nil
@@ -1535,6 +1574,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func failLocally(_ text: String, _ kind: String) {
+        stopCorrelationProgressObservation()
+        correlationProgress = nil
         if phase == .baseline || phase == .powerOn || phase == .scanning || phase == .correlated {
             correlationSession?.abandonCurrentWindow()
             correlationSession = nil
