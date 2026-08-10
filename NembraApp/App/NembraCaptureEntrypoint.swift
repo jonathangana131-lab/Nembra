@@ -1392,6 +1392,37 @@ private final class SecureLinkController: NSObject, ObservableObject {
         log(kind, ["generation": String(token.diagnosticGeneration)])
     }
 
+    private func redactVerifiedAccountUIDFromApplicationUpdate(
+        _ update: [String: String]
+    ) -> [String: String] {
+        guard let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !accountUID.isEmpty else { return update }
+
+        var sanitized: [String: String] = [:]
+        sanitized.reserveCapacity(update.count)
+        let orderedEntries = update.sorted { lhs, rhs in lhs.key < rhs.key }
+
+        for (index, entry) in orderedEntries.enumerated() {
+            let keyContainsAccountUID = entry.key.range(of: accountUID, options: [.caseInsensitive]) != nil
+            let baseKey = keyContainsAccountUID
+                ? "<redacted-account-uid-key-\(index)>"
+                : entry.key
+            var sanitizedKey = baseKey
+            var collisionIndex = 0
+            while sanitized[sanitizedKey] != nil {
+                collisionIndex += 1
+                sanitizedKey = "\(baseKey)-collision-\(collisionIndex)"
+            }
+
+            sanitized[sanitizedKey] = entry.value.replacingOccurrences(
+                of: accountUID,
+                with: "<redacted-account-uid>",
+                options: [.caseInsensitive]
+            )
+        }
+        return sanitized
+    }
+
     private func receivedApplicationUpdate(
         _ update: [String: String],
         token: TuyaReadOnlyConnectionToken
@@ -1430,13 +1461,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        let sanitizedUpdate = redactVerifiedAccountUIDFromApplicationUpdate(update)
         applicationUpdateAdmissionsInFlight += 1
         defer { applicationUpdateAdmissionsInFlight -= 1 }
 
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            log("tuya_application_update", sanitizedUpdate.merging([
                 "generation": String(token.diagnosticGeneration)
             ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
