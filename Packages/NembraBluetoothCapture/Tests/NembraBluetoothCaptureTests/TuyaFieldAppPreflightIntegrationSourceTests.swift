@@ -66,6 +66,29 @@ struct TuyaFieldAppPreflightIntegrationSourceTests {
         )
     }
 
+    @Test("verification-code success never outranks the SDK login source of truth")
+    func verificationCodeSuccessRechecksSDKAccountAuthority() throws {
+        let entrypoint = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        guard let functionStart = entrypoint.range(of: "private func finishLoginSuccess()"),
+              let nextFunction = entrypoint.range(
+                of: "private func finishLoginFailure",
+                range: functionStart.upperBound..<entrypoint.endIndex
+              ) else {
+            Issue.record("Field account authorizer must expose explicit success/failure completion paths for source review.")
+            return
+        }
+
+        let successBody = String(entrypoint[functionStart.lowerBound..<nextFunction.lowerBound])
+        #expect(
+            successBody.contains("OfficialTuyaFactory.accountReady"),
+            "A Tuya login success callback is not itself account-session authority. Re-read ThingSmartUser.isLogin through OfficialTuyaFactory.accountReady before enabling the secure test."
+        )
+        #expect(
+            !successBody.contains("authorized = true"),
+            "Do not let the authorizer's local UI flag become stronger than the official SDK account-session source of truth."
+        )
+    }
+
     private func readRepositoryFile(_ relativePath: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent() // NembraBluetoothCaptureTests
