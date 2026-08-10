@@ -2829,6 +2829,11 @@ private struct SecureLinkView: View {
                 Spacer()
             }
             .accessibilityElement(children: .combine)
+            .accessibilityLabel(
+                test.phase == .accepted
+                    ? "All 4 Capture steps complete, Seal"
+                    : "Step \(currentStageIndex + 1) of 4, \(stageLabels[currentStageIndex])"
+            )
         } else {
             HStack(spacing: 8) {
                 ForEach(Array(stageLabels.enumerated()), id: \.offset) { index, label in
@@ -2853,7 +2858,7 @@ private struct SecureLinkView: View {
                             .lineLimit(1)
                     }
                     .frame(maxWidth: .infinity)
-                    .accessibilityLabel("Step \(index + 1), \(label)\(index == currentStageIndex ? ", current" : index < currentStageIndex ? ", complete" : ", upcoming")")
+                    .accessibilityLabel("Step \(index + 1), \(label)\(test.phase == .accepted || index < currentStageIndex ? ", complete" : index == currentStageIndex ? ", current" : ", upcoming")")
                 }
             }
         }
