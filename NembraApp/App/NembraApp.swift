@@ -22,6 +22,9 @@ struct NembraApp: App {
 
 private struct NembraNavigationHost<Content: View>: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var isNavigationPresented = false
 
     let content: Content
@@ -36,17 +39,34 @@ private struct NembraNavigationHost<Content: View>: View {
 
             if verticalSizeClass != .compact {
                 Button {
-                    isNavigationPresented = true
+                    withAnimation(reduceMotion ? nil : .snappy(duration: 0.28)) {
+                        isNavigationPresented = true
+                    }
                 } label: {
-                    Image(systemName: "location.north.circle.fill")
-                        .font(.system(size: 24, weight: .semibold))
-                        .frame(width: 54, height: 54)
-                        .background(.regularMaterial, in: Circle())
-                        .overlay {
-                            Circle()
-                                .strokeBorder(.primary.opacity(0.08))
+                    Group {
+                        if dynamicTypeSize.isAccessibilitySize {
+                            Label("Navigation", systemImage: "location.north.circle.fill")
+                                .font(.headline)
+                                .padding(.horizontal, 18)
+                        } else {
+                            Image(systemName: "location.north.circle.fill")
+                                .font(.system(size: 24, weight: .semibold))
                         }
-                        .shadow(radius: 8, y: 4)
+                    }
+                    .frame(minWidth: 54, minHeight: 54)
+                    .background {
+                        if reduceTransparency {
+                            Color(uiColor: .secondarySystemBackground)
+                        } else {
+                            Rectangle().fill(.regularMaterial)
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 27, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 27, style: .continuous)
+                            .strokeBorder(.primary.opacity(0.12))
+                    }
+                    .shadow(radius: reduceTransparency ? 3 : 8, y: reduceTransparency ? 2 : 4)
                 }
                 .buttonStyle(.plain)
                 .padding(.trailing, 18)
@@ -104,6 +124,7 @@ private extension Double {
 
 private struct NembraNavigationView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AppStorage("navigation.recentDestinations.v1") private var recentDestinationsJSON = ""
     @State private var query = ""
     @State private var results: [MKMapItem] = []
@@ -160,7 +181,7 @@ private struct NembraNavigationView: View {
         } message: {
             Text("This removes all recent destinations stored on this device.")
         }
-        .accessibilityIdentifier("navigation.root")
+        .accessibilityIdentifier("navigation.surface")
     }
 
     private var destinationMap: some View {
@@ -180,7 +201,7 @@ private struct NembraNavigationView: View {
                 showsTraffic: true
             )
         )
-        .frame(minHeight: 280)
+        .frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 220 : 280)
         .overlay(alignment: .topLeading) {
             if let selectedItem {
                 VStack(alignment: .leading, spacing: 4) {
@@ -227,7 +248,7 @@ private struct NembraNavigationView: View {
                 .accessibilityIdentifier("navigation.searching")
         } else if let searchError {
             ContentUnavailableView(
-                "Search unavailable",
+                "Navigation unavailable",
                 systemImage: "exclamationmark.triangle",
                 description: Text(searchError)
             )
