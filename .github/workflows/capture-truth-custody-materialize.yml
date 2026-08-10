@@ -38,27 +38,35 @@ jobs:
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           source = path.read_text()
 
-          def section_bounds(text: str, start: str, end: str):
-              a = text.index(start)
-              b = text.index(end, a)
+          def fail(message: str):
+              print(f"::error::{message}")
+              raise SystemExit(1)
+
+          def bounds(text: str, start: str, end: str):
+              try:
+                  a = text.index(start)
+                  b = text.index(end, a)
+              except ValueError:
+                  fail(f"section markers changed: {start.strip()} -> {end.strip()}")
               return a, b
 
-          def insert_after_once_in_section(text: str, start: str, end: str, needle: str, insertion: str) -> str:
-              a, b = section_bounds(text, start, end)
-              section = text[a:b]
-              if section.count(needle) != 1:
-                  raise RuntimeError(f"{start.strip()}: expected exactly one {needle.strip()!r}, found {section.count(needle)}")
-              section = section.replace(needle, needle + insertion, 1)
-              return text[:a] + section + text[b:]
+          def insert_after_in_section(text: str, start: str, end: str, needle: str, insertion: str) -> str:
+              a, b = bounds(text, start, end)
+              part = text[a:b]
+              count = part.count(needle)
+              if count != 1:
+                  fail(f"{start.strip()}: expected one {needle.strip()!r}; found {count}")
+              part = part.replace(needle, needle + insertion, 1)
+              return text[:a] + part + text[b:]
 
-          source = insert_after_once_in_section(
+          source = insert_after_in_section(
               source,
               "    func abandonCorrelationForViewExit() {",
               "    func appDidLoseForeground() {",
               "        sdkDeviceMembershipVerified = false\n",
               "        membershipStatus = \"Secure Link changed. Exact scooter membership must be verified again for this view before Bluetooth discovery.\"\n",
           )
-          source = insert_after_once_in_section(
+          source = insert_after_in_section(
               source,
               "    func appDidLoseForeground() {",
               "    var privateConfig: Bool",
@@ -66,9 +74,9 @@ jobs:
               "        membershipStatus = \"Capture left the foreground. Exact scooter membership must be verified again before a new authenticated attempt.\"\n",
           )
 
-          receiver_marker = "    private func receivedApplicationUpdate(\n"
-          if source.count(receiver_marker) != 1:
-              raise RuntimeError("receivedApplicationUpdate marker changed")
+          marker = "    private func receivedApplicationUpdate(\n"
+          if source.count(marker) != 1:
+              fail(f"receivedApplicationUpdate marker count={source.count(marker)}")
           helper = '''    private func preparedApplicationEventDetails(
               _ update: [String: String],
               verifiedAccountUID: String
@@ -103,19 +111,15 @@ jobs:
           }
 
           '''
-          source = source.replace(receiver_marker, helper + receiver_marker, 1)
+          source = source.replace(marker, helper + marker, 1)
 
-          receiver_start, receiver_end = section_bounds(
-              source,
-              "    private func receivedApplicationUpdate(",
-              "    private func startWatchdog",
-          )
-          receiver = source[receiver_start:receiver_end]
+          a, b = bounds(source, "    private func receivedApplicationUpdate(", "    private func startWatchdog")
+          receiver = source[a:b]
 
           admissions = "        applicationUpdateAdmissionsInFlight += 1\n"
           if receiver.count(admissions) != 1:
-              raise RuntimeError("application admission counter shape changed")
-          uid_guard = '''        guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              fail(f"application admission counter count={receiver.count(admissions)}")
+          receiver = receiver.replace(admissions, '''        guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
                 !verifiedAccountUID.isEmpty else {
               await invalidateSourceAuthority(
                   token: token,
@@ -125,13 +129,12 @@ jobs:
               return
           }
 
-          '''
-          receiver = receiver.replace(admissions, uid_guard + admissions, 1)
+          ''' + admissions, 1)
 
           refresh = "            await refreshLedgerSnapshot()\n"
           if receiver.count(refresh) != 1:
-              raise RuntimeError(f"expected one receiver ledger refresh, found {receiver.count(refresh)}")
-          custody = '''            guard sdkAccountLoggedIn,
+              fail(f"receiver ledger refresh count={receiver.count(refresh)}")
+          receiver = receiver.replace(refresh, refresh + '''            guard sdkAccountLoggedIn,
                     sdkDeviceMembershipVerified,
                     accountIdentityLeaseIsAuthorized,
                     membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) == verifiedAccountUID else {
@@ -146,28 +149,22 @@ jobs:
                   update,
                   verifiedAccountUID: verifiedAccountUID
               )
-          '''
-          receiver = receiver.replace(refresh, refresh + custody, 1)
+          ''', 1)
 
-          old_log = '''            log("tuya_application_update", update.merging([
-                  "generation": String(token.diagnosticGeneration)
-              ]) { current, _ in current })'''
-          new_log = '''            log("tuya_application_update", eventDetails.merging([
-                  "generation": String(token.diagnosticGeneration)
-              ]) { _, trusted in trusted })'''
-          if receiver.count(old_log) != 1:
-              raise RuntimeError(f"application event merge shape changed; matches={receiver.count(old_log)}")
-          receiver = receiver.replace(old_log, new_log, 1)
-          source = source[:receiver_start] + receiver + source[receiver_end:]
+          log_head = 'log("tuya_application_update", update.merging(['
+          if receiver.count(log_head) != 1:
+              fail(f"untrusted event log head count={receiver.count(log_head)}")
+          receiver = receiver.replace(log_head, 'log("tuya_application_update", eventDetails.merging([', 1)
+          collision = ']) { current, _ in current })'
+          if receiver.count(collision) != 1:
+              fail(f"untrusted collision policy count={receiver.count(collision)}")
+          receiver = receiver.replace(collision, ']) { _, trusted in trusted })', 1)
+          source = source[:a] + receiver + source[b:]
 
-          trailing_duplicate = '        "refreshtoken",\n        "sessionkey",\n        "authkey",\n'
-          if source.count(trailing_duplicate) != 1:
-              raise RuntimeError("expected duplicate sessionkey classifier immediately after refreshtoken")
-          source = source.replace(
-              trailing_duplicate,
-              '        "refreshtoken",\n        "authkey",\n',
-              1,
-          )
+          duplicate = '        "refreshtoken",\n        "sessionkey",\n        "authkey",\n'
+          if source.count(duplicate) != 1:
+              fail(f"duplicate sessionkey shape count={source.count(duplicate)}")
+          source = source.replace(duplicate, '        "refreshtoken",\n        "authkey",\n', 1)
 
           path.write_text(source)
           PY
