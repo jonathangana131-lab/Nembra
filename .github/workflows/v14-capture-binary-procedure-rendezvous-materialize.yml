@@ -1,0 +1,96 @@
+name: V14 Capture Binary Procedure Rendezvous Materialize
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-binary-procedure-rendezvous-gpt56sol
+
+permissions:
+  contents: read
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-binary-procedure-rendezvous-gpt56sol
+          fetch-depth: 0
+
+      - name: Materialize binary-bound procedure authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "112bcad3b461e728e4743471edf7fd47a71f03f2" || true
+          python3 Scripts/materialize_capture_binary_procedure_rendezvous_v14.py
+          bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+
+      - name: Prove exact binary rendezvous contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          identity='NembraApp/App/NembraCaptureBuildIdentity.swift'
+          entrypoint='NembraApp/App/NembraCaptureEntrypoint.swift'
+          project='NembraCapture.xcodeproj/project.pbxproj'
+          installer='scripts/field/install_one_time_capture.command'
+          workflow='.github/workflows/capture-field-build-provenance.yml'
+          testfile='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift'
+
+          grep -Fq 'static let fieldProcedureIdentifierInfoKey = "NembraCaptureProcedureIdentifier"' "$identity"
+          grep -Fq 'let compiledProcedureIdentifier: String' "$identity"
+          grep -Fq 'compiledProcedureIdentifier == Self.fieldProcedureIdentifier' "$identity"
+          grep -Fq 'var fieldProcedureIdentifier: String { buildIdentity.compiledProcedureIdentifier }' "$entrypoint"
+          grep -Fq 'procedureIdentifier: buildIdentity.compiledProcedureIdentifier' "$entrypoint"
+          test "$(grep -Fc 'INFOPLIST_KEY_NembraCaptureProcedureIdentifier = "$(NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER)";' "$project")" = '2'
+          grep -Fq '"NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER=$PROCEDURE_ID"' "$installer"
+          grep -Fq 'plutil -extract NembraCaptureProcedureIdentifier raw -o - "$APP_INFO_PLIST"' "$installer"
+          grep -Fq '[[ "$BUILT_PROCEDURE_IDENTIFIER" == "$PROCEDURE_ID" ]]' "$installer"
+          grep -Fq 'NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER="ES80-AUTHENTICATED-STATIONARY-v1"' "$workflow"
+          grep -Fq 'plutil -extract NembraCaptureProcedureIdentifier raw -o - "$plist"' "$workflow"
+          grep -Fq 'procedureIdentifier: buildIdentity.compiledProcedureIdentifier' "$testfile"
+
+          if grep -Fq 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier' "$entrypoint"; then
+            echo 'ERROR: accepted export still reconstructs procedure from a source constant instead of compiled binary identity.' >&2
+            exit 1
+          fi
+
+      - name: Verify narrow product delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess
+          expected = {
+              '.github/workflows/capture-field-build-provenance.yml',
+              'NembraApp/App/NembraCaptureBuildIdentity.swift',
+              'NembraApp/App/NembraCaptureEntrypoint.swift',
+              'NembraCapture.xcodeproj/project.pbxproj',
+              'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift',
+              'scripts/field/install_one_time_capture.command',
+          }
+          lines = subprocess.check_output(['git', 'status', '--porcelain=v1'], text=True).splitlines()
+          changed = {line[3:] for line in lines if line}
+          if changed != expected:
+              raise SystemExit(f'unexpected transformed paths: {sorted(changed)} expected {sorted(expected)}')
+          PY
+
+      - name: Stage validated bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/binary-procedure
+          tar -czf /tmp/binary-procedure/validated-product-files.tar.gz \
+            .github/workflows/capture-field-build-provenance.yml \
+            NembraApp/App/NembraCaptureBuildIdentity.swift \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            NembraCapture.xcodeproj/project.pbxproj \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift \
+            scripts/field/install_one_time_capture.command
+          sha256sum /tmp/binary-procedure/validated-product-files.tar.gz > /tmp/binary-procedure/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: capture-binary-procedure-rendezvous-validated-bytes
+          path: /tmp/binary-procedure
+          if-no-files-found: error
