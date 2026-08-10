@@ -1,4 +1,4 @@
-name: Materialize Capture Application Event Custody 1c408
+name: Materialize Capture Application Event Custody
 
 on:
   push:
@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   materialize:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,113 +17,49 @@ jobs:
           ref: sol/v14-capture-membership-status-current-1c408
           fetch-depth: 0
 
-      - name: Guard exact lineage and effective pre-materialization scope
-        shell: bash
+      - name: Guard exact lineage and scope
         run: |
           set -euo pipefail
-          base='1c40853f6991b4d09206df1d25ecff021458b7eb'
-          workflow='.github/workflows/materialize-capture-application-event-custody-1c408.yml'
-          app='NembraApp/App/NembraCaptureEntrypoint.swift'
-          status_test='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift'
-          provenance_test='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift'
-          uid_test='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift'
+          base=1c40853f6991b4d09206df1d25ecff021458b7eb
           test "$(git merge-base "$base" HEAD)" = "$base"
           git diff --name-only "$base"...HEAD | sort > /tmp/actual
-          printf '%s\n' "$workflow" "$app" "$status_test" "$provenance_test" "$uid_test" | sort > /tmp/expected
+          cat > /tmp/expected <<'EOF'
+          .github/scripts/materialize_capture_application_event_custody_1c408.py
+          .github/workflows/materialize-capture-application-event-custody-1c408.yml
+          NembraApp/App/NembraCaptureEntrypoint.swift
+          Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+          Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
+          Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift
+          EOF
+          sort -o /tmp/expected /tmp/expected
           diff -u /tmp/expected /tmp/actual
 
-      - name: Enforce trusted provenance and account UID export custody
-        shell: bash
+      - name: Materialize product repair
+        run: python3 .github/scripts/materialize_capture_application_event_custody_1c408.py
+
+      - name: Validate source contracts
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
-          source = path.read_text()
-
-          old_log = '''            log("tuya_application_update", update.merging([
-                          "generation": String(token.diagnosticGeneration)
-                      ]) { current, _ in current })'''
-          new_log = '''            let exportSafeUpdate = redactedApplicationUpdateForEventCustody(update)
-                      log("tuya_application_update", exportSafeUpdate.merging([
-                          "generation": String(token.diagnosticGeneration)
-                      ]) { _, trusted in trusted })'''
-          if source.count(old_log) != 1:
-              raise SystemExit(f'expected one untrusted-precedence application log, found {source.count(old_log)}')
-          source = source.replace(old_log, new_log, 1)
-
-          marker = '    private func startWatchdog(for token: TuyaReadOnlyConnectionToken) {'
-          if source.count(marker) != 1:
-              raise SystemExit(f'expected one startWatchdog insertion marker, found {source.count(marker)}')
-
-          helper = '''    private func redactedApplicationUpdateForEventCustody(_ update: [String: String]) -> [String: String] {
-              guard let rawAccountUID = membershipAccountUID else { return [:] }
-              let accountUID = rawAccountUID.trimmingCharacters(in: .whitespacesAndNewlines)
-              guard !accountUID.isEmpty else { return [:] }
-
-              var redacted: [String: String] = [:]
-              for (key, value) in update {
-                  var redactedKey = key.replacingOccurrences(
-                      of: accountUID,
-                      with: "<redacted-account-uid>",
-                      options: [.caseInsensitive, .literal]
-                  )
-                  let redactedValue = value.replacingOccurrences(
-                      of: accountUID,
-                      with: "<redacted-account-uid>",
-                      options: [.caseInsensitive, .literal]
-                  )
-
-                  if redacted[redactedKey] != nil {
-                      var suffix = 2
-                      while redacted["\\(redactedKey)#\\(suffix)"] != nil {
-                          suffix += 1
-                      }
-                      redactedKey = "\\(redactedKey)#\\(suffix)"
-                  }
-                  redacted[redactedKey] = redactedValue
-              }
-              return redacted
-          }
-
-'''
-          source = source.replace(marker, helper + marker, 1)
-          path.write_text(source)
-          PY
-
-      - name: Validate composed source contracts
-        shell: bash
-        run: |
-          set -euo pipefail
-          source='NembraApp/App/NembraCaptureEntrypoint.swift'
-          status_test='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift'
-          provenance_test='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift'
-          uid_test='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift'
-
+          source=NembraApp/App/NembraCaptureEntrypoint.swift
           swiftc -parse "$source"
-          swiftc -parse "$status_test"
-          swiftc -parse "$provenance_test"
-          swiftc -parse "$uid_test"
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
           test "$(grep -Foc 'membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."' "$source")" -eq 2
           grep -Fq 'let exportSafeUpdate = redactedApplicationUpdateForEventCustody(update)' "$source"
           grep -Fq ']) { _, trusted in trusted })' "$source"
-          ! grep -Fq ']) { current, _ in current })' "$source"
+          if grep -Fq ']) { current, _ in current })' "$source"; then exit 1; fi
           grep -Fq 'with: "<redacted-account-uid>"' "$source"
           grep -Fq 'key.replacingOccurrences(' "$source"
           grep -Fq 'value.replacingOccurrences(' "$source"
           git diff --check
 
       - name: Publish clean convergence checkpoint
-        shell: bash
         run: |
           set -euo pipefail
           rm .github/workflows/materialize-capture-application-event-custody-1c408.yml
-          git add NembraApp/App/NembraCaptureEntrypoint.swift \
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift \
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift \
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift \
-            .github/workflows/materialize-capture-application-event-custody-1c408.yml
+          rm .github/scripts/materialize_capture_application_event_custody_1c408.py
+          git add -A
           git diff --cached --check
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
