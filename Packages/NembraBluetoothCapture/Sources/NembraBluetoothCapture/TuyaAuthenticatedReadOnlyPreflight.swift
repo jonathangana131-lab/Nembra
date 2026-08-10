@@ -1,13 +1,13 @@
 import Foundation
 
-/// The only authentication routes currently allowed to mint authenticated-session provenance.
+/// The only authentication route currently allowed to mint authenticated-session provenance.
 ///
-/// `cloud local_key` is deliberately absent. Tuya cloud metadata can retain that secret for
-/// future supported use, but it is not mechanically equivalent to documented FD50 BLE
-/// authentication material and must never unlock the physical preflight by itself.
+/// Cloud metadata, device sharing, account membership, and `local_key` possession are deliberately
+/// absent. They may establish account/device context, but none is mechanically equivalent to a
+/// documented authenticated FD50 BLE session. Physical acceptance therefore requires the official
+/// SmartLife App SDK connection path used by the field adapter.
 public enum TuyaReadOnlyAuthenticationMethod: String, Codable, Equatable, Sendable {
     case smartLifeAppSDK = "tuya-smartlife-sdk"
-    case documentedDeviceSharing = "tuya-device-sharing"
 }
 
 /// Non-secret milestones for the physical Tuya authentication gate.
@@ -78,8 +78,8 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
         case .authenticated:
             break
         }
-        guard snapshot.authenticationMethod != nil else {
-            return .blocked(reason: "Authenticated state has no accepted Tuya authentication provenance.")
+        guard snapshot.authenticationMethod == .smartLifeAppSDK else {
+            return .blocked(reason: "Authenticated state has no accepted SmartLife SDK BLE provenance.")
         }
         guard snapshot.applicationPayloadCount > 0 else {
             return .blocked(reason: "Authenticated session has not produced an application payload yet.")
@@ -100,13 +100,13 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
     }
 }
 
-/// Narrow integration seam for an official Tuya-backed session implementation.
+/// Narrow integration seam for the official Tuya-backed session implementation.
 ///
 /// Implementations may perform only documented authentication/session-establishment transport
 /// writes and authenticated reads/notification decryption. They must not expose generic GATT
-/// writes or DP control through this protocol. An implementation must also report which accepted
-/// authentication method actually established the current generation; possession of a cloud
-/// `local_key` alone is not accepted authentication provenance.
+/// writes or DP control through this protocol. An implementation must report SmartLife App SDK
+/// provenance for the current generation; cloud metadata, sharing authority, account membership,
+/// or possession of a cloud `local_key` alone can never mint authenticated BLE authority.
 public protocol TuyaReadOnlyAuthenticationSessionProvider: Sendable {
     func currentPreflightSnapshot() async -> TuyaAuthenticatedReadOnlyPreflightSnapshot
 }
