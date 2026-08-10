@@ -68,8 +68,8 @@ def apply() -> None:
     failure = text[start:end]
     failure = replace_once(
         failure,
-        "                    Button {\n                        test.startBaseline()\n                    } label {",
-        "                    Button {\n                        test.retry()\n                    } label {",
+        "                    Button {\n                        test.startBaseline()\n                    } label: {",
+        "                    Button {\n                        test.retry()\n                    } label: {",
         "failure retry action",
     )
     failure = replace_once(
