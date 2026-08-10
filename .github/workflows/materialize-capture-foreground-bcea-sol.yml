@@ -113,16 +113,24 @@ jobs:
           '''
           source = replace_once(source, controller_marker, method + controller_marker, 'controller insertion')
 
+          view_start = source.index('private struct SecureLinkView: View {')
+          body_start = source.index('    var body: some View {', view_start)
+          header = source[view_start:body_start]
           env_lines = [
-              line for line in source.splitlines(keepends=True)
+              line for line in header.splitlines(keepends=True)
               if '@Environment' in line and 'dynamicTypeSize' in line
           ]
           if len(env_lines) != 1:
-              raise SystemExit(f'scene environment marker count={len(env_lines)}')
+              raise SystemExit(f'SecureLink scene environment marker count={len(env_lines)}')
           env_line = env_lines[0]
           scene_line = env_line.replace('.dynamicTypeSize', '.scenePhase').replace('dynamicTypeSize', 'scenePhase')
-          source = replace_once(source, env_line, env_line + scene_line, 'scene environment')
+          header = replace_once(header, env_line, env_line + scene_line, 'SecureLink scene environment')
+          source = source[:view_start] + header + source[body_start:]
 
+          view_start = source.index('private struct SecureLinkView: View {')
+          body_start = source.index('    var body: some View {', view_start)
+          hero_start = source.index('    private var hero: some View', body_start)
+          body = source[body_start:hero_start]
           view_exit = '''        .onDisappear {
               test.abandonCorrelationForViewExit()
           }'''
@@ -132,7 +140,8 @@ jobs:
                   test.appDidLoseForeground()
               }
           }'''
-          source = replace_once(source, view_exit, view_exit + scene, 'view lifecycle')
+          body = replace_once(body, view_exit, view_exit + scene, 'SecureLink view lifecycle')
+          source = source[:body_start] + body + source[hero_start:]
           path.write_text(source, encoding='utf-8')
           print('foreground-integrity transform applied')
           PY
@@ -168,10 +177,13 @@ jobs:
           assert cleanup.index('membershipRequestID = UUID()') < cleanup.index('if processCorrelationLease')
           for forbidden in ('releasePackageCorrelationLease()', 'recordObservedTransportLoss', 'endConnection', 'disconnectBLE', 'publishDps', 'queryDps', 'writeValue'):
               assert forbidden not in cleanup, forbidden
-          assert '@Environment' in s and 'private var scenePhase' in s
-          assert '.onChange(of: scenePhase)' in s
-          assert 'if newPhase != .active' in s
-          assert 'test.appDidLoseForeground()' in s
+          view_start = s.index('private struct SecureLinkView: View {')
+          hero_start = s.index('    private var hero: some View', view_start)
+          view = s[view_start:hero_start]
+          assert '@Environment(\\.scenePhase) private var scenePhase' in view
+          assert '.onChange(of: scenePhase)' in view
+          assert 'if newPhase != .active' in view
+          assert 'test.appDidLoseForeground()' in view
           print('current-product foreground-integrity contract: PASS')
           PY
           swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
