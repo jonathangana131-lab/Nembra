@@ -1,0 +1,26 @@
+name: Capture Explicit Confirmation Focused QA
+
+on:
+  push:
+    branches:
+      - integration/v14-capture-final-explicit-confirmation-sol
+    paths:
+      - .github/workflows/capture-explicit-confirmation-focused-qa.yml
+
+permissions:
+  contents: read
+
+jobs:
+  focused-source-contract:
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/v14-capture-final-explicit-confirmation-sol
+      - name: Run explicit-confirmation source contract
+        working-directory: Packages/NembraBluetoothCapture
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --filter TuyaExplicitCorrelatedTargetConfirmationSourceTests
