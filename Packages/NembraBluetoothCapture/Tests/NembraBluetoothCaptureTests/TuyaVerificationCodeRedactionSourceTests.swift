@@ -10,7 +10,7 @@ struct TuyaVerificationCodeRedactionSourceTests {
         let authorizer = String(try section(
             in: source,
             from: "@MainActor\nprivate final class OfficialTuyaAccountAuthorizer",
-            to: "#if canImport(ThingSmartHomeKit)\n@MainActor\nprivate final class OfficialTuyaMembershipProbe"
+            to: "@MainActor\nprivate struct SecureLinkView: View"
         ))
 
         #expect(authorizer.contains("let code = verificationCode.trimmingCharacters(in: .whitespacesAndNewlines)"))
@@ -33,6 +33,8 @@ struct TuyaVerificationCodeRedactionSourceTests {
         #expect(scrubber.contains("let verificationCode = submittedVerificationCode.trimmingCharacters(in: .whitespacesAndNewlines)"))
         #expect(scrubber.contains("of: verificationCode"))
         #expect(scrubber.contains("with: \"<redacted-verification-code>\""))
+        #expect(scrubber.contains("of: identity"))
+        #expect(scrubber.contains("with: \"<redacted-account>\""))
     }
 
     @Test("clearing the UI field does not erase the snapshot needed for error scrubbing")
