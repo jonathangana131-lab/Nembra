@@ -50,9 +50,9 @@ jobs:
         // Revoke pending membership-result starts before any scanner/lease early return.
         membershipRequestID = UUID()
         membershipBusy = false
-#if canImport(ThingSmartHomeKit)
+        #if canImport(ThingSmartHomeKit)
         membershipProbe = nil
-#endif
+        #endif
 
         guard processCorrelationLease != nil || correlationSession != nil else { return }
         abandonPackageCorrelation()
