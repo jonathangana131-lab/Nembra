@@ -1,0 +1,83 @@
+name: Agent V14 post-seal local-BLE patch
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-post-seal-local-ble-authority
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Apply exact post-seal authority repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text()
+          old = '''                        try await sessionLedger.sealAcceptedObservation(for: token)
+                        guard self.buildIdentity.isAuthoritativeFieldBuild,
+                              self.accountIdentityLeaseIsAuthorized else {
+'''
+          new = '''                        try await sessionLedger.sealAcceptedObservation(for: token)
+                        // The package seal crosses an actor suspension and retires callback authority.
+                        // Re-sample the official SDK's same-device transport synchronously before
+                        // freezing/presenting accepted UI; the earlier watchdog sample cannot prove
+                        // local-BLE currentness after this suspension.
+                        self.sdkLocalBLEOnline = driver.isLocallyConnected(uuid: self.tuyaUUID)
+                        guard self.sdkLocalBLEOnline else {
+                            self.currentConnectionToken = nil
+                            self.localBLESettlementToken = nil
+                            self.driver = nil
+                            self.phase = .failed
+                            self.message = "Tuya's current local-BLE session was no longer online after canonical acceptance sealing. The sealed package chronology remains diagnostic only; restart from OFF1."
+                            self.log("sdk_local_ble_lost_during_acceptance_seal", [
+                                "generation": String(token.diagnosticGeneration)
+                            ])
+                            return
+                        }
+                        guard self.buildIdentity.isAuthoritativeFieldBuild,
+                              self.accountIdentityLeaseIsAuthorized else {
+'''
+          count = source.count(old)
+          if count != 1:
+              raise SystemExit(f"expected exactly one seal block, found {count}")
+          source = source.replace(old, new, 1)
+          path.write_text(source)
+
+          seal = source.index("try await sessionLedger.sealAcceptedObservation(for: token)")
+          freeze = source.index("self.sealedAcceptedExport = self.makeExport(", seal)
+          between = source[seal:freeze]
+          recheck = "driver.isLocallyConnected(uuid: self.tuyaUUID)"
+          assert recheck in between
+          assert between.index(recheck) > 0
+          assert "self.sdkLocalBLEOnline" in between
+          assert "self.phase = .failed" in between
+          assert "sessionLedger.endConnection" not in between
+          assert "markAuthenticationFailed" not in between
+          assert "markSourceAuthorityInvalidated" not in between
+          assert "markObservationContinuityInvalidated" not in between
+          assert "markInternalLifecycleFailure" not in between
+          after_seal = between.split("try await sessionLedger.sealAcceptedObservation(for: token)", 1)[1]
+          before_recheck = after_seal.split(recheck, 1)[0]
+          assert "await " not in before_recheck
+          PY
+      - name: Commit product repair and retire patch workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-v14-agent"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git rm .github/workflows/agent-v14-postseal-local-ble-patch.yml
+          git commit -m "fix(capture): recheck local BLE after acceptance seal"
+          git push origin HEAD:agent/v14-capture-post-seal-local-ble-authority
