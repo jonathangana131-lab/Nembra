@@ -44,7 +44,7 @@ struct TuyaFreshTargetAndAcquisitionTerminalSourceTests {
         #expect(app.contains("freshlyCorrelated: true"))
     }
 
-    @Test("local-BLE settlement failure does not masquerade as SDK source-authority loss")
+    @Test("local-BLE timeout and invalid clock retain distinct terminal truth")
     func localBLEAcquisitionFailureKeepsTerminalReasonDistinct() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
@@ -59,11 +59,16 @@ struct TuyaFreshTargetAndAcquisitionTerminalSourceTests {
         let timeoutBranch = String(app[timedOut.lowerBound..<invalidClock.lowerBound])
         let invalidClockBranch = String(app[invalidClock.lowerBound..<nextFunction.lowerBound])
 
-        // Account/login/membership drift owns markSourceAuthorityInvalidated. A local-BLE
-        // acquisition timeout or monotonic-clock failure is a different physical/software fact.
+        // A bounded local-BLE timeout is an acquisition/authentication failure. A regressed
+        // monotonic clock is an internal chronology failure and must retire authority without
+        // sampling that same broken clock again. Neither fact is Tuya account/device source drift.
         #expect(timeoutBranch.contains("authenticationAcquisitionFailed"))
-        #expect(invalidClockBranch.contains("authenticationAcquisitionFailed"))
+        #expect(!timeoutBranch.contains("invalidateInternalLifecycle"))
         #expect(!timeoutBranch.contains("invalidateSourceAuthority"))
+
+        #expect(invalidClockBranch.contains("invalidateInternalLifecycle"))
+        #expect(!invalidClockBranch.contains("authenticationAcquisitionFailed"))
+        #expect(!invalidClockBranch.contains("markAuthenticationFailed"))
         #expect(!invalidClockBranch.contains("invalidateSourceAuthority"))
     }
 
