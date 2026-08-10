@@ -15,12 +15,20 @@ struct TuyaMetadataSecretRedactionSourceTests {
         let body = String(redaction).lowercased()
 
         #expect(body.contains("secretkeyfragments"))
-        #expect(body.contains("localkey"))
-        #expect(body.contains("accesstoken"))
-        #expect(body.contains("refreshtoken"))
-        #expect(body.contains("sessionkey"))
-        #expect(body.contains("authkey"))
-        #expect(body.contains("seckey"))
+        for fragment in [
+            "localkey",
+            "sessionkey",
+            "appkey",
+            "appsecret",
+            "password",
+            "accounttoken",
+            "accesstoken",
+            "refreshtoken",
+            "authkey",
+            "seckey",
+        ] {
+            #expect(body.contains("\"\(fragment)\""), "Metadata sanitizer must redact export-promised credential key: \(fragment)")
+        }
         #expect(body.contains("key.lowercased().filter"))
         #expect(body.contains("$0.isletter || $0.isnumber"))
         #expect(body.contains("redactsecrets(value)"))

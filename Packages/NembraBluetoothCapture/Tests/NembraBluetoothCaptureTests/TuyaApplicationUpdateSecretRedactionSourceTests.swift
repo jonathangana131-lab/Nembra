@@ -15,12 +15,20 @@ struct TuyaApplicationUpdateSecretRedactionSourceTests {
 
         #expect(driver.contains("private static func redactApplicationSecrets(_ object: Any) -> Any"))
         #expect(driver.contains("secretKeyFragments"))
-        #expect(driver.contains("localkey"))
-        #expect(driver.contains("accesstoken"))
-        #expect(driver.contains("refreshtoken"))
-        #expect(driver.contains("sessionkey"))
-        #expect(driver.contains("authkey"))
-        #expect(driver.contains("seckey"))
+        for fragment in [
+            "localkey",
+            "sessionkey",
+            "appkey",
+            "appsecret",
+            "password",
+            "accounttoken",
+            "accesstoken",
+            "refreshtoken",
+            "authkey",
+            "seckey",
+        ] {
+            #expect(driver.contains("\"\(fragment)\""), "Application sanitizer must redact export-promised credential key: \(fragment)")
+        }
         #expect(driver.contains("keyString.lowercased().filter"))
         #expect(driver.contains("$0.isLetter || $0.isNumber"))
         #expect(driver.contains("array.map(redactApplicationSecrets)"))
@@ -38,6 +46,11 @@ struct TuyaApplicationUpdateSecretRedactionSourceTests {
             from: "private func makeExport(exportedAt:",
             to: "func prepareExport()"
         ))
+        let prepareExport = String(try section(
+            in: source,
+            from: "func prepareExport()",
+            to: "private func abandonPackageCorrelation()"
+        ))
         let updates = String(try section(
             in: source,
             from: "private func receivedApplicationUpdate(",
@@ -45,8 +58,8 @@ struct TuyaApplicationUpdateSecretRedactionSourceTests {
         ))
 
         #expect(export.contains("secretsRedacted: true"))
+        #expect(prepareExport.contains("No account UID, AppKey/AppSecret, password, account token, local_key, session key"))
         #expect(updates.contains("log(\"tuya_application_update\", update.merging(["))
-        #expect(source.contains("No account UID, AppKey/AppSecret, password, account token, local_key, session key"))
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
