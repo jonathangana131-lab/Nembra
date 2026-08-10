@@ -54,7 +54,7 @@ jobs:
           ]
           for needle in required:
               assert needle in app, needle
-          view = app[app.index('private struct SecureLinkView'):app.index('#Preview')]
+          view = app[app.index('private struct SecureLinkView'):app.index('private struct SecureTransfer')]
           assert 'correlationProgressTask' not in view
           assert 'Task.sleep(for: .milliseconds(100))' not in view
           consumer = app[app.index('func consumeCorrelationAsyncInvalidationIfNeeded()'):app.index('private var accountIdentityLeaseSnapshot')]
