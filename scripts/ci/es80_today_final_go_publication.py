@@ -32,14 +32,43 @@ def _fsync_directory(parent: Path) -> None:
         os.close(directory_fd)
 
 
-def _regular(path: Path, label: str) -> bytes:
+def _regular_metadata(path: Path, label: str) -> os.stat_result:
     try:
         metadata = path.lstat()
     except FileNotFoundError as error:
         raise FinalGoPublicationError(f"{label} is missing") from error
     if not stat.S_ISREG(metadata.st_mode) or path.is_symlink():
         raise FinalGoPublicationError(f"{label} is not a regular file")
+    return metadata
+
+
+def _regular(path: Path, label: str) -> bytes:
+    _regular_metadata(path, label)
     return path.read_bytes()
+
+
+def _require_publication_link_custody(staging: Path, output: Path) -> None:
+    staging_metadata = _regular_metadata(staging, "staged Final GO record")
+    output_metadata = _regular_metadata(output, "published Final GO record")
+    if (staging_metadata.st_dev, staging_metadata.st_ino) != (
+        output_metadata.st_dev,
+        output_metadata.st_ino,
+    ):
+        raise FinalGoPublicationError(
+            "published Final GO record does not reference the exact staged inode"
+        )
+    if staging_metadata.st_nlink != 2 or output_metadata.st_nlink != 2:
+        raise FinalGoPublicationError(
+            "published Final GO record has an unexpected hard-link alias before staging cleanup"
+        )
+
+
+def _require_single_link_output(output: Path) -> None:
+    metadata = _regular_metadata(output, "published Final GO record")
+    if metadata.st_nlink != 1:
+        raise FinalGoPublicationError(
+            "published Final GO record retains an unexpected hard-link alias"
+        )
 
 
 def _publish_file_no_replace(source: Path, destination: Path) -> None:
@@ -104,8 +133,13 @@ def publish_record_no_replace(
     Publication is no-replace. Once the publisher is attempted, any destination that appears is
     treated as potentially authoritative: exact intended bytes are retracted (or quarantined if
     ordinary rollback cannot be proven), while changed/unknown bytes force explicit AMBIGUOUS NO-GO.
-    This closes partial-publisher failures where destination creation succeeds before the publisher
-    raises. Pre-publisher failures never touch an independently-created destination.
+
+    The hard-link publisher must also preserve exact inode custody: before staging cleanup there may
+    be exactly the staging and destination links, and after cleanup the destination must be the sole
+    remaining link. This prevents a same-user alias created while the randomized staging pathname is
+    visible from surviving a successful return and mutating the authoritative record later.
+
+    Pre-publisher failures never touch an independently-created destination.
     """
     if not raw:
         raise FinalGoPublicationError("Final GO record bytes must not be empty")
@@ -148,6 +182,7 @@ def publish_record_no_replace(
 
         publication_attempted = True
         publisher(staging, output)
+        _require_publication_link_custody(staging, output)
         if _regular(output, "published Final GO record") != raw:
             raise FinalGoPublicationError(
                 "published Final GO record bytes differ from staged authority"
@@ -162,6 +197,7 @@ def publish_record_no_replace(
             raise FinalGoPublicationError(
                 "published Final GO record bytes differ from staged authority"
             )
+        _require_single_link_output(output)
         return _sha(raw)
     except Exception as original_error:
         if fd >= 0:
