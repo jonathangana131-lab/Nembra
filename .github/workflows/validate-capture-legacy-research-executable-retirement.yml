@@ -1,0 +1,78 @@
+name: Validate Capture Legacy Research Executable Retirement
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-retire-legacy-research-executables-6b778
+
+permissions:
+  contents: write
+
+jobs:
+  focused:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact semantic checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          semantic='c156bbadad5da2797d44497bf4726de95dd0f6ec'
+          test "$(git rev-parse HEAD^)" = "$semantic"
+          mapfile -t helper_delta < <(git diff --name-only "$semantic"...HEAD)
+          test "${#helper_delta[@]}" = 1
+          test "${helper_delta[0]}" = '.github/workflows/validate-capture-legacy-research-executable-retirement.yml'
+          base='6b778f2104af34dbe5b80da31ddb3ca422f9667c'
+          mapfile -t effective < <(git diff --name-only "$base"..."$semantic" | sort)
+          printf '%s\n' "${effective[@]}"
+          test "${#effective[@]}" = 3
+          test "${effective[0]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayExecutableAuthorityRetirementSourceTests.swift'
+          test "${effective[1]}" = 'scripts/ci/xcode27_signed_field_candidate.sh'
+          test "${effective[2]}" = 'scripts/ci/xcode27_today_research_field_candidate.sh'
+
+      - name: Run focused package regression with warnings as errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test \
+            --package-path Packages/NembraBluetoothCapture \
+            --filter TuyaLegacyTodayExecutableAuthorityRetirementSourceTests \
+            -Xswiftc -warnings-as-errors
+
+      - name: Re-run executable fail-closed behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          wrapper_output="$(bash -p scripts/ci/xcode27_today_research_field_candidate.sh 2>&1)"
+          wrapper_status=$?
+          producer_output="$(bash -p scripts/ci/xcode27_signed_field_candidate.sh --nembra-today-research-build 2>&1)"
+          producer_status=$?
+          set -e
+          test "$wrapper_status" = 64
+          test "$producer_status" = 64
+          grep -Fq 'SUPERSEDED:' <<< "$wrapper_output"
+          grep -Fq 'ES80-AUTHENTICATED-STATIONARY-v1' <<< "$wrapper_output"
+          grep -Fq 'SUPERSEDED: --nembra-today-research-build' <<< "$producer_output"
+          git diff --check '6b778f2104af34dbe5b80da31ddb3ca422f9667c' HEAD
+
+      - name: Remove validation helper from branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='6b778f2104af34dbe5b80da31ddb3ca422f9667c'
+          rm .github/workflows/validate-capture-legacy-research-executable-retirement.yml
+          git add -u .github/workflows/validate-capture-legacy-research-executable-retirement.yml
+          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' commit -m 'chore(capture): collapse focused retirement validator'
+          mapfile -t effective < <(git diff --name-only "$base"...HEAD | sort)
+          printf '%s\n' "${effective[@]}"
+          test "${#effective[@]}" = 3
+          test "${effective[0]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayExecutableAuthorityRetirementSourceTests.swift'
+          test "${effective[1]}" = 'scripts/ci/xcode27_signed_field_candidate.sh'
+          test "${effective[2]}" = 'scripts/ci/xcode27_today_research_field_candidate.sh'
+          git push origin HEAD:sol/v14-capture-retire-legacy-research-executables-6b778
