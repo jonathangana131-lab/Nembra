@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 4
+          fetch-depth: 6
 
       - name: Verify current-product ancestry and helper-only scope
         shell: bash
@@ -31,51 +31,55 @@ jobs:
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           source = path.read_text()
 
-          old_start = """    func appDidLoseForeground() {
-              guard !foregroundIntegrityLossHandled else { return }
-              foregroundIntegrityLossHandled = true
-          """
-          new_start = """    func appDidLoseForeground() {
-              // Sealed acceptance is immutable under later scene transitions.
-              guard phase != .accepted else { return }
-              guard !foregroundIntegrityLossHandled else { return }
-              foregroundIntegrityLossHandled = true
-          """
+          old_start = "\n".join([
+              "    func appDidLoseForeground() {",
+              "        guard !foregroundIntegrityLossHandled else { return }",
+              "        foregroundIntegrityLossHandled = true",
+          ])
+          new_start = "\n".join([
+              "    func appDidLoseForeground() {",
+              "        // Sealed acceptance is immutable under later scene transitions.",
+              "        guard phase != .accepted else { return }",
+              "        guard !foregroundIntegrityLossHandled else { return }",
+              "        foregroundIntegrityLossHandled = true",
+          ])
           if source.count(old_start) != 1:
               raise SystemExit(f"expected one foreground entry anchor, found {source.count(old_start)}")
           source = source.replace(old_start, new_start)
 
-          old_boundary = """        if processCorrelationLease != nil || correlationSession != nil {
-                      // Existing helper stops package transport before releasing this controller's lease.
-                      abandonPackageCorrelation()
-                      phase = .failed
-                      message = \"Capture left the foreground during Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; interrupted windows are never reusable evidence.\"
-                      log(\"foreground_integrity_lost_during_target_correlation\")
-                      return
-                  }
-
-                  guard let token = currentConnectionToken else {
-          """
-          new_boundary = """        if processCorrelationLease != nil || correlationSession != nil {
-                      // Existing helper stops package transport before releasing this controller's lease.
-                      abandonPackageCorrelation()
-                      phase = .failed
-                      message = \"Capture left the foreground during Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; interrupted windows are never reusable evidence.\"
-                      log(\"foreground_integrity_lost_during_target_correlation\")
-                      return
-                  }
-
-                  if phase == .correlated || phase == .selected {
-                      // Scanner retirement does not make correlated/selected target evidence safe to carry across foreground loss.
-                      resetDiscoverySessionOnly()
-                      phase = .failed
-                      message = \"Capture left the foreground after target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; pre-background target authority cannot be reused.\"
-                      log(\"foreground_integrity_lost_after_target_correlation\")
-                      return
-                  }
-
-                  guard let token = currentConnectionToken else {
-          """
+          old_boundary = "\n".join([
+              "        if processCorrelationLease != nil || correlationSession != nil {",
+              "            // Existing helper stops package transport before releasing this controller's lease.",
+              "            abandonPackageCorrelation()",
+              "            phase = .failed",
+              "            message = \"Capture left the foreground during Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; interrupted windows are never reusable evidence.\"",
+              "            log(\"foreground_integrity_lost_during_target_correlation\")",
+              "            return",
+              "        }",
+              "",
+              "        guard let token = currentConnectionToken else {",
+          ])
+          new_boundary = "\n".join([
+              "        if processCorrelationLease != nil || correlationSession != nil {",
+              "            // Existing helper stops package transport before releasing this controller's lease.",
+              "            abandonPackageCorrelation()",
+              "            phase = .failed",
+              "            message = \"Capture left the foreground during Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; interrupted windows are never reusable evidence.\"",
+              "            log(\"foreground_integrity_lost_during_target_correlation\")",
+              "            return",
+              "        }",
+              "",
+              "        if phase == .correlated || phase == .selected {",
+              "            // Scanner retirement does not make correlated/selected target evidence safe to carry across foreground loss.",
+              "            resetDiscoverySessionOnly()",
+              "            phase = .failed",
+              "            message = \"Capture left the foreground after target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; pre-background target authority cannot be reused.\"",
+              "            log(\"foreground_integrity_lost_after_target_correlation\")",
+              "            return",
+              "        }",
+              "",
+              "        guard let token = currentConnectionToken else {",
+          ])
           if source.count(old_boundary) != 1:
               raise SystemExit(f"expected one post-correlation boundary, found {source.count(old_boundary)}")
           source = source.replace(old_boundary, new_boundary)
