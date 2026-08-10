@@ -1,0 +1,105 @@
+name: Materialize Capture Deterministic Key Custody C827
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-deterministic-key-custody-c827-sol
+    paths:
+      - '.github/workflows/materialize-capture-deterministic-key-custody-c827.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact recovery branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: fix/v14-capture-deterministic-key-custody-c827-sol
+          fetch-depth: 0
+
+      - name: Guard exact current Entrypoint
+        run: |
+          set -euo pipefail
+          test "$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)" = "9d88c5605f6a3bf53242a61e41f50e85fbcece2f"
+          git merge-base --is-ancestor c8275997233b333f175f82bc2b1c9240b1e36351 HEAD
+
+      - name: Apply deterministic pre-redaction key ordering
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text()
+          top = "for (key, value) in dps {"
+          nested = "for (key, value) in dictionary {"
+          if source.count(top) != 1 or source.count(nested) != 1:
+              raise SystemExit("deterministic-key loop anchors drifted")
+          source = source.replace(top, "for (key, value) in Self.sortedApplicationEntries(dps) {", 1)
+          source = source.replace(nested, "for (key, value) in sortedApplicationEntries(dictionary) {", 1)
+
+          marker = "    private static let secretKeyFragments = ["
+          helper = textwrap.dedent('''
+              // Collision suffixes are assigned only after traversing the original SDK
+              // keys in a deterministic pre-redaction order. Dictionary hash order must
+              // never decide immutable application-event custody bytes.
+              private static func sortedApplicationEntries(
+                  _ dictionary: [AnyHashable: Any]
+              ) -> [(key: AnyHashable, value: Any)] {
+                  dictionary.sorted { left, right in
+                      let leftDescription = String(describing: left.key)
+                      let rightDescription = String(describing: right.key)
+                      if leftDescription != rightDescription {
+                          return leftDescription < rightDescription
+                      }
+
+                      let leftType = String(reflecting: type(of: left.key.base))
+                      let rightType = String(reflecting: type(of: right.key.base))
+                      if leftType != rightType {
+                          return leftType < rightType
+                      }
+
+                      return String(reflecting: left.key.base) < String(reflecting: right.key.base)
+                  }
+              }
+
+          ''')
+          helper = textwrap.indent(helper, "    ")
+          if source.count(marker) != 1:
+              raise SystemExit("secret-key marker drifted")
+          source = source.replace(marker, helper + marker, 1)
+          path.write_text(source)
+          PY
+
+      - name: Verify focused truth contract
+        run: |
+          set -euo pipefail
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationDeterministicKeyCustodySourceTests.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          assert 'for (key, value) in Self.sortedApplicationEntries(dps)' in source
+          assert 'for (key, value) in sortedApplicationEntries(dictionary)' in source
+          assert 'for (key, value) in dps {' not in source
+          assert 'for (key, value) in dictionary {' not in source
+          assert 'Set([NembraTuyaPrivateIdentity.appKey, NembraTuyaPrivateIdentity.appSecret])' in source
+          assert 'left.count > right.count' in source
+          PY
+          git diff --check
+
+      - name: Publish clean recovery
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/materialize-capture-deterministic-key-custody-c827.yml
+          git config user.name "nembra-sol-materializer"
+          git config user.email "actions@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationDeterministicKeyCustodySourceTests.swift
+          git diff --cached --check
+          git commit -m "fix(capture): canonicalize application keys before custody"
+          git push origin HEAD:fix/v14-capture-deterministic-key-custody-c827-sol
