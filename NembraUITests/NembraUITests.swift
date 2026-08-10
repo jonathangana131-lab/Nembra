@@ -102,6 +102,116 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testLandscapeDashboardRetainedSpeedTruthIsVisibleAndCapturable() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(
+            scenario: "connected-stopped",
+            orientation: .landscapeRight,
+            environment: ["NEMBRA_SIMULATION_SPEED_EVIDENCE_GAP": "1"]
+        )
+
+        let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
+        XCTAssertTrue(
+            cockpit.waitForExistence(timeout: 4),
+            "Landscape must keep the real Cockpit visible while speed evidence is retained."
+        )
+
+        let speed = app.descendants(matching: .any)["dashboard.speed"]
+        XCTAssertTrue(speed.waitForExistence(timeout: 2))
+        XCTAssertTrue(
+            (speed.value as? String ?? "").localizedCaseInsensitiveContains("last known"),
+            "A connected source gap must present the accepted speed as last-known, not live or unavailable."
+        )
+        XCTAssertTrue(
+            app.staticTexts["LAST KNOWN"].waitForExistence(timeout: 2),
+            "Retained speed evidence must carry an explicit last-known visual qualifier."
+        )
+        XCTAssertFalse(app.staticTexts["READY"].exists)
+        XCTAssertFalse(app.staticTexts["RIDING"].exists)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["dashboard.controls-speed-unavailable-message"]
+                .waitForExistence(timeout: 2),
+            "A connected speed gap must retire stopped-control authority while preserving retained presentation."
+        )
+        XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
+        XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
+
+        keepScreenshot(named: "Dashboard Retained Speed Landscape")
+    }
+
+    @MainActor
+    func testLandscapeDashboardDisconnectedCachedSpeedProjectsUnavailable() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(scenario: "scooter-unavailable", orientation: .landscapeRight)
+
+        let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
+        XCTAssertTrue(
+            cockpit.waitForExistence(timeout: 4),
+            "Landscape must still render the real Cockpit when transport is unavailable."
+        )
+
+        let speed = app.descendants(matching: .any)["dashboard.speed"]
+        XCTAssertTrue(speed.waitForExistence(timeout: 2))
+        XCTAssertTrue(
+            (speed.value as? String ?? "").localizedCaseInsensitiveContains("unavailable"),
+            "A disconnected cached speed must not bypass app projection and become retained/current speed authority."
+        )
+        XCTAssertTrue(
+            app.staticTexts["NO LIVE SPEED"].waitForExistence(timeout: 2),
+            "Disconnected transport must fail the field-specific speed projection closed."
+        )
+        XCTAssertFalse(app.staticTexts["READY"].exists)
+        XCTAssertFalse(app.staticTexts["RIDING"].exists)
+        XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
+        XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
+
+        keepScreenshot(named: "Dashboard Disconnected Cached Speed Landscape")
+    }
+
+    @MainActor
+    func testLandscapeDashboardNeverObservedSpeedIsUnavailableAndCapturable() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(scenario: "cold-disconnected", orientation: .landscapeRight)
+
+        let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
+        XCTAssertTrue(
+            cockpit.waitForExistence(timeout: 4),
+            "Landscape must still render the real Cockpit before any speed evidence exists."
+        )
+
+        let speed = app.descendants(matching: .any)["dashboard.speed"]
+        XCTAssertTrue(speed.waitForExistence(timeout: 2))
+        XCTAssertTrue(
+            (speed.value as? String ?? "").localizedCaseInsensitiveContains("unavailable"),
+            "No accepted speed evidence must remain explicitly unavailable rather than becoming zero."
+        )
+        XCTAssertTrue(
+            app.staticTexts["NO LIVE SPEED"].waitForExistence(timeout: 2),
+            "The Cockpit must not manufacture a numeric speed before any accepted source evidence exists."
+        )
+        XCTAssertFalse(app.staticTexts["LAST KNOWN"].exists)
+
+        let vehicleStatus = app.descendants(matching: .any)["dashboard.vehicle-status"]
+        XCTAssertTrue(vehicleStatus.waitForExistence(timeout: 2))
+        let dataStatus = vehicleStatus.descendants(matching: .any).matching(
+            NSPredicate(format: "label == %@", "Vehicle data")
+        ).firstMatch
+        XCTAssertTrue(
+            dataStatus.waitForExistence(timeout: 2),
+            "Cold disconnected launch must expose the no-telemetry vehicle-data semantic."
+        )
+        XCTAssertTrue(
+            (dataStatus.value as? String ?? "")
+                .localizedCaseInsensitiveContains("no confirmed scooter telemetry"),
+            "Cold disconnected launch must identify vehicle telemetry as not yet confirmed."
+        )
+        XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
+        XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
+
+        keepScreenshot(named: "Dashboard No Speed Evidence Landscape")
+    }
+
+    @MainActor
     func testLandscapeDashboardStoppedControlsConfirmEveryModePersonality() {
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "connected-stopped", orientation: .landscapeRight)
@@ -160,6 +270,24 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testLandscapeDashboardLaunchPerformance() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        XCUIDevice.shared.orientation = .landscapeRight
+
+        measure(metrics: [XCTApplicationLaunchMetric(waitUntilResponsive: true)]) {
+            let app = XCUIApplication()
+            app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = "connected-stopped"
+            app.launch()
+
+            XCTAssertTrue(
+                app.descendants(matching: .any)["dashboard.cockpit"].waitForExistence(timeout: 4),
+                "Launch measurement is valid only when the real landscape Cockpit becomes responsive."
+            )
+            app.terminate()
+        }
+    }
+
+    @MainActor
     private func selectDashboardMode(
         identifier: String,
         expectedValue: String,
@@ -205,11 +333,15 @@ final class NembraUITests: XCTestCase {
     @MainActor
     private func launch(
         scenario: String,
-        orientation: UIDeviceOrientation
+        orientation: UIDeviceOrientation,
+        environment: [String: String] = [:]
     ) -> XCUIApplication {
         XCUIDevice.shared.orientation = orientation
         let app = XCUIApplication()
         app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = scenario
+        for (key, value) in environment {
+            app.launchEnvironment[key] = value
+        }
         app.launch()
         return app
     }
