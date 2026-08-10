@@ -20,7 +20,11 @@ struct TuyaCorrelationAsyncInvalidationPresentationSourceTests {
     @Test("periodic presentation refresh alone is not treated as lifecycle recovery")
     func timelineRefreshDoesNotSubstituteForTerminalStateTransition() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let view = try section(in: app, from: "private struct SecureLinkView", to: "#Preview")
+        let view = try section(
+            in: app,
+            from: "private struct SecureLinkView",
+            to: "private struct SecureTransfer"
+        )
         let controller = try section(
             in: app,
             from: "private final class SecureLinkController",
