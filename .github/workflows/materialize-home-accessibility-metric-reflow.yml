@@ -1,0 +1,166 @@
+name: Materialize Home accessibility metric reflow
+
+on:
+  push:
+    branches:
+      - agent/v14-home-accessibility-metric-layout-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/v14-home-accessibility-metric-layout-sol
+          fetch-depth: 0
+
+      - name: Apply focused HomeView repair
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('NembraApp/Features/Home/HomeView.swift')
+          text = path.read_text()
+
+          old_env = '''    @Environment(VehicleStore.self) private var vehicle
+    @Environment(\\.openURL) private var openURL
+    @State private var showLockConfirmation = false
+'''
+          new_env = '''    @Environment(VehicleStore.self) private var vehicle
+    @Environment(\\.openURL) private var openURL
+    @Environment(\\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var showLockConfirmation = false
+'''
+          if old_env not in text:
+              raise SystemExit('HomeView environment anchor drifted; refusing to patch')
+          text = text.replace(old_env, new_env, 1)
+
+          old_metrics = '''            HStack(spacing: 0) {
+                statusMetric(
+                    title: "Battery",
+                    value: batteryText,
+                    icon: batteryIcon,
+                    accessibilityIdentifier: "home.metric.battery",
+                    valueStyle: batteryValueStyle
+                )
+                metricDivider
+                statusMetric(
+                    title: "Trip",
+                    value: tripDistanceText,
+                    icon: "point.bottomleft.forward.to.point.topright.scurvepath",
+                    accessibilityTitle: "Scooter Trip",
+                    accessibilityIdentifier: "home.metric.trip"
+                )
+                metricDivider
+                statusMetric(
+                    title: "Mode",
+                    value: vehicle.state.rideMode?.displayName ?? "—",
+                    icon: "gauge.with.dots.needle.67percent",
+                    accessibilityIdentifier: "home.metric.mode"
+                )
+            }
+'''
+          new_metrics = '''            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 0) {
+                    statusMetric(
+                        title: "Battery",
+                        value: batteryText,
+                        icon: batteryIcon,
+                        accessibilityIdentifier: "home.metric.battery",
+                        valueStyle: batteryValueStyle
+                    )
+                    accessibilityMetricDivider
+                    statusMetric(
+                        title: "Trip",
+                        value: tripDistanceText,
+                        icon: "point.bottomleft.forward.to.point.topright.scurvepath",
+                        accessibilityTitle: "Scooter Trip",
+                        accessibilityIdentifier: "home.metric.trip"
+                    )
+                    accessibilityMetricDivider
+                    statusMetric(
+                        title: "Mode",
+                        value: vehicle.state.rideMode?.displayName ?? "—",
+                        icon: "gauge.with.dots.needle.67percent",
+                        accessibilityIdentifier: "home.metric.mode"
+                    )
+                }
+            } else {
+                HStack(spacing: 0) {
+                    statusMetric(
+                        title: "Battery",
+                        value: batteryText,
+                        icon: batteryIcon,
+                        accessibilityIdentifier: "home.metric.battery",
+                        valueStyle: batteryValueStyle
+                    )
+                    metricDivider
+                    statusMetric(
+                        title: "Trip",
+                        value: tripDistanceText,
+                        icon: "point.bottomleft.forward.to.point.topright.scurvepath",
+                        accessibilityTitle: "Scooter Trip",
+                        accessibilityIdentifier: "home.metric.trip"
+                    )
+                    metricDivider
+                    statusMetric(
+                        title: "Mode",
+                        value: vehicle.state.rideMode?.displayName ?? "—",
+                        icon: "gauge.with.dots.needle.67percent",
+                        accessibilityIdentifier: "home.metric.mode"
+                    )
+                }
+            }
+'''
+          if old_metrics not in text:
+              raise SystemExit('Home status metric row anchor drifted; refusing to patch')
+          text = text.replace(old_metrics, new_metrics, 1)
+
+          old_divider = '''    private var metricDivider: some View {
+        Divider()
+            .frame(height: 44)
+            .padding(.horizontal, 12)
+    }
+'''
+          new_divider = '''    private var metricDivider: some View {
+        Divider()
+            .frame(height: 44)
+            .padding(.horizontal, 12)
+    }
+
+    private var accessibilityMetricDivider: some View {
+        Divider()
+            .padding(.vertical, 12)
+    }
+'''
+          if old_divider not in text:
+              raise SystemExit('Home metric divider anchor drifted; refusing to patch')
+          text = text.replace(old_divider, new_divider, 1)
+
+          path.write_text(text)
+
+      - name: Verify focused repair contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F '@Environment(\.dynamicTypeSize) private var dynamicTypeSize' NembraApp/Features/Home/HomeView.swift
+          grep -F 'if dynamicTypeSize.isAccessibilitySize {' NembraApp/Features/Home/HomeView.swift
+          grep -F 'accessibilityMetricDivider' NembraApp/Features/Home/HomeView.swift
+          test "$(grep -c 'accessibilityIdentifier: "home.metric.battery"' NembraApp/Features/Home/HomeView.swift)" -eq 2
+          test "$(grep -c 'accessibilityIdentifier: "home.metric.trip"' NembraApp/Features/Home/HomeView.swift)" -eq 2
+          test "$(grep -c 'accessibilityIdentifier: "home.metric.mode"' NembraApp/Features/Home/HomeView.swift)" -eq 2
+
+      - name: Remove one-shot materializer and commit product repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-home-accessibility-metric-reflow.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add NembraApp/Features/Home/HomeView.swift .github/workflows/materialize-home-accessibility-metric-reflow.yml
+          git commit -m 'fix(home): reflow status metrics for accessibility sizes'
+          git push origin HEAD:agent/v14-home-accessibility-metric-layout-sol
