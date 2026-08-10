@@ -64,9 +64,7 @@ public struct PropulsionEnergyRailAccessibilityPresentation: Equatable, Sendable
     public let acceptedRevision: PropulsionEnergyRailAcceptedRevision?
     public let semanticRevision: PropulsionEnergyRailAccessibilitySemanticRevision
 
-    /// Module-internal construction keeps source-currentness transforms inside
-    /// NembraCore. SwiftUI may consume this state but cannot synthesize it.
-    init(
+    fileprivate init(
         identity: PropulsionGaugeIdentity,
         currentness: PropulsionEnergyRailCurrentness,
         acceptedWatts: Double?,
@@ -94,6 +92,27 @@ public struct PropulsionEnergyRailAccessibilityPresentation: Equatable, Sendable
             currentness: .unavailable,
             acceptedWatts: nil,
             acceptedRevision: nil
+        )
+    }
+
+    /// Package-internal authority-lowering projection for an already sealed
+    /// accepted measurement. This does not create or refresh a measurement: it
+    /// carries the exact receipt/generation/uptime revision into RETAINED semantic
+    /// state so assistive technology can announce "last known" immediately when
+    /// the source demotes currentness.
+    static func retained(
+        acceptedMeasurement: PropulsionGaugeCockpitAcceptedMeasurement
+    ) -> PropulsionEnergyRailAccessibilityPresentation {
+        PropulsionEnergyRailAccessibilityPresentation(
+            identity: acceptedMeasurement.identity,
+            currentness: .retained,
+            acceptedWatts: acceptedMeasurement.watts,
+            acceptedRevision: PropulsionEnergyRailAcceptedRevision(
+                authority: acceptedMeasurement.authority,
+                continuityGeneration: acceptedMeasurement.continuityGeneration,
+                receiptSequenceNumber: acceptedMeasurement.receiptSequenceNumber,
+                receivedAtUptimeNanoseconds: acceptedMeasurement.receivedAtUptimeNanoseconds
+            )
         )
     }
 }
