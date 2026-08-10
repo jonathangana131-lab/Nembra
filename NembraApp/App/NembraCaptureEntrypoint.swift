@@ -461,6 +461,66 @@ private final class SecureLinkController: NSObject, ObservableObject {
         log("target_correlation_abandoned_on_view_exit")
     }
 
+    func appDidLoseForeground() {
+        // Capture evidence is foreground-only. Revoke pending membership/official-start grants
+        // before inspecting current transport state so backgrounding cannot begin hidden work.
+        membershipRequestID = UUID()
+        membershipBusy = false
+#if canImport(ThingSmartHomeKit)
+        membershipProbe = nil
+#endif
+        officialConnectionRequestID = UUID()
+        watchdog?.cancel()
+        watchdog = nil
+
+        if processCorrelationLease != nil || correlationSession != nil {
+            abandonPackageCorrelation()
+            phase = .failed
+            message = "Capture left the foreground during Bluetooth target correlation. Restart from OFF1; interrupted windows are never reusable evidence."
+            log("foreground_integrity_lost_during_target_correlation")
+            return
+        }
+
+        guard let token = currentConnectionToken else {
+            if phase == .authenticating {
+                localBLESettlementToken = nil
+                sdkLocalBLEOnline = false
+                driver = nil
+                phase = .failed
+                message = "Capture left the foreground during authentication. Relaunch before another authenticated attempt; no BLE disconnect is claimed."
+                log("foreground_integrity_lost_before_observation")
+            }
+            return
+        }
+
+        let wasObserving = phase == .observing
+        phase = .failed
+        message = wasObserving
+            ? "Capture left the foreground during authenticated observation. Restart from OFF1; background time is not accepted evidence and no BLE disconnect is claimed."
+            : "Capture left the foreground before authenticated observation. Relaunch before another authenticated attempt; no BLE disconnect is claimed."
+        log(
+            wasObserving ? "foreground_integrity_lost_during_observation" : "foreground_integrity_lost_before_observation",
+            ["generation": String(token.diagnosticGeneration)]
+        )
+
+        Task { @MainActor [weak self] in
+            guard let self, self.currentConnectionToken == token else { return }
+            if wasObserving {
+                await self.invalidateObservationContinuity(
+                    token: token,
+                    message: "App foreground integrity was lost during authenticated observation. Restart from OFF1; background time is not accepted evidence and no BLE disconnect is claimed.",
+                    kind: "foreground_integrity_lost_during_observation"
+                )
+            } else {
+                await self.invalidateInternalLifecycle(
+                    token: token,
+                    message: "App foreground integrity was lost before authenticated observation. Relaunch before another authenticated attempt; no BLE disconnect is claimed.",
+                    kind: "foreground_integrity_lost_before_observation"
+                )
+            }
+        }
+    }
+
     var privateConfig: Bool { OfficialTuyaFactory.configured }
     var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }
     var fieldBuildIdentifier: String { buildIdentity.buildIdentifier }
@@ -2422,6 +2482,7 @@ private struct SecureLinkView: View {
     @StateObject private var sdkAccount = OfficialTuyaAccountAuthorizer()
     @State private var showEngineeringDetails = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.scenePhase) private var scenePhase
 
     private let stageLabels = ["Target", "Secure link", "Observe", "Seal"]
 
@@ -2474,6 +2535,11 @@ private struct SecureLinkView: View {
         }
         .onDisappear {
             test.abandonCorrelationForViewExit()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase != .active {
+                test.appDidLoseForeground()
+            }
         }
         .onChange(of: sdkAccount.loggedIn) { _, loggedIn in
             if loggedIn { test.verifySDKMembership() }
