@@ -16,12 +16,15 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Verify diagnostic parent
+        with:
+          fetch-depth: 3
+      - name: Verify diagnostic ancestry
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "dfd3b72e54395e19efa11627499fec6355bedcd0"
-          changed="$(git diff --name-only HEAD^ HEAD)"
+          base='dfd3b72e54395e19efa11627499fec6355bedcd0'
+          git merge-base --is-ancestor "$base" HEAD
+          changed="$(git diff --name-only "$base" HEAD)"
           test "$changed" = ".github/workflows/capture-package-mac-diagnostics-dfd3.yml"
       - name: Run exact Capture package with failure extraction
         shell: bash
