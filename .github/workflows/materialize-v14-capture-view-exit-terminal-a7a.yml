@@ -1,0 +1,96 @@
+name: Materialize Capture View Exit Terminal A7A
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-view-exit-terminal-a7a
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: materialize-capture-view-exit-terminal-a7a
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact construction scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess
+          parent = "a7a28ca6e744d4bad8be08fd3553a2af8c609b15"
+          subprocess.run(["git", "merge-base", "--is-ancestor", parent, "HEAD"], check=True)
+          actual = set(subprocess.check_output(["git", "diff", "--name-only", f"{parent}...HEAD"], text=True).splitlines())
+          expected = {
+              ".github/workflows/materialize-v14-capture-view-exit-terminal-a7a.yml",
+              "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureViewExitTerminalOwnershipSourceTests.swift",
+          }
+          if actual != expected:
+              raise SystemExit(f"unexpected construction scope: expected={sorted(expected)!r} actual={sorted(actual)!r}")
+          PY
+
+      - name: Claim the normal view-exit terminal fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text()
+          old = '''        // Foreground loss already owns the terminal retirement for this view lifetime.
+                  // Avoid racing a second terminal task when backgrounding is followed by onDisappear.
+                  if foregroundIntegrityLossHandled { return }
+
+                  if let token = currentConnectionToken {'''
+          new = '''        // Foreground loss already owns the terminal retirement for this view lifetime.
+                  // Avoid racing a second terminal task when backgrounding is followed by onDisappear.
+                  if foregroundIntegrityLossHandled { return }
+                  // A normal navigation exit owns this same view-lifetime terminal before it schedules
+                  // any exact-generation retirement. A later scene callback must not race a second terminal.
+                  foregroundIntegrityLossHandled = true
+
+                  if let token = currentConnectionToken {'''
+          if source.count(old) != 1:
+              raise SystemExit(f"expected one view-exit terminal fence site, found {source.count(old)}")
+          path.write_text(source.replace(old, new, 1))
+          PY
+
+      - name: Validate focused lifecycle contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaCaptureViewExitTerminalOwnershipSourceTests
+          git diff --check
+
+      - name: Verify effective scope and publish donor
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-v14-capture-view-exit-terminal-a7a.yml
+          python3 - <<'PY'
+          import subprocess
+          parent = "a7a28ca6e744d4bad8be08fd3553a2af8c609b15"
+          actual = set(subprocess.check_output(["git", "diff", "--name-only", parent], text=True).splitlines())
+          expected = {
+              "NembraApp/App/NembraCaptureEntrypoint.swift",
+              "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureViewExitTerminalOwnershipSourceTests.swift",
+          }
+          if actual != expected:
+              raise SystemExit(f"unexpected effective scope: expected={sorted(expected)!r} actual={sorted(actual)!r}")
+          PY
+          git diff --check a7a28ca6e744d4bad8be08fd3553a2af8c609b15
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "fix(capture): own one terminal on view exit"
+          git push origin HEAD:sol/v14-capture-view-exit-terminal-a7a
