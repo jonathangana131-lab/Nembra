@@ -7,9 +7,11 @@ struct TuyaProcessLifetimeBLEOwnershipFenceSourceTests {
     @Test("official Tuya driver handoff permanently retires package correlation until relaunch")
     func officialDriverHandoffRetiresPackageCorrelation() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let factory = try section(in: source, from: "private enum OfficialTuyaFactory", to: "#if canImport(ThingSmartHomeKit)
-@MainActor
-private final class OfficialTuyaMembershipProbe")
+        let factory = try section(
+            in: source,
+            from: "private enum OfficialTuyaFactory",
+            to: "#if canImport(ThingSmartHomeKit)\n@MainActor\nprivate final class OfficialTuyaMembershipProbe"
+        )
         let body = String(factory)
 
         #expect(body.contains("private static var packageCorrelationRetiredForProcess = false"))
@@ -19,24 +21,35 @@ private final class OfficialTuyaMembershipProbe")
         #expect(body.components(separatedBy: "packageCorrelationRetiredForProcess = false").count - 1 == 1)
         #expect(body.components(separatedBy: "packageCorrelationRetiredForProcess = true").count - 1 == 1)
 
-        let make = try section(in: body, from: "static func make() -> OfficialTuyaDriver?", to: "}
-}
-
-#if canImport(ThingSmartHomeKit)")
+        let make = try section(
+            in: body,
+            from: "static func make() -> OfficialTuyaDriver?",
+            to: "}\n}\n\n#if canImport(ThingSmartHomeKit)"
+        )
         let retirement = make.range(of: "packageCorrelationRetiredForProcess = true")
         let returnDriver = make.range(of: "return SmartLifeDriver()")
         #expect(retirement != nil)
         #expect(returnDriver != nil)
-        if let retirement, let returnDriver { #expect(retirement.lowerBound < returnDriver.lowerBound) }
+        if let retirement, let returnDriver {
+            #expect(retirement.lowerBound < returnDriver.lowerBound)
+        }
     }
 
     @Test("OFF1 admission and in-process retry both consume the process fence")
     func correlationAndRetryConsumeProcessFence() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let retry = try section(in: source, from: "var failedAttemptCanRestartFromOFF1: Bool", to: "var canRestartFromFreshOFF1")
+        let retry = try section(
+            in: source,
+            from: "var failedAttemptCanRestartFromOFF1: Bool",
+            to: "var canRestartFromFreshOFF1"
+        )
         #expect(retry.contains("OfficialTuyaFactory.packageCorrelationMayStart"))
 
-        let correlation = try section(in: source, from: "private func beginCorrelationSeries()", to: "func confirmCorrelatedTarget")
+        let correlation = try section(
+            in: source,
+            from: "private func beginCorrelationSeries()",
+            to: "func confirmCorrelatedTarget"
+        )
         let processFence = correlation.range(of: "guard OfficialTuyaFactory.packageCorrelationMayStart else")
         let liveStatus = correlation.range(of: "guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else")
         let reset = correlation.range(of: "resetDiscoverySessionOnly()")
