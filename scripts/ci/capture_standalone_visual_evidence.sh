@@ -4,6 +4,8 @@ set -euo pipefail
 APP_PATH="${APP_PATH:-/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app}"
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-${RUNNER_TEMP:-/tmp}/NembraCaptureStandaloneVisualEvidence}"
 EXPECTED_BUNDLE_ID="com.jonathangana131.nembra.capturelearn"
+EXPECTED_DEVICE_NAME="iPhone 12"
+EXPECTED_DEVICE_TYPE="com.apple.CoreSimulator.SimDeviceType.iPhone-12"
 EVIDENCE_PROFILE="${EVIDENCE_PROFILE:-provenance-stamped}"
 EXPECTED_SOURCE_SHA="${EXPECTED_SOURCE_SHA:-}"
 
@@ -98,16 +100,19 @@ print(c[0]["identifier"])
 DEVICE_TYPE="$({ xcrun simctl list devicetypes -j | /usr/bin/python3 -c '
 import json,sys
 items=json.load(sys.stdin)["devicetypes"]
-preferred=["iPhone 12", "iPhone 17", "iPhone 17 Pro", "iPhone 16"]
-for name in preferred:
-    for x in items:
-        if x.get("name")==name:
-            print(x["identifier"]); raise SystemExit(0)
+for item in items:
+    if item.get("name") == "iPhone 12":
+        print(item["identifier"])
+        raise SystemExit(0)
 raise SystemExit(1)
 '; } 2>/dev/null)" || {
-  echo "No supported iPhone Simulator device type is available." >&2
+  echo "The exact V14 baseline device type (iPhone 12) is unavailable; refusing newer-device fallback." >&2
   exit 13
 }
+if [[ "$DEVICE_TYPE" != "$EXPECTED_DEVICE_TYPE" ]]; then
+  echo "Unexpected Simulator device type for the V14 baseline: $DEVICE_TYPE" >&2
+  exit 22
+fi
 
 SIM_NAME="Nembra Capture Visual ${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}"
 UDID="$(xcrun simctl create "$SIM_NAME" "$DEVICE_TYPE" "$RUNTIME_ID")"
@@ -213,6 +218,8 @@ record = {
     "tuyaDependencyProvenanceClass": dependency_provenance_class,
     "expectedFieldBuildAuthority": expected_field_build_authority == "true",
     "bundleIdentifier": bundle_id,
+    "baselineDevice": "iPhone 12",
+    "baselineOS": "iOS 27",
     "simulatorRuntime": runtime_id,
     "simulatorDeviceType": device_type,
     "launchContext": "real standalone bundle; inherited SIMCTL_CHILD/NEMBRA_SIMULATION authority rejected before launch",
@@ -237,10 +244,11 @@ with open(output_path, "w", encoding="utf-8") as handle:
 PY
 
 printf '%s\n' \
-  "Standalone Nembra Capture visual evidence captured." \
+  "Standalone Nembra Capture visual evidence captured on the exact V14 baseline." \
   "Profile: $EVIDENCE_PROFILE" \
   "Build: $BUILD_IDENTIFIER" \
   "Source: $SOURCE_SHA" \
   "Tuya dependency provenance: $DEPENDENCY_PROVENANCE_CLASS" \
+  "Baseline: $EXPECTED_DEVICE_NAME / iOS 27 Simulator" \
   "Screenshot: $SCREENSHOT" \
   "Visual review is still required; this artifact creates no physical/protocol authority."
