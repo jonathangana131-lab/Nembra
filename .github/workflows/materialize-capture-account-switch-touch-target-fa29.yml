@@ -1,0 +1,85 @@
+name: Materialize Capture account-switch target fa29
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-account-switch-touch-target-fa29-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 4
+
+      - name: Guard exact current product lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='fa29a7135101897018723c40e6e2853388b09327'
+          git merge-base --is-ancestor "$expected" HEAD^
+          mapfile -t changed < <(git diff --name-only "$expected"..HEAD^)
+          if [[ "${#changed[@]}" -ne 1 || "${changed[0]}" != 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureAccountSwitchTouchTargetSourceTests.swift' ]]; then
+            printf 'Unexpected pre-materialization scope:\n%s\n' "${changed[*]}" >&2
+            exit 78
+          fi
+
+      - name: Apply 44-point stopped-state recovery target
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text()
+          old = '''                        .buttonStyle(.plain)
+                          .font(.subheadline.weight(.semibold))
+          '''
+          new = '''                        .buttonStyle(.plain)
+                          .frame(minHeight: 44, alignment: .leading)
+                          .contentShape(Rectangle())
+                          .font(.subheadline.weight(.semibold))
+          '''
+          if source.count(old) != 1:
+              raise SystemExit(f'account-switch styling seam drifted: {source.count(old)}')
+          path.write_text(source.replace(old, new, 1))
+          PY
+          git diff --check
+
+      - name: Verify focused source contract and Swift syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureAccountSwitchTouchTargetSourceTests.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          start = s.index('Button("Use a different Tuya account")')
+          end = s.index('.accessibilityHint("Signs out of the official Tuya SDK account', start)
+          button = s[start:end]
+          assert '.buttonStyle(.plain)' in button
+          assert '.frame(minHeight: 44, alignment: .leading)' in button
+          assert '.contentShape(Rectangle())' in button
+          assert '.disabled(test.membershipBusy || sdkAccount.busy)' in button
+          PY
+
+      - name: Publish clean product repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-account-switch-touch-target-fa29.yml
+          git config user.name 'nembra-sol'
+          git config user.email 'nembra-sol@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureAccountSwitchTouchTargetSourceTests.swift \
+                  .github/workflows/materialize-capture-account-switch-touch-target-fa29.yml
+          git diff --cached --check
+          git commit -m 'fix(capture): enlarge Tuya account-switch hit target'
+          git push origin HEAD:fix/v14-capture-account-switch-touch-target-fa29-sol
