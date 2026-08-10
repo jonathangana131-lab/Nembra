@@ -1,0 +1,158 @@
+name: V14 Capture Foreground Integrity 870f Repair
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-foreground-integrity-870f-fix-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply foreground integrity repair without multiline YAML payloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_PARENT="870f20abe144fa7b6f9ac60bf4c0fe0a1792fb81"
+          RED_HEAD="ec55d27270d80bdfa556eff3b598880dd8f5c231"
+          if git diff --name-only "$EXPECTED_PARENT" HEAD | grep -Fqx "NembraApp/App/NembraCaptureEntrypoint.swift"; then
+            echo "foreground repair already materialized"
+            exit 0
+          fi
+          mapfile -t CUT_FILES < <(git diff --name-only "$EXPECTED_PARENT" HEAD)
+          [[ "${#CUT_FILES[@]}" -eq 2 ]] || { printf 'unexpected bootstrap files: %s\n' "${CUT_FILES[*]}"; exit 2; }
+          for path in "${CUT_FILES[@]}"; do
+            [[ "$path" == .github/workflows/v14-capture-foreground-integrity-870f-* ]] || exit 2
+          done
+
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text()
+          marker = "    var privateConfig: Bool { OfficialTuyaFactory.configured }\n"
+          if text.count(marker) != 1:
+              raise SystemExit("privateConfig insertion marker drifted")
+          lines = [
+              "    func appDidLoseForeground() {",
+              "        // Accepted evidence is already sealed and immutable; backgrounding after completion",
+              "        // cannot rewrite or demote that artifact.",
+              "        guard phase != .accepted else { return }",
+              "",
+              "        // Foreground loss closes this view lifetime before any transport inspection. Pending",
+              "        // membership and official-auth completions are generation-fenced by these rotations.",
+              "        acceptsViewScopedMembershipRequests = false",
+              "        sdkDeviceMembershipVerified = false",
+              "        membershipAccountUID = nil",
+              "        membershipDeviceID = nil",
+              "        membershipRequestID = UUID()",
+              "        membershipBusy = false",
+              "        officialConnectionRequestID = UUID()",
+              "        watchdog?.cancel()",
+              "        watchdog = nil",
+              "",
+              "        if processCorrelationLease != nil || correlationSession != nil {",
+              "            abandonPackageCorrelation()",
+              "            phase = .failed",
+              "            message = \"Capture left the foreground during Bluetooth target correlation. Re-verify this scooter, then restart from OFF1; interrupted windows are never reusable evidence.\"",
+              "            log(\"foreground_integrity_lost_during_target_correlation\")",
+              "            return",
+              "        }",
+              "",
+              "        if let token = currentConnectionToken {",
+              "            let wasObserving = phase == .observing",
+              "            phase = .failed",
+              "            message = wasObserving",
+              "                ? \"Capture left the foreground during authenticated observation. Relaunch before another authenticated attempt; background time is not accepted evidence and no BLE disconnect is claimed.\"",
+              "                : \"Capture left the foreground before authenticated observation. Relaunch before another authenticated attempt; no BLE disconnect is claimed.\"",
+              "            log(",
+              "                wasObserving ? \"foreground_integrity_lost_during_observation\" : \"foreground_integrity_lost_before_observation\",",
+              "                [\"generation\": String(token.diagnosticGeneration)]",
+              "            )",
+              "            Task { @MainActor [self] in",
+              "                if wasObserving {",
+              "                    await self.invalidateObservationContinuity(",
+              "                        token: token,",
+              "                        message: \"App foreground integrity was lost during authenticated observation. Relaunch before another authenticated attempt; background time is not accepted evidence and no BLE disconnect is claimed.\",",
+              "                        kind: \"foreground_integrity_lost_during_observation\"",
+              "                    )",
+              "                } else {",
+              "                    await self.invalidateInternalLifecycle(",
+              "                        token: token,",
+              "                        message: \"App foreground integrity was lost before authenticated observation. Relaunch before another authenticated attempt; no BLE disconnect is claimed.\",",
+              "                        kind: \"foreground_integrity_lost_before_observation\"",
+              "                    )",
+              "                }",
+              "            }",
+              "            return",
+              "        }",
+              "",
+              "        if phase == .authenticating {",
+              "            // Driver handoff can precede package token creation. The rotated request id",
+              "            // above forces that pending ledger task to retire before any SDK connect call.",
+              "            localBLESettlementToken = nil",
+              "            sdkLocalBLEOnline = false",
+              "            driver = nil",
+              "            phase = .failed",
+              "            message = \"Capture left the foreground during authentication. Relaunch before another authenticated attempt; no BLE disconnect is claimed.\"",
+              "            log(\"foreground_integrity_lost_before_observation\")",
+              "            return",
+              "        }",
+              "",
+              "        if phase == .correlated || phase == .selected {",
+              "            resetDiscoverySessionOnly()",
+              "            phase = .failed",
+              "            message = \"Capture left the foreground after target correlation. Re-verify this scooter and restart from OFF1; prior target authority is not reused across the interruption.\"",
+              "            log(\"foreground_integrity_lost_after_target_correlation\")",
+              "        }",
+              "    }",
+              "",
+          ]
+          foreground = "\n".join(lines) + "\n"
+          text = text.replace(marker, foreground + marker, 1)
+          env = "    @Environment(\\.dynamicTypeSize) private var dynamicTypeSize\n"
+          if text.count(env) != 1:
+              raise SystemExit("Dynamic Type environment marker drifted")
+          text = text.replace(env, env + "    @Environment(\\.scenePhase) private var scenePhase\n", 1)
+          old = "        .onDisappear {\n            test.abandonCorrelationForViewExit()\n        }\n        .onChange(of: sdkAccount.loggedIn) { _, loggedIn in\n"
+          new = "        .onDisappear {\n            test.abandonCorrelationForViewExit()\n        }\n        .onChange(of: scenePhase) { oldPhase, newPhase in\n            if oldPhase == .active && newPhase != .active {\n                test.appDidLoseForeground()\n            } else if oldPhase != .active && newPhase == .active && test.phase != .accepted {\n                test.activateMembershipRequestsForView()\n                if sdkAccount.loggedIn { test.verifySDKMembership() }\n            }\n        }\n        .onChange(of: sdkAccount.loggedIn) { _, loggedIn in\n"
+          if text.count(old) != 1:
+              raise SystemExit(f"scene hook anchor drifted: {text.count(old)}")
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+          git show "$RED_HEAD:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegrityCurrentSourceTests.swift" > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegrityCurrentSourceTests.swift
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegrityCurrentSourceTests.swift
+          git diff --check
+
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          start = source.index("func appDidLoseForeground()")
+          end = source.index("var privateConfig: Bool", start)
+          cleanup = source[start:end]
+          required = ["guard phase != .accepted else { return }", "sdkDeviceMembershipVerified = false", "membershipAccountUID = nil", "membershipDeviceID = nil", "membershipRequestID = UUID()", "officialConnectionRequestID = UUID()", "watchdog?.cancel()", "abandonPackageCorrelation()", "invalidateObservationContinuity(", "invalidateInternalLifecycle(", "Task { @MainActor [self] in", "phase == .correlated || phase == .selected", "resetDiscoverySessionOnly()", "foreground_integrity_lost_after_target_correlation"]
+          for token in required:
+              assert token in cleanup, token
+          for forbidden in ["recordObservedTransportLoss", "endConnection", "disconnectBLE", "releasePackageCorrelationLease()"]:
+              assert forbidden not in cleanup, forbidden
+          view_start = source.index("private struct SecureLinkView: View")
+          hero = source.index("private var hero: some View", view_start)
+          view = source[view_start:hero]
+          for token in ["@Environment(\\.scenePhase) private var scenePhase", ".onChange(of: scenePhase)", "oldPhase == .active && newPhase != .active", "test.appDidLoseForeground()", "test.activateMembershipRequestsForView()", "if sdkAccount.loggedIn { test.verifySDKMembership() }"]:
+              assert token in view, token
+          PY
+
+          git config user.name "Nembra V14 Materializer"
+          git config user.email "actions@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegrityCurrentSourceTests.swift
+          git commit -m "fix(capture): fail closed on foreground loss"
+          git push origin HEAD:agent/v14-capture-foreground-integrity-870f-fix-sol
