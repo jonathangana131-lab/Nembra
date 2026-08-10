@@ -14,12 +14,16 @@ struct TuyaFieldAppPreflightIntegrationSourceTests {
         #expect(source.contains("rawFD50BytesCaptured: false"))
     }
 
-    @Test("name RSSI and accumulated score never authorize the target")
-    func targetAuthorityIsDeterministic() throws {
+    @Test("local target authority is earned by repeated current-run correlation, never descriptive radio hints or the historical capture UUID")
+    func targetAuthorityUsesCurrentRepeatedCorrelation() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
-        #expect(source.contains("var likely: Bool { knownID || (fd50 && tuyaCompany) }"))
+        #expect(source.contains("PassiveBluetoothPowerCycleObservationSession"))
+        #expect(source.contains("singleRepeatableCandidate"))
+        #expect(!source.contains("var likely: Bool { knownID || (fd50 && tuyaCompany) }"))
+        #expect(!source.contains("var likely: Bool { knownID }"))
         #expect(!source.contains("score >= 600"))
+        #expect(!source.contains("accepted-prior-physical-corebluetooth-uuid"))
     }
 
     @Test("official Tuya connect failure uses documented no-error handler")
