@@ -1,0 +1,47 @@
+name: Materialize Capture Provenance Trigger dfd3
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-gates-staging-dfd3
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: sol/v14-capture-gates-staging-dfd3
+      - name: Add private build-window guard to provenance PR trigger
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/capture-field-build-provenance.yml')
+          text = path.read_text(encoding='utf-8')
+          anchor = '      - Scripts/capture_tuya_private_input_provenance.py\n'
+          insertion = anchor + '      - Scripts/capture_tuya_private_input_build_guard.py\n'
+          if text.count('      - Scripts/capture_tuya_private_input_build_guard.py\n') != 0:
+              raise SystemExit('build-window guard path already present; refuse duplicate mutation')
+          if text.count(anchor) != 1:
+              raise SystemExit('expected exactly one provenance-helper path anchor')
+          path.write_text(text.replace(anchor, insertion), encoding='utf-8')
+          PY
+          git diff --check
+          git diff -- .github/workflows/capture-field-build-provenance.yml
+      - name: Commit trigger coverage repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/capture-field-build-provenance.yml
+          git commit -m 'ci(capture): gate private build-window guard changes'
+          git push origin HEAD:sol/v14-capture-gates-staging-dfd3
