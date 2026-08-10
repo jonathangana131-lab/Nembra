@@ -354,6 +354,18 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var correlationObservedCandidateCount: Int { correlationProgress?.currentObservedCandidateCount ?? 0 }
     var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }
 
+    func consumeCorrelationAsyncInvalidation() {
+        guard phase == .baseline || phase == .scanning,
+              correlationProgress?.isSeriesInvalidated == true else { return }
+
+        correlationSession?.abandonCurrentWindow()
+        correlationSession = nil
+        failLocally(
+            "Bluetooth correlation ended before this window could be sealed. Restart from OFF1; completed windows from this attempt are not reused.",
+            "target_correlation_async_invalidated"
+        )
+    }
+
     var correlationWindowLabel: String {
         guard let phase = correlationProgress?.phase else { return "OFF1" }
         switch phase {
@@ -1977,6 +1989,9 @@ private struct SecureLinkView: View {
                 .frame(maxWidth: .infinity)
             }
             .background(Color.black.ignoresSafeArea())
+            .onChange(of: test.correlationProgress?.isSeriesInvalidated) { _, _ in
+                test.consumeCorrelationAsyncInvalidation()
+            }
         }
         .navigationTitle("Secure Link")
         .task {
