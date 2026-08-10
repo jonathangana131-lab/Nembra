@@ -56,12 +56,14 @@ jobs:
       - name: Publish clean product bytes
         run: |
           set -euo pipefail
+          product_parent='eee5a96fae1d30796ba5707f0a7f30f4f4d62530'
           rm .github/workflows/capture-per-window-ble-fence-materialize.yml
           rm scripts/ci/materialize_capture_per_window_ble_fence.py
           git add -A
           git diff --cached --check
-          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationPerWindowBLEOwnershipSourceTests.swift' | sort)"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "fix(capture): fence every correlation window from Tuya BLE"
+          test "$(git diff --name-only "$product_parent" HEAD | sort)" = "$(printf '%s\n' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationPerWindowBLEOwnershipSourceTests.swift' | sort)"
+          git diff --check "$product_parent" HEAD
           git push origin HEAD:fix/v14-capture-per-window-ble-fence-eee5-sol
