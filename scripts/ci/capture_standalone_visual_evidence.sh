@@ -4,6 +4,7 @@ set -euo pipefail
 APP_PATH="${APP_PATH:-/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app}"
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-${RUNNER_TEMP:-/tmp}/NembraCaptureStandaloneVisualEvidence}"
 EXPECTED_BUNDLE_ID="com.jonathangana131.nembra.capturelearn"
+EXPECTED_SOURCE_SHA="${EXPECTED_SOURCE_SHA:-}"
 TUYA_DEPENDENCY_PROVENANCE_AUTHORITY="${TUYA_DEPENDENCY_PROVENANCE_AUTHORITY:-simulator-placeholder-only}"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -22,15 +23,19 @@ if ! command -v xcrun >/dev/null 2>&1; then
   echo "xcrun/CoreSimulator is required to capture standalone Capture visual evidence." >&2
   exit 5
 fi
+if [[ ! "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "Exact standalone Capture source SHA must be supplied as lowercase 40-hex EXPECTED_SOURCE_SHA." >&2
+  exit 6
+fi
 if [[ "$TUYA_DEPENDENCY_PROVENANCE_AUTHORITY" != "simulator-placeholder-only" ]]; then
   echo "Standalone Simulator visual evidence must not claim private Tuya dependency authority." >&2
-  exit 6
+  exit 7
 fi
 
 INFO_PLIST="$APP_PATH/Info.plist"
 if [[ ! -f "$INFO_PLIST" ]]; then
   echo "Standalone Capture Info.plist is missing." >&2
-  exit 7
+  exit 8
 fi
 
 BUNDLE_ID="$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$INFO_PLIST")"
@@ -39,29 +44,29 @@ SOURCE_SHA="$(/usr/bin/plutil -extract NembraCaptureSourceCommitSHA raw -o - "$I
 TUYA_DEPENDENCY_LOCK_SHA256="$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$INFO_PLIST")"
 if [[ "$BUNDLE_ID" != "$EXPECTED_BUNDLE_ID" ]]; then
   echo "Unexpected standalone Capture bundle identifier: $BUNDLE_ID" >&2
-  exit 8
+  exit 9
 fi
 if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   echo "Standalone Capture source identity must be one lowercase 40-hex SHA." >&2
-  exit 9
+  exit 10
+fi
+if [[ "$SOURCE_SHA" != "$EXPECTED_SOURCE_SHA" ]]; then
+  echo "Standalone Capture source identity does not match the exact requested workflow head." >&2
+  exit 11
 fi
 if [[ ! "$TUYA_DEPENDENCY_LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
   echo "Standalone Capture Tuya dependency provenance field must be one lowercase 64-hex SHA-256." >&2
-  exit 10
+  exit 12
 fi
 EXPECTED_BUILD_IDENTIFIER="capture-v14-${SOURCE_SHA:0:12}"
 if [[ "$BUILD_IDENTIFIER" != "$EXPECTED_BUILD_IDENTIFIER" ]]; then
   echo "Standalone Capture build identifier does not rendezvous with its embedded source SHA." >&2
-  exit 11
-fi
-if [[ -n "${GITHUB_SHA:-}" && "${GITHUB_SHA,,}" != "$SOURCE_SHA" ]]; then
-  echo "Standalone Capture source identity does not match the exact workflow commit." >&2
-  exit 12
+  exit 13
 fi
 
 if [[ -e "$ARTIFACTS_DIR" || -L "$ARTIFACTS_DIR" ]]; then
   echo "Refusing to mix or overwrite prior standalone Capture visual evidence: $ARTIFACTS_DIR" >&2
-  exit 13
+  exit 14
 fi
 mkdir -p "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs"
 
@@ -74,7 +79,7 @@ c.sort(key=lambda x: tuple(int(p) for p in str(x.get("version","0")).split(".") 
 print(c[0]["identifier"])
 '; } 2>/dev/null)" || {
   echo "No iOS 27 Simulator runtime is available on this runner." >&2
-  exit 14
+  exit 15
 }
 
 DEVICE_TYPE="$({ xcrun simctl list devicetypes -j | /usr/bin/python3 -c '
@@ -88,7 +93,7 @@ for name in preferred:
 raise SystemExit(1)
 '; } 2>/dev/null)" || {
   echo "No supported iPhone Simulator device type is available." >&2
-  exit 15
+  exit 16
 }
 
 SIM_NAME="Nembra Capture Visual ${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}"
@@ -120,26 +125,26 @@ launch_output="$(xcrun simctl launch "$UDID" "$BUNDLE_ID" | tee "$ARTIFACTS_DIR/
 pid="${launch_output##*: }"
 if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
   echo "Could not parse standalone Capture process ID from: $launch_output" >&2
-  exit 16
+  exit 17
 fi
 sleep 2
 if ! kill -0 "$pid" >/dev/null 2>&1; then
   echo "Standalone Nembra Capture exited before visual evidence could be captured." >&2
-  exit 17
+  exit 18
 fi
 
 SCREENSHOT="$ARTIFACTS_DIR/screenshots/standalone-unprovisioned-dark.png"
 xcrun simctl io "$UDID" screenshot "$SCREENSHOT"
 if [[ ! -s "$SCREENSHOT" ]]; then
   echo "Standalone Capture screenshot was not created." >&2
-  exit 18
+  exit 19
 fi
 
 SCREENSHOT_SHA256="$(shasum -a 256 "$SCREENSHOT" | awk '{print $1}')"
 INFO_PLIST_SHA256="$(shasum -a 256 "$INFO_PLIST" | awk '{print $1}')"
 if [[ ! "$SCREENSHOT_SHA256" =~ ^[0-9a-f]{64}$ || ! "$INFO_PLIST_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
   echo "Could not derive stable SHA-256 evidence digests." >&2
-  exit 19
+  exit 20
 fi
 
 /usr/bin/python3 - \
