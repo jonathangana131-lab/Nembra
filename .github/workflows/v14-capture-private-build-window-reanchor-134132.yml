@@ -1,0 +1,92 @@
+name: V14 Capture Private Build Window Reanchor 134132
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-private-build-window-134132-sol
+
+permissions:
+  contents: write
+
+jobs:
+  reanchor:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: fix/v14-capture-private-build-window-134132-sol
+
+      - name: Assert exact parent and import reviewed donor tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT='134132fd581666c39376f1e6f5c58460dd1e0174'
+          OLD='b615375e12e43abc55e111deb5dc36f3790c7506'
+          DONOR_BRANCH='fix/v14-capture-private-build-window-b615-sol'
+          GUARD='Scripts/capture_tuya_private_input_build_guard.py'
+          INSTALLER='scripts/field/install_one_time_capture.command'
+          TEST1='scripts/ci/tests/test_capture_tuya_private_input_build_guard.py'
+          TEST2='scripts/ci/tests/test_capture_field_installer_build_window_guard_source.py'
+          test "$(git rev-parse HEAD^)" = "$CURRENT"
+          for path in "$GUARD" "$INSTALLER" "$TEST1" "$TEST2"; do
+            git diff --quiet "$OLD" "$CURRENT" -- "$path"
+          done
+          git fetch --no-tags origin "$DONOR_BRANCH":refs/remotes/origin/build-window-donor
+          for path in "$GUARD" "$INSTALLER" "$TEST1" "$TEST2"; do
+            git show "origin/build-window-donor:$path" > "$path"
+          done
+
+      - name: Re-run exact-current source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/field/install_one_time_capture.command
+          python3 -m py_compile \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            scripts/ci/tests/test_capture_tuya_private_input_build_guard.py \
+            scripts/ci/tests/test_capture_field_installer_build_window_guard_source.py
+          python3 scripts/ci/tests/test_capture_tuya_private_input_build_guard.py
+          python3 scripts/ci/tests/test_capture_field_installer_build_window_guard_source.py
+          python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          python3 scripts/ci/tests/test_capture_tuya_private_input_post_path_descriptor_custody.py
+          python3 scripts/ci/tests/test_capture_tuya_private_input_record_snapshot_coherence.py
+          python3 scripts/ci/tests/test_capture_tuya_private_input_record_final_snapshot_coherence.py
+          python3 scripts/ci/tests/test_capture_tuya_private_input_record_tree_generation.py
+          python3 scripts/ci/tests/test_capture_tuya_private_input_record_tree_cross_authority.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_build_setting_authority.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_apple_process_custody.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py
+          python3 scripts/ci/tests/test_es80_field_authorization_atomic_publication.py
+          python3 scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_today_research_field_candidate.py
+
+      - name: Checkpoint deliberate four-path tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT='134132fd581666c39376f1e6f5c58460dd1e0174'
+          GUARD='Scripts/capture_tuya_private_input_build_guard.py'
+          INSTALLER='scripts/field/install_one_time_capture.command'
+          TEST1='scripts/ci/tests/test_capture_tuya_private_input_build_guard.py'
+          TEST2='scripts/ci/tests/test_capture_field_installer_build_window_guard_source.py'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/v14-capture-private-build-window-reanchor-134132.yml
+          git add "$GUARD" "$INSTALLER" "$TEST1" "$TEST2"
+          git diff --cached --check
+          mapfile -t EFFECTIVE < <(git diff --name-only "$CURRENT")
+          test "${#EFFECTIVE[@]}" = '4'
+          printf '%s\n' "${EFFECTIVE[@]}" | grep -Fx "$GUARD"
+          printf '%s\n' "${EFFECTIVE[@]}" | grep -Fx "$INSTALLER"
+          printf '%s\n' "${EFFECTIVE[@]}" | grep -Fx "$TEST1"
+          printf '%s\n' "${EFFECTIVE[@]}" | grep -Fx "$TEST2"
+          git commit -m 'fix(capture): guard private inputs through xcodebuild'
+          git push origin HEAD:fix/v14-capture-private-build-window-134132-sol
