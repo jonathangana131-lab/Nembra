@@ -1460,7 +1460,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     return
 }
 
-        applicationUpdateAdmissionsInFlight += 1
+applicationUpdateAdmissionsInFlight += 1
         defer { applicationUpdateAdmissionsInFlight -= 1 }
 
         do {
