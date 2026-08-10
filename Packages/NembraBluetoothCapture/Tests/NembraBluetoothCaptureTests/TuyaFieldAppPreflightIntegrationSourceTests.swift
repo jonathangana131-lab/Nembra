@@ -93,6 +93,27 @@ struct TuyaFieldAppPreflightIntegrationSourceTests {
         #expect(source.contains("redactedError(error, submittedIdentity: identity)"))
     }
 
+    @Test("field artifact and scan gate require exact stamped build provenance")
+    func exactBuildIdentityIsMechanicallyWired() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let project = try readRepositoryFile("NembraCapture.xcodeproj/project.pbxproj")
+        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
+
+        #expect(source.contains("CaptureFieldBuildIdentity.from(infoDictionary: Bundle.main.infoDictionary ?? [:])"))
+        #expect(source.contains("guard fieldBuildStamped else"))
+        #expect(source.contains("buildIdentifier: fieldBuildIdentity?.buildIdentifier"))
+        #expect(source.contains("buildCommitSHA: fieldBuildIdentity?.commitSHA"))
+        #expect(source.contains("buildIdentityValid: fieldBuildStamped"))
+        #expect(source.contains("schemaVersion: 6"))
+
+        #expect(project.contains("INFOPLIST_KEY_NembraCaptureBuildIdentifier = \"$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)\";"))
+        #expect(project.contains("INFOPLIST_KEY_NembraCaptureBuildCommitSHA = \"$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)\";"))
+
+        #expect(installer.contains("SOURCE_SHA=\"$(git rev-parse HEAD)\""))
+        #expect(installer.contains("NEMBRA_CAPTURE_BUILD_IDENTIFIER=\"$BUILD_LABEL\""))
+        #expect(installer.contains("NEMBRA_CAPTURE_BUILD_COMMIT_SHA=\"$SOURCE_SHA\""))
+    }
+
     private func readRepositoryFile(_ relativePath: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
