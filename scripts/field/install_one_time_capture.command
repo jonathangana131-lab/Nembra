@@ -14,6 +14,8 @@ command -v security >/dev/null || die "macOS security tool is not available."
 command -v pod >/dev/null || die "CocoaPods is required for the official Tuya SDK field build."
 [[ -x /usr/bin/python3 ]] || die "System Python 3 is required for private intended-device admission."
 [[ -x /usr/bin/plutil ]] || die "System plutil is required for exact built-app provenance verification."
+[[ -x /usr/bin/codesign ]] || die "System codesign is required for effective signed-entitlement verification."
+[[ -x /usr/bin/security ]] || die "System security is required for embedded provisioning-profile verification."
 
 EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"
 [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9A-Fa-f]{40}$ ]] || die "Pass the exact software-accepted Capture source SHA as the first argument (40 hex characters)."
@@ -234,6 +236,38 @@ BUILT_BUNDLE_ID="$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$APP_IN
 [[ "$BUILT_PROCEDURE_IDENTIFIER" == "$PROCEDURE_ID" ]] || die "Built Capture app procedure identity does not match the canonical stationary procedure. Discard this candidate."
 [[ "$BUILT_BUNDLE_ID" == "$BUNDLE_ID" ]] || die "Built Capture app bundle identifier does not match the intended standalone field product. Discard this candidate."
 say "Built app provenance matched exact requested source, reviewed Tuya dependency lock, canonical stationary procedure, and field product"
+
+# Apple-backed Smart Life account entry is now part of field preflight. A source entitlement file
+# is not enough: prove the final signed executable and the exact embedded provisioning profile both
+# authorize Sign in with Apple before this build can be installed as the field candidate.
+SIGNED_ENTITLEMENTS_XML="$(/usr/bin/codesign -d --entitlements :- --xml "$APP" 2>/dev/null)" ||     die "Could not read effective entitlements from the final signed Capture app. Discard this candidate."
+BUILT_APPLE_SIGNIN_ENTITLEMENT="$(printf '%s' "$SIGNED_ENTITLEMENTS_XML" | /usr/bin/python3 -I -c '
+import plistlib, sys
+try:
+    value = plistlib.loads(sys.stdin.buffer.read()).get("com.apple.developer.applesignin")
+except Exception:
+    raise SystemExit(2)
+if value == ["Default"]:
+    sys.stdout.write("Default")
+' || true)"
+[[ "$BUILT_APPLE_SIGNIN_ENTITLEMENT" == "Default" ]] ||     die "Final signed Capture app does not carry the required Sign in with Apple entitlement. Enable the capability for this App ID/team and rebuild; do not install this candidate."
+
+BUILT_PROFILE="$APP/embedded.mobileprovision"
+[[ -f "$BUILT_PROFILE" ]] || die "Final signed Capture app is missing embedded.mobileprovision. Discard this candidate."
+PROFILE_PLIST_XML="$(/usr/bin/security cms -D -i "$BUILT_PROFILE" 2>/dev/null)" ||     die "Could not decode the exact provisioning profile embedded in the final signed Capture app. Discard this candidate."
+PROFILE_APPLE_SIGNIN_ENTITLEMENT="$(printf '%s' "$PROFILE_PLIST_XML" | /usr/bin/python3 -I -c '
+import plistlib, sys
+try:
+    root = plistlib.loads(sys.stdin.buffer.read())
+    value = root.get("Entitlements", {}).get("com.apple.developer.applesignin")
+except Exception:
+    raise SystemExit(2)
+if value == ["Default"]:
+    sys.stdout.write("Default")
+' || true)"
+[[ "$PROFILE_APPLE_SIGNIN_ENTITLEMENT" == "Default" ]] ||     die "Embedded provisioning profile does not authorize Sign in with Apple for the final Capture app. Enable the capability for this App ID/team and rebuild; do not install this candidate."
+say "Final signed app and embedded provisioning profile both authorize Sign in with Apple"
+unset SIGNED_ENTITLEMENTS_XML BUILT_APPLE_SIGNIN_ENTITLEMENT PROFILE_PLIST_XML PROFILE_APPLE_SIGNIN_ENTITLEMENT BUILT_PROFILE
 unset BUILT_BUILD_IDENTIFIER BUILT_SOURCE_SHA BUILT_TUYA_DEPENDENCY_LOCK_SHA256 BUILT_PROCEDURE_IDENTIFIER BUILT_BUNDLE_ID APP_INFO_PLIST
 
 say "Installing SDK-integrated Capture on the intended iPhone"
