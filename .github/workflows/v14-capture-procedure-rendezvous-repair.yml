@@ -6,15 +6,13 @@ on:
       - recovery/v14-capture-procedure-materialize-gpt56sol
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   materialize:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Apply procedure rendezvous patch
         shell: bash
@@ -35,14 +33,30 @@ jobs:
           grep -Fq 'INFOPLIST_KEY_NembraCaptureProcedureIdentifier = "$(NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER)";' NembraCapture.xcodeproj/project.pbxproj
           git diff --check
 
-      - name: Commit validated materialized tree
+      - name: Stage validated product artifact
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git diff --cached --check
-          git diff --cached --quiet && { echo 'ERROR: materializer produced no product delta' >&2; exit 1; }
-          git commit -m 'fix(capture): materialize exact stationary procedure provenance'
-          git push origin HEAD:recovery/v14-capture-procedure-materialize-gpt56sol
+          rm -rf /tmp/nembra-procedure-rendezvous
+          mkdir -p /tmp/nembra-procedure-rendezvous
+          while IFS= read -r path; do
+            mkdir -p "/tmp/nembra-procedure-rendezvous/$(dirname "$path")"
+            cp -p "$path" "/tmp/nembra-procedure-rendezvous/$path"
+          done <<'EOF'
+          NembraApp/App/NembraCaptureBuildIdentity.swift
+          NembraApp/App/NembraCaptureEntrypoint.swift
+          NembraCapture.xcodeproj/project.pbxproj
+          docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md
+          scripts/field/install_one_time_capture.command
+          Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift
+          Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift
+          .github/workflows/capture-field-build-provenance.yml
+          EOF
+          test "$(find /tmp/nembra-procedure-rendezvous -type f | wc -l | tr -d ' ')" = 8
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: capture-procedure-rendezvous-validated
+          path: /tmp/nembra-procedure-rendezvous
+          if-no-files-found: error
+          retention-days: 1
