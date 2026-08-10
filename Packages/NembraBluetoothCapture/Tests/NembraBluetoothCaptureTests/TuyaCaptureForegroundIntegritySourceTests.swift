@@ -75,6 +75,10 @@ struct TuyaCaptureForegroundIntegritySourceTests {
             containing: "membershipDeviceID = nil",
             in: cleanup
         )
+        let membershipStatusReset = try requiredOffset(
+            containing: "membershipStatus = \"Exact scooter membership must be verified again for this Secure Link session.\"",
+            in: cleanup
+        )
         let membershipRevoke = try requiredOffset(
             containing: "membershipRequestID = UUID()",
             in: cleanup
@@ -87,18 +91,29 @@ struct TuyaCaptureForegroundIntegritySourceTests {
             containing: "if processCorrelationLease != nil || correlationSession != nil",
             in: cleanup
         )
+        let completedCorrelationCheck = try requiredOffset(
+            containing: "if phase == .correlated || phase == .selected",
+            in: cleanup
+        )
+        let completedCorrelationReset = try requiredOffset(
+            containing: "resetDiscoverySessionOnly()",
+            in: cleanup
+        )
         let tokenCheck = try requiredOffset(
             containing: "guard let token = currentConnectionToken else",
             in: cleanup
         )
 
         #expect(closeAdmission < clearVerified)
-        #expect(clearVerified < membershipRevoke)
+        #expect(clearVerified < membershipStatusReset)
+        #expect(membershipStatusReset < membershipRevoke)
         #expect(clearAccountLease < membershipRevoke)
         #expect(clearDeviceLease < membershipRevoke)
         #expect(membershipRevoke < officialRevoke)
         #expect(officialRevoke < correlationCheck)
-        #expect(officialRevoke < tokenCheck)
+        #expect(correlationCheck < completedCorrelationCheck)
+        #expect(completedCorrelationCheck < completedCorrelationReset)
+        #expect(completedCorrelationReset < tokenCheck)
         #expect(cleanup.contains("membershipBusy = false"))
         #expect(cleanup.contains("membershipProbe = nil"))
         #expect(cleanup.contains("watchdog?.cancel()"))
@@ -107,7 +122,15 @@ struct TuyaCaptureForegroundIntegritySourceTests {
         // Package target correlation is abandoned through the existing scanner-first owner path.
         #expect(cleanup.contains("abandonPackageCorrelation()"))
         #expect(cleanup.contains("foreground_integrity_lost_during_target_correlation"))
+        #expect(cleanup.contains("foreground_integrity_lost_after_target_correlation"))
         #expect(!cleanup.contains("releasePackageCorrelationLease("))
+
+        // A completed OFF1→ON1→OFF2→ON2 result or its operator-confirmed selection has no live
+        // package scanner/lease anymore, but it is still foreground-scoped target authority.
+        // Foreground loss must erase that completed-correlation authority before token inspection.
+        #expect(cleanup.contains("phase == .correlated || phase == .selected"))
+        #expect(cleanup.contains("resetDiscoverySessionOnly()"))
+        #expect(cleanup.contains("Restart from OFF1"))
 
         // Any authenticated-generation terminal task must outlive StateObject teardown just like
         // the accepted view-exit retirement. Exact-token fencing still rejects stale generations.
