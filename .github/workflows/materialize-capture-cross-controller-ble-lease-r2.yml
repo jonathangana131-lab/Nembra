@@ -1,0 +1,83 @@
+name: Harden Capture Cross-Controller BLE Lease
+
+on:
+  push:
+    branches:
+      - agent/capture-cross-controller-ble-lease
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: agent/capture-cross-controller-ble-lease
+
+      - name: Close pre-window lease cleanup gap
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_parent='675558d21aa165732318c7e999df481f681d3e8a'
+          actual_parent="$(git rev-parse HEAD^)"
+          [[ "$actual_parent" == "$expected_parent" ]] || {
+            echo "Expected hardener commit directly above $expected_parent, got parent $actual_parent" >&2
+            exit 1
+          }
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = source_path.read_text(encoding='utf-8')
+
+          old_message = '''        guard OfficialTuyaFactory.packageCorrelationMayStart else {\n            failLocally(\n                "Tuya BLE ownership was already attempted in this app process. Relaunch Capture with the scooter OFF before a fresh OFF1→ON1→OFF2→ON2 series. Package-owned correlation cannot restart in-process after Tuya BLE ownership.",\n                "process_tuya_ble_ownership_blocks_scan"\n            )\n            return\n        }\n'''
+          new_message = '''        guard OfficialTuyaFactory.packageCorrelationMayStart else {\n            failLocally(\n                "Package Bluetooth correlation is already active elsewhere in Capture, or Tuya BLE ownership was already attempted in this app process. Finish the active attempt or relaunch with the scooter OFF before a fresh OFF1→ON1→OFF2→ON2 series.",\n                "process_tuya_ble_ownership_blocks_scan"\n            )\n            return\n        }\n'''
+          if source.count(old_message) != 1:
+              raise SystemExit('process fence blocker copy anchor drifted')
+          source = source.replace(old_message, new_message, 1)
+
+          old_fail = '''    private func failLocally(_ text: String, _ kind: String) {\n        if phase == .baseline || phase == .powerOn || phase == .scanning || phase == .correlated {\n            abandonPackageCorrelation()\n        }\n'''
+          new_fail = '''    private func failLocally(_ text: String, _ kind: String) {\n        // A lease can exist before the first window changes `phase` (for example if session\n        // construction fails). Never strand that process owner merely because presentation state\n        // has not advanced yet. Radio/session retirement still happens before lease release.\n        if processCorrelationLease != nil || phase == .baseline || phase == .powerOn || phase == .scanning || phase == .correlated {\n            abandonPackageCorrelation()\n        }\n'''
+          if source.count(old_fail) != 1:
+              raise SystemExit('failLocally cleanup anchor drifted')
+          source = source.replace(old_fail, new_fail, 1)
+          source_path.write_text(source, encoding='utf-8')
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCrossControllerBLEOwnershipLeaseSourceTests.swift')
+          test = test_path.read_text(encoding='utf-8')
+          anchor = '''              @Test("scanner is retired before process lease release and successful series also releases")\n'''
+          addition = '''              @Test("pre-window failures cannot strand an acquired process lease")\n              func preWindowFailureReleasesLease() throws {\n                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")\n                  let failure = try section(\n                      in: source,\n                      from: "private func failLocally(_ text: String, _ kind: String)",\n                      to: "private func log(_ kind: String"\n                  )\n                  #expect(failure.contains("if processCorrelationLease != nil || phase == .baseline"))\n                  #expect(failure.contains("abandonPackageCorrelation()"))\n              }\n\n'''
+          if test.count(anchor) != 1:
+              raise SystemExit('regression insertion anchor drifted')
+          test = test.replace(anchor, addition + anchor, 1)
+          test_path.write_text(test, encoding='utf-8')
+          PY
+
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          if 'if processCorrelationLease != nil || phase == .baseline' not in source:
+              raise SystemExit('pre-window lease cleanup missing')
+          if source.count('OfficialTuyaFactory.releasePackageCorrelationLease(processCorrelationLease)') != 1:
+              raise SystemExit('token-bound controller release count drifted')
+          if source.count('activePackageCorrelationOwner = nil') != 1:
+              raise SystemExit('factory owner clear count drifted')
+          if 'Package Bluetooth correlation is already active elsewhere in Capture, or Tuya BLE ownership was already attempted' not in source:
+              raise SystemExit('process blocker copy is not truthful for both ownership states')
+          print('cross-controller BLE lease cleanup contract: PASS')
+          PY
+
+          git diff --check
+          rm .github/workflows/materialize-capture-cross-controller-ble-lease-r2.yml
+          git config user.name 'nembra-v14-bot'
+          git config user.email 'nembra-v14-bot@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCrossControllerBLEOwnershipLeaseSourceTests.swift \
+                  .github/workflows/materialize-capture-cross-controller-ble-lease-r2.yml
+          git diff --cached --check
+          git commit -m 'harden(capture): release pre-window BLE lease'
+          git push origin HEAD:agent/capture-cross-controller-ble-lease
