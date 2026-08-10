@@ -1,10 +1,11 @@
 import Dispatch
 import Foundation
+import NembraCore
 import Observation
 import SwiftUI
 
 enum SpeedInstrumentDisplayOrigin: Equatable {
-    case confirmedVehicleState
+    case acceptedSourceFallback
     case measuredTelemetry
     case visuallyInterpolated
 }
@@ -19,9 +20,44 @@ struct SpeedInstrumentDisplayFrame: Equatable {
     }
 }
 
+extension SpeedEvidenceAvailability {
+    /// Strict production-default sanitizer. Simulator evidence is unavailable
+    /// unless an explicit Simulator profile opts in through the function below.
+    var dashboardPresentationAvailability: SpeedEvidenceAvailability {
+        dashboardPresentationAvailability(allowsSimulatorQA: false)
+    }
+
+    /// Dashboard presentation accepts only absolute-measurement speed evidence
+    /// whose source is permitted for the active app profile.
+    ///
+    /// `SpeedEvidenceAvailability` and `SpeedTelemetrySample` are public/caller-
+    /// constructible, so neither the enum wrapper nor absolute provenance alone
+    /// proves that a buggy provider preserved the accepted source contract.
+    /// Synthetic `.simulatorQA` evidence is eligible only when the app explicitly
+    /// owns the Simulator QA profile. Physical/unverified profiles therefore
+    /// cannot borrow synthetic speed by wrapping it as `.live` or `.retained`.
+    func dashboardPresentationAvailability(
+        allowsSimulatorQA: Bool
+    ) -> SpeedEvidenceAvailability {
+        func admits(_ sample: SpeedTelemetrySample) -> Bool {
+            guard sample.isAuthoritativeMeasurement else { return false }
+            return sample.source != .simulatorQA || allowsSimulatorQA
+        }
+
+        switch self {
+        case .unavailable:
+            return .unavailable
+        case let .retained(sample):
+            return admits(sample) ? .retained(sample) : .unavailable
+        case let .live(sample):
+            return admits(sample) ? .live(sample) : .unavailable
+        }
+    }
+}
+
 /// Main-actor presentation state for the landscape speed instrument.
 ///
-/// Raw evidence enters only through `SpeedTelemetrySample`. High-frequency
+/// Accepted speed evidence enters through `SpeedTelemetrySample`. High-frequency
 /// render frames never flow back into `VehicleState`, ride history, distance,
 /// stats, or protocol diagnostics.
 @MainActor
@@ -29,16 +65,17 @@ struct SpeedInstrumentDisplayFrame: Equatable {
 final class SpeedInstrumentModel {
     private(set) var measurementRevision: UInt64 = 0
     private(set) var latestMeasurementSource: SpeedTelemetrySource?
+    private(set) var latestMeasuredKilometersPerHour: Double?
+    private(set) var latestMeasurementUptimeNanoseconds: UInt64?
+    private(set) var latestAcceptedSample: SpeedTelemetrySample?
     private(set) var isAnimationActive = false
 
     @ObservationIgnored private var interpolator = SpeedDisplayInterpolator()
     @ObservationIgnored private var previousMeasurementUptimeNanoseconds: UInt64?
     @ObservationIgnored private var interpolationPolicy: SpeedInstrumentInterpolationPolicy = .disabled
-    @ObservationIgnored private var streamTask: Task<Void, Never>?
     @ObservationIgnored private var animationEndTask: Task<Void, Never>?
 
     deinit {
-        streamTask?.cancel()
         animationEndTask?.cancel()
     }
 
@@ -49,27 +86,29 @@ final class SpeedInstrumentModel {
         interpolationPolicy = policy
     }
 
-    func start(stream: AsyncStream<SpeedTelemetrySample>) {
-        guard streamTask == nil else { return }
+    func stop() {
+        clearPresentationContinuity()
+    }
 
-        streamTask = Task { [weak self] in
-            for await sample in stream {
-                guard !Task.isCancelled, let self else { break }
-                self.accept(sample)
-            }
+    /// Source-owned speed currentness is the Dashboard's positive presentation
+    /// authority. Retained/unavailable immediately retire interpolation. A new
+    /// live absolute measurement can reopen motion without guessing a freshness timeout.
+    func setSpeedEvidenceAvailability(
+        _ availability: SpeedEvidenceAvailability,
+        allowsSimulatorQA: Bool = false
+    ) {
+        switch availability.dashboardPresentationAvailability(allowsSimulatorQA: allowsSimulatorQA) {
+        case .unavailable, .retained:
+            clearPresentationContinuity()
+        case let .live(sample):
+            accept(sample)
         }
     }
 
-    func stop() {
-        streamTask?.cancel()
-        streamTask = nil
-        animationEndTask?.cancel()
-        animationEndTask = nil
-        isAnimationActive = false
-    }
-
-    /// Internal so the iOS test target can prove display semantics without a
-    /// scheduler-sensitive fake stream.
+    /// Internal test seam for the interpolation primitive. Production Dashboard
+    /// code admits samples only through `setSpeedEvidenceAvailability` so
+    /// currentness and source eligibility remain app-owned rather than recreated
+    /// from a raw stream.
     func accept(_ sample: SpeedTelemetrySample) {
         guard sample.isAuthoritativeMeasurement else { return }
 
@@ -86,6 +125,9 @@ final class SpeedInstrumentModel {
 
         previousMeasurementUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
         latestMeasurementSource = sample.source
+        latestMeasuredKilometersPerHour = sample.kilometersPerHour
+        latestMeasurementUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
+        latestAcceptedSample = sample
         measurementRevision &+= 1
 
         let startsInterpolating = interpolator
@@ -97,9 +139,8 @@ final class SpeedInstrumentModel {
         )
     }
 
-    /// Returns a render-only frame. The fallback is the latest value already
-    /// confirmed in `VehicleState`; it is used only until fresh raw telemetry
-    /// arrives and is never converted into a telemetry sample internally.
+    /// Returns a render-only frame. The fallback is caller-owned accepted source
+    /// evidence and is never promoted into telemetry by this model.
     ///
     /// Reduce Motion changes presentation only: when an interpolation frame is
     /// active, the display snaps to the latest authoritative measurement that
@@ -107,7 +148,7 @@ final class SpeedInstrumentModel {
     /// interpolation state is mutated by this preference.
     func frame(
         atUptimeNanoseconds uptimeNanoseconds: UInt64,
-        fallbackConfirmedKilometersPerHour: Double?,
+        fallbackAcceptedKilometersPerHour: Double?,
         prefersReducedMotion: Bool = false
     ) -> SpeedInstrumentDisplayFrame? {
         _ = measurementRevision
@@ -128,17 +169,54 @@ final class SpeedInstrumentModel {
             )
         }
 
-        guard let fallbackConfirmedKilometersPerHour,
-              fallbackConfirmedKilometersPerHour.isFinite,
-              fallbackConfirmedKilometersPerHour >= 0 else {
-            return nil
-        }
-
-        return SpeedInstrumentDisplayFrame(
-            kilometersPerHour: fallbackConfirmedKilometersPerHour,
-            latestMeasuredKilometersPerHour: nil,
-            origin: .confirmedVehicleState
+        return acceptedSourceFallbackFrame(
+            kilometersPerHour: fallbackAcceptedKilometersPerHour
         )
+    }
+
+    /// Synchronous visual truth boundary for the current field-specific source state.
+    ///
+    /// SwiftUI may render a newly observed availability value before `.onChange`
+    /// retires or retargets the local interpolator. Do not let callback scheduling
+    /// decide what numeric truth is visible during that render:
+    /// - unavailable, non-authoritative, or source-ineligible evidence renders no
+    ///   number immediately;
+    /// - retained renders exactly its accepted last-known sample;
+    /// - live may consume local interpolation only when that interpolation already
+    ///   targets the exact current accepted sample. Otherwise it snaps to current
+    ///   source truth until lifecycle cleanup/retargeting catches up.
+    func presentationFrame(
+        for availability: SpeedEvidenceAvailability,
+        atUptimeNanoseconds uptimeNanoseconds: UInt64,
+        prefersReducedMotion: Bool = false,
+        allowsSimulatorQA: Bool = false
+    ) -> SpeedInstrumentDisplayFrame? {
+        switch availability.dashboardPresentationAvailability(allowsSimulatorQA: allowsSimulatorQA) {
+        case .unavailable:
+            return nil
+
+        case let .retained(sample):
+            return acceptedSourceFallbackFrame(
+                kilometersPerHour: sample.kilometersPerHour
+            )
+
+        case let .live(sample):
+            // `SpeedTelemetrySample` carries the complete accepted display-target
+            // identity used here: source, provenance, value, receipt clocks,
+            // optional measurement clock, and optional accuracy. Partial matching
+            // can collide with a distinct accepted sample and replay an old target.
+            guard latestAcceptedSample == sample else {
+                return acceptedSourceFallbackFrame(
+                    kilometersPerHour: sample.kilometersPerHour
+                )
+            }
+
+            return frame(
+                atUptimeNanoseconds: uptimeNanoseconds,
+                fallbackAcceptedKilometersPerHour: sample.kilometersPerHour,
+                prefersReducedMotion: prefersReducedMotion
+            )
+        }
     }
 
     /// Duration is derived only when an injected policy enables interpolation.
@@ -163,6 +241,22 @@ final class SpeedInstrumentModel {
         )
     }
 
+    private func acceptedSourceFallbackFrame(
+        kilometersPerHour: Double?
+    ) -> SpeedInstrumentDisplayFrame? {
+        guard let kilometersPerHour,
+              kilometersPerHour.isFinite,
+              kilometersPerHour >= 0 else {
+            return nil
+        }
+
+        return SpeedInstrumentDisplayFrame(
+            kilometersPerHour: kilometersPerHour,
+            latestMeasuredKilometersPerHour: nil,
+            origin: .acceptedSourceFallback
+        )
+    }
+
     private func scheduleAnimationWindow(active: Bool, durationNanoseconds: UInt64) {
         animationEndTask?.cancel()
         animationEndTask = nil
@@ -181,47 +275,216 @@ final class SpeedInstrumentModel {
             self?.animationEndTask = nil
         }
     }
+
+    private func clearPresentationContinuity() {
+        animationEndTask?.cancel()
+        animationEndTask = nil
+        isAnimationActive = false
+        interpolator = SpeedDisplayInterpolator()
+        previousMeasurementUptimeNanoseconds = nil
+        latestMeasurementSource = nil
+        latestMeasuredKilometersPerHour = nil
+        latestMeasurementUptimeNanoseconds = nil
+        latestAcceptedSample = nil
+    }
+}
+
+/// App-owned source signature for the Simulator-only Energy Rail fixture.
+///
+/// Equality intentionally excludes unrelated `VehicleState` fields. A redraw or an
+/// unrelated state publication carrying the same watts cannot mint another accepted
+/// power receipt. Physical/unverified profiles collapse to `.unavailable` before the
+/// package runtime is even constructed.
+private struct DashboardSimulatorEnergyRailSource: Equatable {
+    let isSimulatorQA: Bool
+    let connected: Bool
+    let watts: Double?
+    let modeKey: String?
+
+    static let unavailable = DashboardSimulatorEnergyRailSource(
+        isSimulatorQA: false,
+        connected: false,
+        watts: nil,
+        modeKey: nil
+    )
+
+    var drivesDisplayClock: Bool {
+        isSimulatorQA && connected && watts != nil
+    }
 }
 
 /// A deliberately narrow high-frequency subtree for the landscape cockpit.
 ///
-/// Only this view redraws on SwiftUI's animation timeline. Vehicle controls,
-/// ride detection, persistence, distance, and safety continue to consume the
-/// confirmed/raw domain state rather than the rendered interpolation frame.
+/// Speed and propulsion presentation clocks are localized here. Source admission is
+/// event-driven and remains separate from both 60 Hz timelines: render frames never
+/// flow back into `VehicleState`, ride history, distance, stats, or protocol evidence.
 @MainActor
 struct DashboardSpeedInstrumentView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model = SpeedInstrumentModel()
+    @State private var energyRailRuntime: PropulsionEnergyRailSimulatorRuntime?
 
     let modePersonality: DashboardModePersonality
 
     var body: some View {
-        TimelineView(
-            .animation(
-                minimumInterval: 1.0 / 60.0,
-                paused: reduceMotion || !model.isAnimationActive
-            )
-        ) { _ in
-            let frame = model.frame(
-                atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
-                fallbackConfirmedKilometersPerHour: vehicle.state.speedKilometersPerHour,
-                prefersReducedMotion: reduceMotion
-            )
+        let allowsSimulatorQA = vehicle.profile == .simulatorQA
+        let rawSpeedAvailability = vehicle.speedEvidenceAvailability
+        let speedAvailability = rawSpeedAvailability.dashboardPresentationAvailability(
+            allowsSimulatorQA: allowsSimulatorQA
+        )
 
-            instrumentContent(frame: frame)
+        VStack(spacing: 0) {
+            TimelineView(
+                .animation(
+                    minimumInterval: 1.0 / 60.0,
+                    paused: reduceMotion
+                        || !model.isAnimationActive
+                        || !isLivePresentation(speedAvailability)
+                )
+            ) { _ in
+                let frame = model.presentationFrame(
+                    for: rawSpeedAvailability,
+                    atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+                    prefersReducedMotion: reduceMotion,
+                    allowsSimulatorQA: allowsSimulatorQA
+                )
+
+                speedInstrumentContent(frame: frame, speedAvailability: speedAvailability)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            energyRailInstrument
+                .padding(.horizontal, 16)
         }
         .task {
             model.configureInterpolationPolicy(vehicle.speedInstrumentInterpolationPolicy)
-            let stream = await vehicle.speedTelemetryUpdates()
-            model.start(stream: stream)
+            model.setSpeedEvidenceAvailability(
+                vehicle.speedEvidenceAvailability,
+                allowsSimulatorQA: vehicle.profile == .simulatorQA
+            )
+            admitEnergyRailSource(energyRailSource)
+        }
+        .onChange(of: vehicle.speedEvidenceAvailability) { _, availability in
+            model.setSpeedEvidenceAvailability(
+                availability,
+                allowsSimulatorQA: vehicle.profile == .simulatorQA
+            )
+        }
+        .onChange(of: energyRailSource) { _, source in
+            admitEnergyRailSource(source)
         }
         .onDisappear {
             model.stop()
+            energyRailRuntime = nil
         }
     }
 
-    private func instrumentContent(frame: SpeedInstrumentDisplayFrame?) -> some View {
+    @ViewBuilder
+    private var energyRailInstrument: some View {
+        let source = energyRailSource
+
+        TimelineView(
+            .animation(
+                minimumInterval: 1.0 / 60.0,
+                paused: reduceMotion || !source.drivesDisplayClock
+            )
+        ) { _ in
+            NembraEnergyRailView(
+                state: energyRailVisualState(
+                    source: source,
+                    atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
+                )
+            )
+        }
+    }
+
+    private var energyRailSource: DashboardSimulatorEnergyRailSource {
+        guard vehicle.profile == .simulatorQA else {
+            return .unavailable
+        }
+
+        let connected = vehicle.state.connection == .connected
+        let watts: Double?
+        if let rawWatts = vehicle.state.powerWatts,
+           rawWatts.isFinite,
+           rawWatts >= 0 {
+            watts = rawWatts == 0 ? 0 : rawWatts
+        } else {
+            watts = nil
+        }
+
+        return DashboardSimulatorEnergyRailSource(
+            isSimulatorQA: true,
+            connected: connected,
+            watts: watts,
+            modeKey: vehicle.state.rideMode?.displayName
+        )
+    }
+
+    /// Source-event clock. This is called only when the Simulator source signature
+    /// changes (plus initial task admission), never from either render timeline.
+    private func admitEnergyRailSource(_ source: DashboardSimulatorEnergyRailSource) {
+        guard source.isSimulatorQA else {
+            energyRailRuntime = nil
+            return
+        }
+
+        var runtime: PropulsionEnergyRailSimulatorRuntime
+        if let existing = energyRailRuntime {
+            runtime = existing
+        } else {
+            guard let created = try? PropulsionEnergyRailSimulatorRuntime() else {
+                energyRailRuntime = nil
+                return
+            }
+            runtime = created
+        }
+
+        _ = runtime.observe(
+            connected: source.connected,
+            watts: source.watts,
+            modeKey: source.modeKey,
+            receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
+        )
+        energyRailRuntime = runtime
+    }
+
+    /// Synchronous truth gate for SwiftUI callback ordering. If source state changes
+    /// before `.onChange` retargets the package runtime, the old accepted watts are
+    /// hidden rather than flashing as current. Only a projection that exactly matches
+    /// the current Simulator source may render numerically.
+    private func energyRailVisualState(
+        source: DashboardSimulatorEnergyRailSource,
+        atUptimeNanoseconds uptimeNanoseconds: UInt64
+    ) -> NembraEnergyRailVisualState {
+        guard source.isSimulatorQA,
+              source.connected,
+              let sourceWatts = source.watts,
+              let runtime = energyRailRuntime else {
+            return .unavailable
+        }
+
+        let state = NembraEnergyRailVisualState(
+            projection: runtime.projection(atUptimeNanoseconds: uptimeNanoseconds)
+        )
+        guard state.semanticWatts == sourceWatts else {
+            return .unavailable
+        }
+        return state
+    }
+
+    private func isLivePresentation(_ availability: SpeedEvidenceAvailability) -> Bool {
+        if case .live = availability {
+            return true
+        }
+        return false
+    }
+
+    private func speedInstrumentContent(
+        frame: SpeedInstrumentDisplayFrame?,
+        speedAvailability: SpeedEvidenceAvailability
+    ) -> some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
 
@@ -245,17 +508,19 @@ struct DashboardSpeedInstrumentView: View {
             .animation(modeAnimation, value: modePersonality.speedScale)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Speed")
-            // VoiceOver announces the newest authoritative/confirmed value,
-            // never a visual midpoint that no sensor actually measured.
-            .accessibilityValue(accessibilitySpeed(frame: frame))
+            // VoiceOver consumes the same sanitized field-specific speed state,
+            // never a 60 Hz render midpoint, estimate, cached aggregate speed, or
+            // synthetic sample ineligible for the active vehicle profile.
+            .accessibilityValue(accessibilitySpeed(speedAvailability))
             .accessibilityIdentifier("dashboard.speed")
 
             Group {
-                if vehicle.state.dataAvailability == .retained {
+                switch speedAvailability {
+                case .retained:
                     Label("LAST KNOWN", systemImage: "clock.arrow.circlepath")
-                } else if vehicle.state.connection == .connected {
-                    Text(isVehicleMoving ? "RIDING" : "READY")
-                } else {
+                case let .live(sample):
+                    Text(sample.kilometersPerHour >= 0.5 ? "RIDING" : "READY")
+                case .unavailable:
                     Text("NO LIVE SPEED")
                 }
             }
@@ -270,23 +535,28 @@ struct DashboardSpeedInstrumentView: View {
     }
 
     private func displayedValue(kilometersPerHour: Double?) -> Double? {
-        guard let kilometersPerHour else { return nil }
-        let nonnegative = max(0, kilometersPerHour)
-        return VehicleDisplayFormatting.usesMetric ? nonnegative : nonnegative * 0.621_371
+        guard let kilometersPerHour,
+              kilometersPerHour.isFinite,
+              kilometersPerHour >= 0 else {
+            return nil
+        }
+        let normalized = kilometersPerHour == 0 ? 0 : kilometersPerHour
+        return VehicleDisplayFormatting.usesMetric ? normalized : normalized * 0.621_371
     }
 
-    private func accessibilitySpeed(frame: SpeedInstrumentDisplayFrame?) -> String {
-        let authoritativeKilometersPerHour = frame?.latestMeasuredKilometersPerHour
-            ?? vehicle.state.speedKilometersPerHour
-        return VehicleDisplayFormatting.speed(kilometersPerHour: authoritativeKilometersPerHour)
+    private func accessibilitySpeed(_ availability: SpeedEvidenceAvailability) -> String {
+        switch availability {
+        case .unavailable:
+            return "Unavailable"
+        case let .retained(sample):
+            return "Last known, \(VehicleDisplayFormatting.speed(kilometersPerHour: sample.kilometersPerHour))"
+        case let .live(sample):
+            return VehicleDisplayFormatting.speed(kilometersPerHour: sample.kilometersPerHour)
+        }
     }
 
     private var speedUnitText: String {
         VehicleDisplayFormatting.usesMetric ? "KM/H" : "MPH"
-    }
-
-    private var isVehicleMoving: Bool {
-        (vehicle.state.speedKilometersPerHour ?? 0) >= 0.5
     }
 
     private var modeAnimation: Animation? {
