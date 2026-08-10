@@ -26,11 +26,28 @@ jobs:
           provenance='.github/workflows/capture-field-build-provenance.yml'
           regression='scripts/ci/tests/test_capture_ci_python_isolation.py'
 
-          test "$(git rev-parse HEAD^)" = "$base"
-          test "$(git diff --name-only HEAD^ HEAD)" = "$materializer"
+          test "$(git merge-base HEAD "$base")" = "$base"
+          test "$(git diff --name-only "$base" HEAD)" = "$materializer"
 
           python3 - <<'PY'
           from pathlib import Path
+
+          def isolate_command_lines(text: str) -> tuple[str, int]:
+              lines = []
+              converted = 0
+              for line in text.splitlines():
+                  stripped = line.lstrip()
+                  indent = line[:len(line)-len(stripped)]
+                  if stripped.startswith('/usr/bin/python3 -I '):
+                      pass
+                  elif stripped.startswith('/usr/bin/python3 '):
+                      line = indent + '/usr/bin/python3 -I ' + stripped[len('/usr/bin/python3 '):]
+                      converted += 1
+                  elif stripped.startswith('python3 '):
+                      line = indent + '/usr/bin/python3 -I ' + stripped[len('python3 '):]
+                      converted += 1
+                  lines.append(line)
+              return '\n'.join(lines) + '\n', converted
 
           producer = Path('.github/workflows/capture-producer-custody-source.yml')
           text = producer.read_text(encoding='utf-8')
@@ -42,16 +59,7 @@ jobs:
               path_anchor + '      - scripts/ci/tests/test_capture_ci_python_isolation.py\n',
               1,
           )
-          lines = []
-          converted = 0
-          for line in text.splitlines():
-              stripped = line.lstrip()
-              indent = line[:len(line)-len(stripped)]
-              if stripped.startswith('python3 '):
-                  line = indent + '/usr/bin/python3 -I ' + stripped[len('python3 '):]
-                  converted += 1
-              lines.append(line)
-          text = '\n'.join(lines) + '\n'
+          text, converted = isolate_command_lines(text)
           if converted < 8:
               raise SystemExit(f'expected producer Python commands, converted {converted}')
           run_anchor = '          /usr/bin/python3 -I scripts/ci/tests/test_xcode27_today_research_field_candidate.py\n'
@@ -67,17 +75,7 @@ jobs:
           producer.write_text(text, encoding='utf-8')
 
           provenance = Path('.github/workflows/capture-field-build-provenance.yml')
-          text = provenance.read_text(encoding='utf-8')
-          converted = 0
-          lines = []
-          for line in text.splitlines():
-              stripped = line.lstrip()
-              indent = line[:len(line)-len(stripped)]
-              if stripped.startswith('/usr/bin/python3 ') and not stripped.startswith('/usr/bin/python3 -I '):
-                  line = indent + '/usr/bin/python3 -I ' + stripped[len('/usr/bin/python3 '):]
-                  converted += 1
-              lines.append(line)
-          text = '\n'.join(lines) + '\n'
+          text, converted = isolate_command_lines(provenance.read_text(encoding='utf-8'))
           if converted < 4:
               raise SystemExit(f'expected field-provenance Python commands, converted {converted}')
           provenance.write_text(text, encoding='utf-8')
@@ -109,12 +107,11 @@ jobs:
                       raise SystemExit(f'unisolated Python validation command in {path}: {command}')
 
           producer = PRODUCER.read_text(encoding='utf-8')
-          required = [
+          for needle in (
               'scripts/ci/tests/test_capture_ci_python_isolation.py',
               '/usr/bin/python3 -I -m py_compile scripts/ci/tests/test_capture_ci_python_isolation.py',
               '/usr/bin/python3 -I scripts/ci/tests/test_capture_ci_python_isolation.py',
-          ]
-          for needle in required:
+          ):
               if needle not in producer:
                   raise SystemExit(f'portable producer gate does not enforce CI Python isolation: {needle}')
 
