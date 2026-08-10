@@ -2875,7 +2875,29 @@ private struct SecureLinkView: View {
 
     @ViewBuilder
     private var stageRail: some View {
-        if dynamicTypeSize.isAccessibilitySize {
+        if test.phase == .failed {
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: "stop.circle.fill")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(heroAccent)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("CAPTURE STOPPED")
+                        .font(.caption2.bold())
+                        .tracking(1.1)
+                        .foregroundStyle(heroAccent)
+                    Text("No Capture step is current")
+                        .font(.headline)
+                    Text("Start again from a fresh OFF1 when the blocker is cleared.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Capture stopped. No Capture step is current. Start again from a fresh OFF1 when the blocker is cleared.")
+        } else if dynamicTypeSize.isAccessibilitySize {
             HStack(spacing: 10) {
                 Text("Step \(currentStageIndex + 1) of 4")
                     .font(.caption.weight(.bold))
@@ -3542,7 +3564,7 @@ private struct SecureLinkView: View {
     private var phaseTitle: String {
         switch test.phase {
         case .accepted: return test.exportData == nil ? "Capture sealed" : "Capture complete"
-        case .failed: return "Capture paused"
+        case .failed: return "Capture stopped"
         case .baseline, .scanning, .powerOn: return "Find this scooter"
         case .correlated: return "Scooter signal found"
         case .selected, .authenticating: return "Secure the link"
