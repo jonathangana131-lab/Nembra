@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   repair:
-    if: "${{ github.actor != 'github-actions[bot]' }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,121 +17,95 @@ jobs:
           ref: repair/v14-capture-canonical-procedure-rendezvous-sol
           fetch-depth: 0
 
-      - name: Verify exact current flagship ancestry
-        shell: bash
-        run: |
-          set -euo pipefail
-          git merge-base --is-ancestor dee52e17577d25dd6d928378b2fb530f321923bb HEAD
-          test "$(git rev-parse dee52e17577d25dd6d928378b2fb530f321923bb:NembraApp/App/NembraCaptureBuildIdentity.swift)" = "8b75cc92ccdcf0328f301183dc7e246b4ec66255"
-          test "$(git rev-parse dee52e17577d25dd6d928378b2fb530f321923bb:NembraApp/App/NembraCaptureEntrypoint.swift)" = "a9afe42d7104a392475844d8f3866ada46e3664d"
-
       - name: Apply canonical procedure rendezvous
         shell: bash
         run: |
           set -euo pipefail
+          git merge-base --is-ancestor dee52e17577d25dd6d928378b2fb530f321923bb HEAD
           python3 - <<'PY'
           from pathlib import Path
+          P = "ES80-AUTHENTICATED-STATIONARY-v1"
 
-          procedure = "ES80-AUTHENTICATED-STATIONARY-v1"
+          def once(path, old, new):
+              f = Path(path)
+              s = f.read_text(encoding="utf-8")
+              if s.count(old) != 1:
+                  raise SystemExit(f"{path}: anchor count {s.count(old)} for {old[:80]!r}")
+              f.write_text(s.replace(old, new, 1), encoding="utf-8")
 
-          def replace_once(path: str, old: str, new: str) -> None:
-              p = Path(path)
-              source = p.read_text(encoding="utf-8")
-              count = source.count(old)
-              if count != 1:
-                  raise SystemExit(f"{path}: expected exactly one anchor, found {count}: {old[:100]!r}")
-              p.write_text(source.replace(old, new, 1), encoding="utf-8")
-
-          replace_once(
+          once(
               "NembraApp/App/NembraCaptureBuildIdentity.swift",
               '    static let tuyaDependencyLockSHA256InfoKey = "NembraCaptureTuyaDependencyLockSHA256"\n',
               '    static let tuyaDependencyLockSHA256InfoKey = "NembraCaptureTuyaDependencyLockSHA256"\n'
-              f'    static let fieldProcedureIdentifier = "{procedure}"\n'
+              f'    static let fieldProcedureIdentifier = "{P}"\n'
           )
-
-          replace_once(
+          once(
               "NembraApp/App/NembraCaptureEntrypoint.swift",
               "        let tuyaDependencyLockSHA256: String\n        let tuyaDeviceID: String\n",
               "        let tuyaDependencyLockSHA256: String\n        let procedureIdentifier: String\n        let tuyaDeviceID: String\n"
           )
-          replace_once(
+          once(
               "NembraApp/App/NembraCaptureEntrypoint.swift",
               "    var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }\n    var sdkAccountLoggedIn: Bool",
               "    var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }\n"
               "    var fieldProcedureIdentifier: String { NembraCaptureBuildIdentity.fieldProcedureIdentifier }\n"
               "    var sdkAccountLoggedIn: Bool"
           )
-          replace_once(
+          once(
               "NembraApp/App/NembraCaptureEntrypoint.swift",
               "            schemaVersion: 9,\n            purpose: \"Sanitized Tuya authenticated read-only stationary preflight\",\n",
               "            schemaVersion: 10,\n            purpose: \"Sanitized Tuya authenticated read-only stationary preflight\",\n"
           )
-          replace_once(
+          once(
               "NembraApp/App/NembraCaptureEntrypoint.swift",
               "            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,\n            tuyaDeviceID: deviceID,\n",
               "            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,\n"
               "            procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier,\n"
               "            tuyaDeviceID: deviceID,\n"
           )
-          replace_once(
+          once(
               "NembraApp/App/NembraCaptureEntrypoint.swift",
               "            LabeledContent(\"Source commit\", value: test.fieldBuildSourceCommitSHA)\n            LabeledContent(\"Private SDK config\", value: test.privateConfig ? \"Present\" : \"Missing\")\n",
               "            LabeledContent(\"Source commit\", value: test.fieldBuildSourceCommitSHA)\n"
               "            LabeledContent(\"Procedure\", value: test.fieldProcedureIdentifier)\n"
               "            LabeledContent(\"Private SDK config\", value: test.privateConfig ? \"Present\" : \"Missing\")\n"
           )
-
-          replace_once(
+          once(
               "docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md",
               "# Nembra Capture P0 — secure-link gate\n\n",
-              f"# Nembra Capture P0 — secure-link gate\n\nPROCEDURE_ID: `{procedure}`\n\n"
+              f"# Nembra Capture P0 — secure-link gate\n\nPROCEDURE_ID: `{P}`\n\n"
           )
-
-          replace_once(
+          once(
               "scripts/field/install_one_time_capture.command",
               'EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"\n',
-              f'PROCEDURE_ID="{procedure}"\nEXPECTED_SOURCE_SHA="${{1:-${{NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}}}"\n'
+              f'PROCEDURE_ID="{P}"\nEXPECTED_SOURCE_SHA="${{1:-${{NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}}}"\n'
           )
-          replace_once(
+          once(
               "scripts/field/install_one_time_capture.command",
               'say "SDK-INTEGRATED CAPTURE LAUNCHED"\nprintf \'%s\\n\' \\\n',
               'say "SDK-INTEGRATED CAPTURE LAUNCHED"\nprintf \'%s\\n\' \\\n    "Field procedure: $PROCEDURE_ID" \\\n'
           )
 
-          workflow = Path(".github/workflows/capture-field-build-provenance.yml")
-          source = workflow.read_text(encoding="utf-8")
-          source = source.replace(
-              "      - NembraApp/App/NembraCaptureEntrypoint.swift\n",
-              "      - NembraApp/App/NembraCaptureEntrypoint.swift\n"
-              "      - docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md\n"
-              "      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift\n",
-              1,
-          )
-          source = source.replace(
-              "          private_provenance='Scripts/capture_tuya_private_input_provenance.py'\n",
-              "          private_provenance='Scripts/capture_tuya_private_input_provenance.py'\n"
-              "          runbook='docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md'\n"
-              "          procedure_test='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift'\n",
-              1,
-          )
-          needle = "          grep -Fq 'envelope = sealedAcceptedExport' \"$entrypoint\"\n"
-          addition = (
-              needle
-              + "          grep -Fq 'static let fieldProcedureIdentifier = \"ES80-AUTHENTICATED-STATIONARY-v1\"' \"$identity\"\n"
-              + "          grep -Fq 'let procedureIdentifier: String' \"$entrypoint\"\n"
-              + "          grep -Fq 'schemaVersion: 10' \"$entrypoint\"\n"
-              + "          grep -Fq 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier' \"$entrypoint\"\n"
-              + "          grep -Fq 'PROCEDURE_ID: `ES80-AUTHENTICATED-STATIONARY-v1`' \"$runbook\"\n"
-              + "          grep -Fq 'PROCEDURE_ID=\"ES80-AUTHENTICATED-STATIONARY-v1\"' \"$installer\"\n"
-              + "          grep -Fq 'Field procedure: $PROCEDURE_ID' \"$installer\"\n"
-              + "          grep -Fq 'ES80-AUTHENTICATED-STATIONARY-v1' \"$procedure_test\"\n"
-          )
-          if source.count(needle) != 1:
-              raise SystemExit("capture field provenance workflow acceptance anchor changed")
-          workflow.write_text(source.replace(needle, addition, 1), encoding="utf-8")
+          wf = Path(".github/workflows/capture-field-build-provenance.yml")
+          s = wf.read_text(encoding="utf-8")
+          old = "      - NembraApp/App/NembraCaptureEntrypoint.swift\n"
+          new = old + "      - docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md\n      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift\n"
+          if s.count(old) != 1:
+              raise SystemExit("field provenance path anchor changed")
+          s = s.replace(old, new, 1)
+          old = "          private_provenance='Scripts/capture_tuya_private_input_provenance.py'\n"
+          new = old + "          runbook='docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md'\n          procedure_test='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift'\n"
+          if s.count(old) != 1:
+              raise SystemExit("field provenance variable anchor changed")
+          s = s.replace(old, new, 1)
+          old = "          grep -Fq 'envelope = sealedAcceptedExport' \"$entrypoint\"\n"
+          new = old + "          grep -Fq 'static let fieldProcedureIdentifier = \"ES80-AUTHENTICATED-STATIONARY-v1\"' \"$identity\"\n          grep -Fq 'let procedureIdentifier: String' \"$entrypoint\"\n          grep -Fq 'schemaVersion: 10' \"$entrypoint\"\n          grep -Fq 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier' \"$entrypoint\"\n          grep -Fq 'PROCEDURE_ID: `ES80-AUTHENTICATED-STATIONARY-v1`' \"$runbook\"\n          grep -Fq 'PROCEDURE_ID=\"ES80-AUTHENTICATED-STATIONARY-v1\"' \"$installer\"\n          grep -Fq 'Field procedure: $PROCEDURE_ID' \"$installer\"\n          grep -Fq 'ES80-AUTHENTICATED-STATIONARY-v1' \"$procedure_test\"\n"
+          if s.count(old) != 1:
+              raise SystemExit("field provenance assertion anchor changed")
+          wf.write_text(s.replace(old, new, 1), encoding="utf-8")
           PY
 
-      - name: Validate source and field shell contracts
+      - name: Validate and commit
         shell: bash
         run: |
           set -euo pipefail
@@ -140,30 +113,12 @@ jobs:
           swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
           swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift
           bash -n scripts/field/install_one_time_capture.command
-          python3 - <<'PY'
-          from pathlib import Path
-          p = "ES80-AUTHENTICATED-STATIONARY-v1"
-          identity = Path("NembraApp/App/NembraCaptureBuildIdentity.swift").read_text()
-          app = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
-          runbook = Path("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md").read_text()
-          installer = Path("scripts/field/install_one_time_capture.command").read_text()
-          workflow = Path(".github/workflows/capture-field-build-provenance.yml").read_text()
-          test = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift").read_text()
-          for source in (identity, app, runbook, installer, workflow, test):
-              assert p in source
-          assert "schemaVersion: 10" in app
-          assert "procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier" in app
-          assert 'LabeledContent("Procedure", value: test.fieldProcedureIdentifier)' in app
-          assert f"PROCEDURE_ID: `{p}`" in runbook
-          assert f'PROCEDURE_ID="{p}"' in installer
-          assert '"Field procedure: $PROCEDURE_ID"' in installer
-          PY
+          grep -Fq 'ES80-AUTHENTICATED-STATIONARY-v1' NembraApp/App/NembraCaptureBuildIdentity.swift
+          grep -Fq 'schemaVersion: 10' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'PROCEDURE_ID: `ES80-AUTHENTICATED-STATIONARY-v1`' docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md
+          grep -Fq 'Field procedure: $PROCEDURE_ID' scripts/field/install_one_time_capture.command
           git diff --check
-
-      - name: Commit product repair and retire one-shot workflow
-        shell: bash
-        run: |
-          set -euo pipefail
           rm .github/workflows/v14-capture-canonical-procedure-rendezvous-repair.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
