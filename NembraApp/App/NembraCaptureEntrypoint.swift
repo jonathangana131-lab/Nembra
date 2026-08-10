@@ -103,6 +103,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
     @Published private(set) var secure = false
     @Published private(set) var exportData: Data?
     @Published private(set) var exportName = "Nembra-Secure-Link-Diagnostics.json"
+    @Published private(set) var sdkAuthorizationMessage = "Official SDK account authorization has not started."
+    @Published private(set) var sdkVerificationCodeSent = false
     let deviceID: String; let deviceName: String; let productID: String; let tuyaUUID: String
     private var central: CBCentralManager!; private var peripherals: [UUID:CBPeripheral] = [:]; private var byID: [UUID:Candidate] = [:]; private var baseline = Set<UUID>()
     private var selectedPeripheral: CBPeripheral?; private var driver: OfficialTuyaDriver?; private var authUptime: UInt64?; private var acceptRaw = false; private var events: [Event] = []; private var watchdog: Task<Void,Never>?
@@ -117,6 +119,44 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var selected: Candidate? { selectedID.flatMap { byID[$0] } }
     var age: Double? { guard let a = authUptime else { return nil }; let n = DispatchTime.now().uptimeNanoseconds; return n >= a ? Double(n-a)/1e9 : nil }
     var passed: Bool { secure && packetCount > 0 && (age ?? 0) > 45 }
+    func initializeOfficialSDKAccountGate() {
+        guard sdkCompiled else { sdkAuthorizationMessage = "Official Tuya SmartLife SDK is not linked into this build."; return }
+        guard privateConfig else { sdkAuthorizationMessage = "Private Tuya app configuration is missing."; return }
+        guard OfficialTuyaFactory.startConfiguredSDK() else { sdkAuthorizationMessage = "Official Tuya SDK could not be initialized."; return }
+        sdkAuthorizationMessage = sdkAccountAuthorized ? "Official Tuya SDK account already authorized." : "Authorize the official Tuya SDK account before the stationary secure-link test."
+    }
+    func sendSDKEmailLoginCode(email rawEmail:String,countryCode rawCountryCode:String) {
+        let email=rawEmail.trimmingCharacters(in:.whitespacesAndNewlines); let country=rawCountryCode.trimmingCharacters(in:.whitespacesAndNewlines)
+        guard !email.isEmpty,email.contains("@"),!country.isEmpty else { sdkAuthorizationMessage="Enter the Tuya account email and numeric country code."; return }
+        guard sdkCompiled,privateConfig,OfficialTuyaFactory.startConfiguredSDK() else { sdkAuthorizationMessage="Official Tuya SDK/security configuration is not ready."; return }
+#if canImport(ThingSmartHomeKit)
+        guard let user=ThingSmartUser.sharedInstance() else { sdkAuthorizationMessage="Official Tuya account service is unavailable."; return }
+        sdkAuthorizationMessage="Requesting a Tuya login code…"
+        user.sendVerifyCode(withUserName:email,countryCode:country,type:2,success:{ [weak self] in
+            Task { @MainActor in self?.sdkVerificationCodeSent=true; self?.sdkAuthorizationMessage="Verification code sent. Enter it below." }
+        },failure:{ [weak self] _ in
+            Task { @MainActor in self?.sdkVerificationCodeSent=false; self?.sdkAuthorizationMessage="Tuya did not send the login code. Check the email and country code, then try again." }
+        })
+#else
+        sdkAuthorizationMessage="Official Tuya SmartLife SDK is not linked into this build."
+#endif
+    }
+    func completeSDKEmailLogin(email rawEmail:String,countryCode rawCountryCode:String,code rawCode:String) {
+        let email=rawEmail.trimmingCharacters(in:.whitespacesAndNewlines); let country=rawCountryCode.trimmingCharacters(in:.whitespacesAndNewlines); let code=rawCode.trimmingCharacters(in:.whitespacesAndNewlines)
+        guard !email.isEmpty,!country.isEmpty,!code.isEmpty else { sdkAuthorizationMessage="Email, country code, and verification code are required."; return }
+        guard sdkCompiled,privateConfig,OfficialTuyaFactory.startConfiguredSDK() else { sdkAuthorizationMessage="Official Tuya SDK/security configuration is not ready."; return }
+#if canImport(ThingSmartHomeKit)
+        guard let user=ThingSmartUser.sharedInstance() else { sdkAuthorizationMessage="Official Tuya account service is unavailable."; return }
+        sdkAuthorizationMessage="Authorizing the official Tuya SDK account…"
+        user.login(withEmail:email,countryCode:country,code:code,success:{ [weak self] in
+            Task { @MainActor in self?.sdkVerificationCodeSent=false; self?.sdkAuthorizationMessage="Official Tuya SDK account authorized." }
+        },failure:{ [weak self] _ in
+            Task { @MainActor in self?.sdkAuthorizationMessage="Tuya rejected the verification-code login. Request a fresh code and try again." }
+        })
+#else
+        sdkAuthorizationMessage="Official Tuya SmartLife SDK is not linked into this build."
+#endif
+    }
     func startBaseline() {
         guard central.state == .poweredOn else { fail("Bluetooth is not ready.", "bluetooth_unavailable"); return }
         resetDiscovery(); phase = .baseline; message = "Keep the scooter OFF for a few seconds."; log("baseline_started"); central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey:true])
@@ -198,6 +238,16 @@ extension SecureLinkController: @preconcurrency CBPeripheralDelegate {
         false
 #endif
     }
+    static func startConfiguredSDK()->Bool {
+#if canImport(ThingSmartHomeKit)
+        let env=ProcessInfo.processInfo.environment
+        guard let key=env["NEMBRA_TUYA_APP_KEY"],!key.isEmpty,let secret=env["NEMBRA_TUYA_APP_SECRET"],!secret.isEmpty,let sdk=ThingSmartSDK.sharedInstance() else{return false}
+        sdk.start(withAppKey:key,secretKey:secret)
+        return true
+#else
+        return false
+#endif
+    }
     static func make()->OfficialTuyaDriver? {
 #if canImport(ThingSmartHomeKit)
         guard configured,accountReady else{return nil}
@@ -210,8 +260,7 @@ extension SecureLinkController: @preconcurrency CBPeripheralDelegate {
 #if canImport(ThingSmartHomeKit)
 @MainActor private final class SmartLifeDriver: NSObject, OfficialTuyaDriver {
     func connect(uuid:String,productID:String,success:@escaping()->Void,failure:@escaping(String)->Void) {
-        let env=ProcessInfo.processInfo.environment; guard let key=env["NEMBRA_TUYA_APP_KEY"],!key.isEmpty,let secret=env["NEMBRA_TUYA_APP_SECRET"],!secret.isEmpty else{failure("Private Tuya SDK credentials are missing.");return}
-        ThingSmartSDK.sharedInstance()?.start(withAppKey:key,secretKey:secret)
+        guard OfficialTuyaFactory.startConfiguredSDK() else{failure("Private Tuya SDK credentials are missing.");return}
         ThingSmartBLEManager.sharedInstance().connectBLE(withUUID:uuid,productKey:productID,success:success,failure:{ failure("Tuya SmartLife SDK did not establish the BLE session.") })
     }
 }
@@ -220,15 +269,19 @@ extension SecureLinkController: @preconcurrency CBPeripheralDelegate {
 @MainActor
 private struct SecureLinkView: View {
     @StateObject private var test:SecureLinkController
+    @State private var sdkEmail=""
+    @State private var sdkCountryCode=""
+    @State private var sdkCode=""
     init(device:TuyaAccountBridge.LinkedDevice){_test=StateObject(wrappedValue:SecureLinkController(device:device))}
     var body:some View {
         TimelineView(.periodic(from:.now,by:0.5)){_ in ScrollView{VStack(alignment:.leading,spacing:14){
             Text("SMALLEST INDOOR TEST").font(.caption.monospaced().bold()).foregroundStyle(.green); Text("Authenticate. Wait. Capture.").font(.largeTitle.bold()); Text("Keep the scooter stationary. Do not run the old 17-step sequence.").foregroundStyle(.secondary)
-            status; sdk; discovery; if let c=test.selected{selected(c)}; acceptance; export
-        }.frame(maxWidth:760).padding(18).frame(maxWidth:.infinity)}.background(Color.black.ignoresSafeArea())}.navigationTitle("Secure Link")
+            status; sdk; sdkAccount; discovery; if let c=test.selected{selected(c)}; acceptance; export
+        }.frame(maxWidth:760).padding(18).frame(maxWidth:.infinity)}.background(Color.black.ignoresSafeArea())}.navigationTitle("Secure Link").onAppear{test.initializeOfficialSDKAccountGate()}
     }
     private var status:some View { VStack(alignment:.leading,spacing:8){HStack{Text(test.passed ? "Secure scooter link established" : test.phase == .failed ? "Secure-link test stopped" : "Authentication preflight").font(.headline);Spacer();Text("\(test.packetCount)").monospacedDigit()};Text(test.message).font(.footnote).foregroundStyle(.secondary);if let a=test.age{LabeledContent("Secure-session age",value:String(format:"%.1f s",a));ProgressView(value:min(a/45,1))};LabeledContent("Post-auth FD50 packets",value:String(test.packetCount))}.card() }
     private var sdk:some View { VStack(alignment:.leading,spacing:7){Label("Official Tuya gate",systemImage:"checkmark.shield").font(.headline);LabeledContent("SDK compiled in",value:test.sdkCompiled ? "Yes":"No");LabeledContent("Private app config",value:test.privateConfig ? "Yes":"No");LabeledContent("SDK account authorized",value:test.sdkAccountAuthorized ? "Yes":"No");if !test.sdkCompiled || !test.privateConfig || !test.sdkAccountAuthorized{Text("NO PHYSICAL TEST YET: official SDK/security component, matching private app credentials, and an authorized SDK account session must all be ready.").font(.footnote.bold()).foregroundStyle(.orange)}}.card() }
+    private var sdkAccount:some View { VStack(alignment:.leading,spacing:8){Label("Official Tuya account",systemImage:"person.badge.key").font(.headline);if test.sdkAccountAuthorized{Label("Authorized for the official SmartLife SDK",systemImage:"checkmark.circle.fill").foregroundStyle(.green)}else if !test.sdkCompiled || !test.privateConfig{Text("Account authorization stays locked until the official SDK and matching private app configuration are present.").font(.footnote).foregroundStyle(.secondary)}else{Text("Use Tuya's verification-code login for the same Tuya account. Nembra does not ask for or store the account password, and the email/code are never added to the diagnostic export.").font(.footnote).foregroundStyle(.secondary);TextField("Tuya account email",text:$sdkEmail).textInputAutocapitalization(.never).autocorrectionDisabled().textContentType(.emailAddress).keyboardType(.emailAddress).padding(10).background(.white.opacity(0.07),in:RoundedRectangle(cornerRadius:12));TextField("Country code, e.g. 1",text:$sdkCountryCode).keyboardType(.numberPad).padding(10).background(.white.opacity(0.07),in:RoundedRectangle(cornerRadius:12));Button("Send email verification code"){test.sendSDKEmailLoginCode(email:sdkEmail,countryCode:sdkCountryCode)}.buttonStyle(.bordered).disabled(sdkEmail.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || sdkCountryCode.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty);if test.sdkVerificationCodeSent{TextField("Verification code",text:$sdkCode).textContentType(.oneTimeCode).keyboardType(.numberPad).padding(10).background(.white.opacity(0.07),in:RoundedRectangle(cornerRadius:12));Button("Authorize official SDK account"){test.completeSDKEmailLogin(email:sdkEmail,countryCode:sdkCountryCode,code:sdkCode);sdkCode=""}.buttonStyle(.borderedProminent).disabled(sdkCode.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)};Text(test.sdkAuthorizationMessage).font(.footnote).foregroundStyle(.secondary)}}.card() }
     private var discovery:some View { VStack(alignment:.leading,spacing:10){Label("Find the known scooter",systemImage:"scope").font(.headline);switch test.phase{case .idle,.failed:Button("Start scooter-OFF baseline"){test.startBaseline()}.buttonStyle(.borderedProminent);case .baseline:Button("Save OFF baseline"){test.saveBaseline()}.buttonStyle(.borderedProminent);case .powerOn:Text("Turn scooter ON, keep it still.").foregroundStyle(.secondary);Button("Scan after power-on"){test.scanOn()}.buttonStyle(.borderedProminent);case .scanning:Button("Stop scan / use best evidence"){test.stopScan()}.buttonStyle(.bordered);default:EmptyView()};ForEach(test.candidates.prefix(8)){c in Button{test.choose(c)}label:{VStack(alignment:.leading,spacing:4){HStack{Text(c.title).bold();if c.likely{Text("LIKELY SCOOTER").font(.caption2.bold()).padding(.horizontal,6).padding(.vertical,2).background(.green,in:Capsule()).foregroundStyle(.black)};Spacer();Text("\(c.score)").monospacedDigit()};Text("\(c.rssi.map{String($0)+" dBm"} ?? "RSSI ?") · \(c.id.uuidString)").font(.caption2).foregroundStyle(.secondary).lineLimit(1);Text(c.evidence.joined(separator:" · ")).font(.caption).foregroundStyle(.secondary)}}.buttonStyle(.plain)}}.card() }
     private func selected(_ c:SecureLinkController.Candidate)->some View { VStack(alignment:.leading,spacing:8){Label("Authentication gate",systemImage:"key.horizontal").font(.headline);Text(c.evidence.joined(separator:" · ")).font(.footnote).foregroundStyle(.secondary);Button("Start secure read-only test"){test.authenticate()}.buttonStyle(.borderedProminent).disabled(!c.likely || !test.sdkCompiled || !test.privateConfig || !test.sdkAccountAuthorized || [.authenticating,.observing,.accepted].contains(test.phase))}.card() }
     private var acceptance:some View { VStack(alignment:.leading,spacing:7){Label("Acceptance",systemImage:test.passed ? "checkmark.seal.fill":"hourglass").font(.headline).foregroundStyle(test.passed ? .green:.white);Text("Pass only when Tuya's official session succeeds, it survives >45 seconds, and at least one genuine post-auth FD50 notification is captured. No DP meaning is inferred here.").font(.footnote).foregroundStyle(.secondary);if test.passed{Text("Secure scooter link established\nReceiving scooter data").font(.title3.bold()).foregroundStyle(.green)}}.card() }
