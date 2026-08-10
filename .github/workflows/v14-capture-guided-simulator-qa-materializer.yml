@@ -1,0 +1,815 @@
+name: V14 Capture Guided Simulator QA Materializer
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-guided-simulator-qa-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply exact-parent Simulator-only guided visual integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_PARENT="8e4d28c9bd1c3ba6dd3a9c9292bd9f1ff27a40ac"
+          [[ "$(git rev-parse HEAD^)" == "$EXPECTED_PARENT" ]] || { echo "materializer already consumed or branch moved; no-op"; exit 0; }
+          mapfile -t CUT_FILES < <(git diff --name-only "$EXPECTED_PARENT" HEAD)
+          [[ "${#CUT_FILES[@]}" -eq 1 && "${CUT_FILES[0]}" == ".github/workflows/v14-capture-guided-simulator-qa-materializer.yml" ]] || exit 2
+
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text()
+
+          def replace_once(old: str, new: str):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected one anchor, found {count}: {old[:100]!r}")
+              text = text.replace(old, new, 1)
+
+          replace_once(
+          '''    var body: some Scene {
+                  WindowGroup { CaptureP0Root().preferredColorScheme(.dark) }
+              }
+          }
+          ''',
+          '''    var body: some Scene {
+                  WindowGroup {
+          #if DEBUG && targetEnvironment(simulator)
+                      if let scenario = CaptureSimulatorQALaunch.scenario {
+                          NavigationStack {
+                              SecureLinkView(
+                                  simulatorQASnapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.snapshot(for: scenario)
+                              )
+                              .preferredColorScheme(.dark)
+                          }
+                      } else {
+                          CaptureP0Root().preferredColorScheme(.dark)
+                      }
+          #else
+                      CaptureP0Root().preferredColorScheme(.dark)
+          #endif
+                  }
+              }
+          }
+
+          #if DEBUG && targetEnvironment(simulator)
+          @MainActor
+          private enum CaptureSimulatorQALaunch {
+              static let scenarioArgument = "-NemCaptureQAScenario"
+
+              static var scenario: PassiveBluetoothExperimentOneSimulatorQAFixture.Scenario? {
+                  let arguments = CommandLine.arguments
+                  guard let marker = arguments.firstIndex(of: scenarioArgument),
+                        arguments.indices.contains(marker + 1) else { return nil }
+                  return PassiveBluetoothExperimentOneSimulatorQAFixture.Scenario(rawValue: arguments[marker + 1])
+              }
+          }
+          #endif
+          ''')
+
+          replace_once(
+          '''    @State private var showEngineeringDetails = false
+              @Environment(\\.dynamicTypeSize) private var dynamicTypeSize
+
+              private let stageLabels = ["Target", "Secure link", "Observe", "Seal"]
+
+              init(device: TuyaAccountBridge.LinkedDevice) {
+                  _test = StateObject(wrappedValue: SecureLinkController(device: device))
+              }
+          ''',
+          '''    @State private var showEngineeringDetails = false
+              @Environment(\\.dynamicTypeSize) private var dynamicTypeSize
+          #if DEBUG && targetEnvironment(simulator)
+              private let simulatorQASnapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot?
+          #endif
+
+              private let stageLabels = ["Target", "Secure link", "Observe", "Seal"]
+
+              init(device: TuyaAccountBridge.LinkedDevice) {
+                  _test = StateObject(wrappedValue: SecureLinkController(device: device))
+          #if DEBUG && targetEnvironment(simulator)
+                  simulatorQASnapshot = nil
+          #endif
+              }
+
+          #if DEBUG && targetEnvironment(simulator)
+              init(simulatorQASnapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot) {
+                  let device = TuyaAccountBridge.LinkedDevice(
+                      id: "SIMULATOR-QA",
+                      name: "ES80 QA fixture",
+                      category: "qa",
+                      productID: "SIMULATOR-QA",
+                      productName: "Nembra Capture QA",
+                      uuid: "SIMULATOR-QA",
+                      assetID: "",
+                      online: false
+                  )
+                  _test = StateObject(wrappedValue: SecureLinkController(device: device))
+                  self.simulatorQASnapshot = simulatorQASnapshot
+              }
+          #endif
+          ''')
+
+          replace_once(
+          '''            .onChange(of: test.correlationProgress?.isSeriesInvalidated == true) { _, invalidated in
+                          if invalidated {
+                              test.consumeCorrelationAsyncInvalidation()
+                          }
+                      }
+          ''',
+          '''            .onChange(of: test.correlationProgress?.isSeriesInvalidated == true) { _, invalidated in
+          #if DEBUG && targetEnvironment(simulator)
+                          guard simulatorQASnapshot == nil else { return }
+          #endif
+                          if invalidated {
+                              test.consumeCorrelationAsyncInvalidation()
+                          }
+                      }
+          ''')
+
+          replace_once(
+          '''        .task {
+                      sdkAccount.bootstrap()
+                      if sdkAccount.loggedIn { test.verifySDKMembership() }
+                      while !Task.isCancelled {
+                          test.consumeCorrelationAsyncInvalidation()
+                          try? await Task.sleep(nanoseconds: 250_000_000)
+                      }
+                  }
+                  .onDisappear {
+                      test.abandonCorrelationForViewExit()
+                  }
+                  .onChange(of: sdkAccount.loggedIn) { _, loggedIn in
+                      if loggedIn { test.verifySDKMembership() }
+                      else { test.invalidateSDKMembership() }
+                  }
+          ''',
+          '''        .task {
+          #if DEBUG && targetEnvironment(simulator)
+                      guard simulatorQASnapshot == nil else { return }
+          #endif
+                      sdkAccount.bootstrap()
+                      if sdkAccount.loggedIn { test.verifySDKMembership() }
+                      while !Task.isCancelled {
+                          test.consumeCorrelationAsyncInvalidation()
+                          try? await Task.sleep(nanoseconds: 250_000_000)
+                      }
+                  }
+                  .onDisappear {
+          #if DEBUG && targetEnvironment(simulator)
+                      guard simulatorQASnapshot == nil else { return }
+          #endif
+                      test.abandonCorrelationForViewExit()
+                  }
+                  .onChange(of: sdkAccount.loggedIn) { _, loggedIn in
+          #if DEBUG && targetEnvironment(simulator)
+                      guard simulatorQASnapshot == nil else { return }
+          #endif
+                      if loggedIn { test.verifySDKMembership() }
+                      else { test.invalidateSDKMembership() }
+                  }
+          ''')
+
+          replace_once(
+          '''                Label(
+                          test.fieldBuildIsAuthoritative ? "Field build" : "Build blocked",
+                          systemImage: test.fieldBuildIsAuthoritative ? "checkmark.shield.fill" : "exclamationmark.shield"
+                      )
+                      .font(.caption.weight(.semibold))
+                      .foregroundStyle(test.fieldBuildIsAuthoritative ? Color.green : Color.orange)
+          ''',
+          '''                authorityBadge
+          ''')
+
+          replace_once(
+          '''                            if index < currentStageIndex || test.phase == .accepted {
+          ''',
+          '''                            if index < currentStageIndex || presentationIsAccepted {
+          ''')
+
+          replace_once(
+          '''    @ViewBuilder
+              private var primarySurface: some View {
+                  switch test.phase {
+          ''',
+          '''    @ViewBuilder
+              private var primarySurface: some View {
+          #if DEBUG && targetEnvironment(simulator)
+                  if let simulatorQASnapshot {
+                      simulatorPrimarySurface(simulatorQASnapshot)
+                  } else {
+                      livePrimarySurface
+                  }
+          #else
+                  livePrimarySurface
+          #endif
+              }
+
+              @ViewBuilder
+              private var livePrimarySurface: some View {
+                  switch test.phase {
+          ''')
+
+          # Insert Simulator-only presentation helpers before the live failure panel.
+          marker = '''    private var failureRecoveryContextPanel: some View {\n'''
+          if text.count(marker) != 1:
+              raise SystemExit("failure panel insertion marker drifted")
+          simulator_helpers = r'''#if DEBUG && targetEnvironment(simulator)
+              @ViewBuilder
+              private var authorityBadge: some View {
+                  if let simulatorQASnapshot {
+                      Label(simulatorQASnapshot.evidenceLabel, systemImage: "hammer.fill")
+                          .font(.caption.weight(.semibold))
+                          .foregroundStyle(.yellow)
+                          .accessibilityLabel("Simulator QA presentation. Physical procedure locked.")
+                  } else {
+                      liveAuthorityBadge
+                  }
+              }
+          #else
+              private var authorityBadge: some View { liveAuthorityBadge }
+          #endif
+
+              private var liveAuthorityBadge: some View {
+                  Label(
+                      test.fieldBuildIsAuthoritative ? "Field build" : "Build blocked",
+                      systemImage: test.fieldBuildIsAuthoritative ? "checkmark.shield.fill" : "exclamationmark.shield"
+                  )
+                  .font(.caption.weight(.semibold))
+                  .foregroundStyle(test.fieldBuildIsAuthoritative ? Color.green : Color.orange)
+              }
+
+          #if DEBUG && targetEnvironment(simulator)
+              @ViewBuilder
+              private func simulatorPrimarySurface(
+                  _ snapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot
+              ) -> some View {
+                  panel {
+                      VStack(alignment: .leading, spacing: 18) {
+                          simulatorQABanner(snapshot)
+
+                          switch snapshot.scenario {
+                          case .stationaryPreflight:
+                              Text("PREFLIGHT")
+                                  .font(.caption2.bold())
+                                  .tracking(1.2)
+                                  .foregroundStyle(.cyan)
+                              Text(snapshot.title).font(.title2.bold())
+                              Text("Presentation fixture for the guided Capture setup. It cannot log in, scan, connect, or create evidence.")
+                                  .foregroundStyle(.secondary)
+                              simulatorStatusRow("Capture presentation", value: "Ready")
+                              simulatorStatusRow("Physical procedure", value: "Locked")
+
+                          case .firstPoweredOff, .firstPoweredOn, .secondPoweredOff, .secondPoweredOn:
+                              simulatorCorrelationHeader(snapshot)
+                              Text("Keep the scooter state shown by this QA scenario. No Bluetooth scan is running; this screen exists only to inspect the real Capture hierarchy and accessibility layout.")
+                                  .foregroundStyle(.secondary)
+                              Label("Bluetooth transport disabled", systemImage: "antenna.radiowaves.left.and.right.slash")
+                                  .font(.subheadline.weight(.semibold))
+                                  .foregroundStyle(.secondary)
+
+                          case .targetConfirmation:
+                              simulatorCorrelationHeader(snapshot)
+                              Text("One repeated signal is represented for presentation review only. This fixture cannot confirm a physical scooter or mint target authority.")
+                                  .foregroundStyle(.secondary)
+                              Button("Confirm this scooter signal") { }
+                                  .buttonStyle(.borderedProminent)
+                                  .controlSize(.large)
+                                  .frame(maxWidth: .infinity)
+                                  .allowsHitTesting(false)
+                                  .accessibilityHint("Simulator QA only. No target confirmation is performed.")
+
+                          case .passiveDiscovery:
+                              Text("SECURE LINK")
+                                  .font(.caption2.bold())
+                                  .tracking(1.2)
+                                  .foregroundStyle(.cyan)
+                              ProgressView().controlSize(.large)
+                              Text(snapshot.title).font(.title2.bold())
+                              Text("Presentation-only secure-link transition. The fixture owns no Bluetooth transport and performs no Tuya SDK connection.")
+                                  .foregroundStyle(.secondary)
+                              simulatorStatusRow("Transport authority", value: "None")
+
+                          case .observationReady, .captureInProgress, .observationHorizonReady:
+                              Text("OBSERVE")
+                                  .font(.caption2.bold())
+                                  .tracking(1.2)
+                                  .foregroundStyle(.cyan)
+                              Text(snapshot.title).font(.title2.bold())
+                              Text("Simulator-only observation presentation. The displayed progress is fixture state, never measurement or persisted telemetry.")
+                                  .foregroundStyle(.secondary)
+                              simulatorObservationProgress(snapshot)
+
+                          case .horizonSealed:
+                              Label("CAPTURE SEALED", systemImage: "checkmark.seal")
+                                  .font(.title2.bold())
+                                  .foregroundStyle(.cyan)
+                              Text("The sealed state is rendered for QA only. No immutable physical artifact exists in this scenario.")
+                                  .foregroundStyle(.secondary)
+                              simulatorStatusRow("Evidence authority", value: "None")
+
+                          case .captureComplete:
+                              HStack(alignment: .top, spacing: 14) {
+                                  Image(systemName: "checkmark.seal.fill")
+                                      .font(.system(size: 38, weight: .semibold))
+                                      .foregroundStyle(.green)
+                                      .accessibilityHidden(true)
+                                  VStack(alignment: .leading, spacing: 3) {
+                                      Text("CAPTURE COMPLETE")
+                                          .font(.caption2.bold())
+                                          .tracking(1.3)
+                                          .foregroundStyle(.green)
+                                      Text("Ready for visual review")
+                                          .font(.title.bold())
+                                  }
+                              }
+                              Text("This is the completion presentation only. No Capture bytes were created and sharing remains non-authorizing.")
+                                  .foregroundStyle(.secondary)
+                              Button("Share Capture") { }
+                                  .buttonStyle(.borderedProminent)
+                                  .controlSize(.large)
+                                  .frame(maxWidth: .infinity)
+                                  .allowsHitTesting(false)
+                                  .accessibilityHint("Simulator QA only. No artifact is shared.")
+
+                          case .shareRetry:
+                              Label("SHARE RETRY", systemImage: "arrow.clockwise.circle")
+                                  .font(.title2.bold())
+                                  .foregroundStyle(.cyan)
+                              Text(snapshot.title).font(.title3.bold())
+                              Text("The retry affordance is presentation-only; the fixture has no artifact bytes to rebuild or share.")
+                                  .foregroundStyle(.secondary)
+                              Button("Retry Share") { }
+                                  .buttonStyle(.bordered)
+                                  .controlSize(.large)
+                                  .allowsHitTesting(false)
+
+                          case .foregroundInterrupted:
+                              Label("Capture paused", systemImage: "exclamationmark.circle")
+                                  .font(.title2.bold())
+                                  .foregroundStyle(.orange)
+                              Text(snapshot.title).font(.title3.bold())
+                              Text("Foreground continuity is represented as invalidated. The fixture cannot reuse this state or create recovery evidence.")
+                                  .foregroundStyle(.secondary)
+                              simulatorStatusRow("Physical procedure", value: "Locked")
+                          }
+                      }
+                  }
+              }
+
+              private func simulatorQABanner(
+                  _ snapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot
+              ) -> some View {
+                  HStack(spacing: 8) {
+                      Image(systemName: "hammer.fill")
+                      Text(snapshot.evidenceLabel)
+                          .font(.caption.bold())
+                          .tracking(0.8)
+                      Spacer()
+                      Text("PHYSICAL LOCKED")
+                          .font(.caption2.bold())
+                          .foregroundStyle(.secondary)
+                  }
+                  .padding(.horizontal, 12)
+                  .padding(.vertical, 9)
+                  .background(Color.yellow.opacity(0.10), in: Capsule())
+                  .overlay { Capsule().stroke(Color.yellow.opacity(0.25), lineWidth: 1) }
+                  .accessibilityElement(children: .combine)
+                  .accessibilityLabel(snapshot.accessibilitySummary)
+              }
+
+              @ViewBuilder
+              private func simulatorCorrelationHeader(
+                  _ snapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot
+              ) -> some View {
+                  let ordinal = simulatorCorrelationOrdinal(snapshot.scenario)
+                  let title = simulatorCorrelationTitle(snapshot.scenario)
+                  if dynamicTypeSize.isAccessibilitySize {
+                      VStack(alignment: .leading, spacing: 8) {
+                          VStack(alignment: .leading, spacing: 4) {
+                              Text("FIND SCOOTER")
+                                  .font(.caption2.bold())
+                                  .tracking(1.2)
+                                  .foregroundStyle(.cyan)
+                              Text(title)
+                                  .font(.title2.bold())
+                                  .fixedSize(horizontal: false, vertical: true)
+                          }
+                          Text("\(ordinal)/4")
+                              .font(.title3.monospacedDigit().bold())
+                              .foregroundStyle(.secondary)
+                              .accessibilityLabel("Correlation progress")
+                              .accessibilityValue("\(ordinal) of 4 windows")
+                      }
+                  } else {
+                      HStack(alignment: .firstTextBaseline) {
+                          VStack(alignment: .leading, spacing: 4) {
+                              Text("FIND SCOOTER")
+                                  .font(.caption2.bold())
+                                  .tracking(1.2)
+                                  .foregroundStyle(.cyan)
+                              Text(title).font(.title2.bold())
+                          }
+                          Spacer()
+                          Text("\(ordinal)/4")
+                              .font(.title3.monospacedDigit().bold())
+                              .foregroundStyle(.secondary)
+                              .accessibilityLabel("Correlation progress")
+                              .accessibilityValue("\(ordinal) of 4 windows")
+                      }
+                  }
+              }
+
+              @ViewBuilder
+              private func simulatorObservationProgress(
+                  _ snapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot
+              ) -> some View {
+                  let age = simulatorObservationAge(snapshot.scenario)
+                  VStack(alignment: .leading, spacing: 8) {
+                      if dynamicTypeSize.isAccessibilitySize {
+                          VStack(alignment: .leading, spacing: 4) {
+                              Text("Read-only observation")
+                                  .font(.subheadline.weight(.semibold))
+                              Text("\(Int(age)) / 45 s")
+                                  .font(.subheadline.monospacedDigit().bold())
+                          }
+                      } else {
+                          HStack {
+                              Text("Read-only observation")
+                                  .font(.subheadline.weight(.semibold))
+                              Spacer()
+                              Text("\(Int(age)) / 45 s")
+                                  .font(.subheadline.monospacedDigit().bold())
+                          }
+                      }
+                      ProgressView(value: age / 45)
+                          .accessibilityLabel("Read-only observation progress")
+                          .accessibilityValue("\(Int(age)) of 45 seconds")
+                      simulatorStatusRow("Secure local link", value: snapshot.connection == .connected ? "QA ready" : "QA waiting")
+                      simulatorStatusRow("Scooter data received", value: snapshot.scenario == .observationReady ? "QA waiting" : "QA represented")
+                  }
+              }
+
+              private func simulatorStatusRow(_ title: String, value: String) -> some View {
+                  HStack(spacing: 10) {
+                      Image(systemName: "circle.dashed")
+                          .foregroundStyle(.secondary)
+                          .accessibilityHidden(true)
+                      Text(title)
+                      Spacer()
+                      Text(value)
+                          .font(.caption.weight(.semibold))
+                          .foregroundStyle(.secondary)
+                  }
+                  .accessibilityElement(children: .combine)
+                  .accessibilityLabel("\(title), \(value), simulator QA")
+              }
+
+              private func simulatorCorrelationOrdinal(
+                  _ scenario: PassiveBluetoothExperimentOneSimulatorQAFixture.Scenario
+              ) -> Int {
+                  switch scenario {
+                  case .firstPoweredOff: return 1
+                  case .firstPoweredOn: return 2
+                  case .secondPoweredOff: return 3
+                  case .secondPoweredOn, .targetConfirmation: return 4
+                  default: return 4
+                  }
+              }
+
+              private func simulatorCorrelationTitle(
+                  _ scenario: PassiveBluetoothExperimentOneSimulatorQAFixture.Scenario
+              ) -> String {
+                  switch scenario {
+                  case .firstPoweredOff: return "OFF1"
+                  case .firstPoweredOn: return "ON1"
+                  case .secondPoweredOff: return "OFF2"
+                  case .secondPoweredOn: return "ON2"
+                  case .targetConfirmation: return "Scooter signal found"
+                  default: return "Find this scooter"
+                  }
+              }
+
+              private func simulatorObservationAge(
+                  _ scenario: PassiveBluetoothExperimentOneSimulatorQAFixture.Scenario
+              ) -> Double {
+                  switch scenario {
+                  case .observationReady: return 0
+                  case .captureInProgress: return 23
+                  case .observationHorizonReady: return 45
+                  default: return 0
+                  }
+              }
+
+              private func simulatorStageIndex(
+                  _ scenario: PassiveBluetoothExperimentOneSimulatorQAFixture.Scenario
+              ) -> Int {
+                  switch scenario {
+                  case .stationaryPreflight,
+                       .firstPoweredOff,
+                       .firstPoweredOn,
+                       .secondPoweredOff,
+                       .secondPoweredOn:
+                      return 0
+                  case .targetConfirmation, .passiveDiscovery:
+                      return 1
+                  case .observationReady, .captureInProgress, .observationHorizonReady, .foregroundInterrupted:
+                      return 2
+                  case .horizonSealed, .captureComplete, .shareRetry:
+                      return 3
+                  }
+              }
+
+              private func simulatorPhaseKicker(
+                  _ scenario: PassiveBluetoothExperimentOneSimulatorQAFixture.Scenario
+              ) -> String {
+                  switch simulatorStageIndex(scenario) {
+                  case 0: return "FIND SCOOTER"
+                  case 1: return "SECURE LINK"
+                  case 2: return scenario == .foregroundInterrupted ? "STOPPED SAFELY" : "OBSERVATION"
+                  default: return "SEALED"
+                  }
+              }
+
+              private func simulatorPhaseSubtitle(
+                  _ snapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot
+              ) -> String {
+                  switch simulatorStageIndex(snapshot.scenario) {
+                  case 0:
+                      return "Simulator-only presentation of the OFF → ON → OFF → ON target flow. No target identity is earned."
+                  case 1:
+                      return "Simulator-only presentation of the secure-link handoff. No Bluetooth or Tuya transport is started."
+                  case 2:
+                      return snapshot.scenario == .foregroundInterrupted
+                          ? "The interruption state is visual QA only and cannot be recovered into evidence."
+                          : "Simulator-only observation presentation. Display progress is not measurement or physical evidence."
+                  default:
+                      return "Simulator-only seal/share presentation. No physical Capture artifact exists."
+                  }
+              }
+
+              private var simulatorEngineeringDisclosure: some View {
+                  DisclosureGroup(isExpanded: $showEngineeringDetails) {
+                      if let snapshot = simulatorQASnapshot {
+                          VStack(alignment: .leading, spacing: 10) {
+                              LabeledContent("Evidence", value: snapshot.evidenceLabel)
+                              LabeledContent("Scenario", value: snapshot.scenario.rawValue)
+                              LabeledContent("Transport", value: snapshot.mayUseBluetoothTransport ? "Unexpected" : "None")
+                              LabeledContent("Physical procedure", value: snapshot.physicalProcedurePermitted ? "Unexpected" : "Locked")
+                              Text("This Debug iOS Simulator fixture is presentation-only. It cannot create Capture evidence, protocol authority, or physical GO.")
+                                  .font(.caption)
+                                  .foregroundStyle(.secondary)
+                          }
+                          .padding(.top, 12)
+                      }
+                  } label: {
+                      Label("QA details", systemImage: "hammer")
+                          .font(.subheadline.weight(.semibold))
+                  }
+                  .tint(.secondary)
+                  .padding(.horizontal, 2)
+              }
+          #endif
+
+          '''
+          text = text.replace(marker, simulator_helpers + marker, 1)
+
+          # Wrap engineering disclosure so fixture never renders mutable live authority details.
+          replace_once(
+          '''    private var engineeringDisclosure: some View {
+                  DisclosureGroup(isExpanded: $showEngineeringDetails) {
+          ''',
+          '''    @ViewBuilder
+              private var engineeringDisclosure: some View {
+          #if DEBUG && targetEnvironment(simulator)
+                  if simulatorQASnapshot != nil {
+                      simulatorEngineeringDisclosure
+                  } else {
+                      liveEngineeringDisclosure
+                  }
+          #else
+                  liveEngineeringDisclosure
+          #endif
+              }
+
+              private var liveEngineeringDisclosure: some View {
+                  DisclosureGroup(isExpanded: $showEngineeringDetails) {
+          ''')
+
+          # Add simulator branches to presentation-only computed properties.
+          replace_once(
+          '''    private var currentStageIndex: Int {
+                  switch test.phase {
+          ''',
+          '''    private var presentationIsAccepted: Bool {
+          #if DEBUG && targetEnvironment(simulator)
+                  if let simulatorQASnapshot {
+                      return simulatorQASnapshot.artifactState == .completeReadyForAnalysis
+                  }
+          #endif
+                  return test.phase == .accepted
+              }
+
+              private var currentStageIndex: Int {
+          #if DEBUG && targetEnvironment(simulator)
+                  if let simulatorQASnapshot {
+                      return simulatorStageIndex(simulatorQASnapshot.scenario)
+                  }
+          #endif
+                  switch test.phase {
+          ''')
+
+          replace_once(
+          '''    private var phaseKicker: String {
+                  switch test.phase {
+          ''',
+          '''    private var phaseKicker: String {
+          #if DEBUG && targetEnvironment(simulator)
+                  if let simulatorQASnapshot {
+                      return simulatorPhaseKicker(simulatorQASnapshot.scenario)
+                  }
+          #endif
+                  switch test.phase {
+          ''')
+          replace_once(
+          '''    private var phaseTitle: String {
+                  switch test.phase {
+          ''',
+          '''    private var phaseTitle: String {
+          #if DEBUG && targetEnvironment(simulator)
+                  if let simulatorQASnapshot { return simulatorQASnapshot.title }
+          #endif
+                  switch test.phase {
+          ''')
+          replace_once(
+          '''    private var phaseSubtitle: String {
+                  switch test.phase {
+          ''',
+          '''    private var phaseSubtitle: String {
+          #if DEBUG && targetEnvironment(simulator)
+                  if let simulatorQASnapshot { return simulatorPhaseSubtitle(simulatorQASnapshot) }
+          #endif
+                  switch test.phase {
+          ''')
+          replace_once(
+          '''    private var heroSymbol: String {
+                  switch test.phase {
+          ''',
+          '''    private var heroSymbol: String {
+          #if DEBUG && targetEnvironment(simulator)
+                  if let simulatorQASnapshot {
+                      switch simulatorStageIndex(simulatorQASnapshot.scenario) {
+                      case 0: return "scope"
+                      case 1: return "key.horizontal.fill"
+                      case 2: return simulatorQASnapshot.scenario == .foregroundInterrupted ? "exclamationmark" : "waveform.path.ecg"
+                      default: return "checkmark.seal.fill"
+                      }
+                  }
+          #endif
+                  switch test.phase {
+          ''')
+          replace_once(
+          '''    private var heroAccent: Color {
+                  switch test.phase {
+          ''',
+          '''    private var heroAccent: Color {
+          #if DEBUG && targetEnvironment(simulator)
+                  if let simulatorQASnapshot {
+                      if simulatorQASnapshot.scenario == .foregroundInterrupted { return .orange }
+                      if simulatorQASnapshot.artifactState == .completeReadyForAnalysis { return .green }
+                      return .cyan
+                  }
+          #endif
+                  switch test.phase {
+          ''')
+
+          path.write_text(text)
+          PY
+
+          cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureGuidedSimulatorQAIntegrationSourceTests.swift <<'SWIFT'
+          import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Capture guided Simulator QA app integration source contract")
+          struct CaptureGuidedSimulatorQAIntegrationSourceTests {
+              @Test("launch selector is composition-root only and simulator compile bounded")
+              func launchSelectorIsSimulatorOnly() throws {
+                  let source = try entrypointSource()
+                  let block = try section(
+                      in: source,
+                      from: "#if DEBUG && targetEnvironment(simulator)\n@MainActor\nprivate enum CaptureSimulatorQALaunch",
+                      to: "#endif\n\n@MainActor\nprivate struct CaptureP0Root"
+                  )
+                  #expect(block.contains("-NemCaptureQAScenario"))
+                  #expect(block.contains("CommandLine.arguments"))
+                  #expect(block.contains("PassiveBluetoothExperimentOneSimulatorQAFixture.Scenario"))
+                  #expect(!block.contains("ProcessInfo"))
+                  #expect(!block.contains("UserDefaults"))
+              }
+
+              @Test("fixture surface consumes package snapshots without transport or evidence producers")
+              func fixtureSurfaceCannotMintAuthority() throws {
+                  let source = try entrypointSource()
+                  let surface = try section(
+                      in: source,
+                      from: "#if DEBUG && targetEnvironment(simulator)\n    @ViewBuilder\n    private var authorityBadge",
+                      to: "#endif\n\n    private var failureRecoveryContextPanel"
+                  )
+                  for required in [
+                      "simulatorPrimarySurface",
+                      "SIMULATOR / QA",
+                      "PHYSICAL LOCKED",
+                      "mayUseBluetoothTransport",
+                      "physicalProcedurePermitted",
+                      "simulatorObservationProgress",
+                      "Correlation progress",
+                      "Read-only observation progress"
+                  ] {
+                      #expect(surface.contains(required), "missing guided QA presentation contract: \(required)")
+                  }
+                  for forbidden in [
+                      "connectBLE",
+                      "publishDps",
+                      "writeValue",
+                      "scanForPeripherals",
+                      "beginConnection()",
+                      "recordApplicationUpdate",
+                      "sealAcceptedObservation"
+                  ] {
+                      #expect(!surface.contains(forbidden), "Simulator presentation must not own authority producer: \(forbidden)")
+                  }
+              }
+
+              @Test("live Secure Link side effects are fenced when a fixture snapshot is active")
+              func liveSideEffectsAreFenced() throws {
+                  let source = try entrypointSource()
+                  let view = try section(
+                      in: source,
+                      from: "private struct SecureLinkView: View",
+                      to: "private var hero: some View"
+                  )
+                  #expect(view.contains("private let simulatorQASnapshot"))
+                  #expect(view.contains("guard simulatorQASnapshot == nil else { return }"))
+                  #expect(view.contains("sdkAccount.bootstrap()"))
+                  #expect(view.contains("test.abandonCorrelationForViewExit()"))
+                  #expect(view.contains("test.consumeCorrelationAsyncInvalidation()"))
+              }
+
+              private func entrypointSource() throws -> String {
+                  let testFile = URL(fileURLWithPath: #filePath)
+                  let repositoryRoot = testFile
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(
+                      contentsOf: repositoryRoot.appendingPathComponent("NembraApp/App/NembraCaptureEntrypoint.swift"),
+                      encoding: .utf8
+                  )
+              }
+
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let startRange = source.range(of: start),
+                        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+                      Issue.record("Expected source section missing: \(start) ... \(end)")
+                      throw SourceContractError.sectionMissing
+                  }
+                  return source[startRange.lowerBound..<endRange.lowerBound]
+              }
+
+              private enum SourceContractError: Error { case sectionMissing }
+          }
+          SWIFT
+
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureGuidedSimulatorQAIntegrationSourceTests.swift
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          assert source.count("-NemCaptureQAScenario") == 1
+          assert "PassiveBluetoothExperimentOneSimulatorQAFixture.snapshot(for: scenario)" in source
+          assert "guard simulatorQASnapshot == nil else { return }" in source
+          assert "SIMULATOR / QA" in source
+          assert "PHYSICAL LOCKED" in source
+          PY
+
+          git config user.name "Nembra V14 Materializer"
+          git config user.email "actions@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureGuidedSimulatorQAIntegrationSourceTests.swift
+          git commit -m "feat(capture): render guided Simulator QA states"
+          git push origin HEAD:agent/v14-capture-guided-simulator-qa-sol
