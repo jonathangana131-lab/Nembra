@@ -1,4 +1,7 @@
 import SwiftUI
+import struct NembraCore.PropulsionEnergyRailAccessibilityPresentation
+import struct NembraCore.PropulsionEnergyRailAccessibilitySemanticRevision
+import struct NembraCore.PropulsionEnergyRailAppProjection
 
 enum NembraMetrics {
     static let compact: CGFloat = 8
@@ -12,20 +15,22 @@ enum NembraMetrics {
 
 struct NembraGlassButtonStyle: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.accessibilityShowBorders) private var showBorders
     @Environment(\.isEnabled) private var isEnabled
 
     /// Normal Liquid Glass already adapts to Increased Contrast at the material layer.
-    /// Nembra adds a strong explicit boundary only when Show Borders asks custom
-    /// controls to expose their edges, or when Reduce Transparency replaces glass
-    /// with our opaque fallback and therefore removes that native glass adaptation.
+    /// Nembra adds a strong explicit boundary when accessibility asks controls to be
+    /// distinguishable without color or to expose their edges, or when Reduce
+    /// Transparency replaces glass with our opaque fallback and therefore removes
+    /// that native glass adaptation.
     private var strongExplicitBoundaryRequested: Bool {
-        showBorders || (reduceTransparency && colorSchemeContrast == .increased)
+        showBorders || differentiateWithoutColor || (reduceTransparency && colorSchemeContrast == .increased)
     }
 
     private var shouldShowExplicitBoundary: Bool {
-        reduceTransparency || showBorders
+        reduceTransparency || showBorders || differentiateWithoutColor
     }
 
     private var boundaryOpacity: Double {
@@ -88,4 +93,550 @@ struct NembraGlassButtonStyle: ViewModifier {
 
 extension View {
     func nembraGlassControl() -> some View { modifier(NembraGlassButtonStyle()) }
+}
+
+/// Visual currentness only. The eventual Dashboard adapter must derive this from
+/// `PropulsionEnergyRailPresentation`; this enum does not grant telemetry authority.
+enum NembraEnergyRailVisualCurrentness: Equatable {
+    case live
+    case retained
+    case unavailable
+}
+
+/// Stable assistive semantic state carried separately from the 60 Hz rail/render clock.
+/// The package semantic revision is the sole equality key for package-backed states;
+/// display watts and geometry can therefore redraw freely without invalidating the
+/// accessibility representation.
+private struct NembraEnergyRailAccessibilityState: Equatable {
+    private enum Revision: Equatable {
+        case package(PropulsionEnergyRailAccessibilitySemanticRevision)
+        case unavailable
+    }
+
+    private let revision: Revision
+    let currentness: NembraEnergyRailVisualCurrentness
+    let acceptedWatts: Double?
+
+    static let unavailable = NembraEnergyRailAccessibilityState(
+        revision: .unavailable,
+        currentness: .unavailable,
+        acceptedWatts: nil
+    )
+
+    init?(presentation: PropulsionEnergyRailAccessibilityPresentation) {
+        switch presentation.currentness {
+        case .live:
+            guard let watts = presentation.acceptedWatts,
+                  watts.isFinite,
+                  watts >= 0,
+                  presentation.acceptedRevision != nil else {
+                return nil
+            }
+            revision = .package(presentation.semanticRevision)
+            currentness = .live
+            acceptedWatts = watts == 0 ? 0 : watts
+
+        case .retained:
+            guard let watts = presentation.acceptedWatts,
+                  watts.isFinite,
+                  watts >= 0,
+                  presentation.acceptedRevision != nil else {
+                return nil
+            }
+            revision = .package(presentation.semanticRevision)
+            currentness = .retained
+            acceptedWatts = watts == 0 ? 0 : watts
+
+        case .unavailable:
+            guard presentation.acceptedWatts == nil,
+                  presentation.acceptedRevision == nil else {
+                return nil
+            }
+            revision = .package(presentation.semanticRevision)
+            currentness = .unavailable
+            acceptedWatts = nil
+        }
+    }
+
+    static func == (
+        lhs: NembraEnergyRailAccessibilityState,
+        rhs: NembraEnergyRailAccessibilityState
+    ) -> Bool {
+        lhs.revision == rhs.revision
+    }
+
+    var value: String {
+        guard let acceptedWatts else { return "Unavailable" }
+        let formatted = acceptedWatts.formatted(.number.precision(.fractionLength(0)))
+
+        switch currentness {
+        case .live:
+            return "\(formatted) watts"
+        case .retained:
+            return "\(formatted) watts, last known"
+        case .unavailable:
+            return "Unavailable"
+        }
+    }
+}
+
+/// App-side visual input for the signature propulsion instrument.
+///
+/// `acceptedWatts` is the semantic measurement truth shown to accessibility and
+/// status semantics. `displayWatts`, `railFraction`, and `peakMarkerFraction` are
+/// display-clock values/geometry and must never be converted back into telemetry,
+/// persisted, or promoted into ride/protocol evidence. `acceptedTargetFraction` is
+/// stable display geometry derived from the exact accepted measurement by the
+/// canonical package projection; it exists so Reduce Motion never has to consume a
+/// display-clock sweep or reconstruct watts in the app layer.
+struct NembraEnergyRailVisualState: Equatable {
+    let currentness: NembraEnergyRailVisualCurrentness
+    let acceptedWatts: Double?
+    let displayWatts: Double?
+    let railFraction: Double?
+    let acceptedTargetFraction: Double?
+    let peakMarkerFraction: Double?
+    let allowsLiveMotion: Bool
+    fileprivate let accessibilityState: NembraEnergyRailAccessibilityState
+
+    /// The only app-constructible state before the package projection is linked into
+    /// the app target. This lets the real Cockpit surface ship truthfully today while
+    /// keeping all numeric/live construction sealed behind canonical package evidence.
+    static let unavailable = NembraEnergyRailVisualState(
+        currentness: .unavailable,
+        acceptedWatts: nil,
+        displayWatts: nil,
+        railFraction: nil,
+        acceptedTargetFraction: nil,
+        peakMarkerFraction: nil,
+        allowsLiveMotion: false,
+        accessibilityState: .unavailable
+    )
+
+    /// Raw visual construction remains file-private. Numeric/live state may only be
+    /// reached through the canonical package projection adapter below.
+    private init(
+        currentness: NembraEnergyRailVisualCurrentness,
+        acceptedWatts: Double?,
+        displayWatts: Double?,
+        railFraction: Double?,
+        acceptedTargetFraction: Double?,
+        peakMarkerFraction: Double?,
+        allowsLiveMotion: Bool,
+        accessibilityState: NembraEnergyRailAccessibilityState
+    ) {
+        self.currentness = currentness
+        self.acceptedWatts = acceptedWatts
+        self.displayWatts = displayWatts
+        self.railFraction = railFraction
+        self.acceptedTargetFraction = acceptedTargetFraction
+        self.peakMarkerFraction = peakMarkerFraction
+        self.allowsLiveMotion = allowsLiveMotion
+        self.accessibilityState = accessibilityState
+    }
+
+    /// The sole numeric bridge from package-owned propulsion authority into SwiftUI.
+    /// `PropulsionEnergyRailAppProjection` itself cannot be caller-constructed outside
+    /// NembraCore, so app code cannot use this initializer to manufacture accepted watts.
+    init(projection: PropulsionEnergyRailAppProjection) {
+        guard let accessibilityState = NembraEnergyRailAccessibilityState(
+            presentation: projection.accessibilityPresentation
+        ) else {
+            self = .unavailable
+            return
+        }
+
+        switch projection.currentness {
+        case .live:
+            guard let acceptedWatts = projection.acceptedWatts,
+                  acceptedWatts.isFinite,
+                  acceptedWatts >= 0,
+                  accessibilityState.currentness == .live,
+                  accessibilityState.acceptedWatts == acceptedWatts else {
+                self = .unavailable
+                return
+            }
+
+            self.init(
+                currentness: .live,
+                acceptedWatts: acceptedWatts == 0 ? 0 : acceptedWatts,
+                displayWatts: projection.displayWatts,
+                railFraction: projection.railFraction,
+                acceptedTargetFraction: projection.acceptedTargetFraction,
+                peakMarkerFraction: projection.acceptedPeakMarkerFraction,
+                allowsLiveMotion: projection.allowsLiveMotion,
+                accessibilityState: accessibilityState
+            )
+
+        case .retained:
+            guard let acceptedWatts = projection.acceptedWatts,
+                  acceptedWatts.isFinite,
+                  acceptedWatts >= 0,
+                  accessibilityState.currentness == .retained,
+                  accessibilityState.acceptedWatts == acceptedWatts else {
+                self = .unavailable
+                return
+            }
+
+            // Retained truth is semantic only. Even if a future package regression
+            // accidentally carries display geometry, the app boundary strips it.
+            self.init(
+                currentness: .retained,
+                acceptedWatts: acceptedWatts == 0 ? 0 : acceptedWatts,
+                displayWatts: acceptedWatts == 0 ? 0 : acceptedWatts,
+                railFraction: nil,
+                acceptedTargetFraction: nil,
+                peakMarkerFraction: nil,
+                allowsLiveMotion: false,
+                accessibilityState: accessibilityState
+            )
+
+        case .unavailable:
+            guard accessibilityState.currentness == .unavailable,
+                  accessibilityState.acceptedWatts == nil else {
+                self = .unavailable
+                return
+            }
+            self.init(
+                currentness: .unavailable,
+                acceptedWatts: nil,
+                displayWatts: nil,
+                railFraction: nil,
+                acceptedTargetFraction: nil,
+                peakMarkerFraction: nil,
+                allowsLiveMotion: false,
+                accessibilityState: accessibilityState
+            )
+        }
+    }
+
+    var semanticWatts: Double? {
+        guard currentness != .unavailable,
+              let acceptedWatts,
+              acceptedWatts.isFinite,
+              acceptedWatts >= 0 else {
+            return nil
+        }
+        return acceptedWatts == 0 ? 0 : acceptedWatts
+    }
+
+    /// Numeral value for the display clock only. Retained/unavailable states and
+    /// motion denial snap back to exact accepted semantic truth. A malformed render
+    /// value never erases a valid accepted measurement.
+    var admittedDisplayWatts: Double? {
+        guard let semanticWatts else { return nil }
+        guard currentness == .live,
+              allowsLiveMotion,
+              let displayWatts,
+              displayWatts.isFinite,
+              displayWatts >= 0 else {
+            return semanticWatts
+        }
+        return displayWatts == 0 ? 0 : displayWatts
+    }
+
+    /// Stable package-derived target used only when spatial interpolation must be
+    /// suppressed. It remains presentation geometry, not telemetry or persistence.
+    var admittedAcceptedTargetFraction: Double? {
+        guard currentness == .live,
+              semanticWatts != nil,
+              let acceptedTargetFraction,
+              acceptedTargetFraction.isFinite,
+              acceptedTargetFraction >= 0,
+              acceptedTargetFraction <= 1 else {
+            return nil
+        }
+        return acceptedTargetFraction
+    }
+
+    var admittedRailFraction: Double? {
+        guard currentness == .live,
+              semanticWatts != nil,
+              allowsLiveMotion,
+              let railFraction,
+              railFraction.isFinite,
+              railFraction >= 0,
+              railFraction <= 1 else {
+            return nil
+        }
+        return railFraction
+    }
+
+    var admittedPeakMarkerFraction: Double? {
+        guard admittedRailFraction != nil,
+              let peakMarkerFraction,
+              peakMarkerFraction.isFinite,
+              peakMarkerFraction >= 0,
+              peakMarkerFraction <= 1 else {
+            return nil
+        }
+        return peakMarkerFraction
+    }
+}
+
+/// Shallow off-screen-wheel/horizon geometry used by the Energy Rail.
+/// The rail is intentionally not a circular gauge and carries no regen direction.
+private struct NembraEnergyRailArc: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let baseline = rect.height * 0.88
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY + baseline))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: rect.minY + baseline),
+            control: CGPoint(x: rect.midX, y: rect.minY + rect.height * 0.16)
+        )
+        return path
+    }
+}
+
+/// Display-clock watt numeral renderer using the same fixed-slot rolling primitive as
+/// the speed instrument. Intermediate glyph motion is display-only; VoiceOver is
+/// owned by the enclosing Energy Rail and announces only the accepted semantic value.
+private struct NembraRollingPowerValueView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let value: Double
+    let fontSize: CGFloat
+
+    private static let numberModel: RollingNumberModel? = {
+        guard let layout = try? RollingNumberLayout(integerDigits: 4) else { return nil }
+        return try? RollingNumberModel(layout: layout)
+    }()
+
+    /// Compact fallback capacity only, never a physical motor/controller maximum.
+    private static let maximumFallbackDisplayInteger = 99_999.0
+
+    var body: some View {
+        if let numberModel = Self.numberModel,
+           let snapshot = try? numberModel.snapshot(for: value) {
+            HStack(spacing: -4) {
+                ForEach(snapshot.digits.indices, id: \.self) { index in
+                    let digit = snapshot.digits[index]
+                    Text(String(digit.digit))
+                        .font(.system(size: fontSize, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .opacity(digit.isVisible ? 1 : 0)
+                        .contentTransition(
+                            reduceMotion ? .identity : .numericText(value: value)
+                        )
+                        .animation(
+                            reduceMotion ? nil : .snappy(duration: 0.10),
+                            value: digit.digit
+                        )
+                        .animation(
+                            reduceMotion ? nil : .easeOut(duration: 0.08),
+                            value: digit.isVisible
+                        )
+                        .clipped()
+                }
+            }
+        } else if let fallbackText {
+            Text(fallbackText)
+                .font(.system(size: fontSize, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .contentTransition(
+                    reduceMotion ? .identity : .numericText(value: value)
+                )
+                .animation(
+                    reduceMotion ? nil : .snappy(duration: 0.10),
+                    value: fallbackText
+                )
+        } else {
+            Text("—")
+                .font(.system(size: fontSize, weight: .semibold, design: .rounded))
+        }
+    }
+
+    private var fallbackText: String? {
+        guard value.isFinite, value >= 0 else { return nil }
+        let rounded = value.rounded(.toNearestOrAwayFromZero)
+        guard rounded <= Self.maximumFallbackDisplayInteger else { return nil }
+        return String(Int(rounded))
+    }
+}
+
+/// Stable accessibility replacement for the Energy Rail's rapidly changing visual subtree.
+/// Equality deliberately follows only package semantic revision (via `state == state`), so
+/// display-clock watt/rail frames cannot create assistive-technology invalidations.
+private struct NembraEnergyRailAccessibilityRepresentation: View, Equatable {
+    let state: NembraEnergyRailAccessibilityState
+
+    static func == (
+        lhs: NembraEnergyRailAccessibilityRepresentation,
+        rhs: NembraEnergyRailAccessibilityRepresentation
+    ) -> Bool {
+        lhs.state == rhs.state
+    }
+
+    var body: some View {
+        Text("Propulsion power")
+            .accessibilityLabel("Propulsion power")
+            .accessibilityValue(state.value)
+            .accessibilityIdentifier("dashboard.energy-rail")
+    }
+}
+
+/// Localized SwiftUI renderer for the Nembra Energy Rail.
+///
+/// The caller owns the display clock. This view does not add a second smoothing
+/// algorithm to `displayWatts` or `railFraction`; every normal-motion render frame is
+/// drawn immediately so a newer accepted target can retarget the canonical gauge
+/// model without queued stale motion. Under Reduce Motion, the view snaps to accepted
+/// semantic watts and the stable canonical accepted-target geometry instead.
+struct NembraEnergyRailView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .title2) private var powerFontSize: CGFloat = 30
+
+    let state: NembraEnergyRailVisualState
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            railLayer
+                .frame(height: 72)
+                .padding(.top, railTopPadding)
+
+            powerReadout
+        }
+        .frame(maxWidth: .infinity, minHeight: componentMinimumHeight)
+        .accessibilityRepresentation {
+            NembraEnergyRailAccessibilityRepresentation(state: state.accessibilityState)
+                .equatable()
+        }
+    }
+
+    private var railLayer: some View {
+        GeometryReader { proxy in
+            ZStack {
+                NembraEnergyRailArc()
+                    .stroke(
+                        Color.primary.opacity(baseRailOpacity),
+                        style: StrokeStyle(lineWidth: baseRailWidth, lineCap: .round)
+                    )
+
+                if let admittedFraction = displayedRailFraction {
+                    let fraction = CGFloat(admittedFraction)
+
+                    if !reduceTransparency {
+                        NembraEnergyRailArc()
+                            .trim(from: 0, to: fraction)
+                            .stroke(
+                                Color.primary.opacity(0.24),
+                                style: StrokeStyle(lineWidth: 10, lineCap: .round)
+                            )
+                    }
+
+                    NembraEnergyRailArc()
+                        .trim(from: 0, to: fraction)
+                        .stroke(
+                            Color.primary,
+                            style: StrokeStyle(lineWidth: activeRailWidth, lineCap: .round)
+                        )
+
+                    if !reduceMotion,
+                       let admittedMarker = state.admittedPeakMarkerFraction {
+                        peakMarker(at: CGFloat(admittedMarker), in: proxy.size)
+                    }
+                }
+            }
+        }
+        .accessibilityHidden(true)
+        .allowsHitTesting(false)
+    }
+
+    private var powerReadout: some View {
+        VStack(spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                if let watts = displayedWatts {
+                    NembraRollingPowerValueView(value: watts, fontSize: powerFontSize)
+                } else {
+                    Text("—")
+                        .font(.system(size: powerFontSize, weight: .semibold, design: .rounded))
+                }
+
+                Text("W")
+                    .font(dynamicTypeSize.isAccessibilitySize ? .body.weight(.bold) : .caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
+
+            Text(currentnessLabel)
+                .font(dynamicTypeSize.isAccessibilitySize ? .caption.weight(.bold) : .caption2.weight(.bold))
+                .tracking(dynamicTypeSize.isAccessibilitySize ? 0.4 : 1.2)
+                .foregroundStyle(currentnessForeground)
+        }
+    }
+
+    private var displayedWatts: Double? {
+        reduceMotion ? state.semanticWatts : state.admittedDisplayWatts
+    }
+
+    private var displayedRailFraction: Double? {
+        reduceMotion ? state.admittedAcceptedTargetFraction : state.admittedRailFraction
+    }
+
+    @ViewBuilder
+    private func peakMarker(at fraction: CGFloat, in size: CGSize) -> some View {
+        let point = pointOnRail(at: fraction, in: size)
+
+        Capsule(style: .continuous)
+            .fill(Color.primary)
+            .frame(width: 2, height: colorSchemeContrast == .increased ? 13 : 10)
+            .position(point)
+            .accessibilityHidden(true)
+    }
+
+    private func pointOnRail(at fraction: CGFloat, in size: CGSize) -> CGPoint {
+        let t = fraction
+        let inverse = 1 - t
+        let baseline = size.height * 0.88
+        let controlY = size.height * 0.16
+        let y = inverse * inverse * baseline
+            + 2 * inverse * t * controlY
+            + t * t * baseline
+        return CGPoint(x: size.width * t, y: y)
+    }
+
+    private var currentnessLabel: String {
+        switch state.currentness {
+        case .live:
+            state.semanticWatts == nil ? "POWER UNAVAILABLE" : "LIVE POWER"
+        case .retained:
+            state.semanticWatts == nil ? "POWER UNAVAILABLE" : "LAST KNOWN POWER"
+        case .unavailable:
+            "POWER UNAVAILABLE"
+        }
+    }
+
+    private var currentnessForeground: Color {
+        switch state.currentness {
+        case .live where state.semanticWatts != nil:
+            Color.primary.opacity(colorSchemeContrast == .increased ? 0.88 : 0.68)
+        case .retained where state.semanticWatts != nil:
+            Color.primary.opacity(colorSchemeContrast == .increased ? 0.66 : 0.50)
+        default:
+            Color.primary.opacity(colorSchemeContrast == .increased ? 0.50 : 0.32)
+        }
+    }
+
+    private var componentMinimumHeight: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 156 : 94
+    }
+
+    private var railTopPadding: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 76 : 22
+    }
+
+    private var baseRailOpacity: Double {
+        colorSchemeContrast == .increased ? 0.28 : 0.14
+    }
+
+    private var baseRailWidth: CGFloat {
+        colorSchemeContrast == .increased ? 3.5 : 2.5
+    }
+
+    private var activeRailWidth: CGFloat {
+        colorSchemeContrast == .increased ? 7 : 5.5
+    }
 }
