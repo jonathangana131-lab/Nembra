@@ -22,7 +22,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "e618f4d0b6507078a4505238ac6439f98fe1bbd1"
+          parent='e618f4d0b6507078a4505238ac6439f98fe1bbd1'
+          workflow='.github/workflows/v14-capture-apple-auth-e618-materialize.yml'
+          git merge-base --is-ancestor "$parent" HEAD
+          test "$(git diff --name-only "$parent" HEAD)" = "$workflow"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
       - name: Apply reviewed Apple account delta three-way
@@ -60,8 +63,8 @@ jobs:
           grep -Fq 'func loginWithApple(credential: ASAuthorizationAppleIDCredential)' "$app"
           grep -Fq 'loginByAuth2(' "$app"
           grep -Fq 'withType: "ap"' "$app"
-          grep -Fq 'submittedIdentityToken: identityToken' "$app"
-          grep -Fq 'appleUserIdentifier: appleUserIdentifier' "$app"
+          grep -Fq 'redactedAppleOAuthError' "$app"
+          grep -Fq '<redacted-apple-oauth>' "$app"
           grep -Fq 'func signOut()' "$app"
           grep -Fq 'Button("Use a different Tuya account")' "$app"
           grep -Fq '.onChange(of: sdkAccount.loggedIn)' "$app"
@@ -72,12 +75,12 @@ jobs:
           grep -Fq 'static let requiredFieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"' "$identity"
           grep -Fq 'static var fieldProcedureIdentifier: String' "$identity"
           grep -Fq 'current.procedureIdentifier' "$identity"
-          grep -Fq 'CODE_SIGN_ENTITLEMENTS = NembraCapture.entitlements;' "$project"
+          test "$(grep -Fc 'CODE_SIGN_ENTITLEMENTS = NembraCapture.entitlements;' "$project")" = '2'
           grep -Fq '<key>com.apple.developer.applesignin</key>' "$entitlements"
-          grep -Fq 'Apple-backed Tuya account transport' "$login_test"
-          grep -Fq 'identity token' "$custody_test"
+          grep -Fq 'Apple account transport uses system authorization and preserves exact scooter membership authority' "$login_test"
+          grep -Fq 'Apple OAuth error presentation scrubs every submitted credential-shaped value' "$custody_test"
           grep -Fq 'Sign in with Apple' docs/CAPTURE_P0_APPLE_ACCOUNT_LOGIN.md
-          grep -Fq 'ES80-AUTHENTICATED-STATIONARY-v1' docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md
+          grep -Fq 'For this Apple-backed Smart Life account, use **Sign in with Apple**.' docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md
 
           swiftc -frontend -parse "$app"
           swiftc -frontend -parse "$login_test"
