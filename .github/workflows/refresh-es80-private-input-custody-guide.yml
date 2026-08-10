@@ -1,0 +1,224 @@
+name: Refresh ES80 Private Input Custody Guide
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-refresh-private-input-custody-guide
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: agent/v14-capture-refresh-private-input-custody-guide
+
+      - name: Verify exact current main parent
+        run: |
+          set -euo pipefail
+          BASE='73b63048344ed986a5417c88ecbe9e1754d78084'
+          git merge-base --is-ancestor "$BASE" HEAD
+          test "$(git diff --name-only "$BASE" HEAD)" = ".github/workflows/refresh-es80-private-input-custody-guide.yml"
+          test "$(git rev-parse "$BASE:scripts/ci/es80_today_private_device_input.py")" = '62b719e8d9afb34da6d35d696e80edf926442696'
+
+      - name: Rewrite custody guide to accepted nondestructive contract
+        run: |
+          set -euo pipefail
+          cat > docs/ES80_TODAY_PRIVATE_DEVICE_INPUT_CUSTODY.md <<'EOF'
+          # ES80 TODAY Private Intended-Device Input Custody — V14
+
+          Status: **ACCEPTED PRIVATE OPERATOR TOOLING HANDOFF — NON-AUTHORIZING. PHYSICAL EXPERIMENT ONE REMAINS NO-GO.**
+
+          Feature: Nembra Capture / first physical ES80 truth.
+
+          Frozen Capture product subject: `a0f4a33451f61411d6e0541f2e70edea5438342d`.
+
+          This guide describes the accepted private intended-device input helper used before the frozen signed-field producer. The helper is operator-custody tooling only: it does not change the frozen app, authorize signing acceptance, grant Bluetooth activity, identify an ES80, or create telemetry truth.
+
+          ## Accepted helper identity
+
+          The current accepted helper is fixed to:
+
+          - merged helper commit: `b479d851a54437ef394a4901c69db2d829d280e4`;
+          - helper path: `scripts/ci/es80_today_private_device_input.py`;
+          - helper Git blob: `62b719e8d9afb34da6d35d696e80edf926442696`;
+          - exact tested predecessor head carrying the same helper blob: `90d3578a1d39a1d019000583a712306b67786acf`;
+          - focused `Capture TODAY Field Candidate Preflight QA`: run `31350094260`, job `93339137927` — terminal success.
+
+          These bytes are non-authorizing. The canonical production handoff in `docs/ES80_TODAY_SIGNED_FIELD_CANDIDATE_PRODUCTION.md` independently pins the same commit/blob/run/job and is the authoritative sequence for candidate production.
+
+          ## What the helper protects
+
+          The helper removes mutable-pathname authority from private identifier creation:
+
+          - it opens directory components with descriptor-relative no-follow operations;
+          - the final private directory must be owned by the current user with exact mode `0700`;
+          - a private directory that traverses the supplied frozen source repository is rejected;
+          - an occupied final filename is rejected **before** the secret provider is called, minimizing sensitive input; the later `O_EXCL|O_NOFOLLOW` creation remains the race authority;
+          - interactive acquisition uses `getpass` and fails closed if secure no-echo terminal input is unavailable or reaches EOF;
+          - the new file is descriptor-relative, exclusive, regular, current-user-owned, single-link, exact mode `0600`, and exact zero length before any secret byte is written;
+          - bytes are written and `fsync`ed through the already-open file descriptor;
+          - success requires the full pathname to rebound to the same pinned directory identity and exact created file identity, plus exact byte readback;
+          - the raw intended-device identifier is never placed in argv, environment variables, stdout, filenames, GitHub, or retained candidate artifacts.
+
+          ## Failure cleanup is nondestructive to mutable pathnames
+
+          Once secret bytes may have been written, a pathname is **never** deletion authority. A same-UID actor could retarget that pathname after any check.
+
+          On any failed acquisition after the file descriptor exists, the accepted helper:
+
+          1. truncates only the exact still-open created inode with `ftruncate(fd, 0)`;
+          2. `fsync`s that same inode;
+          3. proves through `fstat` that it is still a regular file with exact size zero;
+          4. never unlinks a pathname after secret bytes may exist.
+
+          A failed attempt may therefore leave a mode-`0600` zero-length **spent subject** at the original or moved pathname. Preserve it. Do not delete, overwrite, or reuse it merely to satisfy the helper; choose a fresh filename/path for the next private attempt. If exact-inode zeroization cannot be proved, cleanup fails closed with a secret-free blocker.
+
+          Path retargeting after creation therefore cannot cause cleanup to delete an attacker-selected replacement entry. The replacement pathname is left untouched while the exact open inode that received the secret is scrubbed.
+
+          ## Frozen-source boundary
+
+          The exact field app source remains frozen at `a0f4…`; it intentionally does not absorb later operator-tooling commits. Do not copy moving `main` helper bytes into `FIELD_SOURCE`, do not commit tooling into the frozen worktree, and do not substitute a newer app SHA merely to gain the helper.
+
+          Materialize the accepted helper from a separate trusted local Nembra tooling repository and verify the exact blob outside both the frozen source and retained candidate directory:
+
+          ```bash
+          set -euo pipefail
+          umask 077
+
+          PRIVATE_INPUT_HELPER_COMMIT='b479d851a54437ef394a4901c69db2d829d280e4'
+          PRIVATE_INPUT_HELPER_BLOB='62b719e8d9afb34da6d35d696e80edf926442696'
+          TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
+          PRIVATE_INPUT_HELPER_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-private-input.XXXXXX)"
+          PRIVATE_INPUT_HELPER="$PRIVATE_INPUT_HELPER_DIR/es80_today_private_device_input.py"
+
+          cd "$TOOL_REPO"
+          /usr/bin/git cat-file -e "$PRIVATE_INPUT_HELPER_COMMIT^{commit}"
+          test "$(/usr/bin/git rev-parse --verify "$PRIVATE_INPUT_HELPER_COMMIT:scripts/ci/es80_today_private_device_input.py")" = "$PRIVATE_INPUT_HELPER_BLOB"
+          /usr/bin/git show "$PRIVATE_INPUT_HELPER_COMMIT:scripts/ci/es80_today_private_device_input.py" > "$PRIVATE_INPUT_HELPER"
+          test "$(/usr/bin/git hash-object --no-filters -- "$PRIVATE_INPUT_HELPER")" = "$PRIVATE_INPUT_HELPER_BLOB"
+
+          HOME_PHYSICAL="$(cd -P -- "$HOME" && /bin/pwd -P)"
+          test -n "$HOME_PHYSICAL" && test "${HOME_PHYSICAL#/}" != "$HOME_PHYSICAL"
+          PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"
+
+          /usr/bin/python3 -I "$PRIVATE_INPUT_HELPER" \
+            --private-directory "$PRIVATE_DIR" \
+            --source-repo "$FIELD_SOURCE"
+          ```
+
+          Do not pass the raw UDID on the command line. Keep `PRIVATE_INPUT_HELPER_DIR` outside `ARTIFACTS_DIR`.
+
+          After successful creation, continue **exactly** with `docs/ES80_TODAY_SIGNED_FIELD_CANDIDATE_PRODUCTION.md`. Do not reconstruct or shorten its preflight, producer, retained-IPA inspection, install/runtime rendezvous, or Final GO sequence from this guide.
+
+          ## Acceptance / regression contract
+
+          Focused adversarial coverage in `scripts/ci/tests/test_es80_today_private_device_input.py` and the production-handoff regression must preserve at minimum:
+
+          1. exact `0600` regular single-link creation under an exact `0700` private directory;
+          2. occupied targets fail before secret acquisition and are never clobbered;
+          3. symlinked/invalid ancestors and repository-contained private paths fail before secret acquisition;
+          4. secure-terminal warning/EOF fails closed;
+          5. exact fresh inode is proved before the first secret byte;
+          6. parent/file pathname retarget after creation fails closed;
+          7. failure cleanup truncates/fsyncs/proves zero only through the exact open inode and never unlinks a mutable pathname;
+          8. replacement paths remain untouched and hard links to the original inode observe the same zeroization;
+          9. terminal abort traverses the same cleanup boundary;
+          10. surrounding whitespace/control characters/oversized input are rejected.
+
+          ## Truth boundary
+
+          This helper establishes no AOVOPRO ES80 identity, GATT/Tuya/DP meaning, speed/battery/current/power telemetry, command acknowledgement, scooter write authority, signed-field acceptance, device install proof, runtime provenance, or physical field authorization.
+
+          **PHYSICAL ES80 EXPERIMENT ONE REMAINS NO-GO / DO NOT SCAN / DO NOT RUN UNTIL THE EXACT SIGNED CANDIDATE, INDEPENDENT CROSS-CHECK, RETAINED-IPA INSTALL/RUNTIME RENDEZVOUS, FRESH PREFLIGHT, AND HARDENED FINAL GO RECORD ARE ALL ACCEPTED.**
+          EOF
+          sed -i 's/^          //' docs/ES80_TODAY_PRIVATE_DEVICE_INPUT_CUSTODY.md
+
+      - name: Cross-bind both operator docs to one accepted helper identity
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/ci/tests/test_es80_today_field_candidate_preflight.py')
+          source = path.read_text(encoding='utf-8')
+          constant_anchor = 'HANDOFF_PATH = REPOSITORY_ROOT / "docs" / "ES80_TODAY_SIGNED_FIELD_CANDIDATE_PRODUCTION.md"\n'
+          if source.count(constant_anchor) != 1:
+              raise SystemExit('expected one HANDOFF_PATH constant')
+          custody_constant = 'CUSTODY_PATH = REPOSITORY_ROOT / "docs" / "ES80_TODAY_PRIVATE_DEVICE_INPUT_CUSTODY.md"\n'
+          if custody_constant not in source:
+              source = source.replace(constant_anchor, constant_anchor + custody_constant)
+
+          test_anchor = '    def test_production_handoff_resolves_physical_home_before_private_path_and_helper(self):\n'
+          if source.count(test_anchor) != 1:
+              raise SystemExit('expected one following handoff test anchor')
+          new_test = '''    def test_private_input_custody_guide_matches_current_production_handoff(self):
+        handoff = HANDOFF_PATH.read_text(encoding="utf-8")
+        custody = CUSTODY_PATH.read_text(encoding="utf-8")
+        current_values = (
+            "b479d851a54437ef394a4901c69db2d829d280e4",
+            "62b719e8d9afb34da6d35d696e80edf926442696",
+            "90d3578a1d39a1d019000583a712306b67786acf",
+            "31350094260",
+            "93339137927",
+        )
+        stale_values = (
+            "05ce6d9a20487ab34aa31c5b6456910ed2ed438f",
+            "9a9f7f724ceaf895e52d6d443d326043f97645c8",
+            "af75ffa6dc4409a21822295428e4eeb922ac3d16",
+            "50b12675a57fd2f570d833cfcdbfd7be59f52ca4",
+            "91dda8ac05e937e5615312a487f7d78926b74949",
+            "31349898562",
+            "93338620824",
+        )
+        for value in current_values:
+            self.assertIn(value, handoff)
+            self.assertIn(value, custody)
+        for value in stale_values:
+            self.assertNotIn(value, handoff)
+            self.assertNotIn(value, custody)
+        self.assertIn("never unlinks a pathname after secret bytes may exist", custody)
+        self.assertIn("zero-length spent subject", custody)
+        self.assertIn("replacement pathname is left untouched", custody)
+        self.assertNotIn("removes only the file whose identity matches", custody)
+
+'''
+          source = source.replace(test_anchor, new_test + test_anchor)
+          path.write_text(source, encoding='utf-8')
+          PY
+          git diff --check
+
+      - name: Run focused operator-handoff QA
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_today_field_candidate_preflight.py \
+            scripts/ci/es80_today_private_device_input.py \
+            scripts/ci/tests/test_es80_today_field_candidate_preflight.py \
+            scripts/ci/tests/test_es80_today_private_device_input.py
+          python3 scripts/ci/tests/test_es80_today_field_candidate_preflight.py
+          python3 scripts/ci/tests/test_es80_today_private_device_input.py
+          python3 scripts/ci/tests/test_es80_export_options_coherence.py
+          git diff --check
+
+      - name: Publish exact two-path custody-guide checkpoint
+        run: |
+          set -euo pipefail
+          rm .github/workflows/refresh-es80-private-input-custody-guide.yml
+          git add -A -- \
+            docs/ES80_TODAY_PRIVATE_DEVICE_INPUT_CUSTODY.md \
+            scripts/ci/tests/test_es80_today_field_candidate_preflight.py \
+            .github/workflows/refresh-es80-private-input-custody-guide.yml
+          EXPECTED="$(printf '%s\n' \
+            '.github/workflows/refresh-es80-private-input-custody-guide.yml' \
+            'docs/ES80_TODAY_PRIVATE_DEVICE_INPUT_CUSTODY.md' \
+            'scripts/ci/tests/test_es80_today_field_candidate_preflight.py')"
+          test "$(git diff --cached --name-only | LC_ALL=C sort)" = "$EXPECTED"
+          git config user.name 'nembra-go-handoff'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'docs(capture): refresh private-input custody truth'
+          git push origin HEAD:agent/v14-capture-refresh-private-input-custody-guide
