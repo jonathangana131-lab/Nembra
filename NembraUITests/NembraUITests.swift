@@ -222,9 +222,17 @@ final class NembraUITests: XCTestCase {
 
         let vehicleStatus = app.descendants(matching: .any)["dashboard.vehicle-status"]
         XCTAssertTrue(vehicleStatus.waitForExistence(timeout: 2))
+        let dataStatus = vehicleStatus.descendants(matching: .any).matching(
+            NSPredicate(format: "label == %@", "Vehicle data")
+        ).firstMatch
         XCTAssertTrue(
-            app.staticTexts["WAITING FOR DATA"].waitForExistence(timeout: 2),
-            "Cold disconnected launch must expose the no-telemetry vehicle state."
+            dataStatus.waitForExistence(timeout: 2),
+            "Cold disconnected launch must expose the no-telemetry vehicle-data semantic."
+        )
+        XCTAssertTrue(
+            (dataStatus.value as? String ?? "")
+                .localizedCaseInsensitiveContains("no confirmed scooter telemetry"),
+            "Cold disconnected launch must identify vehicle telemetry as not yet confirmed."
         )
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
