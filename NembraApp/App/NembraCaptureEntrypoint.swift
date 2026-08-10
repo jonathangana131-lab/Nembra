@@ -431,6 +431,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Scooter membership authority was revoked. Verify this scooter again for the current Secure Link session."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -479,6 +480,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func appDidLoseForeground() {
+        // Sealed accepted artifacts remain immutable/shareable across scene transitions.
+        guard phase != .accepted else { return }
         guard !foregroundIntegrityLossHandled else { return }
         foregroundIntegrityLossHandled = true
 
@@ -488,6 +491,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Scooter membership authority was revoked by foreground loss. Verify this scooter again before a fresh OFF1 correlation."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -503,6 +507,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
             phase = .failed
             message = "Capture left the foreground during Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; interrupted windows are never reusable evidence."
             log("foreground_integrity_lost_during_target_correlation")
+            return
+        }
+
+        if phase == .correlated || phase == .selected {
+            // A completed/confirmed target is still mutable current-attempt authority. It may
+            // not cross an app foreground interruption even after the live scanner/lease ended.
+            resetDiscoverySessionOnly()
+            phase = .failed
+            message = "Capture left the foreground after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the pre-background target cannot be reused."
+            log("foreground_integrity_lost_after_target_correlation")
             return
         }
 
@@ -1406,6 +1420,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
         guard sdkAccountLoggedIn,
               sdkDeviceMembershipVerified,
               accountIdentityLeaseIsAuthorized,
+              let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !verifiedAccountUID.isEmpty,
               let driver else {
             await invalidateSourceAuthority(
                 token: token,
@@ -1425,9 +1441,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            let eventDetails = redactVerifiedAccountUID(
+                from: update,
+                verifiedAccountUID: verifiedAccountUID
+            )
+            log("tuya_application_update", eventDetails.merging([
                 "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -1452,6 +1472,33 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 kind: "application_update_lifecycle_rejected"
             )
         }
+    }
+
+    private func redactVerifiedAccountUID(
+        from update: [String: String],
+        verifiedAccountUID: String
+    ) -> [String: String] {
+        var redacted: [String: String] = [:]
+        for (key, value) in update {
+            let redactedKey = key.replacingOccurrences(
+                of: verifiedAccountUID,
+                with: "<redacted-account-uid>"
+            )
+            let redactedValue = value.replacingOccurrences(
+                of: verifiedAccountUID,
+                with: "<redacted-account-uid>"
+            )
+
+            // Redaction must not silently drop a second field that maps to the same safe key.
+            var uniqueKey = redactedKey
+            var suffix = 2
+            while redacted[uniqueKey] != nil {
+                uniqueKey = "\(redactedKey)#\(suffix)"
+                suffix += 1
+            }
+            redacted[uniqueKey] = redactedValue
+        }
+        return redacted
     }
 
     private func startWatchdog(token: TuyaReadOnlyConnectionToken) {
@@ -2241,7 +2288,6 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "accounttoken",
         "accesstoken",
         "refreshtoken",
-        "sessionkey",
         "authkey",
         "seckey",
     ]

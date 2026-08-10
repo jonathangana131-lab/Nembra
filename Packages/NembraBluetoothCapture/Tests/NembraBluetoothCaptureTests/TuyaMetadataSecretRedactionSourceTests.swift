@@ -4,8 +4,8 @@ import Testing
 
 @Suite("Tuya metadata secret redaction source contract")
 struct TuyaMetadataSecretRedactionSourceTests {
-    @Test("recursive redaction normalizes credential key spelling before classification")
-    func tokenKeySpellingsCannotBypassRedaction() throws {
+    @Test("recursive redaction normalizes every promised credential class before classification")
+    func credentialKeySpellingsCannotBypassRedaction() throws {
         let bridge = try readRepositoryFile("NembraApp/Features/Research/TuyaAccountBridge.swift")
         let redaction = try section(
             in: bridge,
@@ -16,9 +16,13 @@ struct TuyaMetadataSecretRedactionSourceTests {
 
         #expect(body.contains("secretkeyfragments"))
         #expect(body.contains("localkey"))
+        #expect(body.contains("sessionkey"))
+        #expect(body.contains("appkey"))
+        #expect(body.contains("appsecret"))
+        #expect(body.contains("password"))
+        #expect(body.contains("accounttoken"))
         #expect(body.contains("accesstoken"))
         #expect(body.contains("refreshtoken"))
-        #expect(body.contains("sessionkey"))
         #expect(body.contains("authkey"))
         #expect(body.contains("seckey"))
         #expect(body.contains("key.lowercased().filter"))
@@ -28,6 +32,8 @@ struct TuyaMetadataSecretRedactionSourceTests {
         #expect(!body.contains("normalized.contains(\"access_token\")"))
         #expect(!body.contains("normalized.contains(\"refresh_token\")"))
         #expect(!body.contains("normalized.contains(\"session_key\")"))
+        #expect(!body.contains("normalized.contains(\"app_secret\")"))
+        #expect(!body.contains("normalized.contains(\"account_token\")"))
     }
 
     @Test("linked device UI state does not retain raw device dictionaries or local key")
