@@ -99,7 +99,8 @@ umask 077
 HOME_PHYSICAL="$(cd -P -- "$HOME" && /bin/pwd -P)"
 test -n "$HOME_PHYSICAL" && test "${HOME_PHYSICAL#/}" != "$HOME_PHYSICAL"
 PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"
-UDID_FILE="$PRIVATE_DIR/es80-intended-device.udid"
+UDID_FILENAME='es80-intended-device.udid'
+UDID_FILE="$PRIVATE_DIR/$UDID_FILENAME"
 TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
 
 PRIVATE_INPUT_HELPER_COMMIT='b479d851a54437ef394a4901c69db2d829d280e4'
@@ -115,19 +116,22 @@ test "$(/usr/bin/git hash-object --no-filters -- "$PRIVATE_INPUT_HELPER")" = "$P
 
 /usr/bin/python3 -I "$PRIVATE_INPUT_HELPER" \
   --private-directory "$PRIVATE_DIR" \
-  --source-repo "$FIELD_SOURCE"
+  --source-repo "$FIELD_SOURCE" \
+  --filename "$UDID_FILENAME"
 
 test -f "$UDID_FILE" && test ! -L "$UDID_FILE"
 test "$(/usr/bin/stat -f '%Lp' "$UDID_FILE")" = '600'
 ```
 
-If the helper reports `NOT_READY`, stop before signing and preserve the exact blocker. Do not fall back to `printf >`, `tee`, `echo`, `noclobber`, or another pathname-based secret write. Keep the resulting file private; do not commit it and do not copy it into the retained candidate directory. If the chosen final path already exists, preserve it and choose a fresh filename/path rather than deleting or overwriting it just to satisfy the helper.
+If the helper reports `NOT_READY`, stop before signing and preserve the exact blocker. Do not fall back to `printf >`, `tee`, `echo`, `noclobber`, or another pathname-based secret write. Keep the resulting file private; do not commit it and do not copy it into the retained candidate directory. If the chosen final path already exists—including a zero-length spent subject from an earlier failed attempt—preserve it, set `UDID_FILENAME` to a fresh leaf name under the same `PRIVATE_DIR`, let `UDID_FILE` derive from it, and rerun the exact pinned helper with `--filename "$UDID_FILENAME"`. Do not delete or overwrite an occupied subject just to satisfy the helper.
 
 ## 3. Set the signing inputs without changing the source subject
 
 Set paths/values for the private Mac. `ARTIFACTS_DIR` must name a destination that does **not** already exist; the producer publishes it failure-atomically only after the archive/export/inspection sequence succeeds.
 
 The accepted preflight deliberately verifies the Xcode selected by `/usr/bin/xcode-select` inside a closed child environment. The frozen `a0f4…` producer predates that helper and does not scrub a caller-provided `DEVELOPER_DIR` before invoking `xcodebuild`. A shell-level `DEVELOPER_DIR` override could therefore make preflight validate one Xcode while the frozen producer later uses another. This handoff closes that operator split without changing the frozen product: clear `DEVELOPER_DIR` before preflight, keep it absent through production, and configure the private Mac's Xcode 27 selection through `xcode-select` instead of a per-shell override.
+
+Section 2 intentionally materializes helper bytes from `TOOL_REPO`. Therefore the checks below bind Git explicitly to `FIELD_SOURCE`; the shell's current working directory must never decide which source is admitted for signing.
 
 ```bash
 unset DEVELOPER_DIR
@@ -144,8 +148,8 @@ ARTIFACTS_DIR="$CANDIDATE_PARENT/NembraFieldCandidate-a0f4-$(/bin/date -u '+%Y%m
 
 test ! -e "$ARTIFACTS_DIR"
 /usr/bin/plutil -lint "$NEMBRA_EXPORT_OPTIONS_PLIST"
-test "$(/usr/bin/git rev-parse --verify HEAD^{commit})" = "$SOURCE_SHA"
-test -z "$(/usr/bin/git status --porcelain=v1 --untracked-files=all)"
+test "$(/usr/bin/git -C "$FIELD_SOURCE" rev-parse --verify HEAD^{commit})" = "$SOURCE_SHA"
+test -z "$(/usr/bin/git -C "$FIELD_SOURCE" status --porcelain=v1 --untracked-files=all)"
 ```
 
 Keep `NEMBRA_ALLOW_PROVISIONING_UPDATES=0` unless the private signing setup actually requires Xcode-managed provisioning updates. If it must be `1`, make that an explicit operator choice; it does not change the frozen source SHA or grant field authorization. If Xcode 27 is not the system-selected Xcode, correct the private Mac's `xcode-select` selection before continuing; do not reintroduce `DEVELOPER_DIR` merely to make the preflight or producer pass.
