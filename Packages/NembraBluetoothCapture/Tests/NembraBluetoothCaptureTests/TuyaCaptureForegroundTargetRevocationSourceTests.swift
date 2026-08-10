@@ -26,6 +26,29 @@ struct TuyaCaptureForegroundTargetRevocationSourceTests {
         #expect(!cleanup.contains("releasePackageCorrelationLease()"))
     }
 
+    @Test("view exit also resets completed correlation and selected target authority")
+    func viewExitCannotCarryCorrelatedTargetAcrossBoundary() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let controller = String(try section(
+            in: source,
+            from: "private final class SecureLinkController",
+            to: "@MainActor\nprivate protocol OfficialTuyaDriver"
+        ))
+        let cleanup = String(try section(
+            in: controller,
+            from: "func abandonCorrelationForViewExit()",
+            to: "func appDidLoseForeground()"
+        ))
+
+        let completedTargetCheck = try #require(cleanup.range(of: "if phase == .correlated || phase == .selected"))
+        let reset = try #require(cleanup.range(of: "resetDiscoverySessionOnly()"))
+        let liveCorrelationGuard = try #require(cleanup.range(of: "guard processCorrelationLease != nil || correlationSession != nil else { return }"))
+        #expect(completedTargetCheck.lowerBound < reset.lowerBound)
+        #expect(reset.lowerBound < liveCorrelationGuard.lowerBound)
+        #expect(cleanup.contains("target_correlation_abandoned_on_view_exit"))
+        #expect(!cleanup.contains("releasePackageCorrelationLease()"))
+    }
+
     @Test("membership copy is revoked with proof before request generations rotate")
     func membershipStatusCannotRemainVerifiedAfterViewOrForegroundRevocation() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
