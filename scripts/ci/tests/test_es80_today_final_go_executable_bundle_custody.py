@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import ast
 from pathlib import Path
-import re
 import subprocess
 import unittest
 
@@ -66,7 +66,7 @@ class FinalGoExecutableBundleCustodyTests(unittest.TestCase):
                 self.assertEqual(completed.stdout.strip(), expected_blob)
 
     def test_hardener_loads_only_the_pinned_local_authority_siblings(self):
-        source = HARDENER.read_text(encoding="utf-8")
+        tree = ast.parse(HARDENER.read_text(encoding="utf-8"))
         expected_loaded_names = {
             "_es80_today_final_go_foundation_impl.py",
             "es80_today_trusted_capture_xcode_subject.py",
@@ -74,7 +74,18 @@ class FinalGoExecutableBundleCustodyTests(unittest.TestCase):
             "es80_today_crosscheck_receipt_custody.py",
             "es80_today_trusted_signed_candidate_reinspection.py",
         }
-        loaded_names = set(re.findall(r'_load\(\s*"[^"]+",\s*"([^"]+\.py)"\s*\)', source))
+        loaded_names: set[str] = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Name) or node.func.id != "_load":
+                continue
+            if len(node.args) < 2:
+                self.fail("Final GO _load call lost its explicit filename argument")
+            filename = node.args[1]
+            if not isinstance(filename, ast.Constant) or not isinstance(filename.value, str):
+                self.fail("Final GO _load filename must remain a static string")
+            loaded_names.add(filename.value)
         self.assertEqual(loaded_names, expected_loaded_names)
 
     def test_invocation_uses_isolated_python_from_verified_worktree_and_same_tooling_repo(self):
