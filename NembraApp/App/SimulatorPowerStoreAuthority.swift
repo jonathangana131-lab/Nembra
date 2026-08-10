@@ -54,11 +54,11 @@ struct SimulatorPowerStoreProjection: Equatable, Sendable {
 /// Aggregate connection state is accepted only as a negative veto and therefore
 /// can demote LIVE -> RETAINED but can never promote RETAINED -> LIVE.
 ///
-/// A transport demotion also fences the exact source receipt that lost live
-/// transport authority. Aggregate reconnect does not clear that fence. The same or
-/// an older source LIVE receipt stays retained; only a strictly newer source receipt
-/// can reopen LIVE. This prevents a delayed pre-disconnect callback/snapshot from
-/// resurrecting propulsion currentness after reconnect.
+/// A transport or provider demotion also fences the exact source receipt that lost
+/// live authority. Aggregate reconnect does not clear that fence. The same or an
+/// older source LIVE receipt stays retained/unavailable; only a strictly newer source
+/// receipt can reopen LIVE. This prevents delayed pre-disconnect callbacks/snapshots
+/// from resurrecting propulsion currentness.
 struct SimulatorPowerStoreAuthority: Sendable {
     private struct SourceIdentity: Equatable, Sendable {
         let continuityGeneration: UInt64
@@ -81,7 +81,8 @@ struct SimulatorPowerStoreAuthority: Sendable {
 
     private(set) var projection: SimulatorPowerStoreProjection = .unavailable
     private var newestSourceObservation: SimulatorPowerObservation?
-    private var transportFenceIdentity: SourceIdentity?
+    private var negativeAuthorityFenceIdentity: SourceIdentity?
+    private var sourceProviderIsAvailable = true
 
     /// Applies source-owned availability after a provider wake-up or explicit
     /// snapshot refresh. Malformed source shape fails closed even though the source
@@ -96,7 +97,7 @@ struct SimulatorPowerStoreAuthority: Sendable {
                 failClosed()
                 return
             }
-            projection = .unavailable
+            failClosed()
 
         case .retained:
             guard let observation = sourceAvailability.observation else {
@@ -122,19 +123,29 @@ struct SimulatorPowerStoreAuthority: Sendable {
               let observation = projection.observation else {
             return
         }
-        rememberTransportFence(for: observation)
+        rememberNegativeFence(for: observation)
         projection = .retained(observation)
     }
 
-    /// Stream/provider termination cannot preserve live authority. This is stronger
-    /// than a transport veto because the app no longer has a source-currentness owner
-    /// to re-snapshot, so presentation fails completely closed. Chronology/fence
-    /// memory is deliberately retained so an old callback cannot reopen authority.
+    /// Stream/provider termination cannot preserve live authority. The last accepted
+    /// source receipt is fenced before projection becomes unavailable, so an already
+    /// queued old callback cannot reopen LIVE after termination. A Store that obtains
+    /// a genuinely new provider must explicitly re-enable provider admission first.
     mutating func sourceBecameUnavailable() {
-        projection = .unavailable
+        sourceProviderIsAvailable = false
+        failClosed()
+    }
+
+    /// Explicitly reopens *provider admission*, not propulsion LIVE authority. The
+    /// negative receipt fence remains. Only a subsequently applied strictly newer
+    /// source LIVE receipt can reopen presentation currentness.
+    mutating func sourceProviderBecameAvailable() {
+        sourceProviderIsAvailable = true
     }
 
     private mutating func applyRetainedSource(_ observation: SimulatorPowerObservation) {
+        guard sourceProviderIsAvailable else { return }
+
         switch compare(observation, to: newestSourceObservation) {
         case .older:
             return
@@ -143,11 +154,11 @@ struct SimulatorPowerStoreAuthority: Sendable {
             return
         case .identical:
             projection = .retained(observation)
-            rememberTransportFence(for: observation)
+            rememberNegativeFence(for: observation)
         case .newer:
             newestSourceObservation = observation
             projection = .retained(observation)
-            rememberTransportFence(for: observation)
+            rememberNegativeFence(for: observation)
         }
     }
 
@@ -155,6 +166,8 @@ struct SimulatorPowerStoreAuthority: Sendable {
         _ observation: SimulatorPowerObservation,
         transportIsConnected: Bool
     ) {
+        guard sourceProviderIsAvailable else { return }
+
         let sourceComparison = compare(observation, to: newestSourceObservation)
         switch sourceComparison {
         case .older:
@@ -170,45 +183,60 @@ struct SimulatorPowerStoreAuthority: Sendable {
 
         guard transportIsConnected else {
             projection = .retained(observation)
-            rememberTransportFence(for: observation)
+            rememberNegativeFence(for: observation)
             return
         }
 
-        if let fence = transportFenceIdentity {
+        if let fence = negativeAuthorityFenceIdentity {
             switch compare(SourceIdentity(observation), to: fence) {
             case .older, .identical:
-                projection = .retained(observation)
+                if projection.currentness != .unavailable {
+                    projection = .retained(observation)
+                }
                 return
             case .contradictory:
                 failClosed()
                 return
             case .newer:
-                transportFenceIdentity = nil
+                negativeAuthorityFenceIdentity = nil
             }
         }
 
         projection = .live(observation)
     }
 
-    private mutating func rememberTransportFence(for observation: SimulatorPowerObservation) {
+    private mutating func rememberNegativeFence(for observation: SimulatorPowerObservation) {
         let candidate = SourceIdentity(observation)
-        guard let current = transportFenceIdentity else {
-            transportFenceIdentity = candidate
+        guard let current = negativeAuthorityFenceIdentity else {
+            negativeAuthorityFenceIdentity = candidate
             return
         }
 
         switch compare(candidate, to: current) {
         case .newer:
-            transportFenceIdentity = candidate
+            negativeAuthorityFenceIdentity = candidate
         case .older, .identical:
             break
         case .contradictory:
-            failClosed()
+            projection = .unavailable
         }
     }
 
     private mutating func failClosed() {
+        fenceNewestObservationWithoutRecursion()
         projection = .unavailable
+    }
+
+    private mutating func fenceNewestObservationWithoutRecursion() {
+        guard let observation = newestSourceObservation else { return }
+        let candidate = SourceIdentity(observation)
+        guard let current = negativeAuthorityFenceIdentity else {
+            negativeAuthorityFenceIdentity = candidate
+            return
+        }
+        if case .newer = compare(candidate, to: current) {
+            negativeAuthorityFenceIdentity = candidate
+        }
     }
 
     private func compare(
