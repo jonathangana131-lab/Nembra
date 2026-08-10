@@ -2038,7 +2038,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
             encoder.dateEncodingStrategy = .iso8601
             exportData = try encoder.encode(envelope)
             exportName = "Nembra-Secure-Link-\(deviceID.prefix(8))-Diagnostics.json"
-            message = "Sanitized diagnostics ready with exact compiled source + reviewed Tuya dependency-lock provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."
+            if phase != .failed {
+                message = "Sanitized diagnostics ready with exact compiled source + reviewed Tuya dependency-lock provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."
+            }
         } catch {
             exportData = nil
             message = "Diagnostic export failed: \(error.localizedDescription)"
@@ -3137,6 +3139,7 @@ private struct SecureLinkView: View {
                 Text("Restore the missing requirement below. This stopped attempt will not be reused.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                failureDiagnosticsControls
             }
         }
     }
@@ -3150,6 +3153,8 @@ private struct SecureLinkView: View {
                 Text(test.message)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+
+                failureDiagnosticsControls
 
                 if test.canRestartFromFreshOFF1 {
                     Text("Nothing from the stopped attempt will carry forward. Restore the required setup, then begin again with the scooter powered off.")
@@ -3173,6 +3178,41 @@ private struct SecureLinkView: View {
                 }
             }
         }
+    }
+
+    private var failureDiagnosticsControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Divider()
+                .overlay(Color.white.opacity(0.08))
+
+            if let data = test.exportData {
+                Text("Sanitized diagnostics ready")
+                    .font(.subheadline.weight(.semibold))
+                ShareLink(item: SecureTransfer(data: data, name: test.exportName), preview: SharePreview(test.exportName)) {
+                    Label("Share diagnostics", systemImage: "square.and.arrow.up")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .accessibilityHint("Shares only sanitized failed-attempt diagnostic evidence. It is not an accepted Capture artifact.")
+            } else {
+                Button {
+                    test.prepareExport()
+                } label: {
+                    Label("Prepare diagnostics", systemImage: "doc.badge.gearshape")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .accessibilityHint("Prepares sanitized evidence from this stopped attempt for troubleshooting. It does not accept the Capture.")
+            }
+
+            Text("Diagnostics preserve legitimate failed-attempt evidence for analysis. They never turn this stopped attempt into an accepted Capture.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .contain)
     }
 
     private var completionPanel: some View {
