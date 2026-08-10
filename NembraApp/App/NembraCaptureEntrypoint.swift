@@ -431,6 +431,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Exact scooter membership must be verified again for this Secure Link view."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -488,6 +489,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Exact scooter membership must be verified again for this Secure Link view."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -1406,6 +1408,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
         guard sdkAccountLoggedIn,
               sdkDeviceMembershipVerified,
               accountIdentityLeaseIsAuthorized,
+              let admittedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !admittedAccountUID.isEmpty,
               let driver else {
             await invalidateSourceAuthority(
                 token: token,
@@ -1425,9 +1429,30 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            guard currentConnectionToken == token,
+                  phase == .observing,
+                  sdkAccountLoggedIn,
+                  sdkDeviceMembershipVerified,
+                  accountIdentityLeaseIsAuthorized,
+                  membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) == admittedAccountUID else {
+                await invalidateSourceAuthority(
+                    token: token,
+                    message: "SDK account/device source authority changed before application evidence could enter immutable event custody.",
+                    kind: "sdk_source_authority_changed_before_application_event_custody"
+                )
+                return
+            }
+            guard driver.isLocallyConnected(uuid: tuyaUUID) else {
+                await recordObservedTransportLoss(token: token)
+                return
+            }
+            let applicationDetails = redactAccountUIDFromApplicationDetails(
+                update,
+                accountUID: admittedAccountUID
+            )
+            log("tuya_application_update", applicationDetails.merging([
                 "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -1453,6 +1478,36 @@ private final class SecureLinkController: NSObject, ObservableObject {
             )
         }
     }
+
+    private func redactAccountUIDFromApplicationDetails(
+    _ details: [String: String],
+    accountUID: String
+) -> [String: String] {
+    let exactAccountUID = accountUID.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !exactAccountUID.isEmpty else { return details }
+
+    func redacted(_ text: String) -> String {
+        text.replacingOccurrences(
+            of: exactAccountUID,
+            with: "<redacted-account-uid>",
+            options: [.caseInsensitive, .literal]
+        )
+    }
+
+    var sanitized: [String: String] = [:]
+    for key in details.keys.sorted() {
+        guard let value = details[key] else { continue }
+        let baseKey = redacted(key)
+        var admittedKey = baseKey
+        var collisionOrdinal = 2
+        while sanitized[admittedKey] != nil {
+            admittedKey = "\(baseKey)#\(collisionOrdinal)"
+            collisionOrdinal += 1
+        }
+        sanitized[admittedKey] = redacted(value)
+    }
+    return sanitized
+}
 
     private func startWatchdog(token: TuyaReadOnlyConnectionToken) {
         watchdog?.cancel()
@@ -2241,7 +2296,6 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "accounttoken",
         "accesstoken",
         "refreshtoken",
-        "sessionkey",
         "authkey",
         "seckey",
     ]
