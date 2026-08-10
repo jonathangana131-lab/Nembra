@@ -1,0 +1,49 @@
+name: Capture Terminal Witness Clock
+
+on:
+  pull_request:
+    branches:
+      - capture/one-time-ble-dump-gpt56
+    paths:
+      - 'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedTerminalHorizonTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaTerminalWitnessClockTests.swift'
+      - '.github/workflows/capture-terminal-witness-clock.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-terminal-witness-clock-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test terminal chronology
+    runs-on: macos-15
+    timeout-minutes: 10
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Swift 6.2 toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+      - name: Test current ledger and terminal horizons
+        run: |
+          set -euo pipefail
+          swift test \
+            --package-path Packages/NembraBluetoothCapture \
+            --filter TuyaAuthenticatedReadOnlySessionLedgerTests \
+            -Xswiftc -warnings-as-errors
+          swift test \
+            --package-path Packages/NembraBluetoothCapture \
+            --filter TuyaAuthenticatedTerminalHorizonTests \
+            -Xswiftc -warnings-as-errors
+          swift test \
+            --package-path Packages/NembraBluetoothCapture \
+            --filter TuyaTerminalWitnessClockTests \
+            -Xswiftc -warnings-as-errors
