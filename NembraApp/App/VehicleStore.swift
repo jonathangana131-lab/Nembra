@@ -244,12 +244,29 @@ final class VehicleStore {
             simulatorPowerEvidenceProvider = nil
         }
 
-        updatesTask = Task { [weak self, service, speedEvidenceProvider] in
+        updatesTask = Task { [weak self, service, speedEvidenceProvider, simulatorPowerEvidenceProvider] in
             let stream = await service.stateUpdates()
             for await incomingState in stream {
                 guard let self, !Task.isCancelled else { break }
                 let previousConnection = self.state.connection
+
+                // Aggregate connection is negative authority only. Revoke a live
+                // presentation claim before the disconnected state can become
+                // observable; preserve the exact source receipt as retained.
+                if incomingState.connection != .connected {
+                    self.demoteLiveSimulatorPowerEvidenceForTransportVeto()
+                }
                 self.apply(incomingState)
+
+                // A transport transition may wake a source snapshot refresh, but
+                // aggregate connection never promotes power. The provider's current
+                // source-owned snapshot remains the only positive authority.
+                if incomingState.connection != previousConnection,
+                   let simulatorPowerEvidenceProvider {
+                    await self.refreshSimulatorPowerEvidenceAuthority(
+                        using: simulatorPowerEvidenceProvider
+                    )
+                }
 
                 guard let speedEvidenceProvider else {
                     if incomingState.connection != .connected {
@@ -299,9 +316,9 @@ final class VehicleStore {
                     // Availability events are wake-ups only. Re-read current source
                     // state so a slow consumer cannot publish an obsolete queued
                     // `.live` receipt after the source has already demoted it.
-                    let current = await simulatorPowerEvidenceProvider.simulatorPowerEvidenceSnapshot()
-                    guard !Task.isCancelled else { return }
-                    self.simulatorPowerEvidenceAvailability = current
+                    await self.refreshSimulatorPowerEvidenceAuthority(
+                        using: simulatorPowerEvidenceProvider
+                    )
                 }
 
                 guard let self, !Task.isCancelled else { return }
@@ -484,6 +501,37 @@ final class VehicleStore {
             return
         }
         speedEvidenceAvailability = speedEvidenceConsumerAuthority.availability
+    }
+
+    /// Aggregate connection is a one-way veto on a live presentation claim. It
+    /// preserves the exact source receipt and never manufactures positive authority.
+    private func demoteLiveSimulatorPowerEvidenceForTransportVeto() {
+        if case let .live(observation) = simulatorPowerEvidenceAvailability {
+            simulatorPowerEvidenceAvailability = .retained(observation)
+        }
+    }
+
+    /// Projects the source-owned availability into Store currentness without ever
+    /// letting a late `.live` snapshot outrun a known disconnected aggregate state.
+    private func publishSimulatorPowerEvidence(
+        _ sourceAvailability: SimulatorPowerEvidenceAvailability
+    ) {
+        if case let .live(observation) = sourceAvailability,
+           state.connection != .connected {
+            simulatorPowerEvidenceAvailability = .retained(observation)
+            return
+        }
+        simulatorPowerEvidenceAvailability = sourceAvailability
+    }
+
+    /// Re-reads current source state after any wakeup/transport transition. The
+    /// provider snapshot remains the sole positive authority for a live receipt.
+    private func refreshSimulatorPowerEvidenceAuthority(
+        using simulatorPowerEvidenceProvider: any SimulatorPowerEvidenceProvider
+    ) async {
+        let current = await simulatorPowerEvidenceProvider.simulatorPowerEvidenceSnapshot()
+        guard !Task.isCancelled else { return }
+        publishSimulatorPowerEvidence(current)
     }
 
     private func perform(_ command: PendingCommand, operation: () async throws -> Void) async {
