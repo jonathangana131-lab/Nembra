@@ -34,40 +34,46 @@ jobs:
           test -z "$unexpected"
 
       - name: Apply bounded hidden-start authority retirement
-        shell: python
+        shell: bash
         run: |
+          set -euo pipefail
+          python3 - <<'PY'
           from pathlib import Path
           path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           source = path.read_text(encoding='utf-8')
-          old = '''    func abandonCorrelationForViewExit() {
-        guard processCorrelationLease != nil || correlationSession != nil else { return }
-        abandonPackageCorrelation()
-        phase = .failed
-        message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
-        log("target_correlation_abandoned_on_view_exit")
-    }'''
-          new = '''    func abandonCorrelationForViewExit() {
-        // Secure Link can disappear while current-account membership enumeration is still
-        // in flight, before OFF1 owns a scanner/lease. Revoke that callback authority first
-        // so a late successful membership result cannot start hidden package correlation.
-        membershipRequestID = UUID()
-        membershipBusy = false
-          #if canImport(ThingSmartHomeKit)
-        membershipProbe = nil
-          #endif
-
-        guard processCorrelationLease != nil || correlationSession != nil else { return }
-        // Preserve the accepted radio ordering: explicit package transport retirement first,
-        // then owner-token lease release inside abandonPackageCorrelation().
-        abandonPackageCorrelation()
-        phase = .failed
-        message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
-        log("target_correlation_abandoned_on_view_exit")
-    }'''
+          old = "\n".join([
+              "    func abandonCorrelationForViewExit() {",
+              "        guard processCorrelationLease != nil || correlationSession != nil else { return }",
+              "        abandonPackageCorrelation()",
+              "        phase = .failed",
+              "        message = \"Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series.\"",
+              "        log(\"target_correlation_abandoned_on_view_exit\")",
+              "    }",
+          ])
+          new = "\n".join([
+              "    func abandonCorrelationForViewExit() {",
+              "        // Secure Link can disappear while current-account membership enumeration is still",
+              "        // in flight, before OFF1 owns a scanner/lease. Revoke that callback authority first",
+              "        // so a late successful membership result cannot start hidden package correlation.",
+              "        membershipRequestID = UUID()",
+              "        membershipBusy = false",
+              "#if canImport(ThingSmartHomeKit)",
+              "        membershipProbe = nil",
+              "#endif",
+              "",
+              "        guard processCorrelationLease != nil || correlationSession != nil else { return }",
+              "        // Preserve the accepted radio ordering: explicit package transport retirement first,",
+              "        // then owner-token lease release inside abandonPackageCorrelation().",
+              "        abandonPackageCorrelation()",
+              "        phase = .failed",
+              "        message = \"Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series.\"",
+              "        log(\"target_correlation_abandoned_on_view_exit\")",
+              "    }",
+          ])
           if source.count(old) != 1:
               raise SystemExit(f'exact view-exit helper anchor changed: {source.count(old)}')
-          source = source.replace(old, new, 1)
-          path.write_text(source, encoding='utf-8')
+          path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          PY
 
       - name: Verify truth and no-authority expansion
         shell: bash
