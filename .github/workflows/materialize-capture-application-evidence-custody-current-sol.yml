@@ -1,0 +1,199 @@
+name: Materialize current Capture application evidence custody
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-application-evidence-custody-current-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 8
+
+      - name: Verify exact current-product ancestry and prerequisite scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='8069c0ffec496cacbe263016d8a7f4ca15ddc64e'
+          git merge-base --is-ancestor "$expected" HEAD
+          actual="$(git diff --name-only "$expected" HEAD | sort)"
+          wanted="$(printf '%s\n' \
+            '.github/workflows/materialize-capture-application-evidence-custody-current-sol.yml' \
+            'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaApplicationUpdateSecretSanitizer.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEvidenceCustodySourceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationUpdateExportSecretPromiseSourceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationUpdateSecretSanitizerTests.swift' | sort)"
+          test "$actual" = "$wanted"
+
+      - name: Wire shared custody into current shipping application path
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text()
+
+          # Shipping SDK callback delegates all key/nested projection to one package authority.
+          class_marker = '@MainActor\nprivate final class SmartLifeDriver'
+          method_marker = '    func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {'
+          class_start = source.index(class_marker)
+          method_start = source.index(method_marker, class_start)
+          class_end = source.index('\n}\n#endif\n\nprivate enum AppleAccountAuthorizationError', method_start)
+          current_tail = source[method_start:class_end]
+          for needle in (
+              'private static let secretKeyFragments = [',
+              '"appkey",',
+              '"appsecret",',
+              '"password",',
+              '"accounttoken",',
+              'private static func redactApplicationSecrets(_ object: Any) -> Any',
+              'String(describing: Self.redactApplicationSecrets(value))',
+          ):
+              if needle not in current_tail:
+                  raise SystemExit(f'current inline sanitizer changed; missing {needle}')
+          replacement = '\n'.join([
+              '    func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {',
+              '        guard let dps, !dps.isEmpty else { return }',
+              '        onApplicationUpdate?(',
+              '            TuyaApplicationUpdateSecretSanitizer.sanitizeForStringProjection(dps)',
+              '        )',
+              '    }',
+          ])
+          source = source[:method_start] + replacement + source[class_end:]
+
+          # Require the exact already-earned account UID lease and scrub that private value from
+          # both projected keys and values before the payload enters event/export custody.
+          receiver_start = source.index('    private func receivedApplicationUpdate(')
+          receiver_end = source.index('\n    private func startWatchdog', receiver_start)
+          receiver = source[receiver_start:receiver_end]
+          admission_marker = '        applicationUpdateAdmissionsInFlight += 1'
+          if receiver.count(admission_marker) != 1:
+              raise SystemExit(f'application admission marker count changed: {receiver.count(admission_marker)}')
+          if 'guard let verifiedAccountUID = membershipAccountUID' in receiver:
+              raise SystemExit('exact account UID custody unexpectedly already present')
+          custody_block = '\n'.join([
+              '        guard let verifiedAccountUID = membershipAccountUID,',
+              '              !verifiedAccountUID.isEmpty,',
+              '              accountIdentityLeaseIsAuthorized else {',
+              '            await invalidateSourceAuthority(',
+              '                token: token,',
+              '                message: "Verified Tuya account identity lease became unavailable before application evidence custody.",',
+              '                kind: "sdk_account_identity_lease_missing_before_application_custody"',
+              '            )',
+              '            return',
+              '        }',
+              '        let custodySafeUpdate = TuyaApplicationUpdateSecretSanitizer.redactingAccountUID(',
+              '            in: update,',
+              '            verifiedAccountUID: verifiedAccountUID',
+              '        )',
+              '',
+          ])
+          admission_abs = receiver_start + receiver.index(admission_marker)
+          source = source[:admission_abs] + custody_block + source[admission_abs:]
+
+          # `generation` is Nembra-owned event provenance. SDK payload collisions cannot override it.
+          receiver_start = source.index('    private func receivedApplicationUpdate(')
+          receiver_end = source.index('\n    private func startWatchdog', receiver_start)
+          receiver = source[receiver_start:receiver_end]
+          old_start = 'log("tuya_application_update", update.merging(['
+          old_close = ']) { current, _ in current })'
+          if receiver.count(old_start) != 1 or receiver.count(old_close) != 1:
+              raise SystemExit('application event merge shape changed')
+          receiver = receiver.replace(old_start, 'log("tuya_application_update", custodySafeUpdate.merging([', 1)
+          receiver = receiver.replace(old_close, ']) { _, trusted in trusted })', 1)
+          source = source[:receiver_start] + receiver + source[receiver_end:]
+
+          path.write_text(source)
+          PY
+
+      - name: Validate source contracts and portable custody behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          app='NembraApp/App/NembraCaptureEntrypoint.swift'
+          helper='Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaApplicationUpdateSecretSanitizer.swift'
+          for test in \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEvidenceCustodySourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationUpdateExportSecretPromiseSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationUpdateSecretSanitizerTests.swift; do
+            swiftc -frontend -parse "$test"
+          done
+          swiftc -frontend -parse "$app"
+          swiftc -warnings-as-errors -emit-library -module-name SanitizerProbe "$helper" -o /tmp/libSanitizerProbe.so
+
+          grep -q 'TuyaApplicationUpdateSecretSanitizer.sanitizeForStringProjection(dps)' "$app"
+          grep -q 'guard let verifiedAccountUID = membershipAccountUID' "$app"
+          grep -q 'TuyaApplicationUpdateSecretSanitizer.redactingAccountUID(' "$app"
+          grep -q ') { _, trusted in trusted })' "$app"
+          ! grep -A100 'private final class SmartLifeDriver' "$app" | grep -q 'private static let secretKeyFragments'
+          ! grep -q ') { current, _ in current })' "$app"
+          grep -q 'secretsRedacted: true' "$app"
+          grep -q 'No account UID, AppKey/AppSecret, password, account token, local_key, session key' "$app"
+          git diff --check
+
+          cp "$helper" /tmp/main.swift
+          cat >> /tmp/main.swift <<'SWIFT'
+
+          private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
+              guard condition() else { fatalError(message) }
+          }
+          for key in [
+              "local_key", "session-key", "app.key", "appSecret", "password",
+              "account_token", "accessToken", "refresh-token", "auth_key", "secKey"
+          ] {
+              require(TuyaApplicationUpdateSecretSanitizer.isSecretKey(key), "missing promised class: \(key)")
+          }
+          let projected = TuyaApplicationUpdateSecretSanitizer.sanitizeForStringProjection([
+              "password": "do-not-export",
+              "ordinary": "evidence",
+              "nested": ["session_key": "session-value", "watts": 120],
+          ])
+          require(projected["password"] == "<redacted>", "top-level credential escaped")
+          require(projected["ordinary"] == "evidence", "ordinary evidence changed")
+          require(projected["nested"]?.contains("session-value") == false, "nested credential escaped")
+
+          let verifiedUID = "account-uid-7A91"
+          let redacted = TuyaApplicationUpdateSecretSanitizer.redactingAccountUID(
+              in: [
+                  "uid": "device-uid-123",
+                  "status": "owner=account-uid-7A91; mode=eco",
+                  "field-account-uid-7A91": "present"
+              ],
+              verifiedAccountUID: verifiedUID
+          )
+          require(redacted["uid"] == "device-uid-123", "generic device uid erased")
+          require(redacted["status"] == "owner=<redacted-account-uid>; mode=eco", "account UID value escaped")
+          require(redacted["field-<redacted-account-uid>"] == "present", "account UID key escaped")
+          require(redacted.keys.allSatisfy { !$0.contains(verifiedUID) }, "verified UID remains in key")
+          require(redacted.values.allSatisfy { !$0.contains(verifiedUID) }, "verified UID remains in value")
+          require(!TuyaApplicationUpdateSecretSanitizer.isSecretKey("uid"), "generic uid gained account semantics")
+          SWIFT
+          swiftc -warnings-as-errors /tmp/main.swift -o /tmp/custody-probe
+          /tmp/custody-probe
+
+      - name: Retire helper and checkpoint exact integrated delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-application-evidence-custody-current-sol.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          actual="$(git diff --cached --name-only '8069c0ffec496cacbe263016d8a7f4ca15ddc64e' | sort)"
+          wanted="$(printf '%s\n' \
+            'NembraApp/App/NembraCaptureEntrypoint.swift' \
+            'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaApplicationUpdateSecretSanitizer.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEvidenceCustodySourceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationUpdateExportSecretPromiseSourceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationUpdateSecretSanitizerTests.swift' | sort)"
+          test "$actual" = "$wanted"
+          git commit -m 'fix(capture): close application evidence custody'
+          git push origin HEAD:agent/v14-capture-application-evidence-custody-current-sol
