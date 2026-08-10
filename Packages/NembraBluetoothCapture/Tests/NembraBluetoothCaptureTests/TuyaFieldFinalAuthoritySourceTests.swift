@@ -19,28 +19,38 @@ struct TuyaFieldFinalAuthoritySourceTests {
         #expect(seal.lowerBound < accepted.lowerBound)
     }
 
-    @Test("OFF scan is mechanically downstream of current SDK account and exact membership authority")
-    func scanCannotStartFromUIStateAlone() throws {
+    @Test("OFF1 correlation is mechanically downstream of exact build, current SDK account, membership, and identity lease authority")
+    func correlationCannotStartFromUIStateAlone() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let start = try section(in: source, from: "func startBaseline()", to: "private func beginBaselineScan()")
-        let begin = try section(in: source, from: "private func beginBaselineScan()", to: "func saveBaseline()")
+        let start = try section(in: source, from: "func startBaseline()", to: "private func beginCorrelationSeries()")
+        let begin = try section(in: source, from: "private func beginCorrelationSeries()", to: "func startNextCorrelationWindow()")
 
+        #expect(start.contains("buildIdentity.isAuthoritativeFieldBuild"))
         #expect(start.contains("guard privateConfig, sdkAccountLoggedIn"))
         #expect(start.contains("verifySDKMembership"))
-        #expect(start.contains("beginBaselineScan()"))
+        #expect(start.contains("TuyaSDKAccountIdentityLeaseGate.verdict"))
+        #expect(start.contains("beginCorrelationSeries()"))
+
         #expect(begin.contains("sdkAccountLoggedIn"))
         #expect(begin.contains("sdkDeviceMembershipVerified"))
-        #expect(begin.contains("scanForPeripherals"))
+        #expect(begin.contains("accountIdentityLeaseIsAuthorized"))
+        #expect(begin.contains("PassiveBluetoothPowerCycleObservationSession(minimumWindowDuration: 10)"))
+        #expect(begin.contains("startCurrentCorrelationWindow()"))
+        #expect(!source.contains("central.scanForPeripherals"))
+        #expect(!source.contains("central.connect("))
     }
 
-    @Test("only the accepted prior physical identity can authorize a local candidate")
-    func descriptiveRadioHintsCannotAuthorizeTarget() throws {
+    @Test("only fresh repeated correlation can authorize a local candidate")
+    func descriptiveRadioAndHistoricalHintsCannotAuthorizeTarget() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        #expect(source.contains("var likely: Bool { knownID }"))
-        #expect(source.contains("knownID:"))
-        #expect(source.contains("knownPeripheral"))
-        #expect(!source.contains("fd50 && tuyaCompany"))
-        #expect(source.contains("Descriptive hints cannot authorize"))
+        #expect(source.contains("var likely: Bool { freshlyCorrelated }"))
+        #expect(source.contains("freshlyCorrelated: true"))
+        #expect(source.contains("matches C7D09A22 capture-local UUID descriptive"))
+        #expect(source.contains("not permanent scooter identity"))
+        #expect(source.contains("Do not fall back to the historical capture UUID"))
+        #expect(!source.contains("var likely: Bool { knownID }"))
+        #expect(!source.contains("knownID || (fd50 && tuyaCompany)"))
+        #expect(!source.contains("score >= 600"))
     }
 
     @Test("login success re-reads SDK authority and account errors redact the submitted identifier")
