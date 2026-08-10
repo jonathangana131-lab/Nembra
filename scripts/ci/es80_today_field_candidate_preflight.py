@@ -238,13 +238,71 @@ def _private_udid_file_is_ready(path: Path, repository_root: Path) -> bool:
 
 
 def _export_options_are_ready(path: Path) -> bool:
-    if _regular_nonsymlink(path) is None:
+    """Read one exact absolute ExportOptions plist without following path aliases.
+
+    This is a non-authorizing operator readiness check, not signing evidence. The frozen producer
+    will reopen and validate the export-options input itself. Still, returning READY after a final
+    lstat followed by a pathname reopen can inspect different bytes when an ancestor is a symlink or
+    the path is retargeted. Walk the absolute path with directory descriptors and O_NOFOLLOW, then
+    parse the exact opened regular-file descriptor and require its identity to remain stable.
+    """
+    if (
+        not hasattr(os, "O_NOFOLLOW")
+        or not hasattr(os, "O_DIRECTORY")
+        or os.open not in os.supports_dir_fd
+    ):
         return False
+    if not path.is_absolute() or path.anchor != os.sep:
+        return False
+
+    components = path.parts[1:]
+    if not components or any(component in ("", ".", "..") for component in components):
+        return False
+
+    close_on_exec = os.O_CLOEXEC if hasattr(os, "O_CLOEXEC") else 0
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | close_on_exec
+    file_flags = os.O_RDONLY | os.O_NOFOLLOW | close_on_exec
+
     try:
-        with path.open("rb") as handle:
-            payload = plistlib.load(handle)
-    except (OSError, plistlib.InvalidFileException, ValueError):
+        parent_descriptor = os.open(os.sep, directory_flags)
+    except OSError:
         return False
+
+    descriptor: int | None = None
+    try:
+        for component in components[:-1]:
+            try:
+                next_descriptor = os.open(component, directory_flags, dir_fd=parent_descriptor)
+            except OSError:
+                return False
+            os.close(parent_descriptor)
+            parent_descriptor = next_descriptor
+
+        try:
+            descriptor = os.open(components[-1], file_flags, dir_fd=parent_descriptor)
+        except OSError:
+            return False
+    finally:
+        os.close(parent_descriptor)
+
+    if descriptor is None:
+        return False
+
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size < 1:
+            return False
+        try:
+            with os.fdopen(os.dup(descriptor), "rb") as handle:
+                payload = plistlib.load(handle)
+            final_metadata = os.fstat(descriptor)
+        except (OSError, plistlib.InvalidFileException, ValueError):
+            return False
+        if _stable_file_identity(final_metadata) != _stable_file_identity(metadata):
+            return False
+    finally:
+        os.close(descriptor)
+
     return isinstance(payload, dict)
 
 
