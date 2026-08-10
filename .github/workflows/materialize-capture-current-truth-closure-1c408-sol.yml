@@ -1,0 +1,203 @@
+name: Materialize Capture Current Truth Closure 1c408 Sol
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-current-truth-closure-1c408-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact parent and red-only helper scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='1c40853f6991b4d09206df1d25ecff021458b7eb'
+          test "$(git merge-base HEAD "$parent")" = "$parent"
+          git diff --quiet "$parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+          mapfile -t changed < <(git diff --name-only "$parent"...HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 4
+          test "${changed[0]}" = '.github/workflows/materialize-capture-current-truth-closure-1c408-sol.yml'
+          test "${changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift'
+          test "${changed[2]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundPostCorrelationRevocationSourceTests.swift'
+          test "${changed[3]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift'
+
+      - name: Materialize three current-product truth repairs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+
+          def replace_in_section(text, start_marker, end_marker, old, new):
+              start = text.index(start_marker)
+              end = text.index(end_marker, start)
+              section = text[start:end]
+              if section.count(old) != 1:
+                  raise SystemExit(f'expected one replacement in {start_marker!r}, found {section.count(old)}')
+              section = section.replace(old, new, 1)
+              return text[:start] + section + text[end:]
+
+          proof_prefix = '''        sdkDeviceMembershipVerified = false
+        membershipAccountUID = nil
+        membershipDeviceID = nil
+        membershipRequestID = UUID()
+'''
+          view_exit_prefix = '''        sdkDeviceMembershipVerified = false
+        membershipAccountUID = nil
+        membershipDeviceID = nil
+        membershipStatus = "Exact scooter membership must be verified again for this Secure Link view."
+        membershipRequestID = UUID()
+'''
+          source = replace_in_section(
+              source,
+              '    func abandonCorrelationForViewExit() {',
+              '    func appDidLoseForeground() {',
+              proof_prefix,
+              view_exit_prefix,
+          )
+
+          foreground_prefix = '''        sdkDeviceMembershipVerified = false
+        membershipAccountUID = nil
+        membershipDeviceID = nil
+        membershipStatus = "Capture left the foreground. Exact scooter membership must be verified again before a fresh OFF1 attempt."
+        membershipRequestID = UUID()
+'''
+          source = replace_in_section(
+              source,
+              '    func appDidLoseForeground() {',
+              '    var privateConfig: Bool',
+              proof_prefix,
+              foreground_prefix,
+          )
+
+          guard_marker = '''        guard let token = currentConnectionToken else {
+'''
+          completed_correlation_branch = '''        if phase == .correlated || phase == .selected {
+            // The package scanner is already retired at these phases, but the completed
+            // current-attempt correlation/selection evidence is still mutable authority.
+            resetDiscoverySessionOnly()
+            phase = .failed
+            message = "Capture left the foreground after target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the prior correlated target was revoked."
+            log("foreground_integrity_lost_after_target_correlation")
+            return
+        }
+
+'''
+          source = replace_in_section(
+              source,
+              '    func appDidLoseForeground() {',
+              '    var privateConfig: Bool',
+              guard_marker,
+              completed_correlation_branch + guard_marker,
+          )
+
+          old_event = '''            log("tuya_application_update", update.merging([
+                "generation": String(token.diagnosticGeneration)
+            ]) { current, _ in current })
+'''
+          new_event = '''            log("tuya_application_update", update.merging([
+                "generation": String(token.diagnosticGeneration)
+            ]) { _, trusted in trusted })
+'''
+          if source.count(old_event) != 1:
+              raise SystemExit(f'expected one application-event metadata merge, found {source.count(old_event)}')
+          source = source.replace(old_event, new_event, 1)
+
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Verify authority ordering and reserved metadata precedence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+
+          exit_start = s.index('    func abandonCorrelationForViewExit() {')
+          fg_start = s.index('    func appDidLoseForeground() {', exit_start)
+          private_start = s.index('    var privateConfig: Bool', fg_start)
+          exit_cleanup = s[exit_start:fg_start]
+          fg_cleanup = s[fg_start:private_start]
+
+          for cleanup in (exit_cleanup, fg_cleanup):
+              clear = cleanup.index('sdkDeviceMembershipVerified = false')
+              status = cleanup.index('membershipStatus =')
+              revoke = cleanup.index('membershipRequestID = UUID()')
+              assert clear < status < revoke
+              assert 'membership verified and leased' not in cleanup.lower()
+
+          completed = fg_cleanup.index('if phase == .correlated || phase == .selected')
+          token = fg_cleanup.index('guard let token = currentConnectionToken else')
+          assert completed < token
+          branch = fg_cleanup[completed:token]
+          assert 'resetDiscoverySessionOnly()' in branch
+          assert 'phase = .failed' in branch
+          assert 'foreground_integrity_lost_after_target_correlation' in branch
+          assert 'Restart from OFF1' in branch
+          assert 'guard !foregroundIntegrityLossHandled else { return }' in fg_cleanup
+          assert 'Task { @MainActor [self] in' in fg_cleanup
+
+          receiver_start = s.index('    private func receivedApplicationUpdate(')
+          receiver_end = s.index('    private func startWatchdog', receiver_start)
+          receiver = s[receiver_start:receiver_end]
+          assert '"generation": String(token.diagnosticGeneration)' in receiver
+          assert ']) { _, trusted in trusted })' in receiver
+          assert ']) { current, _ in current })' not in receiver
+
+          reset_start = s.index('    private func resetDiscoverySessionOnly()')
+          reset_end = s.index('    private func failLocally', reset_start)
+          reset = s[reset_start:reset_end]
+          for required in (
+              'correlationProvenance = nil',
+              'targetCorrelationMethod = nil',
+              'targetCorrelationWindowCount = nil',
+              'targetCorrelationOperatorConfirmed = false',
+              'byID.removeAll()',
+              'candidates.removeAll()',
+              'selectedID = nil',
+              'pendingCorrelatedTargetID = nil',
+          ):
+              assert required in reset, required
+          print('Capture current truth closure source contract: PASS')
+          PY
+          git diff --check
+
+      - name: Collapse helper to four product paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='1c40853f6991b4d09206df1d25ecff021458b7eb'
+          rm .github/workflows/materialize-capture-current-truth-closure-1c408-sol.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundPostCorrelationRevocationSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift
+          git add -u .github/workflows/materialize-capture-current-truth-closure-1c408-sol.yml
+          git diff --cached --check
+          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' \
+            commit -m 'fix(capture): close current foreground and provenance truth gaps'
+          mapfile -t changed < <(git diff --name-only "$parent" HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 4
+          test "${changed[0]}" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          test "${changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift'
+          test "${changed[2]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundPostCorrelationRevocationSourceTests.swift'
+          test "${changed[3]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift'
+          git diff --check "$parent" HEAD
+          git push origin HEAD:fix/v14-capture-current-truth-closure-1c408-sol
