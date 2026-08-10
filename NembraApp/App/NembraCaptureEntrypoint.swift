@@ -1393,6 +1393,37 @@ private final class SecureLinkController: NSObject, ObservableObject {
         log(kind, ["generation": String(token.diagnosticGeneration)])
     }
 
+    private func applicationUpdateForEventCustody(_ update: [String: String]) -> [String: String]? {
+        guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !verifiedAccountUID.isEmpty else { return nil }
+
+        var redacted: [String: String] = [:]
+        for key in update.keys.sorted() {
+            guard let value = update[key] else { continue }
+            let safeKey = key.replacingOccurrences(
+                of: verifiedAccountUID,
+                with: "<redacted-account-uid>",
+                options: [.caseInsensitive, .literal]
+            )
+            let safeValue = value.replacingOccurrences(
+                of: verifiedAccountUID,
+                with: "<redacted-account-uid>",
+                options: [.caseInsensitive, .literal]
+            )
+
+            // Malformed UID-bearing keys may collapse after redaction. Preserve every field under
+            // a deterministic non-authoritative suffix rather than silently dropping evidence.
+            var uniqueKey = safeKey
+            var collisionSuffix = 2
+            while redacted[uniqueKey] != nil {
+                uniqueKey = "\(safeKey)#\(collisionSuffix)"
+                collisionSuffix += 1
+            }
+            redacted[uniqueKey] = safeValue
+        }
+        return redacted
+    }
+
     private func receivedApplicationUpdate(
         _ update: [String: String],
         token: TuyaReadOnlyConnectionToken
@@ -1431,13 +1462,22 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        guard let custodySafeUpdate = applicationUpdateForEventCustody(update) else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "Verified Tuya account identity became unavailable before application evidence could enter immutable custody.",
+                kind: "sdk_account_uid_custody_unavailable"
+            )
+            return
+        }
+
         applicationUpdateAdmissionsInFlight += 1
         defer { applicationUpdateAdmissionsInFlight -= 1 }
 
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            log("tuya_application_update", custodySafeUpdate.merging([
                 "generation": String(token.diagnosticGeneration)
             ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
@@ -2253,7 +2293,6 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "accounttoken",
         "accesstoken",
         "refreshtoken",
-        "sessionkey",
         "authkey",
         "seckey",
     ]
