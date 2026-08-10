@@ -24,23 +24,21 @@ jobs:
           from pathlib import Path
           import subprocess
 
-          expected_parent = "9b98768e64212fed425b4132d1fb5f6191db0c58"
+          expected_parent = "4b7a79d4db386e5608c5f3dff5e04fc29f10427b"
           actual_parent = subprocess.check_output(["git", "rev-parse", "HEAD^"], text=True).strip()
           if actual_parent != expected_parent:
               raise SystemExit(f"stale formatting parent: {actual_parent}")
 
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           text = path.read_text()
-          old = '''    private var correlationDisplayedWindowOrdinal: Int {
-          test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)
-          }
-          '''
-          old = old.replace("          test.phase", "    test.phase").replace("          }", "    }").replace("          \n", "\n")
-          new = '''    private var correlationDisplayedWindowOrdinal: Int {
-          test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)
-          }
-          '''
-          new = new.replace("          test.phase", "        test.phase").replace("          }", "    }").replace("          \n", "\n")
+          old = """    private var correlationDisplayedWindowOrdinal: Int {
+    test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)
+}
+"""
+          new = """    private var correlationDisplayedWindowOrdinal: Int {
+        test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)
+    }
+"""
           if text.count(old) != 1:
               raise SystemExit(f"format guard failed: found {text.count(old)} matches")
           path.write_text(text.replace(old, new, 1))
@@ -49,7 +47,16 @@ jobs:
         run: |
           set -euo pipefail
           git diff --check
-          grep -Fq '        test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)' NembraApp/App/NembraCaptureEntrypoint.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          expected = '''    private var correlationDisplayedWindowOrdinal: Int {
+              test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)
+          }
+          '''
+          expected = expected.replace('              test.phase', '        test.phase').replace('          }', '    }').replace('          \n', '\n')
+          assert expected in text
+          PY
           rm .github/workflows/v14-capture-correlation-progress-format-sync.yml
           git add -A
           git diff --cached --check
