@@ -37,13 +37,33 @@ jobs:
           grep -Fq "pod 'ThingSmartBusinessExtensionKit', '~> 7.8.0'" Podfile
           grep -Fq 'LocalSecrets/' .gitignore
 
-      - name: Enforce no application characteristic writes
+      - name: Enforce active Capture read-only and SDK-account contract
         shell: bash
         run: |
           set -euo pipefail
-          file='NembraApp/Features/Research/ES80CaptureShellView.swift'
-          if grep -En '(^|[^A-Za-z])writeValue[[:space:]]*\(' "$file"; then
-            echo 'ERROR: guided Capture utility must not call CoreBluetooth writeValue(...)'
+          active='NembraApp/App/NembraCaptureEntrypoint.swift'
+          legacy='NembraApp/Features/Research/ES80CaptureShellView.swift'
+
+          # The currently installed Capture entrypoint and the retained legacy shell
+          # must not grow a direct CoreBluetooth application write path. Documented
+          # Tuya SDK authentication/session establishment remains the only allowed
+          # transport writer for this preflight.
+          if grep -En '(^|[^A-Za-z])writeValue[[:space:]]*\(' "$active" "$legacy"; then
+            echo 'ERROR: Capture preflight must not call CoreBluetooth writeValue(...)'
+            exit 1
+          fi
+
+          # The official SDK account gate must remain present; metadata QR approval
+          # alone is not accepted as BLE authentication authority.
+          grep -Fq 'ThingSmartUser.sharedInstance()' "$active"
+          grep -Fq 'sendVerifyCode(withUserName:' "$active"
+          grep -Eq 'login\(withEmail:|login\(withMobile:' "$active"
+          grep -Fq 'ThingSmartBLEManager.sharedInstance().connectBLE' "$active"
+
+          # Keep password-based Tuya login out of the field utility. Verification-code
+          # login is sufficient and avoids collecting/persisting the account password.
+          if grep -En 'login\([^\n]*(password:|withPassword:)|loginBy(Email|Phone)|loginWith(Email|Phone)[^\n]*password' "$active"; then
+            echo 'ERROR: Capture must not collect/use a Tuya account password'
             exit 1
           fi
 
