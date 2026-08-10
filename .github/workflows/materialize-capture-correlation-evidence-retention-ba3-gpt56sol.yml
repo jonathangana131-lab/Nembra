@@ -1,0 +1,188 @@
+name: Materialize Capture Correlation Evidence Retention ba3
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-correlation-evidence-retention-ba3-gpt56sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-correlation-evidence-retention-ba3-gpt56sol
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact parent and import reviewed red contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT=ba3a1eeae36caca6dd84beaabd0f15f4f0b57925
+          WORKFLOW=.github/workflows/materialize-capture-correlation-evidence-retention-ba3-gpt56sol.yml
+          TEST=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundCorrelationEvidenceRetentionSourceTests.swift
+          test "$(git rev-parse HEAD^)" = "$PRODUCT"
+          test "$(git diff --name-only "$PRODUCT" HEAD)" = "$WORKFLOW"
+          git fetch --no-tags origin 659ab020d0964e656928444529448dee566c4943
+          git show 659ab020d0964e656928444529448dee566c4943:"$TEST" > "$TEST"
+
+      - name: Revoke target authority without erasing completed correlation evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s = app.read_text(encoding='utf-8')
+
+          def section_bounds(text, start, end):
+              a = text.index(start)
+              b = text.index(end, a + len(start))
+              return a, b
+
+          # View exit already revokes membership authority, but a completed correlated/selected
+          # target has no live scanner/lease and currently bypasses the transport guard. Revoke only
+          # actionable reuse authority; retain completed receipts/provenance for failed diagnostics.
+          a, b = section_bounds(s, '    func abandonCorrelationForViewExit() {', '    func appDidLoseForeground() {')
+          view = s[a:b]
+          anchor = '        guard processCorrelationLease != nil || correlationSession != nil else { return }'
+          if view.count(anchor) != 1:
+              raise SystemExit('view-exit transport guard anchor changed')
+          insert = '''        if phase == .correlated || phase == .selected {
+            pendingCorrelatedTargetID = nil
+            selectedID = nil
+            targetCorrelationOperatorConfirmed = false
+            phase = .failed
+            message = "Capture left Secure Link after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the prior target cannot cross a view lifetime. Completed correlation evidence remains available for diagnostics."
+            log("target_correlation_abandoned_on_view_exit")
+            return
+        }
+
+'''
+          view = view.replace(anchor, insert + anchor, 1)
+          s = s[:a] + view + s[b:]
+
+          # Foreground loss currently uses the full discovery reset after correlation has already
+          # sealed and retired its scanner. That destroys legitimate failed-attempt evidence. Keep
+          # the evidence, but revoke every current target-selection authority bit synchronously.
+          a, b = section_bounds(s, '    func appDidLoseForeground() {', '    var privateConfig: Bool')
+          fg = s[a:b]
+          old = '''        if phase == .correlated || phase == .selected {
+            // Final-window sealing already retires the package scanner/lease. These phases can
+            // therefore hold actionable target authority with no live transport object to inspect.
+            // Foreground loss must invalidate that authority explicitly before a retry.
+            resetDiscoverySessionOnly()
+            phase = .failed
+            message = "Capture left the foreground after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the prior correlated/selected target cannot cross a foreground-integrity break."
+            log("foreground_integrity_lost_after_target_correlation")
+            return
+        }
+'''
+          new = '''        if phase == .correlated || phase == .selected {
+            // Final-window sealing already retired the scanner/lease. Revoke target reuse authority
+            // without erasing the completed OFF1→ON1→OFF2→ON2 evidence needed for diagnostics.
+            pendingCorrelatedTargetID = nil
+            selectedID = nil
+            targetCorrelationOperatorConfirmed = false
+            phase = .failed
+            message = "Capture left the foreground after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the prior correlated/selected target cannot cross a foreground-integrity break. Completed correlation evidence remains available for diagnostics."
+            log("foreground_integrity_lost_after_target_correlation")
+            return
+        }
+'''
+          if fg.count(old) != 1:
+              raise SystemExit('completed-correlation foreground block changed')
+          fg = fg.replace(old, new, 1)
+          s = s[:a] + fg + s[b:]
+          app.write_text(s, encoding='utf-8')
+
+          # Extend the reviewed red contract to the symmetric view-lifetime boundary.
+          test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundCorrelationEvidenceRetentionSourceTests.swift')
+          t = test.read_text(encoding='utf-8')
+          marker = '    @Test("failed diagnostic export still carries completed correlation provenance")\n'
+          if t.count(marker) != 1:
+              raise SystemExit('evidence-retention test insertion marker changed')
+          extra = '''    @Test("post-correlation view exit revokes reuse authority without erasing sealed evidence")
+    func postCorrelationViewExitPreservesEvidence() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let controller = String(try section(
+            in: source,
+            from: "private final class SecureLinkController",
+            to: "@MainActor\\nprivate protocol OfficialTuyaDriver"
+        ))
+        let cleanup = String(try section(
+            in: controller,
+            from: "func abandonCorrelationForViewExit()",
+            to: "func appDidLoseForeground()"
+        ))
+        #expect(cleanup.contains("phase == .correlated || phase == .selected"))
+        #expect(cleanup.contains("pendingCorrelatedTargetID = nil"))
+        #expect(cleanup.contains("selectedID = nil"))
+        #expect(cleanup.contains("targetCorrelationOperatorConfirmed = false"))
+        let completed = String(try section(
+            in: cleanup,
+            from: "if phase == .correlated || phase == .selected",
+            to: "guard processCorrelationLease != nil || correlationSession != nil"
+        ))
+        #expect(!completed.contains("resetDiscoverySessionOnly()"))
+        #expect(!completed.contains("correlationProvenance = nil"))
+        #expect(!completed.contains("candidates.removeAll()"))
+        #expect(completed.contains("target_correlation_abandoned_on_view_exit"))
+    }
+
+'''
+          test.write_text(t.replace(marker, extra + marker, 1), encoding='utf-8')
+          PY
+
+      - name: Verify focused truth contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          view = s[s.index('func abandonCorrelationForViewExit()'):s.index('func appDidLoseForeground()')]
+          fg = s[s.index('func appDidLoseForeground()'):s.index('var privateConfig: Bool')]
+          for block, event in ((view, 'target_correlation_abandoned_on_view_exit'), (fg, 'foreground_integrity_lost_after_target_correlation')):
+              start = block.index('if phase == .correlated || phase == .selected')
+              tail = block.index('return', start)
+              completed = block[start:tail]
+              for token in ('pendingCorrelatedTargetID = nil', 'selectedID = nil', 'targetCorrelationOperatorConfirmed = false', event):
+                  assert token in completed, token
+              for forbidden in ('resetDiscoverySessionOnly()', 'correlationProvenance = nil', 'targetCorrelationMethod = nil', 'targetCorrelationWindowCount = nil', 'candidates.removeAll()'):
+                  assert forbidden not in completed, forbidden
+          begin = s[s.index('private func beginCorrelationSeries()'):s.index('func startNextCorrelationWindow()')]
+          assert 'resetDiscoverySessionOnly()' in begin
+          assert 'guard phase != .accepted else { return }' in fg
+          print('Capture correlation evidence retention contract: PASS')
+          PY
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundCorrelationEvidenceRetentionSourceTests.swift
+          git diff --check
+
+      - name: Collapse helper into clean exact-parent donor
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT=ba3a1eeae36caca6dd84beaabd0f15f4f0b57925
+          WORKFLOW=.github/workflows/materialize-capture-correlation-evidence-retention-ba3-gpt56sol.yml
+          APP=NembraApp/App/NembraCaptureEntrypoint.swift
+          TEST=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundCorrelationEvidenceRetentionSourceTests.swift
+          git rm "$WORKFLOW"
+          git add "$APP" "$TEST"
+          git diff --cached --check
+          git -c user.name='nembra-gpt56-sol' -c user.email='actions@users.noreply.github.com' commit -m 'fix(capture): preserve completed correlation evidence on authority loss'
+          mapfile -t changed < <(git diff --name-only "$PRODUCT" HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 2
+          test "${changed[0]}" = "$APP"
+          test "${changed[1]}" = "$TEST"
+          git diff --check "$PRODUCT" HEAD
+          git push origin HEAD:repair/v14-capture-correlation-evidence-retention-ba3-gpt56sol
