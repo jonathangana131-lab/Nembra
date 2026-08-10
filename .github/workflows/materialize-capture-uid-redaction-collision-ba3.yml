@@ -1,0 +1,71 @@
+name: Materialize Capture UID Redaction Collision Hardening
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-account-uid-redaction-collision-ba3-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-account-uid-redaction-collision-ba3-sol
+          fetch-depth: 0
+
+      - name: Guard exact current product parent and construction scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='ba3a1eeae36caca6dd84beaabd0f15f4f0b57925'
+          test "$(git merge-base "$base" HEAD)" = "$base"
+          git diff --name-only "$base"...HEAD | sort > /tmp/actual
+          cat > /tmp/expected <<'EOF'
+          .github/workflows/materialize-capture-uid-redaction-collision-ba3.yml
+          scripts/ci/materialize_capture_uid_redaction_collision.py
+          EOF
+          sort -o /tmp/expected /tmp/expected
+          diff -u /tmp/expected /tmp/actual
+          git diff --quiet "$base" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+          test ! -e Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDKeyCollisionSourceTests.swift
+
+      - name: Apply collision-safe event custody repair
+        run: python3 scripts/ci/materialize_capture_uid_redaction_collision.py apply
+
+      - name: Validate focused source and package contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/materialize_capture_uid_redaction_collision.py verify
+          python3 -m py_compile scripts/ci/materialize_capture_uid_redaction_collision.py
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDKeyCollisionSourceTests.swift
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaApplicationAccountUIDKeyCollisionSourceTests
+          git diff --check
+
+      - name: Publish clean two-path repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='ba3a1eeae36caca6dd84beaabd0f15f4f0b57925'
+          rm .github/workflows/materialize-capture-uid-redaction-collision-ba3.yml
+          rm scripts/ci/materialize_capture_uid_redaction_collision.py
+          git add -A
+          git diff --cached --check
+          git diff --cached --name-only | sort > /tmp/actual
+          cat > /tmp/expected <<'EOF'
+          NembraApp/App/NembraCaptureEntrypoint.swift
+          Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDKeyCollisionSourceTests.swift
+          EOF
+          sort -o /tmp/expected /tmp/expected
+          diff -u /tmp/expected /tmp/actual
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): preserve UID-redacted event key collisions'
+          git diff --check "$base" HEAD
+          git push origin HEAD:fix/v14-capture-account-uid-redaction-collision-ba3-sol
