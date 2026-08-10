@@ -22,6 +22,58 @@ public enum ScooterSimulationScenario: String, CaseIterable, Sendable {
     }
 }
 
+/// One synthetic power observation minted by the Simulator source itself.
+///
+/// Receipt identity and monotonic time belong to power. Consumers must not
+/// substitute speed freshness, aggregate vehicle timestamps, render clocks, or
+/// view-lifecycle time. Construction is file-private so no other app/package file
+/// can manufacture Simulator propulsion authority from a cached watt number.
+public struct SimulatorPowerEvidenceSample: Equatable, Sendable {
+    public let watts: Double
+    public let receivedAtUptimeNanoseconds: UInt64
+    public let receiptID: UUID
+
+    fileprivate init?(
+        watts: Double,
+        receivedAtUptimeNanoseconds: UInt64,
+        receiptID: UUID = UUID()
+    ) {
+        guard watts.isFinite,
+              watts >= 0,
+              receivedAtUptimeNanoseconds > 0 else {
+            return nil
+        }
+        self.watts = watts
+        self.receivedAtUptimeNanoseconds = receivedAtUptimeNanoseconds
+        self.receiptID = receiptID
+    }
+}
+
+/// Simulator-only field currentness for synthetic power QA.
+/// `retained` preserves the last legitimate synthetic observation across a known
+/// gap without calling it current. This is never physical ES80 power evidence.
+public enum SimulatorPowerEvidenceAvailability: Equatable, Sendable {
+    case live(SimulatorPowerEvidenceSample)
+    case retained(SimulatorPowerEvidenceSample)
+    case unavailable
+}
+
+/// Source-owned synthetic-power state used only to exercise truthful Dashboard
+/// propulsion presentation. It deliberately does not define production power
+/// semantics for any physical scooter profile.
+public protocol SimulatorPowerEvidenceProvider: Sendable {
+    func simulatorPowerEvidenceUpdates() async -> AsyncStream<SimulatorPowerEvidenceAvailability>
+    func simulatorPowerEvidenceSnapshot() async -> SimulatorPowerEvidenceAvailability
+}
+
+public extension SimulatorPowerEvidenceProvider {
+    func simulatorPowerEvidenceSnapshot() async -> SimulatorPowerEvidenceAvailability {
+        let stream = await simulatorPowerEvidenceUpdates()
+        var iterator = stream.makeAsyncIterator()
+        return await iterator.next() ?? .unavailable
+    }
+}
+
 public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider, SimulatorPowerEvidenceProvider {
     public nonisolated let profile: VehicleProfile
 
