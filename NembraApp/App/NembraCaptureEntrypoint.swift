@@ -850,6 +850,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
 #endif
     }
 
+    func retry() {
+        guard phase == .failed, canRestartFromFreshOFF1 else {
+            message = "This failed attempt still retains session authority. Relaunch Capture before another OFF1 attempt."
+            log("in_process_retry_rejected")
+            return
+        }
+        startBaseline()
+    }
+
     func authenticate() {
         guard let candidate = selected, candidate.likely else {
             failLocally("A fresh repeated OFF1→ON1→OFF2→ON2 Bluetooth correlation is required before Tuya BLE ownership.", "candidate_not_authoritative")
@@ -2271,7 +2280,24 @@ private struct SecureLinkView: View {
         case .accepted:
             completionPanel
         case .failed:
-            failurePanel
+            if !test.fieldBuildIsAuthoritative || !test.privateConfig {
+                VStack(spacing: 16) {
+                    failureRecoveryContextPanel
+                    preflightPanel
+                }
+            } else if !sdkAccount.loggedIn || !test.sdkAccountLoggedIn {
+                VStack(spacing: 16) {
+                    failureRecoveryContextPanel
+                    sdkAuthorizationPanel
+                }
+            } else if !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized {
+                VStack(spacing: 16) {
+                    failureRecoveryContextPanel
+                    preflightPanel
+                }
+            } else {
+                failurePanel
+            }
         case .baseline, .scanning, .powerOn, .correlated:
             correlationPanel
         case .selected, .authenticating, .observing:
@@ -2468,6 +2494,22 @@ private struct SecureLinkView: View {
         }
     }
 
+    private var failureRecoveryContextPanel: some View {
+        panel {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Capture paused", systemImage: "exclamationmark.circle")
+                    .font(.title2.bold())
+                    .foregroundStyle(.orange)
+                Text(test.message)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Restore the missing prerequisite below. The failed attempt is not reused as evidence.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
     private var failurePanel: some View {
         panel {
             VStack(alignment: .leading, spacing: 16) {
@@ -2478,18 +2520,19 @@ private struct SecureLinkView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                if test.failedAttemptCanRestartFromOFF1 && test.canRestartFromFreshOFF1 {
+                if test.canRestartFromFreshOFF1 {
                     Text("Nothing was promoted after the blocker. Re-establish the required field authority, then begin a fresh OFF1 attempt.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Button {
-                        test.startBaseline()
+                        test.retry()
                     } label: {
                         Label("Restart from scooter OFF", systemImage: "arrow.counterclockwise")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
+                    .disabled(!authorityReady || test.membershipBusy)
                 } else {
                     Label("Relaunch Capture before another attempt", systemImage: "arrow.clockwise.circle")
                         .font(.headline)
@@ -2753,7 +2796,9 @@ private struct SecureLinkView: View {
                 ? "The evidence horizon is sealed. Prepare the immutable artifact before sharing it for analysis."
                 : "The immutable accepted artifact is encoded and ready to share for analysis."
         case .failed:
-            return "No evidence was promoted past the blocker. Fix the condition and restart from scooter OFF."
+            return test.canRestartFromFreshOFF1
+                ? "No evidence was promoted past the blocker. Restore the required prerequisite, then restart from scooter OFF."
+                : "No evidence was promoted past the blocker. This session is not proven retired; relaunch Capture before another attempt."
         case .baseline, .scanning, .powerOn, .correlated:
             return "A fresh four-window power pattern identifies the nearby Bluetooth target for this attempt only."
         case .selected, .authenticating:
