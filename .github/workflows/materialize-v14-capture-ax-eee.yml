@@ -1,0 +1,76 @@
+name: Materialize Capture Accessibility XXXL eee
+
+on:
+  push:
+    branches:
+      - product/v14-capture-ax-eee-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard exact current product ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='eee5a96fae1d30796ba5707f0a7f30f4f4d62530'
+          test "$(git merge-base HEAD "$base")" = "$base"
+          allowed="$(printf '%s\n' '.github/workflows/materialize-v14-capture-ax-eee.yml' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureAccessibilityXXXLSourceTests.swift' | sort)"
+          test "$(git diff --name-only "$base" HEAD | sort)" = "$allowed"
+
+      - name: Apply presentation-only Accessibility XXXL reflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+
+          old_header = '''                HStack(alignment: .firstTextBaseline) {\n                    VStack(alignment: .leading, spacing: 4) {\n                        Text("FIND SCOOTER")\n                            .font(.caption2.bold())\n                            .tracking(1.2)\n                            .foregroundStyle(.cyan)\n                        Text(test.phase == .correlated ? "Scooter signal found" : test.correlationWindowLabel)\n                            .font(.title2.bold())\n                    }\n                    Spacer()\n                    Text("\\(correlationDisplayedWindowOrdinal)/4")\n                        .font(.title3.monospacedDigit().bold())\n                        .foregroundStyle(.secondary)\n                }\n'''
+          new_header = '''                if dynamicTypeSize.isAccessibilitySize {\n                    VStack(alignment: .leading, spacing: 8) {\n                        VStack(alignment: .leading, spacing: 4) {\n                            Text("FIND SCOOTER")\n                                .font(.caption2.bold())\n                                .tracking(1.2)\n                                .foregroundStyle(.cyan)\n                            Text(test.phase == .correlated ? "Scooter signal found" : test.correlationWindowLabel)\n                                .font(.title2.bold())\n                                .fixedSize(horizontal: false, vertical: true)\n                        }\n                        Text("\\(correlationDisplayedWindowOrdinal)/4")\n                            .font(.title3.monospacedDigit().bold())\n                            .foregroundStyle(.secondary)\n                            .accessibilityLabel("Correlation progress")\n                            .accessibilityValue("\\(correlationDisplayedWindowOrdinal) of 4 windows")\n                    }\n                } else {\n                    HStack(alignment: .firstTextBaseline) {\n                        VStack(alignment: .leading, spacing: 4) {\n                            Text("FIND SCOOTER")\n                                .font(.caption2.bold())\n                                .tracking(1.2)\n                                .foregroundStyle(.cyan)\n                            Text(test.phase == .correlated ? "Scooter signal found" : test.correlationWindowLabel)\n                                .font(.title2.bold())\n                        }\n                        Spacer()\n                        Text("\\(correlationDisplayedWindowOrdinal)/4")\n                            .font(.title3.monospacedDigit().bold())\n                            .foregroundStyle(.secondary)\n                            .accessibilityLabel("Correlation progress")\n                            .accessibilityValue("\\(correlationDisplayedWindowOrdinal) of 4 windows")\n                    }\n                }\n'''
+          if source.count(old_header) != 1:
+              raise SystemExit(f'expected one current correlation header, found {source.count(old_header)}')
+          source = source.replace(old_header, new_header, 1)
+
+          old_observation = '''                    VStack(alignment: .leading, spacing: 8) {\n                        HStack {\n                            Text("Read-only observation")\n                                .font(.subheadline.weight(.semibold))\n                            Spacer()\n                            Text("\\(Int(min(age, 45))) / 45 s")\n                                .font(.subheadline.monospacedDigit().bold())\n                        }\n                        ProgressView(value: min(age / 45, 1))\n                        requirementRow("Secure local link", ready: test.sdkLocalBLEOnline)\n                        requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)\n                    }\n'''
+          new_observation = '''                    VStack(alignment: .leading, spacing: 8) {\n                        if dynamicTypeSize.isAccessibilitySize {\n                            VStack(alignment: .leading, spacing: 4) {\n                                Text("Read-only observation")\n                                    .font(.subheadline.weight(.semibold))\n                                Text("\\(Int(min(age, 45))) / 45 s")\n                                    .font(.subheadline.monospacedDigit().bold())\n                            }\n                        } else {\n                            HStack {\n                                Text("Read-only observation")\n                                    .font(.subheadline.weight(.semibold))\n                                Spacer()\n                                Text("\\(Int(min(age, 45))) / 45 s")\n                                    .font(.subheadline.monospacedDigit().bold())\n                            }\n                        }\n                        ProgressView(value: min(age / 45, 1))\n                            .accessibilityLabel("Read-only observation progress")\n                            .accessibilityValue("\\(Int(min(age, 45))) of 45 seconds")\n                        requirementRow("Secure local link", ready: test.sdkLocalBLEOnline)\n                        requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)\n                    }\n'''
+          if source.count(old_observation) != 1:
+              raise SystemExit(f'expected one current observation progress block, found {source.count(old_observation)}')
+          source = source.replace(old_observation, new_observation, 1)
+          path.write_text(source, encoding='utf-8')
+          PY
+
+          grep -Fq 'if dynamicTypeSize.isAccessibilitySize {' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq '.accessibilityLabel("Correlation progress")' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq '.accessibilityLabel("Read-only observation progress")' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'OfficialTuyaFactory.packageCorrelationMayStart' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'ThingSmartBLEManager.sharedInstance().deviceStatue(withUUID: uuid)' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'extraInfo["snsNickname"] = appleNickname' NembraApp/App/NembraCaptureEntrypoint.swift
+          test "$(grep -Fc 'test.canRestartFromFreshOFF1 && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn)' NembraApp/App/NembraCaptureEntrypoint.swift)" = 1
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureAccessibilityXXXLSourceTests.swift
+          git diff --check
+
+      - name: Publish clean current-product AX successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow='.github/workflows/materialize-v14-capture-ax-eee.yml'
+          rm "$workflow"
+          git add -A
+          expected="$(printf '%s\n' "$workflow" 'NembraApp/App/NembraCaptureEntrypoint.swift' | sort)"
+          test "$(git diff --cached --name-only | sort)" = "$expected"
+          git config user.name 'nembra-v14-agent'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): reflow guided progress at Accessibility sizes'
+          git push origin HEAD:product/v14-capture-ax-eee-sol
