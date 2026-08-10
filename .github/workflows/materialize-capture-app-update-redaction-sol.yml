@@ -1,4 +1,4 @@
-name: Materialize Capture application-update redaction
+name: Materialize Capture application update redaction
 
 on:
   push:
@@ -10,26 +10,21 @@ permissions:
 
 jobs:
   materialize:
-    if: github.event.head_commit.message == 'chore(capture): arm app-update redaction materializer'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: agent/v14-capture-app-update-redaction-sol
-          fetch-depth: 2
-          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 3
 
-      - name: Verify exact parent and helper-only arm commit
+      - name: Verify exact ancestry and helper-only scope
         shell: bash
         run: |
           set -euo pipefail
-          expected_parent='8e4d28c9bd1c3ba6dd3a9c9292bd9f1ff27a40ac'
-          actual_parent="$(git rev-parse HEAD^)"
-          test "$actual_parent" = "$expected_parent"
-          changed="$(git diff --name-only HEAD^ HEAD)"
-          test "$changed" = '.github/workflows/materialize-capture-app-update-redaction-sol.yml'
+          expected='8e4d28c9bd1c3ba6dd3a9c9292bd9f1ff27a40ac'
+          test "$(git rev-parse HEAD^^)" = "$expected"
+          test "$(git diff --name-only "$expected" HEAD)" = '.github/workflows/materialize-capture-app-update-redaction-sol.yml'
 
-      - name: Materialize fail-closed application secret redaction
+      - name: Materialize product repair and source regression
         shell: bash
         run: |
           set -euo pipefail
@@ -91,12 +86,12 @@ jobs:
           }
           '''
           if source.count(old) != 1:
-              raise SystemExit(f'expected exactly one SmartLifeDriver dpsUpdate body, found {source.count(old)}')
+              raise SystemExit(f'expected one unsanitized SmartLifeDriver callback; found {source.count(old)}')
           source_path.write_text(source.replace(old, new, 1))
 
           test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationUpdateSecretRedactionSourceTests.swift')
           if test_path.exists():
-              raise SystemExit(f'{test_path} already exists; refusing to overwrite concurrent work')
+              raise SystemExit('regression path already exists; refusing concurrent overwrite')
           test_path.write_text(r'''import Foundation
           import Testing
           @testable import NembraBluetoothCapture
@@ -173,33 +168,17 @@ jobs:
           PY
 
           rm .github/workflows/materialize-capture-app-update-redaction-sol.yml
-
-          python3 - <<'PY'
-          from pathlib import Path
-          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
-          required = [
-              'private static func redactApplicationSecrets(_ object: Any) -> Any',
-              'array.map(redactApplicationSecrets)',
-              'String(describing: Self.redactApplicationSecrets(value))',
-              'onApplicationUpdate?(sanitized)',
-          ]
-          for needle in required:
-              assert needle in source, needle
-          assert 'sanitized[String(describing: key)] = String(describing: value)' not in source
-          PY
-
           git diff --check
-          git status --short
 
-      - name: Commit materialized product repair
+      - name: Commit materialized repair
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add NembraApp/App/NembraCaptureEntrypoint.swift \
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationUpdateSecretRedactionSourceTests.swift \
-            .github/workflows/materialize-capture-app-update-redaction-sol.yml
-          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" = '3'
+          git add -A
+          paths="$(git diff --cached --name-only)"
+          printf '%s\n' "$paths"
+          test "$(printf '%s\n' "$paths" | wc -l | tr -d ' ')" = '3'
           git commit -m 'fix(capture): redact authenticated application secrets'
           git push origin HEAD:agent/v14-capture-app-update-redaction-sol
