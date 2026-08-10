@@ -37,13 +37,21 @@ jobs:
           grep -Fq "pod 'ThingSmartBusinessExtensionKit', '~> 7.8.0'" Podfile
           grep -Fq 'LocalSecrets/' .gitignore
 
-      - name: Enforce no application characteristic writes
+      - name: Enforce Capture read-only BLE boundary
         shell: bash
         run: |
           set -euo pipefail
-          file='NembraApp/Features/Research/ES80CaptureShellView.swift'
-          if grep -En '(^|[^A-Za-z])writeValue[[:space:]]*\(' "$file"; then
-            echo 'ERROR: guided Capture utility must not call CoreBluetooth writeValue(...)'
+          files=(
+            'NembraApp/Features/Research/ES80CaptureShellView.swift'
+            'NembraApp/App/NembraCaptureEntrypoint.swift'
+          )
+          banned='writeValue[[:space:]]*\(|publishDps[[:space:]]*\(|publishDps[[:space:]]*:|setDps[[:space:]]*\(|removeDevice[[:space:]]*\(|resetFactory[[:space:]]*\(|unbind[[:space:]]*\('
+          if grep -En "$banned" "${files[@]}"; then
+            echo 'ERROR: Capture must not expose CoreBluetooth writes or Tuya DP/control/reset/unbind calls.'
+            exit 1
+          fi
+          if grep -En 'central[[:space:]]*\.[[:space:]]*connect[[:space:]]*\(' NembraApp/App/NembraCaptureEntrypoint.swift; then
+            echo 'ERROR: after identification, the official Tuya SDK must remain the sole authenticated BLE connection owner.'
             exit 1
           fi
 
