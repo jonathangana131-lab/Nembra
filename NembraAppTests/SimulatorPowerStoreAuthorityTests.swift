@@ -78,8 +78,6 @@ final class SimulatorPowerStoreAuthorityTests: XCTestCase {
         authority.applySource(capturedLive, transportIsConnected: true)
         XCTAssertEqual(authority.projection.currentness, .live)
 
-        // The app-session transport veto must fence the exact source receipt before
-        // aggregate disconnected state is visible.
         authority.transportBecameUnavailable()
         XCTAssertEqual(authority.projection.currentness, .retained)
         XCTAssertEqual(authority.projection.observation, capturedObservation)
@@ -169,7 +167,7 @@ final class SimulatorPowerStoreAuthorityTests: XCTestCase {
         XCTAssertEqual(authority.projection.observation, newerObservation)
     }
 
-    func testSourceTerminationFailsCompletelyClosed() async throws {
+    func testSourceTerminationFencesOldLiveReceipt() async throws {
         let service = SimulatedScooterService(
             initialState: SimulatedScooterService.state(for: .riding),
             commandLatencyNanoseconds: 0
@@ -183,10 +181,10 @@ final class SimulatorPowerStoreAuthorityTests: XCTestCase {
         authority.sourceBecameUnavailable()
         XCTAssertEqual(authority.projection, .unavailable)
 
-        // Source/provider termination is a stronger fence than transport loss: an
-        // already captured old LIVE receipt cannot immediately reopen the Store.
+        // A callback already queued before provider termination is still authentic
+        // source evidence, but it cannot resurrect a dead app-session source owner.
         authority.applySource(source, transportIsConnected: true)
-        XCTAssertEqual(authority.projection.currentness, .live)
+        XCTAssertEqual(authority.projection, .unavailable)
     }
 
     func testSourceOwnedRetainedReceiptRemainsByteIdenticalThroughTransportVeto() async throws {
