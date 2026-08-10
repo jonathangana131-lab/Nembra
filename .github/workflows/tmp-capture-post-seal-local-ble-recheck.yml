@@ -1,0 +1,101 @@
+name: Temporary Capture Post-Seal Local-BLE Repair
+
+on:
+  push:
+    branches:
+      - agent/capture-post-seal-local-ble-recheck
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Verify exact repair parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)" = "4d52eb404f2e675782975909f06ed3881dc25ba4"
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPostSealTransportAuthoritySourceTests.swift
+
+      - name: Apply post-seal local-BLE authority repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text()
+          old = '''                        try await sessionLedger.sealAcceptedObservation(for: token)
+                        guard self.buildIdentity.isAuthoritativeFieldBuild,
+                              self.accountIdentityLeaseIsAuthorized else {'''
+          new = '''                        try await sessionLedger.sealAcceptedObservation(for: token)
+                        self.sdkLocalBLEOnline = driver.isLocallyConnected(uuid: self.tuyaUUID)
+                        guard self.sdkLocalBLEOnline else {
+                            self.currentConnectionToken = nil
+                            self.localBLESettlementToken = nil
+                            self.driver = nil
+                            self.phase = .failed
+                            self.message = "Tuya local-BLE authority was no longer current after canonical acceptance sealed. Restart from OFF1; the sealed package chronology is diagnostic only."
+                            self.log("sdk_local_ble_lost_during_acceptance_seal", [
+                                "generation": String(token.diagnosticGeneration)
+                            ])
+                            return
+                        }
+                        guard self.buildIdentity.isAuthoritativeFieldBuild,
+                              self.accountIdentityLeaseIsAuthorized else {'''
+          if source.count(old) != 1:
+              raise SystemExit(f"expected exactly one repair anchor, found {source.count(old)}")
+          path.write_text(source.replace(old, new, 1))
+          PY
+          git diff --check
+
+      - name: Verify red contract is now satisfied
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          start = source.index("private func startWatchdog")
+          end = source.index("private func recordObservedTransportLoss", start)
+          body = source[start:end]
+          seal = body.index("try await sessionLedger.sealAcceptedObservation(for: token)")
+          freeze = body.index("self.sealedAcceptedExport = self.makeExport(", seal)
+          accepted = body.index("self.phase = .accepted", seal)
+          recheck = body.index("driver.isLocallyConnected(uuid: self.tuyaUUID)", seal)
+          segment = body[seal:freeze]
+          between = body[seal + len("try await sessionLedger.sealAcceptedObservation(for: token)"):recheck]
+
+          assert seal < recheck < freeze < accepted
+          assert "self.sdkLocalBLEOnline" in segment
+          assert "self.phase = .failed" in segment
+          assert "return" in segment
+          assert "await " not in between
+          for forbidden in (
+              "sessionLedger.endConnection",
+              "markAuthenticationFailed",
+              "markSourceAuthorityInvalidated",
+              "markObservationContinuityInvalidated",
+              "markInternalLifecycleFailure",
+          ):
+              assert forbidden not in segment, forbidden
+          PY
+
+      - name: Commit repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-capture-bot"
+          git config user.email "nembra-capture-bot@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git commit -m "fix(capture): recheck local BLE after seal"
+          git push origin HEAD:agent/capture-post-seal-local-ble-recheck
