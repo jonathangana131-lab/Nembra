@@ -1,0 +1,82 @@
+name: Materialize Capture single Tuya driver handoff fence
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-single-tuya-driver-handoff-sol
+    paths:
+      - .github/workflows/materialize-capture-single-tuya-driver-handoff-sol.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-single-tuya-driver-handoff-sol
+          fetch-depth: 0
+
+      - name: Guard exact current product and recovery scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='194197ed62ccd4f7880e314ff70e5e0229cddc30'
+          test "$(git merge-base HEAD "$parent")" = "$parent"
+          unexpected="$(git diff --name-only "$parent"...HEAD | grep -Ev '^(.github/workflows/materialize-capture-single-tuya-driver-handoff-sol.yml|Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSingleOfficialDriverHandoffSourceTests.swift)$' || true)"
+          test -z "$unexpected"
+          test "$(git rev-parse "$parent:NembraApp/App/NembraCaptureEntrypoint.swift")" = "$(git rev-parse HEAD:NembraApp/App/NembraCaptureEntrypoint.swift)"
+
+      - name: Apply one-line process retirement fence
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text(encoding="utf-8")
+          start = text.index("    static func make() -> OfficialTuyaDriver?")
+          end = text.index("\n    }\n}\n\n#if canImport(ThingSmartHomeKit)", start)
+          make = text[start:end]
+          old = "        guard activePackageCorrelationOwner == nil,\n              bootstrap(),\n"
+          new = "        guard !packageCorrelationRetiredForProcess,\n              activePackageCorrelationOwner == nil,\n              bootstrap(),\n"
+          if make.count(old) != 1:
+              raise SystemExit("OfficialTuyaFactory.make() authority anchor changed")
+          make = make.replace(old, new, 1)
+          path.write_text(text[:start] + make + text[end:], encoding="utf-8")
+          PY
+
+      - name: Verify single-driver authority and no side effects
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text(encoding="utf-8")
+          start = app.index("static func make() -> OfficialTuyaDriver?")
+          end = app.index("\n    }\n}\n\n#if canImport(ThingSmartHomeKit)", start)
+          make = app[start:end]
+          guard = make.index("guard !packageCorrelationRetiredForProcess,")
+          owner = make.index("activePackageCorrelationOwner == nil,")
+          retire = make.index("packageCorrelationRetiredForProcess = true")
+          driver = make.index("return SmartLifeDriver()")
+          assert guard < owner < retire < driver
+          factory_start = app.index("private enum OfficialTuyaFactory")
+          factory = app[factory_start:end]
+          for forbidden in ("disconnectBLE", "publishDps", "queryDps", "writeValue", "sessionLedger.endConnection"):
+              assert forbidden not in factory
+          PY
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSingleOfficialDriverHandoffSourceTests.swift
+          git diff --check
+
+      - name: Commit clean repair and remove materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-v14-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git rm .github/workflows/materialize-capture-single-tuya-driver-handoff-sol.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSingleOfficialDriverHandoffSourceTests.swift
+          git commit -m "fix(capture): allow only one Tuya driver handoff per process"
+          git push origin HEAD:repair/v14-capture-single-tuya-driver-handoff-sol
