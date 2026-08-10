@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   focused:
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,41 +23,35 @@ jobs:
         run: |
           set -euo pipefail
           semantic='c156bbadad5da2797d44497bf4726de95dd0f6ec'
-          git merge-base --is-ancestor "$semantic" HEAD
-          mapfile -t helper_delta < <(git diff --name-only "$semantic"...HEAD | sort)
-          printf '%s\n' "${helper_delta[@]}"
-          test "${#helper_delta[@]}" = 1
-          test "${helper_delta[0]}" = '.github/workflows/validate-capture-legacy-research-executable-retirement.yml'
           base='6b778f2104af34dbe5b80da31ddb3ca422f9667c'
-          mapfile -t effective < <(git diff --name-only "$base"..."$semantic" | sort)
-          printf '%s\n' "${effective[@]}"
-          test "${#effective[@]}" = 3
-          test "${effective[0]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayExecutableAuthorityRetirementSourceTests.swift'
-          test "${effective[1]}" = 'scripts/ci/xcode27_signed_field_candidate.sh'
-          test "${effective[2]}" = 'scripts/ci/xcode27_today_research_field_candidate.sh'
+          git merge-base --is-ancestor "$semantic" HEAD
+          python3 - <<'PY'
+          import subprocess
+          def paths(base, head):
+              out = subprocess.check_output(['git', 'diff', '--name-only', f'{base}...{head}'], text=True)
+              return sorted(p for p in out.splitlines() if p)
+          semantic = 'c156bbadad5da2797d44497bf4726de95dd0f6ec'
+          base = '6b778f2104af34dbe5b80da31ddb3ca422f9667c'
+          helper = paths(semantic, 'HEAD')
+          assert helper == ['.github/workflows/validate-capture-legacy-research-executable-retirement.yml'], helper
+          effective = paths(base, semantic)
+          expected = [
+              'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayExecutableAuthorityRetirementSourceTests.swift',
+              'scripts/ci/xcode27_signed_field_candidate.sh',
+              'scripts/ci/xcode27_today_research_field_candidate.sh',
+          ]
+          assert effective == expected, effective
+          print('exact semantic checkpoint: PASS')
+          PY
 
       - name: Run focused package regression with warnings as errors
         shell: bash
         run: |
-          set -uo pipefail
-          output="$(mktemp)"
-          set +e
+          set -euo pipefail
           swift test \
             --package-path Packages/NembraBluetoothCapture \
             --filter TuyaLegacyTodayExecutableAuthorityRetirementSourceTests \
-            -Xswiftc -warnings-as-errors >"$output" 2>&1
-          status=$?
-          set -e
-          cat "$output"
-          if [[ "$status" != 0 ]]; then
-            while IFS= read -r line; do
-              safe="${line//'%'/'%25'}"
-              safe="${safe//$'\r'/'%0D'}"
-              safe="${safe//$'\n'/'%0A'}"
-              echo "::error title=Focused SwiftPM retirement regression::$safe"
-            done < <(grep -E 'error:|failed|Issue recorded|Expectation failed|Test .* failed' "$output" | tail -n 30 || true)
-            exit "$status"
-          fi
+            -Xswiftc -warnings-as-errors
 
       - name: Re-run executable fail-closed behavior
         shell: bash
@@ -84,10 +78,17 @@ jobs:
           rm .github/workflows/validate-capture-legacy-research-executable-retirement.yml
           git add -u .github/workflows/validate-capture-legacy-research-executable-retirement.yml
           git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' commit -m 'chore(capture): collapse focused retirement validator'
-          mapfile -t effective < <(git diff --name-only "$base"...HEAD | sort)
-          printf '%s\n' "${effective[@]}"
-          test "${#effective[@]}" = 3
-          test "${effective[0]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayExecutableAuthorityRetirementSourceTests.swift'
-          test "${effective[1]}" = 'scripts/ci/xcode27_signed_field_candidate.sh'
-          test "${effective[2]}" = 'scripts/ci/xcode27_today_research_field_candidate.sh'
+          python3 - <<'PY'
+          import subprocess
+          base = '6b778f2104af34dbe5b80da31ddb3ca422f9667c'
+          out = subprocess.check_output(['git', 'diff', '--name-only', f'{base}...HEAD'], text=True)
+          effective = sorted(p for p in out.splitlines() if p)
+          expected = [
+              'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayExecutableAuthorityRetirementSourceTests.swift',
+              'scripts/ci/xcode27_signed_field_candidate.sh',
+              'scripts/ci/xcode27_today_research_field_candidate.sh',
+          ]
+          assert effective == expected, effective
+          print('clean effective scope: PASS')
+          PY
           git push origin HEAD:sol/v14-capture-retire-legacy-research-executables-6b778
