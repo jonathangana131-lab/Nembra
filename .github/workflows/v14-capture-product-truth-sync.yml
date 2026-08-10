@@ -1,0 +1,252 @@
+name: V14 Capture Product Truth Sync
+
+on:
+  push:
+    branches:
+      - product/v14-capture-premium-secure-link-current-sol
+
+permissions:
+  contents: write
+
+jobs:
+  converge:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: product/v14-capture-premium-secure-link-current-sol
+          fetch-depth: 0
+
+      - name: Guard exact product parent
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "d5915a97c1359846b103f08602db78eac815a47f"
+
+      - name: Carry exact canonical procedure surfaces and red contracts
+        run: |
+          set -euo pipefail
+          procedure_head="8b9c1cabeeffdec7cb12f9a74f53320c11e7eae0"
+          red_head="3a6c0004c80ed9b3dff04e67d05358bc9d64c8a0"
+          recovery_red_head="a3fa2402e0fd2f61cc765893714482dd192d34a9"
+          for path in \
+            NembraApp/App/NembraCaptureBuildIdentity.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift \
+            docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md \
+            scripts/field/install_one_time_capture.command; do
+            git show "$procedure_head:$path" > "$path"
+          done
+          git show "$red_head:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductRecoveryTruthSourceTests.swift" > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductRecoveryTruthSourceTests.swift
+          git show "$recovery_red_head:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailureRecoveryAuthoritySourceTests.swift" > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailureRecoveryAuthoritySourceTests.swift
+
+      - name: Apply guarded guided-product truth repair
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text()
+
+          def replace_once(old, new):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"guard failed: expected one match, found {count}: {old[:100]!r}")
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              "        let tuyaDependencyLockSHA256: String\n        let tuyaDeviceID: String",
+              "        let tuyaDependencyLockSHA256: String\n        let procedureIdentifier: String\n        let tuyaDeviceID: String",
+          )
+          replace_once(
+              "    var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }\n    var sdkAccountLoggedIn: Bool",
+              "    var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }\n    var fieldProcedureIdentifier: String { NembraCaptureBuildIdentity.fieldProcedureIdentifier }\n    var sdkAccountLoggedIn: Bool",
+          )
+          replace_once(
+              "    var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }\n\n    func consumeCorrelationAsyncInvalidation()",
+              "    var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }\n    var failedAttemptCanRestartFromOFF1: Bool { phase == .failed && currentConnectionToken == nil }\n    var canRestartFromFreshOFF1: Bool { failedAttemptCanRestartFromOFF1 }\n\n    func consumeCorrelationAsyncInvalidation()",
+          )
+          replace_once(
+              "            schemaVersion: 9,",
+              "            schemaVersion: 10,",
+          )
+          replace_once(
+              "            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,\n            tuyaDeviceID: deviceID,",
+              "            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,\n            procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier,\n            tuyaDeviceID: deviceID,",
+          )
+          replace_once(
+              "                LabeledContent(\"Source commit\", value: test.fieldBuildSourceCommitSHA)\n                LabeledContent(\"SDK account\"",
+              "                LabeledContent(\"Source commit\", value: test.fieldBuildSourceCommitSHA)\n                LabeledContent(\"Procedure\", value: test.fieldProcedureIdentifier)\n                LabeledContent(\"SDK account\"",
+          )
+
+          failure_start = text.index("    private var failurePanel: some View {\n")
+          completion_start = text.index("    private var completionPanel: some View {\n", failure_start)
+          failure_lines = [
+              "    private var failurePanel: some View {",
+              "        panel {",
+              "            VStack(alignment: .leading, spacing: 16) {",
+              "                Label(\"Capture paused\", systemImage: \"exclamationmark.circle\")",
+              "                    .font(.title2.bold())",
+              "                    .foregroundStyle(.orange)",
+              "                Text(test.message)",
+              "                    .foregroundStyle(.secondary)",
+              "                    .fixedSize(horizontal: false, vertical: true)",
+              "",
+              "                if test.failedAttemptCanRestartFromOFF1 {",
+              "                    Text(\"Nothing was promoted after the blocker. Fix the condition above, then restart from a fresh OFF1 attempt.\")",
+              "                        .font(.footnote)",
+              "                        .foregroundStyle(.secondary)",
+              "                    Button {",
+              "                        test.startBaseline()",
+              "                    } label: {",
+              "                        Label(\"Restart from scooter OFF\", systemImage: \"arrow.counterclockwise\")",
+              "                            .frame(maxWidth: .infinity)",
+              "                    }",
+              "                    .buttonStyle(.borderedProminent)",
+              "                    .controlSize(.large)",
+              "                    .disabled(!authorityReady || test.membershipBusy)",
+              "                } else {",
+              "                    Label(\"Relaunch Capture\", systemImage: \"arrow.clockwise.circle\")",
+              "                        .font(.headline)",
+              "                    Text(\"This failed attempt still retains package-generation authority. Do not start another OFF1 series in this process; close and relaunch Capture first.\")",
+              "                        .font(.footnote)",
+              "                        .foregroundStyle(.secondary)",
+              "                    Text(test.canRestartFromFreshOFF1 ? \"Fresh OFF1 recovery is available.\" : \"In-app OFF1 recovery is unavailable.\")",
+              "                        .font(.caption)",
+              "                        .foregroundStyle(.secondary)",
+              "                }",
+              "            }",
+              "        }",
+              "    }",
+              "",
+          ]
+          text = text[:failure_start] + "\n".join(failure_lines) + "\n" + text[completion_start:]
+
+          completion_start = text.index("    private var completionPanel: some View {\n")
+          sdk_start = text.index("    private var sdkAuthorizationPanel: some View {\n", completion_start)
+          completion_lines = [
+              "    private var completionPanel: some View {",
+              "        panel {",
+              "            VStack(alignment: .leading, spacing: 18) {",
+              "                if let data = test.exportData {",
+              "                    HStack(alignment: .top, spacing: 14) {",
+              "                        Image(systemName: \"checkmark.seal.fill\")",
+              "                            .font(.system(size: 38, weight: .semibold))",
+              "                            .foregroundStyle(.green)",
+              "                            .accessibilityHidden(true)",
+              "                        VStack(alignment: .leading, spacing: 3) {",
+              "                            Text(\"CAPTURE COMPLETE\")",
+              "                                .font(.caption2.bold())",
+              "                                .tracking(1.3)",
+              "                                .foregroundStyle(.green)",
+              "                            Text(\"Ready for analysis\")",
+              "                                .font(.title.bold())",
+              "                        }",
+              "                    }",
+              "                    Text(\"The accepted artifact is sealed and encoded from the immutable accepted envelope. Later callbacks, account changes, or diagnostics cannot rewrite what this capture proved.\")",
+              "                        .foregroundStyle(.secondary)",
+              "                    ShareLink(item: SecureTransfer(data: data, name: test.exportName), preview: SharePreview(test.exportName)) {",
+              "                        Label(\"Share Capture\", systemImage: \"square.and.arrow.up\")",
+              "                            .frame(maxWidth: .infinity)",
+              "                    }",
+              "                    .buttonStyle(.borderedProminent)",
+              "                    .controlSize(.large)",
+              "                    .accessibilityHint(\"Shares the immutable accepted Capture artifact for analysis.\")",
+              "                } else {",
+              "                    HStack(alignment: .top, spacing: 14) {",
+              "                        Image(systemName: \"checkmark.seal\")",
+              "                            .font(.system(size: 38, weight: .semibold))",
+              "                            .foregroundStyle(.green)",
+              "                            .accessibilityHidden(true)",
+              "                        VStack(alignment: .leading, spacing: 3) {",
+              "                            Text(\"CAPTURE SEALED\")",
+              "                                .font(.caption2.bold())",
+              "                                .tracking(1.3)",
+              "                                .foregroundStyle(.green)",
+              "                            Text(\"Prepare the sealed artifact\")",
+              "                                .font(.title.bold())",
+              "                        }",
+              "                    }",
+              "                    Text(\"The accepted evidence is already sealed, but a shareable analysis artifact is not ready yet.\")",
+              "                        .foregroundStyle(.secondary)",
+              "                    Text(test.message)",
+              "                        .font(.footnote)",
+              "                        .foregroundStyle(.secondary)",
+              "                        .fixedSize(horizontal: false, vertical: true)",
+              "                    Button {",
+              "                        test.prepareExport()",
+              "                    } label: {",
+              "                        Label(\"Retry sealed export\", systemImage: \"arrow.clockwise\")",
+              "                            .frame(maxWidth: .infinity)",
+              "                    }",
+              "                    .buttonStyle(.borderedProminent)",
+              "                    .controlSize(.large)",
+              "                    .accessibilityHint(\"Retries encoding the already-sealed immutable artifact. It does not rebuild accepted evidence.\")",
+              "                }",
+              "",
+              "                Button(showEngineeringDetails ? \"Hide details\" : \"View details\") {",
+              "                    showEngineeringDetails.toggle()",
+              "                }",
+              "                .buttonStyle(.bordered)",
+              "                .controlSize(.large)",
+              "            }",
+              "        }",
+              "        .accessibilityElement(children: .contain)",
+              "    }",
+              "",
+          ]
+          text = text[:completion_start] + "\n".join(completion_lines) + "\n" + text[sdk_start:]
+
+          replace_once(
+              "        case .accepted: return \"Capture complete\"",
+              "        case .accepted: return test.exportData == nil ? \"Capture sealed\" : \"Capture complete\"",
+          )
+          replace_once(
+              "        case .accepted:\n            return \"Your read-only evidence is sealed and ready to share for analysis.\"",
+              "        case .accepted:\n            return test.exportData == nil\n                ? \"Your read-only evidence is sealed. A shareable analysis artifact is not ready yet.\"\n                : \"Your sealed artifact is ready to share for analysis.\"",
+          )
+
+          path.write_text(text)
+
+      - name: Verify truth and procedure source contracts
+        run: |
+          set -euo pipefail
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          required = [
+              'var failedAttemptCanRestartFromOFF1: Bool { phase == .failed && currentConnectionToken == nil }',
+              'test.failedAttemptCanRestartFromOFF1',
+              'Relaunch Capture',
+              'if let data = test.exportData',
+              'Ready for analysis',
+              'Retry sealed export',
+              'Text(test.message)',
+              'schemaVersion: 10',
+              'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier',
+              'LabeledContent("Procedure", value: test.fieldProcedureIdentifier)',
+          ]
+          missing = [item for item in required if item not in app]
+          if missing:
+              raise SystemExit(f'missing guided Capture truth contract: {missing}')
+          completion = app[app.index('private var completionPanel'):app.index('private var sdkAuthorizationPanel')]
+          if completion.index('Ready for analysis') < completion.index('if let data = test.exportData'):
+              raise SystemExit('analysis readiness still precedes shareable artifact branch')
+          if '.task { test.prepareExport() }' in completion:
+              raise SystemExit('completion panel still loops automatic export preparation')
+          if 'read-only evidence is sealed and ready to share for analysis.' in app:
+              raise SystemExit('accepted hero still overclaims share readiness')
+          PY
+
+      - name: Commit clean product convergence
+        run: |
+          set -euo pipefail
+          rm .github/workflows/v14-capture-product-truth-sync.yml
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(capture): gate guided recovery and analysis readiness"
+          git push origin HEAD:product/v14-capture-premium-secure-link-current-sol
