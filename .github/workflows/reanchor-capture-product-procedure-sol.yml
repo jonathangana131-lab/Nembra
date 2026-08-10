@@ -24,12 +24,13 @@ jobs:
           branch='reanchor/v14-capture-product-onto-procedure-sol'
           truth='8b9c1cabeeffdec7cb12f9a74f53320c11e7eae0'
           product_parent='d5915a97c1359846b103f08602db78eac815a47f'
+          truth_ref='refs/remotes/origin/integration/v14-capture-final-stationary-convergence-sol'
           workflow='.github/workflows/reanchor-capture-product-procedure-sol.yml'
           entry='NembraApp/App/NembraCaptureEntrypoint.swift'
 
           test "$(git merge-base "$product_parent" HEAD)" = "$product_parent"
-          git fetch origin "$truth"
-          test "$(git cat-file -t "$truth")" = commit
+          git fetch origin 'refs/heads/integration/v14-capture-final-stationary-convergence-sol:refs/remotes/origin/integration/v14-capture-final-stationary-convergence-sol'
+          test "$(git rev-parse "$truth_ref")" = "$truth"
 
           set +e
           git merge --no-commit --no-ff "$truth"
