@@ -20,7 +20,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "9891e8c1d81227d62608f1f632d02525756cd3cc"
+          test "$(git rev-parse HEAD^^)" = "9891e8c1d81227d62608f1f632d02525756cd3cc"
       - name: Apply deterministic product patch
         run: python3 scripts/ci/apply_capture_correlation_export_provenance.py
       - name: Verify truth boundaries
