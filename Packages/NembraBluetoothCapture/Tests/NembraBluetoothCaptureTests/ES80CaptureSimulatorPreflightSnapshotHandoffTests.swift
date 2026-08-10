@@ -1,9 +1,9 @@
 import Foundation
 import Testing
 
-@Suite("ES80 Capture Simulator preflight authority")
+@Suite("ES80 Capture Simulator preflight snapshot handoff")
 struct ES80CaptureSimulatorPreflightSnapshotHandoffTests {
-    private static func repositorySource(_ relativePath: String) throws -> String {
+    private static func appSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let repositoryRoot = testFile
             .deletingLastPathComponent()
@@ -11,7 +11,14 @@ struct ES80CaptureSimulatorPreflightSnapshotHandoffTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+
+        return try String(
+            contentsOf: repositoryRoot
+                .appendingPathComponent("NembraApp")
+                .appendingPathComponent("App")
+                .appendingPathComponent("NembraApp.swift"),
+            encoding: .utf8
+        )
     }
 
     private static func section(
@@ -20,64 +27,54 @@ struct ES80CaptureSimulatorPreflightSnapshotHandoffTests {
         to endMarker: String
     ) throws -> Substring {
         let start = try #require(source.range(of: startMarker)?.lowerBound)
-        let end = try #require(source.range(of: endMarker, range: start..<source.endIndex)?.lowerBound)
+        let end = try #require(
+            source.range(of: endMarker, range: start..<source.endIndex)?.lowerBound
+        )
         return source[start..<end]
     }
 
-    @Test("stamped Simulator build validates provenance without creating synthetic physical authority")
-    func simulatorBuildIsProvenanceOnly() throws {
-        let workflow = try Self.repositorySource(".github/workflows/capture-field-build-provenance.yml")
-        let entrypoint = try Self.repositorySource("NembraApp/App/NembraCaptureEntrypoint.swift")
-
-        #expect(workflow.contains("-sdk iphonesimulator"))
-        #expect(workflow.contains("CODE_SIGNING_ALLOWED=NO"))
-        #expect(workflow.contains("NEMBRA_CAPTURE_BUILD_IDENTIFIER=\"$label\""))
-        #expect(workflow.contains("NEMBRA_CAPTURE_BUILD_COMMIT_SHA=\"$sha\""))
-        #expect(workflow.contains("NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=\"$dependency_sha\""))
-        #expect(workflow.contains("INFOPLIST_KEY_NembraCaptureProcedureIdentifier=\"$procedure\""))
-        #expect(!workflow.contains("--nembra-today-research-build"))
-        #expect(!workflow.contains("NEMBRA_ES80_TODAY_RESEARCH"))
-        #expect(!entrypoint.contains("simulatorQASnapshot"))
-        #expect(!entrypoint.contains("PassiveBluetoothExperimentOneSimulatorQAFixture"))
-    }
-
-    @Test("current standalone preflight keeps account and exact-scooter authority in the real app")
-    func preflightHasNoSyntheticSnapshotState() throws {
-        let entrypoint = try Self.repositorySource("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let authority = try Self.section(
-            entrypoint,
-            from: "private var authorityReady: Bool",
-            to: "private var currentStageIndex: Int"
+    @Test("stationary Simulator QA passes the package-owned snapshot into preflight")
+    func launchRetainsExactFixtureAuthority() throws {
+        let source = try Self.appSource()
+        let launch = try Self.section(
+            source,
+            from: "case let .es80PassiveCaptureSimulatorQA(rawScenario):",
+            to: "    /// Routes the exact field-build recipe marker"
         )
 
-        #expect(entrypoint.contains("@main @MainActor\nstruct NembraCaptureApp: App"))
-        #expect(entrypoint.contains("WindowGroup { CaptureP0Root().preferredColorScheme(.dark) }"))
-        #expect(authority.contains("test.fieldBuildIsAuthoritative"))
-        #expect(authority.contains("&& test.privateConfig"))
-        #expect(authority.contains("&& test.sdkAccountLoggedIn"))
-        #expect(authority.contains("&& test.sdkDeviceMembershipVerified"))
-        #expect(authority.contains("&& test.accountIdentityLeaseIsAuthorized"))
-        #expect(!entrypoint.contains("#if DEBUG && targetEnvironment(simulator)"))
-        #expect(!entrypoint.contains("simulatorQAEvidenceLabel"))
+        #expect(launch.contains("let snapshot = PassiveBluetoothExperimentOneSimulatorQAFixture.snapshot(for: scenario)"))
+        #expect(launch.contains("if scenario == .stationaryPreflight"))
+        #expect(launch.contains("ES80ExperimentOneStationaryPreflightView("))
+        #expect(launch.contains("simulatorQASnapshot: snapshot"))
     }
 
-    @Test("selected real device context flows into Secure Link and OFF1 starts only after authorityReady")
-    func currentPreflightDoesNotForwardSyntheticScenario() throws {
-        let entrypoint = try Self.repositorySource("NembraApp/App/NembraCaptureEntrypoint.swift")
+    @Test("preflight stores synthetic authority only in DEBUG Simulator builds")
+    func preflightKeepsSyntheticStateOutOfProductionInitializer() throws {
+        let source = try Self.appSource()
         let preflight = try Self.section(
-            entrypoint,
-            from: "private var preflightPanel: some View",
-            to: "private var correlationDisplayedWindowOrdinal: Int"
+            source,
+            from: "private struct ES80ExperimentOneStationaryPreflightView: View",
+            to: "private struct ES80ExperimentOneFieldNoGoView: View"
         )
 
-        #expect(entrypoint.contains("NavigationLink(\"Continue to Capture\") { SecureLinkView(device: device) }"))
-        #expect(entrypoint.contains("init(device: TuyaAccountBridge.LinkedDevice)"))
-        #expect(entrypoint.contains("_test = StateObject(wrappedValue: SecureLinkController(device: device))"))
-        #expect(preflight.contains("if authorityReady"))
-        #expect(preflight.contains("test.startBaseline()"))
-        #expect(preflight.contains("Label(\"Start with scooter OFF\", systemImage: \"power\")"))
-        #expect(!preflight.contains("simulatorQASnapshot"))
-        #expect(!preflight.contains("onFreshExperimentRequested"))
-        #expect(!preflight.contains("disconnectedDeclarationAccepted"))
+        #expect(preflight.contains("#if DEBUG && targetEnvironment(simulator)"))
+        #expect(preflight.contains("private let simulatorQASnapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot?"))
+        #expect(preflight.contains("simulatorQASnapshot = nil"))
+        #expect(preflight.contains("simulatorQAEvidenceLabel = simulatorQASnapshot.evidenceLabel"))
+    }
+
+    @Test("accepted charger preflight forwards the same snapshot into the Capture shell")
+    func acceptedPreflightDoesNotDropSyntheticScenario() throws {
+        let source = try Self.appSource()
+        let preflight = try Self.section(
+            source,
+            from: "private struct ES80ExperimentOneStationaryPreflightView: View",
+            to: "private struct ES80ExperimentOneFieldNoGoView: View"
+        )
+
+        #expect(preflight.contains("if disconnectedDeclarationAccepted"))
+        #expect(preflight.contains("if let simulatorQASnapshot"))
+        #expect(preflight.contains("simulatorQASnapshot: simulatorQASnapshot"))
+        #expect(preflight.contains("onFreshExperimentRequested: makeFreshExperimentCoordinator"))
     }
 }
