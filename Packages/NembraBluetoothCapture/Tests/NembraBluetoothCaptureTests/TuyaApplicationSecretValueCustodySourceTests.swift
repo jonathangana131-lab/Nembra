@@ -20,7 +20,7 @@ struct TuyaApplicationSecretValueCustodySourceTests {
         let sanitizer = String(try section(
             in: driver,
             from: "private static let secretKeyFragments",
-            to: "}\n#endif"
+            to: "private static func redactedApplicationDescription"
         ))
 
         #expect(driver.contains("NembraTuyaPrivateIdentity.appKey"))
