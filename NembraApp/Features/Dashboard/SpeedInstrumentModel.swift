@@ -320,19 +320,10 @@ struct DashboardSpeedInstrumentView: View {
         let speedShouldTick = !reduceMotion
             && model.isAnimationActive
             && isLivePresentation(speedAvailability)
-        let energyRailShouldTick: Bool
-        if !reduceMotion,
-           energyRailHasSynchronizedStoreProjection,
-           hasEnergyRailSourceCapability,
-           storePowerProjection.currentness == .live,
-           storePowerProjection.observation != nil,
-           let energyRailRuntime {
-            energyRailShouldTick = energyRailRuntime.displaySchedule(
-                atUptimeNanoseconds: scheduleNow
-            ).requiresContinuousFrames
-        } else {
-            energyRailShouldTick = false
-        }
+        let energyRailShouldTick = energyRailRequiresContinuousFrames(
+            for: storePowerProjection,
+            atUptimeNanoseconds: scheduleNow
+        )
 
         TimelineView(
             .animation(
@@ -400,6 +391,27 @@ struct DashboardSpeedInstrumentView: View {
         vehicle.profile == .simulatorQA
             && vehicle.profile.capabilities.supportsPowerWatts
             && vehicle.hasSimulatorPowerEvidenceSource
+    }
+
+    /// Continuous-frame gating is a plain Boolean computation rather than an
+    /// imperative branch inside SwiftUI's `ViewBuilder`. This preserves the exact
+    /// display scheduling contract while keeping `body` valid under Swift 6.2.
+    private func energyRailRequiresContinuousFrames(
+        for storeProjection: SimulatorPowerStoreFencedProjection,
+        atUptimeNanoseconds uptimeNanoseconds: UInt64
+    ) -> Bool {
+        guard !reduceMotion,
+              energyRailHasSynchronizedStoreProjection,
+              hasEnergyRailSourceCapability,
+              storeProjection.currentness == .live,
+              storeProjection.observation != nil,
+              let energyRailRuntime else {
+            return false
+        }
+
+        return energyRailRuntime.displaySchedule(
+            atUptimeNanoseconds: uptimeNanoseconds
+        ).requiresContinuousFrames
     }
 
     /// Applies exactly one already-sealed Store projection to the package runtime.
