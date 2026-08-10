@@ -1,0 +1,75 @@
+name: Apply Capture correlation progress fix
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-correlation-progress-gpt56sol-go
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-correlation-progress-gpt56sol-go
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-correlation-progress-gpt56sol-go
+          fetch-depth: 0
+
+      - name: Apply exact presentation-only repair
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text(encoding="utf-8")
+
+          old_text = '                    Text("\\(min(test.correlationCompletedWindowCount + 1, 4))/4")\n'
+          new_text = '                    Text("\\(correlationDisplayedWindowOrdinal)/4")\n'
+          if text.count(old_text) != 1:
+              raise SystemExit(f"visible ordinal anchor count != 1: {text.count(old_text)}")
+          text = text.replace(old_text, new_text, 1)
+
+          anchor = "    private var authorityReady: Bool {\n"
+          addition = (
+              "    private var correlationDisplayedWindowOrdinal: Int {\n"
+              "        test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)\n"
+              "    }\n\n"
+          )
+          if text.count(anchor) != 1:
+              raise SystemExit(f"authorityReady anchor count != 1: {text.count(anchor)}")
+          if "private var correlationDisplayedWindowOrdinal: Int" in text:
+              raise SystemExit("correlationDisplayedWindowOrdinal already exists")
+          text = text.replace(anchor, addition + anchor, 1)
+          path.write_text(text, encoding="utf-8")
+
+      - name: Verify focused source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          grep -Fq 'Text("\(correlationDisplayedWindowOrdinal)/4")' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)' NembraApp/App/NembraCaptureEntrypoint.swift
+          if grep -Fq 'Text("\(min(test.correlationCompletedWindowCount + 1, 4))/4")' NembraApp/App/NembraCaptureEntrypoint.swift; then
+            echo 'ERROR: stale visible raw correlation ordinal remains.' >&2
+            exit 1
+          fi
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaCorrelationProgressPresentationTruthSourceTests
+
+      - name: Commit production repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name nembra-go-bot
+          git config user.email nembra-go-bot@users.noreply.github.com
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git diff --cached --check
+          git commit -m 'fix(capture): show completed correlation as four of four' \
+            -m 'Keep active-window ordinal presentation derived from package-owned completed-window count, while rendering the retired successful correlated state as 4/4. Presentation only; no target authority, BLE ownership, chronology, or evidence bytes change.'
+          git push origin HEAD:fix/v14-capture-correlation-progress-gpt56sol-go
