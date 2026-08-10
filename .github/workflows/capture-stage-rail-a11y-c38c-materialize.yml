@@ -1,0 +1,43 @@
+name: Materialize Capture Stage Rail A11Y c38c
+on:
+  push:
+    branches: [sol/v14-capture-stage-rail-a11y-c38c]
+permissions:
+  contents: write
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sol/v14-capture-stage-rail-a11y-c38c
+          fetch-depth: 0
+      - name: Guard exact current parent
+        run: |
+          set -euo pipefail
+          parent=c38cb8f4c66ec1e1e8f6cdbe7fb77955daf18b5e
+          test "$(git merge-base "$parent" HEAD)" = "$parent"
+          git diff --quiet "$parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+      - name: Apply and parse
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/materialize_capture_stage_rail_a11y_c38c.py
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureStageRailAcceptedAccessibilitySourceTests.swift
+          git diff --check
+      - name: Publish clean two-path repair
+        run: |
+          set -euo pipefail
+          parent=c38cb8f4c66ec1e1e8f6cdbe7fb77955daf18b5e
+          rm .github/workflows/capture-stage-rail-a11y-c38c-materialize.yml scripts/ci/materialize_capture_stage_rail_a11y_c38c.py
+          git add -A
+          changed="$(git diff --cached "$parent" --name-only | sort)"
+          expected="$(printf '%s\n' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureStageRailAcceptedAccessibilitySourceTests.swift' | sort)"
+          test "$changed" = "$expected"
+          git diff --cached "$parent" --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'fix(capture): align accepted stage rail accessibility semantics'
+          git push origin HEAD:sol/v14-capture-stage-rail-a11y-c38c
