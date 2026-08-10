@@ -1,0 +1,44 @@
+name: Dump ES80 Producer Merge Diffs
+
+on:
+  push:
+    branches:
+      - agent/es80-v14-producer-merge-diff
+
+permissions:
+  contents: read
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: agent/es80-v14-producer-merge-diff
+
+      - name: Fetch reviewed repair lineage
+        run: |
+          set -euo pipefail
+          SOURCE_BRANCH='fix/es80-v14-producer-git-xcode-source-custody-go'
+          REPAIR='24b59201b50ee1b43c48af168b3a6713e0d10961'
+          git fetch --no-tags origin "refs/heads/$SOURCE_BRANCH:refs/remotes/origin/$SOURCE_BRANCH"
+          test "$(git rev-parse "refs/remotes/origin/$SOURCE_BRANCH")" = "$REPAIR"
+
+      - name: Produce exact three-way producer diffs
+        run: |
+          set -euo pipefail
+          BASE='720feb4b342958a1809b4915f3e3b650c54074c8'
+          FROZEN='a0f4a33451f61411d6e0541f2e70edea5438342d'
+          REPAIR='24b59201b50ee1b43c48af168b3a6713e0d10961'
+          mkdir -p producer-merge-diffs
+          git diff --no-ext-diff --unified=12 "$BASE" "$FROZEN" -- scripts/ci/xcode27_signed_field_candidate.sh > producer-merge-diffs/base-to-frozen.patch
+          git diff --no-ext-diff --unified=12 "$BASE" "$REPAIR" -- scripts/ci/xcode27_signed_field_candidate.sh > producer-merge-diffs/base-to-reviewed-custody.patch
+          test -s producer-merge-diffs/base-to-frozen.patch
+          test -s producer-merge-diffs/base-to-reviewed-custody.patch
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: es80-producer-three-way-diffs
+          path: producer-merge-diffs
+          if-no-files-found: error
