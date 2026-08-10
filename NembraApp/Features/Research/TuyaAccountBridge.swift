@@ -22,8 +22,6 @@ final class TuyaAccountBridge: ObservableObject {
         let uuid: String
         let assetID: String
         let online: Bool
-        let localKey: String
-        let raw: [String: AnyHashable]
 
         static func == (lhs: LinkedDevice, rhs: LinkedDevice) -> Bool {
             lhs.id == rhs.id && lhs.name == rhs.name && lhs.online == rhs.online
@@ -183,6 +181,7 @@ final class TuyaAccountBridge: ObservableObject {
             "localStrategy": selectedDeviceLocalStrategy ?? [:],
             "safety": [
                 "readOnlyCloudCalls": true,
+                "localKeyRetained": false,
                 "localKeyExported": false,
                 "accessTokenExported": false,
                 "refreshTokenExported": false,
@@ -197,7 +196,7 @@ final class TuyaAccountBridge: ObservableObject {
         do {
             redactedExportData = try JSONSerialization.data(withJSONObject: envelope, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
             redactedExportFilename = "Nembra-Tuya-\(Self.safeFilename(device.name))-Metadata.json"
-            statusMessage = "Redacted Tuya metadata is ready to share. Account tokens and local_key are excluded."
+            statusMessage = "Redacted Tuya metadata is ready to share. Account tokens and local_key are not retained in device UI state or exported."
         } catch {
             statusMessage = "Could not prepare metadata JSON: \(Self.readable(error))"
         }
@@ -363,9 +362,9 @@ final class TuyaAccountBridge: ObservableObject {
         let (detail, specs, strategy) = try await (detailResponse, specResponse, strategyResponse)
         let detailArray = detail["result"] as? [[String: Any]] ?? []
         let rawDetail = detailArray.first ?? [:]
-        selectedDeviceMetadata = rawDetail
-        selectedDeviceSpecifications = specs["result"] as? [String: Any] ?? [:]
-        selectedDeviceLocalStrategy = strategy["result"] as? [String: Any] ?? [:]
+        selectedDeviceMetadata = Self.redactSecrets(rawDetail) as? [String: Any] ?? [:]
+        selectedDeviceSpecifications = Self.redactSecrets(specs["result"] as? [String: Any] ?? [:]) as? [String: Any] ?? [:]
+        selectedDeviceLocalStrategy = Self.redactSecrets(strategy["result"] as? [String: Any] ?? [:]) as? [String: Any] ?? [:]
 
         var statusMap: [String: Any] = [:]
         if let statuses = rawDetail["status"] as? [[String: Any]] {
@@ -432,11 +431,7 @@ final class TuyaAccountBridge: ObservableObject {
     }
 
     private static func makeDevice(_ raw: [String: Any]) -> LinkedDevice {
-        var hashableRaw: [String: AnyHashable] = [:]
-        for (key, value) in raw {
-            if let value = value as? AnyHashable { hashableRaw[key] = value }
-        }
-        return LinkedDevice(
+        LinkedDevice(
             id: string(raw["id"]) ?? "",
             name: string(raw["name"]) ?? string(raw["product_name"]) ?? "Unnamed Tuya device",
             category: string(raw["category"]) ?? "",
@@ -444,9 +439,7 @@ final class TuyaAccountBridge: ObservableObject {
             productName: string(raw["product_name"]) ?? "",
             uuid: string(raw["uuid"]) ?? "",
             assetID: string(raw["asset_id"]) ?? "",
-            online: bool(raw["online"]),
-            localKey: string(raw["local_key"]) ?? "",
-            raw: hashableRaw
+            online: bool(raw["online"])
         )
     }
 
@@ -776,7 +769,7 @@ struct NembraCaptureRootView: View {
             if let device = tuya.selectedDevice {
                 Text(device.name)
                     .font(.title3.bold())
-                Text("Nembra has the Tuya device identity, current cloud status, DP specifications, and local-strategy metadata. Secret local_key stays inside this session and is never put in the export.")
+                Text("Nembra has the Tuya device identity, current cloud status, DP specifications, and redacted local-strategy metadata. BLE-capable device secrets are not retained in UI state or exported.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
