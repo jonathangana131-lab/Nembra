@@ -1,0 +1,155 @@
+name: Materialize Capture Correlation Custody A5CB
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-correlation-custody-a5cb
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: materialize-capture-correlation-custody-a5cb
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact construction scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess
+          parent = "a5cb12ed97241ba274d23f311d67cf84623ceb29"
+          subprocess.run(["git", "merge-base", "--is-ancestor", parent, "HEAD"], check=True)
+          actual = set(subprocess.check_output(["git", "diff", "--name-only", f"{parent}...HEAD"], text=True).splitlines())
+          expected = {
+              ".github/workflows/materialize-v14-capture-correlation-custody-a5cb.yml",
+              "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureCorrelationEvidenceCustodySourceTests.swift",
+          }
+          if actual != expected:
+              raise SystemExit(f"unexpected construction scope: {sorted(actual)!r}")
+          PY
+
+      - name: Apply sealed-correlation custody repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text()
+
+          ownership_old = '''        // Foreground loss already owns the terminal retirement for this view lifetime.
+                  // Avoid racing a second terminal task when backgrounding is followed by onDisappear.
+                  if foregroundIntegrityLossHandled { return }
+
+                  if let token = currentConnectionToken {'''
+          ownership_new = '''        // Foreground loss already owns the terminal retirement for this view lifetime.
+                  // Avoid racing a second terminal task when backgrounding is followed by onDisappear.
+                  if foregroundIntegrityLossHandled { return }
+                  // A normal navigation exit owns this view-lifetime terminal too. A later scene callback
+                  // must not schedule a second/different terminal over the already-retired authority.
+                  foregroundIntegrityLossHandled = true
+
+                  if let token = currentConnectionToken {'''
+          if source.count(ownership_old) != 1:
+              raise SystemExit("view-exit terminal ownership site changed")
+          source = source.replace(ownership_old, ownership_new, 1)
+
+          view_old = '''        guard processCorrelationLease != nil || correlationSession != nil else { return }
+                  // Existing helper stops package transport before releasing this controller's lease.
+                  abandonPackageCorrelation()
+                  phase = .failed
+                  message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
+                  log("target_correlation_abandoned_on_view_exit")'''
+          view_new = '''        if processCorrelationLease != nil || correlationSession != nil {
+                      // An unfinished series has no sealed four-window evidence to preserve. Retire the
+                      // package scanner/lease and clear that incomplete attempt atomically.
+                      abandonPackageCorrelation()
+                      phase = .failed
+                      message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
+                      log("target_correlation_abandoned_on_view_exit")
+                      return
+                  }
+
+                  if phase == .correlated || phase == .selected {
+                      // Final-window sealing already made the correlation receipts/catalog immutable evidence.
+                      // Revoke every actionable target bit, but keep those receipts for failed diagnostic export.
+                      pendingCorrelatedTargetID = nil
+                      selectedID = nil
+                      targetCorrelationOperatorConfirmed = false
+                      phase = .failed
+                      message = "Target authority was retired because Capture left Secure Link. The sealed correlation evidence remains diagnostic only; restart from OFF1 before another attempt."
+                      log("target_correlation_retired_on_view_exit")
+                  }'''
+          if source.count(view_old) != 1:
+              raise SystemExit("view-exit correlation retirement site changed")
+          source = source.replace(view_old, view_new, 1)
+
+          foreground_old = '''        if phase == .correlated || phase == .selected {
+                      // Final-window sealing already retires the package scanner/lease. These phases can
+                      // therefore hold actionable target authority with no live transport object to inspect.
+                      // Foreground loss must invalidate that authority explicitly before a retry.
+                      resetDiscoverySessionOnly()
+                      phase = .failed
+                      message = "Capture left the foreground after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the prior correlated/selected target cannot cross a foreground-integrity break."
+                      log("foreground_integrity_lost_after_target_correlation")
+                      return
+                  }'''
+          foreground_new = '''        if phase == .correlated || phase == .selected {
+                      // Final-window sealing already retires the package scanner/lease. These phases can
+                      // therefore hold actionable target authority with no live transport object to inspect.
+                      // Revoke that authority, but preserve the already-sealed correlation receipts/catalog
+                      // so a failed diagnostic export can still explain exactly what was observed.
+                      pendingCorrelatedTargetID = nil
+                      selectedID = nil
+                      targetCorrelationOperatorConfirmed = false
+                      phase = .failed
+                      message = "Capture left the foreground after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the prior correlated/selected target cannot cross a foreground-integrity break."
+                      log("foreground_integrity_lost_after_target_correlation")
+                      return
+                  }'''
+          if source.count(foreground_old) != 1:
+              raise SystemExit("foreground sealed-correlation retirement site changed")
+          source = source.replace(foreground_old, foreground_new, 1)
+
+          path.write_text(source)
+          PY
+
+      - name: Validate focused contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaCaptureCorrelationEvidenceCustodySourceTests
+          git diff --check
+
+      - name: Verify effective scope and publish donor
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-v14-capture-correlation-custody-a5cb.yml
+          python3 - <<'PY'
+          import subprocess
+          parent = "a5cb12ed97241ba274d23f311d67cf84623ceb29"
+          actual = set(subprocess.check_output(["git", "diff", "--name-only", parent], text=True).splitlines())
+          expected = {
+              "NembraApp/App/NembraCaptureEntrypoint.swift",
+              "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureCorrelationEvidenceCustodySourceTests.swift",
+          }
+          if actual != expected:
+              raise SystemExit(f"unexpected effective scope: {sorted(actual)!r}")
+          PY
+          git diff --check a5cb12ed97241ba274d23f311d67cf84623ceb29
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "fix(capture): preserve sealed correlation evidence"
+          git push origin HEAD:sol/v14-capture-correlation-custody-a5cb
