@@ -1406,6 +1406,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
         guard sdkAccountLoggedIn,
               sdkDeviceMembershipVerified,
               accountIdentityLeaseIsAuthorized,
+              let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !verifiedAccountUID.isEmpty,
               let driver else {
             await invalidateSourceAuthority(
                 token: token,
@@ -1425,7 +1427,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            let accountUIDRedactedUpdate = Self.redactVerifiedAccountUID(
+                verifiedAccountUID,
+                from: update
+            )
+            log("tuya_application_update", accountUIDRedactedUpdate.merging([
                 "generation": String(token.diagnosticGeneration)
             ]) { current, _ in current })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
@@ -1452,6 +1458,39 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 kind: "application_update_lifecycle_rejected"
             )
         }
+    }
+
+    private static func redactVerifiedAccountUID(
+        _ verifiedAccountUID: String,
+        from update: [String: String]
+    ) -> [String: String] {
+        let marker = "<redacted-account-uid>"
+        var sanitized: [String: String] = [:]
+        sanitized.reserveCapacity(update.count)
+
+        // Sort only to make collision-preserving redaction deterministic. The raw account UID
+        // remains process-local authority and is never emitted by this helper.
+        for (sourceKey, sourceValue) in update.sorted(by: { $0.key < $1.key }) {
+            let redactedKeyBase = sourceKey.replacingOccurrences(
+                of: verifiedAccountUID,
+                with: marker,
+                options: [.caseInsensitive, .literal]
+            )
+            let redactedValue = sourceValue.replacingOccurrences(
+                of: verifiedAccountUID,
+                with: marker,
+                options: [.caseInsensitive, .literal]
+            )
+
+            var redactedKey = redactedKeyBase
+            var collisionIndex = 2
+            while sanitized[redactedKey] != nil {
+                redactedKey = "\(redactedKeyBase)#\(collisionIndex)"
+                collisionIndex += 1
+            }
+            sanitized[redactedKey] = redactedValue
+        }
+        return sanitized
     }
 
     private func startWatchdog(token: TuyaReadOnlyConnectionToken) {
@@ -2241,7 +2280,6 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "accounttoken",
         "accesstoken",
         "refreshtoken",
-        "sessionkey",
         "authkey",
         "seckey",
     ]
@@ -2440,7 +2478,7 @@ private final class OfficialTuyaAccountAuthorizer: ObservableObject {
         let country = countryCode.trimmingCharacters(in: .whitespacesAndNewlines)
         let code = verificationCode.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !identity.isEmpty, !country.isEmpty, !code.isEmpty else {
-            status = "Enter the account, country code, and Tuya verification code."
+            status = "Enter the account, country code, and Tuya verification code first."
             return
         }
 #if canImport(ThingSmartHomeKit)
