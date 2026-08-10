@@ -46,47 +46,23 @@ struct TuyaTransportSuccessAuthoritySourceTests {
         #expect(handler.contains("localBLESettlementToken = token"))
         #expect(handler.contains("defer"))
         #expect(handler.contains("sessionLedger.markAuthenticated"))
-        #expect(handler.contains("session_auth_promotion_clock_regressed"))
-        #expect(handler.contains("session_auth_promotion_rejected"))
-
-        // Actor suspension after markAuthenticated legitimately requires a fresh source/driver
-        // authority check before observation can be published. That source-drift cleanup is distinct
-        // from a rejection by the owner-bound ledger mutation itself.
-        #expect(handler.contains("sdk_source_authority_lost_during_auth_promotion"))
-        #expect(handler.contains("sdk_driver_authority_lost_during_auth_promotion"))
+        #expect(handler.contains("session_auth_callback_rejected"))
 
         guard let promotion = handler.range(of: "sessionLedger.markAuthenticated"),
-              let clockCatch = handler.range(
-                of: "catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed",
-                range: promotion.upperBound..<handler.endIndex
-              ),
-              let clockKind = handler.range(
-                of: "kind: \"session_auth_promotion_clock_regressed\"",
-                range: clockCatch.upperBound..<handler.endIndex
-              ),
-              let genericCatch = handler.range(
-                of: "} catch {",
-                range: clockKind.upperBound..<handler.endIndex
-              ),
-              let rejectedKind = handler.range(
-                of: "kind: \"session_auth_promotion_rejected\"",
-                range: genericCatch.upperBound..<handler.endIndex
-              ) else {
-            Issue.record("Could not isolate authentication-promotion lifecycle terminals.")
+              let keepWaiting = handler.range(of: "case .keepWaiting:", range: promotion.upperBound..<handler.endIndex) else {
+            Issue.record("Could not isolate authentication promotion failure cleanup.")
             return
         }
+        let promotionTerminal = String(handler[promotion.lowerBound..<keepWaiting.lowerBound])
 
-        let clockTerminal = String(handler[clockCatch.lowerBound..<genericCatch.lowerBound])
-        let genericTerminal = String(handler[genericCatch.lowerBound..<rejectedKind.upperBound])
-
-        // If the owner-bound ledger mutation rejects chronology/invariants, cleanup must use the
-        // package's exact-token no-resample internal-lifecycle terminal, not invent source drift.
-        for terminal in [clockTerminal, genericTerminal] {
-            #expect(terminal.contains("invalidateInternalLifecycle"))
-            #expect(!terminal.contains("invalidateSourceAuthority"))
-            #expect(!terminal.contains("authenticationAcquisitionFailed"))
-            #expect(!terminal.contains("markAuthenticationFailed"))
-        }
+        // Current Tuya account/device source authority has already been checked before promotion.
+        // If the owner-bound ledger mutation itself rejects chronology/invariants, cleanup must use
+        // the package's exact-token no-resample internal-lifecycle terminal, not invent source drift.
+        #expect(promotionTerminal.contains("MutationError.monotonicClockRegressed"))
+        #expect(promotionTerminal.contains("invalidateInternalLifecycle"))
+        #expect(!promotionTerminal.contains("invalidateSourceAuthority"))
+        #expect(!promotionTerminal.contains("authenticationAcquisitionFailed"))
+        #expect(!promotionTerminal.contains("markAuthenticationFailed"))
         #expect(!handler.contains("failLocally(\"Authenticated-session chronology rejected"))
     }
 
