@@ -1,0 +1,61 @@
+name: Materialize Capture Guided AX Evidence
+
+on:
+  push:
+    branches:
+      - qa/v14-capture-guided-ax-fd6-sol
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-guided-ax-materialize-fd6
+  cancel-in-progress: true
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: qa/v14-capture-guided-ax-fd6-sol
+          fetch-depth: 0
+
+      - name: Guard exact product source and materialize
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='fd6f7b508912d6a956d4ab2f9d5faf7c0049dd56'
+          git merge-base --is-ancestor "$parent" HEAD
+          test "$(git rev-parse "$parent":NembraApp/App/NembraCaptureEntrypoint.swift)" = '68612e5a9acaba9f1a90f3b6e9ad84ebb9b7ec52'
+          test "$(git rev-parse HEAD:NembraApp/App/NembraCaptureEntrypoint.swift)" = '68612e5a9acaba9f1a90f3b6e9ad84ebb9b7ec52'
+          test ! -e Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/GuidedCapturePresentationEvidenceSourceTests.swift
+          test ! -e .github/workflows/capture-guided-presentation-evidence.yml
+          python3 scripts/ci/materialize_capture_guided_ax_evidence.py
+          git diff --check
+          grep -Fq '#if NEMBRA_CAPTURE_PRESENTATION_EVIDENCE' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'if presentationEvidenceState != nil { return }' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'phase = .powerOn' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'phase = .authenticating' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'presentationFixture' .github/workflows/capture-guided-presentation-evidence.yml
+          grep -Fq 'protocolAuthorityCreated' .github/workflows/capture-guided-presentation-evidence.yml
+          ! grep -Fq 'ThingSmartBLEManager.sharedInstance().disconnectBLE' NembraApp/App/NembraCaptureEntrypoint.swift
+          ! grep -Fq 'publishDps(' NembraApp/App/NembraCaptureEntrypoint.swift
+          ! grep -Fq 'queryDps(' NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Publish clean QA-only child
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f scripts/ci/materialize_capture_guided_ax_evidence.py .github/workflows/materialize-capture-guided-ax-evidence.yml
+          git config user.name 'nembra-v14-bot'
+          git config user.email 'nembra-v14-bot@users.noreply.github.com'
+          git add -A
+          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" = '3'
+          git diff --cached --name-only | grep -Fxq 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          git diff --cached --name-only | grep -Fxq 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/GuidedCapturePresentationEvidenceSourceTests.swift'
+          git diff --cached --name-only | grep -Fxq '.github/workflows/capture-guided-presentation-evidence.yml'
+          git diff --cached --check
+          git commit -m 'qa(capture): exercise guided AX progress in presentation-only fixture'
+          git push --force-with-lease origin HEAD:qa/v14-capture-guided-ax-fd6-sol
