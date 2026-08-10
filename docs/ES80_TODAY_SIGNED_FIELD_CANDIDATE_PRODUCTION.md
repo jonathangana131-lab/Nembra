@@ -81,7 +81,7 @@ Choose a private path outside the repository. The producer requires an absolute 
 
 Do not acquire the raw identifier through ordinary shell redirection. Even with `noclobber`, a checked parent directory pathname can be renamed and replaced before `> "$UDID_FILE"` re-resolves it. Instead, materialize the exact descriptor-bound helper below. It opens every parent component with no-follow directory descriptors and creates the final file relative to the retained parent descriptor with `O_EXCL | O_NOFOLLOW`, so a later pathname retarget cannot redirect the secret write.
 
-The helper reads the UDID with hidden terminal input, never places it in command arguments, never prints it, writes the exact identifier bytes with no trailing newline, and requires the final parent directory to be owned by the current user and inaccessible to group/world.
+The helper reads the UDID with hidden terminal input, never places it in command arguments, never prints it, writes the exact identifier bytes with no trailing newline, rejects every ASCII whitespace/control character that the accepted preflight/frozen private runner rejects, and requires the final parent directory to be owned by the current user and inaccessible to group/world.
 
 ```bash
 umask 077
@@ -104,8 +104,10 @@ if [[ -e "$UDID_FILE" || -L "$UDID_FILE" ]]; then
   exit 1
 fi
 
-PRIVATE_INPUT_HELPER_COMMIT='0f9c68edb0f1e43b484ad0051902e19d28149822'
-PRIVATE_INPUT_HELPER_BLOB='7de2eb55c138f578cf3c0a53d0f12db823fa276d'
+# Supersedes helper blob 7de2eb55c138f578cf3c0a53d0f12db823fa276d,
+# whose descriptor custody was correct but whose validator admitted internal ASCII space.
+PRIVATE_INPUT_HELPER_COMMIT='9f2ac13d8dec7812a73bf7723103efadf9e6409d'
+PRIVATE_INPUT_HELPER_BLOB='ff5e45acf3088832935da53a84b84b3a5be4713a'
 PRIVATE_INPUT_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-private-input.XXXXXX)"
 PRIVATE_INPUT_HELPER="$PRIVATE_INPUT_DIR/es80_private_intended_device_input.py"
 
@@ -268,7 +270,7 @@ Stop and preserve the exact blocker if any of these occurs:
 - the candidate destination existed before production or appears partially published after a failure;
 - the private base path cannot be resolved to a physical absolute home path before secret acquisition;
 - the intended-device verification directory is a symlink, the final private path already exists, the retained verification file is not mode-`0600` regular non-symlink single-link input, or its path traverses a symlinked ancestor / the Nembra repository;
-- the intended-device verification value contains leading/trailing whitespace/newline or control characters;
+- the intended-device verification value contains any ASCII whitespace or control character rejected by the accepted private-input contract;
 - the next step would require rebuilding, re-exporting, substituting another app/IPA, or using Xcode Run;
 - anyone proposes Bluetooth scanning before the hardened Final GO record exists.
 
