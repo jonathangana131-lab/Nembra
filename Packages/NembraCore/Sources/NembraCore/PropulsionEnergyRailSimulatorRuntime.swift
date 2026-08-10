@@ -9,8 +9,12 @@ import Foundation
 ///
 /// The runtime owns synthetic chronology at the **measurement clock**. Repeated calls
 /// carrying the same connected watt value do not mint new accepted receipts merely
-/// because a 60 Hz renderer asked for another frame. Display interpolation remains
-/// inside `PropulsionGaugeSourceSession` / `PropulsionGaugeDisplayModel`.
+/// because a 60 Hz renderer asked for another frame. A caller that has a real
+/// source-owned Simulator observation may additionally provide its monotonic
+/// `sourceObservationRevision`; a strictly newer revision is allowed to refresh an
+/// unchanged watt value because that is new source evidence rather than render polling.
+/// Display interpolation remains inside `PropulsionGaugeSourceSession` /
+/// `PropulsionGaugeDisplayModel`.
 public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
     /// Synthetic visual ceiling chosen only because `SimulatedScooterService`
     /// currently caps generated QA power at 620 W. This is not a rated motor,
@@ -33,6 +37,11 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
     private var nextReceiptSequenceNumber: UInt64 = 1
     private var lastAcceptedWatts: Double?
     private var lastAcceptedUptimeNanoseconds: UInt64?
+    /// Opaque caller-owned source revision used only to distinguish a genuine
+    /// synthetic observation from repeated presentation polling. It intentionally
+    /// survives local lifecycle retirement so a delayed pre-gap revision cannot
+    /// revive cached power after reconnect.
+    private var lastAcceptedSourceObservationRevision: UInt64?
     private var requiresNewGeneration = false
 
     public var identity: PropulsionGaugeIdentity { session.identity }
@@ -72,14 +81,23 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
     /// Admits one source-owned Simulator state change.
     ///
     /// Call this when the synthetic source changes, not on every render frame.
-    /// `connected == false`, missing/invalid power, or any chronology failure makes
-    /// the active generation unavailable without manufacturing a zero-watt sample.
-    /// A later valid observation starts a strictly newer synthetic generation.
+    /// `connected == false`, missing/invalid power, or a contradictory reuse of one
+    /// source observation revision makes the active generation unavailable without
+    /// manufacturing a zero-watt sample. A later valid observation starts a strictly
+    /// newer synthetic generation after lifecycle retirement.
+    ///
+    /// `sourceObservationRevision` is optional for compatibility with older isolated
+    /// callers. When supplied it must be a source-owned monotonic observation identity,
+    /// never a display-clock counter. A newer revision may carry the same watts and
+    /// still refresh accepted currentness; an equal revision may only replay the exact
+    /// same watts + mode tuple. A lower revision is stale and ignored without hiding
+    /// newer accepted evidence.
     @discardableResult
     public mutating func observe(
         connected: Bool,
         watts: Double?,
         modeKey: String?,
+        sourceObservationRevision: UInt64? = nil,
         receivedAtUptimeNanoseconds: UInt64
     ) -> Bool {
         guard connected,
@@ -91,6 +109,30 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
         }
 
         let normalizedModeKey = normalizedMode(modeKey)
+
+        if let sourceObservationRevision,
+           let lastAcceptedSourceObservationRevision {
+            if sourceObservationRevision < lastAcceptedSourceObservationRevision {
+                // Delayed old source evidence is non-authoritative for the current
+                // presentation, but it must not erase a newer accepted observation.
+                return false
+            }
+
+            if sourceObservationRevision == lastAcceptedSourceObservationRevision {
+                // One source observation has exactly one semantic tuple. A replay of
+                // that tuple is harmless; any changed watts/mode under the same
+                // revision is a caller/source contradiction and fails closed.
+                if normalizedModeKey == activeModeKey,
+                   lastAcceptedWatts == watts,
+                   !requiresNewGeneration {
+                    return true
+                }
+
+                retireCurrentGeneration()
+                return false
+            }
+        }
+
         if normalizedModeKey != activeModeKey {
             guard rebuildSession(modeKey: normalizedModeKey) else {
                 retireCurrentGeneration()
@@ -108,10 +150,12 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
             requiresNewGeneration = false
         }
 
-        // A render tick or unrelated Simulator state publication must not become a
-        // new accepted power observation when the source's semantic watt value did
-        // not change inside the same continuity generation.
-        guard lastAcceptedWatts != watts else {
+        // Without a source revision, preserve the original safe polling behavior:
+        // an unchanged value is not a new accepted measurement. With a strictly
+        // newer source revision, equal watts are real new synthetic evidence and
+        // must refresh accepted currentness/assistive semantic chronology.
+        if sourceObservationRevision == nil,
+           lastAcceptedWatts == watts {
             return true
         }
 
@@ -138,6 +182,9 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
 
         lastAcceptedWatts = watts == 0 ? 0 : watts
         lastAcceptedUptimeNanoseconds = admittedUptime
+        if let sourceObservationRevision {
+            lastAcceptedSourceObservationRevision = sourceObservationRevision
+        }
         if nextReceiptSequenceNumber < UInt64.max {
             nextReceiptSequenceNumber &+= 1
         }
@@ -163,6 +210,8 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
         requiresNewGeneration = true
         lastAcceptedWatts = nil
         lastAcceptedUptimeNanoseconds = nil
+        // Deliberately preserve `lastAcceptedSourceObservationRevision`. A source
+        // callback from before this lifecycle boundary must remain stale after it.
     }
 
     private mutating func rebuildSession(modeKey: String?) -> Bool {
@@ -188,6 +237,8 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
             lastAcceptedWatts = nil
             lastAcceptedUptimeNanoseconds = nil
             requiresNewGeneration = false
+            // Keep the cross-mode source-revision floor. A mode rebinding changes
+            // presentation identity; it does not erase caller source chronology.
             return true
         } catch {
             return false
