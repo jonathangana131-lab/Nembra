@@ -479,6 +479,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func appDidLoseForeground() {
+        guard phase != .accepted else { return }
         guard !foregroundIntegrityLossHandled else { return }
         foregroundIntegrityLossHandled = true
 
@@ -506,6 +507,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        if currentConnectionToken == nil,
+           phase == .correlated || phase == .selected {
+            resetDiscoverySessionOnly()
+            phase = .failed
+            message = "Capture left the foreground after target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; correlated or selected target authority never crosses a foreground interruption."
+            log("foreground_integrity_lost_after_target_correlation")
+            return
+        }
         guard let token = currentConnectionToken else {
             if phase == .authenticating {
                 // OfficialTuyaFactory.make() permanently retires package correlation for this
@@ -1419,15 +1428,29 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        guard let verifiedAccountUID = membershipAccountUID,
+              !verifiedAccountUID.isEmpty,
+              accountIdentityLeaseIsAuthorized else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "Verified Tuya account identity lease became unavailable before application evidence custody.",
+                kind: "sdk_account_identity_lease_missing_before_application_custody"
+            )
+            return
+        }
+        let custodySafeUpdate = TuyaApplicationUpdateSecretSanitizer.redactingAccountUID(
+            in: update,
+            verifiedAccountUID: verifiedAccountUID
+        )
         applicationUpdateAdmissionsInFlight += 1
         defer { applicationUpdateAdmissionsInFlight -= 1 }
 
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            log("tuya_application_update", custodySafeUpdate.merging([
                 "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -2219,51 +2242,9 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
 
     func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {
         guard let dps, !dps.isEmpty else { return }
-        var sanitized: [String: String] = [:]
-        for (key, value) in dps {
-            let keyString = String(describing: key)
-            let normalizedKey = keyString.lowercased().filter { $0.isLetter || $0.isNumber }
-            if Self.secretKeyFragments.contains(where: { normalizedKey.contains($0) }) {
-                sanitized[keyString] = "<redacted>"
-            } else {
-                sanitized[keyString] = String(describing: Self.redactApplicationSecrets(value))
-            }
-        }
-        onApplicationUpdate?(sanitized)
-    }
-
-    private static let secretKeyFragments = [
-        "localkey",
-        "sessionkey",
-        "appkey",
-        "appsecret",
-        "password",
-        "accounttoken",
-        "accesstoken",
-        "refreshtoken",
-        "sessionkey",
-        "authkey",
-        "seckey",
-    ]
-
-    private static func redactApplicationSecrets(_ object: Any) -> Any {
-        if let dictionary = object as? [AnyHashable: Any] {
-            var sanitized: [String: Any] = [:]
-            for (key, value) in dictionary {
-                let keyString = String(describing: key)
-                let normalizedKey = keyString.lowercased().filter { $0.isLetter || $0.isNumber }
-                if secretKeyFragments.contains(where: { normalizedKey.contains($0) }) {
-                    sanitized[keyString] = "<redacted>"
-                } else {
-                    sanitized[keyString] = redactApplicationSecrets(value)
-                }
-            }
-            return sanitized
-        }
-        if let array = object as? [Any] {
-            return array.map(redactApplicationSecrets)
-        }
-        return object
+        onApplicationUpdate?(
+            TuyaApplicationUpdateSecretSanitizer.sanitizeForStringProjection(dps)
+        )
     }
 }
 #endif
