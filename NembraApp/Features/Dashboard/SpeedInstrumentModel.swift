@@ -291,8 +291,9 @@ final class SpeedInstrumentModel {
 
 /// Simulator-only propulsion admission is anchored to a current source-owned
 /// speed observation from the same synthetic fixture, not to aggregate vehicle
-/// connection or `lastUpdated`. The full speed sample remains the wake-up identity;
-/// repeated equal watts are still de-duplicated by the package runtime.
+/// connection or `lastUpdated`. The full speed sample remains the wake-up identity,
+/// and its monotonic receipt uptime is the source-observation revision. A new source
+/// receipt may therefore refresh equal watts without render polling becoming evidence.
 private struct DashboardEnergyRailSimulatorSourceSnapshot: Equatable {
     let watts: Double
     let sourceSample: SpeedTelemetrySample
@@ -414,6 +415,7 @@ struct DashboardSpeedInstrumentView: View {
                 // runtime on a mode-neutral simulator identity until the source
                 // exposes mode-bound propulsion evidence explicitly.
                 modeKey: nil,
+                sourceObservationRevision: snapshot.sourceSample.receivedAtUptimeNanoseconds,
                 receivedAtUptimeNanoseconds: snapshot.sourceSample.receivedAtUptimeNanoseconds
             )
         } else {
