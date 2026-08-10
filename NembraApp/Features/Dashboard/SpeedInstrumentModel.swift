@@ -2,6 +2,7 @@ import Dispatch
 import Foundation
 import Observation
 import SwiftUI
+import enum NembraCore.PropulsionEnergyRailSimulatorSourceCurrentness
 import struct NembraCore.PropulsionEnergyRailSimulatorRuntime
 
 enum SpeedInstrumentDisplayOrigin: Equatable {
@@ -289,21 +290,11 @@ final class SpeedInstrumentModel {
     }
 }
 
-/// Simulator-only propulsion admission is anchored to a current source-owned
-/// speed observation from the same synthetic fixture, not to aggregate vehicle
-/// connection or `lastUpdated`. The full speed sample remains the wake-up identity,
-/// and its monotonic receipt uptime is the source-observation revision. A new source
-/// receipt may therefore refresh equal watts without render polling becoming evidence.
-private struct DashboardEnergyRailSimulatorSourceSnapshot: Equatable {
-    let watts: Double
-    let sourceSample: SpeedTelemetrySample
-}
-
 /// A deliberately narrow high-frequency subtree for the landscape cockpit.
 ///
-/// Only this view redraws on SwiftUI's animation timeline. Vehicle controls,
-/// ride detection, persistence, distance, and safety continue to consume the
-/// accepted domain/source state rather than rendered speed or Energy Rail frames.
+/// Accepted speed and power currentness are owned upstream in `VehicleStore`.
+/// This view only advances render clocks and maps the sealed package projection to
+/// SwiftUI; 60 Hz intermediates never flow back into vehicle state or evidence.
 @MainActor
 struct DashboardSpeedInstrumentView: View {
     @Environment(VehicleStore.self) private var vehicle
@@ -319,14 +310,14 @@ struct DashboardSpeedInstrumentView: View {
         let speedAvailability = rawSpeedAvailability.dashboardPresentationAvailability(
             allowsSimulatorQA: allowsSimulatorQA
         )
-        let energyRailSource = energyRailSimulatorSourceSnapshot
+        let powerAvailability = vehicle.simulatorPowerEvidenceAvailability
 
         TimelineView(
             .animation(
                 minimumInterval: 1.0 / 60.0,
                 paused: reduceMotion || (
                     !(model.isAnimationActive && isLivePresentation(speedAvailability))
-                        && !shouldRunEnergyRailDisplayClock(energyRailSource)
+                        && !isLivePowerPresentation(powerAvailability)
                 )
             )
         ) { _ in
@@ -338,8 +329,7 @@ struct DashboardSpeedInstrumentView: View {
                 allowsSimulatorQA: allowsSimulatorQA
             )
             let energyRailState = energyRailVisualState(
-                atUptimeNanoseconds: now,
-                source: energyRailSource
+                atUptimeNanoseconds: now
             )
 
             instrumentContent(
@@ -354,7 +344,7 @@ struct DashboardSpeedInstrumentView: View {
                 vehicle.speedEvidenceAvailability,
                 allowsSimulatorQA: vehicle.profile == .simulatorQA
             )
-            synchronizeEnergyRailSource(energyRailSimulatorSourceSnapshot)
+            synchronizeEnergyRailSource(vehicle.simulatorPowerEvidenceAvailability)
         }
         .onChange(of: vehicle.speedEvidenceAvailability) { _, availability in
             model.setSpeedEvidenceAvailability(
@@ -362,90 +352,72 @@ struct DashboardSpeedInstrumentView: View {
                 allowsSimulatorQA: vehicle.profile == .simulatorQA
             )
         }
-        .onChange(of: energyRailSimulatorSourceSnapshot) { _, snapshot in
-            synchronizeEnergyRailSource(snapshot)
-        }
-        .onChange(of: vehicle.state.connection) { _, connection in
-            if connection != .connected {
-                synchronizeEnergyRailSource(nil)
-            }
+        .onChange(of: vehicle.simulatorPowerEvidenceAvailability) { _, availability in
+            synchronizeEnergyRailSource(availability)
         }
         .onDisappear {
+            // View lifecycle is not source lifecycle. Do not retire power evidence
+            // merely because navigation removed this render subtree.
             model.stop()
-            synchronizeEnergyRailSource(nil)
         }
-    }
-
-    private var energyRailSimulatorSourceSnapshot: DashboardEnergyRailSimulatorSourceSnapshot? {
-        let sanitizedSpeed = vehicle.speedEvidenceAvailability.dashboardPresentationAvailability(
-            allowsSimulatorQA: true
-        )
-
-        guard vehicle.profile == .simulatorQA,
-              vehicle.profile.capabilities.supportsPowerWatts,
-              vehicle.state.connection == .connected,
-              case let .live(sourceSample) = sanitizedSpeed,
-              sourceSample.source == .simulatorQA,
-              sourceSample.provenance == .absoluteMeasurement,
-              let aggregateSpeed = vehicle.state.speedKilometersPerHour,
-              aggregateSpeed.isFinite,
-              aggregateSpeed >= 0,
-              abs(aggregateSpeed - sourceSample.kilometersPerHour) <= 0.000_001,
-              let aggregateWatts = vehicle.state.powerWatts,
-              aggregateWatts >= 0 else {
-            return nil
-        }
-
-        return DashboardEnergyRailSimulatorSourceSnapshot(
-            watts: Double(aggregateWatts),
-            sourceSample: sourceSample
-        )
     }
 
     private func synchronizeEnergyRailSource(
-        _ snapshot: DashboardEnergyRailSimulatorSourceSnapshot?
+        _ availability: SimulatorPowerEvidenceAvailability
     ) {
         guard var runtime = energyRailRuntime else { return }
 
-        if let snapshot {
-            _ = runtime.observe(
-                connected: true,
-                watts: snapshot.watts,
-                // Synthetic mode changes are not propulsion measurements. Keep the
-                // runtime on a mode-neutral simulator identity until the source
-                // exposes mode-bound propulsion evidence explicitly.
-                modeKey: nil,
-                sourceObservationRevision: snapshot.sourceSample.receivedAtUptimeNanoseconds,
-                receivedAtUptimeNanoseconds: snapshot.sourceSample.receivedAtUptimeNanoseconds
+        guard vehicle.profile == .simulatorQA,
+              vehicle.profile.capabilities.supportsPowerWatts else {
+            _ = runtime.observeSource(currentness: .unavailable)
+            energyRailRuntime = runtime
+            return
+        }
+
+        switch availability {
+        case .unavailable:
+            _ = runtime.observeSource(currentness: .unavailable)
+
+        case let .retained(observation):
+            _ = runtime.observeSource(
+                currentness: .retained,
+                watts: observation.watts,
+                receiptSequenceNumber: observation.receiptSequenceNumber,
+                receivedAtUptimeNanoseconds: observation.receivedAtUptimeNanoseconds,
+                continuityGeneration: observation.continuityGeneration
             )
-        } else {
-            _ = runtime.observe(
-                connected: false,
-                watts: nil,
-                modeKey: nil,
-                receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
+
+        case let .live(observation):
+            _ = runtime.observeSource(
+                currentness: .live,
+                watts: observation.watts,
+                receiptSequenceNumber: observation.receiptSequenceNumber,
+                receivedAtUptimeNanoseconds: observation.receivedAtUptimeNanoseconds,
+                continuityGeneration: observation.continuityGeneration
             )
         }
 
         energyRailRuntime = runtime
     }
 
-    private func shouldRunEnergyRailDisplayClock(
-        _ source: DashboardEnergyRailSimulatorSourceSnapshot?
+    private func isLivePowerPresentation(
+        _ availability: SimulatorPowerEvidenceAvailability
     ) -> Bool {
-        guard let source,
-              source.watts.isFinite,
-              source.watts >= 0 else {
+        guard vehicle.profile == .simulatorQA,
+              vehicle.profile.capabilities.supportsPowerWatts else {
             return false
         }
-        return true
+        if case .live = availability {
+            return true
+        }
+        return false
     }
 
     private func energyRailVisualState(
-        atUptimeNanoseconds uptimeNanoseconds: UInt64,
-        source: DashboardEnergyRailSimulatorSourceSnapshot?
+        atUptimeNanoseconds uptimeNanoseconds: UInt64
     ) -> NembraEnergyRailVisualState? {
-        guard source != nil,
+        guard vehicle.profile == .simulatorQA,
+              vehicle.profile.capabilities.supportsPowerWatts,
               let runtime = energyRailRuntime else {
             return nil
         }
