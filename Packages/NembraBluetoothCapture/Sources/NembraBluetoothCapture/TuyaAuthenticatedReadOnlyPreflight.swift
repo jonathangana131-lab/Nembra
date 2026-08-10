@@ -30,7 +30,10 @@ public struct TuyaAuthenticatedReadOnlyPreflightSnapshot: Equatable, Sendable {
     public let latestApplicationPayloadUptimeNanoseconds: UInt64?
     public let connectionGeneration: UInt64
 
-    public init(
+    /// Package-owned constructor. Production app code must obtain snapshots through an
+    /// accepted `TuyaReadOnlyAuthenticationSessionProvider` instead of minting accepted
+    /// chronology by assembling this value directly.
+    init(
         authenticationState: AuthenticationState,
         authenticationMethod: TuyaReadOnlyAuthenticationMethod? = nil,
         connectionStartedAtUptimeNanoseconds: UInt64?,
