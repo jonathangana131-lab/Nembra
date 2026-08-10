@@ -1,0 +1,54 @@
+name: Capture Procedure Authority
+
+on:
+  push:
+    branches:
+      - main
+      - product/v14-capture-guided-truth-current-sol
+    paths:
+      - NembraApp/App/NembraCaptureBuildIdentity.swift
+      - CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md
+      - docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md
+      - scripts/ci/tests/test_capture_procedure_authority_coherence.py
+      - .github/workflows/capture-procedure-authority.yml
+  pull_request:
+    paths:
+      - NembraApp/App/NembraCaptureBuildIdentity.swift
+      - CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md
+      - docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md
+      - scripts/ci/tests/test_capture_procedure_authority_coherence.py
+      - .github/workflows/capture-procedure-authority.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  procedure-authority:
+    name: Prove one current physical procedure authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind job to exact checked-out source
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Validate procedure authority coherence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/tests/test_capture_procedure_authority_coherence.py
+          python3 scripts/ci/tests/test_capture_procedure_authority_coherence.py
+          git diff --check
