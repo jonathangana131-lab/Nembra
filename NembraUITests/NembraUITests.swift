@@ -94,6 +94,21 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(speed.waitForExistence(timeout: 3))
         XCTAssertFalse((speed.value as? String ?? "").isEmpty)
 
+        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
+        XCTAssertTrue(
+            energyRail.waitForExistence(timeout: 3),
+            "The canonical Energy Rail must be mounted beneath the central speed instrument."
+        )
+        let livePowerValue = energyRail.value as? String ?? ""
+        XCTAssertTrue(
+            livePowerValue.localizedCaseInsensitiveContains("watts"),
+            "Simulator QA must expose package-owned accepted power semantics through the mounted rail."
+        )
+        XCTAssertFalse(
+            livePowerValue.localizedCaseInsensitiveContains("unavailable"),
+            "A valid connected Simulator power observation must not render as unavailable."
+        )
+
         XCTAssertTrue(app.staticTexts["Controls available when stopped"].waitForExistence(timeout: 2))
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
@@ -160,6 +175,17 @@ final class NembraUITests: XCTestCase {
             app.staticTexts["NO LIVE SPEED"].waitForExistence(timeout: 2),
             "Disconnected transport must fail the field-specific speed projection closed."
         )
+
+        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
+        XCTAssertTrue(
+            energyRail.waitForExistence(timeout: 2),
+            "The Energy Rail surface must remain mounted in the disconnected failure state."
+        )
+        XCTAssertTrue(
+            (energyRail.value as? String ?? "").localizedCaseInsensitiveContains("unavailable"),
+            "Disconnected transport must retire propulsion authority instead of retaining or manufacturing watts."
+        )
+
         XCTAssertFalse(app.staticTexts["READY"].exists)
         XCTAssertFalse(app.staticTexts["RIDING"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
