@@ -37,88 +37,103 @@ jobs:
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           source = path.read_text()
 
-          revoke_old = '''        sdkDeviceMembershipVerified = false
-                  membershipAccountUID = nil
-                  membershipDeviceID = nil
-                  membershipRequestID = UUID()
-          '''
-          revoke_new = '''        sdkDeviceMembershipVerified = false
-                  membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."
-                  membershipAccountUID = nil
-                  membershipDeviceID = nil
-                  membershipRequestID = UUID()
-          '''
-          count = source.count(revoke_old)
-          if count != 2:
-              raise SystemExit(f"expected exactly 2 membership revocation seams, found {count}")
-          source = source.replace(revoke_old, revoke_new)
+          def replace_once_in_section(text, start, end, old, new):
+              start_index = text.index(start)
+              end_index = text.index(end, start_index + len(start))
+              body = text[start_index:end_index]
+              count = body.count(old)
+              if count != 1:
+                  raise SystemExit(f"{start}: expected exactly one repair seam, found {count}")
+              body = body.replace(old, new, 1)
+              return text[:start_index] + body + text[end_index:]
 
-          receiver_marker = '''    private func receivedApplicationUpdate(
-          '''
+          authority_old = (
+              "        sdkDeviceMembershipVerified = false\n"
+              "        membershipAccountUID = nil\n"
+          )
+          authority_new = (
+              "        sdkDeviceMembershipVerified = false\n"
+              "        membershipStatus = \"Exact scooter membership must be verified again for this Secure Link session.\"\n"
+              "        membershipAccountUID = nil\n"
+          )
+          source = replace_once_in_section(
+              source,
+              "func abandonCorrelationForViewExit()",
+              "func appDidLoseForeground()",
+              authority_old,
+              authority_new,
+          )
+          source = replace_once_in_section(
+              source,
+              "func appDidLoseForeground()",
+              "var privateConfig: Bool",
+              authority_old,
+              authority_new,
+          )
+
+          receiver_marker = "    private func receivedApplicationUpdate(\n"
           if source.count(receiver_marker) != 1:
               raise SystemExit("application update receiver marker drifted")
 
           helper = '''    private func redactVerifiedAccountUIDFromApplicationEvidence(
-                  _ update: [String: String]
-              ) -> [String: String] {
-                  let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                  guard !accountUID.isEmpty else { return update }
+        _ update: [String: String]
+    ) -> [String: String] {
+        let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !accountUID.isEmpty else { return update }
 
-                  var redacted: [String: String] = [:]
-                  redacted.reserveCapacity(update.count)
-                  for (key, value) in update {
-                      let redactedKey = key.replacingOccurrences(
-                          of: accountUID,
-                          with: "<redacted-account-uid>",
-                          options: [.literal]
-                      )
-                      let redactedValue = value.replacingOccurrences(
-                          of: accountUID,
-                          with: "<redacted-account-uid>",
-                          options: [.literal]
-                      )
+        var redacted: [String: String] = [:]
+        redacted.reserveCapacity(update.count)
+        for (key, value) in update {
+            let redactedKey = key.replacingOccurrences(
+                of: accountUID,
+                with: "<redacted-account-uid>",
+                options: [.literal]
+            )
+            let redactedValue = value.replacingOccurrences(
+                of: accountUID,
+                with: "<redacted-account-uid>",
+                options: [.literal]
+            )
 
-                      if redacted[redactedKey] == nil {
-                          redacted[redactedKey] = redactedValue
-                      } else {
-                          var suffix = 2
-                          var disambiguatedKey = "\\(redactedKey)#\\(suffix)"
-                          while redacted[disambiguatedKey] != nil {
-                              suffix += 1
-                              disambiguatedKey = "\\(redactedKey)#\\(suffix)"
-                          }
-                          redacted[disambiguatedKey] = redactedValue
-                      }
-                  }
-                  return redacted
-              }
+            if redacted[redactedKey] == nil {
+                redacted[redactedKey] = redactedValue
+            } else {
+                var suffix = 2
+                var disambiguatedKey = "\\(redactedKey)#\\(suffix)"
+                while redacted[disambiguatedKey] != nil {
+                    suffix += 1
+                    disambiguatedKey = "\\(redactedKey)#\\(suffix)"
+                }
+                redacted[disambiguatedKey] = redactedValue
+            }
+        }
+        return redacted
+    }
 
-          '''
+'''
           source = source.replace(receiver_marker, helper + receiver_marker, 1)
 
           event_old = '''            log("tuya_application_update", update.merging([
-                      "generation": String(token.diagnosticGeneration)
-                  ]) { current, _ in current })
-          '''
+                "generation": String(token.diagnosticGeneration)
+            ]) { current, _ in current })'''
           event_new = '''            let redactedUpdate = redactVerifiedAccountUIDFromApplicationEvidence(update)
-                  log("tuya_application_update", redactedUpdate.merging([
-                      "generation": String(token.diagnosticGeneration)
-                  ]) { _, trusted in trusted })
-          '''
+            log("tuya_application_update", redactedUpdate.merging([
+                "generation": String(token.diagnosticGeneration)
+            ]) { _, trusted in trusted })'''
           if source.count(event_old) != 1:
               raise SystemExit("application event merge seam drifted")
           source = source.replace(event_old, event_new, 1)
 
-          duplicate_session_key = '''        "refreshtoken",
-                  "sessionkey",
-                  "authkey",
-          '''
-          simplified_session_key = '''        "refreshtoken",
-                  "authkey",
-          '''
-          if source.count(duplicate_session_key) != 1:
-              raise SystemExit("expected duplicated sessionkey classifier seam not found")
-          source = source.replace(duplicate_session_key, simplified_session_key, 1)
+          list_start = source.index("    private static let secretKeyFragments = [")
+          list_end = source.index("    ]", list_start)
+          secret_list = source[list_start:list_end]
+          if secret_list.count('"sessionkey"') != 2:
+              raise SystemExit("expected exactly two sessionkey secret classifiers before normalization")
+          last = secret_list.rfind('        "sessionkey",\n')
+          if last < 0:
+              raise SystemExit("duplicate sessionkey classifier formatting drifted")
+          secret_list = secret_list[:last] + secret_list[last + len('        "sessionkey",\n'):]
+          source = source[:list_start] + secret_list + source[list_end:]
 
           path.write_text(source)
           PY
@@ -151,6 +166,8 @@ jobs:
           receiver = section("private func receivedApplicationUpdate(", "private func startWatchdog")
           if 'log("tuya_application_update", update.merging([' in receiver:
               raise SystemExit("raw application dictionary still enters event custody")
+          if 'let redactedUpdate = redactVerifiedAccountUIDFromApplicationEvidence(update)' not in receiver:
+              raise SystemExit("verified account UID redaction is not on the event-custody path")
           if '"generation": String(token.diagnosticGeneration)' not in receiver:
               raise SystemExit("trusted generation provenance missing")
           if ') { _, trusted in trusted })' not in receiver:
@@ -158,6 +175,15 @@ jobs:
 
           if "<redacted-account-uid>" not in source:
               raise SystemExit("exact verified account UID redaction marker missing")
+          helper = section(
+              "private func redactVerifiedAccountUIDFromApplicationEvidence(",
+              "private func receivedApplicationUpdate("
+          )
+          if "membershipAccountUID" not in helper:
+              raise SystemExit("redaction is not bound to the exact verified account UID value")
+          if "for (key, value) in update" not in helper:
+              raise SystemExit("redaction does not inspect both application keys and values")
+
           driver = section("@MainActor\nprivate final class SmartLifeDriver", "#endif\n\nprivate enum AppleAccountAuthorizationError")
           if '"uid",' in driver or '"uid"\n' in driver:
               raise SystemExit("generic uid key was incorrectly classified as a secret")
