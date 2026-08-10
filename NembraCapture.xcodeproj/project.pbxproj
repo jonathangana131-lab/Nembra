@@ -9,6 +9,7 @@
 		A10000000000000000000002 /* ES80CaptureShellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* ES80CaptureShellView.swift */; };
 		A10000000000000000000004 /* NembraCaptureEntrypoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* NembraCaptureEntrypoint.swift */; };
 		A10000000000000000000005 /* TuyaAccountBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000005 /* TuyaAccountBridge.swift */; };
+		A10000000000000000000006 /* NembraBluetoothCapture in Frameworks */ = {isa = PBXBuildFile; productRef = 600100000000000000000001 /* NembraBluetoothCapture */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -22,7 +23,9 @@
 		F10000000000000000000001 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
-			files = ();
+			files = (
+				A10000000000000000000006 /* NembraBluetoothCapture in Frameworks */,
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -68,6 +71,9 @@
 			buildRules = ();
 			dependencies = ();
 			name = "Nembra Capture";
+			packageProductDependencies = (
+				600100000000000000000001 /* NembraBluetoothCapture */,
+			);
 			productName = "Nembra Capture";
 			productReference = B10000000000000000000003 /* Nembra Capture.app */;
 			productType = "com.apple.product-type.application";
@@ -93,6 +99,9 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (en, Base);
 			mainGroup = G10000000000000000000001;
+			packageReferences = (
+				500100000000000000000001 /* XCLocalSwiftPackageReference "Packages/NembraBluetoothCapture" */,
+			);
 			productRefGroup = G10000000000000000000003 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -229,6 +238,21 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		500100000000000000000001 /* XCLocalSwiftPackageReference "Packages/NembraBluetoothCapture" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/NembraBluetoothCapture;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		600100000000000000000001 /* NembraBluetoothCapture */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 500100000000000000000001 /* XCLocalSwiftPackageReference "Packages/NembraBluetoothCapture" */;
+			productName = NembraBluetoothCapture;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = P10000000000000000000001 /* Project object */;
 }
