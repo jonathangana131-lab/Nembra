@@ -1485,7 +1485,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                             self.sdkLocalBLEOnline = false
                             self.driver = nil
                             self.phase = .failed
-                            self.message = "Source authority changed while canonical acceptance was sealing. Restart from OFF1; the sealed package chronology is diagnostic only."
+                            self.message = "Source authority changed while canonical acceptance was sealing. Relaunch Capture before a new stationary read-only attempt; the sealed package chronology is diagnostic only."
                             self.log("source_authority_changed_during_acceptance_seal", [
                                 "generation": String(token.diagnosticGeneration)
                             ])
@@ -1496,7 +1496,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                             self.localBLESettlementToken = nil
                             self.sdkLocalBLEOnline = false
                             self.phase = .failed
-                            self.message = "Tuya local-BLE authority became unavailable after canonical acceptance sealed. Restart from OFF1; no disconnect time is inferred."
+                            self.message = "Tuya local-BLE authority became unavailable after canonical acceptance sealed. Relaunch Capture before a new stationary read-only attempt; no disconnect time is inferred."
                             self.log("sdk_local_ble_authority_missing_after_acceptance_seal", [
                                 "generation": String(token.diagnosticGeneration)
                             ])
@@ -1509,7 +1509,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                             self.localBLESettlementToken = nil
                             self.driver = nil
                             self.phase = .failed
-                            self.message = "Tuya local-BLE authority was no longer current after canonical acceptance sealed. Restart from OFF1; no disconnect time is inferred."
+                            self.message = "Tuya local-BLE authority was no longer current after canonical acceptance sealed. Relaunch Capture before a new stationary read-only attempt; no disconnect time is inferred."
                             self.log("sdk_local_ble_not_current_after_acceptance_seal", [
                                 "generation": String(token.diagnosticGeneration)
                             ])
@@ -1583,7 +1583,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     self.driver = nil
                     await self.refreshLedgerSnapshot()
                     self.phase = .failed
-                    self.message = "Authenticated session produced no application update before the observation deadline. Export diagnostics; do not repeat the ride capture."
+                    self.message = "Authenticated session produced no application update before the observation deadline. Export diagnostics; relaunch Capture before any new stationary read-only attempt."
                     self.log("authenticated_application_timeout", ["generation": String(token.diagnosticGeneration)])
                     return
                 }
@@ -1622,7 +1622,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         driver = nil
         await refreshLedgerSnapshot()
         phase = .failed
-        message = "Tuya's current local-BLE session ended before acceptance. Export diagnostics; do not repeat the outdoor ride capture."
+        message = "Tuya's current local-BLE session ended before acceptance. Export diagnostics; relaunch Capture before any new stationary read-only attempt."
         log("sdk_local_ble_dropped", ["generation": String(token.diagnosticGeneration)])
     }
 
@@ -1806,7 +1806,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         if phase == .accepted {
             guard let sealedAcceptedExport else {
                 exportData = nil
-                message = "Accepted diagnostics cannot be exported because the immutable accepted artifact is unavailable. Restart from OFF1 rather than rebuilding accepted evidence from mutable post-seal state."
+                message = "Accepted diagnostics cannot be exported because the immutable accepted artifact is unavailable. Relaunch Capture before a new stationary read-only attempt; do not rebuild accepted evidence from mutable post-seal state."
                 return
             }
             envelope = sealedAcceptedExport
