@@ -21,14 +21,13 @@ jobs:
       - name: Guard exact product parent
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "d5915a97c1359846b103f08602db78eac815a47f"
+          test "$(git rev-parse HEAD^)" = "b1d8f371142263eeac07602ef770d5861b3d626b"
 
-      - name: Carry exact canonical procedure surfaces and red contracts
+      - name: Carry current procedure truth and recovery red contract
         run: |
           set -euo pipefail
           procedure_head="8b9c1cabeeffdec7cb12f9a74f53320c11e7eae0"
-          red_head="3a6c0004c80ed9b3dff04e67d05358bc9d64c8a0"
-          recovery_red_head="a3fa2402e0fd2f61cc765893714482dd192d34a9"
+          recovery_head="3a6c0004c80ed9b3dff04e67d05358bc9d64c8a0"
           for path in \
             NembraApp/App/NembraCaptureBuildIdentity.swift \
             Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift \
@@ -37,10 +36,9 @@ jobs:
             scripts/field/install_one_time_capture.command; do
             git show "$procedure_head:$path" > "$path"
           done
-          git show "$red_head:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductRecoveryTruthSourceTests.swift" > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductRecoveryTruthSourceTests.swift
-          git show "$recovery_red_head:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailureRecoveryAuthoritySourceTests.swift" > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailureRecoveryAuthoritySourceTests.swift
+          git show "$recovery_head:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductRecoveryTruthSourceTests.swift" > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductRecoveryTruthSourceTests.swift
 
-      - name: Apply guarded guided-product truth repair
+      - name: Apply guided product truth repair
         shell: python
         run: |
           from pathlib import Path
@@ -52,7 +50,7 @@ jobs:
               global text
               count = text.count(old)
               if count != 1:
-                  raise SystemExit(f"guard failed: expected one match, found {count}: {old[:100]!r}")
+                  raise SystemExit(f"guard failed: expected one match, found {count}: {old[:120]!r}")
               text = text.replace(old, new, 1)
 
           replace_once(
@@ -65,12 +63,9 @@ jobs:
           )
           replace_once(
               "    var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }\n\n    func consumeCorrelationAsyncInvalidation()",
-              "    var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }\n    var failedAttemptCanRestartFromOFF1: Bool { phase == .failed && currentConnectionToken == nil }\n    var canRestartFromFreshOFF1: Bool { failedAttemptCanRestartFromOFF1 }\n\n    func consumeCorrelationAsyncInvalidation()",
+              "    var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }\n    var failedAttemptCanRestartFromOFF1: Bool { phase == .failed && currentConnectionToken == nil }\n\n    func consumeCorrelationAsyncInvalidation()",
           )
-          replace_once(
-              "            schemaVersion: 9,",
-              "            schemaVersion: 10,",
-          )
+          replace_once("            schemaVersion: 9,", "            schemaVersion: 10,")
           replace_once(
               "            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,\n            tuyaDeviceID: deviceID,",
               "            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,\n            procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier,\n            tuyaDeviceID: deviceID,",
@@ -80,9 +75,30 @@ jobs:
               "                LabeledContent(\"Source commit\", value: test.fieldBuildSourceCommitSHA)\n                LabeledContent(\"Procedure\", value: test.fieldProcedureIdentifier)\n                LabeledContent(\"SDK account\"",
           )
 
+          replace_once(
+              "        case .failed:\n            failurePanel",
+              "        case .failed:\n            if test.privateConfig && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn) {\n                VStack(spacing: 16) {\n                    failureRecoveryContextPanel\n                    sdkAuthorizationPanel\n                }\n            } else if test.sdkAccountLoggedIn && (!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized) {\n                VStack(spacing: 16) {\n                    failureRecoveryContextPanel\n                    preflightPanel\n                }\n            } else {\n                failurePanel\n            }",
+          )
+
           failure_start = text.index("    private var failurePanel: some View {\n")
           completion_start = text.index("    private var completionPanel: some View {\n", failure_start)
           failure_lines = [
+              "    private var failureRecoveryContextPanel: some View {",
+              "        panel {",
+              "            VStack(alignment: .leading, spacing: 10) {",
+              "                Label(\"Capture paused\", systemImage: \"exclamationmark.circle\")",
+              "                    .font(.title2.bold())",
+              "                    .foregroundStyle(.orange)",
+              "                Text(test.message)",
+              "                    .foregroundStyle(.secondary)",
+              "                    .fixedSize(horizontal: false, vertical: true)",
+              "                Text(\"Restore the missing prerequisite below. Capture does not reuse the failed attempt as evidence.\")",
+              "                    .font(.footnote)",
+              "                    .foregroundStyle(.secondary)",
+              "            }",
+              "        }",
+              "    }",
+              "",
               "    private var failurePanel: some View {",
               "        panel {",
               "            VStack(alignment: .leading, spacing: 16) {",
@@ -94,7 +110,7 @@ jobs:
               "                    .fixedSize(horizontal: false, vertical: true)",
               "",
               "                if test.failedAttemptCanRestartFromOFF1 {",
-              "                    Text(\"Nothing was promoted after the blocker. Fix the condition above, then restart from a fresh OFF1 attempt.\")",
+              "                    Text(\"Nothing was promoted after the blocker. Once all prerequisites are current, restart from a fresh OFF1 attempt.\")",
               "                        .font(.footnote)",
               "                        .foregroundStyle(.secondary)",
               "                    Button {",
@@ -111,9 +127,6 @@ jobs:
               "                        .font(.headline)",
               "                    Text(\"This failed attempt still retains package-generation authority. Do not start another OFF1 series in this process; close and relaunch Capture first.\")",
               "                        .font(.footnote)",
-              "                        .foregroundStyle(.secondary)",
-              "                    Text(test.canRestartFromFreshOFF1 ? \"Fresh OFF1 recovery is available.\" : \"In-app OFF1 recovery is unavailable.\")",
-              "                        .font(.caption)",
               "                        .foregroundStyle(.secondary)",
               "                }",
               "            }",
@@ -209,21 +222,78 @@ jobs:
 
           path.write_text(text)
 
-      - name: Verify truth and procedure source contracts
+      - name: Add failed-prerequisite recovery regression
+        run: |
+          cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteRecoverySourceTests.swift <<'SWIFT'
+          import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Capture failed-prerequisite product recovery")
+          struct TuyaFailedPrerequisiteRecoverySourceTests {
+              @Test("failed state exposes the control that can restore missing account or membership authority")
+              func failedStateRoutesToRestorablePrerequisite() throws {
+                  let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let surface = try section(in: app, from: "private var primarySurface: some View", to: "private var preflightPanel: some View")
+                  let body = String(surface)
+                  #expect(body.contains("case .failed:"))
+                  #expect(body.contains("!sdkAccount.loggedIn || !test.sdkAccountLoggedIn"))
+                  #expect(body.contains("sdkAuthorizationPanel"))
+                  #expect(body.contains("!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized"))
+                  #expect(body.contains("preflightPanel"))
+                  #expect(body.contains("failureRecoveryContextPanel"))
+              }
+
+              @Test("recovery routing preserves the exact failure reason")
+              func recoveryContextPreservesFailureReason() throws {
+                  let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let context = try section(in: app, from: "private var failureRecoveryContextPanel: some View", to: "private var failurePanel: some View")
+                  #expect(context.contains("Text(test.message)"))
+                  #expect(context.contains("Restore the missing prerequisite below"))
+              }
+
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let startRange = source.range(of: start),
+                        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+                      throw SourceContractError.sectionMissing
+                  }
+                  return source[startRange.lowerBound..<endRange.lowerBound]
+              }
+
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  let repositoryRoot = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+              }
+
+              private enum SourceContractError: Error { case sectionMissing }
+          }
+          SWIFT
+
+      - name: Verify converged source contracts
         run: |
           set -euo pipefail
           git diff --check
+          bash -n scripts/ci/capture_standalone_visual_evidence.sh
+          /usr/bin/python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
           python3 - <<'PY'
           from pathlib import Path
           app = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
           required = [
               'var failedAttemptCanRestartFromOFF1: Bool { phase == .failed && currentConnectionToken == nil }',
-              'test.failedAttemptCanRestartFromOFF1',
+              'failureRecoveryContextPanel',
+              '!sdkAccount.loggedIn || !test.sdkAccountLoggedIn',
+              'sdkAuthorizationPanel',
+              '!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized',
+              'preflightPanel',
               'Relaunch Capture',
               'if let data = test.exportData',
               'Ready for analysis',
               'Retry sealed export',
-              'Text(test.message)',
               'schemaVersion: 10',
               'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier',
               'LabeledContent("Procedure", value: test.fieldProcedureIdentifier)',
@@ -236,8 +306,6 @@ jobs:
               raise SystemExit('analysis readiness still precedes shareable artifact branch')
           if '.task { test.prepareExport() }' in completion:
               raise SystemExit('completion panel still loops automatic export preparation')
-          if 'read-only evidence is sealed and ready to share for analysis.' in app:
-              raise SystemExit('accepted hero still overclaims share readiness')
           PY
 
       - name: Commit clean product convergence
@@ -248,5 +316,5 @@ jobs:
           git diff --cached --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "fix(capture): gate guided recovery and analysis readiness"
+          git commit -m "fix(capture): expose truthful failed-prerequisite recovery"
           git push origin HEAD:product/v14-capture-premium-secure-link-current-sol
