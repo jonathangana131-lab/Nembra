@@ -6,15 +6,17 @@ import Testing
 struct TuyaFieldProcedureRendezvousSourceTests {
     private static let procedure = "ES80-AUTHENTICATED-STATIONARY-v1"
 
-    @Test("compiled app identity and immutable accepted export record one exact procedure")
-    func appAndAcceptedArtifactShareCanonicalProcedure() throws {
+    @Test("compiled app identity and exports distinguish required from actually built procedure")
+    func appAndArtifactUseBuiltProcedureTruth() throws {
         let identity = try readRepositoryFile("NembraApp/App/NembraCaptureBuildIdentity.swift")
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
-        #expect(identity.contains("static let fieldProcedureIdentifier = \"\(Self.procedure)\""))
+        #expect(identity.contains("static let requiredFieldProcedureIdentifier = \"\(Self.procedure)\""))
         #expect(identity.contains("procedureIdentifierInfoKey = \"NembraCaptureProcedureIdentifier\""))
         #expect(identity.contains("let procedureIdentifier: String"))
-        #expect(identity.contains("procedureIdentifier == Self.fieldProcedureIdentifier"))
+        #expect(identity.contains("procedureIdentifier == Self.requiredFieldProcedureIdentifier"))
+        #expect(identity.contains("static var fieldProcedureIdentifier: String"))
+        #expect(identity.contains("current.procedureIdentifier"))
         #expect(app.contains("let procedureIdentifier: String"))
         #expect(app.contains("var fieldProcedureIdentifier: String { NembraCaptureBuildIdentity.fieldProcedureIdentifier }"))
         #expect(app.contains("procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier"))
@@ -23,7 +25,7 @@ struct TuyaFieldProcedureRendezvousSourceTests {
         #expect(!app.contains("schemaVersion: 9"))
     }
 
-    @Test("canonical runbook and field installer pin the same exact procedure")
+    @Test("canonical runbook and field installer pin the same exact required procedure")
     func fieldSurfacesShareCanonicalProcedure() throws {
         let runbook = try readRepositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
@@ -47,7 +49,9 @@ struct TuyaFieldProcedureRendezvousSourceTests {
         let runbook = try readRepositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
 
-        #expect(identity.contains("static let fieldProcedureIdentifier = \"\(Self.procedure)\""))
+        #expect(identity.contains("static let requiredFieldProcedureIdentifier = \"\(Self.procedure)\""))
+        #expect(identity.contains("static var fieldProcedureIdentifier: String"))
+        #expect(identity.contains("current.procedureIdentifier"))
         #expect(app.contains("NembraCaptureBuildIdentity.fieldProcedureIdentifier"))
         #expect(runbook.contains(Self.procedure))
         #expect(installer.contains(Self.procedure))
