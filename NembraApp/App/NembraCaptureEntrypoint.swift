@@ -598,6 +598,24 @@ private final class SecureLinkController: NSObject, ObservableObject {
             failLocally("Fresh Bluetooth correlation authority is unavailable. Restart from OFF1.", "target_correlation_authority_unavailable")
             return
         }
+        guard OfficialTuyaFactory.packageCorrelationMayStart else {
+            session.abandonCurrentWindow()
+            correlationSession = nil
+            failLocally(
+                "Tuya BLE ownership was attempted before this correlation window. Relaunch Capture with the scooter OFF and restart from a fresh OFF1 series.",
+                "process_tuya_ble_ownership_blocks_correlation_window"
+            )
+            return
+        }
+        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {
+            session.abandonCurrentWindow()
+            correlationSession = nil
+            failLocally(
+                "Tuya local-BLE ownership became active before this correlation window. Relaunch Capture with the scooter OFF and restart from a fresh OFF1 series; package-owned scanning will not overlap Tuya BLE ownership.",
+                "tuya_local_ble_ownership_blocks_correlation_window"
+            )
+            return
+        }
 
         let label = correlationWindowLabel
         do {
