@@ -1,0 +1,42 @@
+name: Validate Capture Apple identity Python contract
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-apple-python-contract-adc9-sol
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-apple-python-contract-adc9-sol
+          fetch-depth: 0
+      - name: Guard exact current product and run focused contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='adc9e3528029a1a0c090972cf9a72ec846935d65'
+          test "$(git merge-base HEAD "$parent")" = "$parent"
+          unexpected="$(git diff --name-only "$parent"...HEAD | grep -Ev '^(.github/workflows/validate-capture-apple-python-contract-sol.yml|scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py)$' || true)"
+          test -z "$unexpected"
+          python3 -m py_compile scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
+          python3 scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
+          bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+      - name: Retire validation workflow
+        shell: bash
+        env:
+          BRANCH: fix/v14-capture-apple-python-contract-adc9-sol
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/validate-capture-apple-python-contract-sol.yml
+          git commit -m "chore(capture): retire Apple Python-contract validator"
+          git push origin "HEAD:$BRANCH"
