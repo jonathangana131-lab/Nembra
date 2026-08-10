@@ -189,6 +189,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     static let knownPeripheral = UUID(uuidString: "6815A5F5-4D1E-E004-BAE8-6DF924123907")!
     static let fd50 = CBUUID(string: "FD50")
+    static let maximumObservationPollGapNanoseconds: UInt64 = 5_000_000_000
 
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var message = "Start with the scooter OFF. This test only identifies it and proves Tuya's supported secure session."
@@ -222,6 +223,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var watchdog: Task<Void, Never>?
     private let sessionLedger = TuyaAuthenticatedReadOnlySessionLedger()
     private var currentConnectionToken: TuyaReadOnlyConnectionToken?
+    private var lastObservationPollUptimeNanoseconds: UInt64?
 #if canImport(ThingSmartHomeKit)
     private var membershipProbe: OfficialTuyaMembershipProbe?
 #endif
@@ -448,6 +450,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         watchdog?.cancel()
         watchdog = nil
         sdkLocalBLEOnline = false
+        lastObservationPollUptimeNanoseconds = nil
         phase = .authenticating
         message = "Tuya's SDK is establishing the supported secure BLE session. Nembra sends no DP command."
 
@@ -475,8 +478,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     success: { [weak self] in
                         Task { @MainActor in await self?.authenticated(token: token) }
                     },
-                    failure: { [weak self] error in
-                        Task { @MainActor in await self?.authenticationFailed(error, token: token) }
+                    failure: { [weak self] in
+                        Task { @MainActor in await self?.authenticationFailed(token: token) }
                     }
                 )
             } catch {
@@ -499,6 +502,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.markAuthenticated(for: token, method: .smartLifeAppSDK)
             sdkLocalBLEOnline = true
+            lastObservationPollUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
             await refreshLedgerSnapshot()
             phase = .observing
             message = "Secure Tuya session established for generation \(token.diagnosticGeneration). Waiting for genuine application updates while the SDK remains the only BLE owner…"
@@ -512,14 +516,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
     }
 
-    private func authenticationFailed(_ error: String, token: TuyaReadOnlyConnectionToken) async {
+    private func authenticationFailed(token: TuyaReadOnlyConnectionToken) async {
         guard currentConnectionToken == token else {
             log("stale_connect_failure_ignored", ["generation": String(token.diagnosticGeneration)])
             return
         }
         try? await sessionLedger.markAuthenticationFailed(for: token)
         await refreshLedgerSnapshot()
-        fail(error, "official_connect_failed")
+        fail("Tuya SmartLife SDK did not establish the BLE session.", "official_connect_failed")
     }
 
     private func receivedApplicationUpdate(_ update: [String: String], token: TuyaReadOnlyConnectionToken) async {
@@ -559,12 +563,34 @@ private final class SecureLinkController: NSObject, ObservableObject {
                       self.secureSessionEstablished,
                       let driver = self.driver else { return }
 
+                let pollNow = DispatchTime.now().uptimeNanoseconds
+                if let priorPoll = self.lastObservationPollUptimeNanoseconds {
+                    guard pollNow >= priorPoll else {
+                        try? await self.sessionLedger.endConnection(for: token)
+                        await self.refreshLedgerSnapshot()
+                        self.currentConnectionToken = nil
+                        self.lastObservationPollUptimeNanoseconds = nil
+                        self.fail("Monotonic observation time regressed. The authenticated continuity window is invalid.", "observation_continuity_clock_regressed")
+                        return
+                    }
+                    if pollNow - priorPoll > Self.maximumObservationPollGapNanoseconds {
+                        try? await self.sessionLedger.endConnection(for: token)
+                        await self.refreshLedgerSnapshot()
+                        self.currentConnectionToken = nil
+                        self.lastObservationPollUptimeNanoseconds = nil
+                        self.fail("The app could not observe local BLE continuously enough to trust the 45-second window. Keep Nembra Capture foreground and retry this stationary test.", "observation_continuity_gap")
+                        return
+                    }
+                }
+                self.lastObservationPollUptimeNanoseconds = pollNow
+
                 let locallyOnline = driver.isLocallyConnected(uuid: self.tuyaUUID)
                 self.sdkLocalBLEOnline = locallyOnline
                 if !locallyOnline {
                     try? await self.sessionLedger.endConnection(for: token)
                     await self.refreshLedgerSnapshot()
                     self.currentConnectionToken = nil
+                    self.lastObservationPollUptimeNanoseconds = nil
                     self.fail("Tuya's local BLE session dropped before acceptance. Export diagnostics; do not repeat the outdoor ride capture.", "sdk_local_ble_dropped")
                     return
                 }
@@ -655,6 +681,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         baseline.removeAll()
         selectedID = nil
         sdkLocalBLEOnline = false
+        lastObservationPollUptimeNanoseconds = nil
         exportData = nil
         if let token = currentConnectionToken {
             currentConnectionToken = nil
@@ -669,6 +696,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private func fail(_ text: String, _ kind: String) {
         watchdog?.cancel()
         watchdog = nil
+        lastObservationPollUptimeNanoseconds = nil
         phase = .failed
         message = text
         log(kind, ["message": sanitize(text)])
@@ -763,7 +791,7 @@ private protocol OfficialTuyaDriver: AnyObject {
         productID: String,
         onApplicationUpdate: @escaping ([String: String]) -> Void,
         success: @escaping () -> Void,
-        failure: @escaping (String) -> Void
+        failure: @escaping () -> Void
     )
     func isLocallyConnected(uuid: String) -> Bool
 }
@@ -933,10 +961,10 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         productID: String,
         onApplicationUpdate: @escaping ([String: String]) -> Void,
         success: @escaping () -> Void,
-        failure: @escaping (String) -> Void
+        failure: @escaping () -> Void
     ) {
         guard OfficialTuyaFactory.bootstrap() else {
-            failure("Private Tuya SDK credentials are missing.")
+            failure()
             return
         }
         self.onApplicationUpdate = onApplicationUpdate
@@ -946,7 +974,7 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
             withUUID: uuid,
             productKey: productID,
             success: success,
-            failure: { failure("Tuya SmartLife SDK did not establish the BLE session.") }
+            failure: failure
         )
     }
 
