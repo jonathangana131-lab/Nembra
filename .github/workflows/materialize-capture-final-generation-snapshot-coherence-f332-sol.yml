@@ -28,13 +28,15 @@ jobs:
           test "$(git diff --name-only f332b37671417038e1a210476bc9129e62c9bcc7 HEAD | sort)" = "$(printf '%s\n' '.github/workflows/materialize-capture-final-generation-snapshot-coherence-f332-sol.yml' 'scripts/ci/tests/test_capture_tuya_private_input_record_final_snapshot_coherence.py' | sort)"
           python3 - <<'PY'
           from pathlib import Path
+          from textwrap import dedent
 
           path = Path('Scripts/capture_tuya_private_input_provenance.py')
           source = path.read_text(encoding='utf-8')
           start = source.index('def _private_input_record_generation_snapshot(')
           end = source.index('\ndef build_record(', start)
           current = source[start:end]
-          expected = '''def _private_input_record_generation_snapshot(
+          expected = dedent('''\
+          def _private_input_record_generation_snapshot(
               *,
               lockfile: Path,
               security_podspec: Path,
@@ -50,11 +52,12 @@ jobs:
                   ("identity_sources", _tree_generation_snapshot(identity_sources)),
               )
           
-          '''.replace('          ', '')
+          ''')
           if current != expected:
               raise SystemExit('current generation snapshot source drifted from reviewed parent')
 
-          replacement = '''def _revalidate_tree_generation_snapshot(
+          replacement = dedent('''\
+          def _revalidate_tree_generation_snapshot(
               root: Path,
               snapshot: tuple[tuple[object, ...], ...],
           ) -> None:
@@ -146,7 +149,7 @@ jobs:
 
               return snapshot
           
-          '''.replace('          ', '')
+          ''')
           path.write_text(source[:start] + replacement + source[end:], encoding='utf-8')
           PY
 
