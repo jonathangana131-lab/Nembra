@@ -26,20 +26,44 @@ The earlier shell example correctly rejected symlinked private directories and e
 
 This is private-input custody only. A successful helper invocation does not mean the signed candidate is accepted and does not grant permission to scan.
 
-## Operator use
+## Frozen-source boundary
 
-Use a physical absolute home path and the exact frozen outer source checkout already required by `docs/ES80_TODAY_SIGNED_FIELD_CANDIDATE_PRODUCTION.md`:
+The exact Capture field source `a0f4…` is intentionally frozen and therefore does **not** contain this later operator helper. Do not copy a moving `main` helper into `FIELD_SOURCE`, do not commit tooling into the frozen worktree, and do not substitute a newer app source SHA merely to gain the helper.
+
+The helper must be materialized from a separate trusted local Nembra tooling repository exactly like the already accepted external pre-signing helper. The current candidate helper identity is:
+
+- helper source commit: `05ce6d9a20487ab34aa31c5b6456910ed2ed438f`;
+- helper path: `scripts/ci/es80_today_private_device_input.py`;
+- helper Git blob: `9a9f7f724ceaf895e52d6d443d326043f97645c8`.
+
+These bytes remain non-authorizing. Before this helper is used for an actual field candidate, this PR/lineage itself must be accepted into the trusted handoff. Until then, keep following the currently accepted production gates and keep Experiment One NO-GO.
+
+## Operator materialization and use after acceptance
+
+Start with the exact frozen outer `FIELD_SOURCE` and a separate tooling repository containing the accepted helper commit. Materialize and verify the helper outside both the frozen source and the retained candidate directory:
 
 ```bash
 set -euo pipefail
 umask 077
+
+PRIVATE_INPUT_HELPER_COMMIT='05ce6d9a20487ab34aa31c5b6456910ed2ed438f'
+PRIVATE_INPUT_HELPER_BLOB='9a9f7f724ceaf895e52d6d443d326043f97645c8'
+TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
+PRIVATE_INPUT_HELPER_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-private-input.XXXXXX)"
+PRIVATE_INPUT_HELPER="$PRIVATE_INPUT_HELPER_DIR/es80_today_private_device_input.py"
+
+cd "$TOOL_REPO"
+/usr/bin/git cat-file -e "$PRIVATE_INPUT_HELPER_COMMIT^{commit}"
+test "$(/usr/bin/git rev-parse --verify "$PRIVATE_INPUT_HELPER_COMMIT:scripts/ci/es80_today_private_device_input.py")" = "$PRIVATE_INPUT_HELPER_BLOB"
+/usr/bin/git show "$PRIVATE_INPUT_HELPER_COMMIT:scripts/ci/es80_today_private_device_input.py" > "$PRIVATE_INPUT_HELPER"
+test "$(/usr/bin/git hash-object --no-filters -- "$PRIVATE_INPUT_HELPER")" = "$PRIVATE_INPUT_HELPER_BLOB"
 
 HOME_PHYSICAL="$(cd -P -- "$HOME" && /bin/pwd -P)"
 test -n "$HOME_PHYSICAL" && test "${HOME_PHYSICAL#/}" != "$HOME_PHYSICAL"
 PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"
 UDID_FILE="$PRIVATE_DIR/es80-intended-device.udid"
 
-/usr/bin/python3 -I scripts/ci/es80_today_private_device_input.py \
+/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER" \
   --private-directory "$PRIVATE_DIR" \
   --source-repo "$FIELD_SOURCE"
 
@@ -49,6 +73,8 @@ NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE="$UDID_FILE"
 ```
 
 The helper prompts privately with `getpass`; do not pass the raw UDID on the command line. If the final path already exists, preserve it and choose a fresh filename/path rather than deleting or overwriting it just to satisfy the helper.
+
+Keep `PRIVATE_INPUT_HELPER_DIR` outside `ARTIFACTS_DIR`. Do not mutate the producer's retained candidate shape with operator tooling or auxiliary files.
 
 After creation, continue through the accepted external pre-signing preflight. The preflight must still report:
 
@@ -73,6 +99,8 @@ It must prove at minimum:
 4. repository-contained private paths fail before secret acquisition;
 5. a parent pathname retarget after file creation fails closed and cleans the original created file rather than touching the replacement directory;
 6. surrounding whitespace/newline is rejected and no final file is created.
+
+The exact tested candidate helper blob is `9a9f7f724ceaf895e52d6d443d326043f97645c8`; the exact tested regression blob is `f1aeb6fa6336481222626d3b6b01137ba338b346`.
 
 ## Truth boundary
 
