@@ -79,7 +79,9 @@ The producer itself will create another fresh detached worktree internally. The 
 
 Choose a private path outside the repository. The producer requires an absolute regular non-symlink mode-`0600` file and independently validates its contents/mode.
 
-This handoff deliberately avoids shell redirection for the secret. Before the UDID is acquired, it resolves `$HOME` to a physical absolute path, then opens that path component-by-component with `O_DIRECTORY|O_NOFOLLOW`. The `.nembra-private` directory is created/opened relative to the pinned home-directory descriptor, and the final UDID file is created with `O_CREAT|O_EXCL|O_NOFOLLOW` relative to the pinned private-directory descriptor. This closes the creation-time parent-path retarget/symlink race that ordinary `> "$UDID_FILE"` redirection cannot close. The raw UDID is read from the terminal by isolated Python, is never placed in the command line or environment, and is written without a trailing newline.
+This handoff deliberately avoids shell redirection for the secret. Before the UDID is acquired, it resolves `$HOME` to a physical absolute path, opens that path component-by-component with `O_DIRECTORY|O_NOFOLLOW`, and pins `.nembra-private` by directory descriptor. It checks descriptor-relative that the final UDID name does not already exist **before prompting for the secret**, then creates the file with `O_CREAT|O_EXCL|O_NOFOLLOW` relative to the same pinned private-directory descriptor. The early check preserves the no-unnecessary-secret-acquisition contract for an already-existing path; `O_EXCL` remains the authoritative race-safe no-clobber guard if a file appears after that check.
+
+This closes the creation-time parent-path retarget/symlink race that ordinary `> "$UDID_FILE"` redirection cannot close. The raw UDID is read from the terminal by isolated Python, is never placed in the command line or environment, and is written without a trailing newline.
 
 The frozen producer and pinned preflight still independently validate the final pathname before using it. This creation helper does not grant field authorization and does not make later pathname substitution trustworthy.
 
@@ -121,6 +123,17 @@ try:
 
     private_fd = os.open(".nembra-private", walk_flags, dir_fd=current_fd)
     os.fchmod(private_fd, 0o700)
+
+    try:
+        os.stat(
+            "es80-intended-device.udid",
+            dir_fd=private_fd,
+            follow_symlinks=False,
+        )
+    except FileNotFoundError:
+        pass
+    else:
+        raise SystemExit("Refusing existing intended-device input path before secret acquisition.")
 
     value = getpass.getpass("Intended iPhone UDID: ")
     if not value or value != value.strip() or "\x00" in value:
@@ -172,7 +185,7 @@ test -f "$UDID_FILE" && test ! -L "$UDID_FILE"
 test "$(/usr/bin/stat -f '%Lp' "$UDID_FILE")" = '600'
 ```
 
-If the final file already exists, `O_EXCL` fails closed without replacing it. Preserve the existing path and choose a fresh private path rather than overwriting it. Keep the new file private; do not commit it and do not copy it into the retained candidate directory.
+If the final file already exists at the descriptor-relative precheck, the helper stops before asking for the UDID. If the name appears only after that check, `O_EXCL` still fails closed without replacing it. Preserve any existing path and choose a fresh private path rather than overwriting it. Keep the new file private; do not commit it and do not copy it into the retained candidate directory.
 
 ## 3. Set the signing inputs without changing the source subject
 
@@ -317,7 +330,7 @@ Stop and preserve the exact blocker if any of these occurs:
 - the resulting evidence names a different source SHA, recipe, or build subject;
 - the candidate destination existed before production or appears partially published after a failure;
 - the private base path cannot be resolved to a physical absolute home path before secret acquisition;
-- the private home path cannot be opened component-by-component without following symlinks, the private directory cannot be created/opened descriptor-relative, the final private file already exists, or the exact mode-`0600` descriptor-relative write cannot be completed and fsynced;
+- the private home path cannot be opened component-by-component without following symlinks, the private directory cannot be created/opened descriptor-relative, the final private file already exists before secret acquisition, or the exact mode-`0600` descriptor-relative `O_EXCL|O_NOFOLLOW` write cannot be completed and fsynced;
 - the retained verification file is not mode-`0600` regular non-symlink input, or its final pathname traverses a symlinked ancestor / the Nembra repository when the pinned preflight revalidates it;
 - the intended-device verification value contains leading/trailing whitespace/newline/NUL;
 - the next step would require rebuilding, re-exporting, substituting another app/IPA, or using Xcode Run;
