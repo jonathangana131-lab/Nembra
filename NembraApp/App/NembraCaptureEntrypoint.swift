@@ -161,16 +161,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
         case idle, baseline, powerOn, scanning, selected, authenticating, observing, accepted, failed
     }
 
-    struct Event: Codable {
-        let at: Date
-        let kind: String
-        let details: [String: String]
-    }
-
     struct Export: Codable {
         let schemaVersion: Int
         let purpose: String
         let exportedAt: Date
+        let buildIdentifier: String
+        let sourceCommitSHA: String
         let tuyaDeviceID: String
         let tuyaUUID: String
         let productID: String
@@ -195,9 +191,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let events: [Event]
     }
 
+    struct Event: Codable {
+        let at: Date
+        let kind: String
+        let details: [String: String]
+    }
+
     static let knownPeripheral = UUID(uuidString: "6815A5F5-4D1E-E004-BAE8-6DF924123907")!
     static let fd50 = CBUUID(string: "FD50")
-    private static let maximumObservationPollGapNanoseconds: UInt64 = 5_000_000_000
+    private static let maximumObservationPollGapNanoseconds = TuyaAuthenticatedReadOnlySessionLedger.maximumContinuousObservationGapNanoseconds
 
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var message = "Log in the official SDK account and verify the exact scooter before Bluetooth discovery."
@@ -223,6 +225,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     let productID: String
     let tuyaUUID: String
 
+    private let buildIdentity = NembraCaptureBuildIdentity.current
     private var central: CBCentralManager!
     private var byID: [UUID: Candidate] = [:]
     private var baseline = Set<UUID>()
@@ -231,6 +234,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var watchdog: Task<Void, Never>?
     private let sessionLedger = TuyaAuthenticatedReadOnlySessionLedger()
     private var currentConnectionToken: TuyaReadOnlyConnectionToken?
+    private var membershipAccountUID: String?
+    private var membershipDeviceID: String?
 #if canImport(ThingSmartHomeKit)
     private var membershipProbe: OfficialTuyaMembershipProbe?
 #endif
@@ -250,8 +255,23 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     var privateConfig: Bool { OfficialTuyaFactory.configured }
     var sdkAccountLoggedIn: Bool { OfficialTuyaFactory.accountLoggedIn }
+    var currentAccountUID: String? { OfficialTuyaFactory.currentAccountUID }
     var selected: Candidate? { selectedID.flatMap { byID[$0] } }
     var applicationUpdateCount: Int { ledgerSnapshot.applicationPayloadCount }
+
+    private var accountIdentityLeaseSnapshot: TuyaSDKAccountIdentityLeaseGate.Snapshot {
+        .init(
+            sdkIsLoggedIn: sdkAccountLoggedIn,
+            currentAccountUID: currentAccountUID,
+            membershipAccountUID: membershipAccountUID,
+            expectedDeviceID: deviceID,
+            membershipDeviceID: membershipDeviceID
+        )
+    }
+
+    var accountIdentityLeaseIsAuthorized: Bool {
+        TuyaSDKAccountIdentityLeaseGate.verdict(for: accountIdentityLeaseSnapshot) == .authorized
+    }
 
     var secureSessionEstablished: Bool {
         if case .authenticated = ledgerSnapshot.authenticationState { return true }
@@ -283,6 +303,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
             failLocally("Bluetooth is not ready.", "bluetooth_unavailable")
             return
         }
+        guard buildIdentity.isAuthoritativeFieldBuild else {
+            failLocally(buildIdentity.blocker ?? "Exact field-build provenance is unavailable.", "field_build_identity_unavailable")
+            return
+        }
         guard privateConfig, sdkAccountLoggedIn else {
             failLocally("Private Tuya app identity and a current SDK login are required before any scooter scan.", "sdk_authority_required_before_scan")
             return
@@ -291,8 +315,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
         // Every physical attempt receives a fresh complete current-account membership verdict.
         verifySDKMembership { [weak self] authorized in
             guard let self else { return }
-            guard authorized, self.sdkAccountLoggedIn else {
-                self.failLocally("Exact scooter membership could not be proven for the current SDK account. Bluetooth discovery remains disabled.", "sdk_device_membership_required_before_scan")
+            let leaseVerdict = TuyaSDKAccountIdentityLeaseGate.verdict(for: self.accountIdentityLeaseSnapshot)
+            guard authorized,
+                  self.sdkAccountLoggedIn,
+                  leaseVerdict == .authorized else {
+                self.failLocally("Exact scooter membership could not be proven for this same current SDK account. Bluetooth discovery remains disabled.", "sdk_device_membership_required_before_scan")
                 return
             }
             self.beginBaselineScan()
@@ -303,20 +330,28 @@ private final class SecureLinkController: NSObject, ObservableObject {
         guard central.state == .poweredOn,
               privateConfig,
               sdkAccountLoggedIn,
-              sdkDeviceMembershipVerified else {
+              sdkDeviceMembershipVerified,
+              accountIdentityLeaseIsAuthorized else {
             failLocally("SDK account/device authority changed before discovery began.", "sdk_authority_changed_before_scan")
+            return
+        }
+        guard currentConnectionToken == nil else {
+            failLocally(
+                "A prior authenticated generation has not been terminally retired. Relaunch Capture before starting another attempt.",
+                "active_generation_blocks_discovery_reset"
+            )
             return
         }
         resetDiscoverySessionOnly()
         phase = .baseline
-        message = "Keep the scooter OFF for a few seconds. Exact SDK device membership is already verified."
+        message = "Keep the scooter OFF for a few seconds. Exact same-account SDK device membership is already verified."
         log("baseline_started_after_membership")
         central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
     }
 
     func saveBaseline() {
         guard phase == .baseline else { return }
-        guard sdkAccountLoggedIn, sdkDeviceMembershipVerified else {
+        guard sdkAccountLoggedIn, sdkDeviceMembershipVerified, accountIdentityLeaseIsAuthorized else {
             failLocally("SDK account/device authority changed during the OFF baseline.", "sdk_authority_changed_during_baseline")
             return
         }
@@ -332,7 +367,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             failLocally("Bluetooth is not ready.", "bluetooth_unavailable")
             return
         }
-        guard sdkAccountLoggedIn, sdkDeviceMembershipVerified else {
+        guard sdkAccountLoggedIn, sdkDeviceMembershipVerified, accountIdentityLeaseIsAuthorized else {
             failLocally("SDK account/device authority changed before the power-on scan.", "sdk_authority_changed_before_power_on_scan")
             return
         }
@@ -354,6 +389,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func choose(_ candidate: Candidate) {
+        guard accountIdentityLeaseIsAuthorized else {
+            failLocally("Current Tuya account/device authority changed before target selection.", "sdk_authority_changed_before_target_selection")
+            return
+        }
         guard candidate.likely else {
             message = "This candidate is not the accepted prior physical UUID. Descriptive hints cannot authorize it."
             return
@@ -370,9 +409,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func invalidateSDKMembership() {
+        let token = currentConnectionToken
         membershipRequestID = UUID()
         membershipBusy = false
         sdkDeviceMembershipVerified = false
+        membershipAccountUID = nil
+        membershipDeviceID = nil
         membershipStatus = "Official SDK login changed. Exact scooter membership must be verified again."
 #if canImport(ThingSmartHomeKit)
         membershipProbe = nil
@@ -382,26 +424,31 @@ private final class SecureLinkController: NSObject, ObservableObject {
             phase = .failed
             message = "SDK account authority changed. Discovery stopped before any authenticated BLE attempt."
         }
-        if phase == .authenticating || phase == .observing {
-            let token = currentConnectionToken
+        if (phase == .authenticating || phase == .observing), let token {
             Task { @MainActor [weak self] in
-                guard let self, let token else { return }
-                await self.invalidateObservedAuthority(token: token, message: "SDK account authority changed during the authenticated attempt.", kind: "sdk_authority_lost")
+                guard let self else { return }
+                await self.invalidateSourceAuthority(
+                    token: token,
+                    message: "SDK account authority changed during the authenticated attempt.",
+                    kind: "sdk_source_authority_lost"
+                )
             }
         }
         log("sdk_membership_invalidated")
     }
 
     func verifySDKMembership(completion: ((Bool) -> Void)? = nil) {
+        membershipAccountUID = nil
+        membershipDeviceID = nil
         guard privateConfig else {
             sdkDeviceMembershipVerified = false
             membershipStatus = "Private Tuya app identity / official SDK integration is not provisioned."
             completion?(false)
             return
         }
-        guard sdkAccountLoggedIn else {
+        guard sdkAccountLoggedIn, currentAccountUID != nil else {
             sdkDeviceMembershipVerified = false
-            membershipStatus = "The official Tuya SDK account is not logged in."
+            membershipStatus = "The official Tuya SDK account has no current UID authority."
             completion?(false)
             return
         }
@@ -425,8 +472,20 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 self.membershipProbe = nil
                 switch result.verdict {
                 case .authorized:
+                    self.membershipAccountUID = result.membershipAccountUID
+                    self.membershipDeviceID = expected
+                    let lease = TuyaSDKAccountIdentityLeaseGate.verdict(for: self.accountIdentityLeaseSnapshot)
+                    guard lease == .authorized else {
+                        self.sdkDeviceMembershipVerified = false
+                        self.membershipAccountUID = nil
+                        self.membershipDeviceID = nil
+                        self.membershipStatus = "Tuya account identity changed while scooter membership was being verified. Verify again under the current account."
+                        self.log("sdk_account_identity_lease_blocked")
+                        completion?(false)
+                        return
+                    }
                     self.sdkDeviceMembershipVerified = true
-                    self.membershipStatus = "Exact scooter membership verified from complete official SDK home details."
+                    self.membershipStatus = "Exact scooter membership verified and leased to this current SDK account."
                     self.log("sdk_device_membership_verified", [
                         "loadedHomes": String(result.loadedHomeCount),
                         "ownedDevices": String(result.ownedDeviceCount),
@@ -435,6 +494,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     completion?(true)
                 case let .blocked(reason):
                     self.sdkDeviceMembershipVerified = false
+                    self.membershipAccountUID = nil
+                    self.membershipDeviceID = nil
                     self.membershipStatus = reason
                     self.log("sdk_device_membership_blocked", [
                         "reason": reason,
@@ -459,12 +520,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
             failLocally("The accepted prior physical scooter identity is required.", "candidate_not_authoritative")
             return
         }
+        guard buildIdentity.isAuthoritativeFieldBuild else {
+            failLocally(buildIdentity.blocker ?? "Exact field-build provenance is unavailable.", "field_build_identity_unavailable")
+            return
+        }
         guard !deviceID.isEmpty, !tuyaUUID.isEmpty, !productID.isEmpty else {
             failLocally("Tuya device ID, UUID or product ID is missing.", "tuya_identity_incomplete")
             return
         }
-        guard privateConfig, sdkAccountLoggedIn, sdkDeviceMembershipVerified else {
-            failLocally("Private Tuya SDK configuration, current login and exact scooter membership are required.", "sdk_authority_unavailable")
+        guard privateConfig, sdkAccountLoggedIn, sdkDeviceMembershipVerified, accountIdentityLeaseIsAuthorized else {
+            failLocally("Private Tuya SDK configuration, current same-account membership and exact scooter authority are required.", "sdk_authority_unavailable")
             return
         }
 
@@ -473,6 +538,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             guard let self else { return }
             guard stillAuthorized,
                   self.sdkAccountLoggedIn,
+                  self.accountIdentityLeaseIsAuthorized,
                   self.selectedID == candidate.id else {
                 self.failLocally("Exact scooter/account authority could not be re-verified immediately before BLE authentication.", "sdk_device_membership_recheck_failed")
                 return
@@ -483,7 +549,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     private func beginOfficialConnection(candidate: Candidate) {
         guard phase == .selected || phase == .failed else { return }
-        guard candidate.likely, sdkDeviceMembershipVerified, sdkAccountLoggedIn else {
+        guard candidate.likely,
+              sdkDeviceMembershipVerified,
+              sdkAccountLoggedIn,
+              accountIdentityLeaseIsAuthorized else {
             failLocally("Tuya account/device authority changed before connection start.", "sdk_authority_changed")
             return
         }
@@ -541,29 +610,64 @@ private final class SecureLinkController: NSObject, ObservableObject {
               currentConnectionToken == token,
               sdkAccountLoggedIn,
               sdkDeviceMembershipVerified,
+              accountIdentityLeaseIsAuthorized,
               let driver else { return }
 
-        guard driver.isLocallyConnected(uuid: tuyaUUID) else {
-            try? await sessionLedger.markAuthenticationFailed(for: token)
-            currentConnectionToken = nil
-            await refreshLedgerSnapshot()
-            failLocally("Tuya reported connection success without current local-BLE authority.", "sdk_local_ble_not_online_at_auth")
-            return
-        }
+        let acquisitionStarted = DispatchTime.now().uptimeNanoseconds
+        while currentConnectionToken == token, phase == .authenticating {
+            guard accountIdentityLeaseIsAuthorized else {
+                await invalidateSourceAuthority(
+                    token: token,
+                    message: "Tuya account/device source authority changed while local BLE status was settling.",
+                    kind: "sdk_source_authority_lost_during_local_ble_settlement"
+                )
+                return
+            }
 
-        do {
-            try await sessionLedger.markAuthenticated(for: token, method: .smartLifeAppSDK)
-            sdkLocalBLEOnline = true
-            await refreshLedgerSnapshot()
-            phase = .observing
-            message = "Authenticated generation \(token.diagnosticGeneration) is live. Waiting for a genuine application update and the canonical 45-second horizon…"
-            log("sdk_local_ble_authenticated", [
-                "generation": String(token.diagnosticGeneration),
-                "localBLEOnline": "true"
-            ])
-            startWatchdog(token: token)
-        } catch {
-            failLocally("Authenticated-session chronology rejected the SDK success callback: \(error.localizedDescription)", "session_auth_callback_rejected")
+            let observedAt = DispatchTime.now().uptimeNanoseconds
+            let isLocallyOnline = driver.isLocallyConnected(uuid: tuyaUUID)
+            switch TuyaLocalBLEAcquisitionWindow.verdict(
+                startedAtUptimeNanoseconds: acquisitionStarted,
+                observedAtUptimeNanoseconds: observedAt,
+                isLocallyOnline: isLocallyOnline,
+                maximumWaitNanoseconds: TuyaLocalBLEAcquisitionWindow.maximumWaitNanoseconds
+            ) {
+            case .observedOnline:
+                sdkLocalBLEOnline = true
+                do {
+                    try await sessionLedger.markAuthenticated(for: token, method: .smartLifeAppSDK)
+                    await refreshLedgerSnapshot()
+                    phase = .observing
+                    message = "Authenticated generation \(token.diagnosticGeneration) is live. Waiting for a genuine application update and the canonical 45-second horizon…"
+                    log("sdk_local_ble_authenticated", [
+                        "generation": String(token.diagnosticGeneration),
+                        "localBLEOnline": "true"
+                    ])
+                    startWatchdog(token: token)
+                } catch {
+                    failLocally("Authenticated-session chronology rejected the SDK success callback: \(error.localizedDescription)", "session_auth_callback_rejected")
+                }
+                return
+
+            case .keepWaiting:
+                try? await Task.sleep(for: .milliseconds(200))
+
+            case .timedOut:
+                await invalidateSourceAuthority(
+                    token: token,
+                    message: "Tuya reported transport success, but current local-BLE status did not become authoritative within the bounded settlement window.",
+                    kind: "sdk_local_ble_settlement_timed_out"
+                )
+                return
+
+            case .invalidClock:
+                await invalidateSourceAuthority(
+                    token: token,
+                    message: "Local-BLE settlement failed closed because the monotonic clock regressed.",
+                    kind: "sdk_local_ble_settlement_clock_invalid"
+                )
+                return
+            }
         }
     }
 
@@ -574,6 +678,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
         try? await sessionLedger.markAuthenticationFailed(for: token)
         currentConnectionToken = nil
+        sdkLocalBLEOnline = false
+        driver = nil
         await refreshLedgerSnapshot()
         failLocally("Tuya SmartLife SDK did not establish the supported BLE session.", "official_connect_failed")
     }
@@ -594,11 +700,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
             ])
             return
         }
-        guard sdkAccountLoggedIn, sdkDeviceMembershipVerified, let driver else {
-            await invalidateObservedAuthority(
+        guard sdkAccountLoggedIn,
+              sdkDeviceMembershipVerified,
+              accountIdentityLeaseIsAuthorized,
+              let driver else {
+            await invalidateSourceAuthority(
                 token: token,
-                message: "SDK account/device authority changed before application evidence arrived.",
-                kind: "sdk_authority_changed_during_observation"
+                message: "SDK account/device source authority changed before application evidence arrived.",
+                kind: "sdk_source_authority_changed_during_observation"
             )
             return
         }
@@ -619,7 +728,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {
             log("retired_application_update_ignored", ["generation": String(token.diagnosticGeneration)])
         } catch {
-            await invalidateObservedAuthority(
+            await invalidateObservationContinuity(
                 token: token,
                 message: "Application chronology failed closed: \(error.localizedDescription)",
                 kind: "application_update_rejected"
@@ -661,11 +770,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 }
                 previousPollUptime = now
 
-                guard self.sdkAccountLoggedIn, self.sdkDeviceMembershipVerified else {
-                    await self.invalidateObservedAuthority(
+                guard self.sdkAccountLoggedIn,
+                      self.sdkDeviceMembershipVerified,
+                      self.accountIdentityLeaseIsAuthorized else {
+                    await self.invalidateSourceAuthority(
                         token: token,
-                        message: "SDK account/device authority changed during authenticated observation.",
-                        kind: "sdk_authority_lost_during_observation"
+                        message: "SDK account/device source authority changed during authenticated observation.",
+                        kind: "sdk_source_authority_lost_during_observation"
                     )
                     return
                 }
@@ -686,7 +797,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     self.log("sealed_watchdog_generation_retired", ["generation": String(token.diagnosticGeneration)])
                     return
                 } catch {
-                    await self.invalidateObservedAuthority(
+                    await self.invalidateObservationContinuity(
                         token: token,
                         message: "Authenticated-session liveness chronology failed closed: \(error.localizedDescription)",
                         kind: "session_liveness_rejected"
@@ -696,6 +807,22 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
                 switch TuyaAuthenticatedReadOnlyPreflight.verdict(for: self.ledgerSnapshot) {
                 case .readyForStationaryMapping:
+                    guard self.buildIdentity.isAuthoritativeFieldBuild else {
+                        await self.invalidateSourceAuthority(
+                            token: token,
+                            message: self.buildIdentity.blocker ?? "Exact field-build provenance became unavailable before acceptance.",
+                            kind: "field_build_identity_rejected_at_seal"
+                        )
+                        return
+                    }
+                    guard self.accountIdentityLeaseIsAuthorized else {
+                        await self.invalidateSourceAuthority(
+                            token: token,
+                            message: "Tuya account/device source authority changed before canonical acceptance could be sealed.",
+                            kind: "sdk_source_authority_rejected_at_seal"
+                        )
+                        return
+                    }
                     do {
                         try await sessionLedger.sealAcceptedObservation(for: token)
                         self.currentConnectionToken = nil
@@ -704,10 +831,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
                         self.message = "Secure scooter link established. Canonical readiness was sealed before UI acceptance; delayed callbacks cannot mutate the accepted prefix."
                         self.log("acceptance_sealed", [
                             "generation": String(token.diagnosticGeneration),
-                            "applicationUpdates": String(self.applicationUpdateCount)
+                            "applicationUpdates": String(self.applicationUpdateCount),
+                            "buildIdentifier": self.buildIdentity.buildIdentifier,
+                            "sourceCommitSHA": self.buildIdentity.sourceCommitSHA
                         ])
                     } catch {
-                        self.failLocally("Canonical readiness could not be sealed: \(error.localizedDescription)", "accepted_prefix_seal_failed")
+                        await self.invalidateObservationContinuity(
+                            token: token,
+                            message: "Canonical readiness could not be sealed: \(error.localizedDescription)",
+                            kind: "accepted_prefix_seal_failed"
+                        )
                     }
                     return
 
@@ -721,6 +854,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
                         try await sessionLedger.markApplicationObservationTimedOut(for: token)
                     } catch {}
                     self.currentConnectionToken = nil
+                    self.sdkLocalBLEOnline = false
+                    self.driver = nil
                     await self.refreshLedgerSnapshot()
                     self.phase = .failed
                     self.message = "Authenticated session produced no application update before the observation deadline. Export diagnostics; do not repeat the ride capture."
@@ -745,7 +880,23 @@ private final class SecureLinkController: NSObject, ObservableObject {
         log("sdk_local_ble_dropped", ["generation": String(token.diagnosticGeneration)])
     }
 
-    private func invalidateObservedAuthority(
+    private func invalidateSourceAuthority(
+        token: TuyaReadOnlyConnectionToken,
+        message: String,
+        kind: String
+    ) async {
+        guard currentConnectionToken == token else { return }
+        try? await sessionLedger.markSourceAuthorityInvalidated(for: token)
+        currentConnectionToken = nil
+        sdkLocalBLEOnline = false
+        driver = nil
+        await refreshLedgerSnapshot()
+        phase = .failed
+        self.message = message
+        log(kind, ["generation": String(token.diagnosticGeneration)])
+    }
+
+    private func invalidateObservationContinuity(
         token: TuyaReadOnlyConnectionToken,
         message: String,
         kind: String
@@ -767,9 +918,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     func prepareExport() {
         let envelope = Export(
-            schemaVersion: 6,
+            schemaVersion: 7,
             purpose: "Sanitized Tuya authenticated read-only stationary preflight",
             exportedAt: Date(),
+            buildIdentifier: buildIdentity.buildIdentifier,
+            sourceCommitSHA: buildIdentity.sourceCommitSHA,
             tuyaDeviceID: deviceID,
             tuyaUUID: tuyaUUID,
             productID: productID,
@@ -800,7 +953,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             encoder.dateEncodingStrategy = .iso8601
             exportData = try encoder.encode(envelope)
             exportName = "Nembra-Secure-Link-\(deviceID.prefix(8))-Diagnostics.json"
-            message = "Sanitized diagnostics ready. No AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."
+            message = "Sanitized diagnostics ready with exact compiled build provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."
         } catch {
             message = "Diagnostic export failed: \(error.localizedDescription)"
         }
@@ -817,12 +970,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
         selectedID = nil
         sdkLocalBLEOnline = false
         exportData = nil
-        if let token = currentConnectionToken {
-            currentConnectionToken = nil
-            Task { [sessionLedger] in
-                try? await sessionLedger.endConnection(for: token)
-            }
-        }
+        // Active authenticated generations must be terminally retired by their
+        // owning outcome path before a new discovery attempt. Generic reset never
+        // manufactures a transport-disconnect terminal.
+        assert(currentConnectionToken == nil)
     }
 
     private func failLocally(_ text: String, _ kind: String) {
@@ -962,9 +1113,20 @@ private enum OfficialTuyaFactory {
 #endif
     }
 
+    static var currentAccountUID: String? {
+#if canImport(ThingSmartHomeKit) && canImport(NembraTuyaPrivateConfig)
+        guard bootstrap(), ThingSmartUser.sharedInstance()?.isLogin == true,
+              let rawUID = ThingSmartUser.sharedInstance()?.uid else { return nil }
+        let uid = rawUID.trimmingCharacters(in: .whitespacesAndNewlines)
+        return uid.isEmpty ? nil : uid
+#else
+        return nil
+#endif
+    }
+
     static func make() -> OfficialTuyaDriver? {
 #if canImport(ThingSmartHomeKit) && canImport(NembraTuyaPrivateConfig)
-        guard bootstrap(), accountLoggedIn else { return nil }
+        guard bootstrap(), accountLoggedIn, currentAccountUID != nil else { return nil }
         return SmartLifeDriver()
 #else
         return nil
@@ -977,6 +1139,7 @@ private enum OfficialTuyaFactory {
 private final class OfficialTuyaMembershipProbe {
     struct Result {
         let verdict: TuyaSDKAccountDeviceMembershipGate.Verdict
+        let membershipAccountUID: String?
         let loadedHomeCount: Int
         let ownedDeviceCount: Int
         let sharedDeviceCount: Int
@@ -993,6 +1156,7 @@ private final class OfficialTuyaMembershipProbe {
     private var ownedDeviceIDs = Set<String>()
     private var sharedDeviceIDs = Set<String>()
     private var activeHome: ThingSmartHome?
+    private var membershipAccountUID: String?
 
     init(expectedDeviceID: String, completion: @escaping (Result) -> Void) {
         self.expectedDeviceID = expectedDeviceID
@@ -1000,10 +1164,13 @@ private final class OfficialTuyaMembershipProbe {
     }
 
     func start() {
-        guard OfficialTuyaFactory.bootstrap(), OfficialTuyaFactory.accountLoggedIn else {
+        guard OfficialTuyaFactory.bootstrap(),
+              OfficialTuyaFactory.accountLoggedIn,
+              let currentAccountUID = OfficialTuyaFactory.currentAccountUID else {
             finish(enumerationCompleted: false)
             return
         }
+        membershipAccountUID = currentAccountUID
         homeManager.getHomeList(success: { [weak self] homes in
             Task { @MainActor in
                 guard let self else { return }
@@ -1062,6 +1229,7 @@ private final class OfficialTuyaMembershipProbe {
         )
         completion(Result(
             verdict: TuyaSDKAccountDeviceMembershipGate.verdict(expectedDeviceID: expectedDeviceID, snapshot: snapshot),
+            membershipAccountUID: membershipAccountUID,
             loadedHomeCount: loadedHomeCount,
             ownedDeviceCount: ownedDeviceIDs.count,
             sharedDeviceCount: sharedDeviceIDs.count,
@@ -1339,17 +1507,18 @@ private struct SecureLinkView: View {
     private var authorityCard: some View {
         VStack(alignment: .leading, spacing: 7) {
             Label("Official Tuya authority", systemImage: "checkmark.shield").font(.headline)
+            LabeledContent("Field build", value: test.accountIdentityLeaseIsAuthorized && test.sdkDeviceMembershipVerified ? "Authority checked" : "Not ready")
             LabeledContent("Private SDK config", value: test.privateConfig ? "Present" : "Missing")
             LabeledContent("SDK account logged in", value: test.sdkAccountLoggedIn ? "Yes" : "No")
-            LabeledContent("Exact scooter membership", value: test.sdkDeviceMembershipVerified ? "Verified" : test.membershipBusy ? "Checking…" : "Not verified")
-            Text(test.membershipStatus).font(.footnote).foregroundStyle(test.sdkDeviceMembershipVerified ? .green : .secondary)
-            if test.sdkAccountLoggedIn && !test.sdkDeviceMembershipVerified {
+            LabeledContent("Exact scooter membership", value: test.sdkDeviceMembershipVerified && test.accountIdentityLeaseIsAuthorized ? "Verified for current account" : test.membershipBusy ? "Checking…" : "Not verified")
+            Text(test.membershipStatus).font(.footnote).foregroundStyle(test.sdkDeviceMembershipVerified && test.accountIdentityLeaseIsAuthorized ? .green : .secondary)
+            if test.sdkAccountLoggedIn && (!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized) {
                 Button(test.membershipBusy ? "Checking scooter membership…" : "Verify scooter in SDK account") { test.verifySDKMembership() }
                     .buttonStyle(.bordered)
                     .disabled(test.membershipBusy)
             }
-            if !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified {
-                Text("NO PHYSICAL BLE TEST YET: the private SDK build, current SDK login, and exact scooter membership must all be proven before even the OFF baseline scan can start.")
+            if !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized {
+                Text("NO PHYSICAL BLE TEST YET: the private exact field build, current SDK account identity, and exact scooter membership must all be proven before even the OFF baseline scan can start.")
                     .font(.footnote.bold())
                     .foregroundStyle(.orange)
             }
@@ -1364,7 +1533,7 @@ private struct SecureLinkView: View {
             case .idle, .failed:
                 Button("Start scooter-OFF baseline") { test.startBaseline() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(!test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || test.membershipBusy)
+                    .disabled(!test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized || test.membershipBusy)
             case .baseline:
                 Button("Save OFF baseline") { test.saveBaseline() }.buttonStyle(.borderedProminent)
             case .powerOn:
@@ -1415,6 +1584,7 @@ private struct SecureLinkView: View {
                         || !test.privateConfig
                         || !test.sdkAccountLoggedIn
                         || !test.sdkDeviceMembershipVerified
+                        || !test.accountIdentityLeaseIsAuthorized
                         || test.membershipBusy
                         || [.authenticating, .observing, .accepted].contains(test.phase)
                 )
@@ -1427,7 +1597,7 @@ private struct SecureLinkView: View {
             Label("Canonical acceptance", systemImage: test.phase == .accepted ? "checkmark.seal.fill" : "hourglass")
                 .font(.headline)
                 .foregroundStyle(test.phase == .accepted ? .green : .white)
-            Text("The product does not maintain a parallel readiness boolean. The canonical preflight verdict is evaluated from the current generation and sealed before this screen may enter Accepted.")
+            Text("The product does not maintain a parallel readiness boolean. The canonical preflight verdict is evaluated from the current generation and sealed only after exact build + same-account source authority are re-checked.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             Text(test.preflightVerdictText).font(.caption.monospaced()).foregroundStyle(.secondary)
@@ -1449,7 +1619,7 @@ private struct SecureLinkView: View {
                 }
                 .buttonStyle(.borderedProminent)
             }
-            Text("Export includes physical target ID, SDK membership state, canonical generation/chronology, local-BLE status, terminal state, and opaque application-value projections. It explicitly records rawFD50BytesCaptured=false, dpQueriesSent=false, and dpCommandsSent=false.")
+            Text("Export includes exact build identity, physical target ID, SDK membership state, canonical generation/chronology, local-BLE status, terminal state, and opaque application-value projections. Account UID remains process-local and is not exported. It explicitly records rawFD50BytesCaptured=false, dpQueriesSent=false, and dpCommandsSent=false.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
