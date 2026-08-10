@@ -429,6 +429,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         // A later SwiftUI/account callback must not mint a replacement membership probe off-screen.
         acceptsViewScopedMembershipRequests = false
         sdkDeviceMembershipVerified = false
+        membershipStatus = "Secure Link changed. Exact scooter membership must be verified again for this view before Bluetooth discovery."
         membershipAccountUID = nil
         membershipDeviceID = nil
         membershipRequestID = UUID()
@@ -486,6 +487,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         // already-issued asynchronous grants before inspecting any radio/session state.
         acceptsViewScopedMembershipRequests = false
         sdkDeviceMembershipVerified = false
+        membershipStatus = "Capture left the foreground. Exact scooter membership must be verified again before a new authenticated attempt."
         membershipAccountUID = nil
         membershipDeviceID = nil
         membershipRequestID = UUID()
@@ -1381,6 +1383,39 @@ private final class SecureLinkController: NSObject, ObservableObject {
         log(kind, ["generation": String(token.diagnosticGeneration)])
     }
 
+    private func preparedApplicationEventDetails(
+    _ update: [String: String],
+    verifiedAccountUID: String
+) -> [String: String] {
+    let accountUID = verifiedAccountUID.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !accountUID.isEmpty else { return [:] }
+
+    let redactionMarker = "<redacted-account-uid>"
+    var details: [String: String] = [:]
+    for key in update.keys.sorted() {
+        guard let value = update[key] else { continue }
+        let redactedKey = key.replacingOccurrences(
+            of: accountUID,
+            with: redactionMarker,
+            options: [.caseInsensitive, .literal]
+        )
+        let redactedValue = value.replacingOccurrences(
+            of: accountUID,
+            with: redactionMarker,
+            options: [.caseInsensitive, .literal]
+        )
+        let baseKey = redactedKey == "generation" ? "application.generation" : redactedKey
+        var uniqueKey = baseKey
+        var collisionIndex = 2
+        while details[uniqueKey] != nil {
+            uniqueKey = "\(baseKey)#\(collisionIndex)"
+            collisionIndex += 1
+        }
+        details[uniqueKey] = redactedValue
+    }
+    return details
+}
+
     private func receivedApplicationUpdate(
         _ update: [String: String],
         token: TuyaReadOnlyConnectionToken
@@ -1419,15 +1454,40 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !verifiedAccountUID.isEmpty else {
+    await invalidateSourceAuthority(
+        token: token,
+        message: "The verified Tuya account UID lease became unavailable before application evidence custody.",
+        kind: "sdk_account_uid_lease_missing_during_observation"
+    )
+    return
+}
+
         applicationUpdateAdmissionsInFlight += 1
         defer { applicationUpdateAdmissionsInFlight -= 1 }
 
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            guard sdkAccountLoggedIn,
+          sdkDeviceMembershipVerified,
+          accountIdentityLeaseIsAuthorized,
+          membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) == verifiedAccountUID else {
+        await invalidateSourceAuthority(
+            token: token,
+            message: "SDK account/device source authority changed before application evidence could enter immutable event custody.",
+            kind: "sdk_source_authority_changed_before_application_event_custody"
+        )
+        return
+    }
+    let eventDetails = preparedApplicationEventDetails(
+        update,
+        verifiedAccountUID: verifiedAccountUID
+    )
+            log("tuya_application_update", eventDetails.merging([
                 "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -2241,7 +2301,6 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "accounttoken",
         "accesstoken",
         "refreshtoken",
-        "sessionkey",
         "authkey",
         "seckey",
     ]
