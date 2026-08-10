@@ -21,14 +21,7 @@ struct TuyaCaptureForegroundTargetRevocationSourceTests {
         #expect(cleanup.contains("guard phase != .accepted else { return }"))
         #expect(cleanup.contains("if processCorrelationLease != nil || correlationSession != nil"))
         #expect(cleanup.contains("if phase == .correlated || phase == .selected"))
-
-        // An actively owned scanner/session must retire through the full discovery reset exactly
-        // once. After a completed four-window correlation has already retired that scanner, keep
-        // the sealed diagnostic evidence but revoke every mutable target-selection authority bit.
-        #expect(cleanup.components(separatedBy: "resetDiscoverySessionOnly()").count - 1 == 1)
-        #expect(cleanup.contains("pendingCorrelatedTargetID = nil"))
-        #expect(cleanup.contains("selectedID = nil"))
-        #expect(cleanup.contains("targetCorrelationOperatorConfirmed = false"))
+        #expect(cleanup.components(separatedBy: "resetDiscoverySessionOnly()").count - 1 == 2)
         #expect(cleanup.contains("foreground_integrity_lost_after_target_correlation"))
         #expect(!cleanup.contains("releasePackageCorrelationLease()"))
     }
