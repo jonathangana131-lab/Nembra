@@ -2124,11 +2124,53 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         ThingSmartBLEManager.sharedInstance().deviceStatue(withUUID: uuid)
     }
 
+    private static let secretKeyFragments = ["localkey", "accesstoken", "refreshtoken", "seckey", "authkey"]
+
+    private static func normalizedApplicationKey(_ key: String) -> String {
+        key.lowercased().filter { $0.isLetter || $0.isNumber }
+    }
+
+    private static func redactApplicationSecrets(_ object: Any) -> Any {
+        if let dictionary = object as? [String: Any] {
+            var output: [String: Any] = [:]
+            for (key, value) in dictionary {
+                let normalized = normalizedApplicationKey(key)
+                if secretKeyFragments.contains(where: normalized.contains) {
+                    output[key] = "<redacted>"
+                } else {
+                    output[key] = redactApplicationSecrets(value)
+                }
+            }
+            return output
+        }
+        if let dictionary = object as? [AnyHashable: Any] {
+            var output: [String: Any] = [:]
+            for (key, value) in dictionary {
+                let keyString = String(describing: key)
+                let normalized = normalizedApplicationKey(keyString)
+                if secretKeyFragments.contains(where: normalized.contains) {
+                    output[keyString] = "<redacted>"
+                } else {
+                    output[keyString] = redactApplicationSecrets(value)
+                }
+            }
+            return output
+        }
+        if let array = object as? [Any] { return array.map(redactApplicationSecrets) }
+        return object
+    }
+
     func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {
         guard let dps, !dps.isEmpty else { return }
         var sanitized: [String: String] = [:]
         for (key, value) in dps {
-            sanitized[String(describing: key)] = String(describing: value)
+            let keyString = String(describing: key)
+            let normalized = keyString.lowercased().filter { $0.isLetter || $0.isNumber }
+            if Self.secretKeyFragments.contains(where: normalized.contains) {
+                sanitized[keyString] = "<redacted>"
+            } else {
+                sanitized[keyString] = String(describing: Self.redactApplicationSecrets(value))
+            }
         }
         onApplicationUpdate?(sanitized)
     }
