@@ -1,0 +1,53 @@
+name: Temporary Capture post-seal local-BLE repair
+on:
+  push:
+    branches: [work/v14-capture-post-seal-localble-authority-8d6-sol]
+permissions:
+  contents: write
+jobs:
+  apply-repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: work/v14-capture-post-seal-localble-authority-8d6-sol
+      - name: Apply guarded production repair
+        run: python3 scripts/_temp_apply_capture_post_seal_localble_recheck.py
+      - name: Verify post-seal authority contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          start = source.index('    private func startWatchdog')
+          end = source.index('    private func recordObservedTransportLoss', start)
+          body = source[start:end]
+          seal = body.index('try await sessionLedger.sealAcceptedObservation(for: token)')
+          recheck = body.index('driver.isLocallyConnected(uuid: self.tuyaUUID)', seal)
+          freeze = body.index('self.sealedAcceptedExport = self.makeExport(', recheck)
+          accepted = body.index('self.phase = .accepted', freeze)
+          post = body[seal:freeze]
+          assert seal < recheck < freeze < accepted
+          assert 'self.sdkLocalBLEOnline = driver.isLocallyConnected(uuid: self.tuyaUUID)' in post
+          assert 'self.phase = .failed' in post and 'return' in post
+          for forbidden in ['sessionLedger.endConnection','markAuthenticationFailed','markSourceAuthorityInvalidated','markObservationContinuityInvalidated','markInternalLifecycleFailure']:
+              assert forbidden not in post, forbidden
+          assert 'await ' not in body[seal + len('try await sessionLedger.sealAcceptedObservation(for: token)'):recheck]
+          assert 'tuyaDependencyLockSHA256' in source
+          PY
+          git diff --check
+      - name: Remove temporary patch transport
+        run: |
+          git rm .github/workflows/_temp_capture_post_seal_localble_recheck.yml
+          git rm scripts/_temp_apply_capture_post_seal_localble_recheck.py
+      - name: Commit product-only repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name nembra-v14-recovery
+          git config user.email actions@users.noreply.github.com
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git diff --cached --check
+          git commit -m 'fix(capture): recheck local BLE after accepted seal'
+          git push origin HEAD:work/v14-capture-post-seal-localble-authority-8d6-sol
