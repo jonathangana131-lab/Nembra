@@ -7,6 +7,7 @@ import stat
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 HELPER_PATH = REPOSITORY_ROOT / "Scripts" / "capture_tuya_private_input_provenance.py"
@@ -94,6 +95,42 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
         self.lockfile.write_text("different resolution", encoding="utf-8")
         with self.assertRaises(provenance.ProvenanceError):
             provenance.verify_record(self.record, self.current())
+
+    def test_file_fingerprint_rejects_same_size_mutation_during_read(self) -> None:
+        target = self.security_podspec
+        original_read = provenance.os.read
+        mutated = False
+
+        def read_then_mutate(descriptor: int, count: int) -> bytes:
+            nonlocal mutated
+            chunk = original_read(descriptor, count)
+            if chunk and not mutated:
+                mutated = True
+                target.write_bytes(b"Z" * target.stat().st_size)
+            return chunk
+
+        with mock.patch.object(provenance.os, "read", side_effect=read_then_mutate):
+            with self.assertRaises(provenance.ProvenanceError):
+                provenance._file_fingerprint(target)
+        self.assertTrue(mutated)
+
+    def test_lockfile_digest_rejects_same_size_mutation_during_read(self) -> None:
+        target = self.lockfile
+        original_read = provenance.os.read
+        mutated = False
+
+        def read_then_mutate(descriptor: int, count: int) -> bytes:
+            nonlocal mutated
+            chunk = original_read(descriptor, count)
+            if chunk and not mutated:
+                mutated = True
+                target.write_bytes(b"L" * target.stat().st_size)
+            return chunk
+
+        with mock.patch.object(provenance.os, "read", side_effect=read_then_mutate):
+            with self.assertRaises(provenance.ProvenanceError):
+                self.current()
+        self.assertTrue(mutated)
 
     def test_record_symlink_is_rejected(self) -> None:
         self.snapshot()
