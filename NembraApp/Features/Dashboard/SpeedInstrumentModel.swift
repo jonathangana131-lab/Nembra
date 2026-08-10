@@ -291,23 +291,28 @@ final class SpeedInstrumentModel {
 
 /// The app-side admission envelope for synthetic power presentation.
 ///
-/// This input is deliberately narrower than `VehicleState`: package-owned Energy
-/// Rail truth may consume Simulator power only when the active app profile itself
-/// is the explicit Simulator QA profile and advertises synthetic power support.
-/// Physical/unverified profiles therefore project unavailable even if a retained
-/// or caller-populated `powerWatts` value exists.
+/// Nembra does not currently have a dedicated production power-evidence provider.
+/// For deterministic Simulator QA only, `SimulatedScooterService` mutates synthetic
+/// speed and power in the same source operation and then emits a fresh `.simulatorQA`
+/// absolute speed observation. The Dashboard therefore admits `powerWatts` only when
+/// aggregate Simulator state still carries the exact speed represented by that live
+/// source observation. This is a synthetic correlation marker, not a claim that speed
+/// proves power on physical hardware.
 private struct DashboardEnergyRailSourceInput: Equatable {
     let isAuthorizedSimulatorProfile: Bool
-    let connected: Bool
+    let hasCorrelatedSourceObservation: Bool
     let watts: Double?
-    let modeKey: String?
+    let sourceObservationRevision: UInt64?
+    let sourceReceivedAtUptimeNanoseconds: UInt64?
 
     var canAdvanceDisplayClock: Bool {
         guard isAuthorizedSimulatorProfile,
-              connected,
+              hasCorrelatedSourceObservation,
               let watts,
               watts.isFinite,
-              watts >= 0 else {
+              watts >= 0,
+              sourceObservationRevision != nil,
+              sourceReceivedAtUptimeNanoseconds != nil else {
             return false
         }
         return true
@@ -316,7 +321,7 @@ private struct DashboardEnergyRailSourceInput: Equatable {
 
 /// Localized Energy Rail runtime bridge for deterministic Simulator product QA.
 ///
-/// Source changes enter `observe` only when the app's semantic vehicle state
+/// Source changes enter `observe` only when the correlated synthetic source revision
 /// changes. The nested timeline advances package-owned display presentation only;
 /// its intermediate watts/rail positions never flow back into VehicleState,
 /// persistence, records, protocol evidence, or physical claims.
@@ -363,11 +368,17 @@ private struct DashboardEnergyRailInstrumentView: View {
         guard var runtime else { return }
 
         let isAdmitted = input.isAuthorizedSimulatorProfile
+            && input.hasCorrelatedSourceObservation
         _ = runtime.observe(
-            connected: isAdmitted && input.connected,
+            connected: isAdmitted,
             watts: isAdmitted ? input.watts : nil,
-            modeKey: isAdmitted ? input.modeKey : nil,
-            receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
+            // Simulator ride mode is intentionally not rebound here. The current
+            // source contract does not carry ride mode inside the correlated power
+            // observation, so attaching aggregate state mode would relabel old watts.
+            modeKey: nil,
+            sourceObservationRevision: isAdmitted ? input.sourceObservationRevision : nil,
+            receivedAtUptimeNanoseconds: input.sourceReceivedAtUptimeNanoseconds
+                ?? DispatchTime.now().uptimeNanoseconds
         )
         self.runtime = runtime
     }
@@ -437,12 +448,40 @@ struct DashboardSpeedInstrumentView: View {
     }
 
     private var energyRailSourceInput: DashboardEnergyRailSourceInput {
-        DashboardEnergyRailSourceInput(
-            isAuthorizedSimulatorProfile: vehicle.profile == .simulatorQA
-                && vehicle.profile.capabilities.supportsPowerWatts,
-            connected: vehicle.state.connection == .connected,
-            watts: vehicle.state.powerWatts.map { Double($0) },
-            modeKey: vehicle.state.rideMode?.rawValue
+        let isAuthorizedSimulatorProfile = vehicle.profile == .simulatorQA
+            && vehicle.profile.capabilities.supportsPowerWatts
+
+        guard isAuthorizedSimulatorProfile,
+              vehicle.state.connection == .connected,
+              case let .live(sample) = vehicle.speedEvidenceAvailability,
+              sample.source == .simulatorQA,
+              sample.provenance == .absoluteMeasurement,
+              sample.isAuthoritativeMeasurement,
+              let aggregateSpeed = vehicle.state.speedKilometersPerHour,
+              aggregateSpeed.isFinite,
+              aggregateSpeed >= 0,
+              abs(aggregateSpeed - sample.kilometersPerHour) <= 0.000_001,
+              let powerWatts = vehicle.state.powerWatts,
+              powerWatts >= 0 else {
+            return DashboardEnergyRailSourceInput(
+                isAuthorizedSimulatorProfile: isAuthorizedSimulatorProfile,
+                hasCorrelatedSourceObservation: false,
+                watts: nil,
+                sourceObservationRevision: nil,
+                sourceReceivedAtUptimeNanoseconds: nil
+            )
+        }
+
+        return DashboardEnergyRailSourceInput(
+            isAuthorizedSimulatorProfile: true,
+            hasCorrelatedSourceObservation: true,
+            watts: Double(powerWatts),
+            // In the Simulator source, this absolute speed receipt is emitted only
+            // after the same actor operation has assigned the synthetic power value.
+            // Its uptime is therefore an opaque source-owned revision for this QA
+            // correlation; it is never promoted to physical power provenance.
+            sourceObservationRevision: sample.receivedAtUptimeNanoseconds,
+            sourceReceivedAtUptimeNanoseconds: sample.receivedAtUptimeNanoseconds
         )
     }
 
