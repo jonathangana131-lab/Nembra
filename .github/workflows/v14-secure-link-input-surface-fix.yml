@@ -1,0 +1,42 @@
+name: V14 Secure Link input surface fix
+
+on:
+  push:
+    branches:
+      - product/v14-capture-premium-secure-link-sol
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 3
+      - name: Verify exact product parent
+        run: test "$(git rev-parse HEAD^^)" = "05f08de10a5dc754ad57bd260fe0a131a07999e6"
+      - name: Apply helper fix and validate portable source
+        run: |
+          python3 scripts/ci/v14_secure_link_input_surface_patch.py
+          git diff --check
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductSurfaceSourceTests.swift
+      - name: Commit clean delta and retire materializer
+        env:
+          BRANCH: product/v14-capture-premium-secure-link-sol
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin "refs/heads/$BRANCH" | awk '{print $1}')" = "$EVENT_SHA"
+          rm scripts/ci/v14_secure_link_input_surface_patch.py
+          rm .github/workflows/v14-secure-link-input-surface-fix.yml
+          git config user.name "nembra-v14-product"
+          git config user.email "actions@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductSurfaceSourceTests.swift scripts/ci/v14_secure_link_input_surface_patch.py .github/workflows/v14-secure-link-input-surface-fix.yml
+          git commit -m "fix(capture): finish Secure Link input styling"
+          git push origin "HEAD:$BRANCH"
