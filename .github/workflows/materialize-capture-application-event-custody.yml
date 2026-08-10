@@ -85,23 +85,29 @@ jobs:
           path.write_text(source)
           PY
 
-      - name: Verify custody contract and source syntax
+      - name: Verify exact RED contracts and source syntax
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
           source = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+
           start = source.index("    private func receivedApplicationUpdate(")
           end = source.index("    private func startWatchdog", start)
           receiver = source[start:end]
-          assert "redactVerifiedAccountUID(in: update).merging([" in receiver
+          assert 'log("tuya_application_update"' in receiver
           assert '"generation": String(token.diagnosticGeneration)' in receiver
           assert ") { _, trusted in trusted })" in receiver
           assert ") { current, _ in current })" not in receiver
           assert 'log("tuya_application_update", update.merging([' not in receiver
+          assert "redactVerifiedAccountUID(in: update)" in receiver
           assert 'with: "<redacted-account-uid>"' in source
           assert "membershipAccountUID?.trimmingCharacters" in source
+
+          export_start = source.index("    func prepareExport()")
+          export_end = source.index("    private func abandonPackageCorrelation()", export_start)
+          assert "No account UID" in source[export_start:export_end]
 
           driver_start = source.index("@MainActor\nprivate final class SmartLifeDriver")
           driver_end = source.index("#endif\n\nprivate enum AppleAccountAuthorizationError", driver_start)
@@ -110,18 +116,20 @@ jobs:
           fragments_end = driver.index("    ]", fragments_start)
           assert driver[fragments_start:fragments_end].count('"sessionkey"') == 1
           assert '"uid",' not in driver
+          assert '"uid"\n' not in driver
           PY
           swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
           swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
           swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
           git diff --check
 
-      - name: Run focused source contracts
+      - name: Run metadata-precedence source contract
         shell: bash
-        run: |
-          set -euo pipefail
-          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaApplicationEventMetadataPrecedenceSourceTests
-          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaApplicationAccountUIDExportCustodySourceTests
+        run: swift test --package-path Packages/NembraBluetoothCapture --filter TuyaApplicationEventMetadataPrecedenceSourceTests
+
+      - name: Run account-UID source contract
+        shell: bash
+        run: swift test --package-path Packages/NembraBluetoothCapture --filter TuyaApplicationAccountUIDExportCustodySourceTests
 
       - name: Commit product repair and retire materializer
         shell: bash
