@@ -3,8 +3,11 @@ name: Capture Tuya Field Prerequisite QA
 on:
   pull_request:
     paths:
+      - 'NembraApp/App/NembraCaptureEntrypoint.swift'
+      - 'NembraApp/Features/Research/TuyaAccountBridge.swift'
       - 'Scripts/validate_capture_tuya_field_prereqs.sh'
       - 'Scripts/test_capture_tuya_field_prereqs.sh'
+      - 'Scripts/test_capture_tuya_credential_minimization.sh'
       - '.github/workflows/capture-tuya-field-prereqs.yml'
   workflow_dispatch:
 
@@ -26,9 +29,16 @@ jobs:
           set -euo pipefail
           bash -n Scripts/validate_capture_tuya_field_prereqs.sh
           bash -n Scripts/test_capture_tuya_field_prereqs.sh
+          bash -n Scripts/test_capture_tuya_credential_minimization.sh
 
       - name: Run secret-free prerequisite regression
         shell: bash
         run: |
           set -euo pipefail
           bash Scripts/test_capture_tuya_field_prereqs.sh
+
+      - name: Enforce credential minimization and read-only BLE boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash Scripts/test_capture_tuya_credential_minimization.sh
