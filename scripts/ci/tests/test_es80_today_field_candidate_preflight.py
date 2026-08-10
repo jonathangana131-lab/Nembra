@@ -263,9 +263,11 @@ class FieldCandidatePreflightTests(unittest.TestCase):
 
     def test_production_handoff_consumes_accepted_descriptor_bound_private_input_before_signing(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
-        helper_commit = "05ce6d9a20487ab34aa31c5b6456910ed2ed438f"
+        helper_commit = "af75ffa6dc4409a21822295428e4eeb922ac3d16"
         helper_path = "scripts/ci/es80_today_private_device_input.py"
-        helper_blob = "9a9f7f724ceaf895e52d6d443d326043f97645c8"
+        helper_blob = "50b12675a57fd2f570d833cfcdbfd7be59f52ca4"
+        helper_tested_head = "91dda8ac05e937e5615312a487f7d78926b74949"
+        helper_qa_run = "31349855525"
         helper_invoke = '/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER"'
         private_directory_arg = '--private-directory "$PRIVATE_DIR"'
         source_repo_arg = '--source-repo "$FIELD_SOURCE"'
@@ -274,10 +276,18 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertIn(helper_commit, handoff)
         self.assertIn(helper_path, handoff)
         self.assertIn(helper_blob, handoff)
+        self.assertIn(helper_tested_head, handoff)
+        self.assertIn(helper_qa_run, handoff)
         self.assertIn(helper_invoke, handoff)
         self.assertIn(private_directory_arg, handoff)
         self.assertIn(source_repo_arg, handoff)
         self.assertLess(handoff.index(helper_invoke), handoff.index(producer_invoke))
+        self.assertNotIn("05ce6d9a20487ab34aa31c5b6456910ed2ed438f", handoff)
+        self.assertNotIn("9a9f7f724ceaf895e52d6d443d326043f97645c8", handoff)
+        self.assertNotIn("fbd9e375292f0d5bfce48339e9c838db593d9e0f", handoff)
+        self.assertNotIn("e9aa14d5c36afa906b27b6eb4cf76168cd3a40ca", handoff)
+        self.assertNotIn("c8c706e3d67d2aeab37341035468437dc2af0491", handoff)
+        self.assertNotIn("38eb695792fb759428a98686081b883e39c3b118", handoff)
         self.assertNotIn("IFS= read -r -s INTENDED_UDID", handoff)
         self.assertNotIn("set -o noclobber", handoff)
         self.assertNotIn('printf \'%s\' "$INTENDED_UDID" > "$UDID_FILE"', handoff)
