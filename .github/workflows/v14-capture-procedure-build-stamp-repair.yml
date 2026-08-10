@@ -1,0 +1,50 @@
+name: V14 Capture Procedure Build Stamp Repair
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-procedure-build-stamp-sol
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply built-procedure provenance patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/apply_capture_procedure_build_stamp.py
+          python3 scripts/ci/apply_capture_procedure_build_stamp.py
+
+      - name: Validate focused contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/field/install_one_time_capture.command
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift
+          grep -Fq 'procedureIdentifier == Self.fieldProcedureIdentifier' NembraApp/App/NembraCaptureBuildIdentity.swift
+          test "$(grep -Fc 'INFOPLIST_KEY_NembraCaptureProcedureIdentifier = "$(NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER)";' NembraCapture.xcodeproj/project.pbxproj)" = 2
+          grep -Fq '[[ "$BUILT_PROCEDURE_ID" == "$PROCEDURE_ID" ]]' scripts/field/install_one_time_capture.command
+          git diff --check
+
+      - name: Commit validated product files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            NembraApp/App/NembraCaptureBuildIdentity.swift \
+            NembraCapture.xcodeproj/project.pbxproj \
+            scripts/field/install_one_time_capture.command \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift
+          git diff --cached --check
+          git commit -m 'fix(capture): require built procedure provenance'
+          git push origin HEAD:repair/v14-capture-procedure-build-stamp-sol
