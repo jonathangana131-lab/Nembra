@@ -26,7 +26,7 @@ jobs:
           needle = """                        try await sessionLedger.sealAcceptedObservation(for: token)
                         guard self.buildIdentity.isAuthoritativeFieldBuild,
                               self.accountIdentityLeaseIsAuthorized else {
-"""
+          """
           replacement = """                        try await sessionLedger.sealAcceptedObservation(for: token)
                         guard self.currentConnectionToken == token,
                               self.driver === driver else {
@@ -55,7 +55,7 @@ jobs:
                         }
                         guard self.buildIdentity.isAuthoritativeFieldBuild,
                               self.accountIdentityLeaseIsAuthorized else {
-"""
+          """
           count = source.count(needle)
           if count != 1:
               raise SystemExit(f"expected exactly one acceptance-seal anchor, found {count}")
