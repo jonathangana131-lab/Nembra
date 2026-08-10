@@ -90,29 +90,26 @@ jobs:
       - name: Current TODAY research field candidate suite
         run: python3 scripts/ci/tests/test_xcode27_today_research_field_candidate.py
 
-      - name: Prove exact effective product scope
+      - name: Prove final tree scope and checkpoint
         shell: bash
         run: |
           set -euo pipefail
+          BASE='b615375e12e43abc55e111deb5dc36f3790c7506'
           GUARD='Scripts/capture_tuya_private_input_build_guard.py'
           INSTALLER='scripts/field/install_one_time_capture.command'
           TEST1='scripts/ci/tests/test_capture_tuya_private_input_build_guard.py'
           TEST2='scripts/ci/tests/test_capture_field_installer_build_window_guard_source.py'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/v14-capture-private-build-window-b615.yml tools/v14_capture_build_window_guard_materialize.py
           git add "$GUARD" "$INSTALLER" "$TEST1" "$TEST2"
           git diff --cached --check
-          mapfile -t EFFECTIVE < <(git diff --cached --name-only HEAD)
+          mapfile -t EFFECTIVE < <(git diff --name-only "$BASE" -- "$GUARD" "$INSTALLER" "$TEST1" "$TEST2")
           test "${#EFFECTIVE[@]}" = '4'
           printf '%s\n' "${EFFECTIVE[@]}" | grep -Fx "$GUARD"
           printf '%s\n' "${EFFECTIVE[@]}" | grep -Fx "$INSTALLER"
           printf '%s\n' "${EFFECTIVE[@]}" | grep -Fx "$TEST1"
           printf '%s\n' "${EFFECTIVE[@]}" | grep -Fx "$TEST2"
-
-      - name: Commit durable repair and retire materializer
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git rm .github/workflows/v14-capture-private-build-window-b615.yml tools/v14_capture_build_window_guard_materialize.py
+          test -z "$(git diff --name-only "$BASE" | grep -E '^(.github/workflows/v14-capture-private-build-window-b615.yml|tools/v14_capture_build_window_guard_materialize.py)$' || true)"
           git commit -m 'fix(capture): guard private inputs through xcodebuild'
           git push origin HEAD:fix/v14-capture-private-build-window-b615-sol
