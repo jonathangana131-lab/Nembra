@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 4
+          fetch-depth: 6
 
       - name: Guard exact product lineage
         shell: bash
@@ -23,8 +23,12 @@ jobs:
           set -euo pipefail
           expected='0ee7aab76b4880c9871404b23755f27e539b5351'
           git merge-base --is-ancestor "$expected" HEAD^
-          mapfile -t changed < <(git diff --name-only "$expected"..HEAD^)
-          if [[ "${#changed[@]}" -ne 1 || "${changed[0]}" != 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureRootCriticalTouchTargetsSourceTests.swift' ]]; then
+          mapfile -t changed < <(git diff --name-only "$expected"..HEAD^ | sort)
+          expected_paths=(
+            '.github/workflows/materialize-capture-root-touch-targets-0ee7.yml'
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureRootCriticalTouchTargetsSourceTests.swift'
+          )
+          if [[ "${changed[*]}" != "${expected_paths[*]}" ]]; then
             printf 'Unexpected pre-materialization scope:\n%s\n' "${changed[*]}" >&2
             exit 78
           fi
@@ -74,7 +78,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
-          root = s[s.index('private struct CaptureP0Root: View'):s.index('@MainActor\nprivate final class TuyaAccountBridge')]
+          root = s[s.index('private struct CaptureP0Root: View'):s.index('@MainActor\nprivate final class SecureLinkController')]
           tokens = [
               'Button("Reset account link")',
               'Button("Refresh")',
