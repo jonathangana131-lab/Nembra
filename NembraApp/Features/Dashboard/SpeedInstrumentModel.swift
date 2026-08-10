@@ -295,9 +295,8 @@ final class SpeedInstrumentModel {
 /// Only this view redraws on the animation timeline. Vehicle controls, ride
 /// detection, persistence, distance, and safety continue to consume accepted
 /// domain/source state rather than rendered speed or Energy Rail frames.
-/// Propulsion authority enters only through `VehicleStore.simulatorPowerStoreProjection`.
-/// Aggregate watts, speed receipts, ride mode, view lifecycle, and display clocks
-/// can only affect presentation, never mint a propulsion measurement.
+/// Propulsion admission is independent from speed and aggregate VehicleState:
+/// only `VehicleStore.simulatorPowerStoreProjection` can introduce a receipt.
 @MainActor
 struct DashboardSpeedInstrumentView: View {
     @Environment(VehicleStore.self) private var vehicle
@@ -306,6 +305,7 @@ struct DashboardSpeedInstrumentView: View {
     @State private var energyRailRuntime: PropulsionEnergyRailSimulatorRuntime? = try? PropulsionEnergyRailSimulatorRuntime()
     @State private var energyRailNextTransitionUptimeNanoseconds: UInt64? = nil
     @State private var energyRailPresentationRevision: UInt64 = 0
+    @State private var energyRailHasSynchronizedStoreProjection = false
 
     let modePersonality: DashboardModePersonality
 
@@ -315,21 +315,18 @@ struct DashboardSpeedInstrumentView: View {
         let speedAvailability = rawSpeedAvailability.dashboardPresentationAvailability(
             allowsSimulatorQA: allowsSimulatorQA
         )
-        let sourceCapability = hasEnergyRailSourceCapability
-        let storeProjection = energyRailStoreProjection
+        let storePowerProjection = vehicle.simulatorPowerStoreProjection
         let scheduleNow = DispatchTime.now().uptimeNanoseconds
         let speedShouldTick = !reduceMotion
             && model.isAnimationActive
             && isLivePresentation(speedAvailability)
         let energyRailShouldTick: Bool
         if !reduceMotion,
-           sourceCapability,
-           storeProjection.currentness == .live,
-           let energyRailRuntime,
-           projectionMatchesStore(
-               energyRailRuntime.projection(atUptimeNanoseconds: scheduleNow),
-               storeProjection: storeProjection
-           ) {
+           energyRailHasSynchronizedStoreProjection,
+           hasEnergyRailSourceCapability,
+           storePowerProjection.currentness == .live,
+           storePowerProjection.observation != nil,
+           let energyRailRuntime {
             energyRailShouldTick = energyRailRuntime.displaySchedule(
                 atUptimeNanoseconds: scheduleNow
             ).requiresContinuousFrames
@@ -352,8 +349,7 @@ struct DashboardSpeedInstrumentView: View {
             )
             let energyRailState = energyRailVisualState(
                 atUptimeNanoseconds: now,
-                sourceCapability: sourceCapability,
-                storeProjection: storeProjection,
+                storeProjection: storePowerProjection,
                 presentationRevision: energyRailPresentationRevision
             )
 
@@ -369,7 +365,7 @@ struct DashboardSpeedInstrumentView: View {
                 vehicle.speedEvidenceAvailability,
                 allowsSimulatorQA: vehicle.profile == .simulatorQA
             )
-            synchronizeEnergyRailStoreProjection(energyRailStoreProjection)
+            synchronizeEnergyRailStoreProjection(vehicle.simulatorPowerStoreProjection)
         }
         .task(id: energyRailNextTransitionUptimeNanoseconds) {
             await waitForEnergyRailPresentationTransition()
@@ -384,12 +380,15 @@ struct DashboardSpeedInstrumentView: View {
             synchronizeEnergyRailStoreProjection(projection)
         }
         .onChange(of: reduceMotion) { _, _ in
-            refreshEnergyRailPresentationSchedule()
+            refreshEnergyRailPresentationSchedule(
+                for: vehicle.simulatorPowerStoreProjection
+            )
         }
         .onDisappear {
             model.stop()
-            // View lifetime is not source lifetime. Do not mutate source or package
-            // receipt chronology merely because SwiftUI removed this subtree.
+            // View lifetime is not source lifetime. Do not mark propulsion
+            // unavailable or mint a lifecycle receipt merely because SwiftUI
+            // removed this subtree.
             energyRailNextTransitionUptimeNanoseconds = nil
         }
     }
@@ -400,49 +399,42 @@ struct DashboardSpeedInstrumentView: View {
             && vehicle.hasSimulatorPowerEvidenceSource
     }
 
-    private var energyRailStoreProjection: SimulatorPowerStoreProjection {
-        hasEnergyRailSourceCapability
-            ? vehicle.simulatorPowerStoreProjection
-            : .unavailable
-    }
-
-    /// Copies only the exact receipt already sealed by the source and joined by the
-    /// Store with transport currentness. No local timestamp or replacement receipt
-    /// exists at this boundary.
+    /// Applies exactly one already-sealed Store projection to the package runtime.
+    /// No view clock, aggregate watts, speed receipt, mode, or lifecycle callback can
+    /// create positive propulsion authority here.
     private func synchronizeEnergyRailStoreProjection(
-        _ projection: SimulatorPowerStoreProjection
+        _ storeProjection: SimulatorPowerStoreProjection
     ) {
         guard hasEnergyRailSourceCapability else {
             energyRailRuntime = nil
             energyRailNextTransitionUptimeNanoseconds = nil
+            energyRailHasSynchronizedStoreProjection = false
             return
         }
 
-        if energyRailRuntime == nil {
-            energyRailRuntime = try? PropulsionEnergyRailSimulatorRuntime()
-        }
-
-        guard var runtime = energyRailRuntime else {
+        guard var runtime = energyRailRuntime ?? (try? PropulsionEnergyRailSimulatorRuntime()) else {
             energyRailNextTransitionUptimeNanoseconds = nil
+            energyRailHasSynchronizedStoreProjection = false
             return
         }
 
-        switch projection.currentness {
-        case .unavailable:
-            guard projection.observation == nil else {
+        switch storeProjection.currentness {
+        case .live:
+            guard let observation = storeProjection.observation else {
                 runtime.markUnavailable()
-                energyRailRuntime = runtime
-                refreshEnergyRailPresentationSchedule()
-                return
+                break
             }
-            runtime.markUnavailable()
+            _ = runtime.acceptLiveSource(
+                watts: observation.watts,
+                receiptSequenceNumber: observation.receiptSequenceNumber,
+                receivedAtUptimeNanoseconds: observation.receivedAtUptimeNanoseconds,
+                continuityGeneration: observation.continuityGeneration
+            )
 
         case .retained:
-            guard let observation = projection.observation else {
+            guard let observation = storeProjection.observation else {
                 runtime.markUnavailable()
-                energyRailRuntime = runtime
-                refreshEnergyRailPresentationSchedule()
-                return
+                break
             }
             _ = runtime.retainSource(
                 watts: observation.watts,
@@ -451,45 +443,31 @@ struct DashboardSpeedInstrumentView: View {
                 continuityGeneration: observation.continuityGeneration
             )
 
-        case .live:
-            guard let observation = projection.observation else {
-                runtime.markUnavailable()
-                energyRailRuntime = runtime
-                refreshEnergyRailPresentationSchedule()
-                return
-            }
-            _ = runtime.acceptLiveSource(
-                watts: observation.watts,
-                receiptSequenceNumber: observation.receiptSequenceNumber,
-                receivedAtUptimeNanoseconds: observation.receivedAtUptimeNanoseconds,
-                continuityGeneration: observation.continuityGeneration
-            )
+        case .unavailable:
+            runtime.markUnavailable()
         }
 
         energyRailRuntime = runtime
+        energyRailHasSynchronizedStoreProjection = true
         energyRailPresentationRevision &+= 1
-        refreshEnergyRailPresentationSchedule()
+        refreshEnergyRailPresentationSchedule(for: storeProjection)
     }
 
-    private func refreshEnergyRailPresentationSchedule() {
+    /// Display scheduling is downstream-only. The Store must still be LIVE before
+    /// a package display schedule may request continuous frames or a future wake.
+    private func refreshEnergyRailPresentationSchedule(
+        for storeProjection: SimulatorPowerStoreProjection
+    ) {
         guard !reduceMotion,
               hasEnergyRailSourceCapability,
-              energyRailStoreProjection.currentness == .live,
+              storeProjection.currentness == .live,
+              storeProjection.observation != nil,
               let energyRailRuntime else {
             energyRailNextTransitionUptimeNanoseconds = nil
             return
         }
 
         let now = DispatchTime.now().uptimeNanoseconds
-        let packageProjection = energyRailRuntime.projection(atUptimeNanoseconds: now)
-        guard projectionMatchesStore(
-            packageProjection,
-            storeProjection: energyRailStoreProjection
-        ) else {
-            energyRailNextTransitionUptimeNanoseconds = nil
-            return
-        }
-
         energyRailNextTransitionUptimeNanoseconds = energyRailRuntime.displaySchedule(
             atUptimeNanoseconds: now
         ).nextTransitionUptimeNanoseconds
@@ -510,21 +488,28 @@ struct DashboardSpeedInstrumentView: View {
         }
         guard !Task.isCancelled else { return }
 
-        // Recompose only presentation at a package-owned deadline. Source/store
-        // receipt identity and measurement chronology remain unchanged.
+        // Recompose only presentation at a package-owned deadline. The Store
+        // observation and accepted source chronology remain unchanged.
         energyRailPresentationRevision &+= 1
-        refreshEnergyRailPresentationSchedule()
+        refreshEnergyRailPresentationSchedule(
+            for: vehicle.simulatorPowerStoreProjection
+        )
     }
 
+    /// Synchronous render fence. SwiftUI can compute a body for a newly observed
+    /// Store value before `.onChange` mutates the local runtime. Never display an
+    /// older receipt during that window. Store RETAINED/UNAVAILABLE may only lower
+    /// package authority; Store LIVE may admit package LIVE or the package's own
+    /// freshness-lowered RETAINED state for the exact same source receipt.
     private func energyRailVisualState(
         atUptimeNanoseconds uptimeNanoseconds: UInt64,
-        sourceCapability: Bool,
         storeProjection: SimulatorPowerStoreProjection,
         presentationRevision: UInt64
     ) -> NembraEnergyRailVisualState? {
         _ = presentationRevision
 
-        guard sourceCapability,
+        guard hasEnergyRailSourceCapability,
+              energyRailHasSynchronizedStoreProjection,
               let energyRailRuntime else {
             return nil
         }
@@ -533,52 +518,52 @@ struct DashboardSpeedInstrumentView: View {
             atUptimeNanoseconds: uptimeNanoseconds
         )
 
-        // This synchronous compare closes the SwiftUI observation -> onChange seam:
-        // a just-demoted Store receipt can never render one stale LIVE package frame.
-        guard projectionMatchesStore(
-            packageProjection,
-            storeProjection: storeProjection
-        ) else {
-            return .unavailable
-        }
-
-        return NembraEnergyRailVisualState(projection: packageProjection)
-    }
-
-    private func projectionMatchesStore(
-        _ packageProjection: PropulsionEnergyRailAppProjection,
-        storeProjection: SimulatorPowerStoreProjection
-    ) -> Bool {
         switch storeProjection.currentness {
         case .unavailable:
-            return storeProjection.observation == nil
-                && packageProjection.currentness == .unavailable
-                && packageProjection.acceptedMeasurement == nil
+            return .unavailable
 
         case .retained:
-            guard let source = storeProjection.observation,
+            guard let observation = storeProjection.observation,
                   packageProjection.currentness == .retained,
-                  let accepted = packageProjection.acceptedMeasurement else {
-                return false
+                  packageProjectionMatchesStoreObservation(
+                    packageProjection,
+                    observation: observation
+                  ) else {
+                return .unavailable
             }
-            return accepted.authority == .simulator
-                && accepted.watts == source.watts
-                && accepted.receiptSequenceNumber == source.receiptSequenceNumber
-                && accepted.receivedAtUptimeNanoseconds == source.receivedAtUptimeNanoseconds
-                && accepted.continuityGeneration == source.continuityGeneration
+            return NembraEnergyRailVisualState(projection: packageProjection)
 
         case .live:
-            guard let source = storeProjection.observation,
-                  packageProjection.currentness == .live,
-                  let accepted = packageProjection.acceptedMeasurement else {
-                return false
+            guard let observation = storeProjection.observation else {
+                return .unavailable
             }
-            return accepted.authority == .simulator
-                && accepted.watts == source.watts
-                && accepted.receiptSequenceNumber == source.receiptSequenceNumber
-                && accepted.receivedAtUptimeNanoseconds == source.receivedAtUptimeNanoseconds
-                && accepted.continuityGeneration == source.continuityGeneration
+            switch packageProjection.currentness {
+            case .live, .retained:
+                guard packageProjectionMatchesStoreObservation(
+                    packageProjection,
+                    observation: observation
+                ) else {
+                    return .unavailable
+                }
+                return NembraEnergyRailVisualState(projection: packageProjection)
+            case .unavailable:
+                return .unavailable
+            }
         }
+    }
+
+    private func packageProjectionMatchesStoreObservation(
+        _ packageProjection: PropulsionEnergyRailAppProjection,
+        observation: SimulatorPowerObservation
+    ) -> Bool {
+        guard let accepted = packageProjection.acceptedMeasurement else {
+            return false
+        }
+        return accepted.authority == .simulator
+            && accepted.watts == observation.watts
+            && accepted.receiptSequenceNumber == observation.receiptSequenceNumber
+            && accepted.receivedAtUptimeNanoseconds == observation.receivedAtUptimeNanoseconds
+            && accepted.continuityGeneration == observation.continuityGeneration
     }
 
     private func isLivePresentation(_ availability: SpeedEvidenceAvailability) -> Bool {
