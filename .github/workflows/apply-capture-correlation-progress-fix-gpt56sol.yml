@@ -29,13 +29,11 @@ jobs:
 
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           text = path.read_text(encoding="utf-8")
-
           old_text = '                    Text("\\(min(test.correlationCompletedWindowCount + 1, 4))/4")\n'
           new_text = '                    Text("\\(correlationDisplayedWindowOrdinal)/4")\n'
           if text.count(old_text) != 1:
               raise SystemExit(f"visible ordinal anchor count != 1: {text.count(old_text)}")
           text = text.replace(old_text, new_text, 1)
-
           anchor = "    private var authorityReady: Bool {\n"
           addition = (
               "    private var correlationDisplayedWindowOrdinal: Int {\n"
@@ -46,13 +44,14 @@ jobs:
               raise SystemExit(f"authorityReady anchor count != 1: {text.count(anchor)}")
           if "private var correlationDisplayedWindowOrdinal: Int" in text:
               raise SystemExit("correlationDisplayedWindowOrdinal already exists")
-          text = text.replace(anchor, addition + anchor, 1)
-          path.write_text(text, encoding="utf-8")
+          path.write_text(text.replace(anchor, addition + anchor, 1), encoding="utf-8")
 
       - name: Verify focused source contract
         shell: bash
         run: |
           set -euo pipefail
+          DIAG='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CORRELATION_PROGRESS_LAST_TEST_FAILURE.txt'
+          rm -f "$DIAG"
           git diff --check
           grep -Fq 'Text("\(correlationDisplayedWindowOrdinal)/4")' NembraApp/App/NembraCaptureEntrypoint.swift
           grep -Fq 'test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)' NembraApp/App/NembraCaptureEntrypoint.swift
@@ -60,7 +59,15 @@ jobs:
             echo 'ERROR: stale visible raw correlation ordinal remains.' >&2
             exit 1
           fi
-          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaCorrelationProgressPresentationTruthSourceTests
+          if ! swift test --package-path Packages/NembraBluetoothCapture --filter TuyaCorrelationProgressPresentationTruthSourceTests >/tmp/correlation-progress-test.log 2>&1; then
+            tail -n 240 /tmp/correlation-progress-test.log > "$DIAG"
+            git config user.name nembra-go-bot
+            git config user.email nembra-go-bot@users.noreply.github.com
+            git add "$DIAG"
+            git commit -m 'diag(capture): retain correlation progress test failure'
+            git push origin HEAD:fix/v14-capture-correlation-progress-gpt56sol-go
+            exit 1
+          fi
 
       - name: Commit production repair
         shell: bash
