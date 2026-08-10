@@ -1,0 +1,72 @@
+name: Materialize Capture accepted Seal VoiceOver repair
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-seal-step-voiceover-ba3a1
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard exact regression parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "99deb293599debdc05267e8a6f6855e56df027ef"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/materialize-capture-seal-step-voiceover-ba3a1.yml"
+
+      - name: Repair accepted stage semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text()
+          old = '.accessibilityLabel("Step \\(index + 1), \\(label)\\(index == currentStageIndex ? \", current\" : index < currentStageIndex ? \", complete\" : \", upcoming\")")'
+          new = '.accessibilityLabel("Step \\(index + 1), \\(label)\\(test.phase == .accepted || index < currentStageIndex ? \", complete\" : index == currentStageIndex ? \", current\" : \", upcoming\")")'
+          if source.count(old) != 1:
+              raise SystemExit(f"expected one stage accessibility label, found {source.count(old)}")
+          source = source.replace(old, new, 1)
+          path.write_text(source)
+          PY
+
+      - name: Validate source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureAcceptedStageRailAccessibilitySourceTests.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          start = source.index("private var stageRail: some View")
+          end = source.index("private var primarySurface: some View", start)
+          stage = source[start:end]
+          line = next(x for x in stage.splitlines() if '.accessibilityLabel("Step' in x)
+          assert "test.phase == .accepted" in line
+          assert '", complete"' in line
+          assert '", current"' in line
+          assert '", upcoming"' in line
+          PY
+          git diff --check
+
+      - name: Publish clean effective checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-seal-step-voiceover-ba3a1.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift .github/workflows/materialize-capture-seal-step-voiceover-ba3a1.yml
+          git diff --cached --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'fix(capture): align accepted Seal VoiceOver semantics'
+          git push origin HEAD:fix/v14-capture-seal-step-voiceover-ba3a1
