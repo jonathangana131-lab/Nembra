@@ -95,6 +95,33 @@ struct TuyaFieldAppPreflightIntegrationSourceTests {
         )
     }
 
+    @Test("SDK login must prove exact scooter home membership before discovery")
+    func exactScooterMembershipIsRequiredBeforeDiscovery() throws {
+        let entrypoint = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let startBaseline = try sourceSection(
+            in: entrypoint,
+            from: "func startBaseline()",
+            to: "func saveBaseline()"
+        )
+
+        #expect(
+            entrypoint.contains("TuyaSDKAccountDeviceMembershipGate.verdict"),
+            "ThingSmartUser.isLogin proves an SDK account session, not that this session contains the already-bound scooter. The app must consume the exact-device membership gate."
+        )
+        #expect(
+            entrypoint.contains("ThingSmartHomeManager") && entrypoint.contains("getHomeList"),
+            "The app must enumerate the current SDK account's Tuya homes rather than accepting login alone."
+        )
+        #expect(
+            entrypoint.contains("getHomeData") && entrypoint.contains("deviceList") && entrypoint.contains("sharedDeviceList"),
+            "Home detail must be loaded before owned/shared device membership is used as exact scooter authority."
+        )
+        #expect(
+            startBaseline.lowercased().contains("membership"),
+            "The physical OFF baseline scan must remain blocked until exact scooter membership is current; a UI label alone is not sufficient authority."
+        )
+    }
+
     @Test("Bluetooth discovery is impossible until the official SDK account is authorized")
     func discoveryRequiresCurrentSDKAccountAuthorization() throws {
         let entrypoint = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
