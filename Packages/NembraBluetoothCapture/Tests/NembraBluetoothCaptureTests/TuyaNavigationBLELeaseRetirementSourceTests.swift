@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Capture navigation BLE lease retirement source contract")
 struct TuyaNavigationBLELeaseRetirementSourceTests {
-    @Test("leaving Secure Link deterministically retires package correlation before controller loss")
+    @Test("leaving Secure Link revokes pending start authority and retires active package correlation")
     func secureLinkNavigationExitRetiresCorrelationLease() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let controller = String(try section(
@@ -18,10 +18,18 @@ struct TuyaNavigationBLELeaseRetirementSourceTests {
             to: "private extension SecureLinkView"
         ))
 
-        #expect(controller.contains("func abandonCorrelationForViewExit()"))
-        #expect(controller.contains("guard processCorrelationLease != nil || correlationSession != nil else { return }"))
-        #expect(controller.contains("abandonPackageCorrelation()"))
-        #expect(controller.contains("target_correlation_abandoned_on_view_exit"))
+        let cleanup = String(try section(
+            in: controller,
+            from: "func abandonCorrelationForViewExit()",
+            to: "var privateConfig: Bool"
+        ))
+        #expect(cleanup.contains("membershipRequestID = UUID()"))
+        #expect(cleanup.contains("membershipBusy = false"))
+        #expect(cleanup.contains("membershipProbe = nil"))
+        #expect(cleanup.contains("guard processCorrelationLease != nil || correlationSession != nil else { return }"))
+        #expect(cleanup.contains("abandonPackageCorrelation()"))
+        #expect(cleanup.contains("target_correlation_abandoned_on_view_exit"))
+        #expect(!cleanup.contains("releasePackageCorrelationLease()"))
         #expect(view.contains(".onDisappear"))
         #expect(view.contains("test.abandonCorrelationForViewExit()"))
     }

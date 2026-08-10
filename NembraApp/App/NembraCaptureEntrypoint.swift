@@ -414,7 +414,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
     deinit { watchdog?.cancel() }
 
     func abandonCorrelationForViewExit() {
+        // Revoke an in-flight membership request before checking scanner ownership. A late
+        // authorized callback must never begin OFF1 after Secure Link has left the screen.
+        membershipRequestID = UUID()
+        membershipBusy = false
+#if canImport(ThingSmartHomeKit)
+        membershipProbe = nil
+#endif
+
         guard processCorrelationLease != nil || correlationSession != nil else { return }
+        // Existing helper stops package transport before releasing this controller's lease.
         abandonPackageCorrelation()
         phase = .failed
         message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
