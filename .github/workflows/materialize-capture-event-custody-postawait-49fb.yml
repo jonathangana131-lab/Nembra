@@ -44,27 +44,30 @@ jobs:
           if "sdk_source_authority_changed_before_application_event_custody" in receiver:
               raise SystemExit("Post-await authority fence already present; refresh product instead of replaying")
 
-          fence = '''            await refreshLedgerSnapshot()
-
-              // The ledger hops above may interleave account/view lifecycle changes. Revalidate
-              // the exact generation and account lease immediately before immutable event custody.
-              guard currentConnectionToken == token,
-                    phase == .observing,
-                    !acceptanceCutIsClosed,
-                    sdkAccountLoggedIn,
-                    sdkDeviceMembershipVerified,
-                    accountIdentityLeaseIsAuthorized,
-                    membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) == leasedAccountUID else {
-                  if currentConnectionToken == token {
-                      await invalidateSourceAuthority(
-                          token: token,
-                          message: "SDK account/device authority changed before application evidence could enter event custody.",
-                          kind: "sdk_source_authority_changed_before_application_event_custody"
-                      )
-                  }
-                  return
-              }
-'''
+          fence_lines = [
+              "            await refreshLedgerSnapshot()",
+              "",
+              "            // The ledger hops above may interleave account/view lifecycle changes. Revalidate",
+              "            // the exact generation and account lease immediately before immutable event custody.",
+              "            guard currentConnectionToken == token,",
+              "                  phase == .observing,",
+              "                  !acceptanceCutIsClosed,",
+              "                  sdkAccountLoggedIn,",
+              "                  sdkDeviceMembershipVerified,",
+              "                  accountIdentityLeaseIsAuthorized,",
+              "                  membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) == leasedAccountUID else {",
+              "                if currentConnectionToken == token {",
+              "                    await invalidateSourceAuthority(",
+              "                        token: token,",
+              "                        message: \"SDK account/device authority changed before application evidence could enter event custody.\",",
+              "                        kind: \"sdk_source_authority_changed_before_application_event_custody\"",
+              "                    )",
+              "                }",
+              "                return",
+              "            }",
+              "",
+          ]
+          fence = "\n".join(fence_lines)
           receiver = receiver.replace(refresh, fence, 1)
           source = source[:start] + receiver + source[end:]
           path.write_text(source)
