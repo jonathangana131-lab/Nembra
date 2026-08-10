@@ -205,13 +205,17 @@ struct NembraTuyaMetadataTestView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 if credentialSaved {
-                    Label("Private scooter credential saved in this iPhone's Keychain for the next Nembra test", systemImage: "lock.shield.fill")
+                    Label("Tuya device key retained privately on this iPhone. Secure BLE authentication is still not proven.", systemImage: "lock.shield.fill")
                         .font(.footnote)
                         .foregroundStyle(.green)
                 } else if device.localKey.isEmpty {
                     Label("Tuya did not provide a private local key for this device; the JSON is still useful", systemImage: "info.circle")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                } else {
+                    Label("Tuya returned a device key, but Keychain verification failed. The secure-link test must stay blocked.", systemImage: "exclamationmark.shield.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
                 }
             }
 
@@ -263,27 +267,59 @@ private enum TuyaCaptureCredentialStore {
     private static let service = "com.jonathangana131.nembra.capturelearn.tuya"
     private static let account = "selected-scooter"
 
+    private struct StoredCredential: Codable, Equatable {
+        let deviceID: String
+        let productID: String
+        let uuid: String
+        let localKey: String
+    }
+
     static func save(device: TuyaAccountBridge.LinkedDevice) -> Bool {
         guard !device.localKey.isEmpty else { return false }
-        let payload: [String: String] = [
-            "deviceID": device.id,
-            "productID": device.productID,
-            "uuid": device.uuid,
-            "localKey": device.localKey
-        ]
-        guard let data = try? JSONEncoder().encode(payload) else { return false }
+        let credential = StoredCredential(
+            deviceID: device.id,
+            productID: device.productID,
+            uuid: device.uuid,
+            localKey: device.localKey
+        )
+        guard let data = try? JSONEncoder().encode(credential) else { return false }
 
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
-        SecItemDelete(query as CFDictionary)
+        let update: [String: Any] = [
+            kSecValueData as String: data
+        ]
 
-        var insert = query
-        insert[kSecValueData as String] = data
-        insert[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        return SecItemAdd(insert as CFDictionary, nil) == errSecSuccess
+        let updateStatus = SecItemUpdate(query as CFDictionary, update as CFDictionary)
+        if updateStatus == errSecItemNotFound {
+            var insert = query
+            insert[kSecValueData as String] = data
+            insert[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            guard SecItemAdd(insert as CFDictionary, nil) == errSecSuccess else { return false }
+        } else if updateStatus != errSecSuccess {
+            return false
+        }
+
+        return load() == credential
+    }
+
+    private static func load() -> StoredCredential? {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data else {
+            return nil
+        }
+        return try? JSONDecoder().decode(StoredCredential.self, from: data)
     }
 }
 
@@ -306,7 +342,7 @@ struct TuyaSecureLinkPreflightView: View {
                 .foregroundStyle(.green)
             Text("Metadata first")
                 .font(.largeTitle.bold())
-            Text("Send the redacted metadata JSON first. The secure Bluetooth test stays locked until Nembra can build it from your actual bound-device information instead of guessing.")
+            Text("Send the redacted metadata JSON first. A retained Tuya device key is not treated as proof of BLE authentication. The secure Bluetooth test stays locked until Nembra can establish the documented secure session, receive a current post-auth notification payload, and survive the full stability window.")
                 .foregroundStyle(.secondary)
             Spacer()
         }
