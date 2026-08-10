@@ -1439,15 +1439,36 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        guard let verifiedAccountUID = membershipAccountUID,
+              !verifiedAccountUID.isEmpty else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "Verified Tuya account identity became unavailable before application evidence could enter event custody.",
+                kind: "sdk_account_uid_unavailable_before_application_event_custody"
+            )
+            return
+        }
+
+        let exportSafeUpdate = update.reduce(into: [String: String]()) { sanitized, entry in
+            let safeKey = entry.key.replacingOccurrences(
+                of: verifiedAccountUID,
+                with: "<redacted-account-uid>"
+            )
+            let safeValue = entry.value.replacingOccurrences(
+                of: verifiedAccountUID,
+                with: "<redacted-account-uid>"
+            )
+            sanitized[safeKey] = safeValue
+        }
         applicationUpdateAdmissionsInFlight += 1
         defer { applicationUpdateAdmissionsInFlight -= 1 }
 
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            log("tuya_application_update", exportSafeUpdate.merging([
                 "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -2261,7 +2282,6 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "accounttoken",
         "accesstoken",
         "refreshtoken",
-        "sessionkey",
         "authkey",
         "seckey",
     ]
