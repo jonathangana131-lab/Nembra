@@ -1,0 +1,22 @@
+name: Apply Capture Premium Root Recovery
+
+on:
+  push:
+    branches:
+      - product/v14-capture-premium-root-recovery-sol
+    paths:
+      - .github/workflows/apply-capture-premium-root-recovery.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: product/v14-capture-premium-root-recovery-sol
+          fetch-depth: 0
+      - name: Apply and validate product repair
+        run: python3 scripts/ci/apply_capture_premium_root_recovery.py
