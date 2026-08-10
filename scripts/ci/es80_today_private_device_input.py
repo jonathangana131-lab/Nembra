@@ -281,7 +281,9 @@ def create_private_input(
 
         os.fsync(directory_descriptor)
         return output_path
-    except Exception:
+    except BaseException:
+        # Cleanup is part of private-input custody even for terminal aborts such as Ctrl-C. Re-raise
+        # the original exception immediately after removing only the exact fresh inode we created.
         if created_object_identity is not None:
             try:
                 current = os.stat(filename, dir_fd=directory_descriptor, follow_symlinks=False)
