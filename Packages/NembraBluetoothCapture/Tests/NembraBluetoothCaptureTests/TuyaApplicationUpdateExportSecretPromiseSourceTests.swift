@@ -39,6 +39,10 @@ struct TuyaApplicationUpdateExportSecretPromiseSourceTests {
             "seckey",
         ] {
             #expect(driver.contains("\"\(fragment)\""), "Application sanitizer must redact export-promised credential key: \(fragment)")
+            #expect(
+                driver.components(separatedBy: "\"\(fragment)\"").count == 2,
+                "Application sanitizer credential fragments must be unique: \(fragment)"
+            )
         }
 
         #expect(driver.contains("String(describing: Self.redactApplicationSecrets(value))"))
