@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 3
           ref: red/v14-capture-cross-tree-revalidation-4c1b-sol
       - name: Assert exact repair parent and test-only scope
         shell: bash
