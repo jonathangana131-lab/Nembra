@@ -19,13 +19,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Guard exact current product parent
+      - name: Guard exact current product parent and untouched product paths
         shell: bash
         run: |
           set -euo pipefail
           parent='b59cd71272b465bcad70fcc3425382bb29541b2e'
-          test "$(git rev-parse HEAD^)" = "$parent"
-          test "$(git diff --name-only "$parent" HEAD)" = '.github/workflows/materialize-capture-view-exit-membership-b59.yml'
+          git merge-base --is-ancestor "$parent" HEAD
+          git diff --quiet "$parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift
+          test "$(git diff --name-only "$parent" HEAD | grep -Ev '^.github/workflows/materialize-capture-view-exit-membership-b59.yml$' || true)" = ""
 
       - name: Strengthen view-exit authority retirement
         shell: bash
