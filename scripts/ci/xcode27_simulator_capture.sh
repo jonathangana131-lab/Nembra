@@ -179,6 +179,7 @@ capture_state() {
   local state="$1"
   local appearance="${2:-light}"
   local suffix="${3:-}"
+  local settle_seconds="${4:-2}"
   local artifact_name="${state}-${appearance}"
   if [[ -n "$suffix" ]]; then
     artifact_name="${artifact_name}-${suffix}"
@@ -198,7 +199,7 @@ capture_state() {
     exit 5
   fi
 
-  sleep 2
+  sleep "$settle_seconds"
   if ! kill -0 "$pid" >/dev/null 2>&1; then
     echo "Nembra exited before ${artifact_name} screenshot capture." >&2
     exit 6
@@ -225,7 +226,7 @@ set_content_size() {
   fi
 }
 
-# Baseline direct screenshot matrix stays at the normal system text size.
+# Baseline product matrix at the normal system text size.
 set_content_size large || exit 8
 for state in \
   cold-disconnected \
@@ -252,8 +253,18 @@ echo "dashboard_ax5_content_size=$AX5_CONTENT_SIZE" >> "$ARTIFACTS_DIR/environme
 capture_state connected-stopped light ax5
 capture_state riding light ax5
 
-# Leave cleanup and any subsequent diagnostics in the normal baseline environment.
+# Return to baseline text size before the long freshness capture. Keep the Store's
+# riding power source unchanged for >30 s under the real Reduce Motion setting so
+# NembraCore's package-owned freshness horizon must reproject the exact same receipt
+# from LIVE to RETAINED without any new source callback. The resulting screenshot is
+# the visual proof for the one-shot semantic deadline; no app/test override shortens
+# or manufactures the accepted 30 s Simulator freshness contract.
 set_content_size large || exit 10
+xcrun simctl ui "$UDID" reduce_motion enabled
+FRESHNESS_CAPTURE_SECONDS=33
+echo "dashboard_reduce_motion_freshness_capture_seconds=$FRESHNESS_CAPTURE_SECONDS" >> "$ARTIFACTS_DIR/environment.txt"
+capture_state riding light reduce-motion-freshness "$FRESHNESS_CAPTURE_SECONDS"
+xcrun simctl ui "$UDID" reduce_motion disabled || true
 
 printf '%s\n' "Captured screenshots:" > "$ARTIFACTS_DIR/screenshots.txt"
 find "$ARTIFACTS_DIR/screenshots" -type f -name '*.png' -print | sort >> "$ARTIFACTS_DIR/screenshots.txt"
