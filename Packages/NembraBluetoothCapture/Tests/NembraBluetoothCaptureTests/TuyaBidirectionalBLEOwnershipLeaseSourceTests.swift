@@ -64,6 +64,14 @@ struct TuyaBidirectionalBLEOwnershipLeaseSourceTests {
 
         let finish = try section(in: source, from: "private func finishCorrelationSeries", to: "func confirmCorrelatedTarget")
         #expect(finish.contains("releasePackageCorrelationOwnership()"))
+        let membershipInvalidation = try section(in: source, from: "func invalidateSDKMembership()", to: "func verifySDKMembership")
+        let abandon = membershipInvalidation.range(of: "correlationSession?.abandonCurrentWindow()")
+        let release = membershipInvalidation.range(of: "releasePackageCorrelationOwnership()")
+        #expect(abandon != nil)
+        #expect(release != nil)
+        if let abandon, let release {
+            #expect(abandon.lowerBound < release.lowerBound)
+        }
         let failure = try section(in: source, from: "private func failLocally", to: "private func log")
         #expect(failure.contains("releasePackageCorrelationOwnership()"))
     }

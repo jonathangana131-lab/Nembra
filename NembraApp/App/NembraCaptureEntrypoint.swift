@@ -819,6 +819,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         if phase == .baseline || phase == .powerOn || phase == .scanning || phase == .correlated {
             correlationSession?.abandonCurrentWindow()
             correlationSession = nil
+            releasePackageCorrelationOwnership()
         }
         membershipStatus = "Official SDK login changed. Exact scooter membership must be verified again."
 #if canImport(ThingSmartHomeKit)
