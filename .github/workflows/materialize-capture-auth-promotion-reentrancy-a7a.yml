@@ -22,7 +22,7 @@ jobs:
         run: |
           set -euo pipefail
           BASE='a7a28ca6e744d4bad8be08fd3553a2af8c609b15'
-          test "$(git rev-parse HEAD^)" = "$BASE"
+          test "$(git merge-base HEAD "$BASE")" = "$BASE"
           mapfile -t paths < <(git diff --name-only "$BASE"...HEAD)
           test "${#paths[@]}" -eq 1
           test "${paths[0]}" = '.github/workflows/materialize-capture-auth-promotion-reentrancy-a7a.yml'
@@ -33,21 +33,13 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          import textwrap
 
           app_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           app = app_path.read_text(encoding='utf-8')
-          old = '''                    try await sessionLedger.markAuthenticated(for: token, method: .smartLifeAppSDK)
-                    await refreshLedgerSnapshot()
-                    phase = .observing
-                    message = "Authenticated generation \\(token.diagnosticGeneration) is live. Waiting for a genuine application update and the canonical 45-second horizon…"
-                    log("sdk_local_ble_authenticated", [
-                        "generation": String(token.diagnosticGeneration),
-                        "localBLEOnline": "true"
-                    ])
-                    startWatchdog(token: token)
-          '''
-          new = '''                    try await sessionLedger.markAuthenticated(for: token, method: .smartLifeAppSDK)
-                    await refreshLedgerSnapshot()
+          anchor = '''                    await refreshLedgerSnapshot()
+                    phase = .observing'''
+          replacement = '''                    await refreshLedgerSnapshot()
 
                     // Both actor hops above may interleave foreground/view/account retirement.
                     // Never resurrect app-visible observation state after another task has already
@@ -75,22 +67,16 @@ jobs:
                         return
                     }
 
-                    phase = .observing
-                    message = "Authenticated generation \\(token.diagnosticGeneration) is live. Waiting for a genuine application update and the canonical 45-second horizon…"
-                    log("sdk_local_ble_authenticated", [
-                        "generation": String(token.diagnosticGeneration),
-                        "localBLEOnline": "true"
-                    ])
-                    startWatchdog(token: token)
-          '''
-          if app.count(old) != 1:
-              raise SystemExit(f'expected one authentication promotion block, found {app.count(old)}')
-          app_path.write_text(app.replace(old, new, 1), encoding='utf-8')
+                    phase = .observing'''
+          if app.count(anchor) != 1:
+              raise SystemExit(f'expected one post-auth refresh/promotion anchor, found {app.count(anchor)}')
+          app_path.write_text(app.replace(anchor, replacement, 1), encoding='utf-8')
 
           test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticationPromotionReentrancySourceTests.swift')
           if test_path.exists():
               raise SystemExit('auth promotion reentrancy regression already exists; refresh live product instead of replaying')
-          test_path.write_text(r'''import Foundation
+          test_path.write_text(textwrap.dedent(r'''\
+          import Foundation
           import Testing
           @testable import NembraBluetoothCapture
 
@@ -157,7 +143,7 @@ jobs:
               private func section(in source: String, from start: String, to end: String) throws -> Substring {
                   guard let a = source.range(of: start),
                         let b = source.range(of: end, range: a.upperBound..<source.endIndex) else {
-                      Issue.record("Expected source section missing: \\(start) ... \\(end)")
+                      Issue.record("Expected source section missing: \(start) ... \(end)")
                       throw SourceContractError.sectionMissing
                   }
                   return source[a.lowerBound..<b.lowerBound]
@@ -177,7 +163,7 @@ jobs:
                   case sectionMissing
               }
           }
-          ''', encoding='utf-8')
+          '''), encoding='utf-8')
           PY
 
       - name: Validate focused source and package contracts
