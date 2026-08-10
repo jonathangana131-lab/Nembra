@@ -1,4 +1,4 @@
-name: QA Capture cross-controller BLE 1c2825
+name: QA Capture cross-controller BLE a47f96
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: qa-capture-cross-controller-ble-1c2825
+  group: qa-capture-cross-controller-ble-a47f96
   cancel-in-progress: true
 
 jobs:
@@ -18,19 +18,20 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 30
     steps:
-      - name: Checkout exact product repair SHA
+      - name: Checkout exact composed product repair SHA
         uses: actions/checkout@v4
         with:
-          ref: 1c2825c5d91fa374e04e8cfc5c3dc41ef6464836
+          ref: a47f96eaa9a6ecd2912684fe426ae10ef6ab4c9b
           fetch-depth: 0
 
-      - name: Prove exact checkout and clean delta
+      - name: Prove exact checkout and one-commit two-file delta
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = '1c2825c5d91fa374e04e8cfc5c3dc41ef6464836'
-          git diff --check e7af19bf1d9b21c2b184c2a8c403d0d86dbc06c7...HEAD
-          changed="$(git diff --name-only e7af19bf1d9b21c2b184c2a8c403d0d86dbc06c7...HEAD)"
+          test "$(git rev-parse HEAD)" = 'a47f96eaa9a6ecd2912684fe426ae10ef6ab4c9b'
+          test "$(git rev-parse HEAD^)" = '39b574275f390cfa14c4e106cdabc54c1b9580b2'
+          git diff --check HEAD^...HEAD
+          changed="$(git diff --name-only HEAD^...HEAD)"
           printf '%s\n' "$changed"
           test "$changed" = $'NembraApp/App/NembraCaptureEntrypoint.swift\nPackages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCrossControllerBLEOwnershipSourceTests.swift'
 
@@ -82,7 +83,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: capture-cross-controller-ble-1c2825-build-logs
+          name: capture-cross-controller-ble-a47f96-build-logs
           path: |
             /tmp/nembra-cross-controller-simulator-build.log
             /tmp/nembra-cross-controller-device-build.log
