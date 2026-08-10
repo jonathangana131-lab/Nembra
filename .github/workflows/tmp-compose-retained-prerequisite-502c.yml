@@ -1,0 +1,102 @@
+name: Temporary compose retained prerequisite recovery on 502c
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-retained-prerequisite-502c-sol
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-retained-prerequisite-502c-sol
+          fetch-depth: 0
+
+      - name: Guard exact isolated product parent
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 502cfc43d8943bacb446f287b58d46463df3a7ca HEAD
+          test "$(git diff --name-only 502cfc43d8943bacb446f287b58d46463df3a7ca..HEAD)" = ".github/workflows/tmp-compose-retained-prerequisite-502c.yml"
+
+      - name: Apply retired-generation prerequisite authority
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          app_path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          app = app_path.read_text()
+          replacements = {
+              "            } else if !sdkAccount.loggedIn || !test.sdkAccountLoggedIn {":
+              "            } else if test.canRestartFromFreshOFF1 && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn) {",
+              "            } else if !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized {":
+              "            } else if test.canRestartFromFreshOFF1 && test.sdkAccountLoggedIn && (!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized) {",
+          }
+          for old, new in replacements.items():
+              count = app.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected one recovery anchor, found {count}: {old}")
+              app = app.replace(old, new, 1)
+          app_path.write_text(app)
+
+          test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteRecoverySourceTests.swift")
+          test = test_path.read_text()
+          old1 = '#expect(body.contains("!sdkAccount.loggedIn || !test.sdkAccountLoggedIn"))'
+          new1 = '#expect(body.contains("test.canRestartFromFreshOFF1 && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn)"))'
+          old2 = '#expect(body.contains("!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized"))'
+          new2 = '#expect(body.contains("test.canRestartFromFreshOFF1 && test.sdkAccountLoggedIn && (!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized)"))'
+          if test.count(old1) != 1 or test.count(old2) != 1:
+              raise SystemExit("current recovery regression anchors changed")
+          test = test.replace(old1, new1, 1).replace(old2, new2, 1)
+          anchor = '    @Test("in-process retry remains gated by controller-owned retired-session authority")\n'
+          extra = '''    @Test("retained generation remains relaunch-only even when a prerequisite is missing")
+    func retainedGenerationCannotEnterPrerequisiteRecovery() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let surface = try section(in: app, from: "private var primarySurface: some View", to: "private var preflightPanel: some View")
+        let body = String(surface)
+        #expect(body.contains("test.canRestartFromFreshOFF1 && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn)"))
+        #expect(body.contains("test.canRestartFromFreshOFF1 && test.sdkAccountLoggedIn && (!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized)"))
+        #expect(body.contains("else {\\n                failurePanel\\n            }"))
+    }
+
+'''
+          if test.count(anchor) != 1:
+              raise SystemExit("retry test insertion anchor changed")
+          test_path.write_text(test.replace(anchor, extra + anchor, 1))
+          PY
+
+      - name: Validate exact product truth
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteRecoverySourceTests.swift').read_text()
+          login = 'test.canRestartFromFreshOFF1 && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn)'
+          membership = 'test.canRestartFromFreshOFF1 && test.sdkAccountLoggedIn && (!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized)'
+          assert login in app and membership in app
+          assert login in test and membership in test
+          assert 'phase == .failed && currentConnectionToken == nil && localBLESettlementToken == nil && driver == nil' in app
+          assert 'procedureIdentifier: buildIdentity.procedureIdentifier' in app
+          assert 'schemaVersion: 10' in app
+          identity = Path('NembraApp/App/NembraCaptureBuildIdentity.swift').read_text()
+          assert 'procedureIdentifier == Self.fieldProcedureIdentifier' in identity
+          installer = Path('scripts/field/install_one_time_capture.command').read_text()
+          assert 'BUILT_PROCEDURE_IDENTIFIER' in installer
+          PY
+          git diff --check
+
+      - name: Commit clean two-file product fix
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tmp-compose-retained-prerequisite-502c.yml
+          git config user.name nembra-go-bot
+          git config user.email nembra-go-bot@users.noreply.github.com
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteRecoverySourceTests.swift .github/workflows/tmp-compose-retained-prerequisite-502c.yml
+          git diff --cached --check
+          git commit -m 'fix(capture): keep unresolved failures relaunch-only'
+          git push origin HEAD:fix/v14-capture-retained-prerequisite-502c-sol
