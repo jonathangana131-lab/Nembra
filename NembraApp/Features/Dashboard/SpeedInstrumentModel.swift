@@ -2,6 +2,7 @@ import Dispatch
 import Foundation
 import Observation
 import SwiftUI
+import struct NembraCore.PropulsionEnergyRailSimulatorRuntime
 
 enum SpeedInstrumentDisplayOrigin: Equatable {
     case acceptedSourceFallback
@@ -288,15 +289,100 @@ final class SpeedInstrumentModel {
     }
 }
 
+/// The app-side admission envelope for synthetic power presentation.
+///
+/// This input is deliberately narrower than `VehicleState`: package-owned Energy
+/// Rail truth may consume Simulator power only when the active app profile itself
+/// is the explicit Simulator QA profile and advertises synthetic power support.
+/// Physical/unverified profiles therefore project unavailable even if a retained
+/// or caller-populated `powerWatts` value exists.
+private struct DashboardEnergyRailSourceInput: Equatable {
+    let isAuthorizedSimulatorProfile: Bool
+    let connected: Bool
+    let watts: Double?
+    let modeKey: String?
+
+    var canAdvanceDisplayClock: Bool {
+        guard isAuthorizedSimulatorProfile,
+              connected,
+              let watts,
+              watts.isFinite,
+              watts >= 0 else {
+            return false
+        }
+        return true
+    }
+}
+
+/// Localized Energy Rail runtime bridge for deterministic Simulator product QA.
+///
+/// Source changes enter `observe` only when the app's semantic vehicle state
+/// changes. The nested timeline advances package-owned display presentation only;
+/// its intermediate watts/rail positions never flow back into VehicleState,
+/// persistence, records, protocol evidence, or physical claims.
+@MainActor
+private struct DashboardEnergyRailInstrumentView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var runtime: PropulsionEnergyRailSimulatorRuntime? = try? PropulsionEnergyRailSimulatorRuntime()
+
+    let input: DashboardEnergyRailSourceInput
+
+    var body: some View {
+        TimelineView(
+            .animation(
+                minimumInterval: reduceMotion ? 1.0 : (1.0 / 60.0),
+                paused: !input.canAdvanceDisplayClock
+            )
+        ) { _ in
+            NembraEnergyRailView(
+                state: visualState(
+                    atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
+                )
+            )
+        }
+        .task {
+            admit(input)
+        }
+        .onChange(of: input) { _, newInput in
+            admit(newInput)
+        }
+    }
+
+    private func visualState(
+        atUptimeNanoseconds uptimeNanoseconds: UInt64
+    ) -> NembraEnergyRailVisualState {
+        guard let runtime else { return .unavailable }
+        return NembraEnergyRailVisualState(
+            projection: runtime.projection(
+                atUptimeNanoseconds: uptimeNanoseconds
+            )
+        )
+    }
+
+    private func admit(_ input: DashboardEnergyRailSourceInput) {
+        guard var runtime else { return }
+
+        let isAdmitted = input.isAuthorizedSimulatorProfile
+        _ = runtime.observe(
+            connected: isAdmitted && input.connected,
+            watts: isAdmitted ? input.watts : nil,
+            modeKey: isAdmitted ? input.modeKey : nil,
+            receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
+        )
+        self.runtime = runtime
+    }
+}
+
 /// A deliberately narrow high-frequency subtree for the landscape cockpit.
 ///
-/// Only this view redraws on SwiftUI's animation timeline. Vehicle controls,
-/// ride detection, persistence, distance, and safety continue to consume the
-/// accepted domain/source state rather than the rendered interpolation frame.
+/// Only the speed and Energy Rail presentation subtrees own display clocks.
+/// Vehicle controls, ride detection, persistence, distance, and safety continue
+/// to consume accepted domain/source state rather than rendered interpolation frames.
 @MainActor
 struct DashboardSpeedInstrumentView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var model = SpeedInstrumentModel()
 
     let modePersonality: DashboardModePersonality
@@ -308,22 +394,29 @@ struct DashboardSpeedInstrumentView: View {
             allowsSimulatorQA: allowsSimulatorQA
         )
 
-        TimelineView(
-            .animation(
-                minimumInterval: 1.0 / 60.0,
-                paused: reduceMotion
-                    || !model.isAnimationActive
-                    || !isLivePresentation(speedAvailability)
-            )
-        ) { _ in
-            let frame = model.presentationFrame(
-                for: rawSpeedAvailability,
-                atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
-                prefersReducedMotion: reduceMotion,
-                allowsSimulatorQA: allowsSimulatorQA
-            )
+        ZStack(alignment: .bottom) {
+            TimelineView(
+                .animation(
+                    minimumInterval: 1.0 / 60.0,
+                    paused: reduceMotion
+                        || !model.isAnimationActive
+                        || !isLivePresentation(speedAvailability)
+                )
+            ) { _ in
+                let frame = model.presentationFrame(
+                    for: rawSpeedAvailability,
+                    atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+                    prefersReducedMotion: reduceMotion,
+                    allowsSimulatorQA: allowsSimulatorQA
+                )
 
-            instrumentContent(frame: frame, speedAvailability: speedAvailability)
+                instrumentContent(frame: frame, speedAvailability: speedAvailability)
+                    .padding(.bottom, energyRailReservedHeight)
+            }
+
+            DashboardEnergyRailInstrumentView(input: energyRailSourceInput)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, dynamicTypeSize.isAccessibilitySize ? 2 : 8)
         }
         .task {
             model.configureInterpolationPolicy(vehicle.speedInstrumentInterpolationPolicy)
@@ -341,6 +434,20 @@ struct DashboardSpeedInstrumentView: View {
         .onDisappear {
             model.stop()
         }
+    }
+
+    private var energyRailSourceInput: DashboardEnergyRailSourceInput {
+        DashboardEnergyRailSourceInput(
+            isAuthorizedSimulatorProfile: vehicle.profile == .simulatorQA
+                && vehicle.profile.capabilities.supportsPowerWatts,
+            connected: vehicle.state.connection == .connected,
+            watts: vehicle.state.powerWatts.map { Double($0) },
+            modeKey: vehicle.state.rideMode?.rawValue
+        )
+    }
+
+    private var energyRailReservedHeight: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 160 : 98
     }
 
     private func isLivePresentation(_ availability: SpeedEvidenceAvailability) -> Bool {
