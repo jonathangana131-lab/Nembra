@@ -11,12 +11,14 @@ struct SimulatorPowerEvidenceTests {
         )
 
         let availability = await service.simulatorPowerEvidenceSnapshot()
-        guard case let .live(observation) = availability else {
+        #expect(availability.currentness == .live)
+        guard let observation = availability.observation else {
             Issue.record("Expected connected Simulator riding fixture to expose live power evidence")
             return
         }
         #expect(observation.watts == 356)
         #expect(observation.receiptSequenceNumber == 1)
+        #expect(observation.receivedAtUptimeNanoseconds > 0)
         #expect(observation.continuityGeneration > 0)
     }
 
@@ -27,34 +29,35 @@ struct SimulatorPowerEvidenceTests {
             commandLatencyNanoseconds: 0
         )
 
-        guard case let .live(initial) = await service.simulatorPowerEvidenceSnapshot() else {
+        let initialAvailability = await service.simulatorPowerEvidenceSnapshot()
+        #expect(initialAvailability.currentness == .live)
+        guard let initial = initialAvailability.observation else {
             Issue.record("Expected initial live power evidence")
             return
         }
 
         await service.disconnect()
-        guard case let .retained(retained) = await service.simulatorPowerEvidenceSnapshot() else {
-            Issue.record("Disconnect must demote power evidence to retained")
-            return
-        }
-        #expect(retained == initial)
+        let retainedAvailability = await service.simulatorPowerEvidenceSnapshot()
+        #expect(retainedAvailability.currentness == .retained)
+        #expect(retainedAvailability.observation == initial)
 
         await service.connect()
         #expect((await service.snapshot()).connection == .connected)
         #expect((await service.snapshot()).powerWatts == 356)
-        guard case let .retained(afterReconnect) = await service.simulatorPowerEvidenceSnapshot() else {
-            Issue.record("Reconnect and fresh speed evidence must not revive cached propulsion power")
-            return
-        }
-        #expect(afterReconnect == initial)
+        let afterReconnect = await service.simulatorPowerEvidenceSnapshot()
+        #expect(afterReconnect.currentness == .retained)
+        #expect(afterReconnect.observation == initial)
 
         await service.simulateRide(speedKilometersPerHour: 18.4, elapsedSeconds: 0)
-        guard case let .live(refreshed) = await service.simulatorPowerEvidenceSnapshot() else {
+        let refreshedAvailability = await service.simulatorPowerEvidenceSnapshot()
+        #expect(refreshedAvailability.currentness == .live)
+        guard let refreshed = refreshedAvailability.observation else {
             Issue.record("A genuine Simulator ride observation must restore live power evidence")
             return
         }
         #expect(refreshed.watts == 356)
         #expect(refreshed.receiptSequenceNumber > initial.receiptSequenceNumber)
+        #expect(refreshed.receivedAtUptimeNanoseconds > initial.receivedAtUptimeNanoseconds)
         #expect(refreshed.continuityGeneration > initial.continuityGeneration)
     }
 
@@ -67,18 +70,25 @@ struct SimulatorPowerEvidenceTests {
             commandLatencyNanoseconds: 0
         )
 
-        guard case let .live(initial) = await service.simulatorPowerEvidenceSnapshot() else {
+        let initialAvailability = await service.simulatorPowerEvidenceSnapshot()
+        #expect(initialAvailability.currentness == .live)
+        guard let initial = initialAvailability.observation else {
             Issue.record("Expected initial live zero-watt Simulator evidence")
             return
         }
 
         await service.simulateRide(speedKilometersPerHour: 0, elapsedSeconds: 0)
-        guard case let .live(second) = await service.simulatorPowerEvidenceSnapshot() else {
+        let secondAvailability = await service.simulatorPowerEvidenceSnapshot()
+        #expect(secondAvailability.currentness == .live)
+        guard let second = secondAvailability.observation else {
             Issue.record("Expected first repeated zero-watt observation to remain live")
             return
         }
+
         await service.simulateRide(speedKilometersPerHour: 0, elapsedSeconds: 0)
-        guard case let .live(third) = await service.simulatorPowerEvidenceSnapshot() else {
+        let thirdAvailability = await service.simulatorPowerEvidenceSnapshot()
+        #expect(thirdAvailability.currentness == .live)
+        guard let third = thirdAvailability.observation else {
             Issue.record("Expected second repeated zero-watt observation to remain live")
             return
         }
@@ -88,6 +98,7 @@ struct SimulatorPowerEvidenceTests {
         #expect(third.watts == 0)
         #expect(second.receiptSequenceNumber == initial.receiptSequenceNumber + 1)
         #expect(third.receiptSequenceNumber == second.receiptSequenceNumber + 1)
+        #expect(initial.receivedAtUptimeNanoseconds > 0)
         #expect(second.receivedAtUptimeNanoseconds > initial.receivedAtUptimeNanoseconds)
         #expect(third.receivedAtUptimeNanoseconds > second.receivedAtUptimeNanoseconds)
     }
@@ -99,19 +110,15 @@ struct SimulatorPowerEvidenceTests {
             commandLatencyNanoseconds: 0
         )
 
-        guard case let .live(before) = await service.simulatorPowerEvidenceSnapshot() else {
-            Issue.record("Expected initial live Simulator power")
-            return
-        }
+        let before = await service.simulatorPowerEvidenceSnapshot()
+        #expect(before.currentness == .live)
+        #expect(before.observation != nil)
 
         try await service.setRideMode(.drive)
         try await service.setHeadlight(true)
         try await service.setCruise(true)
 
-        guard case let .live(after) = await service.simulatorPowerEvidenceSnapshot() else {
-            Issue.record("Unrelated commands must not remove existing live source evidence")
-            return
-        }
+        let after = await service.simulatorPowerEvidenceSnapshot()
         #expect(after == before)
     }
 
@@ -122,7 +129,9 @@ struct SimulatorPowerEvidenceTests {
             commandLatencyNanoseconds: 0
         )
 
-        guard case let .live(initial) = await service.simulatorPowerEvidenceSnapshot() else {
+        let initialAvailability = await service.simulatorPowerEvidenceSnapshot()
+        #expect(initialAvailability.currentness == .live)
+        guard let initial = initialAvailability.observation else {
             Issue.record("Expected initial live Simulator power")
             return
         }
@@ -130,37 +139,39 @@ struct SimulatorPowerEvidenceTests {
 
         let stream = await service.simulatorPowerEvidenceUpdates()
         var iterator = stream.makeAsyncIterator()
-        #expect(await iterator.next() == .retained(initial))
+        guard let replay = await iterator.next() else {
+            Issue.record("Expected retained replay")
+            return
+        }
+        #expect(replay.currentness == .retained)
+        #expect(replay.observation == initial)
     }
 
-    @Test("receipt construction rejects invalid value and identity domains")
-    func receiptConstructionFailsClosed() {
-        func constructionError(
-            watts: Double = 1,
-            receiptSequenceNumber: UInt64 = 1,
-            continuityGeneration: UInt64 = 1
-        ) -> SimulatorPowerObservationError? {
-            do {
-                _ = try SimulatorPowerObservation(
-                    watts: watts,
-                    receiptSequenceNumber: receiptSequenceNumber,
-                    receivedAtUptimeNanoseconds: 1,
-                    continuityGeneration: continuityGeneration
-                )
-                return nil
-            } catch let error as SimulatorPowerObservationError {
-                return error
-            } catch {
-                return nil
-            }
-        }
+    @Test("invalid ride inputs cannot mint a propulsion receipt")
+    func invalidRideInputsCannotAdvanceSourceReceipt() async throws {
+        var initialState = SimulatedScooterService.state(for: .connectedStopped)
+        initialState.isLocked = false
+        let service = SimulatedScooterService(
+            initialState: initialState,
+            commandLatencyNanoseconds: 0
+        )
 
-        #expect(constructionError(watts: -1) == .invalidWatts)
-        #expect(constructionError(watts: .nan) == .invalidWatts)
-        #expect(constructionError(watts: .infinity) == .invalidWatts)
-        #expect(constructionError(receiptSequenceNumber: 0) == .invalidReceiptSequence)
-        #expect(constructionError(continuityGeneration: 0) == .invalidContinuityGeneration)
-        #expect(constructionError(watts: 0) == nil)
+        let initial = await service.simulatorPowerEvidenceSnapshot()
+        #expect(initial.currentness == .live)
+        #expect(initial.observation != nil)
+
+        let invalidInputs: [(Double, Double)] = [
+            (-1, 0),
+            (.nan, 0),
+            (.infinity, 0),
+            (0, -1),
+            (0, .nan),
+            (0, .infinity)
+        ]
+        for (speed, elapsed) in invalidInputs {
+            await service.simulateRide(speedKilometersPerHour: speed, elapsedSeconds: elapsed)
+            #expect(await service.simulatorPowerEvidenceSnapshot() == initial)
+        }
     }
 
     @Test("non-Simulator profile cannot expose synthetic power authority")
