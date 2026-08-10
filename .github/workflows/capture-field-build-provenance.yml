@@ -8,7 +8,9 @@ on:
   pull_request:
     paths:
       - NembraApp/App/NembraCaptureBuildIdentity.swift
+      - NembraApp/App/NembraCaptureEntrypoint.swift
       - NembraCapture.xcodeproj/project.pbxproj
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift
       - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift
       - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerPrivateInstallLogCustodySourceTests.swift
       - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift
@@ -43,6 +45,7 @@ jobs:
         run: |
           set -euo pipefail
           identity='NembraApp/App/NembraCaptureBuildIdentity.swift'
+          entrypoint='NembraApp/App/NembraCaptureEntrypoint.swift'
           project='NembraCapture.xcodeproj/project.pbxproj'
           installer='scripts/field/install_one_time_capture.command'
           bootstrap='Scripts/bootstrap_capture_tuya_sdk.sh'
@@ -61,6 +64,8 @@ jobs:
           grep -Fq 'BUILD_LABEL="capture-v14-${SOURCE_SHA:0:12}"' "$installer"
           grep -Fq 'NEMBRA_CAPTURE_BUILD_IDENTIFIER="$BUILD_LABEL"' "$installer"
           grep -Fq 'NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$SOURCE_SHA"' "$installer"
+          grep -Fq 'TUYA_DEPENDENCY_LOCK_SHA256="$(shasum -a 256 "$ROOT/Podfile.lock"' "$installer"
+          grep -Fq 'NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256' "$installer"
           if grep -Fq 'Switch to capture/one-time-ble-dump-gpt56 first' "$installer"; then
             echo 'ERROR: field-build authority must bind the accepted source SHA, not a branch name.' >&2
             exit 1
@@ -105,9 +110,11 @@ jobs:
           grep -Fq 'APP_INFO_PLIST="$APP/Info.plist"' "$installer"
           grep -Fq 'plutil -extract NembraCaptureBuildIdentifier raw -o - "$APP_INFO_PLIST"' "$installer"
           grep -Fq 'plutil -extract NembraCaptureSourceCommitSHA raw -o - "$APP_INFO_PLIST"' "$installer"
+          grep -Fq 'plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$APP_INFO_PLIST"' "$installer"
           grep -Fq 'plutil -extract CFBundleIdentifier raw -o - "$APP_INFO_PLIST"' "$installer"
           grep -Fq '[[ "$BUILT_BUILD_IDENTIFIER" == "$BUILD_LABEL" ]]' "$installer"
           grep -Fq '[[ "$BUILT_SOURCE_SHA" == "$SOURCE_SHA" ]]' "$installer"
+          grep -Fq '[[ "$BUILT_TUYA_DEPENDENCY_LOCK_SHA256" == "$TUYA_DEPENDENCY_LOCK_SHA256" ]]' "$installer"
           grep -Fq '[[ "$BUILT_BUNDLE_ID" == "$BUNDLE_ID" ]]' "$installer"
           readback_line="$(grep -nF 'APP_INFO_PLIST="$APP/Info.plist"' "$installer" | cut -d: -f1)"
           install_line="$(grep -nF 'say "Installing SDK-integrated Capture on the intended iPhone"' "$installer" | cut -d: -f1)"
@@ -130,17 +137,25 @@ jobs:
           grep -Fq 'NembraCaptureBuildIdentity.swift in Sources' "$project"
           grep -Fq 'INFOPLIST_KEY_NembraCaptureBuildIdentifier = "$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)";' "$project"
           grep -Fq 'INFOPLIST_KEY_NembraCaptureSourceCommitSHA = "$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)";' "$project"
+          grep -Fq 'INFOPLIST_KEY_NembraCaptureTuyaDependencyLockSHA256 = "$(NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256)";' "$project"
 
           grep -Fq 'static let buildIdentifierInfoKey = "NembraCaptureBuildIdentifier"' "$identity"
           grep -Fq 'static let sourceCommitSHAInfoKey = "NembraCaptureSourceCommitSHA"' "$identity"
+          grep -Fq 'static let tuyaDependencyLockSHA256InfoKey = "NembraCaptureTuyaDependencyLockSHA256"' "$identity"
           grep -Fq 'sourceCommitSHA.count == 40' "$identity"
+          grep -Fq 'tuyaDependencyLockSHA256.count == 64' "$identity"
           grep -Fq 'let expectedIdentifier = "capture-v14-\(sourceCommitSHA.prefix(12))"' "$identity"
+          grep -Fq 'let tuyaDependencyLockSHA256: String' "$entrypoint"
+          grep -Fq 'tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256' "$entrypoint"
+          grep -Fq 'self.sealedAcceptedExport = self.makeExport(' "$entrypoint"
+          grep -Fq 'envelope = sealedAcceptedExport' "$entrypoint"
 
       - name: Build stamped standalone Simulator app
         shell: bash
         run: |
           set -euo pipefail
           sha='0123456789abcdef0123456789abcdef01234567'
+          dependency_sha='abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'
           label='capture-v14-0123456789ab'
           rm -rf /tmp/NembraCaptureProvenanceDerived
           xcodebuild \
@@ -153,9 +168,11 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
             NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" \
+            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$dependency_sha" \
             build
 
           plist='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
           test -f "$plist"
           test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
           test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$sha"
+          test "$(plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist")" = "$dependency_sha"
