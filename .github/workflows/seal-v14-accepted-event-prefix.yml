@@ -1,0 +1,114 @@
+name: Seal V14 accepted application evidence prefix
+
+on:
+  push:
+    branches: [integration/v14-capture-final-field-security-sol]
+    paths:
+      - '.github/workflows/seal-v14-accepted-event-prefix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  seal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Assert exact field-security product input
+        run: |
+          set -euo pipefail
+          test "$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)" = "010145472719c94294199e44ffc7c96cdfa732d1"
+          test ! -e Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedApplicationEvidenceSealSourceTests.swift
+
+      - name: Freeze accepted app evidence synchronously at package seal
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s=p.read_text()
+          def r(old,new,label):
+              global s
+              n=s.count(old)
+              if n!=1: raise SystemExit(f'{label}: expected 1, found {n}')
+              s=s.replace(old,new,1)
+          r('    private var events: [Event] = []\n    private var watchdog: Task<Void, Never>?',
+            '    private var events: [Event] = []\n    // Immutable app-side export prefix captured synchronously after the package seal.\n    // Post-seal callback diagnostics may continue in `events` but cannot rewrite accepted evidence.\n    private var sealedAcceptedEventPrefix: [Event]?\n    private var watchdog: Task<Void, Never>?',
+            'sealed prefix storage')
+          r('                        try await sessionLedger.sealAcceptedObservation(for: token)\n                        self.currentConnectionToken = nil\n                        await self.refreshLedgerSnapshot()',
+            '                        try await sessionLedger.sealAcceptedObservation(for: token)\n                        // Freeze before the next suspension point. Delayed callbacks can append only\n                        // to the live diagnostic log after this exact accepted prefix is captured.\n                        self.sealedAcceptedEventPrefix = self.events\n                        self.currentConnectionToken = nil\n                        await self.refreshLedgerSnapshot()',
+            'synchronous seal freeze')
+          r('    func prepareExport() {\n        let envelope = Export(',
+            '''    func prepareExport() {
+        let exportEvents: [Event]
+        if phase == .accepted {
+            guard let sealedAcceptedEventPrefix else {
+                exportData = nil
+                message = "Accepted evidence export is blocked because the immutable app event prefix is unavailable. Relaunch only after preserving diagnostics; do not repeat the field test."
+                return
+            }
+            exportEvents = sealedAcceptedEventPrefix
+        } else {
+            exportEvents = events
+        }
+
+        let envelope = Export(''',
+            'accepted export selector')
+          r('            candidates: candidates,\n            events: events\n        )',
+            '            candidates: candidates,\n            events: exportEvents\n        )',
+            'export frozen events')
+          r('        targetCorrelationOperatorConfirmed = false\n        watchdog?.cancel()',
+            '        targetCorrelationOperatorConfirmed = false\n        sealedAcceptedEventPrefix = nil\n        watchdog?.cancel()',
+            'fresh attempt clears accepted prefix')
+          p.write_text(s)
+          PY
+
+          git show 09554886ccdc818dbac4818b5be922bb821bd5ed:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedApplicationEvidenceSealSourceTests.swift \
+            > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedApplicationEvidenceSealSourceTests.swift
+
+          # Keep the red contract semantic rather than depending on Swift's explicit-self spelling.
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedApplicationEvidenceSealSourceTests.swift')
+          s=p.read_text()
+          s=s.replace('body.range(of: "sealedAcceptedEventPrefix = events", range: packageSeal.upperBound..<body.endIndex)',
+                      'body.range(of: "sealedAcceptedEventPrefix = self.events", range: packageSeal.upperBound..<body.endIndex)')
+          s=s.replace('#expect(body.contains("events: sealedAcceptedEventPrefix"))\n        #expect(!body.contains("events: events\\n"))',
+                      '#expect(body.contains("exportEvents = sealedAcceptedEventPrefix"))\n        #expect(body.contains("events: exportEvents"))\n        #expect(!body.contains("events: events\\n"))')
+          p.write_text(s)
+          PY
+
+          git diff --check
+
+      - name: Assert immutable accepted-export boundary
+        run: |
+          set -euo pipefail
+          app=NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'private var sealedAcceptedEventPrefix: [Event]?' "$app"
+          grep -Fq 'self.sealedAcceptedEventPrefix = self.events' "$app"
+          grep -Fq 'exportEvents = sealedAcceptedEventPrefix' "$app"
+          grep -Fq 'events: exportEvents' "$app"
+          grep -Fq 'sealedAcceptedEventPrefix = nil' "$app"
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          a=s.index('try await sessionLedger.sealAcceptedObservation(for: token)')
+          b=s.index('self.sealedAcceptedEventPrefix = self.events', a)
+          next_await=s.find('await ', a+len('try await sessionLedger.sealAcceptedObservation(for: token)'))
+          assert b > a
+          assert next_await == -1 or b < next_await
+          PY
+
+      - name: Commit product and retire workflow
+        run: |
+          set -euo pipefail
+          rm .github/workflows/seal-v14-accepted-event-prefix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(capture): freeze accepted application evidence export"
+          git push origin HEAD:integration/v14-capture-final-field-security-sol
