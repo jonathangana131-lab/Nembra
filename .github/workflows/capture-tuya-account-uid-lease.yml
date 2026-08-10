@@ -1,0 +1,40 @@
+name: Capture Tuya Account UID Lease
+
+on:
+  pull_request:
+    branches:
+      - capture/one-time-ble-dump-gpt56
+    paths:
+      - 'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaSDKAccountIdentityLeaseGate.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSDKAccountIdentityLeaseGateTests.swift'
+      - '.github/workflows/capture-tuya-account-uid-lease.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-tuya-account-uid-lease-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test Tuya account identity lease
+    runs-on: macos-15
+    timeout-minutes: 10
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Swift 6.2 toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+      - name: Test account identity lease gate
+        run: |
+          set -euo pipefail
+          swift test \
+            --package-path Packages/NembraBluetoothCapture \
+            --filter TuyaSDKAccountIdentityLeaseGateTests \
+            -Xswiftc -warnings-as-errors
