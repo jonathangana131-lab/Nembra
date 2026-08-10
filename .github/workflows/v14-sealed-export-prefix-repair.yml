@@ -18,20 +18,20 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 3
+          fetch-depth: 4
 
       - name: Verify exact repair ancestry
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^^)" = "0b3ab8c58ebfb1332cbb46d9f1f145fdfca8b17f"
+          test "$(git rev-parse HEAD^^^)" = "0b3ab8c58ebfb1332cbb46d9f1f145fdfca8b17f"
 
       - name: Apply immutable accepted-event-prefix repair
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
-          source = path.read_text()
+          app_path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = app_path.read_text()
 
           def replace_once(old: str, new: str, label: str) -> None:
               global source
@@ -44,6 +44,11 @@ jobs:
               "    private var events: [Event] = []\n    private var watchdog: Task<Void, Never>?\n",
               "    private var events: [Event] = []\n    private var sealedAcceptedEventPrefix: [Event]?\n    private var watchdog: Task<Void, Never>?\n",
               "sealed-prefix storage",
+          )
+          replace_once(
+              "            try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)\n            await refreshLedgerSnapshot()\n            log(\"tuya_application_update\", update.merging([\n                \"generation\": String(token.diagnosticGeneration)\n            ]) { current, _ in current })\n",
+              "            try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)\n            // Once the package admits this update, copy its structured values into the app-owned\n            // evidence log before any further suspension can allow canonical sealing.\n            log(\"tuya_application_update\", update.merging([\n                \"generation\": String(token.diagnosticGeneration)\n            ]) { current, _ in current })\n            await refreshLedgerSnapshot()\n",
+              "accepted application-value chronology",
           )
           replace_once(
               "                        try await sessionLedger.sealAcceptedObservation(for: token)\n                        self.currentConnectionToken = nil\n",
@@ -63,13 +68,70 @@ jobs:
 
           if "events: events\n" in source:
               raise SystemExit("mutable live event log still directly feeds Export.events")
+          app_path.write_text(source)
 
-          path.write_text(source)
+          test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedApplicationEvidenceSealSourceTests.swift")
+          tests = test_path.read_text()
+          anchor = "\n    private func section(in source: String, from start: String, to end: String) throws -> Substring {\n"
+          if tests.count(anchor) != 1:
+              raise SystemExit("test helper anchor changed")
+          chronology_test = r'''
+    @Test("accepted structured application values are logged before the next suspension after ledger admission")
+    func acceptedApplicationValuesCannotMissTheFrozenPrefix() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let receive = try section(
+            in: app,
+            from: "private func receivedApplicationUpdate(",
+            to: "private func startWatchdog"
+        )
+        let body = String(receive)
+
+        guard let admission = body.range(of: "try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)"),
+              let valueLog = body.range(of: "log(\"tuya_application_update\"", range: admission.upperBound..<body.endIndex),
+              let nextAwait = body.range(of: "await ", range: admission.upperBound..<body.endIndex) else {
+            Issue.record("Accepted application-value chronology anchors are missing.")
+            throw SourceContractError.sectionMissing
+        }
+
+        #expect(valueLog.lowerBound < nextAwait.lowerBound)
+    }
+'''
+          tests = tests.replace(anchor, "\n" + chronology_test + anchor, 1)
+          test_path.write_text(tests)
           PY
           git diff --check
 
-      - name: Run focused accepted-export source contract
-        run: swift test --package-path Packages/NembraBluetoothCapture --filter TuyaAcceptedApplicationEvidenceSealSourceTests
+      - name: Validate syntax and source contract without Apple frameworks
+        run: |
+          set -euo pipefail
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedApplicationEvidenceSealSourceTests.swift
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          assert "private var sealedAcceptedEventPrefix: [Event]?" in app
+
+          record = app.index("try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)")
+          value_log = app.index('log("tuya_application_update"', record)
+          next_await = app.index("await ", record + len("try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)"))
+          assert value_log < next_await, "accepted structured value log must precede the next suspension"
+
+          seal = app.index("try await sessionLedger.sealAcceptedObservation(for: token)")
+          frozen = app.index("sealedAcceptedEventPrefix = events", seal)
+          next_seal_await = app.index("await ", seal + len("try await sessionLedger.sealAcceptedObservation(for: token)"))
+          assert frozen < next_seal_await, "accepted event prefix must freeze before the next suspension"
+
+          export_start = app.index("func prepareExport()")
+          reset_start = app.index("private func resetDiscoverySessionOnly", export_start)
+          export = app[export_start:reset_start]
+          assert "events: sealedAcceptedEventPrefix ?? events" in export
+          assert "events: events\n" not in export
+
+          fail_start = app.index("private func failLocally", reset_start)
+          reset = app[reset_start:fail_start]
+          assert "sealedAcceptedEventPrefix = nil" in reset
+          PY
 
       - name: Commit repair and retire one-shot workflow
         env:
@@ -82,6 +144,6 @@ jobs:
           rm .github/workflows/v14-sealed-export-prefix-repair.yml
           git config user.name "nembra-v14-integration"
           git config user.email "actions@users.noreply.github.com"
-          git add NembraApp/App/NembraCaptureEntrypoint.swift .github/workflows/v14-sealed-export-prefix-repair.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedApplicationEvidenceSealSourceTests.swift .github/workflows/v14-sealed-export-prefix-repair.yml
           git commit -m "fix(capture): freeze accepted application export prefix"
           git push origin "HEAD:$BRANCH"
