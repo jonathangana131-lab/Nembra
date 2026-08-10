@@ -8,6 +8,9 @@ import UniformTypeIdentifiers
 #if canImport(ThingSmartHomeKit)
 import ThingSmartHomeKit
 #endif
+#if canImport(NembraTuyaPrivateConfig)
+import NembraTuyaPrivateConfig
+#endif
 
 let CBAdvertisementDataIsConnectableKey = CBAdvertisementDataIsConnectable
 
@@ -696,11 +699,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     private func sanitize(_ text: String) -> String {
         var result = text
-        for key in ["NEMBRA_TUYA_APP_KEY", "NEMBRA_TUYA_APP_SECRET"] {
-            if let value = ProcessInfo.processInfo.environment[key], !value.isEmpty {
-                result = result.replacingOccurrences(of: value, with: "<redacted>")
-            }
+#if canImport(NembraTuyaPrivateConfig)
+        for value in [NembraTuyaPrivateIdentity.appKey, NembraTuyaPrivateIdentity.appSecret] where !value.isEmpty {
+            result = result.replacingOccurrences(of: value, with: "<redacted>")
         }
+#endif
         return result
     }
 
@@ -797,20 +800,22 @@ private enum OfficialTuyaFactory {
     }
 
     static var configured: Bool {
-        compiled
-            && !(ProcessInfo.processInfo.environment["NEMBRA_TUYA_APP_KEY"] ?? "").isEmpty
-            && !(ProcessInfo.processInfo.environment["NEMBRA_TUYA_APP_SECRET"] ?? "").isEmpty
+#if canImport(ThingSmartHomeKit) && canImport(NembraTuyaPrivateConfig)
+        !NembraTuyaPrivateIdentity.appKey.isEmpty && !NembraTuyaPrivateIdentity.appSecret.isEmpty
+#else
+        false
+#endif
     }
 
     @discardableResult
     static func bootstrap() -> Bool {
-#if canImport(ThingSmartHomeKit)
+#if canImport(ThingSmartHomeKit) && canImport(NembraTuyaPrivateConfig)
         guard configured else { return false }
         if didBootstrap { return true }
-        let environment = ProcessInfo.processInfo.environment
-        guard let key = environment["NEMBRA_TUYA_APP_KEY"], !key.isEmpty,
-              let secret = environment["NEMBRA_TUYA_APP_SECRET"], !secret.isEmpty else { return false }
-        ThingSmartSDK.sharedInstance()?.start(withAppKey: key, secretKey: secret)
+        ThingSmartSDK.sharedInstance()?.start(
+            withAppKey: NembraTuyaPrivateIdentity.appKey,
+            secretKey: NembraTuyaPrivateIdentity.appSecret
+        )
         didBootstrap = true
         return true
 #else
@@ -1005,7 +1010,7 @@ private final class OfficialTuyaAccountAuthorizer: ObservableObject {
             return
         }
         guard OfficialTuyaFactory.configured else {
-            status = "Private Tuya AppKey/AppSecret are not provisioned for this build."
+            status = "Private Tuya app identity is not compiled into this field workspace."
             loggedIn = false
             return
         }
