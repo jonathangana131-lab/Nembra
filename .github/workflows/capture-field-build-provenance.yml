@@ -49,10 +49,10 @@ jobs:
           source = Path(sys.argv[1]).read_text()
           source_match = '[[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]]'
           bootstrap = '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"'
-          build = 'xcodebuild \\\n'
-          if source_match not in source or bootstrap not in source or build not in source:
+          build_stage = 'say "Building SDK-integrated Nembra Capture for iPhone"'
+          if source_match not in source or bootstrap not in source or build_stage not in source:
               raise SystemExit("Capture field installer source-order anchors are missing")
-          if not source.index(source_match) < source.index(bootstrap) < source.index(build):
+          if not source.index(source_match) < source.index(bootstrap) < source.index(build_stage):
               raise SystemExit("Exact accepted source SHA must be proven before workspace bootstrap/build")
           PY
 
