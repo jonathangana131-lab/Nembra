@@ -2,10 +2,8 @@ name: Materialize Capture Signed Apple App ID Custody
 
 on:
   push:
-    branches:
-      - fix/v14-capture-signed-apple-app-id-custody-sol
-    paths:
-      - .github/workflows/materialize_capture_signed_apple_app_id_custody.yml
+    branches: [fix/v14-capture-signed-apple-app-id-custody-sol]
+    paths: [.github/workflows/materialize_capture_signed_apple_app_id_custody.yml]
   workflow_dispatch:
 
 permissions:
@@ -73,8 +71,8 @@ jobs:
           import plistlib, sys
           try:
               root = plistlib.loads(sys.stdin.buffer.read())
+              signin = root.get("Entitlements", {}).get("com.apple.developer.applesignin")
               entitlements = root.get("Entitlements", {})
-              signin = entitlements.get("com.apple.developer.applesignin")
               application_identifier = entitlements.get("application-identifier")
               team_identifier = entitlements.get("com.apple.developer.team-identifier")
               root_team_identifiers = root.get("TeamIdentifier")
@@ -108,13 +106,11 @@ jobs:
               die "Embedded provisioning profile root TeamIdentifier does not match the selected Apple Development team. Discard this candidate."'''
           text = text[:profile_start] + profile + text[profile_end:]
 
-          old_unset = 'unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_APPLE_SIGNIN_ENTITLEMENT PROFILE_PLIST_XML PROFILE_APPLE_SIGNIN_ENTITLEMENT BUILT_PROFILE'
-          new_unset = 'unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_APPLE_SIGNIN_ENTITLEMENT BUILT_APPLICATION_IDENTIFIER BUILT_TEAM_IDENTIFIER PROFILE_PLIST_XML PROFILE_APPLE_SIGNIN_ENTITLEMENT PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_IDENTIFIER PROFILE_ROOT_TEAM_IDENTIFIER BUILT_PROFILE'
-          if text.count(old_unset) != 1:
+          old = 'unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_APPLE_SIGNIN_ENTITLEMENT PROFILE_PLIST_XML PROFILE_APPLE_SIGNIN_ENTITLEMENT BUILT_PROFILE'
+          new = 'unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_APPLE_SIGNIN_ENTITLEMENT BUILT_APPLICATION_IDENTIFIER BUILT_TEAM_IDENTIFIER PROFILE_PLIST_XML PROFILE_APPLE_SIGNIN_ENTITLEMENT PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_IDENTIFIER PROFILE_ROOT_TEAM_IDENTIFIER BUILT_PROFILE'
+          if text.count(old) != 1:
               raise SystemExit("expected exactly one Apple custody unset anchor")
-          text = text.replace(old_unset, new_unset, 1)
-
-          path.write_text(text, encoding="utf-8")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
           PY
 
       - name: Validate portable custody contracts
@@ -126,26 +122,18 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           installer = Path("scripts/field/install_one_time_capture.command").read_text(encoding="utf-8")
-          required = [
-              'BUILT_APPLICATION_IDENTIFIER',
-              'BUILT_TEAM_IDENTIFIER',
-              'PROFILE_APPLICATION_IDENTIFIER',
-              'PROFILE_TEAM_IDENTIFIER',
-              'PROFILE_ROOT_TEAM_IDENTIFIER',
-              'application-identifier',
-              'com.apple.developer.team-identifier',
-              'TeamIdentifier',
+          install = installer.index('say "Installing SDK-integrated Capture on the intended iPhone"')
+          checks = [
               '[[ "$BUILT_APPLICATION_IDENTIFIER" == *".$BUNDLE_ID" ]]',
               '[[ "$PROFILE_APPLICATION_IDENTIFIER" == "$BUILT_APPLICATION_IDENTIFIER" ]]',
               '[[ "$BUILT_TEAM_IDENTIFIER" == "$TEAM_ID" ]]',
               '[[ "$PROFILE_TEAM_IDENTIFIER" == "$TEAM_ID" ]]',
               '[[ "$PROFILE_ROOT_TEAM_IDENTIFIER" == "$TEAM_ID" ]]',
           ]
-          install = installer.index('say "Installing SDK-integrated Capture on the intended iPhone"')
-          for needle in required:
+          for needle in ["BUILT_APPLICATION_IDENTIFIER", "BUILT_TEAM_IDENTIFIER", "PROFILE_APPLICATION_IDENTIFIER", "PROFILE_TEAM_IDENTIFIER", "PROFILE_ROOT_TEAM_IDENTIFIER", "application-identifier", "com.apple.developer.team-identifier", "TeamIdentifier", *checks]:
               if needle not in installer:
                   raise SystemExit(f"missing Apple App ID custody needle: {needle}")
-          for check in required[-5:]:
+          for check in checks:
               if installer.index(check) >= install:
                   raise SystemExit(f"Apple App ID custody check is after installation: {check}")
           if 'EXPECTED_APPLICATION_IDENTIFIER="${TEAM_ID}.${BUNDLE_ID}"' in installer:
