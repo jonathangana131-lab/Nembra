@@ -25,7 +25,8 @@ say "Exact requested Capture source matched: $SOURCE_SHA"
 # The intended-device identifier is private field-admission input, never product
 # evidence. Reuse the canonical descriptor-bound reader so the private file is
 # opened once with no-follow component checks and stable metadata/read custody.
-# The raw identifier is captured in-process only; it is never printed by Nembra.
+# The raw identifier is captured in-process only; Nembra never prints it and
+# never places it in a child process argv/environment.
 unset NEMBRA_INTENDED_FIELD_DEVICE_UDID || true
 : "${NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE:?Set NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE to an absolute private mode-0600 file containing only the intended iPhone UDID.}"
 PRIVATE_DEVICE_RUNNER="$ROOT/scripts/ci/es80_signed_field_artifact_private_runner.py"
@@ -66,7 +67,7 @@ say "Validating official Tuya SDK and private app-identity provisioning"
 # prevents an old caller environment from becoming accidental authority.
 unset NEMBRA_TUYA_APP_KEY NEMBRA_TUYA_APP_SECRET || true
 
-say "Verifying the intended iPhone is physically connected"
+say "Verifying the intended iPhone 12 / iOS 27 baseline"
 DEVICE_ROWS="$(xcrun xctrace list devices 2>/dev/null | /usr/bin/python3 -c '
 import re,sys
 section=False
@@ -84,20 +85,65 @@ for raw in sys.stdin:
 ')"
 [[ -n "$DEVICE_ROWS" ]] || die "No physical iPhone found. Connect the intended device by USB, unlock it, trust this Mac, and enable Developer Mode."
 
-DEVICE_NAME=""
+DEVICE_LABEL=""
+DEVICE_OS_VERSION=""
 MATCH_COUNT=0
 INTENDED_NORMALIZED="$(printf '%s' "$DEVICE_UDID" | tr '[:upper:]' '[:lower:]')"
-while IFS=$'\t' read -r ROW_UDID ROW_NAME; do
+while IFS=$'\t' read -r ROW_UDID ROW_LABEL; do
     [[ -n "$ROW_UDID" ]] || continue
     ROW_NORMALIZED="$(printf '%s' "$ROW_UDID" | tr '[:upper:]' '[:lower:]')"
     if [[ "$ROW_NORMALIZED" == "$INTENDED_NORMALIZED" ]]; then
         MATCH_COUNT=$((MATCH_COUNT + 1))
-        DEVICE_NAME="$ROW_NAME"
+        DEVICE_LABEL="$ROW_LABEL"
+        if [[ "$ROW_LABEL" =~ \(([0-9]+(\.[0-9]+){1,2})\)$ ]]; then
+            DEVICE_OS_VERSION="${BASH_REMATCH[1]}"
+        fi
     fi
 done <<< "$DEVICE_ROWS"
 unset INTENDED_NORMALIZED ROW_NORMALIZED ROW_UDID
-[[ "$MATCH_COUNT" == "1" && -n "$DEVICE_NAME" ]] || die "The connected-device set does not contain exactly one match for the private intended iPhone. No arbitrary-device fallback is permitted."
-say "Intended iPhone connected: $DEVICE_NAME"
+[[ "$MATCH_COUNT" == "1" && -n "$DEVICE_LABEL" ]] || die "The connected-device set does not contain exactly one match for the private intended iPhone. No arbitrary-device fallback is permitted."
+[[ "$DEVICE_OS_VERSION" == 27.* ]] || die "The privately admitted intended iPhone is not currently reporting iOS 27 through Xcode device discovery. Do not use a different OS baseline."
+
+# CoreDevice exposes a separate non-private selector and hardware product type.
+# Correlate it to the private UDID through the device hostname, then use only the
+# CoreDevice identifier for install/launch so the private UDID never enters
+# devicectl argv. `--hide-headers` is an Xcode-supported textual-output option.
+COREDEVICE_ROWS="$(xcrun devicectl list devices --hide-headers 2>/dev/null || true)"
+[[ -n "$COREDEVICE_ROWS" ]] || die "CoreDevice did not report the intended iPhone. Keep it connected/unlocked and allow Xcode device preparation to finish."
+COREDEVICE_MATCH="$(printf '%s\0%s' "$DEVICE_UDID" "$COREDEVICE_ROWS" | /usr/bin/python3 -c '
+import re,sys
+payload=sys.stdin.buffer.read()
+try:
+    intended_raw, rows_raw = payload.split(b"\0", 1)
+    intended=intended_raw.decode("utf-8").lower()
+    rows=rows_raw.decode("utf-8")
+except (ValueError, UnicodeDecodeError):
+    raise SystemExit(2)
+matches=[]
+for raw in rows.splitlines():
+    line=raw.strip()
+    m=re.search(r"(\S+\.coredevice\.local)\s+([0-9A-Fa-f-]{36})\s+(.+)$", line)
+    if not m:
+        continue
+    hostname, selector, tail=m.groups()
+    if hostname.lower() != intended + ".coredevice.local":
+        continue
+    if re.search(r"\bunavailable\b", tail, re.IGNORECASE):
+        continue
+    models=re.findall(r"\b(iPhone[0-9]+,[0-9]+)\b", tail)
+    if len(models) != 1:
+        continue
+    matches.append((selector, models[0]))
+if len(matches) != 1:
+    raise SystemExit(3)
+sys.stdout.write(matches[0][0]+"\t"+matches[0][1])
+')" || die "CoreDevice could not bind exactly one available non-private selector to the intended iPhone."
+COREDEVICE_ID="${COREDEVICE_MATCH%%$'\t'*}"
+DEVICE_MODEL="${COREDEVICE_MATCH#*$'\t'}"
+[[ "$COREDEVICE_ID" =~ ^[0-9A-Fa-f-]{36}$ ]] || die "CoreDevice returned an invalid selector for the intended iPhone."
+[[ "$DEVICE_MODEL" == "iPhone13,2" ]] || die "The privately admitted intended device is not the V14 iPhone 12 hardware baseline (expected product type iPhone13,2)."
+unset COREDEVICE_MATCH COREDEVICE_ROWS DEVICE_ROWS DEVICE_LABEL DEVICE_MODEL
+say "Intended baseline proven: iPhone 12 / iOS $DEVICE_OS_VERSION"
 
 say "Finding Apple Development signing team"
 TEAM_IDS="$(security find-identity -v -p codesigning 2>/dev/null | /usr/bin/python3 -c '
@@ -157,7 +203,7 @@ INSTALL_LOG="${TMPDIR:-/tmp}/nembra-authenticated-capture-install.log"
 rm -f "$INSTALL_LOG"
 INSTALLED=0
 for ATTEMPT in $(seq 1 60); do
-    if xcrun devicectl device install app --device "$DEVICE_UDID" "$APP" >"$INSTALL_LOG" 2>&1; then
+    if xcrun devicectl device install app --device "$COREDEVICE_ID" "$APP" >"$INSTALL_LOG" 2>&1; then
         INSTALLED=1
         break
     fi
@@ -171,6 +217,7 @@ if [[ "$INSTALLED" != "1" ]]; then
     if [[ -f "$INSTALL_LOG" ]]; then
         INSTALL_DIAGNOSTIC="$(<"$INSTALL_LOG")"
         INSTALL_DIAGNOSTIC="${INSTALL_DIAGNOSTIC//$DEVICE_UDID/<redacted-device>}"
+        INSTALL_DIAGNOSTIC="${INSTALL_DIAGNOSTIC//$COREDEVICE_ID/<redacted-device-selector>}"
         printf '%s\n' "$INSTALL_DIAGNOSTIC" >&2
         unset INSTALL_DIAGNOSTIC
     fi
@@ -179,17 +226,18 @@ fi
 
 say "Launching privately provisioned Capture on the intended iPhone"
 if ! xcrun devicectl device process launch \
-    --device "$DEVICE_UDID" \
+    --device "$COREDEVICE_ID" \
     --activate \
     "$BUNDLE_ID" >/dev/null 2>&1; then
     die "Capture installed, but devicectl could not launch it on the intended iPhone. Do not promote the physical test; relaunch through this installer after the device is ready."
 fi
-unset DEVICE_UDID
+unset DEVICE_UDID COREDEVICE_ID DEVICE_OS_VERSION
 rm -f "$INSTALL_LOG"
 
 say "SDK-INTEGRATED CAPTURE LAUNCHED"
 printf '%s\n' \
     "This launch used no Tuya secret in host argv, environment, Git, or the diagnostic export." \
+    "The private intended-device UDID was used only for local correlation and was not placed in devicectl argv." \
     "Do NOT repeat the old 17-step ride capture." \
     "Keep the scooter stationary for this first preflight." \
     "If Capture says SDK compiled/configured, account logged in, exact scooter membership, or field-build provenance is not proven, STOP and do not start Bluetooth correlation." \
