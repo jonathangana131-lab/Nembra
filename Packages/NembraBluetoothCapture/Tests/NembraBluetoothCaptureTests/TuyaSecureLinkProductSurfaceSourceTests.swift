@@ -33,9 +33,27 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         #expect(body.contains("CAPTURE COMPLETE"))
         #expect(body.contains("Ready for analysis"))
         #expect(body.contains("Label(\"Share Capture\""))
-        #expect(body.contains("if accepted && test.exportData == nil { test.prepareExport() }"))
+        #expect(body.contains("Retry sealed Capture preparation"))
+        #expect(body.contains("already sealed immutable Capture artifact"))
         #expect(body.contains("Button(showEngineeringDetails ? \"Hide details\" : \"View details\")"))
         #expect(body.contains("accepted artifact is sealed"))
+
+        let sealedExport = try #require(app.range(of: "self.sealedAcceptedExport = self.makeExport("))
+        let exportClear = try #require(app.range(
+            of: "self.exportData = nil",
+            range: sealedExport.upperBound..<app.endIndex
+        ))
+        let acceptedPhase = try #require(app.range(
+            of: "self.phase = .accepted",
+            range: exportClear.upperBound..<app.endIndex
+        ))
+        let prepare = try #require(app.range(
+            of: "self.prepareExport()",
+            range: acceptedPhase.upperBound..<app.endIndex
+        ))
+        #expect(sealedExport.lowerBound < exportClear.lowerBound)
+        #expect(exportClear.lowerBound < acceptedPhase.lowerBound)
+        #expect(acceptedPhase.lowerBound < prepare.lowerBound)
     }
 
     @Test("truth gates remain visible in the guided product surface")
@@ -51,7 +69,7 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         #expect(body.contains("test.authenticate()"))
         #expect(body.contains("test.sdkLocalBLEOnline"))
         #expect(body.contains("test.applicationUpdateCount > 0"))
-        #expect(body.contains("Historical UUID, name, RSSI, FD50, and Tuya hints never authorize the target."))
+        #expect(body.contains("Only the full OFF → ON → OFF → ON pattern can authorize the nearby signal for this attempt."))
         #expect(body.contains("No DP query or scooter command is authorized by this surface."))
     }
 
