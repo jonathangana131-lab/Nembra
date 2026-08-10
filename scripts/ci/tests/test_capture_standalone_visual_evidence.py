@@ -1,0 +1,41 @@
+from pathlib import Path
+import re
+
+root = Path(__file__).resolve().parents[3]
+script = (root / "scripts/ci/capture_standalone_visual_evidence.sh").read_text(encoding="utf-8")
+
+required = [
+    'EXPECTED_BUNDLE_ID="com.jonathangana131.nembra.capturelearn"',
+    'startswith("com.apple.CoreSimulator.SimRuntime.iOS-27")',
+    'preferred=["iPhone 12", "iPhone 17", "iPhone 17 Pro", "iPhone 16"]',
+    'EXPECTED_BUILD_IDENTIFIER="capture-v14-${SOURCE_SHA:0:12}"',
+    'SIMCTL_CHILD_*|NEMBRA_SIMULATION_*)',
+    'done < <(compgen -v)',
+    'launch_output="$(xcrun simctl launch "$UDID" "$BUNDLE_ID"',
+    'xcrun simctl io "$UDID" screenshot "$SCREENSHOT"',
+    '"syntheticAuthorityEnvironmentRejected": True',
+    '"visualAcceptanceRequiresHumanReview": True',
+    '"physicalAuthorityCreated": False',
+    '"protocolAuthorityCreated": False',
+]
+for needle in required:
+    if needle not in script:
+        raise SystemExit(f"missing standalone visual-evidence contract: {needle}")
+
+active_lines = [
+    line.strip()
+    for line in script.splitlines()
+    if line.strip() and not line.lstrip().startswith("#")
+]
+for line in active_lines:
+    if re.match(r"^(SIMCTL_CHILD_|NEMBRA_SIMULATION_)[A-Za-z0-9_]*=", line):
+        raise SystemExit(f"standalone visual evidence must not assign synthetic app authority: {line}")
+
+launch_lines = [line for line in active_lines if "xcrun simctl launch" in line]
+if len(launch_lines) != 1:
+    raise SystemExit(f"expected exactly one real standalone launch, found {len(launch_lines)}")
+launch_line = launch_lines[0]
+if "--args" in launch_line or "SIMCTL_CHILD_" in launch_line or "NEMBRA_SIMULATION_" in launch_line:
+    raise SystemExit("standalone launch must not inject synthetic authority or launch fixtures")
+
+print("capture standalone visual evidence source contract: PASS")
