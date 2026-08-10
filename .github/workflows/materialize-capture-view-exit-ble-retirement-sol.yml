@@ -1,0 +1,115 @@
+name: Materialize Capture View Exit BLE Retirement
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.event.pull_request.head.ref == 'fix/v14-capture-view-exit-ble-retirement-sol'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact parent and helper scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='194197ed62ccd4f7880e314ff70e5e0229cddc30'
+          test "$(git rev-parse HEAD~2)" = "$parent"
+          mapfile -t changed < <(git diff --name-only "$parent"...HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 2
+          test "${changed[0]}" = '.github/workflows/materialize-capture-view-exit-ble-retirement-sol.yml'
+          test "${changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift'
+
+      - name: Apply deterministic lifecycle repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+
+          controller_marker = '''    func invalidateSDKMembership() {
+          '''
+          controller_insert = '''    func abandonCorrelationForViewExit() {
+              // Navigation exit is an explicit experiment interruption. Cancel any membership
+              // probe that could still start OFF1 after this view has left, then retire package
+              // radio ownership through the existing scanner-first/token-bound path.
+              membershipRequestID = UUID()
+              membershipBusy = false
+          #if canImport(ThingSmartHomeKit)
+              membershipProbe = nil
+          #endif
+              guard processCorrelationLease != nil || correlationSession != nil else { return }
+              pendingCorrelatedTargetID = nil
+              abandonPackageCorrelation()
+              if phase == .baseline || phase == .powerOn || phase == .scanning || phase == .correlated {
+                  phase = .failed
+                  message = "Capture was left during Bluetooth target correlation. Restart from OFF1; interrupted windows are never reusable evidence."
+                  log("target_correlation_abandoned_on_view_exit")
+              }
+          }
+
+              func invalidateSDKMembership() {
+          '''
+          if source.count(controller_marker) != 1:
+              raise SystemExit(f'expected one controller insertion marker, found {source.count(controller_marker)}')
+          source = source.replace(controller_marker, controller_insert, 1)
+
+          view_marker = '''        .onChange(of: sdkAccount.loggedIn) { _, loggedIn in
+          '''
+          view_insert = '''        .onDisappear {
+              test.abandonCorrelationForViewExit()
+          }
+              .onChange(of: sdkAccount.loggedIn) { _, loggedIn in
+          '''
+          if source.count(view_marker) != 1:
+              raise SystemExit(f'expected one view insertion marker, found {source.count(view_marker)}')
+          source = source.replace(view_marker, view_insert, 1)
+
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Verify repair shape and truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          assert s.count('func abandonCorrelationForViewExit()') == 1
+          assert s.count('test.abandonCorrelationForViewExit()') == 1
+          start = s.index('func abandonCorrelationForViewExit()')
+          end = s.index('func invalidateSDKMembership()', start)
+          cleanup = s[start:end]
+          assert 'membershipRequestID = UUID()' in cleanup
+          assert 'membershipProbe = nil' in cleanup
+          assert 'abandonPackageCorrelation()' in cleanup
+          assert 'releasePackageCorrelationLease()' not in cleanup
+          for forbidden in ('connectBLE(', 'publishDps', 'writeValue', 'disconnect'):
+              assert forbidden not in cleanup, forbidden
+          PY
+          git diff --check
+
+      - name: Collapse helper into clean product repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-view-exit-ble-retirement-sol.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift \
+            .github/workflows/materialize-capture-view-exit-ble-retirement-sol.yml
+          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' \
+            commit -m 'fix(capture): retire BLE correlation on view exit'
+          git push origin HEAD:${GITHUB_HEAD_REF}
