@@ -1,0 +1,64 @@
+name: Validate Capture Account UID Regression 37bf Sol
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-account-uid-regression-37bf-sol
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Guard exact parent and regression-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='37bf3bf6502c470f69915c5e1e5f81721e846ae4'
+          test "$(git merge-base HEAD "$parent")" = "$parent"
+          git diff --quiet "$parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+          mapfile -t changed < <(git diff --name-only "$parent"...HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 2
+          test "${changed[0]}" = '.github/workflows/validate-capture-account-uid-regression-37bf-sol.yml'
+          test "${changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift'
+
+      - name: Parse source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+          git diff --check
+
+      - name: Run focused SwiftPM regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift --version
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaApplicationAccountUIDExportCustodySourceTests
+
+      - name: Remove validation helper and preserve one-path delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='37bf3bf6502c470f69915c5e1e5f81721e846ae4'
+          rm .github/workflows/validate-capture-account-uid-regression-37bf-sol.yml
+          git add -u .github/workflows/validate-capture-account-uid-regression-37bf-sol.yml
+          git diff --cached --check
+          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' commit -m 'ci(capture): record account UID regression validation'
+          mapfile -t changed < <(git diff --name-only "$parent" HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 1
+          test "${changed[0]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift'
+          git diff --check "$parent" HEAD
+          git push origin HEAD:fix/v14-capture-account-uid-regression-37bf-sol
