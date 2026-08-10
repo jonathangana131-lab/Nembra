@@ -44,6 +44,32 @@ struct TuyaSecureLinkAccountRecoverySourceTests {
         #expect(!authorizer.contains("markAuthenticated"))
     }
 
+    @Test("logout state change revokes membership and any current attempt authority")
+    func logoutRevokesMembershipAndAttemptAuthority() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let secureLink = try section(
+            in: app,
+            from: "private struct SecureLinkView: View",
+            to: "private struct SecureTransfer: Transferable"
+        )
+        let invalidation = try section(
+            in: app,
+            from: "func invalidateSDKMembership()",
+            to: "func verifySDKMembership"
+        )
+
+        #expect(secureLink.contains(".onChange(of: sdkAccount.loggedIn)"))
+        #expect(secureLink.contains("else { test.invalidateSDKMembership() }"))
+        #expect(invalidation.contains("membershipRequestID = UUID()"))
+        #expect(invalidation.contains("sdkDeviceMembershipVerified = false"))
+        #expect(invalidation.contains("membershipAccountUID = nil"))
+        #expect(invalidation.contains("membershipDeviceID = nil"))
+        #expect(invalidation.contains("pendingCorrelatedTargetID = nil"))
+        #expect(invalidation.contains("correlationSession?.abandonCurrentWindow()"))
+        #expect(invalidation.contains("phase = .failed"))
+        #expect(invalidation.contains("invalidateSourceAuthority("))
+    }
+
     @Test("account recovery preserves the accepted correlation presentation repair")
     func preservesCorrelationTruth() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
