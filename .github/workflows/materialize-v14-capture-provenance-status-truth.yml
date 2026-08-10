@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 4
 
       - name: Verify exact construction parent
         shell: bash
@@ -25,9 +25,10 @@ jobs:
           expected_parent='1c40853f6991b4d09206df1d25ecff021458b7eb'
           expected_source_blob='c58be3f6bc0cf33a9f6d0d950b7d011ff8aa1d25'
           workflow='.github/workflows/materialize-v14-capture-provenance-status-truth.yml'
-          test "$(git rev-parse HEAD^)" = "$expected_parent"
+          git merge-base --is-ancestor "$expected_parent" HEAD
           test "$(git rev-parse "HEAD:NembraApp/App/NembraCaptureEntrypoint.swift")" = "$expected_source_blob"
-          test "$(git diff --name-only "$expected_parent"..HEAD)" = "$workflow"
+          changed="$(git diff --name-only "$expected_parent"..HEAD)"
+          test "$changed" = "$workflow"
 
       - name: Apply exact truth repairs and regressions
         shell: bash
@@ -205,9 +206,19 @@ jobs:
         run: |
           set -euo pipefail
           expected_parent='1c40853f6991b4d09206df1d25ecff021458b7eb'
-          expected_paths=$'NembraApp/App/NembraCaptureEntrypoint.swift\nPackages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift\nPackages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift'
-          actual_paths="$(git diff --name-only "$expected_parent" | sort)"
-          test "$actual_paths" = "$(printf '%s\n' "$expected_paths" | sort)"
+          workflow='.github/workflows/materialize-v14-capture-provenance-status-truth.yml'
+          allowed='^(NembraApp/App/NembraCaptureEntrypoint.swift|Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift|Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift)$'
+          test ! -e "$workflow"
+          printf 'Materialized working-tree scope:\n'
+          git status --short
+          unexpected="$(git diff --name-only "$expected_parent" -- . | grep -Ev "$allowed|^$workflow$" || true)"
+          test -z "$unexpected"
+          for required in \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift; do
+            git diff --name-only "$expected_parent" -- "$required" | grep -Fxq "$required"
+          done
           git diff --check
           /usr/bin/python3 <<'PY'
           from pathlib import Path
