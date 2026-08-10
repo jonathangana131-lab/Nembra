@@ -1,0 +1,154 @@
+name: Materialize Capture UID Redaction Collision Custody
+
+on:
+  push:
+    branches:
+      - "red/v14-capture-account-uid-redaction-key-collision-ba3-sol"
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact current-product parent and test-only staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='ba3a1eeae36caca6dd84beaabd0f15f4f0b57925'
+          git merge-base --is-ancestor "$parent" HEAD
+          git diff --quiet "$parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+          mapfile -t changed < <(git diff --name-only "$parent"...HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 2
+          test "${changed[0]}" = '.github/workflows/materialize-capture-account-uid-redaction-key-collision-ba3-sol.yml'
+          test "${changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDRedactionCollisionSourceTests.swift'
+
+      - name: Preserve every opaque application field across UID-key redaction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+          start = source.index('private func redactedApplicationEventDetails(')
+          end = source.index('private func startWatchdog', start)
+          helper = source[start:end]
+
+          old = '\n'.join([
+              '        for (key, value) in update {',
+              '            let redactedKey = key.replacingOccurrences(',
+              '                of: accountUID,',
+              '                with: "<redacted-account-uid>",',
+              '                options: [.caseInsensitive, .literal]',
+              '            )',
+              '            redacted[redactedKey] = value.replacingOccurrences(',
+              '                of: accountUID,',
+              '                with: "<redacted-account-uid>",',
+              '                options: [.caseInsensitive, .literal]',
+              '            )',
+              '        }',
+          ])
+          new = '\n'.join([
+              '        for (key, value) in update.sorted(by: { $0.key < $1.key }) {',
+              '            let redactedKey = key.replacingOccurrences(',
+              '                of: accountUID,',
+              '                with: "<redacted-account-uid>",',
+              '                options: [.caseInsensitive, .literal]',
+              '            )',
+              '            let redactedValue = value.replacingOccurrences(',
+              '                of: accountUID,',
+              '                with: "<redacted-account-uid>",',
+              '                options: [.caseInsensitive, .literal]',
+              '            )',
+              '',
+              '            // Two distinct untrusted keys can collapse after exact UID redaction.',
+              '            // Keep every opaque field while ensuring no account identifier survives.',
+              '            var uniqueKey = redactedKey',
+              '            var collisionSuffix = 2',
+              '            while redacted[uniqueKey] != nil {',
+              '                uniqueKey = "\\(redactedKey)#\\(collisionSuffix)"',
+              '                collisionSuffix += 1',
+              '            }',
+              '            redacted[uniqueKey] = redactedValue',
+              '        }',
+          ])
+          if helper.count(old) != 1:
+              raise SystemExit(f'expected one current UID-redaction loop, found {helper.count(old)}')
+          helper = helper.replace(old, new, 1)
+          source = source[:start] + helper + source[end:]
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Verify lossless privacy custody and preserve accepted event provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          receiver_start = s.index('private func receivedApplicationUpdate(')
+          receiver_end = s.index('private func startWatchdog', receiver_start)
+          receiver = s[receiver_start:receiver_end]
+          helper_start = s.index('private func redactedApplicationEventDetails(')
+          helper = s[helper_start:receiver_end]
+
+          assert 'update.sorted(by: { $0.key < $1.key })' in helper
+          assert 'var uniqueKey = redactedKey' in helper
+          assert 'while redacted[uniqueKey] != nil' in helper
+          assert 'uniqueKey = "\\(redactedKey)#\\(collisionSuffix)"' in helper
+          assert 'redacted[uniqueKey] = redactedValue' in helper
+          assert 'redacted[redactedKey] = value.replacingOccurrences(' not in helper
+          assert '<redacted-account-uid>' in helper
+          assert 'membershipAccountUID?.trimmingCharacters' in helper
+
+          # Preserve ba3a's stronger accepted-event contract: redact first, then stamp Nembra provenance.
+          redaction = receiver.index('var eventDetails = redactedApplicationEventDetails(update)')
+          generation = receiver.index('eventDetails["generation"] = String(token.diagnosticGeneration)')
+          log = receiver.index('log("tuya_application_update", eventDetails)')
+          assert redaction < generation < log
+          assert 'update.merging([' not in receiver
+          assert 'recordApplicationUpdate' in receiver
+          assert 'currentConnectionToken == token' in receiver
+
+          for forbidden in (
+              'queryDps', 'publishDps', 'writeValue', 'writeWithoutResponse',
+              'disconnectBLE', 'endConnection('
+          ):
+              assert forbidden not in helper, forbidden
+
+          print('Capture UID-redaction collision custody contract: PASS')
+          PY
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDRedactionCollisionSourceTests.swift
+          git diff --check
+
+      - name: Collapse helper into clean two-path hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='ba3a1eeae36caca6dd84beaabd0f15f4f0b57925'
+          rm .github/workflows/materialize-capture-account-uid-redaction-key-collision-ba3-sol.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDRedactionCollisionSourceTests.swift
+          git add -u .github/workflows/materialize-capture-account-uid-redaction-key-collision-ba3-sol.yml
+          git diff --cached --check
+          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' \
+            commit -m 'fix(capture): preserve fields across UID redaction collisions'
+          mapfile -t changed < <(git diff --name-only "$parent" HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 2
+          test "${changed[0]}" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          test "${changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDRedactionCollisionSourceTests.swift'
+          git diff --check "$parent" HEAD
+          git push origin HEAD:red/v14-capture-account-uid-redaction-key-collision-ba3-sol
