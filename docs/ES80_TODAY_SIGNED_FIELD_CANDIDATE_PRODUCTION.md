@@ -81,7 +81,17 @@ Choose a private path outside the repository. The producer requires an absolute 
 
 Do not acquire the raw identifier through ordinary shell redirection. Even with `noclobber`, a checked parent directory pathname can be renamed and replaced before `> "$UDID_FILE"` re-resolves it. Use the accepted descriptor-bound private-input helper instead. It opens directory components with no-follow descriptors, creates the final file relative to the pinned directory descriptor, rebinds the pathname after creation, verifies directory/file identity and exact readback, and fails closed if the path was retargeted.
 
-The accepted helper identity is fixed below. These helper bytes are operator-custody tooling only; they do not alter the frozen `a0f4…` app subject and do not authorize signing acceptance or Bluetooth activity.
+The accepted helper identity is fixed below. The current merged helper fails closed rather than accepting a potentially echoed `getpass` fallback; removes the exact fresh inode after write/fsync failures or terminal aborts without unlinking a replacement pathname subject; and refuses an already-occupied final name before asking the operator for the private UDID while retaining `O_EXCL` as the post-precheck race authority. These helper bytes are operator-custody tooling only; they do not alter the frozen `a0f4…` app subject and do not authorize signing acceptance or Bluetooth activity.
+
+Accepted current helper evidence:
+
+- merged helper commit: `c8c706e3d67d2aeab37341035468437dc2af0491`;
+- helper path: `scripts/ci/es80_today_private_device_input.py`;
+- helper blob: `38eb695792fb759428a98686081b883e39c3b118`;
+- exact tested predecessor head carrying the same helper blob: `008a883cd09917302a8f8f190086d79887a603e4`;
+- focused `Capture TODAY Field Candidate Preflight QA` run `31349460839` — terminal success on that exact predecessor head.
+
+The Git blob is the byte authority: the runbook materializes the exact merged helper blob from the durable merged commit below.
 
 ```bash
 umask 077
@@ -91,8 +101,8 @@ PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"
 UDID_FILE="$PRIVATE_DIR/es80-intended-device.udid"
 TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
 
-PRIVATE_INPUT_HELPER_COMMIT='05ce6d9a20487ab34aa31c5b6456910ed2ed438f'
-PRIVATE_INPUT_HELPER_BLOB='9a9f7f724ceaf895e52d6d443d326043f97645c8'
+PRIVATE_INPUT_HELPER_COMMIT='c8c706e3d67d2aeab37341035468437dc2af0491'
+PRIVATE_INPUT_HELPER_BLOB='38eb695792fb759428a98686081b883e39c3b118'
 PRIVATE_INPUT_HELPER_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-private-input.XXXXXX)"
 PRIVATE_INPUT_HELPER="$PRIVATE_INPUT_HELPER_DIR/es80_today_private_device_input.py"
 
