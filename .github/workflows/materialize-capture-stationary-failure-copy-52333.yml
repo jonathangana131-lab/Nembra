@@ -1,0 +1,182 @@
+name: Materialize Capture Stationary Recovery Copy 52333
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-stationary-failure-copy-52333
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact current-product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='52333deb09ea9a5964250097f83884d285f25d78'
+          test "$(git rev-parse HEAD^)" = "$parent"
+          mapfile -t changed < <(git diff --name-only "$parent"...HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 1
+          test "${changed[0]}" = '.github/workflows/materialize-capture-stationary-failure-copy-52333.yml'
+          git diff --quiet "$parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+          test ! -e Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaStationaryFailureCopySourceTests.swift
+
+      - name: Apply stationary-only recovery truth repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = app.read_text(encoding='utf-8')
+          replacements = {
+              'Source authority changed while canonical acceptance was sealing. Restart from OFF1; the sealed package chronology is diagnostic only.':
+                  'Source authority changed while canonical acceptance was sealing. Relaunch Capture before a new stationary read-only attempt; the sealed package chronology is diagnostic only.',
+              'Tuya local-BLE authority became unavailable after canonical acceptance sealed. Restart from OFF1; no disconnect time is inferred.':
+                  'Tuya local-BLE authority became unavailable after canonical acceptance sealed. Relaunch Capture before a new stationary read-only attempt; no disconnect time is inferred.',
+              'Tuya local-BLE authority was no longer current after canonical acceptance sealed. Restart from OFF1; no disconnect time is inferred.':
+                  'Tuya local-BLE authority was no longer current after canonical acceptance sealed. Relaunch Capture before a new stationary read-only attempt; no disconnect time is inferred.',
+              'Authenticated session produced no application update before the observation deadline. Export diagnostics; do not repeat the ride capture.':
+                  'Authenticated session produced no application update before the observation deadline. Export diagnostics; relaunch Capture before any new stationary read-only attempt.',
+              "Tuya's current local-BLE session ended before acceptance. Export diagnostics; do not repeat the outdoor ride capture.":
+                  "Tuya's current local-BLE session ended before acceptance. Export diagnostics; relaunch Capture before any new stationary read-only attempt.",
+              'Accepted diagnostics cannot be exported because the immutable accepted artifact is unavailable. Restart from OFF1 rather than rebuilding accepted evidence from mutable post-seal state.':
+                  'Accepted diagnostics cannot be exported because the immutable accepted artifact is unavailable. Relaunch Capture before a new stationary read-only attempt; do not rebuild accepted evidence from mutable post-seal state.',
+          }
+          for old, new in replacements.items():
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one stale recovery string, found {count}: {old}')
+              source = source.replace(old, new, 1)
+          app.write_text(source, encoding='utf-8')
+
+          test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaStationaryFailureCopySourceTests.swift')
+          test.write_text(r'''import Foundation
+import Testing
+@testable import NembraBluetoothCapture
+
+@Suite("Capture stationary-only failure recovery copy")
+struct TuyaStationaryFailureCopySourceTests {
+    @Test("post-handoff failures require relaunch and a new stationary read-only attempt")
+    func postHandoffFailureCopyStaysStationaryOnly() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let controller = String(try section(
+            in: source,
+            from: "private final class SecureLinkController",
+            to: "private protocol OfficialTuyaDriver"
+        ))
+
+        #expect(!controller.contains("ride capture"))
+        #expect(!controller.contains("outdoor ride"))
+
+        let recovery = "Export diagnostics; relaunch Capture before any new stationary read-only attempt."
+        #expect(controller.components(separatedBy: recovery).count - 1 == 2)
+    }
+
+    @Test("official Tuya handoff makes bare OFF1 restart copy invalid")
+    func officialHandoffRecoveryRequiresRelaunch() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let postHandoff = String(try section(
+            in: source,
+            from: "private func beginOfficialConnection(candidate: Candidate)",
+            to: "private protocol OfficialTuyaDriver"
+        ))
+
+        #expect(!postHandoff.lowercased().contains("restart from off1"))
+
+        let required = [
+            "Source authority changed while canonical acceptance was sealing. Relaunch Capture before a new stationary read-only attempt; the sealed package chronology is diagnostic only.",
+            "Tuya local-BLE authority became unavailable after canonical acceptance sealed. Relaunch Capture before a new stationary read-only attempt; no disconnect time is inferred.",
+            "Tuya local-BLE authority was no longer current after canonical acceptance sealed. Relaunch Capture before a new stationary read-only attempt; no disconnect time is inferred.",
+            "Accepted diagnostics cannot be exported because the immutable accepted artifact is unavailable. Relaunch Capture before a new stationary read-only attempt; do not rebuild accepted evidence from mutable post-seal state."
+        ]
+        for message in required {
+            #expect(postHandoff.contains(message), "missing relaunch-required post-handoff recovery: \(message)")
+        }
+    }
+
+    private func section(in source: String, from start: String, to end: String) throws -> Substring {
+        guard let startRange = source.range(of: start),
+              let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+            Issue.record("Expected source section missing: \(start) ... \(end)")
+            throw SourceContractError.sectionMissing
+        }
+        return source[startRange.lowerBound..<endRange.lowerBound]
+    }
+
+    private func readRepositoryFile(_ relativePath: String) throws -> String {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+    }
+
+    private enum SourceContractError: Error { case sectionMissing }
+}
+''', encoding='utf-8')
+          PY
+          git diff --check
+
+      - name: Verify recovery semantics and effective scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          start = s.index('private final class SecureLinkController')
+          end = s.index('private protocol OfficialTuyaDriver', start)
+          controller = s[start:end]
+          assert 'ride capture' not in controller
+          assert 'outdoor ride' not in controller
+          recovery = 'Export diagnostics; relaunch Capture before any new stationary read-only attempt.'
+          assert controller.count(recovery) == 2
+          post_start = controller.index('private func beginOfficialConnection(candidate: Candidate)')
+          post = controller[post_start:]
+          assert 'restart from off1' not in post.lower()
+          required = (
+              'Source authority changed while canonical acceptance was sealing. Relaunch Capture before a new stationary read-only attempt; the sealed package chronology is diagnostic only.',
+              'Tuya local-BLE authority became unavailable after canonical acceptance sealed. Relaunch Capture before a new stationary read-only attempt; no disconnect time is inferred.',
+              'Tuya local-BLE authority was no longer current after canonical acceptance sealed. Relaunch Capture before a new stationary read-only attempt; no disconnect time is inferred.',
+              'Accepted diagnostics cannot be exported because the immutable accepted artifact is unavailable. Relaunch Capture before a new stationary read-only attempt; do not rebuild accepted evidence from mutable post-seal state.',
+          )
+          for message in required:
+              assert message in post, message
+          print('stationary recovery source contract: PASS')
+          PY
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaStationaryFailureCopySourceTests.swift
+
+      - name: Collapse helper and publish clean recovery branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='52333deb09ea9a5964250097f83884d285f25d78'
+          rm .github/workflows/materialize-capture-stationary-failure-copy-52333.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaStationaryFailureCopySourceTests.swift
+          git add -u .github/workflows/materialize-capture-stationary-failure-copy-52333.yml
+          git diff --cached --check
+          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' \
+            commit -m 'fix(capture): keep recovery stationary after handoff'
+          mapfile -t changed < <(git diff --name-only "$parent" HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 2
+          test "${changed[0]}" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          test "${changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaStationaryFailureCopySourceTests.swift'
+          git diff --check "$parent" HEAD
+          git push origin HEAD:sol/v14-capture-stationary-failure-copy-52333
