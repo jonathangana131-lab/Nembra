@@ -1129,12 +1129,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
                 let gap = now - previousPollUptime
                 guard gap <= Self.maximumObservationPollGapNanoseconds else {
-                    do {
-                        try await sessionLedger.markObservationContinuityInvalidated(for: token)
-                    } catch {}
-                    self.currentConnectionToken = nil
-                    await self.refreshLedgerSnapshot()
-                    self.failLocally("Authenticated observation continuity was interrupted; the gap is not evidence that BLE disconnected.", "observation_poll_gap_exceeded")
+                    await self.invalidateObservationContinuity(
+                        token: token,
+                        message: "Authenticated observation continuity was interrupted; the gap is not evidence that BLE disconnected.",
+                        kind: "observation_poll_gap_exceeded"
+                    )
                     return
                 }
                 previousPollUptime = now
