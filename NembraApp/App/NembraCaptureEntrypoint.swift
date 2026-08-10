@@ -2819,7 +2819,29 @@ private struct SecureLinkView: View {
 
     @ViewBuilder
     private var stageRail: some View {
-        if dynamicTypeSize.isAccessibilitySize {
+        if test.phase == .failed {
+            HStack(spacing: 10) {
+                Image(systemName: "stop.circle.fill")
+                    .font(.headline)
+                    .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Attempt stopped")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.orange)
+                    Text(test.canRestartFromFreshOFF1
+                         ? "Begin again from scooter OFF"
+                         : "Relaunch before another attempt")
+                        .font(.subheadline.weight(.semibold))
+                }
+                Spacer()
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Capture attempt stopped")
+            .accessibilityValue(test.canRestartFromFreshOFF1
+                                ? "Restore the requirement, then begin a new attempt from scooter off"
+                                : "Relaunch Capture before another attempt")
+        } else if dynamicTypeSize.isAccessibilitySize {
             HStack(spacing: 10) {
                 Text("Step \(currentStageIndex + 1) of 4")
                     .font(.caption.weight(.bold))
@@ -3135,7 +3157,7 @@ private struct SecureLinkView: View {
     private var failureRecoveryContextPanel: some View {
         panel {
             VStack(alignment: .leading, spacing: 10) {
-                Label("Capture paused", systemImage: "exclamationmark.circle")
+                Label("Capture stopped", systemImage: "exclamationmark.circle")
                     .font(.title2.bold())
                     .foregroundStyle(.orange)
                 Text(test.message)
@@ -3152,7 +3174,7 @@ private struct SecureLinkView: View {
     private var failurePanel: some View {
         panel {
             VStack(alignment: .leading, spacing: 16) {
-                Label("Capture paused", systemImage: "exclamationmark.circle")
+                Label("Capture stopped", systemImage: "exclamationmark.circle")
                     .font(.title2.bold())
                     .foregroundStyle(.orange)
                 Text(test.message)
@@ -3486,7 +3508,7 @@ private struct SecureLinkView: View {
     private var phaseTitle: String {
         switch test.phase {
         case .accepted: return test.exportData == nil ? "Capture sealed" : "Capture complete"
-        case .failed: return "Capture paused"
+        case .failed: return "Capture stopped"
         case .baseline, .scanning, .powerOn: return "Find this scooter"
         case .correlated: return "Scooter signal found"
         case .selected, .authenticating: return "Secure the link"
