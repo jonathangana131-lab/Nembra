@@ -87,11 +87,11 @@ class PrivateInputTests(unittest.TestCase):
             with self.assertRaises(private_input.PrivateInputError):
                 private_input.create_private_input(str(private_dir / "device.udid"), "ABC123")
 
-    def test_rejects_whitespace_and_control_characters(self):
-        with self.assertRaises(private_input.PrivateInputError):
-            private_input._validate_identifier(" ABC123")
-        with self.assertRaises(private_input.PrivateInputError):
-            private_input._validate_identifier("ABC123\n")
+    def test_rejects_any_ascii_whitespace_and_control_characters(self):
+        for value in (" ABC123", "ABC123 ", "ABC DEF", "ABC\tDEF", "ABC123\n"):
+            with self.subTest(value=repr(value)):
+                with self.assertRaises(private_input.PrivateInputError):
+                    private_input._validate_identifier(value)
 
     def test_operator_handoff_uses_pinned_descriptor_bound_helper_not_shell_secret_redirection(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
