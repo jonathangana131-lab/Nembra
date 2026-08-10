@@ -93,7 +93,7 @@ struct NembraTuyaMetadataTestView: View {
                     .foregroundStyle(.secondary)
 
                 TextField("Paste User Code", text: $tuya.userCode)
-                    .textInputAutitalizationNever()
+                    .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .padding(12)
                     .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
@@ -286,10 +286,6 @@ private extension View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(.white.opacity(0.08)))
-    }
-
-    func textInputAutitalizationNever() -> some View {
-        textInputAutocapitalization(.never)
     }
 }
 
