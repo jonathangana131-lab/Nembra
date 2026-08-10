@@ -479,6 +479,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func appDidLoseForeground() {
+        // A sealed accepted artifact is immutable and remains shareable across scene changes.
+        guard phase != .accepted else { return }
         guard !foregroundIntegrityLossHandled else { return }
         foregroundIntegrityLossHandled = true
 
@@ -507,6 +509,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
 
         guard let token = currentConnectionToken else {
+            if phase == .correlated || phase == .selected {
+                // Correlation is current-attempt authority only. A foreground boundary ends that
+                // attempt even after package scanning has already released its process lease.
+                resetDiscoverySessionOnly()
+                phase = .failed
+                message = "Capture left the foreground after target correlation. Re-verify this scooter and restart from OFF1; prior target authority is not reused across the interruption."
+                log("foreground_integrity_lost_after_target_correlation")
+                return
+            }
+
             if phase == .authenticating {
                 // OfficialTuyaFactory.make() permanently retires package correlation for this
                 // process, even if no package generation existed before foreground loss.
