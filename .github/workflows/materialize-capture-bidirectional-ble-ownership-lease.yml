@@ -1,0 +1,48 @@
+name: Materialize Capture Bidirectional BLE Ownership Lease
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-bidirectional-ble-ownership-lease-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-bidirectional-ble-ownership-lease-sol
+          fetch-depth: 0
+
+      - name: Guard exact product source
+        run: |
+          set -euo pipefail
+          product_parent='e8acd80c6f220529a98a4a4829514829c3321daa'
+          git merge-base --is-ancestor "$product_parent" HEAD
+          git diff --quiet "$product_parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+          test ! -e Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaBidirectionalBLEOwnershipLeaseSourceTests.swift
+
+      - name: Apply ownership lease repair
+        run: python3 scripts/ci/materialize_capture_bidirectional_ble_ownership_lease.py apply
+
+      - name: Verify ownership lease repair
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/materialize_capture_bidirectional_ble_ownership_lease.py verify
+          git diff --check
+
+      - name: Publish clean product bytes
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-bidirectional-ble-ownership-lease.yml
+          rm scripts/ci/materialize_capture_bidirectional_ble_ownership_lease.py
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(capture): enforce bidirectional process BLE ownership"
+          git push origin HEAD:fix/v14-capture-bidirectional-ble-ownership-lease-sol
