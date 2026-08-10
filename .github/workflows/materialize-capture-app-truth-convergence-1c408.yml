@@ -50,24 +50,29 @@ jobs:
             test "$(git rev-parse FETCH_HEAD)" = "$expected"
             git show "FETCH_HEAD:$path" > "$path"
           }
-          import_test \
-            agent/v14-capture-membership-status-revocation-red-4b41 \
-            8e004bdc39357c832c11d98d5013d2097937967f \
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift
-          import_test \
-            agent/v14-capture-application-event-metadata-precedence-red \
-            a8eb9b93eea7e5de1a9c80468cadf378989b5edd \
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
-          import_test \
-            agent/v14-capture-account-uid-export-red-870f-sol \
-            8010d108a043fbe2ff03fa3bb0d1518aa7047c08 \
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+          import_test agent/v14-capture-membership-status-revocation-red-4b41 8e004bdc39357c832c11d98d5013d2097937967f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift
+          import_test agent/v14-capture-application-event-metadata-precedence-red a8eb9b93eea7e5de1a9c80468cadf378989b5edd Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
+          import_test agent/v14-capture-account-uid-export-red-870f-sol 8010d108a043fbe2ff03fa3bb0d1518aa7047c08 Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
 
       - name: Apply current-product truth repair
         shell: bash
         run: |
-          set -euo pipefail
-          python3 .github/scripts/materialize-capture-app-truth-convergence.py
+          set -uo pipefail
+          output="$(mktemp)"
+          set +e
+          python3 .github/scripts/materialize-capture-app-truth-convergence.py >"$output" 2>&1
+          status=$?
+          set -e
+          cat "$output"
+          if [[ "$status" != 0 ]]; then
+            while IFS= read -r line; do
+              safe="${line//'%'/'%25'}"
+              safe="${safe//$'\r'/'%0D'}"
+              safe="${safe//$'\n'/'%0A'}"
+              echo "::error title=Capture app truth materializer::$safe"
+            done < "$output"
+            exit "$status"
+          fi
           git diff --check
 
       - name: Validate Swift source syntax
