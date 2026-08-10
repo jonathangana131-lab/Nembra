@@ -16,6 +16,19 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: f0fb83da5f57f9e92d29cf6ab444dc856e74c3a4
+      - name: Apply already-proven connectable symbol fix in workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('NembraApp/Features/Research/ES80CaptureShellView.swift')
+          text = path.read_text()
+          old = 'CBAdvertisementDataIsConnectableKey'
+          if text.count(old) != 2:
+              raise SystemExit(f'expected two stale connectable symbols, found {text.count(old)}')
+          path.write_text(text.replace(old, 'CBAdvertisementDataIsConnectable'))
+          PY
       - name: Reproduce stamped Simulator build with surfaced diagnostics
         shell: bash
         run: |
