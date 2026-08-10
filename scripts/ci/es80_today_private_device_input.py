@@ -188,6 +188,53 @@ def _refuse_existing_target_before_secret(directory_descriptor: int, filename: s
     raise PrivateInputError("private-intended-device-path-already-exists")
 
 
+def _same_inode(left: os.stat_result, right: os.stat_result) -> bool:
+    return (left.st_dev, left.st_ino) == (right.st_dev, right.st_ino)
+
+
+def _erase_failed_private_input(
+    file_descriptor: int,
+    directory_descriptor: int,
+    filename: str,
+) -> None:
+    """Prove secret erasure is durable before returning a failed acquisition.
+
+    The still-open file descriptor remains authoritative even if the pathname is retargeted or a
+    hard link appears. Scrub that exact inode first. Descriptor-relative unlink is an independent
+    fallback only when the original pathname still names the exact single-link inode. If neither
+    route can be proven durable, surface a secret-free cleanup blocker rather than hiding the
+    unresolved custody condition behind the original acquisition failure.
+    """
+    try:
+        os.fstat(file_descriptor)
+    except OSError as error:
+        raise PrivateInputError("private-intended-device-cleanup-failed") from error
+
+    durable_scrub = False
+    try:
+        os.ftruncate(file_descriptor, 0)
+        os.fsync(file_descriptor)
+        durable_scrub = os.fstat(file_descriptor).st_size == 0
+    except OSError:
+        durable_scrub = False
+
+    durable_unlink = False
+    try:
+        current = os.stat(filename, dir_fd=directory_descriptor, follow_symlinks=False)
+        opened_before_unlink = os.fstat(file_descriptor)
+        if _same_inode(current, opened_before_unlink) and opened_before_unlink.st_nlink == 1:
+            os.unlink(filename, dir_fd=directory_descriptor)
+            os.fsync(directory_descriptor)
+            durable_unlink = os.fstat(file_descriptor).st_nlink == 0
+    except OSError:
+        durable_unlink = False
+
+    if durable_scrub or durable_unlink:
+        return
+
+    raise PrivateInputError("private-intended-device-cleanup-failed")
+
+
 def create_private_input(
     private_directory: Path,
     repository_root: Path,
@@ -206,7 +253,6 @@ def create_private_input(
 
     directory_descriptor = _open_directory_chain(private_directory, create_leaf=True)
     file_descriptor: int | None = None
-    created_object_identity: tuple[int, int] | None = None
     final_identity: FileIdentity | None = None
     try:
         if _directory_contains_repository(private_directory, repository_root):
@@ -228,11 +274,10 @@ def create_private_input(
         except OSError as error:
             raise PrivateInputError("private-intended-device-create-failed") from error
 
-        # Capture the created filesystem object immediately after O_EXCL succeeds. Cleanup must not
-        # depend on a later successful write/fsync/fstat: any failure after creation is responsible
-        # for removing this exact object, but never a pathname replacement created by another actor.
-        opened_metadata = os.fstat(file_descriptor)
-        created_object_identity = (opened_metadata.st_dev, opened_metadata.st_ino)
+        # From this point onward the open descriptor is the strongest identity for cleanup. Any
+        # failure, including terminal cancellation, must durably erase this exact object or surface
+        # an explicit secret-free cleanup blocker.
+        os.fstat(file_descriptor)
 
         _write_all(file_descriptor, payload)
         os.fsync(file_descriptor)
@@ -281,23 +326,12 @@ def create_private_input(
 
         os.fsync(directory_descriptor)
         return output_path
-    except BaseException:
-        if created_object_identity is not None:
+    except BaseException as acquisition_error:
+        if file_descriptor is not None:
             try:
-                current = os.stat(filename, dir_fd=directory_descriptor, follow_symlinks=False)
-            except OSError:
-                pass
-            else:
-                if (current.st_dev, current.st_ino) == created_object_identity:
-                    try:
-                        os.unlink(filename, dir_fd=directory_descriptor)
-                    except OSError:
-                        pass
-                    else:
-                        try:
-                            os.fsync(directory_descriptor)
-                        except OSError:
-                            pass
+                _erase_failed_private_input(file_descriptor, directory_descriptor, filename)
+            except PrivateInputError as cleanup_error:
+                raise cleanup_error from acquisition_error
         raise
     finally:
         if file_descriptor is not None:
