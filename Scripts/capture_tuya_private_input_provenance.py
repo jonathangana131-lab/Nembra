@@ -12,7 +12,7 @@ import argparse
 import hashlib
 import os
 import stat
-import tempfile
+import secrets
 from pathlib import Path
 from typing import Iterable
 
@@ -249,64 +249,144 @@ def _record_text(record: dict[str, str]) -> str:
     return "".join(f"{key}={record[key]}\n" for key in _RECORD_KEYS)
 
 
-def write_record(path: Path, record: dict[str, str]) -> None:
-    parent = path.parent
-    try:
-        parent_metadata = parent.lstat()
-    except OSError as error:
-        raise ProvenanceError("private provenance directory is unavailable") from error
-    if parent.is_symlink() or not stat.S_ISDIR(parent_metadata.st_mode):
-        raise ProvenanceError("private provenance directory must be a real directory")
+def _open_bound_directory(path: Path) -> int:
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    directory = getattr(os, "O_DIRECTORY", None)
+    if nofollow is None or directory is None:
+        raise ProvenanceError("private provenance directory admission requires descriptor-safe directory support")
 
-    temporary_name: str | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=parent,
-            prefix=".nembra-tuya-provenance.",
-            delete=False,
-        ) as handle:
-            temporary_name = handle.name
-            os.chmod(temporary_name, 0o600)
-            handle.write(_record_text(record))
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary_name, path)
-        temporary_name = None
-        os.chmod(path, 0o600)
-    except OSError as error:
-        raise ProvenanceError("private provenance record could not be written") from error
-    finally:
-        if temporary_name is not None:
-            try:
-                os.unlink(temporary_name)
-            except FileNotFoundError:
-                pass
-
-
-def read_record(path: Path) -> dict[str, str]:
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    flags = os.O_RDONLY | nofollow | directory | getattr(os, "O_CLOEXEC", 0)
     try:
         descriptor = os.open(path, flags)
     except OSError as error:
-        raise ProvenanceError("private provenance record is unavailable or unsafe") from error
+        raise ProvenanceError("private provenance directory is unavailable or unsafe") from error
+
     try:
         metadata = os.fstat(descriptor)
-        if not stat.S_ISREG(metadata.st_mode):
+        if not stat.S_ISDIR(metadata.st_mode):
+            raise ProvenanceError("private provenance directory must be a real directory")
+        try:
+            current_path = path.lstat()
+        except OSError as error:
+            raise ProvenanceError("private provenance directory pathname changed during admission") from error
+        if (
+            stat.S_ISLNK(current_path.st_mode)
+            or not stat.S_ISDIR(current_path.st_mode)
+            or current_path.st_dev != metadata.st_dev
+            or current_path.st_ino != metadata.st_ino
+        ):
+            raise ProvenanceError("private provenance directory pathname changed during admission")
+        return descriptor
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
+def write_record(path: Path, record: dict[str, str]) -> None:
+    parent_descriptor = _open_bound_directory(path.parent)
+    temporary_name: str | None = None
+    temporary_descriptor: int | None = None
+    try:
+        flags = (
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_CLOEXEC", 0)
+        )
+        for _ in range(64):
+            candidate = f".nembra-tuya-provenance.{secrets.token_hex(12)}"
+            try:
+                temporary_descriptor = os.open(
+                    candidate,
+                    flags,
+                    0o600,
+                    dir_fd=parent_descriptor,
+                )
+                temporary_name = candidate
+                break
+            except FileExistsError:
+                continue
+        if temporary_descriptor is None or temporary_name is None:
+            raise ProvenanceError("private provenance record temporary file could not be allocated")
+
+        payload = _record_text(record).encode("utf-8")
+        offset = 0
+        while offset < len(payload):
+            written = os.write(temporary_descriptor, payload[offset:])
+            if written <= 0:
+                raise ProvenanceError("private provenance record could not be written")
+            offset += written
+        os.fchmod(temporary_descriptor, 0o600)
+        os.fsync(temporary_descriptor)
+
+        os.replace(
+            temporary_name,
+            path.name,
+            src_dir_fd=parent_descriptor,
+            dst_dir_fd=parent_descriptor,
+        )
+        temporary_name = None
+        os.fsync(parent_descriptor)
+    except OSError as error:
+        raise ProvenanceError("private provenance record could not be written") from error
+    finally:
+        if temporary_descriptor is not None:
+            os.close(temporary_descriptor)
+        if temporary_name is not None:
+            try:
+                os.unlink(temporary_name, dir_fd=parent_descriptor)
+            except FileNotFoundError:
+                pass
+        os.close(parent_descriptor)
+
+
+def read_record(path: Path) -> dict[str, str]:
+    parent_descriptor = _open_bound_directory(path.parent)
+    descriptor: int | None = None
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        try:
+            descriptor = os.open(path.name, flags, dir_fd=parent_descriptor)
+        except OSError as error:
+            raise ProvenanceError("private provenance record is unavailable or unsafe") from error
+
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
             raise ProvenanceError("private provenance record is not a regular file")
-        if hasattr(os, "getuid") and metadata.st_uid != os.getuid():
+        if hasattr(os, "getuid") and before.st_uid != os.getuid():
             raise ProvenanceError("private provenance record is not owned by the current user")
-        if stat.S_IMODE(metadata.st_mode) & 0o077:
+        if stat.S_IMODE(before.st_mode) & 0o077:
             raise ProvenanceError("private provenance record permissions are too broad")
+
         chunks: list[bytes] = []
+        bytes_read = 0
         while True:
             chunk = os.read(descriptor, 64 * 1024)
             if not chunk:
                 break
+            bytes_read += len(chunk)
             chunks.append(chunk)
+
+        after = os.fstat(descriptor)
+        if _stat_identity(before) != _stat_identity(after) or bytes_read != after.st_size:
+            raise ProvenanceError("private provenance record changed while it was read")
+
+        try:
+            current_path = os.stat(path.name, dir_fd=parent_descriptor, follow_symlinks=False)
+        except OSError as error:
+            raise ProvenanceError("private provenance record pathname changed while it was read") from error
+        if (
+            stat.S_ISLNK(current_path.st_mode)
+            or not stat.S_ISREG(current_path.st_mode)
+            or current_path.st_dev != after.st_dev
+            or current_path.st_ino != after.st_ino
+        ):
+            raise ProvenanceError("private provenance record pathname changed while it was read")
     finally:
-        os.close(descriptor)
+        if descriptor is not None:
+            os.close(descriptor)
+        os.close(parent_descriptor)
 
     try:
         text = b"".join(chunks).decode("utf-8")
