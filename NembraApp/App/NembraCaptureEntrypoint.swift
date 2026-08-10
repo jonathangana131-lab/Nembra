@@ -168,6 +168,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let buildIdentifier: String
         let sourceCommitSHA: String
         let tuyaDependencyLockSHA256: String
+        let procedureIdentifier: String
         let tuyaDeviceID: String
         let tuyaUUID: String
         let productID: String
@@ -350,6 +351,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }
     var fieldBuildIdentifier: String { buildIdentity.buildIdentifier }
     var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }
+    var fieldProcedureIdentifier: String { NembraCaptureBuildIdentity.fieldProcedureIdentifier }
     var sdkAccountLoggedIn: Bool { OfficialTuyaFactory.accountLoggedIn }
     var currentAccountUID: String? { OfficialTuyaFactory.currentAccountUID }
     var selected: Candidate? { selectedID.flatMap { byID[$0] } }
@@ -1563,12 +1565,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     private func makeExport(exportedAt: Date, phase: Phase, events: [Event]) -> Export {
         Export(
-            schemaVersion: 9,
+            schemaVersion: 10,
             purpose: "Sanitized Tuya authenticated read-only stationary preflight",
             exportedAt: exportedAt,
             buildIdentifier: buildIdentity.buildIdentifier,
             sourceCommitSHA: buildIdentity.sourceCommitSHA,
             tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,
+            procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier,
             tuyaDeviceID: deviceID,
             tuyaUUID: tuyaUUID,
             productID: productID,
@@ -2580,6 +2583,7 @@ private struct SecureLinkView: View {
             VStack(alignment: .leading, spacing: 12) {
                 LabeledContent("Build", value: test.fieldBuildIdentifier)
                 LabeledContent("Source commit", value: test.fieldBuildSourceCommitSHA)
+                LabeledContent("Procedure", value: test.fieldProcedureIdentifier)
                 LabeledContent("SDK account", value: test.sdkAccountLoggedIn ? "Logged in" : "Not logged in")
                 LabeledContent("Exact scooter membership", value: test.sdkDeviceMembershipVerified && test.accountIdentityLeaseIsAuthorized ? "Verified" : "Not verified")
                 LabeledContent("Connection generation", value: String(test.ledgerSnapshot.connectionGeneration))
