@@ -69,6 +69,8 @@ TUYA_DEPENDENCY_LOCK_SHA256="$(shasum -a 256 "$ROOT/Podfile.lock" | awk '{print 
 say "Resolved Tuya dependency lock fingerprint captured for compiled provenance"
 
 TUYA_PROVENANCE_HELPER="$ROOT/Scripts/capture_tuya_private_input_provenance.py"
+TUYA_BUILD_WINDOW_GUARD="$ROOT/Scripts/capture_tuya_private_input_build_guard.py"
+[[ -f "$TUYA_BUILD_WINDOW_GUARD" ]] || die "Private Tuya build-window custody guard is missing from the accepted source."
 TUYA_PRIVATE_SDK="$ROOT/LocalSecrets/TuyaSDK"
 TUYA_PRIVATE_IDENTITY="$ROOT/LocalSecrets/TuyaRuntime"
 TUYA_DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
@@ -202,7 +204,17 @@ BUILD_LABEL="capture-v14-${SOURCE_SHA:0:12}"
 verify_private_tuya_inputs
 
 say "Building SDK-integrated Nembra Capture for the intended iPhone"
-xcodebuild \
+# Endpoint fingerprints alone cannot prove that a transient private-input change
+# was not consumed by the compiler and restored before the post-build verify.
+# Keep macOS vnode custody armed for every admitted private file/directory across
+# the complete compiler/linker window, then retain the cryptographic verify below.
+/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD" \
+    --lockfile "$ROOT/Podfile.lock" \
+    --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
+    --security-build "$TUYA_PRIVATE_SDK/Build" \
+    --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
+    --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
+    -- xcodebuild \
     -workspace NembraCapture.xcworkspace \
     -scheme "Nembra Capture" \
     -configuration Debug \
@@ -217,7 +229,7 @@ xcodebuild \
     "NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$SOURCE_SHA" \
     "NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256" \
     "INFOPLIST_KEY_NembraCaptureProcedureIdentifier=$PROCEDURE_ID" \
-    build
+    build || die "Private inputs changed while xcodebuild was running, vnode custody failed, or the signed build itself failed. No field artifact was admitted."
 
 verify_private_tuya_inputs
 [[ "$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')" == "$SOURCE_SHA" ]] || die "Repository HEAD changed while the accepted field build was compiling. Discard this candidate."
