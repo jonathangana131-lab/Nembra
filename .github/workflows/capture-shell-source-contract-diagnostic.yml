@@ -1,0 +1,37 @@
+name: Capture Shell Source Contract Diagnostic
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/capture-shell-source-contract-diagnostic.yml'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureStageRailAcceptedAccessibilitySourceTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductSurfaceSourceTests.swift'
+
+permissions:
+  contents: read
+
+jobs:
+  focused-shell-contracts:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Bind to exact head
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Run stage-rail source contract
+        run: |
+          cd Packages/NembraBluetoothCapture
+          swift test --filter CaptureStageRailAcceptedAccessibilitySourceTests
+      - name: Run product-surface source contract
+        run: |
+          cd Packages/NembraBluetoothCapture
+          swift test --filter TuyaSecureLinkProductSurfaceSourceTests
