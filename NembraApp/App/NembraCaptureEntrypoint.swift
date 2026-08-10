@@ -1425,7 +1425,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
               !verifiedAccountUID.isEmpty else {
             await invalidateSourceAuthority(
                 token: token,
-                message: "Verified Tuya account identity became unavailable before application evidence could enter event custody." ,
+                message: "Verified Tuya account identity became unavailable before application evidence could enter event custody.",
                 kind: "sdk_account_uid_unavailable_before_application_event_custody"
             )
             return
