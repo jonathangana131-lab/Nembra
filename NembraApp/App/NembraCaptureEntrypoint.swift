@@ -2386,8 +2386,12 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
 
     private static var exactSecretValues: [String] {
 #if canImport(NembraTuyaPrivateConfig)
-        [NembraTuyaPrivateIdentity.appKey, NembraTuyaPrivateIdentity.appSecret]
+        Set([NembraTuyaPrivateIdentity.appKey, NembraTuyaPrivateIdentity.appSecret])
             .filter { !$0.isEmpty }
+            .sorted { left, right in
+                if left.count != right.count { return left.count > right.count }
+                return left < right
+            }
 #else
         []
 #endif
