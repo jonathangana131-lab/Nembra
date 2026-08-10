@@ -54,10 +54,12 @@ jobs:
           fi
 
           # The official SDK account gate must remain present; metadata QR approval
-          # alone is not accepted as BLE authentication authority.
+          # alone is not accepted as BLE authentication authority. Swift formatting
+          # may split argument labels across lines, so do not couple this source guard
+          # to a one-line call shape.
           grep -Fq 'ThingSmartUser.sharedInstance()' "$active"
-          grep -Fq 'sendVerifyCode(withUserName:' "$active"
-          grep -Eq 'login\(withEmail:|login\(withMobile:' "$active"
+          grep -Fq 'sendVerifyCode(' "$active"
+          grep -Eq 'withEmail:|withMobile:' "$active"
           grep -Fq 'ThingSmartBLEManager.sharedInstance().connectBLE' "$active"
 
           # Keep password-based Tuya login out of the field utility. Verification-code
