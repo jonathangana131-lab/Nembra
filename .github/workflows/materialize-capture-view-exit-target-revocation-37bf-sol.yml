@@ -1,0 +1,72 @@
+name: Materialize Capture View-Exit Target Revocation 37BF
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-view-exit-target-revocation-37bf-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-view-exit-target-revocation-37bf-sol
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Import reviewed two-path donor onto exact product
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "37bf3bf6502c470f69915c5e1e5f81721e846ae4"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/materialize-capture-view-exit-target-revocation-37bf-sol.yml"
+          git fetch --no-tags origin 5edc22686012dc73a64599afdedaf0d6f0ea5508
+          git diff a5cb12ed97241ba274d23f311d67cf84623ceb29 5edc22686012dc73a64599afdedaf0d6f0ea5508 -- \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundTargetRevocationSourceTests.swift \
+            > /tmp/view-exit-target.patch
+          git apply --check /tmp/view-exit-target.patch
+          git apply /tmp/view-exit-target.patch
+
+      - name: Reverify source contract and syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          start = source.index('    func abandonCorrelationForViewExit() {')
+          end = source.index('    func appDidLoseForeground() {', start)
+          cleanup = source[start:end]
+          reset = cleanup.index('if phase == .correlated || phase == .selected')
+          live_guard = cleanup.index('guard processCorrelationLease != nil || correlationSession != nil')
+          if reset >= live_guard:
+              raise SystemExit('already-correlated target retirement is still hidden behind live scanner/lease guard')
+          for token in ['resetDiscoverySessionOnly()', 'target_correlation_abandoned_on_view_exit']:
+              if token not in cleanup:
+                  raise SystemExit(f'missing view-exit target revocation contract: {token}')
+          if 'releasePackageCorrelationLease()' in cleanup:
+              raise SystemExit('view exit bypasses scanner-first package correlation retirement')
+          print('Capture view-exit target authority current reanchor: PASS')
+          PY
+          git diff --check
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundTargetRevocationSourceTests.swift
+
+      - name: Collapse helper into current product donor
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-sol-materializer'
+          git config user.email 'actions@users.noreply.github.com'
+          git rm .github/workflows/materialize-capture-view-exit-target-revocation-37bf-sol.yml
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(capture): revoke correlated target on Secure Link exit'
+          git push origin HEAD:fix/v14-capture-view-exit-target-revocation-37bf-sol
