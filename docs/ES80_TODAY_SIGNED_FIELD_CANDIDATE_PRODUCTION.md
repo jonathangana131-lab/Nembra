@@ -99,7 +99,8 @@ umask 077
 HOME_PHYSICAL="$(cd -P -- "$HOME" && /bin/pwd -P)"
 test -n "$HOME_PHYSICAL" && test "${HOME_PHYSICAL#/}" != "$HOME_PHYSICAL"
 PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"
-UDID_FILE="$PRIVATE_DIR/es80-intended-device.udid"
+UDID_FILENAME='es80-intended-device.udid'
+UDID_FILE="$PRIVATE_DIR/$UDID_FILENAME"
 TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
 
 PRIVATE_INPUT_HELPER_COMMIT='b479d851a54437ef394a4901c69db2d829d280e4'
@@ -115,13 +116,14 @@ test "$(/usr/bin/git hash-object --no-filters -- "$PRIVATE_INPUT_HELPER")" = "$P
 
 /usr/bin/python3 -I "$PRIVATE_INPUT_HELPER" \
   --private-directory "$PRIVATE_DIR" \
-  --source-repo "$FIELD_SOURCE"
+  --source-repo "$FIELD_SOURCE" \
+  --filename "$UDID_FILENAME"
 
 test -f "$UDID_FILE" && test ! -L "$UDID_FILE"
 test "$(/usr/bin/stat -f '%Lp' "$UDID_FILE")" = '600'
 ```
 
-If the helper reports `NOT_READY`, stop before signing and preserve the exact blocker. Do not fall back to `printf >`, `tee`, `echo`, `noclobber`, or another pathname-based secret write. Keep the resulting file private; do not commit it and do not copy it into the retained candidate directory. If the chosen final path already exists, preserve it and choose a fresh filename/path rather than deleting or overwriting it just to satisfy the helper.
+If the helper reports `NOT_READY`, stop before signing and preserve the exact blocker. Do not fall back to `printf >`, `tee`, `echo`, `noclobber`, or another pathname-based secret write. Keep the resulting file private; do not commit it and do not copy it into the retained candidate directory. If the chosen final path already exists—including a zero-length spent subject from an earlier failed attempt—preserve it, set `UDID_FILENAME` to a fresh leaf name under the same `PRIVATE_DIR`, let `UDID_FILE` derive from it, and rerun the exact pinned helper with `--filename "$UDID_FILENAME"`. Do not delete or overwrite an occupied subject just to satisfy the helper.
 
 ## 3. Set the signing inputs without changing the source subject
 
