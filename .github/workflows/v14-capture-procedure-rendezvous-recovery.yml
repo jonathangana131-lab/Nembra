@@ -45,10 +45,12 @@ jobs:
 
       - name: Commit durable product contract
         run: |
-          # Keep this recovery workflow + transformer on the recovery branch.
-          # GitHub's workflow token can push ordinary product/source changes,
-          # while self-deleting the active workflow caused the previous push to fail.
-          # The current-spine convergence commit will transplant only product/test blobs.
+          # Keep recovery tooling on this branch. Also revert the transform's
+          # CI-workflow hardening before the bot commit: GITHUB_TOKEN may push
+          # ordinary product/source files here, but workflow-file mutation is
+          # separately restricted. The current-spine connector commit will
+          # harden that CI workflow after product blobs are transplanted.
+          git checkout -- .github/workflows/capture-field-build-provenance.yml
           rm -f rendezvous_failure.txt
           git add -A
           git diff --cached --check
