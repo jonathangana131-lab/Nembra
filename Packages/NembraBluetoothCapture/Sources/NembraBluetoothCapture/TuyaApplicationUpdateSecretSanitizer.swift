@@ -14,6 +14,7 @@ public enum TuyaApplicationUpdateSecretSanitizer: Sendable {
         "refreshtoken",
         "authkey",
         "seckey",
+        "sessionkey",
     ]
 
     /// Produces the string projection consumed by Capture diagnostics only after
