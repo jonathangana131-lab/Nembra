@@ -323,13 +323,14 @@ struct DashboardSpeedInstrumentView: View {
             allowsSimulatorQA: allowsSimulatorQA
         )
         let energyRailSource = energyRailSimulatorSourceSnapshot
+        let energyRailPresentationEligible = energyRailSimulatorPresentationEligible
         let scheduleNow = DispatchTime.now().uptimeNanoseconds
         let speedShouldTick = !reduceMotion
             && model.isAnimationActive
             && isLivePresentation(speedAvailability)
         let energyRailShouldTick: Bool
         if !reduceMotion,
-           energyRailSource != nil,
+           energyRailPresentationEligible,
            let energyRailRuntime {
             energyRailShouldTick = energyRailRuntime.displaySchedule(
                 atUptimeNanoseconds: scheduleNow
@@ -353,7 +354,7 @@ struct DashboardSpeedInstrumentView: View {
             )
             let energyRailState = energyRailVisualState(
                 atUptimeNanoseconds: now,
-                source: energyRailSource,
+                presentationEligible: energyRailPresentationEligible,
                 presentationRevision: energyRailPresentationRevision
             )
 
@@ -369,7 +370,7 @@ struct DashboardSpeedInstrumentView: View {
                 vehicle.speedEvidenceAvailability,
                 allowsSimulatorQA: vehicle.profile == .simulatorQA
             )
-            synchronizeEnergyRailSource(energyRailSimulatorSourceSnapshot)
+            synchronizeEnergyRailSourceState()
         }
         .task(id: energyRailNextTransitionUptimeNanoseconds) {
             await waitForEnergyRailPresentationTransition()
@@ -380,8 +381,11 @@ struct DashboardSpeedInstrumentView: View {
                 allowsSimulatorQA: vehicle.profile == .simulatorQA
             )
         }
-        .onChange(of: energyRailSimulatorSourceSnapshot) { _, snapshot in
-            synchronizeEnergyRailSource(snapshot)
+        .onChange(of: energyRailSource) { _, _ in
+            synchronizeEnergyRailSourceState()
+        }
+        .onChange(of: energyRailPresentationEligible) { _, _ in
+            synchronizeEnergyRailSourceState()
         }
         .onChange(of: vehicle.state.connection) { _, connection in
             if connection != .connected {
@@ -394,7 +398,13 @@ struct DashboardSpeedInstrumentView: View {
         }
     }
 
-    private var energyRailSimulatorSourceSnapshot: DashboardEnergyRailSimulatorSourceSnapshot? {
+    /// Hard presentation authority excludes physical/unverified profiles, missing
+    /// capability, transport loss, retained speed, and caller-constructible source
+    /// wrappers that do not carry the accepted Simulator absolute-measurement shape.
+    /// Aggregate speed/power are intentionally *not* part of this gate because they
+    /// arrive on a separate async stream and can be temporarily skewed without a real
+    /// lifecycle interruption.
+    private var energyRailSimulatorPresentationEligible: Bool {
         let sanitizedSpeed = vehicle.speedEvidenceAvailability.dashboardPresentationAvailability(
             allowsSimulatorQA: true
         )
@@ -404,7 +414,23 @@ struct DashboardSpeedInstrumentView: View {
               vehicle.state.connection == .connected,
               case let .live(sourceSample) = sanitizedSpeed,
               sourceSample.source == .simulatorQA,
-              sourceSample.provenance == .absoluteMeasurement,
+              sourceSample.provenance == .absoluteMeasurement else {
+            return false
+        }
+        return true
+    }
+
+    /// A source admission exists only when the two Simulator streams describe the
+    /// same synthetic speed observation. Cross-stream skew is neither accepted power
+    /// nor a disconnect: callers preserve the previous runtime generation while they
+    /// wait for the matching aggregate state to arrive.
+    private var energyRailSimulatorSourceSnapshot: DashboardEnergyRailSimulatorSourceSnapshot? {
+        let sanitizedSpeed = vehicle.speedEvidenceAvailability.dashboardPresentationAvailability(
+            allowsSimulatorQA: true
+        )
+
+        guard energyRailSimulatorPresentationEligible,
+              case let .live(sourceSample) = sanitizedSpeed,
               let aggregateSpeed = vehicle.state.speedKilometersPerHour,
               aggregateSpeed.isFinite,
               aggregateSpeed >= 0,
@@ -418,6 +444,20 @@ struct DashboardSpeedInstrumentView: View {
             watts: Double(aggregateWatts),
             sourceSample: sourceSample
         )
+    }
+
+    /// Reconcile the independently delivered Simulator streams without turning a
+    /// temporary mismatch into false lifecycle evidence. A coherent snapshot may
+    /// admit a new synthetic power observation. Hard authority loss retires the
+    /// generation. An eligible-but-incoherent pair does neither.
+    private func synchronizeEnergyRailSourceState() {
+        if let snapshot = energyRailSimulatorSourceSnapshot {
+            synchronizeEnergyRailSource(snapshot)
+        } else if !energyRailSimulatorPresentationEligible {
+            synchronizeEnergyRailSource(nil)
+        } else {
+            refreshEnergyRailPresentationSchedule()
+        }
     }
 
     private func synchronizeEnergyRailSource(
@@ -451,7 +491,7 @@ struct DashboardSpeedInstrumentView: View {
     }
 
     private func refreshEnergyRailPresentationSchedule() {
-        guard energyRailSimulatorSourceSnapshot != nil,
+        guard energyRailSimulatorPresentationEligible,
               let energyRailRuntime else {
             energyRailNextTransitionUptimeNanoseconds = nil
             return
@@ -486,20 +526,22 @@ struct DashboardSpeedInstrumentView: View {
 
     private func energyRailVisualState(
         atUptimeNanoseconds uptimeNanoseconds: UInt64,
-        source: DashboardEnergyRailSimulatorSourceSnapshot?,
+        presentationEligible: Bool,
         presentationRevision: UInt64
     ) -> NembraEnergyRailVisualState? {
         // Reading the display-only revision here gives SwiftUI an explicit state
         // dependency without placing a Void expression in the ViewBuilder body.
         _ = presentationRevision
 
-        guard source != nil,
+        guard presentationEligible,
               let runtime = energyRailRuntime else {
             return nil
         }
-        return NembraEnergyRailVisualState(
-            projection: runtime.projection(atUptimeNanoseconds: uptimeNanoseconds)
-        )
+        let projection = runtime.projection(atUptimeNanoseconds: uptimeNanoseconds)
+        guard projection.currentness != .unavailable else {
+            return nil
+        }
+        return NembraEnergyRailVisualState(projection: projection)
     }
 
     private func isLivePresentation(_ availability: SpeedEvidenceAvailability) -> Bool {
