@@ -19,17 +19,18 @@ struct PhysicalCaptureTransportEvidenceTests {
         #expect(abs(evidence.meanConnectedIntervalSeconds - 29.930) < 0.001)
     }
 
-    @Test("transport-only capture cannot mint telemetry semantics")
-    func transportOnlyCaptureCannotMintTelemetry() {
+    @Test("transport-only capture cannot mint raw bytes or telemetry semantics")
+    func transportOnlyCaptureCannotMintStrongerAuthority() {
         let evidence = PhysicalCaptureTransportEvidence.c7d09a22
 
         #expect(evidence.characteristicValueEventCount == 0)
+        #expect(evidence.authorizesRawFD50NotificationBytes == false)
         #expect(evidence.authorizesTelemetrySemantics == false)
         #expect(evidence.isStablePhysicalDeviceIdentity == false)
     }
 
-    @Test("opaque application payload receipt still cannot mint telemetry semantics")
-    func opaqueApplicationPayloadStillCannotMintTelemetry() {
+    @Test("opaque application update still cannot mint raw FD50 or telemetry semantics")
+    func opaqueApplicationUpdateStillCannotMintStrongerAuthority() {
         let evidence = PhysicalCaptureTransportEvidence(
             captureID: "future-opaque-capture",
             observedPeripheralID: "capture-local-peripheral",
@@ -44,6 +45,7 @@ struct PhysicalCaptureTransportEvidenceTests {
         )
 
         #expect(evidence.characteristicValueEventCount == 1)
+        #expect(evidence.authorizesRawFD50NotificationBytes == false)
         #expect(evidence.authorizesTelemetrySemantics == false)
         #expect(evidence.isStablePhysicalDeviceIdentity == false)
     }
