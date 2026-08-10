@@ -4,7 +4,7 @@ import Foundation
 ///
 /// This type intentionally stops at the transport layer. It must not be used to mint
 /// speed, battery, power, mode, odometer, or other scooter telemetry semantics.
-public struct PhysicalCaptureTransportEvidence: Codable, Equatable, Sendable {
+public struct PhysicalCaptureTransportEvidence: Encodable, Equatable, Sendable {
     public enum Provenance: String, Codable, Equatable, Sendable {
         case physicalCapture
     }
@@ -21,7 +21,12 @@ public struct PhysicalCaptureTransportEvidence: Codable, Equatable, Sendable {
     public let meanConnectedIntervalSeconds: Double
     public let provenance: Provenance
 
-    public init(
+    // Physical provenance is authority-bearing. Keep construction module-internal so external
+    // product/package callers cannot manufacture arbitrary values labeled as a physical capture.
+    // The type is intentionally Encodable-only: public Decodable conformance would reopen a
+    // caller-constructible authority path through arbitrary JSON. Accepted physical facts are
+    // exposed through reviewed static ledger entries below; tests may use @testable fixtures.
+    init(
         captureID: String,
         observedPeripheralID: String,
         advertisedLocalName: String,
