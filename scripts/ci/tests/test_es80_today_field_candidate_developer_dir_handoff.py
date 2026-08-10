@@ -13,19 +13,22 @@ class FieldCandidateDeveloperDirHandoffTests(unittest.TestCase):
         unset_guard = "unset DEVELOPER_DIR"
         absent_guard = 'test -z "${DEVELOPER_DIR+x}"'
         preflight_invocation = '/usr/bin/python3 -I "$PREFLIGHT"'
-        producer_invocation = "./scripts/ci/xcode27_today_research_field_candidate.sh"
+        producer_invocation = "\n./scripts/ci/xcode27_today_research_field_candidate.sh\n"
 
         self.assertIn(unset_guard, handoff)
         self.assertGreaterEqual(handoff.count(absent_guard), 3)
         self.assertIn(preflight_invocation, handoff)
         self.assertIn(producer_invocation, handoff)
-        self.assertLess(handoff.index(unset_guard), handoff.index(preflight_invocation))
-        self.assertLess(handoff.index(unset_guard), handoff.index(producer_invocation))
 
-        preflight_guard = handoff.rfind(absent_guard, 0, handoff.index(preflight_invocation))
-        producer_guard = handoff.rfind(absent_guard, 0, handoff.index(producer_invocation))
+        preflight_index = handoff.index(preflight_invocation)
+        producer_index = handoff.index(producer_invocation) + 1
+        self.assertLess(handoff.index(unset_guard), preflight_index)
+        self.assertLess(handoff.index(unset_guard), producer_index)
+
+        preflight_guard = handoff.rfind(absent_guard, 0, preflight_index)
+        producer_guard = handoff.rfind(absent_guard, 0, producer_index)
         self.assertGreater(preflight_guard, handoff.index(unset_guard))
-        self.assertGreater(producer_guard, handoff.index(preflight_invocation))
+        self.assertGreater(producer_guard, preflight_index)
 
     def test_handoff_never_reintroduces_a_developer_dir_override(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
