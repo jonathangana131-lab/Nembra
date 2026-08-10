@@ -5,8 +5,67 @@ on:
     branches:
       - agent/capture-offscreen-auth-current-fd6f
 
+permissions:
+  contents: write
+
 jobs:
   harden:
     runs-on: ubuntu-latest
     steps:
-      - run: echo workflow-started
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/capture-offscreen-auth-current-fd6f
+          fetch-depth: 0
+
+      - name: Apply lifetime custody fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor f05c4601c0aecc53899d371f0443c68062faa7fe HEAD
+          python3 - <<'PY'
+          from pathlib import Path
+          app=Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s=app.read_text()
+          old="            Task { @MainActor [weak self] in\n                guard let self else { return }\n                await self.invalidateInternalLifecycle(\n"
+          new="            Task { @MainActor [self] in\n                await self.invalidateInternalLifecycle(\n"
+          assert s.count(old)==1, s.count(old)
+          app.write_text(s.replace(old,new,1))
+          test=Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift')
+          t=test.read_text()
+          anchor='        #expect(cleanup.contains("invalidateInternalLifecycle("))\n'
+          addition='        #expect(cleanup.contains("Task { @MainActor [self] in"))\n        #expect(!cleanup.contains("Task { @MainActor [weak self] in"))\n'
+          assert t.count(anchor)==1
+          test.write_text(t.replace(anchor,anchor+addition,1))
+          PY
+
+      - name: Verify lifetime custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          a=s.index('func abandonCorrelationForViewExit()')
+          b=s.index('var privateConfig: Bool',a)
+          c=s[a:b]
+          assert 'Task { @MainActor [self] in' in c
+          assert 'Task { @MainActor [weak self] in' not in c
+          assert 'await self.invalidateInternalLifecycle(' in c
+          assert c.index('officialConnectionRequestID = UUID()') < c.index('if let token = currentConnectionToken')
+          assert 'disconnectBLE' not in c
+          PY
+          git diff --check
+
+      - name: Publish clean donor
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/harden-capture-offscreen-auth-retirement.yml
+          git add -A
+          git diff --cached --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'fix(capture): retain controller through exit retirement'
+          git push origin HEAD:agent/capture-offscreen-auth-current-fd6f
