@@ -79,7 +79,9 @@ The producer itself will create another fresh detached worktree internally. The 
 
 Choose a private path outside the repository. The producer requires an absolute regular non-symlink mode-`0600` file and independently validates its contents/mode.
 
-This example reads the UDID without placing the value in the command line or echoing it back to the terminal. The file must contain the exact identifier bytes with **no trailing newline or other surrounding whitespace**, matching the frozen `a0f4…` private runner's fail-closed input contract. Before any secret is acquired, the snippet resolves `$HOME` to its physical path so the eventual private file does not inherit a symlinked home ancestor that the accepted preflight would later reject. It also refuses a symlink private directory or any pre-existing final path. Bash `noclobber` is a second fail-closed guard if a target appears between the pre-check and redirection; do not change this into write-then-validate because ordinary shell redirection can follow an existing symlink before a later `test ! -L` executes.
+This handoff deliberately avoids shell redirection for the secret. Before the UDID is acquired, it resolves `$HOME` to a physical absolute path, then opens that path component-by-component with `O_DIRECTORY|O_NOFOLLOW`. The `.nembra-private` directory is created/opened relative to the pinned home-directory descriptor, and the final UDID file is created with `O_CREAT|O_EXCL|O_NOFOLLOW` relative to the pinned private-directory descriptor. This closes the creation-time parent-path retarget/symlink race that ordinary `> "$UDID_FILE"` redirection cannot close. The raw UDID is read from the terminal by isolated Python, is never placed in the command line or environment, and is written without a trailing newline.
+
+The frozen producer and pinned preflight still independently validate the final pathname before using it. This creation helper does not grant field authorization and does not make later pathname substitution trustworthy.
 
 ```bash
 umask 077
@@ -88,32 +90,89 @@ test -n "$HOME_PHYSICAL" && test "${HOME_PHYSICAL#/}" != "$HOME_PHYSICAL"
 PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"
 UDID_FILE="$PRIVATE_DIR/es80-intended-device.udid"
 
-if [[ -L "$PRIVATE_DIR" ]]; then
-  printf 'Refusing symlink private directory. Choose a real private directory.\n' >&2
-  exit 1
-fi
-/bin/mkdir -p "$PRIVATE_DIR"
-test -d "$PRIVATE_DIR" && test ! -L "$PRIVATE_DIR"
-/bin/chmod 700 "$PRIVATE_DIR"
+/usr/bin/python3 -I - "$HOME_PHYSICAL" <<'PY'
+import getpass
+import os
+import stat
+import sys
 
-if [[ -e "$UDID_FILE" || -L "$UDID_FILE" ]]; then
-  printf 'Refusing existing intended-device input path. Choose a fresh private path.\n' >&2
-  exit 1
-fi
+home = sys.argv[1]
+if not home.startswith("/") or home == "/":
+    raise SystemExit("Refusing invalid physical home path.")
 
-printf 'Intended iPhone UDID: ' >&2
-IFS= read -r -s INTENDED_UDID
-printf '\n' >&2
-( set -o noclobber; printf '%s' "$INTENDED_UDID" > "$UDID_FILE" )
-unset INTENDED_UDID
-/bin/chmod 600 "$UDID_FILE"
+walk_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+root_fd = os.open("/", walk_flags)
+current_fd = root_fd
+private_fd = None
+file_fd = None
+created_file = False
+
+try:
+    for component in (part for part in home.split("/") if part):
+        next_fd = os.open(component, walk_flags, dir_fd=current_fd)
+        if current_fd != root_fd:
+            os.close(current_fd)
+        current_fd = next_fd
+
+    try:
+        os.mkdir(".nembra-private", 0o700, dir_fd=current_fd)
+    except FileExistsError:
+        pass
+
+    private_fd = os.open(".nembra-private", walk_flags, dir_fd=current_fd)
+    os.fchmod(private_fd, 0o700)
+
+    value = getpass.getpass("Intended iPhone UDID: ")
+    if not value or value != value.strip() or "\x00" in value:
+        raise SystemExit("Refusing empty or whitespace/NUL-padded intended-device identifier.")
+
+    create_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
+    file_fd = os.open(
+        "es80-intended-device.udid",
+        create_flags,
+        0o600,
+        dir_fd=private_fd,
+    )
+    created_file = True
+    encoded = value.encode("utf-8")
+    offset = 0
+    while offset < len(encoded):
+        written = os.write(file_fd, encoded[offset:])
+        if written <= 0:
+            raise OSError("short write while creating intended-device input")
+        offset += written
+    os.fsync(file_fd)
+
+    metadata = os.fstat(file_fd)
+    if not stat.S_ISREG(metadata.st_mode):
+        raise SystemExit("Refusing non-regular intended-device input.")
+    if stat.S_IMODE(metadata.st_mode) != 0o600:
+        raise SystemExit("Refusing intended-device input with mode other than 0600.")
+    if metadata.st_size != len(encoded) or metadata.st_size == 0:
+        raise SystemExit("Refusing incomplete intended-device input write.")
+except BaseException:
+    if created_file and private_fd is not None:
+        try:
+            os.unlink("es80-intended-device.udid", dir_fd=private_fd)
+        except OSError:
+            pass
+    raise
+finally:
+    if file_fd is not None:
+        os.close(file_fd)
+    if private_fd is not None:
+        os.close(private_fd)
+    if current_fd != root_fd:
+        os.close(current_fd)
+    os.close(root_fd)
+PY
 
 test -s "$UDID_FILE"
 test -f "$UDID_FILE" && test ! -L "$UDID_FILE"
 test "$(/usr/bin/stat -f '%Lp' "$UDID_FILE")" = '600'
 ```
 
-Keep this file private. Do not commit it and do not copy it into the retained candidate directory. If the chosen final path already exists, preserve it and choose a fresh private path rather than overwriting or following it.
+If the final file already exists, `O_EXCL` fails closed without replacing it. Preserve the existing path and choose a fresh private path rather than overwriting it. Keep the new file private; do not commit it and do not copy it into the retained candidate directory.
 
 ## 3. Set the signing inputs without changing the source subject
 
@@ -258,8 +317,9 @@ Stop and preserve the exact blocker if any of these occurs:
 - the resulting evidence names a different source SHA, recipe, or build subject;
 - the candidate destination existed before production or appears partially published after a failure;
 - the private base path cannot be resolved to a physical absolute home path before secret acquisition;
-- the intended-device verification directory is a symlink, the final private path already exists, the exact-byte private write cannot be created under `noclobber`, the retained verification file is not mode-`0600` regular non-symlink input, or its path traverses a symlinked ancestor / the Nembra repository;
-- the intended-device verification value contains leading/trailing whitespace/newline;
+- the private home path cannot be opened component-by-component without following symlinks, the private directory cannot be created/opened descriptor-relative, the final private file already exists, or the exact mode-`0600` descriptor-relative write cannot be completed and fsynced;
+- the retained verification file is not mode-`0600` regular non-symlink input, or its final pathname traverses a symlinked ancestor / the Nembra repository when the pinned preflight revalidates it;
+- the intended-device verification value contains leading/trailing whitespace/newline/NUL;
 - the next step would require rebuilding, re-exporting, substituting another app/IPA, or using Xcode Run;
 - anyone proposes Bluetooth scanning before the hardened Final GO record exists.
 
