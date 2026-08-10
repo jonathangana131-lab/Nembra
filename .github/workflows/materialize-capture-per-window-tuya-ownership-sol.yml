@@ -1,0 +1,92 @@
+name: Materialize Capture per-window Tuya ownership repair
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-per-window-tuya-ownership-sol
+    paths:
+      - .github/workflows/materialize-capture-per-window-tuya-ownership-sol.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-per-window-tuya-ownership-sol
+          fetch-depth: 0
+
+      - name: Apply bounded product repair
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text()
+          needle = '''    private func startCurrentCorrelationWindow() {
+              guard sdkAccountLoggedIn,
+                    sdkDeviceMembershipVerified,
+                    accountIdentityLeaseIsAuthorized else {
+                  correlationSession?.abandonCurrentWindow()
+                  correlationSession = nil
+                  failLocally("SDK account/device authority changed before the next correlation window.", "sdk_authority_changed_during_target_correlation")
+                  return
+              }
+              guard let session = correlationSession,
+          '''
+          replacement = '''    private func startCurrentCorrelationWindow() {
+              guard sdkAccountLoggedIn,
+                    sdkDeviceMembershipVerified,
+                    accountIdentityLeaseIsAuthorized else {
+                  correlationSession?.abandonCurrentWindow()
+                  correlationSession = nil
+                  failLocally("SDK account/device authority changed before the next correlation window.", "sdk_authority_changed_during_target_correlation")
+                  return
+              }
+              guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {
+                  correlationSession?.abandonCurrentWindow()
+                  correlationSession = nil
+                  failLocally(
+                      "Tuya already owns local BLE for this scooter before the next correlation window. Relaunch Capture with the scooter OFF before another OFF1→ON1→OFF2→ON2 series. Package-owned scanning remains blocked while Tuya owns local BLE.",
+                      "sdk_local_ble_ownership_blocks_correlation_window"
+                  )
+                  return
+              }
+              guard let session = correlationSession,
+          '''
+          if text.count(needle) != 1:
+              raise SystemExit(f"expected exactly one bounded window-start needle, found {text.count(needle)}")
+          path.write_text(text.replace(needle, replacement, 1))
+          PY
+
+      - name: Verify source contract shape
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          start = text.index("private func startCurrentCorrelationWindow()")
+          end = text.index("func finishCorrelationWindow()", start)
+          body = text[start:end]
+          ownership = body.index("OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID)")
+          scanner = body.index("try session.startCurrentWindow()")
+          assert ownership < scanner
+          assert "return" in body[ownership:scanner]
+          for forbidden in ("disconnectBLE", "publishDps", "queryDps", "writeValue", "sessionLedger.endConnection"):
+              assert forbidden not in body
+          PY
+          git diff --check
+
+      - name: Commit repair and remove materializer
+        shell: bash
+        run: |
+          git config user.name "nembra-v14-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git rm .github/workflows/materialize-capture-per-window-tuya-ownership-sol.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git commit -m "fix(capture): fence every correlation window from Tuya BLE ownership"
+          git push origin HEAD:repair/v14-capture-per-window-tuya-ownership-sol
