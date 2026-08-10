@@ -1,22 +1,21 @@
 name: Apply Capture async invalidation recovery
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - fix/v14-capture-correlation-async-invalidation-recovery-sol
 
 permissions:
   contents: write
 
 jobs:
   repair:
-    if: >-
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.head.ref == 'fix/v14-capture-correlation-async-invalidation-recovery-sol'
+    if: github.ref_name == 'fix/v14-capture-correlation-async-invalidation-recovery-sol'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: fix/v14-capture-correlation-async-invalidation-recovery-sol
           fetch-depth: 0
 
       - name: Apply fail-closed lifecycle consumer
@@ -124,4 +123,4 @@ struct TuyaCorrelationAsyncInvalidationPresentationSourceTests {
           git add -A
           git diff --cached --exit-code && { echo 'No repair delta'; exit 1; }
           git commit -m 'fix(capture): recover async correlation invalidation'
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          git push origin HEAD:fix/v14-capture-correlation-async-invalidation-recovery-sol
