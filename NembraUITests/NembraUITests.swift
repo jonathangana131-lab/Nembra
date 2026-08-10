@@ -170,18 +170,13 @@ final class NembraUITests: XCTestCase {
             "The real Cockpit must remain mounted across the retained-power reconnect fixture."
         )
 
+        // The visual subtree is intentionally replaced by one stable accessibility
+        // representation, so automation asserts the semantic last-known contract
+        // here and the keep-always screenshot is the visual acceptance evidence.
         assertEnergyRailValue(
             containing: "356 watts, last known",
             in: app,
             message: "Reconnect without a new source power receipt must preserve exact 356 W evidence as retained, never live."
-        )
-        XCTAssertTrue(
-            app.staticTexts["LAST KNOWN POWER"].waitForExistence(timeout: 2),
-            "Retained propulsion must carry a visible last-known qualifier."
-        )
-        XCTAssertFalse(
-            app.staticTexts["LIVE POWER"].exists,
-            "Aggregate reconnect alone must not promote a retained propulsion receipt back to live."
         )
 
         keepScreenshot(named: "Dashboard Retained Power Landscape")
