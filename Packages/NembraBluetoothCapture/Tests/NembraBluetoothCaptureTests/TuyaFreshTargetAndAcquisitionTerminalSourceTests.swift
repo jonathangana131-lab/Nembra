@@ -62,7 +62,7 @@ struct TuyaFreshTargetAndAcquisitionTerminalSourceTests {
         // Account/login/membership drift owns markSourceAuthorityInvalidated. A local-BLE
         // acquisition timeout or monotonic-clock failure is a different physical/software fact.
         #expect(timeoutBranch.contains("authenticationAcquisitionFailed"))
-        #expect(invalidClockBranch.contains("authenticationAcquisitionFailed"))
+        #expect(invalidClockBranch.contains("invalidateChronologyIntegrity"))
         #expect(!timeoutBranch.contains("invalidateSourceAuthority"))
         #expect(!invalidClockBranch.contains("invalidateSourceAuthority"))
     }

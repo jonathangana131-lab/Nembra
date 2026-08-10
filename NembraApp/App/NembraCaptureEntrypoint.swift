@@ -160,7 +160,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     enum Phase: String, Codable {
-        case idle, baseline, powerOn, scanning, selected, authenticating, observing, accepted, failed
+        case idle, baseline, powerOn, scanning, correlated, selected, authenticating, observing, accepted, failed
     }
 
     struct Export: Codable {
@@ -258,6 +258,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     deinit { watchdog?.cancel() }
 
     var privateConfig: Bool { OfficialTuyaFactory.configured }
+    var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }
     var sdkAccountLoggedIn: Bool { OfficialTuyaFactory.accountLoggedIn }
     var currentAccountUID: String? { OfficialTuyaFactory.currentAccountUID }
     var selected: Candidate? { selectedID.flatMap { byID[$0] } }
@@ -482,13 +483,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
             )
             byID = [id: candidate]
             candidates = [candidate]
-            selectedID = id
+            selectedID = nil
             correlationSession = nil
-            phase = .selected
-            message = "Fresh repeated power-cycle correlation found one full CoreBluetooth target. This is current-session correlation evidence, not permanent scooter identity. Discovery is retired before Tuya's SDK takes BLE ownership."
-            log("candidate_selected", [
+            phase = .correlated
+            message = "Scooter signal found by the complete repeated power-cycle series. Confirm this correlated Bluetooth target before Tuya may take BLE ownership. This is current-session correlation evidence, not permanent scooter identity."
+            log("candidate_correlation_ready", [
                 "id": id.uuidString,
-                "authority": "fresh-repeated-off-on-full-corebluetooth-id",
+                "authority": "fresh-repeated-off-on-full-corebluetooth-id-awaiting-operator-confirmation",
                 "historicalCaptureUUIDMatch": String(historicalCaptureID),
                 "windows": String(result.windows.count)
             ])
@@ -523,7 +524,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         membershipProbe = nil
 #endif
         central.stopScan()
-        if [.baseline, .powerOn, .scanning, .selected].contains(phase) {
+        if [.baseline, .powerOn, .scanning, .correlated, .selected].contains(phase) {
             phase = .failed
             message = "SDK account authority changed. Discovery stopped before any authenticated BLE attempt."
         }
@@ -538,6 +539,30 @@ private final class SecureLinkController: NSObject, ObservableObject {
             }
         }
         log("sdk_membership_invalidated")
+    }
+
+    func confirmCorrelatedTarget(_ candidate: Candidate) {
+        guard phase == .correlated,
+              selectedID == nil,
+              candidate.freshlyCorrelated,
+              byID[candidate.id] == candidate else {
+            failLocally("Only the single target earned by this exact OFF1→ON1→OFF2→ON2 series can be confirmed.", "target_confirmation_rejected")
+            return
+        }
+        guard sdkAccountLoggedIn,
+              sdkDeviceMembershipVerified,
+              accountIdentityLeaseIsAuthorized else {
+            failLocally("Current Tuya account/device authority changed before target confirmation.", "sdk_authority_changed_before_target_confirmation")
+            return
+        }
+        selectedID = candidate.id
+        phase = .selected
+        message = "Correlated Bluetooth target confirmed for this attempt. This confirmation does not establish durable scooter identity. Tuya may now take sole BLE ownership for the read-only authentication test."
+        log("candidate_selected", [
+            "id": candidate.id.uuidString,
+            "authority": "operator-confirmed-current-session-correlation",
+            "historicalCaptureUUIDMatch": String(candidate.historicalCaptureID)
+        ])
     }
 
     func verifySDKMembership(completion: ((Bool) -> Void)? = nil) {
@@ -677,8 +702,17 @@ private final class SecureLinkController: NSObject, ObservableObject {
             guard let self else { return }
             do {
                 let token = try await self.sessionLedger.beginConnection()
-                try await self.sessionLedger.markAuthenticationStarted(for: token)
                 self.currentConnectionToken = token
+                do {
+                    try await self.sessionLedger.markAuthenticationStarted(for: token)
+                } catch {
+                    await self.invalidateChronologyIntegrity(
+                        token: token,
+                        message: "Authenticated-session chronology could not start safely: \(error.localizedDescription)",
+                        kind: "session_auth_start_rejected"
+                    )
+                    return
+                }
                 await self.refreshLedgerSnapshot()
                 self.log("official_connect_requested", [
                     "generation": String(token.diagnosticGeneration),
@@ -788,7 +822,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     ])
                     startWatchdog(token: token)
                 } catch {
-                    await invalidateSourceAuthority(
+                    await invalidateChronologyIntegrity(
                         token: token,
                         message: "Authenticated-session chronology rejected the SDK success callback: \(error.localizedDescription)",
                         kind: "session_auth_callback_rejected"
@@ -808,7 +842,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 return
 
             case .invalidClock:
-                await authenticationAcquisitionFailed(
+                await invalidateChronologyIntegrity(
                     token: token,
                     message: "Local-BLE settlement failed closed because the monotonic clock regressed.",
                     kind: "sdk_local_ble_settlement_clock_invalid"
@@ -816,6 +850,23 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 return
             }
         }
+    }
+
+    private func invalidateChronologyIntegrity(
+        token: TuyaReadOnlyConnectionToken,
+        message: String,
+        kind: String
+    ) async {
+        guard currentConnectionToken == token else { return }
+        try? await sessionLedger.markChronologyIntegrityInvalidated(for: token)
+        currentConnectionToken = nil
+        localBLESettlementToken = nil
+        sdkLocalBLEOnline = false
+        driver = nil
+        await refreshLedgerSnapshot()
+        phase = .failed
+        self.message = message
+        log(kind, ["generation": String(token.diagnosticGeneration)])
     }
 
     private func authenticationFailed(token: TuyaReadOnlyConnectionToken) async {
@@ -836,7 +887,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
         kind: String
     ) async {
         guard currentConnectionToken == token else { return }
-        try? await sessionLedger.markAuthenticationFailed(for: token)
+        do {
+            try await sessionLedger.markAuthenticationFailed(for: token)
+        } catch {
+            await invalidateChronologyIntegrity(token: token, message: message, kind: kind + "_chronology_fallback")
+            return
+        }
         currentConnectionToken = nil
         localBLESettlementToken = nil
         sdkLocalBLEOnline = false
@@ -912,23 +968,21 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
                 let now = DispatchTime.now().uptimeNanoseconds
                 guard now >= previousPollUptime else {
-                    do {
-                        try await sessionLedger.markObservationContinuityInvalidated(for: token)
-                    } catch {}
-                    self.currentConnectionToken = nil
-                    await self.refreshLedgerSnapshot()
-                    self.failLocally("Authenticated observation continuity was interrupted by a monotonic-clock regression.", "observation_clock_regressed")
+                    await self.invalidateChronologyIntegrity(
+                        token: token,
+                        message: "Authenticated observation chronology failed closed because the monotonic clock regressed.",
+                        kind: "observation_clock_regressed"
+                    )
                     return
                 }
 
                 let gap = now - previousPollUptime
                 guard gap <= Self.maximumObservationPollGapNanoseconds else {
-                    do {
-                        try await sessionLedger.markObservationContinuityInvalidated(for: token)
-                    } catch {}
-                    self.currentConnectionToken = nil
-                    await self.refreshLedgerSnapshot()
-                    self.failLocally("Authenticated observation continuity was interrupted; the gap is not evidence that BLE disconnected.", "observation_poll_gap_exceeded")
+                    await self.invalidateObservationContinuity(
+                        token: token,
+                        message: "Authenticated observation continuity was interrupted; the gap is not evidence that BLE disconnected.",
+                        kind: "observation_poll_gap_exceeded"
+                    )
                     return
                 }
                 previousPollUptime = now
@@ -1015,8 +1069,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
                    self.applicationUpdateCount == 0 {
                     do {
                         try await sessionLedger.markApplicationObservationTimedOut(for: token)
-                    } catch {}
+                    } catch {
+                        await self.invalidateChronologyIntegrity(
+                            token: token,
+                            message: "Authenticated session reached the no-application deadline while chronology could not be sealed safely.",
+                            kind: "authenticated_application_timeout_chronology_fallback"
+                        )
+                        return
+                    }
                     self.currentConnectionToken = nil
+                    self.localBLESettlementToken = nil
                     self.sdkLocalBLEOnline = false
                     self.driver = nil
                     await self.refreshLedgerSnapshot()
@@ -1033,7 +1095,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken) async {
         guard currentConnectionToken == token else { return }
-        try? await sessionLedger.endConnection(for: token)
+        do {
+            try await sessionLedger.endConnection(for: token)
+        } catch {
+            await invalidateChronologyIntegrity(
+                token: token,
+                message: "Tuya local-BLE transport ended, but session chronology also became invalid while retiring authority.",
+                kind: "sdk_local_ble_drop_chronology_fallback"
+            )
+            return
+        }
         currentConnectionToken = nil
         localBLESettlementToken = nil
         sdkLocalBLEOnline = false
@@ -1050,7 +1121,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
         kind: String
     ) async {
         guard currentConnectionToken == token else { return }
-        try? await sessionLedger.markSourceAuthorityInvalidated(for: token)
+        do {
+            try await sessionLedger.markSourceAuthorityInvalidated(for: token)
+        } catch {
+            await invalidateChronologyIntegrity(token: token, message: message, kind: kind + "_chronology_fallback")
+            return
+        }
         currentConnectionToken = nil
         localBLESettlementToken = nil
         sdkLocalBLEOnline = false
@@ -1067,7 +1143,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
         kind: String
     ) async {
         guard currentConnectionToken == token else { return }
-        try? await sessionLedger.markObservationContinuityInvalidated(for: token)
+        do {
+            try await sessionLedger.markObservationContinuityInvalidated(for: token)
+        } catch {
+            await invalidateChronologyIntegrity(token: token, message: message, kind: kind + "_chronology_fallback")
+            return
+        }
         currentConnectionToken = nil
         localBLESettlementToken = nil
         sdkLocalBLEOnline = false
@@ -1681,7 +1762,7 @@ private struct SecureLinkView: View {
     private var authorityCard: some View {
         VStack(alignment: .leading, spacing: 7) {
             Label("Official Tuya authority", systemImage: "checkmark.shield").font(.headline)
-            LabeledContent("Field build", value: test.accountIdentityLeaseIsAuthorized && test.sdkDeviceMembershipVerified ? "Authority checked" : "Not ready")
+            LabeledContent("Field build", value: test.fieldBuildIsAuthoritative ? "Exact provenance verified" : "Not authoritative")
             LabeledContent("Private SDK config", value: test.privateConfig ? "Present" : "Missing")
             LabeledContent("SDK account logged in", value: test.sdkAccountLoggedIn ? "Yes" : "No")
             LabeledContent("Exact scooter membership", value: test.sdkDeviceMembershipVerified && test.accountIdentityLeaseIsAuthorized ? "Verified for current account" : test.membershipBusy ? "Checking…" : "Not verified")
@@ -1691,7 +1772,7 @@ private struct SecureLinkView: View {
                     .buttonStyle(.bordered)
                     .disabled(test.membershipBusy)
             }
-            if !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized {
+            if !test.fieldBuildIsAuthoritative || !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized {
                 Text("NO PHYSICAL BLE TEST YET: the private exact field build, current SDK account identity, and exact scooter membership must all be proven before even the OFF baseline scan can start.")
                     .font(.footnote.bold())
                     .foregroundStyle(.orange)
@@ -1711,7 +1792,7 @@ private struct SecureLinkView: View {
             case .idle, .failed:
                 Button("Start OFF1 correlation") { test.startBaseline() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(!test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized || test.membershipBusy)
+                    .disabled(!test.fieldBuildIsAuthoritative || !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized || test.membershipBusy)
 
             case .baseline, .scanning:
                 Text("\(test.correlationWindowLabel) · \(test.correlationWindowInstruction)")
@@ -1728,6 +1809,16 @@ private struct SecureLinkView: View {
                     .foregroundStyle(.secondary)
                 Button("Start \(test.correlationWindowLabel) window") { test.startNextCorrelationWindow() }
                     .buttonStyle(.borderedProminent)
+
+            case .correlated:
+                Text("Scooter signal found").font(.headline)
+                Text("One full CoreBluetooth target repeated across the complete four-window series. Confirm it explicitly before authentication. This is current-session correlation evidence, not permanent scooter identity.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                if let candidate = test.candidates.first(where: { $0.freshlyCorrelated }) {
+                    Button("Confirm correlated Bluetooth target") { test.confirmCorrelatedTarget(candidate) }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized)
+                }
 
             default:
                 EmptyView()
