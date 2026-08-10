@@ -43,76 +43,28 @@ jobs:
           path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           source = path.read_text(encoding='utf-8')
 
-          membership_block = '''        sdkDeviceMembershipVerified = false
-        membershipAccountUID = nil
-        membershipDeviceID = nil
-        membershipRequestID = UUID()
-'''
-          membership_repair = '''        sdkDeviceMembershipVerified = false
-        membershipAccountUID = nil
-        membershipDeviceID = nil
-        membershipStatus = "Capture authority changed. Exact scooter membership must be verified again for a fresh Secure Link lifetime."
-        membershipRequestID = UUID()
-'''
+          membership_block = '        sdkDeviceMembershipVerified = false\n        membershipAccountUID = nil\n        membershipDeviceID = nil\n        membershipRequestID = UUID()\n'
+          membership_repair = '        sdkDeviceMembershipVerified = false\n        membershipAccountUID = nil\n        membershipDeviceID = nil\n        membershipStatus = "Capture authority changed. Exact scooter membership must be verified again for a fresh Secure Link lifetime."\n        membershipRequestID = UUID()\n'
           if source.count(membership_block) != 2:
               raise SystemExit(f'expected two membership-revocation blocks, found {source.count(membership_block)}')
           source = source.replace(membership_block, membership_repair)
 
-          receiver_marker = '''    private func receivedApplicationUpdate(
-        _ update: [String: String],
-        token: TuyaReadOnlyConnectionToken
-    ) async {
-'''
-          helper = '''    private func redactVerifiedAccountUID(from update: [String: String]) -> [String: String] {
-        guard let rawAccountUID = membershipAccountUID else { return update }
-        let accountUID = rawAccountUID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !accountUID.isEmpty else { return update }
-
-        var sanitized: [String: String] = [:]
-        sanitized.reserveCapacity(update.count)
-        for (key, value) in update {
-            let sanitizedKey = key.replacingOccurrences(
-                of: accountUID,
-                with: "<redacted-account-uid>",
-                options: [.caseInsensitive, .literal]
-            )
-            let sanitizedValue = value.replacingOccurrences(
-                of: accountUID,
-                with: "<redacted-account-uid>",
-                options: [.caseInsensitive, .literal]
-            )
-            sanitized[sanitizedKey] = sanitizedValue
-        }
-        return sanitized
-    }
-
-'''
+          receiver_marker = '    private func receivedApplicationUpdate(\n        _ update: [String: String],\n        token: TuyaReadOnlyConnectionToken\n    ) async {\n'
+          helper = '    private func redactVerifiedAccountUID(from update: [String: String]) -> [String: String] {\n        guard let rawAccountUID = membershipAccountUID else { return update }\n        let accountUID = rawAccountUID.trimmingCharacters(in: .whitespacesAndNewlines)\n        guard !accountUID.isEmpty else { return update }\n\n        var sanitized: [String: String] = [:]\n        sanitized.reserveCapacity(update.count)\n        for (key, value) in update {\n            let sanitizedKey = key.replacingOccurrences(\n                of: accountUID,\n                with: "<redacted-account-uid>",\n                options: [.caseInsensitive, .literal]\n            )\n            let sanitizedValue = value.replacingOccurrences(\n                of: accountUID,\n                with: "<redacted-account-uid>",\n                options: [.caseInsensitive, .literal]\n            )\n            sanitized[sanitizedKey] = sanitizedValue\n        }\n        return sanitized\n    }\n\n'
           if source.count(receiver_marker) != 1:
               raise SystemExit(f'expected one application receiver, found {source.count(receiver_marker)}')
           if '<redacted-account-uid>' in source:
               raise SystemExit('account UID marker already exists; refresh current product before replaying this materializer')
           source = source.replace(receiver_marker, helper + receiver_marker, 1)
 
-          old_log = '''            log("tuya_application_update", update.merging([
-                "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
-'''
-          new_log = '''            let sanitizedUpdate = redactVerifiedAccountUID(from: update)
-            log("tuya_application_update", sanitizedUpdate.merging([
-                "generation": String(token.diagnosticGeneration)
-            ]) { _, trusted in trusted })
-'''
+          old_log = '            log("tuya_application_update", update.merging([\n                "generation": String(token.diagnosticGeneration)\n            ]) { current, _ in current })\n'
+          new_log = '            let sanitizedUpdate = redactVerifiedAccountUID(from: update)\n            log("tuya_application_update", sanitizedUpdate.merging([\n                "generation": String(token.diagnosticGeneration)\n            ]) { _, trusted in trusted })\n'
           if source.count(old_log) != 1:
               raise SystemExit(f'expected one untrusted-precedence application log, found {source.count(old_log)}')
           source = source.replace(old_log, new_log, 1)
 
-          duplicate_secret = '''        "refreshtoken",
-        "sessionkey",
-        "authkey",
-'''
-          simplified_secret = '''        "refreshtoken",
-        "authkey",
-'''
+          duplicate_secret = '        "refreshtoken",\n        "sessionkey",\n        "authkey",\n'
+          simplified_secret = '        "refreshtoken",\n        "authkey",\n'
           if source.count(duplicate_secret) != 1:
               raise SystemExit(f'expected one duplicate sessionkey classifier tail, found {source.count(duplicate_secret)}')
           source = source.replace(duplicate_secret, simplified_secret, 1)
@@ -159,8 +111,7 @@ jobs:
             Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift
           git add -u .github/workflows/materialize-capture-current-redteam-convergence-sol.yml
           git diff --cached --check
-          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' \
-            commit -m 'fix(capture): converge current red-team truth invariants'
+          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' commit -m 'fix(capture): converge current red-team truth invariants'
           mapfile -t changed < <(git diff --name-only "$parent" HEAD | sort)
           printf '%s\n' "${changed[@]}"
           test "${#changed[@]}" = 4
