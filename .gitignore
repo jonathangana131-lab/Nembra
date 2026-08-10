@@ -12,6 +12,13 @@ xcuserdata/
 .swiftpm/
 Package.resolved
 
+# CocoaPods / local Tuya SDK integration
+Pods/
+NembraCapture.xcworkspace/
+
+# Private local provisioning material (never commit Tuya app/user/device secrets)
+LocalSecrets/
+
 # Python
 __pycache__/
 
