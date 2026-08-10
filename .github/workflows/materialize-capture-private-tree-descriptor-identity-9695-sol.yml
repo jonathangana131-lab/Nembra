@@ -86,6 +86,17 @@ jobs:
 
           test_path = Path('scripts/ci/tests/test_capture_tuya_private_input_provenance.py')
           tests = test_path.read_text(encoding='utf-8')
+          for helper in ('fingerprint_then_replace', 'fingerprint_then_add'):
+              old = f'        def {helper}(path: Path) -> str:\n'
+              new = f'        def {helper}(path: Path, **kwargs: object) -> str:\n'
+              if tests.count(old) != 1:
+                  raise SystemExit(f'{helper}: expected one mock helper anchor')
+              tests = tests.replace(old, new, 1)
+          old_forward = '            result = original_fingerprint(path)\n'
+          if tests.count(old_forward) != 2:
+              raise SystemExit(f'expected two legacy fingerprint mock forwards, found {tests.count(old_forward)}')
+          tests = tests.replace(old_forward, '            result = original_fingerprint(path, **kwargs)\n')
+
           anchor = '    def test_tree_rejects_entry_added_after_directory_enumeration(self) -> None:\n'
           if tests.count(anchor) != 1:
               raise SystemExit('ABA regression insertion anchor missing')
