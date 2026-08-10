@@ -1,0 +1,146 @@
+name: Materialize Capture acceptance repair sol 3
+
+on:
+  push:
+    branches:
+      - recovery/v14-capture-current-head-acceptance-sol-3
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    name: Apply bounded Capture compile and provenance repair
+    if: github.actor != 'github-actions[bot]'
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: recovery/v14-capture-current-head-acceptance-sol-3
+          fetch-depth: 0
+
+      - name: Prove exact clean predecessor and materializer-only staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='f0fb83da5f57f9e92d29cf6ab444dc856e74c3a4'
+          test "$(git rev-parse HEAD^)" = "$expected"
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/materialize-capture-acceptance-repair-sol-3.yml'
+
+      - name: Apply exact bounded product repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          shell = Path('NembraApp/Features/Research/ES80CaptureShellView.swift')
+          shell_text = shell.read_text()
+          old_symbol = 'CBAdvertisementDataIsConnectableKey'
+          if shell_text.count(old_symbol) != 2:
+              raise SystemExit(f'expected exactly two stale connectable symbols, found {shell_text.count(old_symbol)}')
+          shell.write_text(shell_text.replace(old_symbol, 'CBAdvertisementDataIsConnectable'))
+
+          entry = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          entry_text = entry.read_text()
+          old_boundary = '            membershipDeviceID: membershipDeviceID\n'
+          new_boundary = '            membershipDeviceID: membershipDeviceID ?? ""\n'
+          if entry_text.count(old_boundary) != 1:
+              raise SystemExit(f'expected exactly one optional membership boundary, found {entry_text.count(old_boundary)}')
+          entry.write_text(entry_text.replace(old_boundary, new_boundary, 1))
+
+          project = Path('NembraCapture.xcodeproj/project.pbxproj')
+          project_text = project.read_text()
+          old_generate = '\t\t\t\tGENERATE_INFOPLIST_FILE = YES;\n'
+          new_generate = '\t\t\t\tGENERATE_INFOPLIST_FILE = NO;\n\t\t\t\tINFOPLIST_FILE = NembraCapture-Info.plist;\n'
+          if project_text.count(old_generate) != 2:
+              raise SystemExit(f'expected Debug+Release generated plist settings, found {project_text.count(old_generate)}')
+          if 'INFOPLIST_FILE = NembraCapture-Info.plist;' in project_text:
+              raise SystemExit('explicit Capture plist already wired; refusing ambiguous project edit')
+          project.write_text(project_text.replace(old_generate, new_generate))
+
+          tests = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSDKAccountIdentityLeaseGateTests.swift')
+          test_text = tests.read_text()
+          anchor = '''        #expect(TuyaSDKAccountIdentityLeaseGate.verdict(for: blankExpected) == .blocked(reason: "Expected Tuya scooter device ID is unavailable."))\n    }\n'''
+          replacement = '''        #expect(TuyaSDKAccountIdentityLeaseGate.verdict(for: blankExpected) == .blocked(reason: "Expected Tuya scooter device ID is unavailable."))\n\n        let blankMembership = TuyaSDKAccountIdentityLeaseGate.Snapshot(\n            isLoggedIn: true,\n            currentAccountUID: "account-a",\n            membershipAccountUID: "account-a",\n            expectedDeviceID: expectedDeviceID,\n            membershipDeviceID: "   "\n        )\n        #expect(TuyaSDKAccountIdentityLeaseGate.verdict(for: blankMembership) == .blocked(reason: "The account-bound membership proof has no scooter device ID."))\n    }\n'''
+          if test_text.count(anchor) != 1:
+              raise SystemExit('blank-input gate test anchor changed; refusing broad test edit')
+          tests.write_text(test_text.replace(anchor, replacement, 1))
+
+          plist = Path('NembraCapture-Info.plist')
+          if plist.exists():
+              raise SystemExit('NembraCapture-Info.plist already exists; refusing overwrite')
+          plist.write_text('''<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n\t<key>CFBundleDevelopmentRegion</key>\n\t<string>$(DEVELOPMENT_LANGUAGE)</string>\n\t<key>CFBundleDisplayName</key>\n\t<string>Nembra Capture</string>\n\t<key>CFBundleExecutable</key>\n\t<string>$(EXECUTABLE_NAME)</string>\n\t<key>CFBundleIdentifier</key>\n\t<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>\n\t<key>CFBundleInfoDictionaryVersion</key>\n\t<string>6.0</string>\n\t<key>CFBundleName</key>\n\t<string>$(PRODUCT_NAME)</string>\n\t<key>CFBundlePackageType</key>\n\t<string>APPL</string>\n\t<key>CFBundleShortVersionString</key>\n\t<string>$(MARKETING_VERSION)</string>\n\t<key>CFBundleVersion</key>\n\t<string>$(CURRENT_PROJECT_VERSION)</string>\n\t<key>LSRequiresIPhoneOS</key>\n\t<true/>\n\t<key>NembraCaptureBuildIdentifier</key>\n\t<string>$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)</string>\n\t<key>NembraCaptureSourceCommitSHA</key>\n\t<string>$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)</string>\n\t<key>NembraCaptureTuyaDependencyLockSHA256</key>\n\t<string>$(NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256)</string>\n\t<key>NembraCaptureProcedureIdentifier</key>\n\t<string>$(INFOPLIST_KEY_NembraCaptureProcedureIdentifier)</string>\n\t<key>NSBluetoothAlwaysUsageDescription</key>\n\t<string>Nembra Capture uses Bluetooth to learn this scooter's advertised and GATT data during a guided calibration.</string>\n\t<key>NSBluetoothPeripheralUsageDescription</key>\n\t<string>Nembra Capture uses Bluetooth to learn this scooter's advertised and GATT data during a guided calibration.</string>\n\t<key>NSLocationWhenInUseUsageDescription</key>\n\t<string>Nembra Capture can use iPhone location speed as a reference while learning which Bluetooth values represent scooter speed.</string>\n\t<key>UIApplicationSceneManifest</key>\n\t<dict>\n\t\t<key>UIApplicationSupportsMultipleScenes</key>\n\t\t<false/>\n\t</dict>\n\t<key>UILaunchScreen</key>\n\t<dict/>\n\t<key>UISupportedInterfaceOrientations</key>\n\t<array>\n\t\t<string>UIInterfaceOrientationPortrait</string>\n\t\t<string>UIInterfaceOrientationLandscapeLeft</string>\n\t\t<string>UIInterfaceOrientationLandscapeRight</string>\n\t</array>\n</dict>\n</plist>\n''')
+          PY
+
+      - name: Validate bounded source repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -Fq 'CBAdvertisementDataIsConnectableKey' NembraApp/Features/Research/ES80CaptureShellView.swift
+          test "$(grep -c 'CBAdvertisementDataIsConnectable]' NembraApp/Features/Research/ES80CaptureShellView.swift)" = '2'
+          grep -Fq 'membershipDeviceID: membershipDeviceID ?? ""' NembraApp/App/NembraCaptureEntrypoint.swift
+          test "$(grep -Fc 'GENERATE_INFOPLIST_FILE = NO;' NembraCapture.xcodeproj/project.pbxproj)" = '2'
+          test "$(grep -Fc 'INFOPLIST_FILE = NembraCapture-Info.plist;' NembraCapture.xcodeproj/project.pbxproj)" = '2'
+          plutil -lint NembraCapture-Info.plist
+          grep -Fq '<key>NembraCaptureBuildIdentifier</key>' NembraCapture-Info.plist
+          grep -Fq '$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)' NembraCapture-Info.plist
+          grep -Fq '<key>NembraCaptureSourceCommitSHA</key>' NembraCapture-Info.plist
+          grep -Fq '$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)' NembraCapture-Info.plist
+          grep -Fq '<key>NembraCaptureTuyaDependencyLockSHA256</key>' NembraCapture-Info.plist
+          grep -Fq '$(NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256)' NembraCapture-Info.plist
+          grep -Fq '<key>NembraCaptureProcedureIdentifier</key>' NembraCapture-Info.plist
+          grep -Fq '$(INFOPLIST_KEY_NembraCaptureProcedureIdentifier)' NembraCapture-Info.plist
+          grep -Fq 'The account-bound membership proof has no scooter device ID.' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSDKAccountIdentityLeaseGateTests.swift
+          git diff --check
+
+      - name: Validate Capture package
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture
+
+      - name: Build and verify stamped standalone Simulator app
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha='f0fb83da5f57f9e92d29cf6ab444dc856e74c3a4'
+          dependency_sha='abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'
+          procedure='ES80-AUTHENTICATED-STATIONARY-v1'
+          label="capture-v14-${sha:0:12}"
+          rm -rf /tmp/NembraCaptureAcceptanceRepairDerived
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/NembraCaptureAcceptanceRepairDerived \
+            CODE_SIGNING_ALLOWED=NO \
+            NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
+            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" \
+            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$dependency_sha" \
+            INFOPLIST_KEY_NembraCaptureProcedureIdentifier="$procedure" \
+            build
+          plist='/tmp/NembraCaptureAcceptanceRepairDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
+          test -f "$plist"
+          test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
+          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$sha"
+          test "$(plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist")" = "$dependency_sha"
+          test "$(plutil -extract NembraCaptureProcedureIdentifier raw -o - "$plist")" = "$procedure"
+
+      - name: Commit proven product bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-go-worker'
+          git config user.email 'nembra-go-worker@users.noreply.github.com'
+          git add \
+            NembraApp/Features/Research/ES80CaptureShellView.swift \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            NembraCapture.xcodeproj/project.pbxproj \
+            NembraCapture-Info.plist \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSDKAccountIdentityLeaseGateTests.swift
+          git commit -m 'fix(capture): make stamped field provenance build-visible'
+          git push origin HEAD:recovery/v14-capture-current-head-acceptance-sol-3
