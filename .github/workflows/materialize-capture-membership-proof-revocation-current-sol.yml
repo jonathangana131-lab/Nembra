@@ -40,18 +40,42 @@ jobs:
 
           path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           source = path.read_text(encoding='utf-8')
-          marker = '''        acceptsViewScopedMembershipRequests = false
-          membershipRequestID = UUID()
-          '''
-          if source.count(marker) != 1:
-              raise SystemExit(f'expected one view-exit membership marker, found {source.count(marker)}')
-          replacement = '''        acceptsViewScopedMembershipRequests = false
-          sdkDeviceMembershipVerified = false
-          membershipAccountUID = nil
-          membershipDeviceID = nil
-          membershipRequestID = UUID()
-          '''
-          source = source.replace(marker, replacement, 1)
+          function_start = source.index('func abandonCorrelationForViewExit()')
+          function_end = source.index('var privateConfig: Bool', function_start)
+          cleanup = source[function_start:function_end]
+
+          close_token = 'acceptsViewScopedMembershipRequests = false'
+          request_token = 'membershipRequestID = UUID()'
+          if cleanup.count(close_token) != 1:
+              raise SystemExit(f'expected one view-exit admission close, found {cleanup.count(close_token)}')
+          if cleanup.count(request_token) != 1:
+              raise SystemExit(f'expected one membership generation rotation, found {cleanup.count(request_token)}')
+          if cleanup.index(close_token) >= cleanup.index(request_token):
+              raise SystemExit('membership generation rotates before view-scoped admission closes')
+
+          for stale_clear in (
+              'sdkDeviceMembershipVerified = false',
+              'membershipAccountUID = nil',
+              'membershipDeviceID = nil',
+          ):
+              if stale_clear in cleanup:
+                  raise SystemExit(f'repair already present or ambiguous before materialization: {stale_clear}')
+
+          request_offset = cleanup.index(request_token)
+          line_start = cleanup.rfind('\n', 0, request_offset) + 1
+          indentation = cleanup[line_start:request_offset]
+          if indentation.strip():
+              raise SystemExit('could not derive membership-request line indentation safely')
+          insertion = ''.join(
+              indentation + line + '\n'
+              for line in (
+                  'sdkDeviceMembershipVerified = false',
+                  'membershipAccountUID = nil',
+                  'membershipDeviceID = nil',
+              )
+          )
+          cleanup = cleanup[:line_start] + insertion + cleanup[line_start:]
+          source = source[:function_start] + cleanup + source[function_end:]
           path.write_text(source, encoding='utf-8')
           PY
 
