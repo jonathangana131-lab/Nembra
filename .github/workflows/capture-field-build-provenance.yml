@@ -18,6 +18,7 @@ on:
       - Scripts/bootstrap_capture_tuya_sdk.sh
       - Scripts/capture_tuya_private_input_provenance.py
       - scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+      - scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
       - scripts/field/install_one_time_capture.command
       - .github/workflows/capture-field-build-provenance.yml
   workflow_dispatch:
@@ -56,6 +57,14 @@ jobs:
           /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
           /usr/bin/python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
           bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+
+      - name: Validate signed Apple application identity custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
+          bash -n scripts/field/install_one_time_capture.command
 
       - name: Verify source contract
         shell: bash
