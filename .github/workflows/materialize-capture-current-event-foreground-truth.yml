@@ -1,0 +1,352 @@
+name: Materialize Capture Current Event Foreground Truth
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-current-event-foreground-truth-1c408-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-current-event-foreground-truth-1c408-sol
+          fetch-depth: 0
+
+      - name: Verify exact current-product anchor
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='1c40853f6991b4d09206df1d25ecff021458b7eb'
+          git merge-base --is-ancestor "$base" HEAD
+          changed="$(git diff --name-only "$base"...HEAD)"
+          test "$changed" = '.github/workflows/materialize-capture-current-event-foreground-truth.yml'
+
+      - name: Materialize current-head truth repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = source_path.read_text(encoding='utf-8')
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one source match, found {count}')
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              '''    func appDidLoseForeground() {
+                  guard !foregroundIntegrityLossHandled else { return }''',
+              '''    func appDidLoseForeground() {
+                  guard phase != .accepted else { return }
+                  guard !foregroundIntegrityLossHandled else { return }''',
+              'accepted foreground seal guard'
+          )
+
+          view_exit_start = source.index('    func abandonCorrelationForViewExit() {')
+          foreground_start = source.index('    func appDidLoseForeground() {', view_exit_start)
+          view_exit = source[view_exit_start:foreground_start]
+          old_proof = '''        sdkDeviceMembershipVerified = false
+                  membershipAccountUID = nil
+                  membershipDeviceID = nil
+                  membershipRequestID = UUID()'''
+          new_view_proof = '''        sdkDeviceMembershipVerified = false
+                  membershipAccountUID = nil
+                  membershipDeviceID = nil
+                  membershipStatus = "Exact scooter membership must be verified again for a new Secure Link view."
+                  membershipRequestID = UUID()'''
+          if view_exit.count(old_proof) != 1:
+              raise SystemExit('view-exit proof/status block was not exact')
+          view_exit = view_exit.replace(old_proof, new_view_proof, 1)
+          source = source[:view_exit_start] + view_exit + source[foreground_start:]
+
+          foreground_start = source.index('    func appDidLoseForeground() {')
+          foreground_end = source.index('    var privateConfig: Bool', foreground_start)
+          foreground = source[foreground_start:foreground_end]
+          new_foreground_proof = '''        sdkDeviceMembershipVerified = false
+                  membershipAccountUID = nil
+                  membershipDeviceID = nil
+                  membershipStatus = "Capture left the foreground. Exact scooter membership must be verified again after Capture returns."
+                  membershipRequestID = UUID()'''
+          if foreground.count(old_proof) != 1:
+              raise SystemExit('foreground proof/status block was not exact')
+          foreground = foreground.replace(old_proof, new_foreground_proof, 1)
+
+          active_guard = '''        if processCorrelationLease != nil || correlationSession != nil {
+                  // Existing helper stops package transport before releasing this controller's lease.'''
+          correlated_guard = '''        if phase == .correlated || phase == .selected {
+                  // The live scanner is already sealed in these phases, but its correlated full UUID and
+                  // provenance are still mutable current-attempt authority. A foreground boundary makes
+                  // that authority non-reusable even though there is no active package scanner to abandon.
+                  resetDiscoverySessionOnly()
+                  phase = .failed
+                  message = "Capture left the foreground after target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the prior correlated target cannot cross the foreground boundary."
+                  log("foreground_integrity_lost_after_target_correlation")
+                  return
+              }
+
+              if processCorrelationLease != nil || correlationSession != nil {
+                  // Existing helper stops package transport before releasing this controller's lease.'''
+          if foreground.count(active_guard) != 1:
+              raise SystemExit('active correlation foreground guard was not exact')
+          foreground = foreground.replace(active_guard, correlated_guard, 1)
+          source = source[:foreground_start] + foreground + source[foreground_end:]
+
+          update_start = source.index('    private func receivedApplicationUpdate(')
+          helper = '''    private func redactVerifiedAccountUID(
+              from update: [String: String],
+              verifiedAccountUID: String
+          ) -> [String: String] {
+              let marker = "<redacted-account-uid>"
+              var sanitized: [String: String] = [:]
+              for (key, value) in update.sorted(by: { $0.key < $1.key }) {
+                  let redactedKey = key.replacingOccurrences(
+                      of: verifiedAccountUID,
+                      with: marker,
+                      options: [.caseInsensitive, .literal]
+                  )
+                  let redactedValue = value.replacingOccurrences(
+                      of: verifiedAccountUID,
+                      with: marker,
+                      options: [.caseInsensitive, .literal]
+                  )
+                  var admittedKey = redactedKey
+                  var collisionOrdinal = 2
+                  while sanitized[admittedKey] != nil {
+                      admittedKey = "\\(redactedKey)#\\(collisionOrdinal)"
+                      collisionOrdinal += 1
+                  }
+                  sanitized[admittedKey] = redactedValue
+              }
+              return sanitized
+          }
+
+'''
+          if 'private func redactVerifiedAccountUID(' in source:
+              raise SystemExit('account UID redactor already exists unexpectedly')
+          source = source[:update_start] + helper + source[update_start:]
+
+          identity_guard = '''        guard sdkAccountLoggedIn,
+                    sdkDeviceMembershipVerified,
+                    accountIdentityLeaseIsAuthorized,
+                    let driver else {
+                  await invalidateSourceAuthority(
+                      token: token,
+                      message: "SDK account/device source authority changed before application evidence arrived.",
+                      kind: "sdk_source_authority_changed_during_observation"
+                  )
+                  return
+              }
+              guard driver.isLocallyConnected(uuid: tuyaUUID) else {'''
+          identity_guard_repaired = '''        guard sdkAccountLoggedIn,
+                    sdkDeviceMembershipVerified,
+                    accountIdentityLeaseIsAuthorized,
+                    let driver else {
+                  await invalidateSourceAuthority(
+                      token: token,
+                      message: "SDK account/device source authority changed before application evidence arrived.",
+                      kind: "sdk_source_authority_changed_during_observation"
+                  )
+                  return
+              }
+              guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                    !verifiedAccountUID.isEmpty else {
+                  await invalidateSourceAuthority(
+                      token: token,
+                      message: "Verified Tuya account identity was unavailable before application evidence custody.",
+                      kind: "sdk_account_uid_authority_missing_during_observation"
+                  )
+                  return
+              }
+              guard driver.isLocallyConnected(uuid: tuyaUUID) else {'''
+          replace_once(identity_guard, identity_guard_repaired, 'application account UID authority guard')
+
+          old_log = '''            log("tuya_application_update", update.merging([
+                      "generation": String(token.diagnosticGeneration)
+                  ]) { current, _ in current })'''
+          new_log = '''            let accountUIDRedactedUpdate = redactVerifiedAccountUID(
+                      from: update,
+                      verifiedAccountUID: verifiedAccountUID
+                  )
+                  log("tuya_application_update", accountUIDRedactedUpdate.merging([
+                      "generation": String(token.diagnosticGeneration)
+                  ]) { _, trusted in trusted })'''
+          replace_once(old_log, new_log, 'application event custody')
+
+          duplicate = '''        "refreshtoken",
+                  "sessionkey",
+                  "authkey",'''
+          replacement = '''        "refreshtoken",
+                  "authkey",'''
+          replace_once(duplicate, replacement, 'duplicate sessionkey classifier')
+
+          source_path.write_text(source, encoding='utf-8')
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureCurrentTruthConvergenceSourceTests.swift')
+          if test_path.exists():
+              raise SystemExit('convergence source test already exists unexpectedly')
+          test_path.write_text(r'''import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Capture current foreground and application-event truth convergence")
+          struct TuyaCaptureCurrentTruthConvergenceSourceTests {
+              @Test("foreground loss preserves sealed acceptance and invalidates correlated target authority")
+              func foregroundBoundaryCannotReuseCorrelatedTarget() throws {
+                  let source = try entrypointSource()
+                  let cleanup = String(try section(
+                      in: source,
+                      from: "func appDidLoseForeground()",
+                      to: "var privateConfig: Bool"
+                  ))
+
+                  #expect(cleanup.contains("guard phase != .accepted else { return }"))
+                  #expect(cleanup.contains("phase == .correlated || phase == .selected"))
+                  #expect(cleanup.contains("resetDiscoverySessionOnly()"))
+                  #expect(cleanup.contains("foreground_integrity_lost_after_target_correlation"))
+                  #expect(cleanup.contains("membershipStatus ="))
+                  #expect(cleanup.contains("Task { @MainActor [self] in"))
+                  #expect(!cleanup.contains("recordObservedTransportLoss"))
+                  #expect(!cleanup.contains("endConnection"))
+              }
+
+              @Test("view exit resets operator membership copy between proof clear and request revocation")
+              func viewExitCannotRetainVerifiedMembershipCopy() throws {
+                  let source = try entrypointSource()
+                  let cleanup = String(try section(
+                      in: source,
+                      from: "func abandonCorrelationForViewExit()",
+                      to: "func appDidLoseForeground()"
+                  ))
+                  let proof = try requiredOffset("sdkDeviceMembershipVerified = false", in: cleanup)
+                  let status = try requiredOffset("membershipStatus =", in: cleanup)
+                  let request = try requiredOffset("membershipRequestID = UUID()", in: cleanup)
+                  #expect(proof < status)
+                  #expect(status < request)
+                  #expect(!cleanup.contains("membershipStatus = \"Exact scooter membership verified and leased to this current SDK account.\""))
+              }
+
+              @Test("application event custody scrubs verified account UID and gives Nembra provenance precedence")
+              func applicationEventCannotForgeGenerationOrExportAccountUID() throws {
+                  let source = try entrypointSource()
+                  let receiver = String(try section(
+                      in: source,
+                      from: "private func receivedApplicationUpdate(",
+                      to: "private func startWatchdog"
+                  ))
+                  let driver = String(try section(
+                      in: source,
+                      from: "@MainActor\nprivate final class SmartLifeDriver",
+                      to: "#endif\n\nprivate enum AppleAccountAuthorizationError"
+                  ))
+
+                  #expect(source.contains("<redacted-account-uid>"))
+                  #expect(receiver.contains("redactVerifiedAccountUID("))
+                  #expect(receiver.contains("\"generation\": String(token.diagnosticGeneration)"))
+                  #expect(receiver.contains(") { _, trusted in trusted })"))
+                  #expect(!receiver.contains("log(\"tuya_application_update\", update.merging(["))
+                  #expect(!driver.contains("\"uid\","))
+                  #expect(!driver.contains("\"uid\"\n"))
+              }
+
+              @Test("export-promised application secret fragments are unique")
+              func applicationSecretClassifierHasNoMergeDuplicates() throws {
+                  let source = try entrypointSource()
+                  let driver = String(try section(
+                      in: source,
+                      from: "@MainActor\nprivate final class SmartLifeDriver",
+                      to: "private static func redactApplicationSecrets"
+                  ))
+                  let fragments = [
+                      "localkey", "sessionkey", "appkey", "appsecret", "password",
+                      "accounttoken", "accesstoken", "refreshtoken", "authkey", "seckey"
+                  ]
+                  for fragment in fragments {
+                      #expect(
+                          driver.components(separatedBy: "\"\(fragment)\"").count == 2,
+                          "credential classifier fragment must appear exactly once: \(fragment)"
+                      )
+                  }
+              }
+
+              private func entrypointSource() throws -> String {
+                  var root = URL(fileURLWithPath: #filePath)
+                  for _ in 0..<5 { root.deleteLastPathComponent() }
+                  return try String(
+                      contentsOf: root.appendingPathComponent("NembraApp/App/NembraCaptureEntrypoint.swift"),
+                      encoding: .utf8
+                  )
+              }
+
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let startRange = source.range(of: start),
+                        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+                      Issue.record("Expected source section missing: \(start) ... \(end)")
+                      throw ContractError.missing
+                  }
+                  return source[startRange.lowerBound..<endRange.lowerBound]
+              }
+
+              private func requiredOffset(_ token: String, in source: String) throws -> String.Index {
+                  guard let range = source.range(of: token) else {
+                      Issue.record("Expected source token missing: \(token)")
+                      throw ContractError.missing
+                  }
+                  return range.lowerBound
+              }
+
+              private enum ContractError: Error { case missing }
+          }
+          ''', encoding='utf-8')
+          PY
+
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          assert 'guard phase != .accepted else { return }' in source
+          assert 'phase == .correlated || phase == .selected' in source
+          assert 'foreground_integrity_lost_after_target_correlation' in source
+          assert source.count('membershipStatus = "Exact scooter membership must be verified again for a new Secure Link view."') == 1
+          assert source.count('membershipStatus = "Capture left the foreground. Exact scooter membership must be verified again after Capture returns."') == 1
+          assert '<redacted-account-uid>' in source
+          assert 'accountUIDRedactedUpdate.merging([' in source
+          assert ']) { _, trusted in trusted })' in source
+          assert source.count('"sessionkey",') >= 1
+          start = source.index('    private static let secretKeyFragments = [')
+          end = source.index('    private static func redactApplicationSecrets', start)
+          classifier = source[start:end]
+          expected = ['localkey','sessionkey','appkey','appsecret','password','accounttoken','accesstoken','refreshtoken','authkey','seckey']
+          for fragment in expected:
+              count = classifier.count(f'"{fragment}"')
+              if count != 1:
+                  raise SystemExit(f'{fragment} classifier count {count}, expected 1')
+          PY
+          git diff --check
+
+      - name: Publish clean two-path convergence
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-current-event-foreground-truth.yml
+          git add -A
+          git diff --cached --check
+          changed="$(git diff --cached --name-only | sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/materialize-capture-current-event-foreground-truth.yml' \
+            'NembraApp/App/NembraCaptureEntrypoint.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureCurrentTruthConvergenceSourceTests.swift' | sort)"
+          test "$changed" = "$expected"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'Capture: close current foreground and event custody gaps'
+          git push origin HEAD:fix/v14-capture-current-event-foreground-truth-1c408-sol
