@@ -218,35 +218,46 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 12) {
             sectionHeader(title: "Controls")
 
-            HStack(spacing: 12) {
-                if vehicle.profile.capabilities.supportsHeadlight {
-                    actionControl(
-                        title: "Light",
-                        subtitle: lightSubtitle,
-                        icon: vehicle.state.isHeadlightOn == true ? "lightbulb.fill" : "lightbulb",
-                        active: vehicle.state.isHeadlightOn == true,
-                        pending: vehicle.pendingCommands.contains(.headlight),
-                        available: vehicle.state.isHeadlightOn != nil,
-                        enabled: true
-                    ) {
-                        guard let isOn = vehicle.state.isHeadlightOn else { return }
-                        Task { await vehicle.setHeadlight(!isOn) }
-                    }
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 12) {
+                    actionControls
                 }
+            } else {
+                HStack(spacing: 12) {
+                    actionControls
+                }
+            }
+        }
+    }
 
-                if vehicle.profile.capabilities.supportsLock {
-                    actionControl(
-                        title: lockControlTitle,
-                        subtitle: lockSubtitle,
-                        icon: vehicle.state.isLocked == true ? "lock.fill" : "lock.open",
-                        active: vehicle.state.isLocked == true,
-                        pending: vehicle.pendingCommands.contains(.lock),
-                        available: vehicle.state.isLocked != nil,
-                        enabled: canChangeLockState
-                    ) {
-                        showLockConfirmation = true
-                    }
-                }
+    @ViewBuilder
+    private var actionControls: some View {
+        if vehicle.profile.capabilities.supportsHeadlight {
+            actionControl(
+                title: "Light",
+                subtitle: lightSubtitle,
+                icon: vehicle.state.isHeadlightOn == true ? "lightbulb.fill" : "lightbulb",
+                active: vehicle.state.isHeadlightOn == true,
+                pending: vehicle.pendingCommands.contains(.headlight),
+                available: vehicle.state.isHeadlightOn != nil,
+                enabled: true
+            ) {
+                guard let isOn = vehicle.state.isHeadlightOn else { return }
+                Task { await vehicle.setHeadlight(!isOn) }
+            }
+        }
+
+        if vehicle.profile.capabilities.supportsLock {
+            actionControl(
+                title: lockControlTitle,
+                subtitle: lockSubtitle,
+                icon: vehicle.state.isLocked == true ? "lock.fill" : "lock.open",
+                active: vehicle.state.isLocked == true,
+                pending: vehicle.pendingCommands.contains(.lock),
+                available: vehicle.state.isLocked != nil,
+                enabled: canChangeLockState
+            ) {
+                showLockConfirmation = true
             }
         }
     }
@@ -284,13 +295,15 @@ struct HomeView: View {
                     Text(available ? subtitle : "Unavailable")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 13)
-            .frame(height: 58)
+            .padding(.vertical, 11)
+            .frame(minHeight: 58)
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
         }
