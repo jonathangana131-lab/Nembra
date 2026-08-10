@@ -7,7 +7,7 @@ on:
     paths:
       - 'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift'
       - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlySessionLedgerTests.swift'
-      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedTerminalHorizonTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaObservationContinuityTerminalTests.swift'
       - '.github/workflows/capture-terminal-horizons-swift62.yml'
   workflow_dispatch:
 
@@ -34,17 +34,17 @@ jobs:
           printf '%s\n' "$XCODE_VERSION"
           swift --version
           [[ "$XCODE_VERSION" == Xcode\ 26.* ]]
-      - name: Test current ledger regressions
+      - name: Test authenticated session ledger
         run: |
           set -euo pipefail
           swift test \
             --package-path Packages/NembraBluetoothCapture \
             --filter TuyaAuthenticatedReadOnlySessionLedgerTests \
             -Xswiftc -warnings-as-errors
-      - name: Test immutable terminal horizons
+      - name: Test continuity terminal
         run: |
           set -euo pipefail
           swift test \
             --package-path Packages/NembraBluetoothCapture \
-            --filter TuyaAuthenticatedTerminalHorizonTests \
+            --filter TuyaObservationContinuityTerminalTests \
             -Xswiftc -warnings-as-errors
