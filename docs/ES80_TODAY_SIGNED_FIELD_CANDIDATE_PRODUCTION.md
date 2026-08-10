@@ -23,10 +23,10 @@ The Simulator artifact above is software evidence only. It is **not** the signed
 
 The current accepted external pre-signing helper is also non-authorizing software tooling:
 
-- helper commit: `4a6dbdd9e6a987804d48544dd61f424dfc743340`
+- helper commit: `74f4e88e4efb78bf69fe504f407ef42398e4b6ab`
 - helper path: `scripts/ci/es80_today_field_candidate_preflight.py`
-- helper blob: `f8ab407df9b18f61418e8807dd8f4646442e88de`
-- exact focused QA run: `31349190917` — terminal success
+- helper blob: `1b0155ab8d990420c33ad4c65461e7663612f9fb`
+- exact focused QA run: `31349183788` — terminal success
 - helper authority on every report: `operator-pre-signing-readiness-not-field-authorization`
 - physical authorization on every report: `not-granted`
 
@@ -141,13 +141,13 @@ Keep `NEMBRA_ALLOW_PROVISIONING_UPDATES=0` unless the private signing setup actu
 
 ## 3A. Run the accepted non-authorizing pre-signing preflight
 
-Do not run a moving `main` copy of the helper and do not copy the helper into the frozen source checkout. Materialize the exact accepted helper bytes from a separate local Nembra tooling repository that contains commit `4a6dbdd9e6a987804d48544dd61f424dfc743340`, then run those bytes against the exact frozen `FIELD_SOURCE`.
+Do not run a moving `main` copy of the helper and do not copy the helper into the frozen source checkout. Materialize the exact accepted helper bytes from a separate local Nembra tooling repository that contains commit `74f4e88e4efb78bf69fe504f407ef42398e4b6ab`, then run those bytes against the exact frozen `FIELD_SOURCE`.
 
 The helper deliberately reads the private signing values from the environment and the intended-device value only from its mode-`0600` file. Its JSON report omits the TeamIdentifier, raw UDID, private input paths, export-options contents, and dirty-checkout text. It also fails closed unless the export-options plist is reached through one absolute non-symlink ancestor chain, remains one stable opened regular-file subject while parsed, and its optional `teamID` / `method` fields are coherent with the frozen producer's deterministic admission.
 
 ```bash
-PREFLIGHT_COMMIT='4a6dbdd9e6a987804d48544dd61f424dfc743340'
-PREFLIGHT_BLOB='f8ab407df9b18f61418e8807dd8f4646442e88de'
+PREFLIGHT_COMMIT='74f4e88e4efb78bf69fe504f407ef42398e4b6ab'
+PREFLIGHT_BLOB='1b0155ab8d990420c33ad4c65461e7663612f9fb'
 PREFLIGHT_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-preflight.XXXXXX)"
 PREFLIGHT="$PREFLIGHT_DIR/es80_today_field_candidate_preflight.py"
 PREFLIGHT_REPORT="$PREFLIGHT_DIR/preflight.json"
