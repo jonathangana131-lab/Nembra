@@ -17,11 +17,10 @@ struct TuyaApplicationDeterministicKeyCustodySourceTests {
             from: "func device(_ device: ThingSmartDevice?, dpsUpdate",
             to: "private static func sortedApplicationEntries("
         ))
-        let sanitizer = String(try section(
-            in: driver,
-            from: "private static func redactApplicationSecrets(",
-            to: "}\n#endif"
-        ))
+        let sanitizerStart = try #require(
+            driver.range(of: "private static func redactApplicationSecrets(")?.lowerBound
+        )
+        let sanitizer = String(driver[sanitizerStart...])
 
         #expect(callback.contains("for (key, value) in Self.sortedApplicationEntries(dps)"))
         #expect(!callback.contains("for (key, value) in dps {"))
