@@ -609,7 +609,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     private var accountIdentityLeaseSnapshot: TuyaSDKAccountIdentityLeaseGate.Snapshot {
         .init(
-            sdkIsLoggedIn: sdkAccountLoggedIn,
+            isLoggedIn: sdkAccountLoggedIn,
             currentAccountUID: currentAccountUID,
             membershipAccountUID: membershipAccountUID,
             expectedDeviceID: deviceID,
