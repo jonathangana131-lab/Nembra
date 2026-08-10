@@ -24,9 +24,13 @@ struct TuyaSecureLinkProductRecoveryTruthSourceTests {
         #expect(controllerBody.contains("var failedAttemptCanRestartFromOFF1: Bool"))
         #expect(controllerBody.contains("phase == .failed"))
         #expect(controllerBody.contains("currentConnectionToken == nil"))
-        #expect(surfaceBody.contains("test.failedAttemptCanRestartFromOFF1"))
+        #expect(surfaceBody.contains("private var failedRecoveryCanRestartInProcess: Bool"))
+        #expect(surfaceBody.contains("test.failedAttemptCanRestartFromOFF1 && test.canRestartFromFreshOFF1"))
+        #expect(surfaceBody.contains("if failedRecoveryCanRestartInProcess"))
+        #expect(surfaceBody.contains("return failedRecoveryCanRestartInProcess"))
         #expect(surfaceBody.contains("Restart from scooter OFF"))
         #expect(surfaceBody.contains("Relaunch Capture"))
+        #expect(surfaceBody.contains("Relaunch Capture before another scooter-OFF attempt."))
     }
 
     @Test("analysis readiness is earned by a shareable sealed artifact, not accepted phase alone")
