@@ -1,0 +1,34 @@
+name: Capture correlation follow-up
+
+on:
+  push:
+    branches:
+      - recovery/capture-repeatable-target-correlation-sol
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Keep correlated-wait state inside source-authority terminal
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s = p.read_text()
+          old = 'if [.baseline, .powerOn, .scanning, .selected].contains(phase) {'
+          new = 'if [.baseline, .powerOn, .scanning, .correlated, .selected].contains(phase) {'
+          if s.count(old) != 1:
+              raise SystemExit(f'expected one source-authority phase list, found {s.count(old)}')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git commit -m "Capture: fail correlated wait on source-authority loss"
+          git push origin HEAD:${GITHUB_REF_NAME}
