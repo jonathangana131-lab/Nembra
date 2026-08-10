@@ -1,0 +1,214 @@
+name: Apply Capture procedure rendezvous
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-rendezvous:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'fix/v14-capture-procedure-rendezvous-sol'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout procedure donor
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Reconcile live flagship and apply exact procedure rendezvous
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-go-bot'
+          git config user.email 'nembra-go-bot@users.noreply.github.com'
+          git fetch origin integration/v14-capture-final-stationary-convergence-sol
+          flagship="$(git rev-parse FETCH_HEAD)"
+          printf 'Reconciling live Capture flagship: %s\n' "$flagship"
+          git merge --no-edit "$flagship"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          procedure = "ES80-AUTHENTICATED-STATIONARY-v1"
+
+          def replace_once(path: Path, old: str, new: str) -> None:
+              source = path.read_text(encoding="utf-8")
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one replacement point, found {count}: {old!r}")
+              path.write_text(source.replace(old, new, 1), encoding="utf-8")
+
+          identity = Path("NembraApp/App/NembraCaptureBuildIdentity.swift")
+          replace_once(
+              identity,
+              '    static let sourceCommitSHAInfoKey = "NembraCaptureSourceCommitSHA"\n',
+              '    static let sourceCommitSHAInfoKey = "NembraCaptureSourceCommitSHA"\n'
+              f'    static let fieldProcedureIdentifier = "{procedure}"\n',
+          )
+
+          app = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          replace_once(
+              app,
+              '        let sourceCommitSHA: String\n        let tuyaDeviceID: String\n',
+              '        let sourceCommitSHA: String\n        let procedureIdentifier: String\n        let tuyaDeviceID: String\n',
+          )
+          replace_once(
+              app,
+              '    var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }\n    var sdkAccountLoggedIn: Bool',
+              '    var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }\n'
+              '    var fieldProcedureIdentifier: String { NembraCaptureBuildIdentity.fieldProcedureIdentifier }\n'
+              '    var sdkAccountLoggedIn: Bool',
+          )
+          replace_once(
+              app,
+              '            LabeledContent("Source commit", value: test.fieldBuildSourceCommitSHA)\n            LabeledContent("Private SDK config"',
+              '            LabeledContent("Source commit", value: test.fieldBuildSourceCommitSHA)\n'
+              '            LabeledContent("Procedure", value: test.fieldProcedureIdentifier)\n'
+              '            LabeledContent("Private SDK config"',
+          )
+          replace_once(
+              app,
+              '            schemaVersion: 8,\n            purpose: "Sanitized Tuya authenticated read-only stationary preflight",',
+              '            schemaVersion: 9,\n            purpose: "Sanitized Tuya authenticated read-only stationary preflight",',
+          )
+          replace_once(
+              app,
+              '            sourceCommitSHA: buildIdentity.sourceCommitSHA,\n            tuyaDeviceID: deviceID,',
+              '            sourceCommitSHA: buildIdentity.sourceCommitSHA,\n'
+              '            procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier,\n'
+              '            tuyaDeviceID: deviceID,',
+          )
+
+          runbook = Path("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
+          runbook_text = runbook.read_text(encoding="utf-8")
+          marker = f"PROCEDURE_ID: `{procedure}`"
+          if marker not in runbook_text:
+              title = "# Nembra Capture P0 — secure-link gate\n"
+              if runbook_text.count(title) != 1:
+                  raise SystemExit("canonical runbook title insertion point changed")
+              runbook_text = runbook_text.replace(title, title + f"\n{marker}\n", 1)
+              runbook.write_text(runbook_text, encoding="utf-8")
+
+          installer = Path("scripts/field/install_one_time_capture.command")
+          installer_text = installer.read_text(encoding="utf-8")
+          procedure_assignment = f'PROCEDURE_ID="{procedure}"'
+          if procedure_assignment not in installer_text:
+              anchor = 'BUNDLE_ID="com.jonathangana131.nembra.capturelearn"\n'
+              if installer_text.count(anchor) != 1:
+                  raise SystemExit("field installer procedure constant insertion point changed")
+              installer_text = installer_text.replace(anchor, anchor + procedure_assignment + "\n", 1)
+          launch_line = '    "Field procedure: $PROCEDURE_ID. The same identifier is compiled into the immutable accepted export." \\\n'
+          if launch_line not in installer_text:
+              anchor = '    "The exact built device app was read back before installation and matched the requested source SHA, field-build identifier, and standalone bundle identifier." \\\n'
+              if installer_text.count(anchor) != 1:
+                  raise SystemExit("field installer launch-rendezvous insertion point changed")
+              installer_text = installer_text.replace(anchor, anchor + launch_line, 1)
+          installer.write_text(installer_text, encoding="utf-8")
+
+          tests = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift")
+          tests.write_text(f'''import Foundation
+import Testing
+@testable import NembraBluetoothCapture
+
+@Suite("Capture field procedure rendezvous")
+struct TuyaFieldProcedureRendezvousSourceTests {{
+    private static let procedure = "{procedure}"
+
+    @Test("compiled app, accepted export, runbook, and installer share one exact procedure identifier")
+    func fieldSurfacesRendezvousOnOneProcedure() throws {{
+        let identity = try readRepositoryFile("NembraApp/App/NembraCaptureBuildIdentity.swift")
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let runbook = try readRepositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
+        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
+
+        #expect(identity.contains("static let fieldProcedureIdentifier = \\\"\\(Self.procedure)\\\""))
+        #expect(app.contains("let procedureIdentifier: String"))
+        #expect(app.contains("procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier"))
+        #expect(app.contains("LabeledContent(\\\"Procedure\\\", value: test.fieldProcedureIdentifier)"))
+        #expect(runbook.contains("PROCEDURE_ID: `\\(Self.procedure)`"))
+        #expect(installer.contains("PROCEDURE_ID=\\\"\\(Self.procedure)\\\""))
+        #expect(installer.contains("Field procedure: $PROCEDURE_ID"))
+    }}
+
+    @Test("procedure-bearing immutable export is a new schema")
+    func exportSchemaAdvancesWithProcedureIdentity() throws {{
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        #expect(app.contains("schemaVersion: 9"))
+        #expect(!app.contains("schemaVersion: 8"))
+    }}
+
+    @Test("procedure identifier is build-bound constant, not mutable field input")
+    func procedureCannotComeFromEnvironmentOrOperatorText() throws {{
+        let identity = try readRepositoryFile("NembraApp/App/NembraCaptureBuildIdentity.swift")
+        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
+
+        #expect(!identity.contains("ProcessInfo.processInfo.environment"))
+        #expect(!installer.contains("NEMBRA_CAPTURE_PROCEDURE"))
+        #expect(!installer.contains("read -r -p \\\"Procedure"))
+    }}
+
+    private func readRepositoryFile(_ relativePath: String) throws -> String {{
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+    }}
+}}
+''', encoding="utf-8")
+
+          workflow = Path(".github/workflows/capture-field-build-provenance.yml")
+          workflow_text = workflow.read_text(encoding="utf-8")
+          for path_line, after_line in [
+              ("      - NembraApp/App/NembraCaptureEntrypoint.swift\n", "      - NembraApp/App/NembraCaptureBuildIdentity.swift\n"),
+              ("      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift\n", "      - NembraCapture.xcodeproj/project.pbxproj\n"),
+              ("      - docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md\n", "      - Scripts/capture_tuya_private_input_provenance.py\n"),
+          ]:
+              if path_line not in workflow_text:
+                  if after_line not in workflow_text:
+                      raise SystemExit(f"field provenance path anchor changed: {after_line!r}")
+                  workflow_text = workflow_text.replace(after_line, after_line + path_line, 1)
+          if "runbook='docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md'" not in workflow_text:
+              anchor = "          installer='scripts/field/install_one_time_capture.command'\n"
+              if workflow_text.count(anchor) != 1:
+                  raise SystemExit("field provenance variable anchor changed")
+              workflow_text = workflow_text.replace(
+                  anchor,
+                  anchor + "          entrypoint='NembraApp/App/NembraCaptureEntrypoint.swift'\n"
+                  + "          runbook='docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md'\n",
+                  1,
+              )
+          procedure_checks = f'''          grep -Fq 'static let fieldProcedureIdentifier = "{procedure}"' "$identity"
+          grep -Fq 'let procedureIdentifier: String' "$entrypoint"
+          grep -Fq 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier' "$entrypoint"
+          grep -Fq 'schemaVersion: 9' "$entrypoint"
+          grep -Fq 'PROCEDURE_ID: `{procedure}`' "$runbook"
+          grep -Fq 'PROCEDURE_ID="{procedure}"' "$installer"
+'''
+          if f'static let fieldProcedureIdentifier = "{procedure}"' not in workflow_text:
+              anchor = "          grep -Fq 'static let sourceCommitSHAInfoKey = \"NembraCaptureSourceCommitSHA\"' \"$identity\"\n"
+              if workflow_text.count(anchor) != 1:
+                  raise SystemExit("field provenance identity check anchor changed")
+              workflow_text = workflow_text.replace(anchor, anchor + procedure_checks, 1)
+          workflow.write_text(workflow_text, encoding="utf-8")
+
+          # Cross-surface preflight: every product authority surface must carry the same literal.
+          for path in (identity, app, runbook, installer, tests, workflow):
+              if procedure not in path.read_text(encoding="utf-8"):
+                  raise SystemExit(f"procedure rendezvous missing from {path}")
+          PY
+
+          rm -- .github/workflows/apply-capture-procedure-rendezvous.yml
+          git add -A
+          git diff --cached --check
+          git diff --cached --exit-code && { echo 'No procedure rendezvous delta to commit'; exit 1; }
+          git commit -m 'fix(capture): bind exact field procedure rendezvous' \
+            -m 'Compile one versioned stationary ES80 procedure into the UI and immutable export, align the canonical runbook and installer, advance the export schema, and lock the cross-surface contract in package + field-provenance tests. Physical status remains NO-GO.'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
