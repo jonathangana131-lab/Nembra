@@ -4,9 +4,12 @@ import Testing
 
 @Suite("Tuya application-update export secret promise")
 struct TuyaApplicationUpdateExportSecretPromiseSourceTests {
-    @Test("application sanitizer covers every credential key explicitly promised absent from export")
+    @Test("shared sanitizer covers every credential key explicitly promised absent from export")
     func applicationSanitizerMatchesExportSecretPromise() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let sanitizer = try readRepositoryFile(
+            "Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaApplicationUpdateSecretSanitizer.swift"
+        )
         let driver = String(try section(
             in: source,
             from: "@MainActor\nprivate final class SmartLifeDriver",
@@ -27,22 +30,17 @@ struct TuyaApplicationUpdateExportSecretPromiseSourceTests {
         #expect(prepareExport.contains("No account UID, AppKey/AppSecret, password, account token, local_key, session key"))
 
         for fragment in [
-            "localkey",
-            "sessionkey",
-            "appkey",
-            "appsecret",
-            "password",
-            "accounttoken",
-            "accesstoken",
-            "refreshtoken",
-            "authkey",
-            "seckey",
+            "localkey", "sessionkey", "appkey", "appsecret", "password",
+            "accounttoken", "accesstoken", "refreshtoken", "authkey", "seckey",
         ] {
-            #expect(driver.contains("\"\(fragment)\""), "Application sanitizer must redact export-promised credential key: \(fragment)")
+            #expect(sanitizer.contains("\"\(fragment)\""))
         }
 
-        #expect(driver.contains("String(describing: Self.redactApplicationSecrets(value))"))
-        #expect(driver.contains("onApplicationUpdate?(sanitized)"))
+        #expect(driver.contains("TuyaApplicationUpdateSecretSanitizer.sanitizeForStringProjection(dps)"))
+        #expect(driver.contains("onApplicationUpdate?("))
+        #expect(!driver.contains("private static let secretKeyFragments"))
+        #expect(!driver.contains("private static func redactApplicationSecrets"))
+        #expect(!driver.contains("String(describing: value)"))
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
@@ -64,7 +62,5 @@ struct TuyaApplicationUpdateExportSecretPromiseSourceTests {
         return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
     }
 
-    private enum SourceContractError: Error {
-        case sectionMissing
-    }
+    private enum SourceContractError: Error { case sectionMissing }
 }
