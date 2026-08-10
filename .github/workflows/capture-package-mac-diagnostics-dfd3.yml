@@ -11,13 +11,13 @@ permissions:
 
 jobs:
   capture-package:
-    name: Verify Capture package after lease contract repair
+    name: Verify Capture package after source-contract repairs
     runs-on: xcode-27
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 8
+          fetch-depth: 12
       - name: Verify diagnostic ancestry
         shell: bash
         run: |
@@ -26,9 +26,16 @@ jobs:
           git merge-base --is-ancestor "$base" HEAD
           changed="$(git diff --name-only "$base" HEAD)"
           printf '%s\n' "$changed"
-          test "$(printf '%s\n' "$changed" | sed '/^$/d' | wc -l | tr -d ' ')" = '2'
-          printf '%s\n' "$changed" | grep -Fxq '.github/workflows/capture-package-mac-diagnostics-dfd3.yml'
-          printf '%s\n' "$changed" | grep -Fxq 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCrossControllerBLEOwnershipLeaseSourceTests.swift'
+          test "$(printf '%s\n' "$changed" | sed '/^$/d' | wc -l | tr -d ' ')" = '5'
+          for path in \
+            '.github/workflows/capture-package-mac-diagnostics-dfd3.yml' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCrossControllerBLEOwnershipLeaseSourceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductSurfaceSourceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaExplicitCorrelatedTargetConfirmationSourceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift'
+          do
+            printf '%s\n' "$changed" | grep -Fxq "$path"
+          done
       - name: Run exact Capture package
         shell: bash
         run: |
@@ -36,7 +43,7 @@ jobs:
           swift test --package-path Packages/NembraBluetoothCapture > /tmp/nembra-capture-package.log 2>&1
           rc=$?
           set -e
-          tail -n 100 /tmp/nembra-capture-package.log
+          tail -n 120 /tmp/nembra-capture-package.log
           if [[ "$rc" -ne 0 ]]; then
             count=0
             while IFS= read -r line; do
@@ -45,8 +52,8 @@ jobs:
               escaped="${escaped//$'\n'/'%0A'}"
               printf '::error file=Packages/NembraBluetoothCapture,title=Capture package remaining failure::%s\n' "$escaped"
               count=$((count + 1))
-              [[ "$count" -ge 30 ]] && break
-            done < <(grep -E 'Expectation failed|Issue recorded|error:|failed after|Test .* failed' /tmp/nembra-capture-package.log)
+              [[ "$count" -ge 50 ]] && break
+            done < <(grep -E 'recorded an issue|Caught error:|Expectation failed:|Test run with .*issue|Suite .* failed after|Test .* failed after|error:' /tmp/nembra-capture-package.log)
             exit "$rc"
           fi
-          printf '%s\n' 'Capture package is green with only the lease source-contract repair applied.'
+          printf '%s\n' 'Capture package is green after the source-contract repairs.'
