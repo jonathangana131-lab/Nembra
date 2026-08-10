@@ -1,0 +1,66 @@
+name: Normalize visual donor bytes
+
+on:
+  push:
+    branches:
+      - qa/v14-capture-visual-49fb-current-sol
+    paths:
+      - .github/workflows/materialize-visual-byte-identical-49fb.yml
+
+permissions:
+  contents: write
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 8
+          persist-credentials: true
+
+      - name: Verify exact current reanchor
+        shell: bash
+        run: |
+          set -euo pipefail
+          product='49fb833b87883f4cb3d9d39b332f6157a0ff51fe'
+          git merge-base --is-ancestor "$product" HEAD
+          test "$(git hash-object .github/workflows/capture-standalone-visual-evidence.yml)" = 'c4f7606e231404a8da15d5f8fc4f625d3554e438'
+          test "$(git hash-object scripts/ci/capture_standalone_visual_evidence.sh)" = '21bffe8f947f309c6ff1d87cd3dfa89a1315d3bc'
+          test "$(git hash-object scripts/ci/tests/test_capture_standalone_visual_evidence.py)" = 'c0d78ca1430a020c02a5b5a37f3666b4e95bca44'
+
+      - name: Restore byte-identical reviewed donor blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '\n' >> .github/workflows/capture-standalone-visual-evidence.yml
+          printf '\n' >> scripts/ci/capture_standalone_visual_evidence.sh
+          printf '\n' >> scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          test "$(git hash-object .github/workflows/capture-standalone-visual-evidence.yml)" = '02c2ab53d778c7a1dd4fa1bc19c711016fe0d949'
+          test "$(git hash-object scripts/ci/capture_standalone_visual_evidence.sh)" = '1670230d4a0fdb2fd723206981d97ebed9bef9bb'
+          test "$(git hash-object scripts/ci/tests/test_capture_standalone_visual_evidence.py)" = '643bacbf2725fd5bf58408bcfa1dfff970140984'
+          bash -n scripts/ci/capture_standalone_visual_evidence.sh
+          python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          git diff --check
+
+      - name: Collapse normalization helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          product='49fb833b87883f4cb3d9d39b332f6157a0ff51fe'
+          helper='.github/workflows/materialize-visual-byte-identical-49fb.yml'
+          rm "$helper"
+          git config user.name 'nembra-go-worker'
+          git config user.email 'actions@users.noreply.github.com'
+          git add .github/workflows/capture-standalone-visual-evidence.yml \
+            scripts/ci/capture_standalone_visual_evidence.sh \
+            scripts/ci/tests/test_capture_standalone_visual_evidence.py \
+            "$helper"
+          git diff --cached --check
+          git commit -m 'qa(capture): preserve reviewed visual harness bytes'
+          mapfile -t changed < <(git diff --name-only "$product"..HEAD | sort)
+          test "${#changed[@]}" = 3
+          test "${changed[0]}" = '.github/workflows/capture-standalone-visual-evidence.yml'
+          test "${changed[1]}" = 'scripts/ci/capture_standalone_visual_evidence.sh'
+          test "${changed[2]}" = 'scripts/ci/tests/test_capture_standalone_visual_evidence.py'
+          git push origin HEAD:qa/v14-capture-visual-49fb-current-sol
