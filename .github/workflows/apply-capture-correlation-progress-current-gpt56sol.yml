@@ -1,0 +1,99 @@
+name: Apply current Capture correlation progress repair
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-correlation-progress-current-gpt56sol
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-correlation-progress-current-gpt56sol
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-correlation-progress-current-gpt56sol
+          fetch-depth: 0
+
+      - name: Guard exact current product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "5e96004ec565a5a19df8312f64985862a0443cdc"
+
+      - name: Apply presentation-only chronology repair
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text(encoding="utf-8")
+          old_text = '                    Text("\\(min(test.correlationCompletedWindowCount + 1, 4))/4")\n'
+          new_text = '                    Text("\\(correlationDisplayedWindowOrdinal)/4")\n'
+          if text.count(old_text) != 1:
+              raise SystemExit(f"visible ordinal anchor count != 1: {text.count(old_text)}")
+          text = text.replace(old_text, new_text, 1)
+
+          anchor = "    private var authorityReady: Bool {\n"
+          addition = (
+              "    private var correlationDisplayedWindowOrdinal: Int {\n"
+              "        test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)\n"
+              "    }\n\n"
+          )
+          if text.count(anchor) != 1:
+              raise SystemExit(f"authorityReady anchor count != 1: {text.count(anchor)}")
+          if "private var correlationDisplayedWindowOrdinal: Int" in text:
+              raise SystemExit("correlationDisplayedWindowOrdinal already exists")
+          path.write_text(text.replace(anchor, addition + anchor, 1), encoding="utf-8")
+
+      - name: Verify portable source contract
+        shell: python
+        run: |
+          from pathlib import Path
+
+          app = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text(encoding="utf-8")
+          test = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationTruthSourceTests.swift").read_text(encoding="utf-8")
+          start = app.index("private struct SecureLinkView: View")
+          end = app.index("private struct SecureTransfer: Transferable", start)
+          surface = app[start:end]
+
+          required = [
+              "private var correlationDisplayedWindowOrdinal: Int",
+              "test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)",
+              'Text("\\(correlationDisplayedWindowOrdinal)/4")',
+          ]
+          for needle in required:
+              if needle not in surface:
+                  raise SystemExit(f"missing production contract: {needle}")
+          stale = 'Text("\\(min(test.correlationCompletedWindowCount + 1, 4))/4")'
+          if stale in surface:
+              raise SystemExit("stale visible raw correlation ordinal remains")
+          for prohibited in ("rssi progress", "name progress", "tuya hint progress"):
+              if prohibited in surface.lower():
+                  raise SystemExit(f"non-authoritative progress source introduced: {prohibited}")
+          for needle in (
+              "completed OFF1 ON1 OFF2 ON2 correlation presents four of four",
+              "in-progress correlation still derives its ordinal from package-owned completed windows",
+          ):
+              if needle not in test:
+                  raise SystemExit(f"missing Swift source regression: {needle}")
+
+      - name: Commit product repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name nembra-go-bot
+          git config user.email nembra-go-bot@users.noreply.github.com
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git diff --cached --check
+          git commit -m 'fix(capture): show completed correlation as four of four' \
+            -m 'Render the retired successful correlated phase as 4/4 while keeping active-window progress derived from the package-owned completed-window count. Presentation only; no BLE, target authority, chronology, evidence, protocol, or command semantics change.'
+          git push origin HEAD:fix/v14-capture-correlation-progress-current-gpt56sol
