@@ -417,6 +417,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
     deinit { watchdog?.cancel() }
 
     func activateMembershipRequestsForView() {
+        // Accepted artifacts are terminal. Do not reopen account authority just because the
+        // app becomes active again after a completed, sealed capture.
+        guard phase != .accepted else {
+            acceptsViewScopedMembershipRequests = false
+            return
+        }
         // A fast inactive -> active transition must not reset the duplicate-retirement fence
         // while the exact authenticated generation from foreground loss is still terminalizing.
         guard currentConnectionToken == nil else { return }
@@ -431,6 +437,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Secure Link ended. Exact scooter membership must be verified again for a new Capture session."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -479,6 +486,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func appDidLoseForeground() {
+        // A sealed accepted artifact is immutable and shareable. Foreground transitions after
+        // acceptance must not restart membership/network authority or mutate capture state.
+        guard phase != .accepted else { return }
         guard !foregroundIntegrityLossHandled else { return }
         foregroundIntegrityLossHandled = true
 
@@ -488,6 +498,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Capture left the foreground. Exact scooter membership must be verified again before another attempt."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -503,6 +514,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
             phase = .failed
             message = "Capture left the foreground during Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; interrupted windows are never reusable evidence."
             log("foreground_integrity_lost_during_target_correlation")
+            return
+        }
+
+        if phase == .correlated || phase == .selected {
+            // The four package windows may already be sealed and their live scanner/lease gone.
+            // Foreground loss still invalidates that current-attempt correlation/selection proof.
+            resetDiscoverySessionOnly()
+            phase = .failed
+            message = "Capture left the foreground after target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; pre-interruption target authority is never reused."
+            log("foreground_integrity_lost_after_target_correlation")
             return
         }
 
@@ -963,6 +984,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func verifySDKMembership(completion: ((Bool) -> Void)? = nil) {
+        guard phase != .accepted else {
+            completion?(false)
+            return
+        }
         guard acceptsViewScopedMembershipRequests else {
             completion?(false)
             return
@@ -1419,15 +1444,24 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        guard let eventUpdate = applicationUpdateForEventCustody(update) else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "Account identity lease became unavailable before application evidence could enter immutable event custody.",
+                kind: "application_event_account_identity_unavailable"
+            )
+            return
+        }
+
         applicationUpdateAdmissionsInFlight += 1
         defer { applicationUpdateAdmissionsInFlight -= 1 }
 
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            log("tuya_application_update", eventUpdate.merging([
                 "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -1452,6 +1486,29 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 kind: "application_update_lifecycle_rejected"
             )
         }
+    }
+
+
+    private func applicationUpdateForEventCustody(_ update: [String: String]) -> [String: String]? {
+        guard accountIdentityLeaseIsAuthorized,
+              let leasedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !leasedAccountUID.isEmpty else {
+            return nil
+        }
+
+        let marker = "<redacted-account-uid>"
+        var sanitized: [String: String] = [:]
+        for (key, value) in update.sorted(by: { $0.key < $1.key }) {
+            let baseKey = key.replacingOccurrences(of: leasedAccountUID, with: marker)
+            var sanitizedKey = baseKey.isEmpty ? marker : baseKey
+            var suffix = 2
+            while sanitized[sanitizedKey] != nil {
+                sanitizedKey = "\(baseKey)#\(suffix)"
+                suffix += 1
+            }
+            sanitized[sanitizedKey] = value.replacingOccurrences(of: leasedAccountUID, with: marker)
+        }
+        return sanitized
     }
 
     private func startWatchdog(token: TuyaReadOnlyConnectionToken) {
@@ -2241,7 +2298,6 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "accounttoken",
         "accesstoken",
         "refreshtoken",
-        "sessionkey",
         "authkey",
         "seckey",
     ]
