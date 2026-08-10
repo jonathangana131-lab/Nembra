@@ -27,6 +27,7 @@ public struct TuyaAuthenticatedReadOnlyPreflightSnapshot: Equatable, Sendable {
     public let authenticatedAtUptimeNanoseconds: UInt64?
     public let latestObservedUptimeNanoseconds: UInt64?
     public let applicationPayloadCount: Int
+    public let latestApplicationPayloadUptimeNanoseconds: UInt64?
     public let connectionGeneration: UInt64
 
     public init(
@@ -36,6 +37,7 @@ public struct TuyaAuthenticatedReadOnlyPreflightSnapshot: Equatable, Sendable {
         authenticatedAtUptimeNanoseconds: UInt64?,
         latestObservedUptimeNanoseconds: UInt64?,
         applicationPayloadCount: Int,
+        latestApplicationPayloadUptimeNanoseconds: UInt64? = nil,
         connectionGeneration: UInt64
     ) {
         self.authenticationState = authenticationState
@@ -44,6 +46,7 @@ public struct TuyaAuthenticatedReadOnlyPreflightSnapshot: Equatable, Sendable {
         self.authenticatedAtUptimeNanoseconds = authenticatedAtUptimeNanoseconds
         self.latestObservedUptimeNanoseconds = latestObservedUptimeNanoseconds
         self.applicationPayloadCount = max(0, applicationPayloadCount)
+        self.latestApplicationPayloadUptimeNanoseconds = latestApplicationPayloadUptimeNanoseconds
         self.connectionGeneration = connectionGeneration
     }
 }
@@ -83,10 +86,14 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
         guard snapshot.applicationPayloadCount > 0 else {
             return .blocked(reason: "Authenticated session has not produced an application payload yet.")
         }
-        guard let authenticatedAt = snapshot.authenticatedAtUptimeNanoseconds,
+        guard let connectionStarted = snapshot.connectionStartedAtUptimeNanoseconds,
+              let authenticatedAt = snapshot.authenticatedAtUptimeNanoseconds,
+              let latestPayload = snapshot.latestApplicationPayloadUptimeNanoseconds,
               let latest = snapshot.latestObservedUptimeNanoseconds,
-              latest >= authenticatedAt else {
-            return .blocked(reason: "Authenticated connection duration is unavailable.")
+              authenticatedAt >= connectionStarted,
+              latestPayload >= authenticatedAt,
+              latest >= latestPayload else {
+            return .blocked(reason: "Authenticated connection chronology is unavailable or invalid.")
         }
         guard latest - authenticatedAt >= minimumAuthenticatedConnectionNanoseconds else {
             return .blocked(reason: "Authenticated connection has not survived the physical stability window yet.")
