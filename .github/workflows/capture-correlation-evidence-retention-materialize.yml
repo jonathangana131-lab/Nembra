@@ -1,0 +1,175 @@
+name: Capture correlation evidence retention materializer
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-correlation-evidence-retention-sol
+    paths:
+      - .github/workflows/capture-correlation-evidence-retention-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/v14-capture-correlation-evidence-retention-sol
+          fetch-depth: 0
+
+      - name: Bind exact parent lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 1558e1bf38c2aad809887a77a3bc4cabe1704e39 HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Apply completed-correlation authority repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text()
+
+          view_guard = """        guard processCorrelationLease != nil || correlationSession != nil else { return }
+          // Existing helper stops package transport before releasing this controller's lease.
+          abandonPackageCorrelation()
+          phase = .failed
+          message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
+          log("target_correlation_abandoned_on_view_exit")
+          """
+          if source.count(view_guard) != 1:
+              raise SystemExit(f"unexpected view-exit correlation guard shape: {source.count(view_guard)}")
+
+          completed_view = """        if phase == .correlated || phase == .selected {
+              // The four-window result is already sealed and package transport is retired. Revoke
+              // only reusable target authority; keep the completed receipts for failed diagnostics.
+              pendingCorrelatedTargetID = nil
+              selectedID = nil
+              targetCorrelationOperatorConfirmed = false
+              phase = .failed
+              message = "Capture left Secure Link after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the completed correlation remains diagnostic evidence only and cannot be reused as target authority."
+              log("target_correlation_abandoned_on_view_exit")
+              return
+          }
+
+          """
+          source = source.replace(view_guard, completed_view + view_guard, 1)
+
+          old_foreground = """        if phase == .correlated || phase == .selected {
+              // Final-window sealing already retires the package scanner/lease. These phases can
+              // therefore hold actionable target authority with no live transport object to inspect.
+              // Foreground loss must invalidate that authority explicitly before a retry.
+              resetDiscoverySessionOnly()
+              phase = .failed
+              message = "Capture left the foreground after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the prior correlated/selected target cannot cross a foreground-integrity break."
+              log("foreground_integrity_lost_after_target_correlation")
+              return
+          }
+          """
+          new_foreground = """        if phase == .correlated || phase == .selected {
+              // Final-window sealing already retires the package scanner/lease. Revoke reusable
+              // target authority without deleting the legitimate completed four-window evidence.
+              pendingCorrelatedTargetID = nil
+              selectedID = nil
+              targetCorrelationOperatorConfirmed = false
+              phase = .failed
+              message = "Capture left the foreground after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the completed correlation remains diagnostic evidence only and cannot cross a foreground-integrity break as target authority."
+              log("foreground_integrity_lost_after_target_correlation")
+              return
+          }
+          """
+          if source.count(old_foreground) != 1:
+              raise SystemExit(f"unexpected completed foreground branch shape: {source.count(old_foreground)}")
+          source = source.replace(old_foreground, new_foreground, 1)
+
+          path.write_text(source)
+          PY
+          git diff --check
+
+      - name: Verify exact evidence-retention contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+
+          def section(text, start, end):
+              a = text.index(start)
+              b = text.index(end, a + len(start))
+              return text[a:b]
+
+          exit_block = section(s, "    func abandonCorrelationForViewExit() {", "    func appDidLoseForeground() {")
+          exit_completed = section(
+              exit_block,
+              "        if phase == .correlated || phase == .selected {",
+              "        guard processCorrelationLease != nil || correlationSession != nil else { return }",
+          )
+          foreground = section(s, "    func appDidLoseForeground() {", "    var privateConfig: Bool")
+          foreground_completed = section(
+              foreground,
+              "        if phase == .correlated || phase == .selected {",
+              "        guard let token = currentConnectionToken else {",
+          )
+
+          for label, block in (("view exit", exit_completed), ("foreground", foreground_completed)):
+              for required in (
+                  "pendingCorrelatedTargetID = nil",
+                  "selectedID = nil",
+                  "targetCorrelationOperatorConfirmed = false",
+                  "phase = .failed",
+                  "Restart from OFF1",
+              ):
+                  assert required in block, f"{label}: missing {required}"
+              for forbidden in (
+                  "resetDiscoverySessionOnly()",
+                  "correlationProvenance = nil",
+                  "targetCorrelationMethod = nil",
+                  "targetCorrelationWindowCount = nil",
+                  "candidates.removeAll()",
+              ):
+                  assert forbidden not in block, f"{label}: evidence erasure leaked into completed branch: {forbidden}"
+
+          assert "target_correlation_abandoned_on_view_exit" in exit_completed
+          assert "foreground_integrity_lost_after_target_correlation" in foreground_completed
+
+          # In-progress correlation still owns the full scanner-first reset.
+          in_progress = section(
+              foreground,
+              "        if processCorrelationLease != nil || correlationSession != nil {",
+              "        if phase == .correlated || phase == .selected {",
+          )
+          assert "resetDiscoverySessionOnly()" in in_progress
+
+          begin = section(s, "    private func beginCorrelationSeries() {", "    func startNextCorrelationWindow() {")
+          assert "resetDiscoverySessionOnly()" in begin
+          assert "OfficialTuyaFactory.packageCorrelationMayStart" in begin
+
+          export_builder = section(s, "    private func makeExport(exportedAt:", "    func prepareExport()")
+          for required in (
+              "targetCorrelationMethod: targetCorrelationMethod",
+              "targetCorrelationWindowCount: targetCorrelationWindowCount",
+              "targetCorrelationOperatorConfirmed: targetCorrelationOperatorConfirmed",
+              "targetCorrelationProvenance: correlationProvenance",
+              "candidates: candidates",
+          ):
+              assert required in export_builder, f"export lost {required}"
+          PY
+
+      - name: Commit repair and retire materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-correlation-evidence-retention-materialize.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift .github/workflows/capture-correlation-evidence-retention-materialize.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(capture): preserve sealed correlation evidence on authority loss"
+          git push origin HEAD:agent/v14-capture-correlation-evidence-retention-sol
