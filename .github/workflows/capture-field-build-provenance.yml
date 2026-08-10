@@ -16,6 +16,8 @@ on:
       - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift
       - Scripts/bootstrap_capture_tuya_sdk.sh
       - Scripts/capture_tuya_private_input_provenance.py
+      - scripts/ci/capture_standalone_visual_evidence.sh
+      - scripts/ci/tests/test_capture_standalone_visual_evidence.py
       - scripts/ci/tests/test_capture_tuya_private_input_provenance.py
       - scripts/field/install_one_time_capture.command
       - .github/workflows/capture-field-build-provenance.yml
@@ -31,6 +33,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Validate private Tuya input provenance helper
         shell: bash
@@ -39,6 +43,14 @@ jobs:
           /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
           /usr/bin/python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
           bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+
+      - name: Validate standalone Capture visual-evidence source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ci/capture_standalone_visual_evidence.sh
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
 
       - name: Verify source contract
         shell: bash
@@ -150,13 +162,17 @@ jobs:
           grep -Fq 'self.sealedAcceptedExport = self.makeExport(' "$entrypoint"
           grep -Fq 'envelope = sealedAcceptedExport' "$entrypoint"
 
-      - name: Build stamped standalone Simulator app
+      - name: Build exact-source stamped standalone Simulator app
         shell: bash
+        env:
+          EXACT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          sha='0123456789abcdef0123456789abcdef01234567'
+          sha="${EXACT_SOURCE_SHA,,}"
           dependency_sha='abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'
-          label='capture-v14-0123456789ab'
+          label="capture-v14-${sha:0:12}"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')" = "$sha"
           rm -rf /tmp/NembraCaptureProvenanceDerived
           xcodebuild \
             -project NembraCapture.xcodeproj \
@@ -176,3 +192,23 @@ jobs:
           test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
           test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$sha"
           test "$(plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist")" = "$dependency_sha"
+
+      - name: Capture real standalone fail-closed visual evidence
+        shell: bash
+        env:
+          APP_PATH: /tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app
+          ARTIFACTS_DIR: ${{ runner.temp }}/NembraCaptureStandaloneVisualEvidence
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          TUYA_DEPENDENCY_PROVENANCE_AUTHORITY: simulator-placeholder-only
+        run: |
+          set -euo pipefail
+          bash scripts/ci/capture_standalone_visual_evidence.sh
+
+      - name: Retain standalone Capture visual evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-standalone-visual-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/NembraCaptureStandaloneVisualEvidence
+          if-no-files-found: warn
+          retention-days: 14
