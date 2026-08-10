@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import os
 from pathlib import Path
 import shutil
@@ -9,6 +11,7 @@ import stat
 import sys
 import tempfile
 import unittest
+import warnings
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "es80_today_private_device_input.py"
 spec = importlib.util.spec_from_file_location("private_device_input", MODULE_PATH)
@@ -147,6 +150,47 @@ class PrivateDeviceInputTests(unittest.TestCase):
                     secret_provider=lambda: self.SECRET + "\n",
                 )
             self.assertFalse((private_dir / "es80-intended-device.udid").exists())
+
+    def test_getpass_warning_fails_closed_before_fallback_secret_is_consumed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+            fallback_returned = False
+            original_getpass = module.getpass.getpass
+
+            def insecure_fallback(_prompt: str) -> str:
+                nonlocal fallback_returned
+                warnings.warn(
+                    "Can not control echo on the terminal.",
+                    module.getpass.GetPassWarning,
+                )
+                fallback_returned = True
+                return self.SECRET
+
+            module.getpass.getpass = insecure_fallback
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    exit_code = module.main(
+                        [
+                            "--private-directory",
+                            str(private_dir),
+                            "--source-repo",
+                            str(repo),
+                        ]
+                    )
+            finally:
+                module.getpass.getpass = original_getpass
+
+            self.assertEqual(exit_code, 2)
+            self.assertFalse(fallback_returned)
+            self.assertFalse(target.exists())
+            self.assertNotIn(module.READY_MARKER, stdout.getvalue())
+            self.assertNotIn(self.SECRET, stdout.getvalue())
+            self.assertNotIn(self.SECRET, stderr.getvalue())
+            self.assertIn("secure-terminal-input-unavailable", stderr.getvalue())
 
 
 if __name__ == "__main__":
