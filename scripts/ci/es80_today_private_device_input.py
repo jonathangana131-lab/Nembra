@@ -201,53 +201,24 @@ def _validate_fresh_output(metadata: os.stat_result) -> None:
         raise PrivateInputError("private-intended-device-owner-invalid")
 
 
-def _same_inode(left: os.stat_result, right: os.stat_result) -> bool:
-    return (left.st_dev, left.st_ino) == (right.st_dev, right.st_ino)
+def _erase_failed_private_input(file_descriptor: int) -> None:
+    """Durably erase secret bytes through the exact still-open created inode.
 
-
-def _erase_failed_private_input(
-    file_descriptor: int,
-    directory_descriptor: int,
-    filename: str,
-) -> None:
-    """Make secret erasure durable before returning a failed acquisition.
-
-    The open descriptor is the strongest remaining authority after a pathname retarget. Scrub that
-    exact inode first so an added hard link cannot preserve secret bytes. Descriptor-relative unlink
-    is a second route only when the original pathname still names the exact single-link inode and the
-    opened inode proves zero links after unlink. At least one erasure route must be proven durable;
-    otherwise surface a secret-free cleanup blocker instead of silently claiming failure atomicity.
+    Once private bytes may have been written, a mutable pathname is no longer deletion authority:
+    another same-UID actor can retarget that directory entry between any check and unlink. Cleanup
+    therefore never unlinks by pathname. It truncates and fsyncs only the already-open inode and
+    proves zero length before allowing the original acquisition failure to propagate. A zero-length
+    spent pathname may remain and must not be reused; the operator chooses a fresh path on retry.
     """
-    try:
-        os.fstat(file_descriptor)
-    except OSError as error:
-        raise PrivateInputError("private-intended-device-cleanup-failed") from error
-
-    durable_scrub = False
     try:
         os.ftruncate(file_descriptor, 0)
         os.fsync(file_descriptor)
-        durable_scrub = os.fstat(file_descriptor).st_size == 0
-    except OSError:
-        durable_scrub = False
+        metadata = os.fstat(file_descriptor)
+    except OSError as error:
+        raise PrivateInputError("private-intended-device-cleanup-failed") from error
 
-    durable_unlink = False
-    try:
-        current = os.stat(filename, dir_fd=directory_descriptor, follow_symlinks=False)
-        opened_before_unlink = os.fstat(file_descriptor)
-        if _same_inode(current, opened_before_unlink) and opened_before_unlink.st_nlink == 1:
-            os.unlink(filename, dir_fd=directory_descriptor)
-            os.fsync(directory_descriptor)
-            durable_unlink = os.fstat(file_descriptor).st_nlink == 0
-    except OSError:
-        durable_unlink = False
-
-    # Descriptor scrub is authoritative even if the path moved or acquired more links. Unlink is
-    # authoritative only after the exact open inode proves it has no surviving hard-link names.
-    if durable_scrub or durable_unlink:
-        return
-
-    raise PrivateInputError("private-intended-device-cleanup-failed")
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_size != 0:
+        raise PrivateInputError("private-intended-device-cleanup-failed")
 
 
 def create_private_input(
@@ -289,8 +260,7 @@ def create_private_input(
         except OSError as error:
             raise PrivateInputError("private-intended-device-create-failed") from error
 
-        # Prove the exact fresh inode before any secret byte is written. Cleanup later compares
-        # against this still-open descriptor's stable dev/inode identity, never its mutable size.
+        # Prove the exact fresh inode before any secret byte is written.
         _validate_fresh_output(os.fstat(file_descriptor))
 
         _write_all(file_descriptor, payload)
@@ -343,7 +313,7 @@ def create_private_input(
     except BaseException as acquisition_error:
         if file_descriptor is not None:
             try:
-                _erase_failed_private_input(file_descriptor, directory_descriptor, filename)
+                _erase_failed_private_input(file_descriptor)
             except PrivateInputError as cleanup_error:
                 raise cleanup_error from acquisition_error
         raise
