@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,6 +15,7 @@ SPEC = importlib.util.spec_from_file_location("capture_tuya_private_input_build_
 if SPEC is None or SPEC.loader is None:
     raise RuntimeError("could not load build-window guard")
 guard = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = guard
 SPEC.loader.exec_module(guard)
 
 
