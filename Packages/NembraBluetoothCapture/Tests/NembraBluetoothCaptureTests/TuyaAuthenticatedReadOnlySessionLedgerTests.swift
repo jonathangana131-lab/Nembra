@@ -49,6 +49,30 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
         #expect(snapshot.applicationPayloadCount == 0)
     }
 
+    @Test("same generation from another ledger cannot cross the owner boundary")
+    func crossLedgerTokenRejected() async throws {
+        let firstClock = TestUptimeClock(10)
+        let secondClock = TestUptimeClock(10)
+        let firstLedger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: firstClock.now)
+        let secondLedger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: secondClock.now)
+
+        let firstToken = try await firstLedger.beginConnection()
+        let secondToken = try await secondLedger.beginConnection()
+
+        #expect(firstToken.diagnosticGeneration == secondToken.diagnosticGeneration)
+        #expect(firstToken != secondToken)
+
+        secondClock.advance(to: 20)
+        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection) {
+            try await secondLedger.markAuthenticated(for: firstToken, method: .smartLifeAppSDK)
+        }
+
+        let secondSnapshot = await secondLedger.currentPreflightSnapshot()
+        #expect(secondSnapshot.authenticationState == .waitingForAuthentication)
+        #expect(secondSnapshot.authenticationMethod == nil)
+        #expect(secondSnapshot.applicationPayloadCount == 0)
+    }
+
     @Test("payload admission is post-auth and non-empty")
     func payloadAdmissionIsFailClosed() async throws {
         let clock = TestUptimeClock(100)
