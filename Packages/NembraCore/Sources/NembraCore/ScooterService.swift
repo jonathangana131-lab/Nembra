@@ -47,6 +47,69 @@ public extension SpeedEvidenceProvider {
     }
 }
 
+/// One source-owned synthetic propulsion observation used only by Simulator QA.
+///
+/// This is deliberately not a physical scooter power type. It exists so the app
+/// can exercise the canonical propulsion presentation with real source chronology
+/// instead of inferring power receipts from `VehicleState` value changes, speed
+/// callbacks, command publishes, or the 60 Hz display clock.
+public struct SimulatorPropulsionPowerSample: Equatable, Sendable {
+    public let watts: Double
+    public let receiptSequenceNumber: UInt64
+    public let receivedAtUptimeNanoseconds: UInt64
+    public let continuityGeneration: UInt64
+
+    init?(
+        watts: Double,
+        receiptSequenceNumber: UInt64,
+        receivedAtUptimeNanoseconds: UInt64,
+        continuityGeneration: UInt64
+    ) {
+        guard watts.isFinite,
+              watts >= 0,
+              receiptSequenceNumber > 0,
+              receivedAtUptimeNanoseconds > 0,
+              continuityGeneration > 0 else {
+            return nil
+        }
+        self.watts = watts == 0 ? 0 : watts
+        self.receiptSequenceNumber = receiptSequenceNumber
+        self.receivedAtUptimeNanoseconds = receivedAtUptimeNanoseconds
+        self.continuityGeneration = continuityGeneration
+    }
+}
+
+/// Current Simulator-only propulsion evidence. Retained preserves the last
+/// legitimate synthetic observation without pretending it is still live;
+/// unavailable carries no numeric power authority.
+public enum SimulatorPropulsionPowerAvailability: Equatable, Sendable {
+    case live(SimulatorPropulsionPowerSample)
+    case retained(SimulatorPropulsionPowerSample)
+    case unavailable
+}
+
+/// Optional source-owned Simulator propulsion projection.
+///
+/// Like `SpeedEvidenceProvider`, availability is current state rather than an
+/// event log: registration and initial replay must be atomic and slow consumers
+/// must not be allowed to resurrect obsolete `.live` state. Crucially, a provider
+/// must issue a distinct source receipt for every legitimate synthetic propulsion
+/// observation even when the numeric watt value is unchanged. Connection state,
+/// speed receipts, mode changes, and unrelated `VehicleState` publishes are not
+/// substitute propulsion receipts.
+public protocol SimulatorPropulsionPowerEvidenceProvider: Sendable {
+    func simulatorPropulsionPowerEvidenceUpdates() async -> AsyncStream<SimulatorPropulsionPowerAvailability>
+    func simulatorPropulsionPowerEvidenceSnapshot() async -> SimulatorPropulsionPowerAvailability
+}
+
+public extension SimulatorPropulsionPowerEvidenceProvider {
+    func simulatorPropulsionPowerEvidenceSnapshot() async -> SimulatorPropulsionPowerAvailability {
+        let stream = await simulatorPropulsionPowerEvidenceUpdates()
+        var iterator = stream.makeAsyncIterator()
+        return await iterator.next() ?? .unavailable
+    }
+}
+
 /// Consumer-side admission for one asynchronous refresh of source-owned speed
 /// currentness. The opaque token makes supersession mechanical rather than a
 /// scheduling assumption: once a connection transition or a newer refresh calls
