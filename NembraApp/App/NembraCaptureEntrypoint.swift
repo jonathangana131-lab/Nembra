@@ -431,6 +431,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -488,6 +489,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -498,11 +500,20 @@ private final class SecureLinkController: NSObject, ObservableObject {
         watchdog = nil
 
         if processCorrelationLease != nil || correlationSession != nil {
-            // Existing helper stops package transport before releasing this controller's lease.
-            abandonPackageCorrelation()
+            revokeTargetCorrelationAuthorityForForegroundLoss()
             phase = .failed
             message = "Capture left the foreground during Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; interrupted windows are never reusable evidence."
             log("foreground_integrity_lost_during_target_correlation")
+            return
+        }
+
+        // A completed correlation result and operator selection are current-foreground authority,
+        // not durable scooter identity. Neither may bridge a background/inactive interruption.
+        if phase == .correlated || phase == .selected || correlationProvenance != nil || selectedID != nil || pendingCorrelatedTargetID != nil {
+            revokeTargetCorrelationAuthorityForForegroundLoss()
+            phase = .failed
+            message = "Capture left the foreground after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the prior correlated/selected target is no longer current-attempt authority."
+            log("foreground_integrity_lost_after_target_correlation")
             return
         }
 
@@ -1427,7 +1438,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             await refreshLedgerSnapshot()
             log("tuya_application_update", update.merging([
                 "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -1921,6 +1932,19 @@ private final class SecureLinkController: NSObject, ObservableObject {
         correlationSession?.abandonCurrentWindow()
         correlationSession = nil
         releasePackageCorrelationLease()
+    }
+
+    private func revokeTargetCorrelationAuthorityForForegroundLoss() {
+        // Scanner/session transport is always retired before its process-global package lease.
+        abandonPackageCorrelation()
+        correlationProvenance = nil
+        targetCorrelationMethod = nil
+        targetCorrelationWindowCount = nil
+        targetCorrelationOperatorConfirmed = false
+        byID.removeAll()
+        candidates.removeAll()
+        selectedID = nil
+        pendingCorrelatedTargetID = nil
     }
 
     private func releasePackageCorrelationLease() {
