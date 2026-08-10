@@ -23,15 +23,26 @@ if grep -Eq 'localKey:[[:space:]]*string\(raw\["local_key"\]\)' "$BRIDGE"; then
   fail "metadata parser still copies local_key into app state"
 fi
 
-# The authenticated field controller must not invoke DP control APIs.
+# The authenticated field controller must never issue scooter DP controls, lifecycle mutations,
+# or raw CoreBluetooth GATT traffic. CoreBluetooth is discovery-only here; after candidate
+# identification the official Tuya SDK must be the sole connection/GATT owner.
 if grep -Eq '\.(publishDps|publishDpsWith|resetFactory|removeDevice|unbind|disconnectAndRemove)' "$ENTRY"; then
   fail "authenticated field controller contains a prohibited command/unbind/reset API"
 fi
+if grep -Eq 'central\.(connect|cancelPeripheralConnection)' "$ENTRY"; then
+  fail "Capture secure-link entrypoint contains a raw CoreBluetooth connection path; Tuya SDK must own the secure session"
+fi
+if grep -Eq '\.(writeValue|setNotifyValue|discoverServices|discoverCharacteristics|readValue)\(' "$ENTRY"; then
+  fail "Capture secure-link entrypoint contains raw CoreBluetooth GATT operations; discovery must stop before Tuya SDK ownership"
+fi
 
-# The official driver is the only accepted BLE authentication provider.
+# The official driver is the only accepted BLE authentication provider and acceptance must
+# be based on local-BLE liveness plus genuine application callbacks from that SDK session.
 grep -q 'connectBLE' "$ENTRY" || fail "official Tuya BLE connect path missing"
 grep -q 'deviceStatue' "$ENTRY" || fail "local BLE liveness proof missing"
 grep -q 'dpsUpdate' "$ENTRY" || fail "application update observation missing"
 grep -q 'smartLifeAppSDK' "$ENTRY" || fail "accepted authentication provenance missing"
+grep -q 'sdkDeviceMembershipVerified' "$ENTRY" || fail "exact SDK-account scooter membership gate missing"
+grep -q 'maximumObservationPollGapNanoseconds' "$ENTRY" || fail "authenticated observation continuity fence missing"
 
 printf 'PASS: Capture Tuya credential-minimization/read-only contract\n'
