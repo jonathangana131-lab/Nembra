@@ -4,7 +4,10 @@ import Foundation
 ///
 /// This type intentionally stops at the transport layer. It must not be used to mint
 /// speed, battery, power, mode, odometer, or other scooter telemetry semantics.
-public struct PhysicalCaptureTransportEvidence: Codable, Equatable, Sendable {
+///
+/// The authority-bearing value is intentionally not `Decodable`: accepted physical facts must
+/// come from reviewed ledger entries in this module, never attacker- or caller-supplied bytes.
+public struct PhysicalCaptureTransportEvidence: Equatable, Sendable {
     public enum Provenance: String, Codable, Equatable, Sendable {
         case physicalCapture
     }
