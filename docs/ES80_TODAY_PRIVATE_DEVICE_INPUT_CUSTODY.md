@@ -12,7 +12,7 @@ This helper closes operator-side private-input custody races without changing th
 
 The earlier shell example correctly rejected symlinked private directories and existing final files and used Bash `noclobber`. That protects the final filename from ordinary replacement, but shell redirection still resolves the parent pathname at write time. A same-UID local actor could rename/retarget `.nembra-private` after the operator entered the secret but before the redirection opened the final file. The later accepted preflight would fail closed, but the secret could already have been written under the wrong directory subject.
 
-`scripts/ci/es80_today_private_device_input.py` removes that write-time pathname authority and now preserves the full accepted failure-erasure and pre-prompt contract:
+`scripts/ci/es80_today_private_device_input.py` removes that write-time pathname authority and preserves the full accepted failure-erasure and pre-prompt contract:
 
 - opens every private-directory component with `O_DIRECTORY|O_NOFOLLOW`;
 - creates only the final private directory when absent and requires exact mode `0700` plus current-user ownership;
@@ -22,9 +22,10 @@ The earlier shell example correctly rejected symlinked private directories and e
 - creates the final file relative to the pinned directory descriptor with `O_CREAT|O_EXCL|O_NOFOLLOW` and mode `0600`, so a target racing into existence after the precheck still cannot be clobbered;
 - writes and `fsync`s through the exact file descriptor;
 - reopens the full pathname after creation and requires the same directory device/inode and the same file identity plus exact byte readback;
-- on acquisition failure, first scrubs the exact still-open inode with `ftruncate(0)` + file `fsync` and proves size zero;
-- accepts pathname unlink as a fallback only when the descriptor-relative name still identifies the exact inode, the inode remains single-linked immediately before unlink, directory `fsync` succeeds, and the open inode proves `st_nlink == 0` afterward;
-- if neither durable erasure route can be proven, surfaces a secret-free `private-intended-device-cleanup-failed` blocker instead of pretending cleanup succeeded;
+- once secret bytes may have been written, cleanup authority stays exclusively on the exact still-open created inode: `ftruncate(fd, 0)`, file `fsync`, then `fstat` proving a regular zero-length subject;
+- **never unlinks a mutable pathname after secret acquisition**; a failed acquisition may intentionally leave a mode-`0600` zero-length spent file, which the operator must preserve and bypass with a fresh filename/path on retry;
+- scrubbing the exact open inode also scrubs any hard-link alias to that inode rather than trusting a mutable directory entry;
+- if durable open-inode erasure cannot be proven, surfaces a secret-free `private-intended-device-cleanup-failed` blocker instead of pretending cleanup succeeded;
 - never places the raw identifier in argv, environment variables, stdout, filenames, GitHub, or retained candidate artifacts.
 
 This is private-input custody only. A successful helper invocation does not mean the signed candidate is accepted and does not grant permission to scan.
@@ -35,16 +36,17 @@ The exact Capture field source `a0f4…` is intentionally frozen and therefore d
 
 The helper must be materialized from a separate trusted local Nembra tooling repository exactly like the already accepted external pre-signing helper. The current accepted helper identity is:
 
-- helper source commit: `91dda8ac05e937e5615312a487f7d78926b74949`;
+- helper source commit: `90d3578a1d39a1d019000583a712306b67786acf`;
 - helper path: `scripts/ci/es80_today_private_device_input.py`;
-- helper Git blob: `50b12675a57fd2f570d833cfcdbfd7be59f52ca4`;
-- exact focused QA run: `31349898562` — terminal success;
-- exact focused QA job: `93338620824` — terminal success;
-- merged current-main lineage at acceptance handoff: `af75ffa6dc4409a21822295428e4eeb922ac3d16`.
+- helper Git blob: `62b719e8d9afb34da6d35d696e80edf926442696`;
+- exact focused regression blob: `e87c15948f7a6c934b600e4fc3bb525653847f5d`;
+- exact focused QA run: `31350148402` — terminal success;
+- exact focused QA job: `93339277106` — terminal success;
+- merged current-main lineage at acceptance handoff: `b479d851a54437ef394a4901c69db2d829d280e4`.
 
-That exact QA head combines the durable secret-erasure model with the occupied-target-before-secret guard and EOF fail-closed terminal contract. The merge onto `main` preserves the same helper bytes. These bytes remain non-authorizing.
+That exact QA head combines occupied-target-before-secret admission, EOF fail-closed terminal handling, descriptor-bound creation/rebind, and the final nondestructive failure-erasure rule: scrub only the exact open inode and never unlink a mutable pathname after secret acquisition. The merge onto `main` preserves those helper bytes. These bytes remain non-authorizing.
 
-Superseded helper identity retained only for audit history: commit `05ce6d9a20487ab34aa31c5b6456910ed2ed438f`, blob `9a9f7f724ceaf895e52d6d443d326043f97645c8`. **Do not materialize or invoke that superseded helper for the current TODAY handoff.**
+Superseded helper identity retained only for audit history: commit `91dda8ac05e937e5615312a487f7d78926b74949`, blob `50b12675a57fd2f570d833cfcdbfd7be59f52ca4`. Older superseded identity: commit `05ce6d9a20487ab34aa31c5b6456910ed2ed438f`, blob `9a9f7f724ceaf895e52d6d443d326043f97645c8`. **Do not materialize or invoke either superseded helper for the current TODAY handoff.**
 
 ## Operator materialization and use
 
@@ -54,8 +56,8 @@ Start with the exact frozen outer `FIELD_SOURCE` and a separate tooling reposito
 set -euo pipefail
 umask 077
 
-PRIVATE_INPUT_HELPER_COMMIT='91dda8ac05e937e5615312a487f7d78926b74949'
-PRIVATE_INPUT_HELPER_BLOB='50b12675a57fd2f570d833cfcdbfd7be59f52ca4'
+PRIVATE_INPUT_HELPER_COMMIT='90d3578a1d39a1d019000583a712306b67786acf'
+PRIVATE_INPUT_HELPER_BLOB='62b719e8d9afb34da6d35d696e80edf926442696'
 TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
 PRIVATE_INPUT_HELPER_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-private-input.XXXXXX)"
 PRIVATE_INPUT_HELPER="$PRIVATE_INPUT_HELPER_DIR/es80_today_private_device_input.py"
@@ -82,6 +84,8 @@ NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE="$UDID_FILE"
 
 The helper prompts privately with `getpass`; do not pass the raw UDID on the command line. If the final path already exists, the helper refuses **before** asking for the secret. Preserve that target and choose a fresh filename/path rather than deleting or overwriting it just to satisfy the helper. If secure terminal input is unavailable or reaches EOF, stop; do not substitute echoing stdin or shell redirection.
 
+If acquisition fails after the helper created a file, a zero-length mode-`0600` spent subject may intentionally remain. Preserve it. Do not delete or overwrite it merely to make a retry fit the same path; choose a fresh private filename/path so the failure evidence and nondestructive cleanup contract stay intact.
+
 Keep `PRIVATE_INPUT_HELPER_DIR` outside `ARTIFACTS_DIR`. Do not mutate the producer's retained candidate shape with operator tooling or auxiliary files.
 
 After creation, continue through the accepted external pre-signing preflight. The preflight must still report:
@@ -106,13 +110,16 @@ It must prove at minimum:
 3. a target racing into existence after the precheck is still rejected by exclusive descriptor-relative creation;
 4. symlinked ancestors fail before the secret provider is called;
 5. repository-contained private paths fail before secret acquisition;
-6. a parent pathname retarget after file creation fails closed and cleanup acts only on the exact created inode;
-7. partial-write and fsync failures cannot return as cleanup-safe unless exact bytes are durably erased or exact single-link unlink is durably proven;
-8. a hard-link race cannot preserve secret bytes while cleanup is called safe;
-9. surrounding whitespace/newline/control characters are rejected;
-10. secure-terminal echo fallback and EOF both fail closed without output creation or secret disclosure.
+6. a parent pathname retarget after file creation fails closed while cleanup acts only on the exact created inode;
+7. partial-write and primary file-fsync failures cannot return as cleanup-safe unless the exact open inode is durably zeroed;
+8. a pathname replacement introduced after secret bytes are written remains byte-for-byte untouched while the original open inode is scrubbed;
+9. cleanup after secret acquisition does not call pathname `unlink` at all;
+10. a hard-link race cannot preserve secret bytes because open-inode truncation scrubs every alias;
+11. `KeyboardInterrupt` after creation scrubs the exact open inode before rethrowing;
+12. surrounding whitespace/newline/control characters are rejected;
+13. secure-terminal echo fallback and EOF both fail closed without output creation or secret disclosure.
 
-The exact accepted helper blob is `50b12675a57fd2f570d833cfcdbfd7be59f52ca4`; the exact accepted regression blob at `91dda8ac…` is `cf56956207d0e7838ec8c9638b271f340861ae59`. Exact focused QA is run `31349898562`, job `93338620824`, terminal success.
+The exact accepted helper blob is `62b719e8d9afb34da6d35d696e80edf926442696`; the exact accepted regression blob at `90d3578a…` is `e87c15948f7a6c934b600e4fc3bb525653847f5d`. Exact focused QA is run `31350148402`, job `93339277106`, terminal success.
 
 ## Truth boundary
 
