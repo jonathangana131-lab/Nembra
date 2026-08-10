@@ -39,7 +39,8 @@ struct TuyaCorrelationAsyncInvalidationPresentationSourceTests {
 
         #expect(consumer.contains("isSeriesInvalidated == true"))
         #expect(consumer.contains("phase == .baseline") || consumer.contains("phase == .scanning"))
-        #expect(consumer.contains("correlationSession = nil"))
+        #expect(consumer.contains("abandonPackageCorrelation()"))
+        #expect(consumer.contains("failLocally("))
         #expect(consumer.contains("target_correlation_async_invalidated"))
         #expect(consumer.contains("Restart from OFF1"))
         #expect(!consumer.contains("selectedID ="))
