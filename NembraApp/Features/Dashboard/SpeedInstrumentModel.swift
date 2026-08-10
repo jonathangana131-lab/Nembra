@@ -290,6 +290,75 @@ final class SpeedInstrumentModel {
     }
 }
 
+/// Immutable receipt identity copied only for presentation gating. These values can
+/// deny a package projection, but can never create telemetry or accepted power.
+struct DashboardEnergyRailGateReceipt: Equatable {
+    let watts: Double
+    let receiptSequenceNumber: UInt64
+    let receivedAtUptimeNanoseconds: UInt64
+    let continuityGeneration: UInt64
+}
+
+enum DashboardEnergyRailGateCurrentness: Equatable {
+    case live
+    case retained
+    case unavailable
+}
+
+struct DashboardEnergyRailGateState: Equatable {
+    let currentness: DashboardEnergyRailGateCurrentness
+    let receipt: DashboardEnergyRailGateReceipt?
+
+    var isWellFormed: Bool {
+        switch currentness {
+        case .live, .retained:
+            return receipt != nil
+        case .unavailable:
+            return receipt == nil
+        }
+    }
+}
+
+/// One-way presentation authority lattice between current Store truth and package
+/// presentation. This helper is intentionally caller-constructible because it grants
+/// no positive authority: it can only reject or allow a projection that is already
+/// sealed by NembraCore and mechanically matched to the Store receipt.
+enum DashboardEnergyRailAuthorityGate {
+    static func admits(
+        package: DashboardEnergyRailGateState,
+        under store: DashboardEnergyRailGateState
+    ) -> Bool {
+        guard package.isWellFormed, store.isWellFormed else { return false }
+
+        switch store.currentness {
+        case .unavailable:
+            // Store removal/demotion is an immediate hard veto on stale positive UI.
+            return package.currentness == .unavailable
+
+        case .retained:
+            switch package.currentness {
+            case .unavailable:
+                return true
+            case .retained:
+                return package.receipt == store.receipt
+            case .live:
+                return false
+            }
+
+        case .live:
+            switch package.currentness {
+            case .unavailable:
+                return true
+            case .live, .retained:
+                // NembraCore may conservatively age the same accepted receipt to
+                // RETAINED before the Store changes. That is lower authority, not a
+                // mismatch and must remain visible as last-known rather than fake nil.
+                return package.receipt == store.receipt
+            }
+        }
+    }
+}
+
 /// A deliberately narrow high-frequency subtree for the landscape cockpit.
 ///
 /// Only this view redraws on the animation timeline. Vehicle controls, ride
@@ -472,8 +541,7 @@ struct DashboardSpeedInstrumentView: View {
     }
 
     private func refreshEnergyRailPresentationSchedule() {
-        guard !reduceMotion,
-              hasEnergyRailSourceCapability,
+        guard hasEnergyRailSourceCapability,
               energyRailStoreProjection.currentness == .live,
               let energyRailRuntime else {
             energyRailNextTransitionUptimeNanoseconds = nil
@@ -490,6 +558,9 @@ struct DashboardSpeedInstrumentView: View {
             return
         }
 
+        // Reduce Motion suppresses continuous display frames in `body`, but must
+        // never suppress package-owned one-shot deadlines. Those deadlines can age
+        // accepted LIVE semantics to RETAINED without any new measurement.
         energyRailNextTransitionUptimeNanoseconds = energyRailRuntime.displaySchedule(
             atUptimeNanoseconds: now
         ).nextTransitionUptimeNanoseconds
@@ -533,8 +604,10 @@ struct DashboardSpeedInstrumentView: View {
             atUptimeNanoseconds: uptimeNanoseconds
         )
 
-        // This synchronous compare closes the SwiftUI observation -> onChange seam:
-        // a just-demoted Store receipt can never render one stale LIVE package frame.
+        // Close the synchronous SwiftUI observation -> `.onChange` seam while
+        // allowing NembraCore to be more conservative than Store truth. A just-
+        // demoted Store receipt cannot flash stale LIVE, and a package freshness
+        // demotion of the same Store-LIVE receipt remains truthful last-known state.
         guard projectionMatchesStore(
             packageProjection,
             storeProjection: storeProjection
@@ -549,35 +622,63 @@ struct DashboardSpeedInstrumentView: View {
         _ packageProjection: PropulsionEnergyRailAppProjection,
         storeProjection: SimulatorPowerStoreProjection
     ) -> Bool {
-        switch storeProjection.currentness {
+        guard let packageGateState = energyRailGateState(packageProjection),
+              let storeGateState = energyRailGateState(storeProjection) else {
+            return false
+        }
+
+        return DashboardEnergyRailAuthorityGate.admits(
+            package: packageGateState,
+            under: storeGateState
+        )
+    }
+
+    private func energyRailGateState(
+        _ projection: PropulsionEnergyRailAppProjection
+    ) -> DashboardEnergyRailGateState? {
+        switch projection.currentness {
         case .unavailable:
-            return storeProjection.observation == nil
-                && packageProjection.currentness == .unavailable
-                && packageProjection.acceptedMeasurement == nil
+            guard projection.acceptedMeasurement == nil else { return nil }
+            return DashboardEnergyRailGateState(currentness: .unavailable, receipt: nil)
 
-        case .retained:
-            guard let source = storeProjection.observation,
-                  packageProjection.currentness == .retained,
-                  let accepted = packageProjection.acceptedMeasurement else {
-                return false
+        case .retained, .live:
+            guard let accepted = projection.acceptedMeasurement,
+                  accepted.authority == .simulator else {
+                return nil
             }
-            return accepted.authority == .simulator
-                && accepted.watts == source.watts
-                && accepted.receiptSequenceNumber == source.receiptSequenceNumber
-                && accepted.receivedAtUptimeNanoseconds == source.receivedAtUptimeNanoseconds
-                && accepted.continuityGeneration == source.continuityGeneration
+            let receipt = DashboardEnergyRailGateReceipt(
+                watts: accepted.watts,
+                receiptSequenceNumber: accepted.receiptSequenceNumber,
+                receivedAtUptimeNanoseconds: accepted.receivedAtUptimeNanoseconds,
+                continuityGeneration: accepted.continuityGeneration
+            )
+            return DashboardEnergyRailGateState(
+                currentness: projection.currentness == .live ? .live : .retained,
+                receipt: receipt
+            )
+        }
+    }
 
-        case .live:
-            guard let source = storeProjection.observation,
-                  packageProjection.currentness == .live,
-                  let accepted = packageProjection.acceptedMeasurement else {
-                return false
-            }
-            return accepted.authority == .simulator
-                && accepted.watts == source.watts
-                && accepted.receiptSequenceNumber == source.receiptSequenceNumber
-                && accepted.receivedAtUptimeNanoseconds == source.receivedAtUptimeNanoseconds
-                && accepted.continuityGeneration == source.continuityGeneration
+    private func energyRailGateState(
+        _ projection: SimulatorPowerStoreProjection
+    ) -> DashboardEnergyRailGateState? {
+        switch projection.currentness {
+        case .unavailable:
+            guard projection.observation == nil else { return nil }
+            return DashboardEnergyRailGateState(currentness: .unavailable, receipt: nil)
+
+        case .retained, .live:
+            guard let observation = projection.observation else { return nil }
+            let receipt = DashboardEnergyRailGateReceipt(
+                watts: observation.watts,
+                receiptSequenceNumber: observation.receiptSequenceNumber,
+                receivedAtUptimeNanoseconds: observation.receivedAtUptimeNanoseconds,
+                continuityGeneration: observation.continuityGeneration
+            )
+            return DashboardEnergyRailGateState(
+                currentness: projection.currentness == .live ? .live : .retained,
+                receipt: receipt
+            )
         }
     }
 
