@@ -199,12 +199,12 @@ def _erase_failed_private_input(
 
     The open descriptor is the strongest remaining authority after a pathname retarget. Scrub that
     exact inode first so an added hard link cannot preserve secret bytes. Descriptor-relative unlink
-    is a second route when the original pathname still names the same single-link inode. At least one
-    erasure route must be proven durable; otherwise surface a secret-free cleanup blocker instead of
-    silently claiming failure atomicity.
+    is a second route only when the original pathname still names the exact single-link inode and the
+    opened inode proves zero links after unlink. At least one erasure route must be proven durable;
+    otherwise surface a secret-free cleanup blocker instead of silently claiming failure atomicity.
     """
     try:
-        opened_before = os.fstat(file_descriptor)
+        os.fstat(file_descriptor)
     except OSError as error:
         raise PrivateInputError("private-intended-device-cleanup-failed") from error
 
@@ -219,18 +219,17 @@ def _erase_failed_private_input(
     durable_unlink = False
     try:
         current = os.stat(filename, dir_fd=directory_descriptor, follow_symlinks=False)
-        opened_after = os.fstat(file_descriptor)
-        if _same_inode(current, opened_after):
+        opened_before_unlink = os.fstat(file_descriptor)
+        if _same_inode(current, opened_before_unlink) and opened_before_unlink.st_nlink == 1:
             os.unlink(filename, dir_fd=directory_descriptor)
             os.fsync(directory_descriptor)
-            durable_unlink = True
+            durable_unlink = os.fstat(file_descriptor).st_nlink == 0
     except OSError:
         durable_unlink = False
 
-    # A durable descriptor scrub erases the exact inode even if the pathname was retargeted or an
-    # extra hard link appeared. A durable unlink is sufficient only when the fresh subject still had
-    # exactly its original single link before cleanup.
-    if durable_scrub or (opened_before.st_nlink == 1 and durable_unlink):
+    # Descriptor scrub is authoritative even if the path moved or acquired more links. Unlink is
+    # authoritative only after the exact open inode proves it has no surviving hard-link names.
+    if durable_scrub or durable_unlink:
         return
 
     raise PrivateInputError("private-intended-device-cleanup-failed")
