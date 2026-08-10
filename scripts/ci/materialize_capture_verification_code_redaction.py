@@ -78,7 +78,7 @@ source = source.replace(old, new, 1)
 path.write_text(source, encoding="utf-8")
 
 start = source.index("@MainActor\nprivate final class OfficialTuyaAccountAuthorizer")
-end = source.index("#if canImport(ThingSmartHomeKit)\n@MainActor\nprivate final class OfficialTuyaMembershipProbe", start)
+end = source.index("@MainActor\nprivate struct SecureLinkView", start)
 authorizer = source[start:end]
 required = (
     "finishLoginFailure(error, submittedIdentity: identity, submittedVerificationCode: code)",
