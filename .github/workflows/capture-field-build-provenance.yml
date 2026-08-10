@@ -72,6 +72,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          trap 'rc=$?; printf "::error title=Capture provenance source contract::shell line %s failed: %q (exit %s)\n" "$LINENO" "$BASH_COMMAND" "$rc"; exit "$rc"' ERR
           identity='NembraApp/App/NembraCaptureBuildIdentity.swift'
           entrypoint='NembraApp/App/NembraCaptureEntrypoint.swift'
           project='NembraCapture.xcodeproj/project.pbxproj'
@@ -92,12 +93,12 @@ jobs:
             exit 1
           fi
           grep -Fq 'BUILD_LABEL="capture-v14-${SOURCE_SHA:0:12}"' "$installer"
-          grep -Fq 'NEMBRA_CAPTURE_BUILD_IDENTIFIER="$BUILD_LABEL"' "$installer"
-          grep -Fq 'NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$SOURCE_SHA"' "$installer"
+          grep -Fq '"NEMBRA_CAPTURE_BUILD_IDENTIFIER=$BUILD_LABEL"' "$installer"
+          grep -Fq '"NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$SOURCE_SHA"' "$installer"
           grep -Fq 'TUYA_DEPENDENCY_LOCK_SHA256="$(shasum -a 256 "$ROOT/Podfile.lock"' "$installer"
-          grep -Fq 'NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256' "$installer"
+          grep -Fq '"NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256"' "$installer"
           grep -Fq "PROCEDURE_ID=\"$procedure\"" "$installer"
-          grep -Fq 'INFOPLIST_KEY_NembraCaptureProcedureIdentifier=$PROCEDURE_ID' "$installer"
+          grep -Fq '"INFOPLIST_KEY_NembraCaptureProcedureIdentifier=$PROCEDURE_ID"' "$installer"
           if grep -Fq 'Switch to capture/one-time-ble-dump-gpt56 first' "$installer"; then
             echo 'ERROR: field-build authority must bind the accepted source SHA, not a branch name.' >&2
             exit 1
@@ -207,6 +208,9 @@ jobs:
           procedure='ES80-AUTHENTICATED-STATIONARY-v1'
           label="capture-v14-${sha:0:12}"
           rm -rf /tmp/NembraCaptureProvenanceDerived
+          build_log="$RUNNER_TEMP/nembra-capture-provenance-xcodebuild.log"
+          rm -f -- "$build_log"
+          set +e
           xcodebuild \
             -project NembraCapture.xcodeproj \
             -scheme 'Nembra Capture' \
@@ -219,7 +223,22 @@ jobs:
             NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" \
             NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$dependency_sha" \
             INFOPLIST_KEY_NembraCaptureProcedureIdentifier="$procedure" \
-            build
+            build 2>&1 | tee "$build_log"
+          build_status="${PIPESTATUS[0]}"
+          set -e
+          if [[ "$build_status" != "0" ]]; then
+            /usr/bin/python3 -I - "$build_log" <<'PY'
+          import sys
+          from pathlib import Path
+
+          lines = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace").splitlines()
+          errors = [line.strip() for line in lines if "error:" in line.lower()]
+          for line in errors[-12:]:
+              safe = line.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error title=Capture stamped Simulator build::{safe}")
+          PY
+            exit "$build_status"
+          fi
 
           plist='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
           test -f "$plist"
