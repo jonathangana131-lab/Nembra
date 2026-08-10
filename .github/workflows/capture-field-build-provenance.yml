@@ -22,7 +22,28 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout immutable PR head
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Checkout immutable non-PR subject
+        if: github.event_name != 'pull_request'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Verify immutable source subject
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual_source_sha="$(git rev-parse HEAD)"
+          printf 'Expected immutable source: %s\nActual checkout source: %s\n' "$EXPECTED_SOURCE_SHA" "$actual_source_sha"
+          [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual_source_sha" = "$EXPECTED_SOURCE_SHA"
 
       - name: Verify source contract
         shell: bash
