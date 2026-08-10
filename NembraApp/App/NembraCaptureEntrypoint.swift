@@ -202,6 +202,7 @@ private final class SecureLinkController: NSObject, ObservableObject, TuyaReadOn
         guard let newDriver = OfficialTuyaFactory.make() else { fail("Official Tuya provider is unavailable.", "sdk_provider_unavailable"); return }
         guard connectionGeneration < UInt64.max else { fail("Connection generation exhausted. Restart Nembra Capture before another secure-link attempt.", "connection_generation_exhausted"); return }
         connectionGeneration += 1
+        let activeGeneration = connectionGeneration
         let now = DispatchTime.now().uptimeNanoseconds
         connectionStartedAtUptime = now
         authenticatedAtUptime = nil
@@ -212,13 +213,29 @@ private final class SecureLinkController: NSObject, ObservableObject, TuyaReadOn
         sdkLocalBLEOnline = false
         preflightVerdict = .blocked(reason: "Tuya authentication is still in progress.")
         central.stopScan(); driver = newDriver; phase = .authenticating; message = "Tuya's SDK is establishing the supported secure BLE session. Nembra sends no DP command."
-        log("official_connect_requested", ["coreBluetoothID": candidate.id.uuidString, "tuyaDeviceID": deviceID, "tuyaUUID": tuyaUUID, "productID": productID, "connectionGeneration": String(connectionGeneration)])
-        newDriver.connect(deviceID: deviceID, uuid: tuyaUUID, productID: productID, onApplicationUpdate: { [weak self] update in Task { @MainActor in self?.receivedApplicationUpdate(update) } }, success: { [weak self] in Task { @MainActor in self?.officialConnectReturnedSuccess() } }, failure: { [weak self] error in Task { @MainActor in self?.fail(error, "official_connect_failed") } })
+        log("official_connect_requested", ["coreBluetoothID": candidate.id.uuidString, "tuyaDeviceID": deviceID, "tuyaUUID": tuyaUUID, "productID": productID, "connectionGeneration": String(activeGeneration)])
+        newDriver.connect(
+            deviceID: deviceID,
+            uuid: tuyaUUID,
+            productID: productID,
+            onApplicationUpdate: { [weak self] update in
+                Task { @MainActor in self?.receivedApplicationUpdate(update, generation: activeGeneration) }
+            },
+            success: { [weak self] in
+                Task { @MainActor in self?.officialConnectReturnedSuccess(generation: activeGeneration) }
+            },
+            failure: { [weak self] error in
+                Task { @MainActor in self?.officialConnectFailed(error, generation: activeGeneration) }
+            }
+        )
     }
-    private func officialConnectReturnedSuccess() {
-        guard phase == .authenticating, driver != nil else { return }
+    private func officialConnectReturnedSuccess(generation: UInt64) {
+        guard generation == connectionGeneration, phase == .authenticating, driver != nil else {
+            log("stale_official_connect_success_ignored", ["callbackGeneration": String(generation), "currentGeneration": String(connectionGeneration)])
+            return
+        }
         phase = .observing
-        log("official_connect_success_callback")
+        log("official_connect_success_callback", ["connectionGeneration": String(generation)])
         refreshLocalConnectionEvidence()
         if sdkLocalBLEOnline {
             message = "Tuya's local BLE session is current. Waiting for application updates and the 45-second authenticated stability gate…"
@@ -227,16 +244,27 @@ private final class SecureLinkController: NSObject, ObservableObject, TuyaReadOn
         }
         startWatchdog()
     }
-    private func receivedApplicationUpdate(_ update: [String: String]) {
+    private func officialConnectFailed(_ text: String, generation: UInt64) {
+        guard generation == connectionGeneration, [.authenticating, .observing].contains(phase) else {
+            log("stale_official_connect_failure_ignored", ["callbackGeneration": String(generation), "currentGeneration": String(connectionGeneration)])
+            return
+        }
+        fail(text, "official_connect_failed")
+    }
+    private func receivedApplicationUpdate(_ update: [String: String], generation: UInt64) {
+        guard generation == connectionGeneration else {
+            log("stale_application_update_ignored", ["callbackGeneration": String(generation), "currentGeneration": String(connectionGeneration), "entries": String(update.count)])
+            return
+        }
         guard secureSessionEstablished, sdkLocalBLEOnline, authenticatedAtUptime != nil else {
-            log("application_update_ignored_before_current_auth", ["entries": String(update.count)])
+            log("application_update_ignored_before_current_auth", ["entries": String(update.count), "connectionGeneration": String(generation)])
             return
         }
         let now = DispatchTime.now().uptimeNanoseconds
         applicationUpdateCount += 1
         latestApplicationPayloadAtUptime = now
         latestObservedAtUptime = now
-        log("tuya_application_update", update)
+        log("tuya_application_update", update.merging(["connectionGeneration": String(generation)]) { current, _ in current })
         Task { @MainActor [weak self] in
             guard let self else { return }
             await self.refreshAuthoritativeVerdict()
