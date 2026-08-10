@@ -1,0 +1,48 @@
+name: Materialize Foreground Integrity 870
+on:
+  push:
+    branches: [repair/v14-capture-foreground-integrity-870f-sol]
+permissions:
+  contents: write
+jobs:
+  materialize:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-foreground-integrity-870f-sol
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Guard exact product
+        shell: bash
+        run: |
+          set -euo pipefail
+          b=870f20abe144fa7b6f9ac60bf4c0fe0a1792fb81
+          test "$(git merge-base HEAD "$b")" = "$b"
+          test "$(git rev-parse "$b:NembraApp/App/NembraCaptureEntrypoint.swift")" = "$(git rev-parse HEAD:NembraApp/App/NembraCaptureEntrypoint.swift)"
+      - name: Materialize and parse
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/materialize_foreground_870.py
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegritySourceTests.swift
+          git diff --check
+      - name: Publish clean successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          b=870f20abe144fa7b6f9ac60bf4c0fe0a1792fb81
+          rm -f .github/workflows/materialize-foreground-870.yml scripts/ci/materialize_foreground_870.py
+          git add -A
+          mapfile -t f < <(git diff --cached --name-only "$b" | sort)
+          mapfile -t w < <(printf '%s\n' NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegritySourceTests.swift | sort)
+          test "${#f[@]}" -eq 2
+          for i in "${!w[@]}"; do test "${f[$i]}" = "${w[$i]}"; done
+          git diff --cached --check
+          git config user.name nembra-v14-bot
+          git config user.email nembra-v14-bot@users.noreply.github.com
+          git commit -m 'fix(capture): fail closed on Secure Link foreground loss'
+          git push origin HEAD:repair/v14-capture-foreground-integrity-870f-sol
