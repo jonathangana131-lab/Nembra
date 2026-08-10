@@ -2134,11 +2134,47 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         ThingSmartBLEManager.sharedInstance().deviceStatue(withUUID: uuid)
     }
 
+    private static let secretKeyFragments = [
+        "localkey",
+        "accesstoken",
+        "refreshtoken",
+        "authkey",
+        "seckey",
+    ]
+
+    private static func redactApplicationSecrets(_ object: Any) -> Any {
+        if let dictionary = object as? [AnyHashable: Any] {
+            var sanitized: [String: Any] = [:]
+            for (rawKey, value) in dictionary {
+                let key = String(describing: rawKey)
+                let normalizedKey = key.lowercased().filter { $0.isLetter || $0.isNumber }
+                if secretKeyFragments.contains(where: { normalizedKey.contains($0) }) {
+                    sanitized[key] = "<redacted>"
+                } else {
+                    sanitized[key] = redactApplicationSecrets(value)
+                }
+            }
+            return sanitized
+        }
+
+        if let array = object as? [Any] {
+            return array.map(redactApplicationSecrets)
+        }
+
+        return object
+    }
+
     func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {
         guard let dps, !dps.isEmpty else { return }
         var sanitized: [String: String] = [:]
         for (key, value) in dps {
-            sanitized[String(describing: key)] = String(describing: value)
+            let keyString = String(describing: key)
+            let normalizedKey = keyString.lowercased().filter { $0.isLetter || $0.isNumber }
+            if Self.secretKeyFragments.contains(where: { normalizedKey.contains($0) }) {
+                sanitized[keyString] = "<redacted>"
+            } else {
+                sanitized[keyString] = String(describing: Self.redactApplicationSecrets(value))
+            }
         }
         onApplicationUpdate?(sanitized)
     }
