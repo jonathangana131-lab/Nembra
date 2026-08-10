@@ -106,13 +106,48 @@ if [[ "$TEST_STATUS" -ne 0 ]]; then
   exit "$TEST_STATUS"
 fi
 
+# CoreSimulator's `simctl ui` action spelling has changed across Xcode/runtime
+# generations. Probe the known spellings instead of letting `set -e` terminate
+# the acceptance job before the Reduce Motion rerun, and preserve authoritative
+# runner help if none is supported.
+set_reduce_motion() {
+  local requested_state="$1"
+  local action status
+  local log_path="$ARTIFACTS_DIR/logs/simctl-reduce-motion.log"
+  : > "$log_path"
+
+  for action in reduce_motion reduceMotion reduce-motion; do
+    echo "probe_action=$action state=$requested_state" >> "$log_path"
+    set +e
+    xcrun simctl ui "$UDID" "$action" "$requested_state" >> "$log_path" 2>&1
+    status=$?
+    set -e
+    if [[ "$status" -eq 0 ]]; then
+      echo "reduce_motion_simctl_action=$action" >> "$ARTIFACTS_DIR/environment.txt"
+      echo "accepted_action=$action state=$requested_state" >> "$log_path"
+      return 0
+    fi
+    echo "rejected_action=$action status=$status" >> "$log_path"
+  done
+
+  {
+    echo "No probed Reduce Motion simctl action was accepted. Runner help follows."
+    xcrun simctl help ui || true
+    xcrun simctl ui "$UDID" help || true
+  } >> "$log_path" 2>&1
+  return 1
+}
+
 # Accessibility runtime acceptance uses the real Simulator setting rather than an
 # app launch override. Continuous 60 Hz motion must be suppressed while semantic
 # LIVE/RETAINED/UNAVAILABLE truth and the mounted landscape Energy Rail remain
 # correct. Re-run only the two product states needed for this visual/accessibility
 # proof and export their keep-always screenshots separately.
 echo "reduce_motion_runtime_qa=enabled" >> "$ARTIFACTS_DIR/environment.txt"
-xcrun simctl ui "$UDID" reduce_motion enabled
+if ! set_reduce_motion enabled; then
+  echo "This Xcode/iOS Simulator pair exposes no supported Reduce Motion simctl UI action; see simctl-reduce-motion.log." >&2
+  exit 8
+fi
 
 set +e
 set -o pipefail
@@ -136,7 +171,7 @@ xcodebuild \
 REDUCE_MOTION_TEST_STATUS=${PIPESTATUS[0]}
 set -e
 
-xcrun simctl ui "$UDID" reduce_motion disabled || true
+set_reduce_motion disabled || true
 
 if [[ -d "$REDUCE_MOTION_RESULT_BUNDLE" ]]; then
   if xcrun xcresulttool export attachments \
