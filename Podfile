@@ -23,9 +23,10 @@ target 'Nembra Capture' do
   # standalone .xcodeproj does not consume this pod and therefore remains fail-closed.
   pod 'NembraTuyaPrivateConfig', :path => './LocalSecrets/TuyaRuntime'
 
-  # SmartLife App SDK 7.8.0 is the current iOS line documented by Tuya.
-  pod 'ThingSmartHomeKit', '~> 7.8.0'
-  pod 'ThingSmartBusinessExtensionKit', '~> 7.8.0'
+  # Exact pin: the private field build must not silently move to a later 7.8.x
+  # release merely because CocoaPods resolved on a different day.
+  pod 'ThingSmartHomeKit', '7.8.0'
+  pod 'ThingSmartBusinessExtensionKit', '7.8.0'
 
   # Do not add pairing/activation BizBundles or BLEExtra merely to make the
   # authenticated observation experiment work. The already-activated-device
