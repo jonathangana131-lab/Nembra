@@ -4,6 +4,7 @@ struct NembraCaptureBuildIdentity: Codable, Equatable, Sendable {
     static let buildIdentifierInfoKey = "NembraCaptureBuildIdentifier"
     static let sourceCommitSHAInfoKey = "NembraCaptureSourceCommitSHA"
     static let tuyaDependencyLockSHA256InfoKey = "NembraCaptureTuyaDependencyLockSHA256"
+    static let fieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"
 
     let buildIdentifier: String
     let sourceCommitSHA: String
