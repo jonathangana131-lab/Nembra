@@ -4,17 +4,20 @@ import Testing
 
 @Suite("Tuya application account UID export custody")
 struct TuyaApplicationAccountUIDExportCustodySourceTests {
-    @Test("accepted event scrubs the exact leased account UID from untrusted keys and values")
-    func acceptedEventScrubsExactLeasedAccountUID() throws {
+    @Test("accepted event scrubs the exact admitted account UID from untrusted keys and values")
+    func acceptedEventScrubsExactAdmittedAccountUID() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let receiver = String(try section(in: source, from: "private func receivedApplicationUpdate(", to: "private func startWatchdog"))
-        #expect(receiver.contains("redactedApplicationEventDetails(update)"))
-        #expect(receiver.contains("membershipAccountUID?.trimmingCharacters"))
-        #expect(receiver.contains("let redactedKey = key.replacingOccurrences("))
-        #expect(receiver.contains("value.replacingOccurrences("))
+
+        #expect(receiver.contains("let admittedAccountUID = membershipAccountUID?.trimmingCharacters"))
+        #expect(receiver.contains("redactedApplicationEventDetails("))
+        #expect(receiver.contains("accountUID: admittedAccountUID"))
+        #expect(receiver.contains("let baseKey = redactedText(key)"))
+        #expect(receiver.contains("redacted[admittedKey] = redactedText(value)"))
         #expect(receiver.contains("<redacted-account-uid>"))
         #expect(receiver.contains("options: [.caseInsensitive, .literal]"))
         #expect(!receiver.contains("log(\"tuya_application_update\", update"))
+        #expect(!receiver.contains("return update"))
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
