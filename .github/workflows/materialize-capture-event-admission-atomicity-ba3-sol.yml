@@ -20,12 +20,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Verify exact product parent
+      - name: Verify exact product lineage
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "ba3a1eeae36caca6dd84beaabd0f15f4f0b57925"
-          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/materialize-capture-event-admission-atomicity-ba3-sol.yml"
+          git merge-base --is-ancestor ba3a1eeae36caca6dd84beaabd0f15f4f0b57925 HEAD
+          test "$(git diff --name-only ba3a1eeae36caca6dd84beaabd0f15f4f0b57925 HEAD)" = ".github/workflows/materialize-capture-event-admission-atomicity-ba3-sol.yml"
 
       - name: Materialize lifecycle and custody hardening
         shell: bash
@@ -53,8 +53,6 @@ jobs:
           path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           source = path.read_text(encoding='utf-8')
 
-          # Leaving Secure Link after the final correlation window currently misses the live
-          # scanner/lease branch. Explicitly retire already-correlated/selected target authority.
           view_anchor = '        guard processCorrelationLease != nil || correlationSession != nil else { return }'
           view_repair = lines(
               '        if phase == .correlated || phase == .selected {',
@@ -69,18 +67,10 @@ jobs:
               '',
               view_anchor
           )
-          source = replace_in_section(
-              source,
-              '    func abandonCorrelationForViewExit() {',
-              '    func appDidLoseForeground() {',
-              view_anchor,
-              view_repair,
-              'view-exit correlated target retirement'
-          )
+          source = replace_in_section(source, '    func abandonCorrelationForViewExit() {', '    func appDidLoseForeground() {', view_anchor, view_repair, 'view-exit correlated target retirement')
 
           receiver_start = '    private func receivedApplicationUpdate('
           receiver_end = '    private func startWatchdog('
-
           guard_old = lines(
               '        guard sdkAccountLoggedIn,',
               '              sdkDeviceMembershipVerified,',
@@ -95,18 +85,9 @@ jobs:
               '              !verifiedAccountUID.isEmpty,',
               '              let driver else {'
           )
-          source = replace_in_section(
-              source,
-              receiver_start,
-              receiver_end,
-              guard_old,
-              guard_new,
-              'capture immutable verified account UID at event admission'
-          )
+          source = replace_in_section(source, receiver_start, receiver_end, guard_old, guard_new, 'immutable UID admission lease')
 
-          # Redact before the first actor suspension. The helper must never reread mutable account
-          # identity after the admission guard has been earned.
-          pre_admission_anchor = lines(
+          custody_old = lines(
               '        applicationUpdateAdmissionsInFlight += 1',
               '        defer { applicationUpdateAdmissionsInFlight -= 1 }',
               '',
@@ -116,7 +97,8 @@ jobs:
               '            var eventDetails = redactedApplicationEventDetails(update)',
               '            eventDetails["generation"] = String(token.diagnosticGeneration)'
           )
-          pre_admission_repair = lines(
+          custody_new = lines(
+              '        // Freeze identity-dependent export custody before the first actor suspension.',
               '        let eventDetailsWithoutProvenance = redactedApplicationEventDetails(',
               '            update,',
               '            verifiedAccountUID: verifiedAccountUID',
@@ -131,14 +113,7 @@ jobs:
               '            var eventDetails = eventDetailsWithoutProvenance',
               '            eventDetails["generation"] = String(token.diagnosticGeneration)'
           )
-          source = replace_in_section(
-              source,
-              receiver_start,
-              receiver_end,
-              pre_admission_anchor,
-              pre_admission_repair,
-              'pre-suspension account UID redaction'
-          )
+          source = replace_in_section(source, receiver_start, receiver_end, custody_old, custody_new, 'pre-suspension UID custody')
 
           helper_old = lines(
               '    private func redactedApplicationEventDetails(_ update: [String: String]) -> [String: String] {',
@@ -196,54 +171,56 @@ jobs:
               '        return redacted',
               '    }'
           )
-          source = replace_in_section(
-              source,
-              receiver_start,
-              receiver_end,
-              helper_old,
-              helper_new,
-              'immutable UID helper and collision-preserving redaction'
-          )
+          source = replace_in_section(source, receiver_start, receiver_end, helper_old, helper_new, 'collision-preserving UID redaction')
           path.write_text(source, encoding='utf-8')
 
-          # Strengthen the current UID custody source contract around the actual race boundary.
           uid_test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift')
-          uid_test = uid_test_path.read_text(encoding='utf-8')
-          old_test_body = '''        #expect(receiver.contains("redactedApplicationEventDetails(update)"))
-              #expect(receiver.contains("membershipAccountUID?.trimmingCharacters"))
-              #expect(receiver.contains("let redactedKey = key.replacingOccurrences("))
-              #expect(receiver.contains("value.replacingOccurrences("))
-              #expect(receiver.contains("<redacted-account-uid>"))
-              #expect(receiver.contains("options: [.caseInsensitive, .literal]"))
-              #expect(!receiver.contains("log(\\\"tuya_application_update\\\", update"))
-          '''
-          new_test_body = '''        #expect(receiver.contains("let verifiedAccountUID = membershipAccountUID?.trimmingCharacters"))
-              #expect(receiver.contains("redactedApplicationEventDetails("))
-              #expect(receiver.contains("verifiedAccountUID: verifiedAccountUID"))
-              #expect(receiver.contains("let redactedKey = key.replacingOccurrences("))
-              #expect(receiver.contains("let redactedValue = value.replacingOccurrences("))
-              #expect(receiver.contains("<redacted-account-uid>"))
-              #expect(receiver.contains("options: [.caseInsensitive, .literal]"))
-              #expect(receiver.contains("while redacted[uniqueKey] != nil"))
-              #expect(receiver.contains("collisionSuffix"))
-              #expect(!receiver.contains("guard let accountUID = membershipAccountUID"))
-              #expect(!receiver.contains("return update"))
-              #expect(!receiver.contains("log(\\\"tuya_application_update\\\", update"))
+          uid_test_path.write_text('''import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
 
-              let capturedUID = try #require(receiver.range(of: "let verifiedAccountUID = membershipAccountUID?.trimmingCharacters"))
-              let preRedaction = try #require(receiver.range(of: "let eventDetailsWithoutProvenance = redactedApplicationEventDetails("))
-              let firstLedgerAwait = try #require(receiver.range(of: "try await sessionLedger.recordApplicationUpdate"))
-              #expect(capturedUID.lowerBound < preRedaction.lowerBound)
-              #expect(preRedaction.lowerBound < firstLedgerAwait.lowerBound)
-          '''
-          if uid_test.count(old_test_body) != 1:
-              raise SystemExit('UID source-test strengthening anchor missing')
-          uid_test_path.write_text(uid_test.replace(old_test_body, new_test_body, 1), encoding='utf-8')
+          @Suite("Tuya application account UID export custody")
+          struct TuyaApplicationAccountUIDExportCustodySourceTests {
+              @Test("accepted event freezes the exact leased account UID before actor suspension")
+              func acceptedEventFreezesExactLeasedAccountUID() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let receiver = String(try section(in: source, from: "private func receivedApplicationUpdate(", to: "private func startWatchdog"))
+
+                  #expect(receiver.contains("let verifiedAccountUID = membershipAccountUID?.trimmingCharacters"))
+                  #expect(receiver.contains("verifiedAccountUID: verifiedAccountUID"))
+                  #expect(receiver.contains("let redactedKey = key.replacingOccurrences("))
+                  #expect(receiver.contains("let redactedValue = value.replacingOccurrences("))
+                  #expect(receiver.contains("<redacted-account-uid>"))
+                  #expect(receiver.contains("options: [.caseInsensitive, .literal]"))
+                  #expect(receiver.contains("while redacted[uniqueKey] != nil"))
+                  #expect(receiver.contains("collisionSuffix"))
+                  #expect(!receiver.contains("guard let accountUID = membershipAccountUID"))
+                  #expect(!receiver.contains("return update"))
+                  #expect(!receiver.contains("log(\"tuya_application_update\", update"))
+
+                  let capturedUID = try #require(receiver.range(of: "let verifiedAccountUID = membershipAccountUID?.trimmingCharacters"))
+                  let preRedaction = try #require(receiver.range(of: "let eventDetailsWithoutProvenance = redactedApplicationEventDetails("))
+                  let firstLedgerAwait = try #require(receiver.range(of: "try await sessionLedger.recordApplicationUpdate"))
+                  #expect(capturedUID.lowerBound < preRedaction.lowerBound)
+                  #expect(preRedaction.lowerBound < firstLedgerAwait.lowerBound)
+              }
+
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let a = source.range(of: start), let b = source.range(of: end, range: a.upperBound..<source.endIndex) else { throw Error.sectionMissing }
+                  return source[a.lowerBound..<b.lowerBound]
+              }
+              private func readRepositoryFile(_ path: String) throws -> String {
+                  let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+                  return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+              }
+              private enum Error: Swift.Error { case sectionMissing }
+          }
+          '''.replace('          ', ''), encoding='utf-8')
 
           target_test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundTargetRevocationSourceTests.swift')
           target_test = target_test_path.read_text(encoding='utf-8')
           insert_anchor = '    @Test("foreground reactivation cannot reopen membership after official driver handoff")\n'
-          inserted_test = '''    @Test("view exit cannot retain an already-correlated or selected target")
+          inserted = '''    @Test("view exit cannot retain an already-correlated or selected target")
               func viewExitCannotCarryTargetAcrossLifetime() throws {
                   let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
                   let controller = String(try section(
@@ -256,16 +233,15 @@ jobs:
                       from: "func abandonCorrelationForViewExit()",
                       to: "func appDidLoseForeground()"
                   ))
-
                   #expect(cleanup.contains("phase == .correlated || phase == .selected"))
                   #expect(cleanup.contains("resetDiscoverySessionOnly()"))
                   #expect(cleanup.contains("target_correlation_abandoned_on_view_exit"))
               }
 
-          '''
+          '''.replace('          ', '')
           if target_test.count(insert_anchor) != 1:
               raise SystemExit('view-exit regression insertion anchor missing')
-          target_test_path.write_text(target_test.replace(insert_anchor, inserted_test + insert_anchor, 1), encoding='utf-8')
+          target_test_path.write_text(target_test.replace(insert_anchor, inserted + insert_anchor, 1), encoding='utf-8')
           PY
 
       - name: Verify exact source contracts
@@ -278,28 +254,24 @@ jobs:
           start = source.index('    private func receivedApplicationUpdate(')
           end = source.index('    private func startWatchdog(', start)
           receiver = source[start:end]
-          required = [
+          for token in [
               'let verifiedAccountUID = membershipAccountUID?.trimmingCharacters',
               'let eventDetailsWithoutProvenance = redactedApplicationEventDetails(',
               'verifiedAccountUID: verifiedAccountUID',
               'while redacted[uniqueKey] != nil',
               'collisionSuffix',
               'eventDetails["generation"] = String(token.diagnosticGeneration)',
-          ]
-          for token in required:
+          ]:
               if token not in receiver:
-                  raise SystemExit(f'missing event-admission atomicity contract: {token}')
+                  raise SystemExit(f'missing event-admission contract: {token}')
           if receiver.index('let eventDetailsWithoutProvenance = redactedApplicationEventDetails(') > receiver.index('try await sessionLedger.recordApplicationUpdate'):
-              raise SystemExit('account UID redaction still occurs after actor suspension')
+              raise SystemExit('identity redaction occurs after actor suspension')
           if 'guard let accountUID = membershipAccountUID' in receiver or 'return update' in receiver:
-              raise SystemExit('redaction helper can still reread mutable UID or fail open')
-
-          view_start = source.index('    func abandonCorrelationForViewExit() {')
-          view_end = source.index('    func appDidLoseForeground() {', view_start)
-          view = source[view_start:view_end]
+              raise SystemExit('UID redaction can still reread mutable identity or fail open')
+          view = source[source.index('    func abandonCorrelationForViewExit() {'):source.index('    func appDidLoseForeground() {')]
           for token in ['phase == .correlated || phase == .selected', 'resetDiscoverySessionOnly()', 'target_correlation_abandoned_on_view_exit']:
               if token not in view:
-                  raise SystemExit(f'missing view-exit target retirement contract: {token}')
+                  raise SystemExit(f'missing view-exit target retirement: {token}')
           print('Capture event-admission atomicity + view-exit authority: PASS')
           PY
           git diff --check
@@ -314,10 +286,7 @@ jobs:
           git config user.name 'nembra-sol-materializer'
           git config user.email 'actions@users.noreply.github.com'
           git rm .github/workflows/materialize-capture-event-admission-atomicity-ba3-sol.yml
-          git add NembraApp/App/NembraCaptureEntrypoint.swift \
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift \
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundTargetRevocationSourceTests.swift \
-            .github/workflows/materialize-capture-event-admission-atomicity-ba3-sol.yml
+          git add -A
           git diff --cached --check
           git commit -m 'fix(capture): freeze account identity at event admission'
           git push origin HEAD:fix/v14-capture-event-admission-atomicity-ba3-sol
