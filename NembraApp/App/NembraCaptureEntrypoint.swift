@@ -3108,6 +3108,8 @@ private struct SecureLinkView: View {
                 Text("Restore the missing requirement below. This stopped attempt will not be reused.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+
+                failureDiagnosticsControls
             }
         }
     }
@@ -3142,6 +3144,8 @@ private struct SecureLinkView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+
+                failureDiagnosticsControls
             }
         }
     }
@@ -3213,6 +3217,43 @@ private struct SecureLinkView: View {
         }
         .accessibilityElement(children: .contain)
     }
+
+    private var failureDiagnosticsControls: some View {
+    VStack(alignment: .leading, spacing: 10) {
+        Divider()
+            .overlay(.white.opacity(0.10))
+
+        Text("FAILED ATTEMPT DIAGNOSTICS")
+            .font(.caption2.bold())
+            .tracking(1.1)
+            .foregroundStyle(.orange)
+
+        Text("Sanitized diagnostics describe this stopped attempt only. They are not an accepted Capture artifact or physical success.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+
+        if let data = test.exportData {
+            ShareLink(item: SecureTransfer(data: data, name: test.exportName), preview: SharePreview(test.exportName)) {
+                Label("Share diagnostics", systemImage: "square.and.arrow.up")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .accessibilityHint("Shares sanitized diagnostics from this stopped attempt. This is not an accepted Capture artifact.")
+        } else {
+            Button {
+                test.prepareExport()
+            } label: {
+                Label("Prepare diagnostics", systemImage: "doc.badge.gearshape")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .accessibilityHint("Prepares sanitized diagnostic JSON for this stopped attempt without creating accepted evidence.")
+        }
+    }
+}
 
     private var sdkAuthorizationPanel: some View {
         panel {
