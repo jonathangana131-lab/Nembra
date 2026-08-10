@@ -59,6 +59,8 @@ final class VehicleStore {
     var lastErrorMessage: String?
     private(set) var retainedBatteryObservedAt: Date?
     private(set) var retainedBatteryAuthority: BatteryObservationAuthority?
+    private var lastConfirmedBatteryPercent: Int?
+    private var lastConfirmedBatteryObservedAt: Date?
     private var lastConfirmedBatteryAuthority: BatteryObservationAuthority?
 
     /// Battery truth is deliberately joined separately from vehicle-wide data
@@ -185,10 +187,30 @@ final class VehicleStore {
             resolvedState.lastUpdated = snapshot.observedAt
             retainedBatteryObservedAt = snapshot.observedAt
             retainedBatteryAuthority = snapshot.authority
+            lastConfirmedBatteryPercent = snapshot.percent
+            lastConfirmedBatteryObservedAt = snapshot.observedAt
             lastConfirmedBatteryAuthority = snapshot.authority
         }
 
         self.state = resolvedState
+
+        // A connected authoritative initial state is already confirmed evidence.
+        // Seed the same chronology used by later stream updates so an immediate
+        // disconnect cannot discard or re-date it.
+        if resolvedState.connection == .connected,
+           let percent = resolvedState.batteryPercent,
+           let observation = AuthoritativeBatteryObservation(
+               percent: percent,
+               authority: batteryObservationAuthority,
+               observedAt: resolvedState.lastUpdated
+           ) {
+            lastConfirmedBatteryPercent = observation.percent
+            lastConfirmedBatteryObservedAt = observation.observedAt
+            lastConfirmedBatteryAuthority = observation.authority
+            if let snapshot = observation.retained() {
+                try? retainedBatteryStorage?.save(snapshot)
+            }
+        }
     }
 
     deinit {
@@ -329,32 +351,41 @@ final class VehicleStore {
                 authority: batteryObservationAuthority,
                 observedAt: incomingState.lastUpdated
             ) {
-                lastConfirmedBatteryAuthority = observation.authority
-                if let snapshot = observation.retained() {
-                    do {
-                        try retainedBatteryStorage?.save(snapshot)
-                    } catch {
-                        // Persistence must never turn confirmed live telemetry into an error state.
-                        // The current session remains authoritative even if local continuity storage fails.
+                if shouldAcceptConfirmedBatteryObservation(observation) {
+                    lastConfirmedBatteryPercent = observation.percent
+                    lastConfirmedBatteryObservedAt = observation.observedAt
+                    lastConfirmedBatteryAuthority = observation.authority
+                    if let snapshot = observation.retained() {
+                        do {
+                            try retainedBatteryStorage?.save(snapshot)
+                        } catch {
+                            // Persistence must never turn confirmed live telemetry into an error state.
+                            // The current session remains authoritative even if local continuity storage fails.
+                        }
                     }
+                } else if let previousPercent = lastConfirmedBatteryPercent {
+                    // A replayed aggregate publication or delayed older battery value does not
+                    // manufacture newer evidence or roll shared Battery truth backward. Keep the
+                    // previously confirmed value while unrelated live vehicle fields may advance.
+                    nextState.batteryPercent = previousPercent
                 }
             } else {
                 // An unclassified or invalid transport value does not enter shared product state.
                 // This prevents Home, Dashboard, Vehicle, Rides, or any future consumer from
                 // accidentally treating a raw integer as Battery truth before hardware evidence
-                // establishes its meaning.
+                // establishes its meaning. Previously confirmed retained evidence stays intact.
                 nextState.batteryPercent = nil
-                lastConfirmedBatteryAuthority = nil
             }
         } else if incomingState.connection != .connected {
             // A disconnect/reconnect lifecycle update is not a battery observation. Its payload
             // cannot replace the last confirmed value or create a new one. Preserve the prior
-            // confirmed value and its original chronology when one exists; otherwise fail closed.
-            if let previousPercent = state.batteryPercent,
+            // confirmed value and its original battery chronology when one exists; otherwise fail closed.
+            if let previousPercent = lastConfirmedBatteryPercent,
+               let observedAt = lastConfirmedBatteryObservedAt,
                let authority = lastConfirmedBatteryAuthority {
                 nextState.batteryPercent = previousPercent
-                nextState.lastUpdated = state.lastUpdated
-                retainedBatteryObservedAt = retainedBatteryObservedAt ?? state.lastUpdated
+                nextState.lastUpdated = observedAt
+                retainedBatteryObservedAt = observedAt
                 retainedBatteryAuthority = authority
             } else {
                 nextState.batteryPercent = nil
@@ -364,6 +395,26 @@ final class VehicleStore {
         }
 
         state = nextState
+    }
+
+    /// Runtime uses the same evidence chronology rule as durable retained storage:
+    /// exact value/authority replays are not new observations, and delayed older
+    /// evidence cannot replace newer confirmed truth.
+    private func shouldAcceptConfirmedBatteryObservation(
+        _ candidate: AuthoritativeBatteryObservation
+    ) -> Bool {
+        guard let previousPercent = lastConfirmedBatteryPercent,
+              let previousObservedAt = lastConfirmedBatteryObservedAt,
+              let previousAuthority = lastConfirmedBatteryAuthority else {
+            return true
+        }
+
+        if candidate.percent == previousPercent,
+           candidate.authority == previousAuthority {
+            return false
+        }
+
+        return candidate.observedAt > previousObservedAt
     }
 
     /// Retires current speed authority and invalidates every in-flight refresh.
