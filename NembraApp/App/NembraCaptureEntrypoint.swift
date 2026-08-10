@@ -474,6 +474,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        if phase == .correlated || phase == .selected {
+            pendingCorrelatedTargetID = nil
+            selectedID = nil
+            targetCorrelationOperatorConfirmed = false
+            phase = .failed
+            message = "Capture left Secure Link after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the prior target cannot cross a view lifetime. Completed correlation evidence remains available for diagnostics."
+            log("target_correlation_abandoned_on_view_exit")
+            return
+        }
         guard processCorrelationLease != nil || correlationSession != nil else { return }
         // Existing helper stops package transport before releasing this controller's lease.
         abandonPackageCorrelation()
@@ -516,12 +525,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
 
         if phase == .correlated || phase == .selected {
-            // Final-window sealing already retires the package scanner/lease. These phases can
-            // therefore hold actionable target authority with no live transport object to inspect.
-            // Foreground loss must invalidate that authority explicitly before a retry.
-            resetDiscoverySessionOnly()
+            // Final-window sealing already retired the scanner/lease. Revoke target reuse authority
+            // without erasing the completed OFF1→ON1→OFF2→ON2 evidence needed for diagnostics.
+            pendingCorrelatedTargetID = nil
+            selectedID = nil
+            targetCorrelationOperatorConfirmed = false
             phase = .failed
-            message = "Capture left the foreground after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the prior correlated/selected target cannot cross a foreground-integrity break."
+            message = "Capture left the foreground after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the prior correlated/selected target cannot cross a foreground-integrity break. Completed correlation evidence remains available for diagnostics."
             log("foreground_integrity_lost_after_target_correlation")
             return
         }
