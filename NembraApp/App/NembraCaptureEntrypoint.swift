@@ -496,6 +496,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func startBaseline() {
+        if phase == .failed && !canRestartFromFreshOFF1 {
+            message = "This failed attempt still retains session authority. Relaunch Capture before another OFF1 attempt."
+            log("in_process_restart_rejected")
+            return
+        }
         guard buildIdentity.isAuthoritativeFieldBuild else {
             failLocally(buildIdentity.blocker ?? "Exact field-build provenance is unavailable.", "field_build_identity_unavailable")
             return
@@ -2271,7 +2276,24 @@ private struct SecureLinkView: View {
         case .accepted:
             completionPanel
         case .failed:
-            failurePanel
+            if !test.fieldBuildIsAuthoritative || !test.privateConfig {
+                VStack(spacing: 16) {
+                    failureRecoveryContextPanel
+                    preflightPanel
+                }
+            } else if !sdkAccount.loggedIn || !test.sdkAccountLoggedIn {
+                VStack(spacing: 16) {
+                    failureRecoveryContextPanel
+                    sdkAuthorizationPanel
+                }
+            } else if !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized {
+                VStack(spacing: 16) {
+                    failureRecoveryContextPanel
+                    preflightPanel
+                }
+            } else {
+                failurePanel
+            }
         case .baseline, .scanning, .powerOn, .correlated:
             correlationPanel
         case .selected, .authenticating, .observing:
@@ -2464,6 +2486,22 @@ private struct SecureLinkView: View {
                         requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)
                     }
                 }
+            }
+        }
+    }
+
+    private var failureRecoveryContextPanel: some View {
+        panel {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Capture paused", systemImage: "exclamationmark.circle")
+                    .font(.title2.bold())
+                    .foregroundStyle(.orange)
+                Text(test.message)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Restore the missing prerequisite below. A new OFF1 attempt can begin only after the prior attempt is safely restartable; failed evidence is never reused.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
     }
