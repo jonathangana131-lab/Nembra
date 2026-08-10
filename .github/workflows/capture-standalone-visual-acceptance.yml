@@ -33,11 +33,18 @@ jobs:
             echo "GitHub source SHA is not canonical lowercase 40-hex." >&2
             exit 1
           fi
-          dependency_sha="$(shasum -a 256 Podfile.lock | awk '{print $1}')"
+
+          # The public standalone project is deliberately unprovisioned and the
+          # private field Podfile.lock is not committed. Stamp a deterministic
+          # visual-only fixture so the compiled provenance field remains shaped
+          # and self-consistent without pretending this screenshot build owns
+          # private Tuya dependency provenance.
+          dependency_sha="$(printf '%s' 'nembra-capture-public-unprovisioned-visual-v1' | shasum -a 256 | awk '{print $1}')"
           if [[ ! "$dependency_sha" =~ ^[0-9a-f]{64}$ ]]; then
-            echo "Could not derive Tuya dependency-lock SHA-256." >&2
+            echo "Could not derive deterministic visual-only dependency fixture." >&2
             exit 1
           fi
+
           label="capture-v14-${source_sha:0:12}"
           rm -rf /tmp/NembraCaptureProvenanceDerived
           xcodebuild \
@@ -55,6 +62,7 @@ jobs:
 
           plist='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
           test -f "$plist"
+          test "$(plutil -extract CFBundleIdentifier raw -o - "$plist")" = 'com.jonathangana131.nembra.capturelearn'
           test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
           test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$source_sha"
           test "$(plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist")" = "$dependency_sha"
