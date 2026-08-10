@@ -17,18 +17,122 @@ jobs:
         with:
           ref: product/v14-capture-primary-language-380-sol
           fetch-depth: 0
-      - name: Guard and cherry-pick reviewed language delta
+
+      - name: Apply rider-first copy to exact Apple-account product
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          blob = subprocess.check_output(["git", "hash-object", str(path)], text=True).strip()
+          if blob != "e354afb4e07857f31e2f86514538ed10839476c1":
+              raise SystemExit(f"unexpected Entrypoint blob before semantic transform: {blob}")
+
+          text = path.read_text()
+          replacements = {
+              '"The next step is passive Bluetooth correlation. Keep the scooter stationary and begin with it powered off."':
+                  '"Next, Nembra will match this scooter by its OFF → ON → OFF → ON signal pattern. Keep the scooter stationary and begin with it powered off."',
+              '"Capture stays locked until the exact field build, Tuya SDK session, and this scooter\'s current account membership are all proven."':
+                  '"Capture stays locked until this Capture build, your Tuya account, and this scooter in that account are all confirmed."',
+              'requirementRow("Exact field build", ready: test.fieldBuildIsAuthoritative)':
+                  'requirementRow("Capture build", ready: test.fieldBuildIsAuthoritative)',
+              'requirementRow("Official Tuya SDK", ready: test.privateConfig)':
+                  'requirementRow("Tuya secure service", ready: test.privateConfig)',
+              '.accessibilityHint("Starts the first passive Bluetooth correlation window.")':
+                  '.accessibilityHint("Starts the first read-only signal check with the scooter powered off.")',
+              'Text("One Bluetooth target repeated through the full OFF → ON → OFF → ON pattern. Confirm it for this attempt before Tuya takes over the secure link.")':
+                  'Text("One nearby signal repeated through the full OFF → ON → OFF → ON pattern. Confirm this signal for the current attempt before Nembra opens the secure read-only link.")',
+              '.accessibilityHint("Finishes only when the package-owned scan window has earned its required evidence duration.")':
+                  '.accessibilityHint("Finishes only after this read-only signal check has run long enough to be valid.")',
+              'Text("Historical UUID, name, RSSI, FD50, and Tuya hints never authorize the target.")':
+                  'Text("Only the full OFF → ON → OFF → ON pattern can authorize the nearby signal for this attempt.")',
+              'Text("Target confirmed")':
+                  'Text("Scooter signal confirmed")',
+              'Text("Tuya can now become the sole Bluetooth owner. Capture remains read-only. No DP query or scooter command is authorized by this surface.")':
+                  'Text("Nembra can now open the secure Tuya link. Capture stays read-only and cannot send scooter commands.")',
+              'Text("Tuya owns Bluetooth now. Capture is waiting for the supported local session to become current.")':
+                  'Text("Tuya owns the secure Bluetooth link now. Capture is waiting for this scooter\'s current read-only session.")',
+              'Text("Keep Capture in the foreground and leave the scooter untouched while the accepted observation horizon is earned.")':
+                  'Text("Keep Capture in the foreground and leave the scooter untouched until this read-only observation is complete.")',
+              'Text("Authenticated observation")':
+                  'Text("Read-only observation")',
+              'Text("Restore the missing prerequisite below. The failed attempt is not reused as evidence.")':
+                  'Text("Restore the missing requirement below. This stopped attempt will not be reused.")',
+              'Text("Nothing was promoted after the blocker. Re-establish the required field authority, then begin a fresh OFF1 attempt.")':
+                  'Text("Nothing from the stopped attempt will carry forward. Restore the required setup, then begin again with the scooter powered off.")',
+              'Text("The prior session generation was not proven retired in-process, so Capture will not offer an OFF1 restart here.")':
+                  'Text("The previous secure session did not fully close inside the app, so Capture will not start another attempt until you relaunch.")',
+              'case .baseline, .scanning, .powerOn, .correlated: return "TARGET CORRELATION"':
+                  'case .baseline, .scanning, .powerOn, .correlated: return "FIND SCOOTER"',
+              'return test.canRestartFromFreshOFF1\n                ? "No evidence was promoted past the blocker. Restore the required prerequisite, then restart from scooter OFF."\n                : "No evidence was promoted past the blocker. This session is not proven retired; relaunch Capture before another attempt."':
+                  'return test.canRestartFromFreshOFF1\n                ? "Nothing from the stopped attempt will carry forward. Restore the missing requirement, then restart with the scooter powered off."\n                : "The stopped attempt cannot be safely retired inside the app. Relaunch Capture before another attempt."',
+              'return "A fresh four-window power pattern identifies the nearby Bluetooth target for this attempt only."':
+                  'return "The OFF → ON → OFF → ON signal pattern identifies the nearby scooter for this attempt only."',
+              'return "Tuya becomes the sole Bluetooth owner while Capture stays read-only."':
+                  'return "Nembra opens one secure Tuya connection while Capture stays read-only."',
+              'return "Keep the scooter stationary and Capture in the foreground until the accepted horizon is sealed."':
+                  'return "Keep the scooter stationary and Capture in the foreground until the read-only observation is complete."',
+              'return authorityReady\n                ? "Everything required for a passive current-attempt target correlation is ready."\n                : "Prove the exact field build and same-account Tuya authority before Bluetooth starts."':
+                  'return authorityReady\n                ? "Everything required to find this scooter by its current signal pattern is ready."\n                : "Confirm this Capture build and the Tuya account that owns the scooter before Bluetooth starts."',
+          }
+          for old, new in replacements.items():
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected one primary-copy anchor, found {count}: {old[:120]!r}")
+              text = text.replace(old, new, 1)
+          path.write_text(text)
+
+      - name: Add regression and validate preserved account/product truth
+        shell: python
+        run: |
+          from pathlib import Path
+          test = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCapturePrimaryLanguageSourceTests.swift")
+          test.write_text(r'''import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Capture primary rider language")
+          struct TuyaCapturePrimaryLanguageSourceTests {
+              @Test("primary Capture flow is rider-first while Engineering Details keeps exact protocol truth")
+              func primaryLanguageBoundary() throws {
+                  let app = try read("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let primaryStart = try #require(app.range(of: "private var preflightPanel"))
+                  let detailsStart = try #require(app.range(of: "private var engineeringDisclosure"))
+                  let primary = String(app[primaryStart.lowerBound..<detailsStart.lowerBound])
+                  let details = String(app[detailsStart.lowerBound...])
+                  for forbidden in ["Historical UUID", "RSSI", "FD50", "DP query", "package-owned scan window", "passive Bluetooth correlation", "accepted observation horizon", "required field authority", "prior session generation"] {
+                      #expect(!primary.contains(forbidden))
+                  }
+                  for required in ["OFF → ON → OFF → ON signal pattern", "read-only signal check", "cannot send scooter commands", "Read-only observation", "This stopped attempt will not be reused"] {
+                      #expect(primary.contains(required))
+                  }
+                  #expect(details.contains("raw FD50 bytes"))
+                  #expect(details.contains("No DP query or scooter command"))
+                  #expect(app.contains("ASAuthorizationAppleIDProvider"))
+                  #expect(app.contains("Sign in with Apple"))
+              }
+
+              private func read(_ path: String) throws -> String {
+                  let root = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent().deletingLastPathComponent()
+                      .deletingLastPathComponent().deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+              }
+          }
+          '''.replace("          ", ""))
+
+      - name: Commit clean semantic delta on helper branch
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "380bca6dfa7c4346058aca8286cced23209c970a"
+          git diff --check
+          grep -Fq 'ASAuthorizationAppleIDProvider' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Only the full OFF → ON → OFF → ON pattern can authorize the nearby signal for this attempt.' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Application values are sanitized SDK-level projections, not raw FD50 bytes.' NembraApp/App/NembraCaptureEntrypoint.swift
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCapturePrimaryLanguageSourceTests.swift
+          git diff --cached --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git cherry-pick 44d846faa5271d47dbec0d39b00e8b42821250de
-          git diff HEAD^ --check
-          grep -Fq 'Only the full OFF → ON → OFF → ON pattern can authorize the nearby signal for this attempt.' NembraApp/App/NembraCaptureEntrypoint.swift
-          grep -Fq 'Capture stays read-only and cannot send scooter commands.' NembraApp/App/NembraCaptureEntrypoint.swift
-          grep -Fq 'ASAuthorizationAppleIDProvider' NembraApp/App/NembraCaptureEntrypoint.swift
-          grep -Fq 'Application values are sanitized SDK-level projections, not raw FD50 bytes.' NembraApp/App/NembraCaptureEntrypoint.swift
-          grep -Fq 'No DP query or scooter command is authorized by this surface.' NembraApp/App/NembraCaptureEntrypoint.swift
-          test -s Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCapturePrimaryLanguageSourceTests.swift
+          git commit -m "polish(capture): keep protocol jargon out of Apple account flow"
           git push origin HEAD:product/v14-capture-primary-language-380-sol
