@@ -223,6 +223,95 @@ def _tree_fingerprint(root: Path) -> str:
     return digest.hexdigest()
 
 
+
+def _regular_file_generation_witness(path: Path) -> tuple[int, ...]:
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise ProvenanceError(f"required private build input is unavailable: {path.name}") from error
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise ProvenanceError(f"required private build input is not a regular file: {path.name}")
+    return _stat_identity(metadata)
+
+
+def _tree_generation_witness(
+    root: Path,
+) -> tuple[
+    tuple[tuple[str, str, tuple[int, ...], str], ...],
+    tuple[tuple[str, tuple[str, ...]], ...],
+]:
+    try:
+        root_metadata = root.lstat()
+    except OSError as error:
+        raise ProvenanceError(f"required private build directory is unavailable: {root.name}") from error
+    if stat.S_ISLNK(root_metadata.st_mode) or not stat.S_ISDIR(root_metadata.st_mode):
+        raise ProvenanceError(f"required private build directory is not a real directory: {root.name}")
+
+    root_resolved = root.resolve(strict=True)
+    observed_states: list[tuple[Path, str, tuple[int, ...], str, str]] = [
+        (root, ".", _stat_identity(root_metadata), "D", "")
+    ]
+    observed_directory_members: dict[Path, tuple[str, tuple[str, ...]]] = {}
+
+    for current_text, directory_names, file_names in os.walk(root, topdown=True, followlinks=False):
+        current = Path(current_text)
+        relative_current = "." if current == root else current.relative_to(root).as_posix()
+        observed_directory_members[current] = (
+            relative_current,
+            tuple(sorted((*directory_names, *file_names), key=os.fsencode)),
+        )
+        kept_directories: list[str] = []
+
+        for name in sorted(directory_names, key=os.fsencode):
+            entry = current / name
+            relative = entry.relative_to(root).as_posix()
+            metadata = entry.lstat()
+            identity = _stat_identity(metadata)
+            if stat.S_ISLNK(metadata.st_mode):
+                target = _assert_internal_symlink(entry, root_resolved)
+                _assert_unchanged_tree_entry(entry, identity, "L")
+                observed_states.append((entry, relative, identity, "L", target))
+            elif stat.S_ISDIR(metadata.st_mode):
+                observed_states.append((entry, relative, identity, "D", ""))
+                kept_directories.append(name)
+            else:
+                raise ProvenanceError("private build tree contains an unsupported directory entry")
+        directory_names[:] = kept_directories
+
+        for name in sorted(file_names, key=os.fsencode):
+            entry = current / name
+            relative = entry.relative_to(root).as_posix()
+            metadata = entry.lstat()
+            identity = _stat_identity(metadata)
+            if stat.S_ISLNK(metadata.st_mode):
+                target = _assert_internal_symlink(entry, root_resolved)
+                _assert_unchanged_tree_entry(entry, identity, "L")
+                observed_states.append((entry, relative, identity, "L", target))
+            elif stat.S_ISREG(metadata.st_mode):
+                observed_states.append((entry, relative, identity, "F", ""))
+            else:
+                raise ProvenanceError("private build tree contains an unsupported file entry")
+
+    for entry, _relative, identity, kind, _target in observed_states:
+        _assert_unchanged_tree_entry(entry, identity, kind)
+    for directory, (_relative, members) in observed_directory_members.items():
+        if _directory_member_names(directory) != members:
+            raise ProvenanceError("private build tree changed while its generation witness was captured")
+
+    states = tuple(
+        sorted(
+            ((relative, kind, identity, target) for _entry, relative, identity, kind, target in observed_states),
+            key=lambda item: os.fsencode(item[0]),
+        )
+    )
+    memberships = tuple(
+        sorted(
+            observed_directory_members.values(),
+            key=lambda item: os.fsencode(item[0]),
+        )
+    )
+    return states, memberships
+
 def build_record(
     *,
     lockfile: Path,
@@ -231,7 +320,21 @@ def build_record(
     identity_podspec: Path,
     identity_sources: Path,
 ) -> dict[str, str]:
-    return {
+    # Capture metadata-generation witnesses for the complete authority set before
+    # hashing any component. The matching after-witnesses prove that all component
+    # digests belonged to one finite private-input snapshot, not merely five
+    # individually stable reads performed at different times.
+    regular_generation_before = (
+        _regular_file_generation_witness(lockfile),
+        _regular_file_generation_witness(security_podspec),
+        _regular_file_generation_witness(identity_podspec),
+    )
+    tree_generation_before = (
+        _tree_generation_witness(security_build),
+        _tree_generation_witness(identity_sources),
+    )
+
+    record = {
         "schema": SCHEMA,
         "podfile_lock_sha256": _read_stable_regular_file_sha256(lockfile)[1],
         "thing_smart_home_kit": THING_SMART_HOME_KIT_VERSION,
@@ -242,6 +345,23 @@ def build_record(
         "private_identity_sources_tree_sha256": _tree_fingerprint(identity_sources),
     }
 
+    regular_generation_after = (
+        _regular_file_generation_witness(lockfile),
+        _regular_file_generation_witness(security_podspec),
+        _regular_file_generation_witness(identity_podspec),
+    )
+    tree_generation_after = (
+        _tree_generation_witness(security_build),
+        _tree_generation_witness(identity_sources),
+    )
+    if (
+        regular_generation_before != regular_generation_after
+        or tree_generation_before != tree_generation_after
+    ):
+        raise ProvenanceError(
+            "private build inputs changed while the whole provenance record was assembled"
+        )
+    return record
 
 def _record_text(record: dict[str, str]) -> str:
     if set(record) != set(_RECORD_KEYS):
