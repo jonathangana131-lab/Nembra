@@ -1,72 +1,33 @@
-name: Capture Field Build Provenance
+name: Capture Final App Closure Patch
 
 on:
   push:
     branches:
-      - capture/field-build-provenance-gpt56
-      - capture/one-time-ble-dump-gpt56
-  pull_request:
+      - repair/v14-capture-progress-scanner-build-sol
     paths:
-      - NembraApp/App/NembraCaptureBuildIdentity.swift
-      - NembraCapture.xcodeproj/project.pbxproj
-      - scripts/field/install_one_time_capture.command
       - .github/workflows/capture-field-build-provenance.yml
-  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  provenance:
-    name: Stamp and verify Capture provenance
-    runs-on: xcode-27
-    timeout-minutes: 20
+  patch:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Verify source contract
+        with:
+          ref: repair/v14-capture-progress-scanner-build-sol
+          fetch-depth: 0
+      - name: Apply reviewed final-app closure transform
         shell: bash
         run: |
           set -euo pipefail
-          identity='NembraApp/App/NembraCaptureBuildIdentity.swift'
-          project='NembraCapture.xcodeproj/project.pbxproj'
-          installer='scripts/field/install_one_time_capture.command'
-
-          bash -n "$installer"
-          grep -Fq 'SOURCE_SHA="$(git rev-parse HEAD)' "$installer"
-          grep -Fq 'BUILD_LABEL="capture-v14-${SOURCE_SHA:0:12}"' "$installer"
-          grep -Fq 'NEMBRA_CAPTURE_BUILD_IDENTIFIER="$BUILD_LABEL"' "$installer"
-          grep -Fq 'NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$SOURCE_SHA"' "$installer"
-
-          grep -Fq 'NembraCaptureBuildIdentity.swift in Sources' "$project"
-          grep -Fq 'INFOPLIST_KEY_NembraCaptureBuildIdentifier = "$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)";' "$project"
-          grep -Fq 'INFOPLIST_KEY_NembraCaptureSourceCommitSHA = "$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)";' "$project"
-
-          grep -Fq 'static let buildIdentifierInfoKey = "NembraCaptureBuildIdentifier"' "$identity"
-          grep -Fq 'static let sourceCommitSHAInfoKey = "NembraCaptureSourceCommitSHA"' "$identity"
-          grep -Fq 'sourceCommitSHA.count == 40' "$identity"
-          grep -Fq 'let expectedIdentifier = "capture-v14-\(sourceCommitSHA.prefix(12))"' "$identity"
-
-      - name: Build stamped standalone Simulator app
-        shell: bash
-        run: |
-          set -euo pipefail
-          sha='0123456789abcdef0123456789abcdef01234567'
-          label='capture-v14-0123456789ab'
-          rm -rf /tmp/NembraCaptureProvenanceDerived
-          xcodebuild \
-            -project NembraCapture.xcodeproj \
-            -scheme 'Nembra Capture' \
-            -configuration Debug \
-            -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath /tmp/NembraCaptureProvenanceDerived \
-            CODE_SIGNING_ALLOWED=NO \
-            NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
-            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" \
-            build
-
-          plist='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
-          test -f "$plist"
-          test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
-          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$sha"
+          python3 Scripts/apply_capture_progress_scanner_build_patch.py
+          rm Scripts/apply_capture_progress_scanner_build_patch.py
+          git show HEAD~2:.github/workflows/capture-field-build-provenance.yml > .github/workflows/capture-field-build-provenance.yml
+          git config user.name nembra-v14-integration
+          git config user.email actions@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(capture): publish correlation readiness and retire legacy scanner"
+          git push origin HEAD:repair/v14-capture-progress-scanner-build-sol
