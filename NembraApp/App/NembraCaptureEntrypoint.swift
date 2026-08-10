@@ -621,7 +621,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
         guard currentConnectionToken == nil else {
             pendingCorrelatedTargetID = nil
-            failLocally("An authenticated generation already owns session authority. Relaunch Capture before confirming another target.", "active_generation_blocks_target_confirmation")
+            if let token = currentConnectionToken {
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    await self.invalidateInternalLifecycle(
+                        token: token,
+                        message: "An unexpected authenticated generation already owned session authority during target confirmation. That exact generation was retired; restart from OFF1 before another attempt.",
+                        kind: "active_generation_blocks_target_confirmation"
+                    )
+                }
+            }
             return
         }
 
@@ -771,10 +780,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
         verifySDKMembership { [weak self] stillAuthorized in
             guard let self else { return }
             guard stillAuthorized,
+                  self.phase == .selected,
+                  self.targetCorrelationOperatorConfirmed,
                   self.sdkAccountLoggedIn,
                   self.accountIdentityLeaseIsAuthorized,
                   self.selectedID == candidate.id else {
-                self.failLocally("Exact scooter/account authority could not be re-verified immediately before BLE authentication.", "sdk_device_membership_recheck_failed")
+                self.failLocally("Exact selected-target confirmation and scooter/account authority could not be re-verified immediately before BLE authentication.", "sdk_device_membership_recheck_failed")
                 return
             }
             self.beginOfficialConnection(candidate: candidate)
@@ -782,8 +793,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func beginOfficialConnection(candidate: Candidate) {
-        guard phase == .selected || phase == .failed else { return }
-        guard candidate.likely,
+        guard phase == .selected else { return }
+        guard targetCorrelationOperatorConfirmed,
+              selectedID == candidate.id,
+              candidate.likely,
               sdkDeviceMembershipVerified,
               sdkAccountLoggedIn,
               accountIdentityLeaseIsAuthorized else {
