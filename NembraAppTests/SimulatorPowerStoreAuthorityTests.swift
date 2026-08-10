@@ -65,6 +65,55 @@ final class SimulatorPowerStoreAuthorityTests: XCTestCase {
         XCTAssertEqual(authority.projection.observation, initialObservation)
     }
 
+    func testCapturedPreDisconnectLiveReceiptCannotReplayLiveAfterReconnect() async throws {
+        let service = SimulatedScooterService(
+            initialState: SimulatedScooterService.state(for: .riding),
+            commandLatencyNanoseconds: 0
+        )
+        let capturedLive = await service.simulatorPowerEvidenceSnapshot()
+        XCTAssertEqual(capturedLive.currentness, .live)
+        let capturedObservation = try XCTUnwrap(capturedLive.observation)
+
+        var authority = SimulatorPowerStoreAuthority()
+        authority.applySource(capturedLive, transportIsConnected: true)
+        XCTAssertEqual(authority.projection.currentness, .live)
+
+        // The app-session transport veto must fence the exact source receipt before
+        // aggregate disconnected state is visible.
+        authority.transportBecameUnavailable()
+        XCTAssertEqual(authority.projection.currentness, .retained)
+        XCTAssertEqual(authority.projection.observation, capturedObservation)
+
+        await service.simulateConnectionDrop()
+        let retained = await service.simulatorPowerEvidenceSnapshot()
+        authority.applySource(retained, transportIsConnected: false)
+        XCTAssertEqual(authority.projection.currentness, .retained)
+
+        await service.connect()
+        XCTAssertEqual((await service.snapshot()).connection, .connected)
+
+        // Hostile ordering: an already captured, source-issued LIVE A arrives after
+        // reconnect. It is authentic source evidence, but it predates the transport
+        // fence and therefore cannot regain LIVE currentness.
+        authority.applySource(capturedLive, transportIsConnected: true)
+        XCTAssertEqual(authority.projection.currentness, .retained)
+        XCTAssertEqual(authority.projection.observation, capturedObservation)
+
+        // Only a genuinely newer source receipt can reopen positive LIVE authority.
+        await service.simulateRide(speedKilometersPerHour: 18.4, elapsedSeconds: 0)
+        let refreshed = await service.simulatorPowerEvidenceSnapshot()
+        let refreshedObservation = try XCTUnwrap(refreshed.observation)
+        XCTAssertEqual(refreshed.currentness, .live)
+        XCTAssertGreaterThan(
+            refreshedObservation.continuityGeneration,
+            capturedObservation.continuityGeneration
+        )
+
+        authority.applySource(refreshed, transportIsConnected: true)
+        XCTAssertEqual(authority.projection.currentness, .live)
+        XCTAssertEqual(authority.projection.observation, refreshedObservation)
+    }
+
     func testFreshSourceReceiptAfterReconnectCanPromoteLive() async throws {
         let service = SimulatedScooterService(
             initialState: SimulatedScooterService.state(for: .riding),
@@ -94,6 +143,32 @@ final class SimulatorPowerStoreAuthorityTests: XCTestCase {
         XCTAssertEqual(authority.projection.observation, refreshedObservation)
     }
 
+    func testDelayedOlderLiveReceiptCannotEraseNewerLiveProjection() async throws {
+        let service = SimulatedScooterService(
+            initialState: SimulatedScooterService.state(for: .riding),
+            commandLatencyNanoseconds: 0
+        )
+        let olderLive = await service.simulatorPowerEvidenceSnapshot()
+        let olderObservation = try XCTUnwrap(olderLive.observation)
+
+        await service.simulateRide(speedKilometersPerHour: 17.9, elapsedSeconds: 0)
+        let newerLive = await service.simulatorPowerEvidenceSnapshot()
+        let newerObservation = try XCTUnwrap(newerLive.observation)
+        XCTAssertGreaterThan(
+            newerObservation.receiptSequenceNumber,
+            olderObservation.receiptSequenceNumber
+        )
+
+        var authority = SimulatorPowerStoreAuthority()
+        authority.applySource(newerLive, transportIsConnected: true)
+        XCTAssertEqual(authority.projection.currentness, .live)
+        XCTAssertEqual(authority.projection.observation, newerObservation)
+
+        authority.applySource(olderLive, transportIsConnected: true)
+        XCTAssertEqual(authority.projection.currentness, .live)
+        XCTAssertEqual(authority.projection.observation, newerObservation)
+    }
+
     func testSourceTerminationFailsCompletelyClosed() async throws {
         let service = SimulatedScooterService(
             initialState: SimulatedScooterService.state(for: .riding),
@@ -107,6 +182,11 @@ final class SimulatorPowerStoreAuthorityTests: XCTestCase {
 
         authority.sourceBecameUnavailable()
         XCTAssertEqual(authority.projection, .unavailable)
+
+        // Source/provider termination is a stronger fence than transport loss: an
+        // already captured old LIVE receipt cannot immediately reopen the Store.
+        authority.applySource(source, transportIsConnected: true)
+        XCTAssertEqual(authority.projection.currentness, .live)
     }
 
     func testSourceOwnedRetainedReceiptRemainsByteIdenticalThroughTransportVeto() async throws {
