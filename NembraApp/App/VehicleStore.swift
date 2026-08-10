@@ -43,6 +43,11 @@ final class VehicleStore {
 
     let profile: VehicleProfile
     let speedInstrumentInterpolationPolicy: SpeedInstrumentInterpolationPolicy
+    /// True only when the app owns the explicit Simulator QA profile, that profile
+    /// declares synthetic power support, and the injected service provides the
+    /// source-owned Simulator power-evidence contract. This is app capability
+    /// authority for mounting Simulator QA instrumentation, not physical ES80 proof.
+    let hasSimulatorPowerEvidenceSource: Bool
     private let service: any ScooterService
     private let retainedBatteryStorage: (any RetainedBatterySnapshotStorage)?
     private let batteryObservationAuthority: BatteryObservationAuthority?
@@ -51,6 +56,10 @@ final class VehicleStore {
     /// Source-owned currentness for speed. Cached `VehicleState` speed never
     /// promotes this value by itself.
     private(set) var speedEvidenceAvailability: SpeedEvidenceAvailability = .unavailable
+    /// Source-owned Simulator propulsion currentness. The immutable observation
+    /// receipt survives SwiftUI view lifetime changes; aggregate `state.powerWatts`
+    /// and view/render clocks never promote this value.
+    private(set) var simulatorPowerEvidenceAvailability: SimulatorPowerEvidenceAvailability = .unavailable
     var pendingCommands: Set<PendingCommand> = []
     var pendingRideMode: RideMode?
     var pendingCruiseValue: Bool?
@@ -124,6 +133,7 @@ final class VehicleStore {
 
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
     @ObservationIgnored private var speedEvidenceTask: Task<Void, Never>?
+    @ObservationIgnored private var simulatorPowerEvidenceTask: Task<Void, Never>?
     @ObservationIgnored private var speedEvidenceConsumerAuthority = SpeedEvidenceConsumerAuthority()
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private let shouldAutoConnectOnStart: Bool
@@ -140,6 +150,9 @@ final class VehicleStore {
         self.profile = service.profile
         self.shouldAutoConnectOnStart = shouldAutoConnectOnStart
         self.speedInstrumentInterpolationPolicy = speedInstrumentInterpolationPolicy
+        self.hasSimulatorPowerEvidenceSource = service.profile == .simulatorQA
+            && service.profile.capabilities.supportsPowerWatts
+            && service is any SimulatorPowerEvidenceProvider
         self.retainedBatteryStorage = retainedBatteryStorage
         self.batteryObservationAuthority = batteryObservationAuthority
 
@@ -216,6 +229,7 @@ final class VehicleStore {
     deinit {
         updatesTask?.cancel()
         speedEvidenceTask?.cancel()
+        simulatorPowerEvidenceTask?.cancel()
     }
 
     func start() async {
@@ -223,6 +237,12 @@ final class VehicleStore {
         didStart = true
 
         let speedEvidenceProvider = service as? any SpeedEvidenceProvider
+        let simulatorPowerEvidenceProvider: (any SimulatorPowerEvidenceProvider)?
+        if hasSimulatorPowerEvidenceSource {
+            simulatorPowerEvidenceProvider = service as? any SimulatorPowerEvidenceProvider
+        } else {
+            simulatorPowerEvidenceProvider = nil
+        }
 
         updatesTask = Task { [weak self, service, speedEvidenceProvider] in
             let stream = await service.stateUpdates()
@@ -268,6 +288,27 @@ final class VehicleStore {
             }
         } else {
             speedEvidenceAvailability = .unavailable
+        }
+
+        if let simulatorPowerEvidenceProvider {
+            simulatorPowerEvidenceTask = Task { [weak self, simulatorPowerEvidenceProvider] in
+                let stream = await simulatorPowerEvidenceProvider.simulatorPowerEvidenceUpdates()
+                for await _ in stream {
+                    guard let self, !Task.isCancelled else { return }
+
+                    // Availability events are wake-ups only. Re-read current source
+                    // state so a slow consumer cannot publish an obsolete queued
+                    // `.live` receipt after the source has already demoted it.
+                    let current = await simulatorPowerEvidenceProvider.simulatorPowerEvidenceSnapshot()
+                    guard !Task.isCancelled else { return }
+                    self.simulatorPowerEvidenceAvailability = current
+                }
+
+                guard let self, !Task.isCancelled else { return }
+                self.simulatorPowerEvidenceAvailability = .unavailable
+            }
+        } else {
+            simulatorPowerEvidenceAvailability = .unavailable
         }
 
         if shouldAutoConnectOnStart {
