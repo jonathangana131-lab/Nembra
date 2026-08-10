@@ -21,7 +21,11 @@ public struct PhysicalCaptureTransportEvidence: Codable, Equatable, Sendable {
     public let meanConnectedIntervalSeconds: Double
     public let provenance: Provenance
 
-    public init(
+    // Physical provenance is authority-bearing. Keep construction module-internal so external
+    // product/package callers cannot manufacture arbitrary values labeled as a physical capture.
+    // Accepted physical facts are exposed through reviewed static ledger entries below. Tests use
+    // @testable import for non-authorizing fixtures without reopening the production authority API.
+    init(
         captureID: String,
         observedPeripheralID: String,
         advertisedLocalName: String,
