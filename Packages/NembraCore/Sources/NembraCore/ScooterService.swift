@@ -16,6 +16,7 @@ public enum ScooterCommandError: Error, Equatable, Sendable {
 public enum SimulatorPowerObservationError: Error, Equatable, Sendable {
     case invalidWatts
     case invalidReceiptSequence
+    case invalidReceiptUptime
     case invalidContinuityGeneration
 }
 
@@ -33,9 +34,11 @@ public struct SimulatorPowerObservation: Equatable, Sendable {
     public let continuityGeneration: UInt64
 
     /// Construction is intentionally module-internal. External consumers may read
-    /// source-issued observations but cannot manufacture one and wrap it in a
-    /// caller-created `.live` availability value. `@testable` package tests still
-    /// exercise the fail-closed numeric/identity guards directly.
+    /// source-issued observations but cannot manufacture one through the public API.
+    /// App-session code must still take positive currentness only from the provider
+    /// stream/snapshot; direct-compilation into Nembra.app does not make arbitrary
+    /// locally constructed values source evidence. `@testable` package tests exercise
+    /// these fail-closed numeric/identity guards directly.
     init(
         watts: Double,
         receiptSequenceNumber: UInt64,
@@ -47,6 +50,9 @@ public struct SimulatorPowerObservation: Equatable, Sendable {
         }
         guard receiptSequenceNumber > 0 else {
             throw SimulatorPowerObservationError.invalidReceiptSequence
+        }
+        guard receivedAtUptimeNanoseconds > 0 else {
+            throw SimulatorPowerObservationError.invalidReceiptUptime
         }
         guard continuityGeneration > 0 else {
             throw SimulatorPowerObservationError.invalidContinuityGeneration
