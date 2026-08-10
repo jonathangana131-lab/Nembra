@@ -2569,19 +2569,40 @@ private struct SecureLinkView: View {
     private var correlationPanel: some View {
         panel {
             VStack(alignment: .leading, spacing: 18) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("FIND SCOOTER")
-                            .font(.caption2.bold())
-                            .tracking(1.2)
-                            .foregroundStyle(.cyan)
-                        Text(test.phase == .correlated ? "Scooter signal found" : test.correlationWindowLabel)
-                            .font(.title2.bold())
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("FIND SCOOTER")
+                                .font(.caption2.bold())
+                                .tracking(1.2)
+                                .foregroundStyle(.cyan)
+                            Text(test.phase == .correlated ? "Scooter signal found" : test.correlationWindowLabel)
+                                .font(.title2.bold())
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Text("\(correlationDisplayedWindowOrdinal)/4")
+                            .font(.title3.monospacedDigit().bold())
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Correlation progress")
+                            .accessibilityValue("\(correlationDisplayedWindowOrdinal) of 4 windows")
                     }
-                    Spacer()
-                    Text("\(correlationDisplayedWindowOrdinal)/4")
-                        .font(.title3.monospacedDigit().bold())
-                        .foregroundStyle(.secondary)
+                } else {
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("FIND SCOOTER")
+                                .font(.caption2.bold())
+                                .tracking(1.2)
+                                .foregroundStyle(.cyan)
+                            Text(test.phase == .correlated ? "Scooter signal found" : test.correlationWindowLabel)
+                                .font(.title2.bold())
+                        }
+                        Spacer()
+                        Text("\(correlationDisplayedWindowOrdinal)/4")
+                            .font(.title3.monospacedDigit().bold())
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Correlation progress")
+                            .accessibilityValue("\(correlationDisplayedWindowOrdinal) of 4 windows")
+                    }
                 }
 
                 if test.phase == .correlated {
@@ -2682,14 +2703,25 @@ private struct SecureLinkView: View {
 
                     let age = test.canonicalObservedAgeSeconds ?? 0
                     VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Read-only observation")
-                                .font(.subheadline.weight(.semibold))
-                            Spacer()
-                            Text("\(Int(min(age, 45))) / 45 s")
-                                .font(.subheadline.monospacedDigit().bold())
+                        if dynamicTypeSize.isAccessibilitySize {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Read-only observation")
+                                    .font(.subheadline.weight(.semibold))
+                                Text("\(Int(min(age, 45))) / 45 s")
+                                    .font(.subheadline.monospacedDigit().bold())
+                            }
+                        } else {
+                            HStack {
+                                Text("Read-only observation")
+                                    .font(.subheadline.weight(.semibold))
+                                Spacer()
+                                Text("\(Int(min(age, 45))) / 45 s")
+                                    .font(.subheadline.monospacedDigit().bold())
+                            }
                         }
                         ProgressView(value: min(age / 45, 1))
+                            .accessibilityLabel("Read-only observation progress")
+                            .accessibilityValue("\(Int(min(age, 45))) of 45 seconds")
                         requirementRow("Secure local link", ready: test.sdkLocalBLEOnline)
                         requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)
                     }
