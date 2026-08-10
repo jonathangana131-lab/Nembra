@@ -57,6 +57,10 @@ say "Private intended-device admission validated"
 say "Validating official Tuya SDK and private app-identity provisioning"
 "$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"
 [[ -d "$ROOT/NembraCapture.xcworkspace" ]] || die "NembraCapture.xcworkspace was not generated. Do not use NembraCapture.xcodeproj for the authenticated field build."
+[[ -f "$ROOT/Podfile.lock" ]] || die "Private workspace bootstrap produced no Podfile.lock; reviewed Tuya dependency provenance is unavailable."
+TUYA_DEPENDENCY_LOCK_SHA256="$(shasum -a 256 "$ROOT/Podfile.lock" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
+[[ "$TUYA_DEPENDENCY_LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "Could not compute a valid SHA-256 fingerprint for the resolved Tuya dependency lock."
+say "Resolved Tuya dependency lock fingerprint captured for compiled provenance"
 [[ "$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')" == "$SOURCE_SHA" ]] || die "Repository HEAD changed during private workspace bootstrap. Restart from the exact accepted source."
 [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Private workspace bootstrap changed tracked or unignored accepted-source inputs. Review and re-accept before building."
 
@@ -144,6 +148,7 @@ xcodebuild \
     PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
     "NEMBRA_CAPTURE_BUILD_IDENTIFIER=$BUILD_LABEL" \
     "NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$SOURCE_SHA" \
+    "NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256" \
     build
 
 [[ "$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')" == "$SOURCE_SHA" ]] || die "Repository HEAD changed while the accepted field build was compiling. Discard this candidate."
