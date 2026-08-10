@@ -1,5 +1,8 @@
+import Dispatch
 import Foundation
 import Observation
+import struct NembraCore.PropulsionEnergyRailAppProjection
+import struct NembraCore.PropulsionEnergyRailSimulatorRuntime
 
 /// Presentation timing is injected explicitly so Simulator QA can exercise the
 /// speed animation without silently choosing a production MAXSHOT cadence.
@@ -125,6 +128,7 @@ final class VehicleStore {
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
     @ObservationIgnored private var speedEvidenceTask: Task<Void, Never>?
     @ObservationIgnored private var speedEvidenceConsumerAuthority = SpeedEvidenceConsumerAuthority()
+    @ObservationIgnored private var simulatorEnergyRailRuntime: PropulsionEnergyRailSimulatorRuntime?
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private let shouldAutoConnectOnStart: Bool
 
@@ -282,6 +286,23 @@ final class VehicleStore {
         await service.speedTelemetryUpdates()
     }
 
+    /// Display-clock access to the sealed package projection. Only the explicit
+    /// Simulator QA profile can own a runtime, so a physical/unverified vehicle can
+    /// never borrow synthetic watts merely because its aggregate state has a power
+    /// field or advertises a broad capability.
+    func energyRailProjection(
+        atUptimeNanoseconds uptimeNanoseconds: UInt64
+    ) -> PropulsionEnergyRailAppProjection? {
+        guard profile == .simulatorQA,
+              profile.capabilities.supportsPowerWatts,
+              let simulatorEnergyRailRuntime else {
+            return nil
+        }
+        return simulatorEnergyRailRuntime.projection(
+            atUptimeNanoseconds: uptimeNanoseconds
+        )
+    }
+
     func connect() async {
         guard !pendingCommands.contains(.connect), !isVehicleCommandPending else { return }
         pendingCommands.insert(.connect)
@@ -339,6 +360,8 @@ final class VehicleStore {
     }
 
     private func apply(_ incomingState: VehicleState) {
+        observeSimulatorEnergyRailSourceState(incomingState)
+
         var nextState = incomingState
 
         if incomingState.connection == .connected,
@@ -395,6 +418,31 @@ final class VehicleStore {
         }
 
         state = nextState
+    }
+
+    /// Source-clock adapter for synthetic propulsion QA. This function is called
+    /// only from the real service state-update ingress above; the Dashboard render
+    /// clock can project from the runtime but cannot call `observe` or mint receipts.
+    /// Initial/caller-supplied `VehicleState` is deliberately not admitted here.
+    private func observeSimulatorEnergyRailSourceState(_ incomingState: VehicleState) {
+        guard profile == .simulatorQA,
+              profile.capabilities.supportsPowerWatts else {
+            simulatorEnergyRailRuntime = nil
+            return
+        }
+
+        if simulatorEnergyRailRuntime == nil {
+            simulatorEnergyRailRuntime = try? PropulsionEnergyRailSimulatorRuntime()
+        }
+        guard var runtime = simulatorEnergyRailRuntime else { return }
+
+        _ = runtime.observe(
+            connected: incomingState.connection == .connected,
+            watts: incomingState.powerWatts.map { Double($0) },
+            modeKey: incomingState.rideMode?.rawValue,
+            receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
+        )
+        simulatorEnergyRailRuntime = runtime
     }
 
     /// Runtime uses the same evidence chronology rule as durable retained storage:
