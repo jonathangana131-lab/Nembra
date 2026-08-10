@@ -1,0 +1,295 @@
+name: Materialize Capture app custody convergence
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-app-custody-converge-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact construction parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_parent="1c40853f6991b4d09206df1d25ecff021458b7eb"
+          test "$(git rev-parse HEAD^)" = "$expected_parent"
+          test "$(git diff --name-only "$expected_parent" HEAD)" = ".github/workflows/materialize-v14-capture-app-custody-convergence.yml"
+
+      - name: Materialize product and adversarial contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin \
+            refs/pull/2414/head:refs/remotes/origin/pr-2414 \
+            refs/pull/2415/head:refs/remotes/origin/pr-2415 \
+            refs/pull/2419/head:refs/remotes/origin/pr-2419
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          entry = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = entry.read_text()
+
+          revoke = '''        sdkDeviceMembershipVerified = false
+        membershipAccountUID = nil
+        membershipDeviceID = nil
+        membershipRequestID = UUID()
+'''
+          if source.count(revoke) != 2:
+              raise SystemExit(f"expected two membership revocation blocks, found {source.count(revoke)}")
+
+          view_exit = '''        sdkDeviceMembershipVerified = false
+        membershipAccountUID = nil
+        membershipDeviceID = nil
+        membershipStatus = "Secure Link closed. Exact scooter membership must be verified again for the next Secure Link view."
+        membershipRequestID = UUID()
+'''
+          foreground = '''        sdkDeviceMembershipVerified = false
+        membershipAccountUID = nil
+        membershipDeviceID = nil
+        membershipStatus = "Capture left the foreground. Exact scooter membership must be verified again after returning to Secure Link."
+        membershipRequestID = UUID()
+'''
+          source = source.replace(revoke, view_exit, 1)
+          source = source.replace(revoke, foreground, 1)
+
+          duplicate_fragments = '''        "localkey",
+        "sessionkey",
+        "appkey",
+        "appsecret",
+        "password",
+        "accounttoken",
+        "accesstoken",
+        "refreshtoken",
+        "sessionkey",
+        "authkey",
+        "seckey",
+'''
+          single_fragments = '''        "localkey",
+        "sessionkey",
+        "appkey",
+        "appsecret",
+        "password",
+        "accounttoken",
+        "accesstoken",
+        "refreshtoken",
+        "authkey",
+        "seckey",
+'''
+          if source.count(duplicate_fragments) != 1:
+              raise SystemExit("secret-fragment list did not match exact current product")
+          source = source.replace(duplicate_fragments, single_fragments, 1)
+
+          marker = '''    private func receivedApplicationUpdate(
+'''
+          if source.count(marker) != 1:
+              raise SystemExit("receivedApplicationUpdate marker mismatch")
+          helper = '''    private func sanitizedApplicationEventDetails(
+        _ update: [String: String],
+        verifiedAccountUID: String
+    ) -> [String: String]? {
+        let uid = verifiedAccountUID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !uid.isEmpty else { return nil }
+
+        let redactionMarker = "<redacted-account-uid>"
+        var sanitized: [String: String] = [:]
+        for (key, value) in update.sorted(by: { $0.key < $1.key }) {
+            let redactedKey = key.replacingOccurrences(of: uid, with: redactionMarker)
+            let redactedValue = value.replacingOccurrences(of: uid, with: redactionMarker)
+
+            // Redacting a UID embedded in a malformed key can collapse two distinct input keys.
+            // Preserve both pieces of application evidence without re-exposing the UID.
+            var custodyKey = redactedKey
+            var suffix = 2
+            while sanitized[custodyKey] != nil {
+                custodyKey = "\\(redactedKey)#\\(suffix)"
+                suffix += 1
+            }
+            sanitized[custodyKey] = redactedValue
+        }
+        return sanitized
+    }
+
+'''
+          source = source.replace(marker, helper + marker, 1)
+
+          start = source.index("    private func receivedApplicationUpdate(")
+          end = source.index("    private func startWatchdog", start)
+          receiver = source[start:end]
+
+          authority = '''        guard sdkAccountLoggedIn,
+              sdkDeviceMembershipVerified,
+              accountIdentityLeaseIsAuthorized,
+              let driver else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "SDK account/device source authority changed before application evidence arrived.",
+                kind: "sdk_source_authority_changed_during_observation"
+            )
+            return
+        }
+        guard driver.isLocallyConnected(uuid: tuyaUUID) else {
+'''
+          authority_repair = '''        guard sdkAccountLoggedIn,
+              sdkDeviceMembershipVerified,
+              accountIdentityLeaseIsAuthorized,
+              let driver else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "SDK account/device source authority changed before application evidence arrived.",
+                kind: "sdk_source_authority_changed_during_observation"
+            )
+            return
+        }
+        guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !verifiedAccountUID.isEmpty,
+              currentAccountUID == verifiedAccountUID,
+              let sanitizedUpdate = sanitizedApplicationEventDetails(
+                  update,
+                  verifiedAccountUID: verifiedAccountUID
+              ) else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "Exact same-account UID custody became unavailable before application evidence could enter accepted event storage.",
+                kind: "sdk_account_uid_custody_unavailable"
+            )
+            return
+        }
+        guard driver.isLocallyConnected(uuid: tuyaUUID) else {
+'''
+          if receiver.count(authority) != 1:
+              raise SystemExit("application authority block mismatch")
+          receiver = receiver.replace(authority, authority_repair, 1)
+
+          logging = '''            try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
+            await refreshLedgerSnapshot()
+            log("tuya_application_update", update.merging([
+                "generation": String(token.diagnosticGeneration)
+            ]) { current, _ in current })
+'''
+          logging_repair = '''            try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
+            await refreshLedgerSnapshot()
+            guard currentConnectionToken == token,
+                  phase == .observing,
+                  accountIdentityLeaseIsAuthorized,
+                  membershipAccountUID == verifiedAccountUID,
+                  currentAccountUID == verifiedAccountUID else {
+                await invalidateSourceAuthority(
+                    token: token,
+                    message: "SDK account/device source authority changed while application evidence was entering package chronology.",
+                    kind: "sdk_source_authority_changed_during_application_admission"
+                )
+                return
+            }
+            log("tuya_application_update", sanitizedUpdate.merging([
+                "generation": String(token.diagnosticGeneration)
+            ]) { _, trusted in trusted })
+'''
+          if receiver.count(logging) != 1:
+              raise SystemExit("application logging block mismatch")
+          receiver = receiver.replace(logging, logging_repair, 1)
+          source = source[:start] + receiver + source[end:]
+          entry.write_text(source)
+
+          foreground_test = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegritySourceTests.swift")
+          test_source = foreground_test.read_text()
+          offsets = '''        let clearDeviceLease = try requiredOffset(
+            containing: "membershipDeviceID = nil",
+            in: cleanup
+        )
+        let membershipRevoke = try requiredOffset(
+'''
+          offsets_repair = '''        let clearDeviceLease = try requiredOffset(
+            containing: "membershipDeviceID = nil",
+            in: cleanup
+        )
+        let statusReset = try requiredOffset(
+            containing: "membershipStatus =",
+            in: cleanup
+        )
+        let membershipRevoke = try requiredOffset(
+'''
+          if test_source.count(offsets) != 1:
+              raise SystemExit("foreground test offset block mismatch")
+          test_source = test_source.replace(offsets, offsets_repair, 1)
+
+          assertions = '''        #expect(closeAdmission < clearVerified)
+        #expect(clearVerified < membershipRevoke)
+        #expect(clearAccountLease < membershipRevoke)
+'''
+          assertions_repair = '''        #expect(closeAdmission < clearVerified)
+        #expect(clearVerified < statusReset)
+        #expect(statusReset < membershipRevoke)
+        #expect(clearAccountLease < membershipRevoke)
+'''
+          if test_source.count(assertions) != 1:
+              raise SystemExit("foreground test assertion block mismatch")
+          test_source = test_source.replace(assertions, assertions_repair, 1)
+          foreground_test.write_text(test_source)
+          PY
+
+          tests="Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests"
+          git show refs/remotes/origin/pr-2414:"$tests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift" > "$tests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift"
+          git show refs/remotes/origin/pr-2415:"$tests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift" > "$tests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift"
+          git show refs/remotes/origin/pr-2419:"$tests/TuyaApplicationAccountUIDExportCustodySourceTests.swift" > "$tests/TuyaApplicationAccountUIDExportCustodySourceTests.swift"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          assert s.count('"sessionkey",') == 1
+          assert '<redacted-account-uid>' in s
+          assert 'sanitizedUpdate.merging([' in s
+          assert ']) { _, trusted in trusted })' in s
+          assert 'log("tuya_application_update", update.merging([' not in s
+          exit_start = s.index('    func abandonCorrelationForViewExit()')
+          foreground_start = s.index('    func appDidLoseForeground()', exit_start)
+          properties_start = s.index('    var privateConfig:', foreground_start)
+          view_exit = s[exit_start:foreground_start]
+          foreground = s[foreground_start:properties_start]
+          for section in (view_exit, foreground):
+              assert section.index('sdkDeviceMembershipVerified = false') < section.index('membershipStatus =') < section.index('membershipRequestID = UUID()')
+              assert 'membership verified and leased' not in section.lower()
+          PY
+
+          git diff --check
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+
+      - name: Commit effective convergence and remove materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_parent="1c40853f6991b4d09206df1d25ecff021458b7eb"
+          workflow=".github/workflows/materialize-v14-capture-app-custody-convergence.yml"
+          git rm "$workflow"
+          git add \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegritySourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+
+          expected_paths=$(cat <<'EOF'
+          NembraApp/App/NembraCaptureEntrypoint.swift
+          Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+          Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
+          Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegritySourceTests.swift
+          Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift
+          EOF
+          )
+          actual_paths=$(git diff --name-only "$expected_parent" | sort)
+          test "$actual_paths" = "$(printf '%s\n' "$expected_paths" | sed 's/^          //' | sort)"
+          git diff --check "$expected_parent"
+
+          git config user.name "nembra-sol"
+          git config user.email "nembra-sol@users.noreply.github.com"
+          git commit -m "fix(capture): close app evidence custody"
+          git push origin HEAD:agent/v14-capture-app-custody-converge-sol
