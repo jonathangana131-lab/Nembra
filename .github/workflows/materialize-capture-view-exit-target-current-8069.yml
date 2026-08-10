@@ -1,0 +1,132 @@
+name: Materialize Current Capture View-Exit Target Retirement
+
+on:
+  push:
+    branches: [agent/capture-view-exit-target-current-8069]
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/capture-view-exit-target-current-8069
+          fetch-depth: 0
+      - name: Apply exact-current view-lifetime authority repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='8069c0ffec496cacbe263016d8a7f4ca15ddc64e'
+          test "$(git rev-parse HEAD^)" = "$parent"
+          test "$(git diff --name-only "$parent"...HEAD)" = '.github/workflows/materialize-capture-view-exit-target-current-8069.yml'
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s=p.read_text(encoding='utf-8')
+
+          old='''        // Foreground loss already owns the terminal retirement for this view lifetime.\n        // Avoid racing a second terminal task when backgrounding is followed by onDisappear.\n        if foregroundIntegrityLossHandled { return }\n\n        if let token = currentConnectionToken {\n'''
+          new='''        // Foreground loss already owns the terminal retirement for this view lifetime.\n        // Avoid racing a second terminal task when backgrounding is followed by onDisappear.\n        if foregroundIntegrityLossHandled { return }\n        // A normal navigation exit now owns this view-lifetime terminal too. A later scene callback\n        // must not schedule a second/different package terminal while the first is still in flight.\n        foregroundIntegrityLossHandled = true\n\n        if let token = currentConnectionToken {\n'''
+          if s.count(old)!=1: raise SystemExit('view terminal ownership anchor drifted')
+          s=s.replace(old,new,1)
+
+          old='''        guard processCorrelationLease != nil || correlationSession != nil else { return }\n        // Existing helper stops package transport before releasing this controller's lease.\n        abandonPackageCorrelation()\n        phase = .failed\n        message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."\n        log("target_correlation_abandoned_on_view_exit")\n    }\n'''
+          new='''        if processCorrelationLease != nil || correlationSession != nil {\n            // Match foreground loss: full discovery reset stops package scanning before lease release\n            // and erases every actionable target-selection bit earned by the interrupted attempt.\n            resetDiscoverySessionOnly()\n            phase = .failed\n            message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."\n            log("target_correlation_abandoned_on_view_exit")\n            return\n        }\n\n        if phase == .correlated || phase == .selected {\n            // Final-window sealing already retired scanner/lease, but correlated/selected target\n            // authority remains mutable current-attempt evidence and cannot cross view lifetime.\n            resetDiscoverySessionOnly()\n            phase = .failed\n            message = "Target correlation was retired because Capture left Secure Link. Restart from OFF1; a pre-exit correlated target is never reusable authority."\n            log("target_correlation_retired_on_view_exit")\n        }\n    }\n'''
+          if s.count(old)!=1: raise SystemExit('view target cleanup anchor drifted')
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+          PY
+
+          cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureViewExitTargetRevocationSourceTests.swift <<'SWIFT'
+          import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Capture view-exit target-authority revocation")
+          struct TuyaCaptureViewExitTargetRevocationSourceTests {
+              @Test("navigation exit owns one lifecycle terminal")
+              func viewExitSuppressesLaterSceneTerminal() throws {
+                  let cleanup = try cleanupSource()
+                  let alreadyOwned = try #require(cleanup.range(of: "if foregroundIntegrityLossHandled { return }"))
+                  let claim = try #require(cleanup.range(of: "foregroundIntegrityLossHandled = true"))
+                  let token = try #require(cleanup.range(of: "if let token = currentConnectionToken"))
+                  #expect(alreadyOwned.lowerBound < claim.lowerBound)
+                  #expect(claim.lowerBound < token.lowerBound)
+                  #expect(cleanup.contains("Task { @MainActor [self] in"))
+              }
+
+              @Test("active and already-finished target correlation are both fully retired")
+              func viewExitErasesAllCurrentAttemptTargetAuthority() throws {
+                  let cleanup = try cleanupSource()
+                  #expect(cleanup.contains("if processCorrelationLease != nil || correlationSession != nil"))
+                  #expect(cleanup.contains("if phase == .correlated || phase == .selected"))
+                  #expect(cleanup.components(separatedBy: "resetDiscoverySessionOnly()").count - 1 == 2)
+                  #expect(cleanup.contains("target_correlation_abandoned_on_view_exit"))
+                  #expect(cleanup.contains("target_correlation_retired_on_view_exit"))
+                  #expect(!cleanup.contains("guard processCorrelationLease != nil || correlationSession != nil else { return }"))
+              }
+
+              @Test("view exit preserves current proof revocation and does not manufacture transport state")
+              func viewExitKeepsTruthBoundaries() throws {
+                  let cleanup = try cleanupSource()
+                  let proof = try #require(cleanup.range(of: "sdkDeviceMembershipVerified = false"))
+                  let status = try #require(cleanup.range(of: "membershipStatus ="))
+                  let request = try #require(cleanup.range(of: "membershipRequestID = UUID()"))
+                  #expect(proof.lowerBound < status.lowerBound)
+                  #expect(status.lowerBound < request.lowerBound)
+                  for forbidden in ["disconnectBLE", "recordObservedTransportLoss", "endConnection(", "writeValue", "publishDps", "queryDps"] {
+                      #expect(!cleanup.contains(forbidden))
+                  }
+              }
+
+              private func cleanupSource() throws -> String {
+                  let source = try entrypointSource()
+                  let controller = try section(in: source, from: "private final class SecureLinkController", to: "@MainActor\nprivate protocol OfficialTuyaDriver")
+                  return String(try section(in: String(controller), from: "func abandonCorrelationForViewExit()", to: "func appDidLoseForeground()"))
+              }
+
+              private func entrypointSource() throws -> String {
+                  var root = URL(fileURLWithPath: #filePath)
+                  for _ in 0..<5 { root.deleteLastPathComponent() }
+                  return try String(contentsOf: root.appendingPathComponent("NembraApp/App/NembraCaptureEntrypoint.swift"), encoding: .utf8)
+              }
+
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let a=source.range(of:start), let b=source.range(of:end,range:a.upperBound..<source.endIndex) else {
+                      Issue.record("Expected source section missing: \(start) ... \(end)")
+                      throw SourceError.missing
+                  }
+                  return source[a.lowerBound..<b.lowerBound]
+              }
+
+              private enum SourceError: Error { case missing }
+          }
+          SWIFT
+
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          a=s.index('func abandonCorrelationForViewExit()'); b=s.index('func appDidLoseForeground()',a); x=s[a:b]
+          required=['if foregroundIntegrityLossHandled { return }','foregroundIntegrityLossHandled = true','if processCorrelationLease != nil || correlationSession != nil','if phase == .correlated || phase == .selected','target_correlation_retired_on_view_exit','membershipStatus =']
+          for q in required:
+              if q not in x: raise SystemExit('missing view-exit invariant: '+q)
+          if x.count('resetDiscoverySessionOnly()') != 2: raise SystemExit('view exit must reset active + sealed correlation authority')
+          if not (x.index('if foregroundIntegrityLossHandled { return }') < x.index('foregroundIntegrityLossHandled = true') < x.index('if let token = currentConnectionToken')): raise SystemExit('view terminal ownership ordering violated')
+          for q in ['disconnectBLE','recordObservedTransportLoss','endConnection(','writeValue','publishDps','queryDps']:
+              if q in x: raise SystemExit('view exit manufactured authority: '+q)
+          print('view-exit target-authority contract: PASS')
+          PY
+
+          git diff --check
+          rm .github/workflows/materialize-capture-view-exit-target-current-8069.yml
+          git config user.name nembra-v14-bot
+          git config user.email nembra-v14-bot@users.noreply.github.com
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureViewExitTargetRevocationSourceTests.swift \
+                  .github/workflows/materialize-capture-view-exit-target-current-8069.yml
+          git diff --cached --check
+          git commit -m 'fix(capture): retire target authority on view exit'
+          git push origin HEAD:agent/capture-view-exit-target-current-8069
