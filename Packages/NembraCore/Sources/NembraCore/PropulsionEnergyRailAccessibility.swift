@@ -94,6 +94,27 @@ public struct PropulsionEnergyRailAccessibilityPresentation: Equatable, Sendable
             acceptedRevision: nil
         )
     }
+
+    /// Package-internal authority-lowering projection for an already sealed
+    /// accepted measurement. This does not create or refresh a measurement: it
+    /// carries the exact receipt/generation/uptime revision into RETAINED semantic
+    /// state so assistive technology can announce "last known" immediately when
+    /// the source demotes currentness.
+    static func retained(
+        acceptedMeasurement: PropulsionGaugeCockpitAcceptedMeasurement
+    ) -> PropulsionEnergyRailAccessibilityPresentation {
+        PropulsionEnergyRailAccessibilityPresentation(
+            identity: acceptedMeasurement.identity,
+            currentness: .retained,
+            acceptedWatts: acceptedMeasurement.watts,
+            acceptedRevision: PropulsionEnergyRailAcceptedRevision(
+                authority: acceptedMeasurement.authority,
+                continuityGeneration: acceptedMeasurement.continuityGeneration,
+                receiptSequenceNumber: acceptedMeasurement.receiptSequenceNumber,
+                receivedAtUptimeNanoseconds: acceptedMeasurement.receivedAtUptimeNanoseconds
+            )
+        )
+    }
 }
 
 public extension PropulsionGaugeCockpitSnapshot {
