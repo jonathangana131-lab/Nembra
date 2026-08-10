@@ -1,0 +1,96 @@
+name: Materialize Capture Event Custody Status
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-event-custody-status-sol
+    paths:
+      - '.github/workflows/materialize-capture-event-custody-status-sol.yml'
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - product/v14-capture-guided-truth-current-sol
+    paths:
+      - '.github/workflows/materialize-capture-event-custody-status-sol.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact repair branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: repair/v14-capture-event-custody-status-sol
+          fetch-depth: 0
+
+      - name: Guard exact inspected product source
+        run: |
+          set -euo pipefail
+          test "$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)" = "c58be3f6bc0cf33a9f6d0d950b7d011ff8aa1d25"
+          git merge-base --is-ancestor 1c40853f6991b4d09206df1d25ecff021458b7eb HEAD
+
+      - name: Apply bounded truth repair
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text()
+
+          revoked = '''        membershipAccountUID = nil\n        membershipDeviceID = nil\n        membershipRequestID = UUID()'''
+          reset = '''        membershipAccountUID = nil\n        membershipDeviceID = nil\n        membershipStatus = "Exact scooter membership must be verified again for the current Secure Link session."\n        membershipRequestID = UUID()'''
+          if source.count(revoked) != 2:
+              raise SystemExit(f'expected exactly 2 membership-revocation anchors, found {source.count(revoked)}')
+          source = source.replace(revoked, reset)
+
+          old_log = '''            log("tuya_application_update", update.merging([\n                "generation": String(token.diagnosticGeneration)\n            ]) { current, _ in current })'''
+          new_log = '''            let accountUIDRedactedUpdate = redactCurrentAccountUID(from: update)\n            log("tuya_application_update", accountUIDRedactedUpdate.merging([\n                "generation": String(token.diagnosticGeneration)\n            ]) { _, trusted in trusted })'''
+          if source.count(old_log) != 1:
+              raise SystemExit(f'expected exactly 1 application-event log anchor, found {source.count(old_log)}')
+          source = source.replace(old_log, new_log)
+
+          watchdog = '    private func startWatchdog(token: TuyaReadOnlyConnectionToken) {'
+          helper = '''    private func redactCurrentAccountUID(from update: [String: String]) -> [String: String] {\n        guard accountIdentityLeaseIsAuthorized,\n              let rawAccountUID = membershipAccountUID else { return update }\n        let accountUID = rawAccountUID.trimmingCharacters(in: .whitespacesAndNewlines)\n        guard !accountUID.isEmpty else { return update }\n\n        return update.mapValues { value in\n            value.replacingOccurrences(of: accountUID, with: "<redacted-account-uid>")\n        }\n    }\n\n'''
+          if source.count(watchdog) != 1:
+              raise SystemExit(f'expected exactly 1 watchdog anchor, found {source.count(watchdog)}')
+          if '<redacted-account-uid>' in source:
+              raise SystemExit('account UID marker already exists before materialization')
+          source = source.replace(watchdog, helper + watchdog)
+          path.write_text(source)
+          PY
+
+      - name: Verify repair contracts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          cleanup = source.split('func abandonCorrelationForViewExit()', 1)[1].split('var privateConfig: Bool', 1)[0]
+          assert cleanup.index('sdkDeviceMembershipVerified = false') < cleanup.index('membershipStatus =') < cleanup.index('membershipRequestID = UUID()')
+          foreground = source.split('func appDidLoseForeground()', 1)[1].split('var privateConfig: Bool', 1)[0]
+          assert foreground.index('sdkDeviceMembershipVerified = false') < foreground.index('membershipStatus =') < foreground.index('membershipRequestID = UUID()')
+          receiver = source.split('private func receivedApplicationUpdate(', 1)[1].split('private func startWatchdog', 1)[0]
+          assert 'accountUIDRedactedUpdate.merging([' in receiver
+          assert ') { _, trusted in trusted })' in receiver
+          assert ') { current, _ in current })' not in receiver
+          assert '<redacted-account-uid>' in source
+          assert 'log("tuya_application_update", update.merging([' not in receiver
+          driver = source.split('@MainActor\nprivate final class SmartLifeDriver', 1)[1].split('#endif\n\nprivate enum AppleAccountAuthorizationError', 1)[0]
+          assert '"uid",' not in driver and '"uid"\n' not in driver
+          PY
+          git diff --check
+
+      - name: Publish clean product repair
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/materialize-capture-event-custody-status-sol.yml
+          git config user.name "nembra-sol-materializer"
+          git config user.email "actions@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git diff --cached --check
+          git commit -m "fix(capture): close event custody and status truth"
+          git push origin HEAD:repair/v14-capture-event-custody-status-sol
