@@ -1111,9 +1111,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 kind: "application_receipt_clock_regressed"
             )
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.observationContinuityInvalidated {
-            await invalidateObservationContinuity(
+            await mirrorAlreadyTerminalObservationContinuity(
                 token: token,
-                message: "Application receipt arrived after authenticated observation continuity was already invalid.",
+                message: "Application receipt crossed the package-owned continuous-observation horizon. The package already retired this generation; no disconnect is claimed.",
                 kind: "application_observation_continuity_invalidated"
             )
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
@@ -1189,9 +1189,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     )
                     return
                 } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.observationContinuityInvalidated {
-                    await self.invalidateObservationContinuity(
+                    await self.mirrorAlreadyTerminalObservationContinuity(
                         token: token,
-                        message: "Authenticated-session liveness exceeded the accepted continuous-observation horizon.",
+                        message: "Authenticated-session liveness crossed the package-owned continuous-observation horizon. The package already retired this generation; no disconnect is claimed.",
                         kind: "session_liveness_continuity_invalidated"
                     )
                     return
@@ -1246,11 +1246,17 @@ private final class SecureLinkController: NSObject, ObservableObject {
                             message: "Canonical acceptance sealing encountered a monotonic-clock regression.",
                             kind: "accepted_prefix_seal_clock_regressed"
                         )
-                    } catch {
-                        await self.invalidateObservationContinuity(
+                    } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.observationContinuityInvalidated {
+                        await self.mirrorAlreadyTerminalObservationContinuity(
                             token: token,
-                            message: "Canonical readiness could not be sealed: \(error.localizedDescription)",
-                            kind: "accepted_prefix_seal_failed"
+                            message: "Canonical acceptance crossed the package-owned continuous-observation horizon. The package already retired this generation; no disconnect is claimed.",
+                            kind: "accepted_prefix_seal_continuity_invalidated"
+                        )
+                    } catch {
+                        await self.invalidateInternalLifecycle(
+                            token: token,
+                            message: "Canonical readiness sealing violated the current internal session lifecycle: \(error.localizedDescription)",
+                            kind: "accepted_prefix_seal_lifecycle_rejected"
                         )
                     }
                     return
@@ -1354,6 +1360,27 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 return
             }
         }
+        currentConnectionToken = nil
+        localBLESettlementToken = nil
+        sdkLocalBLEOnline = false
+        driver = nil
+        await refreshLedgerSnapshot()
+        phase = .failed
+        self.message = message
+        log(kind, ["generation": String(token.diagnosticGeneration)])
+    }
+
+    /// Mirrors a terminal continuity verdict already committed by the package mutation that threw
+    /// `observationContinuityInvalidated`. The package clears its current token before throwing,
+    /// so a second ledger terminal here would fabricate a retirement failure.
+    private func mirrorAlreadyTerminalObservationContinuity(
+        token: TuyaReadOnlyConnectionToken,
+        message: String,
+        kind: String
+    ) async {
+        guard currentConnectionToken == token else { return }
+        watchdog?.cancel()
+        watchdog = nil
         currentConnectionToken = nil
         localBLESettlementToken = nil
         sdkLocalBLEOnline = false
