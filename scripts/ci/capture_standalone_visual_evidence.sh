@@ -137,7 +137,7 @@ done < <(compgen -v)
 
 # Deliberately launch the real standalone product with no SIMCTL_CHILD_* variables, no
 # NEMBRA_SIMULATION_* scenario, no private dependency provenance, and no fake Tuya account/device
-# authority. The screenshot is presentation evidence only and must remain fail-closed.
+# authority. The screenshots are presentation evidence only and must remain fail-closed.
 launch_output="$(xcrun simctl launch "$UDID" "$BUNDLE_ID" | tee "$ARTIFACTS_DIR/logs/launch.log")"
 pid="${launch_output##*: }"
 if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
@@ -150,19 +150,32 @@ if ! kill -0 "$pid" >/dev/null 2>&1; then
   exit 15
 fi
 
-SCREENSHOT="$ARTIFACTS_DIR/screenshots/standalone-unprovisioned-dark-iphone12.png"
-xcrun simctl io "$UDID" screenshot "$SCREENSHOT"
-if [[ ! -s "$SCREENSHOT" ]]; then
-  echo "Standalone Capture screenshot was not created." >&2
+STANDARD_SCREENSHOT="$ARTIFACTS_DIR/screenshots/standalone-unprovisioned-dark-iphone12.png"
+xcrun simctl io "$UDID" screenshot "$STANDARD_SCREENSHOT"
+if [[ ! -s "$STANDARD_SCREENSHOT" ]]; then
+  echo "Standalone Capture standard screenshot was not created." >&2
   exit 16
 fi
 
-SCREENSHOT_SHA256="$(shasum -a 256 "$SCREENSHOT" | awk '{print $1}')"
-INFO_PLIST_SHA256="$(shasum -a 256 "$INFO_PLIST" | awk '{print $1}')"
-if [[ ! "$SCREENSHOT_SHA256" =~ ^[0-9a-f]{64}$ || ! "$INFO_PLIST_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
-  echo "Could not derive stable SHA-256 evidence digests." >&2
-  exit 17
+xcrun simctl ui "$UDID" content_size accessibility-extra-extra-extra-large
+sleep 1
+AX5_SCREENSHOT="$ARTIFACTS_DIR/screenshots/standalone-unprovisioned-dark-iphone12-ax5.png"
+xcrun simctl io "$UDID" screenshot "$AX5_SCREENSHOT"
+if [[ ! -s "$AX5_SCREENSHOT" ]]; then
+  echo "Standalone Capture Accessibility XXXL screenshot was not created." >&2
+  exit 22
 fi
+xcrun simctl ui "$UDID" content_size large
+
+STANDARD_SCREENSHOT_SHA256="$(shasum -a 256 "$STANDARD_SCREENSHOT" | awk '{print $1}')"
+AX5_SCREENSHOT_SHA256="$(shasum -a 256 "$AX5_SCREENSHOT" | awk '{print $1}')"
+INFO_PLIST_SHA256="$(shasum -a 256 "$INFO_PLIST" | awk '{print $1}')"
+for digest in "$STANDARD_SCREENSHOT_SHA256" "$AX5_SCREENSHOT_SHA256" "$INFO_PLIST_SHA256"; do
+  if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "Could not derive stable SHA-256 evidence digests." >&2
+    exit 17
+  fi
+done
 
 /usr/bin/python3 - \
   "$ARTIFACTS_DIR/NembraCaptureStandaloneVisualEvidence.json" \
@@ -172,7 +185,8 @@ fi
   "$BUNDLE_ID" \
   "$RUNTIME_ID" \
   "$DEVICE_TYPE" \
-  "$SCREENSHOT_SHA256" \
+  "$STANDARD_SCREENSHOT_SHA256" \
+  "$AX5_SCREENSHOT_SHA256" \
   "$INFO_PLIST_SHA256" <<'PY'
 import json
 import sys
@@ -185,12 +199,13 @@ import sys
     bundle_id,
     runtime_id,
     device_type,
-    screenshot_sha256,
+    standard_screenshot_sha256,
+    ax5_screenshot_sha256,
     info_plist_sha256,
 ) = sys.argv[1:]
 
 record = {
-    "schemaVersion": 3,
+    "schemaVersion": 4,
     "authority": "standalone-capture-simulator-presentation-only",
     "buildIdentifier": build_identifier,
     "sourceCommitSHA": source_sha,
@@ -210,10 +225,18 @@ record = {
     "visualAcceptanceRequiresHumanReview": True,
     "physicalAuthorityCreated": False,
     "protocolAuthorityCreated": False,
-    "screenshot": {
-        "relativePath": "screenshots/standalone-unprovisioned-dark-iphone12.png",
-        "sha256": screenshot_sha256,
-    },
+    "screenshots": [
+        {
+            "state": "unprovisioned-dark-standard",
+            "relativePath": "screenshots/standalone-unprovisioned-dark-iphone12.png",
+            "sha256": standard_screenshot_sha256,
+        },
+        {
+            "state": "unprovisioned-dark-accessibility-xxxl",
+            "relativePath": "screenshots/standalone-unprovisioned-dark-iphone12-ax5.png",
+            "sha256": ax5_screenshot_sha256,
+        },
+    ],
     "infoPlistSHA256": info_plist_sha256,
 }
 with open(output_path, "w", encoding="utf-8") as handle:
@@ -228,5 +251,6 @@ printf '%s\n' \
   "Procedure: $EXPECTED_PROCEDURE_IDENTIFIER" \
   "Tuya dependency authority: deliberately absent in public CI" \
   "Baseline: $EXPECTED_DEVICE_NAME / iOS 27 Simulator" \
-  "Screenshot: $SCREENSHOT" \
+  "Standard screenshot: $STANDARD_SCREENSHOT" \
+  "Accessibility XXXL screenshot: $AX5_SCREENSHOT" \
   "Visual review is still required; this artifact creates no physical/protocol authority."
