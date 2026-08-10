@@ -43,11 +43,13 @@ jobs:
           grep -Fq 'schemaVersion: 10' NembraApp/App/NembraCaptureEntrypoint.swift
           grep -Fq 'PROCEDURE_ID: `ES80-AUTHENTICATED-STATIONARY-v1`' docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md
 
-      - name: Commit only durable product contract
+      - name: Commit durable product contract
         run: |
+          # Keep this recovery workflow + transformer on the recovery branch.
+          # GitHub's workflow token can push ordinary product/source changes,
+          # while self-deleting the active workflow caused the previous push to fail.
+          # The current-spine convergence commit will transplant only product/test blobs.
           rm -f rendezvous_failure.txt
-          rm Scripts/apply_capture_procedure_rendezvous.py
-          rm .github/workflows/v14-capture-procedure-rendezvous-recovery.yml
           git add -A
           git diff --cached --check
           git config user.name "github-actions[bot]"
