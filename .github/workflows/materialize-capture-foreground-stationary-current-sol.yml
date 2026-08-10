@@ -1,0 +1,55 @@
+name: Materialize Capture Foreground Stationary Current
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-foreground-stationary-current-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sol/v14-capture-foreground-stationary-current-sol
+          fetch-depth: 0
+      - name: Guard exact live product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='4b41c9ad783f568d0d353acc9f7016a9bd0b64c2'
+          git merge-base --is-ancestor "$parent" HEAD
+          git diff --quiet "$parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaForegroundStationaryRecoverySourceTests.swift
+      - name: Apply convergence
+        run: python3 scripts/ci/materialize_capture_foreground_stationary_current.py apply
+      - name: Verify bounded repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/materialize_capture_foreground_stationary_current.py verify
+          python3 -m py_compile scripts/ci/materialize_capture_foreground_stationary_current.py
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaForegroundStationaryRecoverySourceTests.swift
+          git diff --check
+      - name: Publish clean two-path result
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='4b41c9ad783f568d0d353acc9f7016a9bd0b64c2'
+          rm .github/workflows/materialize-capture-foreground-stationary-current-sol.yml
+          rm scripts/ci/materialize_capture_foreground_stationary_current.py
+          git add -A
+          changed="$(git diff --name-only "$parent" | sort)"
+          expected="$(printf '%s\n' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaForegroundStationaryRecoverySourceTests.swift' | sort)"
+          test "$changed" = "$expected"
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): close foreground integrity and stationary recovery'
+          git push origin HEAD:sol/v14-capture-foreground-stationary-current-sol
