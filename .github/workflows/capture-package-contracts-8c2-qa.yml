@@ -17,15 +17,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 3
-      - name: Verify exact product parent and validation-only delta
+          fetch-depth: 8
+      - name: Verify exact product ancestry and validation-only delta
         shell: bash
         run: |
           set -euo pipefail
-          product='818d486b1e296399f1d7966ffdc22bc2cd496571'
-          test "$(git rev-parse HEAD^)" = "$product"
+          product='8c2e4baefb36d304662e84c9dcf78ef04e48437e'
+          git merge-base --is-ancestor "$product" HEAD
           changed="$(git diff --name-only "$product" HEAD)"
-          test "$changed" = '.github/workflows/capture-package-contracts-8c2-qa.yml'
+          printf '%s\n' "$changed"
+          expected="$(cat <<'EOF'
+          .github/workflows/capture-package-contracts-8c2-qa.yml
+          Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
+          Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCrossControllerBLEOwnershipLeaseSourceTests.swift
+          Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaExplicitCorrelatedTargetConfirmationSourceTests.swift
+          Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductSurfaceSourceTests.swift
+          Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSessionTerminalRetirementSourceTests.swift
+          Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaTransportSuccessAuthoritySourceTests.swift
+          EOF
+          )"
+          test "$changed" = "$expected"
       - name: Run repaired source-contract suites
         shell: bash
         run: |
@@ -34,7 +45,9 @@ jobs:
             TuyaCrossControllerBLEOwnershipLeaseSourceTests \
             TuyaSecureLinkProductSurfaceSourceTests \
             TuyaExplicitCorrelatedTargetConfirmationSourceTests \
-            TuyaApplicationEventMetadataPrecedenceSourceTests
+            TuyaApplicationEventMetadataPrecedenceSourceTests \
+            TuyaTransportSuccessAuthoritySourceTests \
+            TuyaSessionTerminalRetirementSourceTests
           do
             swift test --package-path Packages/NembraBluetoothCapture --filter "$suite"
           done
@@ -55,7 +68,7 @@ jobs:
               printf '::error file=Packages/NembraBluetoothCapture,title=Capture package remaining failure::%s\n' "$escaped"
               count=$((count + 1))
               [[ "$count" -ge 50 ]] && break
-            done < <(grep -E 'recorded an issue|Caught error:|Expectation failed:|Test run with .*issue|Suite .* failed after|Test .* failed after|error:' /tmp/capture-package.log)
+            done < <(grep -E 'recorded an issue|Caught error:|Expectation failed:|Test run with .*issue|Suite .* failed after|Test .* failed after' /tmp/capture-package.log)
             exit "$rc"
           fi
-          printf '%s\n' 'Capture package is green on the current recovery plus the four source-contract repairs.'
+          printf '%s\n' 'Capture package is green on the current recovery plus the six source-contract repairs.'
