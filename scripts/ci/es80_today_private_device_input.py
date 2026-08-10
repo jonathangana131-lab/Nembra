@@ -160,6 +160,21 @@ def _write_all(descriptor: int, payload: bytes) -> None:
         offset += written
 
 
+def _refuse_existing_target_before_secret(directory_descriptor: int, filename: str) -> None:
+    """Reject an occupied final name before acquiring the private intended-device value.
+
+    This minimizes sensitive input only. The later O_EXCL create remains the race authority because
+    a target may appear after this precheck and before final creation.
+    """
+    try:
+        os.stat(filename, dir_fd=directory_descriptor, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    except OSError as error:
+        raise PrivateInputError("private-intended-device-path-precheck-failed") from error
+    raise PrivateInputError("private-intended-device-path-already-exists")
+
+
 def create_private_input(
     private_directory: Path,
     repository_root: Path,
@@ -183,6 +198,8 @@ def create_private_input(
     try:
         if _directory_contains_repository(private_directory, repository_root):
             raise PrivateInputError("private-directory-traverses-source-repository")
+
+        _refuse_existing_target_before_secret(directory_descriptor, filename)
 
         secret = secret_provider()
         payload = _validated_secret(secret, output_path)
