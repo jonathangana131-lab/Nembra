@@ -29,7 +29,7 @@ ROOT_TEST_ADDITION = '''    @Test("legacy card-based Capture root is retired fro
 
 '''
 
-STATUS_TEST_CONTENT = '''import Foundation
+STATUS_TEST_CONTENT = r'''import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
@@ -59,14 +59,14 @@ struct TuyaMetadataStatusSecretRedactionSourceTests {
         )
         let body = String(export)
 
-        #expect(body.contains("\\\"status\\\": Self.redactSecrets(selectedDeviceStatus ?? [:])"))
-        #expect(!body.contains("\\\"status\\\": selectedDeviceStatus ?? [:]"))
+        #expect(body.contains("\"status\": Self.redactSecrets(selectedDeviceStatus ?? [:])"))
+        #expect(!body.contains("\"status\": selectedDeviceStatus ?? [:]"))
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
         guard let startRange = source.range(of: start),
               let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
-            Issue.record("Expected source section missing: \\(start) ... \\(end)")
+            Issue.record("Expected source section missing: \(start) ... \(end)")
             throw SourceContractError.sectionMissing
         }
         return source[startRange.lowerBound..<endRange.lowerBound]
@@ -164,9 +164,9 @@ def verify() -> None:
     status_test = STATUS_TEST.read_text(encoding="utf-8")
     for token in (
         "selectedDeviceStatus = Self.redactSecrets(statusMap) as? [String: Any] ?? [:]",
-        '"status": Self.redactSecrets(selectedDeviceStatus ?? [:])',
+        r'\"status\": Self.redactSecrets(selectedDeviceStatus ?? [:])',
         "selectedDeviceStatus = statusMap",
-        '"status": selectedDeviceStatus ?? [:]',
+        r'\"status\": selectedDeviceStatus ?? [:]',
     ):
         if token not in status_test:
             raise SystemExit(f"status-secret regression does not pin token: {token}")
