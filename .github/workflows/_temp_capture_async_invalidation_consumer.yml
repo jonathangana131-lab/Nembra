@@ -1,0 +1,41 @@
+name: Temporary Capture async-invalidation consumer
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-async-invalidation-consumer-sol
+
+permissions:
+  contents: write
+
+jobs:
+  apply-consumer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact recovery branch
+        uses: actions/checkout@v6
+        with:
+          ref: fix/v14-capture-async-invalidation-consumer-sol
+
+      - name: Apply production consumer
+        run: python3 scripts/_temp_apply_capture_async_invalidation_consumer.py
+
+      - name: Run pinned source contract
+        run: swift test --package-path Packages/NembraBluetoothCapture --filter TuyaCorrelationAsyncInvalidationPresentationSourceTests
+
+      - name: Remove temporary patch transport
+        run: |
+          git rm .github/workflows/_temp_capture_async_invalidation_consumer.yml
+          git rm scripts/_temp_apply_capture_async_invalidation_consumer.py
+
+      - name: Commit product-only repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-v14-recovery'
+          git config user.email 'actions@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m 'fix(capture): consume asynchronous correlation invalidation'
+          git push origin HEAD:fix/v14-capture-async-invalidation-consumer-sol
