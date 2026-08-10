@@ -1,0 +1,141 @@
+name: Materialize Capture Auth Promotion Transport Truth D56
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-auth-promotion-transport-truth-d56-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-auth-promotion-transport-truth-d56-sol
+          fetch-depth: 0
+
+      - name: Guard exact current product and scaffold-only branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='d56a30c699fbdecec6130537d3f3f4f4232f5c47'
+          test "$(git rev-parse HEAD^)" = "$base"
+          test "$(git diff --name-only "$base" HEAD)" = '.github/workflows/materialize-capture-auth-promotion-transport-truth-d56.yml'
+          git diff --quiet "$base" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+          test ! -e Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticationPromotionTransportTruthSourceTests.swift
+
+      - name: Apply previously source-green semantic repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = app.read_text(encoding='utf-8')
+          old = '''                    guard sdkAccountLoggedIn,
+                                sdkDeviceMembershipVerified,
+                                accountIdentityLeaseIsAuthorized else {
+                              await invalidateSourceAuthority(
+                                  token: token,
+                                  message: "Tuya account/device source authority changed while authentication promotion was suspended.",
+                                  kind: "sdk_source_authority_lost_during_auth_promotion"
+                              )
+                              return
+                          }
+
+                          phase = .observing
+          '''
+          old = old.replace('                                sdkDeviceMembershipVerified', '                          sdkDeviceMembershipVerified')
+          old = old.replace('                                accountIdentityLeaseIsAuthorized', '                          accountIdentityLeaseIsAuthorized')
+          old = old.replace('                              await', '                        await').replace('                                  token:', '                            token:').replace('                                  message:', '                            message:').replace('                                  kind:', '                            kind:').replace('                              )', '                        )').replace('                              return', '                        return').replace('                          }', '                    }').replace('                          phase', '                    phase')
+          new = '''                    guard sdkAccountLoggedIn,
+                          sdkDeviceMembershipVerified,
+                          accountIdentityLeaseIsAuthorized else {
+                        await invalidateSourceAuthority(
+                            token: token,
+                            message: "Tuya account/device source authority changed while authentication promotion was suspended.",
+                            kind: "sdk_source_authority_lost_during_auth_promotion"
+                        )
+                        return
+                    }
+                    guard let promotionDriver = self.driver else {
+                        await invalidateSourceAuthority(
+                            token: token,
+                            message: "Official Tuya driver authority disappeared while authentication promotion was suspended.",
+                            kind: "sdk_driver_authority_lost_during_auth_promotion"
+                        )
+                        return
+                    }
+                    let promotionLocalBLEOnline = promotionDriver.isLocallyConnected(uuid: tuyaUUID)
+                    sdkLocalBLEOnline = promotionLocalBLEOnline
+                    guard promotionLocalBLEOnline else {
+                        await recordObservedTransportLoss(token: token)
+                        return
+                    }
+
+                    phase = .observing
+          '''
+          if source.count(old) != 1:
+              raise SystemExit(f'expected one current auth promotion anchor, found {source.count(old)}')
+          app.write_text(source.replace(old, new, 1), encoding='utf-8')
+          PY
+          git show 739871ba42bad20e4a9c0f54836128a3ff6f7200:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticationPromotionTransportTruthSourceTests.swift > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticationPromotionTransportTruthSourceTests.swift
+
+      - name: Validate exact post-await truth ordering
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          start = s.index('private func authenticated(token: TuyaReadOnlyConnectionToken) async')
+          end = s.index('private func authenticationFailed(token: TuyaReadOnlyConnectionToken) async', start)
+          auth = s[start:end]
+          refresh = auth.index('await refreshLedgerSnapshot()')
+          observing = auth.index('phase = .observing', refresh)
+          fence = auth[refresh:observing]
+          ordered = [
+              'currentConnectionToken == token',
+              'phase == .authenticating',
+              'accountIdentityLeaseIsAuthorized',
+              'guard let promotionDriver = self.driver else',
+              'sdk_driver_authority_lost_during_auth_promotion',
+              'promotionDriver.isLocallyConnected(uuid: tuyaUUID)',
+              'sdkLocalBLEOnline = promotionLocalBLEOnline',
+              'guard promotionLocalBLEOnline else',
+              'await recordObservedTransportLoss(token: token)',
+          ]
+          positions = [fence.index(token) for token in ordered]
+          if positions != sorted(positions):
+              raise SystemExit(f'promotion fence ordering drifted: {positions}')
+          if auth.index('startWatchdog(token: token)', observing) <= observing:
+              raise SystemExit('watchdog ordering invalid')
+          print('post-await auth transport truth fence: PASS')
+          PY
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticationPromotionTransportTruthSourceTests.swift
+          git diff --check
+
+      - name: Publish clean exact-current two-path repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='d56a30c699fbdecec6130537d3f3f4f4232f5c47'
+          rm .github/workflows/materialize-capture-auth-promotion-transport-truth-d56.yml
+          git add -A
+          git diff --cached --check "$base"
+          git diff --cached --name-only "$base" | sort > /tmp/actual
+          cat > /tmp/expected <<'EOF'
+          NembraApp/App/NembraCaptureEntrypoint.swift
+          Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticationPromotionTransportTruthSourceTests.swift
+          EOF
+          sort -o /tmp/expected /tmp/expected
+          diff -u /tmp/expected /tmp/actual
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): recheck transport before auth promotion'
+          git push origin HEAD:repair/v14-capture-auth-promotion-transport-truth-d56-sol
