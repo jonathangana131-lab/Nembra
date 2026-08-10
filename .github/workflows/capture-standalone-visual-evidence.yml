@@ -44,6 +44,8 @@ jobs:
           bash -n scripts/ci/capture_standalone_visual_evidence.sh
           /usr/bin/python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
           grep -Fq 'static let fieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"' NembraApp/App/NembraCaptureBuildIdentity.swift
+          grep -Fq 'static let procedureIdentifierInfoKey = "NembraCaptureProcedureIdentifier"' NembraApp/App/NembraCaptureBuildIdentity.swift
+          grep -Fq 'procedureIdentifier == Self.fieldProcedureIdentifier' NembraApp/App/NembraCaptureBuildIdentity.swift
           grep -Fq 'tuyaDependencyLockSHA256.count == 64' NembraApp/App/NembraCaptureBuildIdentity.swift
           grep -Fq 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier' NembraApp/App/NembraCaptureEntrypoint.swift
           grep -Fq 'schemaVersion: 10' NembraApp/App/NembraCaptureEntrypoint.swift
@@ -53,6 +55,7 @@ jobs:
         run: |
           set -euo pipefail
           label="capture-v14-${NEMBRA_VISUAL_SOURCE_SHA:0:12}"
+          procedure='ES80-AUTHENTICATED-STATIONARY-v1'
           rm -rf /tmp/NembraCaptureProvenanceDerived
           xcodebuild \
             -project NembraCapture.xcodeproj \
@@ -65,12 +68,14 @@ jobs:
             NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
             NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$NEMBRA_VISUAL_SOURCE_SHA" \
             NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="" \
+            INFOPLIST_KEY_NembraCaptureProcedureIdentifier="$procedure" \
             build
 
           plist='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
           test -f "$plist"
           test "$(/usr/bin/plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
           test "$(/usr/bin/plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$NEMBRA_VISUAL_SOURCE_SHA"
+          test "$(/usr/bin/plutil -extract NembraCaptureProcedureIdentifier raw -o - "$plist")" = "$procedure"
           embedded_dependency="$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist" 2>/dev/null || true)"
           test -z "$embedded_dependency"
 
@@ -97,6 +102,7 @@ jobs:
           assert record["baselineDevice"] == "iPhone 12"
           assert record["baselineOS"] == "iOS 27"
           assert record["procedureIdentifier"] == "ES80-AUTHENTICATED-STATIONARY-v1"
+          assert record["procedureBuildRendezvousVerified"] is True
           assert record["tuyaDependencyLockSHA256"] == ""
           assert record["tuyaDependencyProvenanceClass"] == "deliberately-absent-public-ci"
           assert record["expectedFieldBuildAuthority"] is False
