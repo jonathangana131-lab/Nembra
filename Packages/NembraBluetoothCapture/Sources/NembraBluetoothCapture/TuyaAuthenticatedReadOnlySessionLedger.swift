@@ -18,18 +18,22 @@ public struct TuyaReadOnlyConnectionToken: Hashable, Sendable {
 
 /// Owns the non-secret chronology consumed by `TuyaAuthenticatedReadOnlyPreflight`.
 ///
-/// The official Tuya adapter reports lifecycle events here rather than assembling preflight
+/// The official Tuya adapter reports lifecycle observations here rather than assembling preflight
 /// snapshots itself. The ledger samples monotonic uptime at the mutation boundary, resets
-/// authentication/payload evidence on every new connection, and rejects callbacks attributed to
-/// an older connection token or a different ledger instance. Payload bytes are inspected only for
-/// non-emptiness and are never retained by this type.
+/// authentication/application evidence on every new connection, and rejects callbacks attributed
+/// to an older token or a different ledger instance.
+///
+/// Current SmartLife application evidence arrives as structured `ThingSmartDeviceDelegate`
+/// `dpsUpdate` data, not byte-exact FD50 transport. This ledger therefore records only whether a
+/// genuine callback was non-empty plus its receipt chronology. It stores no DP key/value, account
+/// identifier, verification code, AppKey/AppSecret, local key, session key, or raw FD50 bytes.
 public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationSessionProvider {
     public enum MutationError: Error, Equatable, Sendable {
         case noActiveConnection
         case staleConnection
         case invalidAuthenticationTransition
         case authenticationRequired
-        case emptyApplicationPayload
+        case emptyApplicationObservation
         case applicationPayloadCountExhausted
         case monotonicClockRegressed
         case connectionGenerationExhausted
@@ -107,6 +111,7 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         authenticationMethod = method
         authenticatedAtUptimeNanoseconds = now
         latestObservedUptimeNanoseconds = now
+        // Evidence observed before accepted authentication cannot satisfy the physical gate.
         applicationPayloadCount = 0
         latestApplicationPayloadUptimeNanoseconds = nil
     }
@@ -114,9 +119,9 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     public func markAuthenticationFailed(for token: TuyaReadOnlyConnectionToken) throws {
         try requireCurrent(token)
         switch authenticationState {
-        case .waitingForAuthentication, .authenticating:
+        case .waitingForAuthentication, .authenticating, .authenticated:
             break
-        case .unavailable, .authenticated, .failed:
+        case .unavailable, .failed:
             throw MutationError.invalidAuthenticationTransition
         }
 
@@ -129,16 +134,20 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         latestApplicationPayloadUptimeNanoseconds = nil
     }
 
-    public func recordApplicationPayload(
-        _ payload: Data,
+    /// Admit one genuine non-empty application-level SDK observation for the current generation.
+    ///
+    /// `fieldCount` is used only to reject an empty callback. It does not become a byte count,
+    /// payload length, DP count persisted for evidence, or any other physical semantic.
+    public func recordApplicationObservation(
+        fieldCount: Int,
         for token: TuyaReadOnlyConnectionToken
     ) throws {
         try requireCurrent(token)
         guard case .authenticated = authenticationState else {
             throw MutationError.authenticationRequired
         }
-        guard !payload.isEmpty else {
-            throw MutationError.emptyApplicationPayload
+        guard fieldCount > 0 else {
+            throw MutationError.emptyApplicationObservation
         }
 
         let now = try nextMonotonicObservation()
@@ -154,10 +163,13 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         latestObservedUptimeNanoseconds = now
     }
 
-    /// Advances only the non-secret liveness observation for the current connection.
+    /// Advances only the non-secret liveness observation for the current authenticated session.
     /// No telemetry or application payload is manufactured by this call.
     public func observeCurrentConnection(for token: TuyaReadOnlyConnectionToken) throws {
         try requireCurrent(token)
+        guard case .authenticated = authenticationState else {
+            throw MutationError.authenticationRequired
+        }
         latestObservedUptimeNanoseconds = try nextMonotonicObservation()
     }
 
