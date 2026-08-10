@@ -33,14 +33,16 @@ struct TuyaFieldFinalAuthoritySourceTests {
         #expect(begin.contains("scanForPeripherals"))
     }
 
-    @Test("only the accepted prior physical identity can authorize a local candidate")
-    func descriptiveRadioHintsCannotAuthorizeTarget() throws {
+    @Test("current repeated power-cycle correlation, not the historical C7D09A22 UUID, authorizes the local candidate")
+    func historicalCaptureIdentityCannotAuthorizeTarget() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        #expect(source.contains("var likely: Bool { knownID }"))
-        #expect(source.contains("knownID:"))
-        #expect(source.contains("knownPeripheral"))
+
+        #expect(source.contains("PassiveBluetoothPowerCycleObservationSession"))
+        #expect(source.contains("singleRepeatableCandidate"))
+        #expect(!source.contains("static let knownPeripheral"))
+        #expect(!source.contains("var likely: Bool { knownID }"))
+        #expect(!source.contains("accepted-prior-physical-corebluetooth-uuid"))
         #expect(!source.contains("fd50 && tuyaCompany"))
-        #expect(source.contains("Descriptive hints cannot authorize"))
     }
 
     @Test("login success re-reads SDK authority and account errors redact the submitted identifier")
