@@ -1,0 +1,93 @@
+name: Capture Source Contract Convergence Diagnostic
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/capture-source-contract-convergence-diagnostic.yml'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureLockedSurfaceVisualAcceptanceTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaProcessLifetimeBLEOwnershipFenceSourceTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCrossControllerBLEOwnershipLeaseSourceTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureFieldRuntimeRendezvousTests.swift'
+
+permissions:
+  contents: read
+
+jobs:
+  package-differential:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify exact head
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED"
+
+      - name: Run complete Capture package
+        id: package
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/capture-source-contract-convergence.log"
+          set +e
+          (cd Packages/NembraBluetoothCapture && swift test) 2>&1 | tee "$log"
+          status="${PIPESTATUS[0]}"
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Require exact 82 to 69 differential
+        shell: bash
+        run: |
+          /usr/bin/python3 -I - "$RUNNER_TEMP/capture-source-contract-convergence.log" <<'PY'
+          import re
+          import sys
+          from collections import Counter
+          from pathlib import Path
+
+          log = Path(sys.argv[1])
+          lines = log.read_text(errors="replace").splitlines()
+          files = Counter()
+          for line in lines:
+              match = re.search(r'at ([A-Za-z0-9_]+\.swift):\d+:\d+:', line)
+              if match and ("recorded an issue" in line or "Caught error" in line):
+                  files[match.group(1)] += 1
+
+          targets = [
+              "ES80CaptureLockedSurfaceVisualAcceptanceTests.swift",
+              "TuyaProcessLifetimeBLEOwnershipFenceSourceTests.swift",
+              "TuyaCrossControllerBLEOwnershipLeaseSourceTests.swift",
+              "ES80CaptureFieldRuntimeRendezvousTests.swift",
+          ]
+
+          total = sum(files.values())
+          print(f"TOTAL_PACKAGE_ISSUES {total}")
+          for name, count in files.most_common():
+              print(f"PACKAGE_ISSUES {count:3d} {name}")
+          for name in targets:
+              print(f"TARGET_ISSUES {files[name]:3d} {name}")
+
+          failures = [name for name in targets if files[name] != 0]
+          if failures:
+              raise SystemExit("targeted source-contract issues remain: " + ", ".join(failures))
+          if total != 69:
+              raise SystemExit(f"expected exact 82 -> 69 differential, observed {total} issues")
+          PY
+
+      - name: Confirm package remains globally red
+        env:
+          PACKAGE_STATUS: ${{ steps.package.outputs.status }}
+        run: test "$PACKAGE_STATUS" -ne 0
+
+      - name: Upload exact package log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: capture-source-contract-convergence-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/capture-source-contract-convergence.log
+          retention-days: 7
+          if-no-files-found: error
