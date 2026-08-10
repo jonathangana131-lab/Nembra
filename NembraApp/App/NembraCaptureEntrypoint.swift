@@ -318,6 +318,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var targetCorrelationOperatorConfirmed = false
     private var driver: OfficialTuyaDriver?
     private var events: [Event] = []
+    private var captureAttemptEventStartIndex = 0
     private var sealedAcceptedEventPrefix: [Event]?
     private var applicationAdmissionInFlightCount = 0
     private var acceptanceSealInProgress = false
@@ -427,6 +428,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
             failLocally("Private Tuya app identity and a current SDK login are required before any scooter correlation scan.", "sdk_authority_required_before_scan")
             return
         }
+
+        // Start a new app-owned diagnostic/evidence lifetime before membership verification so
+        // retries cannot leak older correlation/authentication events into a later accepted export.
+        captureAttemptEventStartIndex = events.count
+        sealedAcceptedEventPrefix = nil
 
         // Every physical attempt receives a fresh complete current-account membership verdict
         // before the package-owned four-window Bluetooth correlation series may start.
@@ -1267,9 +1273,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     // New SDK callbacks may remain diagnostic, but they cannot race a ledger mutation
                     // against the package-owned immutable horizon.
                     self.acceptanceSealInProgress = true
+                    // Snapshot the current attempt before the package-seal suspension. Callbacks that
+                    // arrive while sealing are diagnostic-only and must not enter accepted evidence.
+                    let eventsAtSealBarrier = Array(self.events.dropFirst(self.captureAttemptEventStartIndex))
                     do {
                         try await sessionLedger.sealAcceptedObservation(for: token)
-                        self.sealedAcceptedEventPrefix = self.events
+                        self.sealedAcceptedEventPrefix = eventsAtSealBarrier
                         self.currentConnectionToken = nil
                         await self.refreshLedgerSnapshot()
                         self.phase = .accepted
