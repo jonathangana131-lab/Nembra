@@ -220,19 +220,60 @@ extension SecureLinkController: @preconcurrency CBPeripheralDelegate {
 @MainActor
 private struct SecureLinkView: View {
     @StateObject private var test:SecureLinkController
-    init(device:TuyaAccountBridge.LinkedDevice){_test=StateObject(wrappedValue:SecureLinkController(device:device))}
+    @StateObject private var sdkAccount:TuyaSDKAccountAuthorizer
+    init(device:TuyaAccountBridge.LinkedDevice){
+        _test=StateObject(wrappedValue:SecureLinkController(device:device))
+        _sdkAccount=StateObject(wrappedValue:TuyaSDKAccountAuthorizer())
+    }
     var body:some View {
         TimelineView(.periodic(from:.now,by:0.5)){_ in ScrollView{VStack(alignment:.leading,spacing:14){
             Text("SMALLEST INDOOR TEST").font(.caption.monospaced().bold()).foregroundStyle(.green); Text("Authenticate. Wait. Capture.").font(.largeTitle.bold()); Text("Keep the scooter stationary. Do not run the old 17-step sequence.").foregroundStyle(.secondary)
-            status; sdk; discovery; if let c=test.selected{selected(c)}; acceptance; export
+            status; sdk
+            if test.sdkCompiled && test.privateConfig && test.sdkAccountAuthorized {
+                discovery; if let c=test.selected{selected(c)}; acceptance; export
+            }
         }.frame(maxWidth:760).padding(18).frame(maxWidth:.infinity)}.background(Color.black.ignoresSafeArea())}.navigationTitle("Secure Link")
     }
     private var status:some View { VStack(alignment:.leading,spacing:8){HStack{Text(test.passed ? "Secure scooter link established" : test.phase == .failed ? "Secure-link test stopped" : "Authentication preflight").font(.headline);Spacer();Text("\(test.packetCount)").monospacedDigit()};Text(test.message).font(.footnote).foregroundStyle(.secondary);if let a=test.age{LabeledContent("Secure-session age",value:String(format:"%.1f s",a));ProgressView(value:min(a/45,1))};LabeledContent("Post-auth FD50 packets",value:String(test.packetCount))}.card() }
-    private var sdk:some View { VStack(alignment:.leading,spacing:7){Label("Official Tuya gate",systemImage:"checkmark.shield").font(.headline);LabeledContent("SDK compiled in",value:test.sdkCompiled ? "Yes":"No");LabeledContent("Private app config",value:test.privateConfig ? "Yes":"No");LabeledContent("SDK account authorized",value:test.sdkAccountAuthorized ? "Yes":"No");if !test.sdkCompiled || !test.privateConfig || !test.sdkAccountAuthorized{Text("NO PHYSICAL TEST YET: official SDK/security component, matching private app credentials, and an authorized SDK account session must all be ready.").font(.footnote.bold()).foregroundStyle(.orange)}}.card() }
+    private var sdk:some View {
+        VStack(alignment:.leading,spacing:9){
+            Label("Official Tuya gate",systemImage:"checkmark.shield").font(.headline)
+            LabeledContent("SDK compiled in",value:test.sdkCompiled ? "Yes":"No")
+            LabeledContent("Private app config",value:test.privateConfig ? "Yes":"No")
+            LabeledContent("SDK account authorized",value:test.sdkAccountAuthorized ? "Yes":"No")
+            if test.sdkCompiled && test.privateConfig && !test.sdkAccountAuthorized {
+                Divider().overlay(.white.opacity(0.12))
+                Text("Authorize the same Tuya account").font(.subheadline.bold())
+                Text(sdkAccount.message).font(.footnote).foregroundStyle(.secondary)
+                TextField("Tuya account email",text:$sdkAccount.email)
+                    .textContentType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.emailAddress)
+                    .padding(11).background(.white.opacity(0.07),in:RoundedRectangle(cornerRadius:12))
+                    .accessibilityLabel("Tuya account email")
+                TextField("Country code · example 1",text:$sdkAccount.countryCode)
+                    .textContentType(.countryName).keyboardType(.numberPad)
+                    .padding(11).background(.white.opacity(0.07),in:RoundedRectangle(cornerRadius:12))
+                    .accessibilityLabel("Tuya account country code")
+                Button(sdkAccount.phase == .sendingCode ? "Sending code…":"Send one-time login code"){sdkAccount.sendEmailLoginCode()}
+                    .buttonStyle(.bordered).disabled(!sdkAccount.canSendCode)
+                if sdkAccount.phase == .codeSent || sdkAccount.phase == .failed || sdkAccount.phase == .authorizing {
+                    SecureField("One-time verification code",text:$sdkAccount.verificationCode)
+                        .textContentType(.oneTimeCode).keyboardType(.numberPad)
+                        .padding(11).background(.white.opacity(0.07),in:RoundedRectangle(cornerRadius:12))
+                    Button(sdkAccount.phase == .authorizing ? "Authorizing…":"Authorize SDK session"){sdkAccount.authorizeWithEmailCode()}
+                        .buttonStyle(.borderedProminent).disabled(!sdkAccount.canAuthorize)
+                }
+                Text("Nembra never asks for your Tuya password. The one-time code is cleared after authorization and is never added to the diagnostic export.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if !test.sdkCompiled || !test.privateConfig || !test.sdkAccountAuthorized {
+                Text("NO PHYSICAL TEST YET: official SDK/security component, matching private app credentials, and an authorized SDK account session must all be ready.").font(.footnote.bold()).foregroundStyle(.orange)
+            }
+        }.card()
+    }
     private var discovery:some View { VStack(alignment:.leading,spacing:10){Label("Find the known scooter",systemImage:"scope").font(.headline);switch test.phase{case .idle,.failed:Button("Start scooter-OFF baseline"){test.startBaseline()}.buttonStyle(.borderedProminent);case .baseline:Button("Save OFF baseline"){test.saveBaseline()}.buttonStyle(.borderedProminent);case .powerOn:Text("Turn scooter ON, keep it still.").foregroundStyle(.secondary);Button("Scan after power-on"){test.scanOn()}.buttonStyle(.borderedProminent);case .scanning:Button("Stop scan / use best evidence"){test.stopScan()}.buttonStyle(.bordered);default:EmptyView()};ForEach(test.candidates.prefix(8)){c in Button{test.choose(c)}label:{VStack(alignment:.leading,spacing:4){HStack{Text(c.title).bold();if c.likely{Text("LIKELY SCOOTER").font(.caption2.bold()).padding(.horizontal,6).padding(.vertical,2).background(.green,in:Capsule()).foregroundStyle(.black)};Spacer();Text("\(c.score)").monospacedDigit()};Text("\(c.rssi.map{String($0)+" dBm"} ?? "RSSI ?") · \(c.id.uuidString)").font(.caption2).foregroundStyle(.secondary).lineLimit(1);Text(c.evidence.joined(separator:" · ")).font(.caption).foregroundStyle(.secondary)}}.buttonStyle(.plain)}}.card() }
     private func selected(_ c:SecureLinkController.Candidate)->some View { VStack(alignment:.leading,spacing:8){Label("Authentication gate",systemImage:"key.horizontal").font(.headline);Text(c.evidence.joined(separator:" · ")).font(.footnote).foregroundStyle(.secondary);Button("Start secure read-only test"){test.authenticate()}.buttonStyle(.borderedProminent).disabled(!c.likely || !test.sdkCompiled || !test.privateConfig || !test.sdkAccountAuthorized || [.authenticating,.observing,.accepted].contains(test.phase))}.card() }
     private var acceptance:some View { VStack(alignment:.leading,spacing:7){Label("Acceptance",systemImage:test.passed ? "checkmark.seal.fill":"hourglass").font(.headline).foregroundStyle(test.passed ? .green:.white);Text("Pass only when Tuya's official session succeeds, it survives >45 seconds, and at least one genuine post-auth FD50 notification is captured. No DP meaning is inferred here.").font(.footnote).foregroundStyle(.secondary);if test.passed{Text("Secure scooter link established\nReceiving scooter data").font(.title3.bold()).foregroundStyle(.green)}}.card() }
-    private var export:some View { VStack(alignment:.leading,spacing:8){Button("Prepare sanitized diagnostic JSON"){test.prepareExport()}.buttonStyle(.bordered);if let d=test.exportData{ShareLink(item:SecureTransfer(data:d,name:test.exportName),preview:SharePreview(test.exportName)){Label("Share diagnostic JSON",systemImage:"square.and.arrow.up")}.buttonStyle(.borderedProminent)};Text("Export includes candidate evidence, timings, failures, and post-auth raw bytes; it excludes passwords, tokens, local_key, and AppSecret.").font(.footnote).foregroundStyle(.secondary)}.card() }
+    private var export:some View { VStack(alignment:.leading,spacing:8){Button("Prepare sanitized diagnostic JSON"){test.prepareExport()}.buttonStyle(.bordered);if let d=test.exportData{ShareLink(item:SecureTransfer(data:d,name:test.exportName),preview:SharePreview(test.exportName)){Label("Share diagnostic JSON",systemImage:"square.and.arrow.up")}.buttonStyle(.borderedProminent)};Text("Export includes candidate evidence, timings, failures, and post-auth raw bytes; it excludes passwords, tokens, local_key, AppSecret, account email, and one-time code.").font(.footnote).foregroundStyle(.secondary)}.card() }
 }
 
 private struct SecureTransfer:Transferable{let data:Data;let name:String;static var transferRepresentation:some TransferRepresentation{DataRepresentation(exportedContentType:.json){$0.data}.suggestedFileName{$0.name}}}
