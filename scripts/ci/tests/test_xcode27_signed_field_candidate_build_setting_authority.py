@@ -24,7 +24,7 @@ class SignedFieldCandidateBuildSettingAuthorityTests(unittest.TestCase):
         admission = f'if [[ "${{1:-}}" == "{RETIRED_MODE}" ]]; then'
         self.assertIn(admission, self.producer)
         block_start = self.producer.index(admission)
-        block_end = self.producer.index('fi', block_start)
+        block_end = self.producer.index('\nfi', block_start)
         block = self.producer[block_start:block_end]
         self.assertIn('SUPERSEDED:', block)
         self.assertIn(CURRENT_PROCEDURE, block)
