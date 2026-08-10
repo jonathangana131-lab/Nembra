@@ -21,7 +21,7 @@ struct TuyaCorrelationProgressPresentationSourceTests {
         #expect(!liveProjection.contains("correlationSession?.progress"))
     }
 
-    @Test("starting a window bridges asynchronous package readiness into the controller")
+    @Test("starting a window bridges asynchronous package readiness without retaining the controller across sleeps")
     func startWindowStartsPresentationObservation() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let start = try section(
@@ -39,7 +39,8 @@ struct TuyaCorrelationProgressPresentationSourceTests {
             to: "private func stopCorrelationProgressObservation"
         )
         #expect(observer.contains("session.progress"))
-        #expect(observer.contains("self.correlationProgress = progress"))
+        #expect(observer.contains("self?.correlationProgress = progress"))
+        #expect(!observer.contains("guard let self"))
         #expect(observer.contains("Task.sleep"))
         #expect(observer.contains("Task.isCancelled"))
     }
