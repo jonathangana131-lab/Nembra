@@ -4,38 +4,34 @@ import Testing
 
 @Suite("Tuya application account UID export custody")
 struct TuyaApplicationAccountUIDExportCustodySourceTests {
-    @Test("accepted event scrubs the exact leased account UID from untrusted keys and values")
-    func acceptedEventScrubsExactLeasedAccountUID() throws {
+    @Test("accepted event delegates exact leased account UID to lossless package custody before suspension")
+    func acceptedEventDelegatesExactLeasedAccountUIDCustody() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let receiver = String(try section(in: source, from: "private func receivedApplicationUpdate(", to: "private func startWatchdog"))
         #expect(receiver.contains("leasedAccountUID = membershipAccountUID?.trimmingCharacters"))
-        #expect(receiver.contains("redactedApplicationEventDetails(update, accountUID: leasedAccountUID)"))
-        #expect(receiver.contains("let redactedKey = key.replacingOccurrences("))
-        #expect(receiver.contains("value.replacingOccurrences("))
-        #expect(receiver.contains("<redacted-account-uid>"))
-        #expect(receiver.contains("options: [.caseInsensitive, .literal]"))
-        #expect(receiver.contains("while redacted[custodyKey] != nil"))
+        #expect(receiver.contains("TuyaAuthenticatedApplicationEventCustody.eventDetails("))
+        #expect(receiver.contains("applicationUpdate: update"))
+        #expect(receiver.contains("accountUID: leasedAccountUID"))
+        #expect(!receiver.contains("redactedApplicationEventDetails("))
         #expect(!receiver.contains("log(\"tuya_application_update\", update"))
     }
 
     @Test("account identity and exact connection token are revalidated after ledger actor hops")
     func accountLeaseIsRecheckedBeforeImmutableEventCustody() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let receiver = String(try section(in: source, from: "private func receivedApplicationUpdate(", to: "private func redactedApplicationEventDetails("))
-        let snapshot = try requiredOffset("let custodySafeUpdate = redactedApplicationEventDetails(update, accountUID: leasedAccountUID)", in: receiver)
+        let receiver = String(try section(in: source, from: "private func receivedApplicationUpdate(", to: "private func startWatchdog"))
+        let snapshot = try requiredOffset("let custodySafeEventDetails = TuyaAuthenticatedApplicationEventCustody.eventDetails(", in: receiver)
         let ledger = try requiredOffset("try await sessionLedger.recordApplicationUpdate", in: receiver, after: snapshot)
         let refresh = try requiredOffset("await refreshLedgerSnapshot()", in: receiver, after: ledger)
         let postAwaitToken = try requiredOffset("guard currentConnectionToken == token,", in: receiver, after: refresh)
         let postAwaitUID = try requiredOffset("membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) == leasedAccountUID", in: receiver, after: postAwaitToken)
-        let custody = try requiredOffset("var eventDetails = custodySafeUpdate", in: receiver, after: postAwaitUID)
-        let log = try requiredOffset("log(\"tuya_application_update\"", in: receiver, after: custody)
+        let log = try requiredOffset("log(\"tuya_application_update\", custodySafeEventDetails)", in: receiver, after: postAwaitUID)
 
         #expect(snapshot < ledger)
         #expect(ledger < refresh)
         #expect(refresh < postAwaitToken)
         #expect(postAwaitToken < postAwaitUID)
-        #expect(postAwaitUID < custody)
-        #expect(custody < log)
+        #expect(postAwaitUID < log)
         #expect(receiver.contains("sdk_source_authority_changed_before_application_event_custody"))
     }
 
