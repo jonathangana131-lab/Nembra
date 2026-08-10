@@ -1,0 +1,52 @@
+name: V14 Capture Entitlement + AX Materializer
+
+on:
+  push:
+    branches:
+      - recovery/v14-capture-2250-entitlement-ax-gpt56sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply AX reflow over entitlement + process-lifetime truth
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/apply_v14_capture_live_language_ax.py
+          python3 scripts/ci/apply_v14_capture_live_language_ax.py
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureAccessibilityXXXLSourceTests.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaProcessLifetimeBLEOwnershipFenceSourceTests.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAppleOAuthCredentialCustodySourceTests.swift
+          /usr/bin/python3 scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
+          grep -Fq 'Read-only observation progress' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Correlation progress' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'SignInWithAppleButton(.signIn)' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'loginByAuth2(' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'process_lifetime' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaProcessLifetimeBLEOwnershipFenceSourceTests.swift
+          grep -Fq 'Final signed app and embedded provisioning profile both authorize Sign in with Apple' scripts/field/install_one_time_capture.command
+          test "$(grep -Fc 'INFOPLIST_KEY_NembraCaptureProcedureIdentifier = "$(NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER)";' NembraCapture.xcodeproj/project.pbxproj)" = 2
+          git diff --check
+
+      - name: Publish clean entitlement + AX product bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm scripts/ci/apply_v14_capture_live_language_ax.py
+          rm .github/workflows/materialize-v14-capture-entitlement-ax.yml
+          git add -A
+          git diff --cached --check
+          git diff --cached --quiet && { echo 'ERROR: entitlement AX materializer produced no product delta' >&2; exit 1; }
+          git config user.name 'nembra-v14-agent'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): compose entitlement custody with AX progress'
+          git push origin HEAD:recovery/v14-capture-2250-entitlement-ax-gpt56sol
