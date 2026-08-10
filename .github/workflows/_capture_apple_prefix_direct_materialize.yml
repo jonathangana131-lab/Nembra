@@ -23,45 +23,44 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path('scripts/field/install_one_time_capture.command')
-          text = path.read_text(encoding='utf-8')
-
-          def replace_once(old: str, new: str) -> None:
-              global text
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'expected one repair subject, found {count}: {old!r}')
-              text = text.replace(old, new, 1)
-
-          replace_once('EXPECTED_APPLICATION_IDENTIFIER="${TEAM_ID}.${BUNDLE_ID}"\n', '')
-          replace_once(
-              '[[ "$BUILT_APPLICATION_IDENTIFIER" == "$EXPECTED_APPLICATION_IDENTIFIER" ]] || \\\n    die "Final signed Capture app application-identifier does not match the selected team and Capture bundle identifier. Discard this candidate."',
-              '[[ "$BUILT_APPLICATION_IDENTIFIER" == *".$BUNDLE_ID" ]] || \\\n    die "Final signed Capture app application-identifier does not end with the exact Capture bundle identifier. Discard this candidate."'
-          )
-          replace_once(
-              '        and team_identifiers[0] == entitlement_team):\n    sys.stdout.write(application + "\\t" + entitlement_team)',
-              '        and isinstance(team_identifiers[0], str)):\n    sys.stdout.write(application + "\\t" + entitlement_team + "\\t" + team_identifiers[0])'
-          )
-
-          start_marker = 'PROFILE_APPLICATION_IDENTIFIER="${PROFILE_SIGNING_IDENTITY%%$\'\\t\'*}"'
-          end_marker = 'unset BUILT_BUILD_IDENTIFIER'
-          start = text.index(start_marker)
-          end = text.index(end_marker, start)
-          replacement = '''IFS=$'\\t' read -r PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_IDENTIFIER PROFILE_ROOT_TEAM_IDENTIFIER <<< "$PROFILE_SIGNING_IDENTITY"
-[[ -n "$PROFILE_APPLICATION_IDENTIFIER" && -n "$PROFILE_TEAM_IDENTIFIER" && -n "$PROFILE_ROOT_TEAM_IDENTIFIER" ]] || \\
-    die "Embedded provisioning profile did not yield complete application/team identity custody. Discard this candidate."
-[[ "$PROFILE_APPLICATION_IDENTIFIER" == "$BUILT_APPLICATION_IDENTIFIER" ]] || \\
-    die "Embedded provisioning profile application identifier does not exactly match the final signed Capture app identifier. Wildcard or mismatched App ID authority is not accepted."
-[[ "$PROFILE_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \\
-    die "Embedded provisioning profile entitlement team identity does not match the selected Apple Development team. Discard this candidate."
-[[ "$PROFILE_ROOT_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \\
-    die "Embedded provisioning profile root TeamIdentifier does not match the selected Apple Development team. Discard this candidate."
-say "Final signed app and embedded provisioning profile authorize Sign in with Apple and agree on exact App ID/profile/team custody"
-unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_SIGNING_IDENTITY BUILT_APPLICATION_IDENTIFIER BUILT_TEAM_IDENTIFIER PROFILE_PLIST_XML PROFILE_SIGNING_IDENTITY PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_IDENTIFIER PROFILE_ROOT_TEAM_IDENTIFIER BUILT_PROFILE
-'''
-          text = text[:start] + replacement + text[end:]
-          path.write_text(text, encoding='utf-8')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          def exact_index(value):
+              matches = [i for i, line in enumerate(lines) if line == value]
+              if len(matches) != 1:
+                  raise SystemExit(f'expected one exact line, found {len(matches)}: {value!r}')
+              return matches[0]
+          expected_line = 'EXPECTED_APPLICATION_IDENTIFIER="${TEAM_ID}.${BUNDLE_ID}"'
+          lines.pop(exact_index(expected_line))
+          built = exact_index('[[ "$BUILT_APPLICATION_IDENTIFIER" == "$EXPECTED_APPLICATION_IDENTIFIER" ]] || ' + chr(92))
+          lines[built] = '[[ "$BUILT_APPLICATION_IDENTIFIER" == *".$BUNDLE_ID" ]] || ' + chr(92)
+          lines[built + 1] = '    die "Final signed Capture app application-identifier does not end with the exact Capture bundle identifier. Discard this candidate."'
+          parser = exact_index('        and team_identifiers[0] == entitlement_team):')
+          lines[parser] = '        and isinstance(team_identifiers[0], str)):'
+          if lines[parser + 1] != '    sys.stdout.write(application + "\\t" + entitlement_team)':
+              raise SystemExit('profile identity parser output subject drifted')
+          lines[parser + 1] = '    sys.stdout.write(application + "\\t" + entitlement_team + "\\t" + team_identifiers[0])'
+          starts = [i for i, line in enumerate(lines) if line.startswith('PROFILE_APPLICATION_IDENTIFIER=')]
+          ends = [i for i, line in enumerate(lines) if line.startswith('unset SIGNED_ENTITLEMENTS_OUTPUT')]
+          if len(starts) != 1 or len(ends) != 1 or ends[0] <= starts[0]:
+              raise SystemExit('profile custody block drifted')
+          start, end = starts[0], ends[0]
+          bs = chr(92)
+          replacement = [
+              "IFS=$'\\t' read -r PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_IDENTIFIER PROFILE_ROOT_TEAM_IDENTIFIER <<< \"$PROFILE_SIGNING_IDENTITY\"",
+              '[[ -n "$PROFILE_APPLICATION_IDENTIFIER" && -n "$PROFILE_TEAM_IDENTIFIER" && -n "$PROFILE_ROOT_TEAM_IDENTIFIER" ]] || ' + bs,
+              '    die "Embedded provisioning profile did not yield complete application/team identity custody. Discard this candidate."',
+              '[[ "$PROFILE_APPLICATION_IDENTIFIER" == "$BUILT_APPLICATION_IDENTIFIER" ]] || ' + bs,
+              '    die "Embedded provisioning profile application identifier does not exactly match the final signed Capture app identifier. Wildcard or mismatched App ID authority is not accepted."',
+              '[[ "$PROFILE_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || ' + bs,
+              '    die "Embedded provisioning profile entitlement team identity does not match the selected Apple Development team. Discard this candidate."',
+              '[[ "$PROFILE_ROOT_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || ' + bs,
+              '    die "Embedded provisioning profile root TeamIdentifier does not match the selected Apple Development team. Discard this candidate."',
+              'say "Final signed app and embedded provisioning profile authorize Sign in with Apple and agree on exact App ID/profile/team custody"',
+              'unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_SIGNING_IDENTITY BUILT_APPLICATION_IDENTIFIER BUILT_TEAM_IDENTIFIER PROFILE_PLIST_XML PROFILE_SIGNING_IDENTITY PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_IDENTIFIER PROFILE_ROOT_TEAM_IDENTIFIER BUILT_PROFILE',
+          ]
+          lines[start:end + 1] = replacement
+          path.write_text("\n".join(lines) + "\n", encoding='utf-8')
           PY
 
       - name: Validate exact custody shape
@@ -98,11 +97,7 @@ unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_SIGNING_IDENTITY BUILT_APPLICATION_IDENTI
           set -euo pipefail
           git config user.name 'nembra-capture-bot'
           git config user.email 'actions@users.noreply.github.com'
-          git rm -f \
-            .github/workflows/_capture_apple_prefix_direct_materialize.yml \
-            .github/workflows/materialize-capture-apple-prefix-rendezvous-fix.yml \
-            .github/workflows/repair-capture-apple-prefix-materializer-verifier.yml \
-            .github/workflows/repair-capture-apple-prefix-materializer-verifier-v2.yml
+          git rm -f .github/workflows/_capture_apple_prefix_direct_materialize.yml .github/workflows/materialize-capture-apple-prefix-rendezvous-fix.yml .github/workflows/repair-capture-apple-prefix-materializer-verifier.yml .github/workflows/repair-capture-apple-prefix-materializer-verifier-v2.yml
           git add scripts/field/install_one_time_capture.command Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSignedAppleAppIdentityCustodySourceTests.swift
           git diff --cached --check
           git diff --cached --stat
