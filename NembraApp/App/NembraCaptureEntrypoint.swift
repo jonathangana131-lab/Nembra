@@ -1302,6 +1302,32 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 do {
                     try await sessionLedger.markAuthenticated(for: token, method: .smartLifeAppSDK)
                     await refreshLedgerSnapshot()
+
+                    // Both actor hops above can interleave foreground/view/account teardown. Never
+                    // repaint a generation as observing after another terminal path retired its app authority.
+                    guard currentConnectionToken == token else {
+                        log("retired_authentication_promotion_ignored", [
+                            "generation": String(token.diagnosticGeneration)
+                        ])
+                        return
+                    }
+                    guard phase == .authenticating else {
+                        log("authentication_promotion_outside_active_phase_ignored", [
+                            "generation": String(token.diagnosticGeneration),
+                            "phase": phase.rawValue
+                        ])
+                        return
+                    }
+                    guard sdkAccountLoggedIn,
+                          sdkDeviceMembershipVerified,
+                          accountIdentityLeaseIsAuthorized else {
+                        await invalidateSourceAuthority(
+                            token: token,
+                            message: "Tuya account/device source authority changed while authenticated state was being promoted.",
+                            kind: "sdk_source_authority_lost_during_auth_promotion"
+                        )
+                        return
+                    }
                     phase = .observing
                     message = "Authenticated generation \(token.diagnosticGeneration) is live. Waiting for a genuine application update and the canonical 45-second horizon…"
                     log("sdk_local_ble_authenticated", [
