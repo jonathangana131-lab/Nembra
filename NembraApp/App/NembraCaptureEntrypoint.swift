@@ -1338,6 +1338,21 @@ private final class SecureLinkController: NSObject, ObservableObject {
                         return
                     }
 
+                    guard let promotionDriver = self.driver else {
+                        await invalidateSourceAuthority(
+                            token: token,
+                            message: "Official Tuya driver authority disappeared while authentication promotion was suspended.",
+                            kind: "sdk_driver_authority_lost_during_auth_promotion"
+                        )
+                        return
+                    }
+                    let promotionLocalBLEOnline = promotionDriver.isLocallyConnected(uuid: tuyaUUID)
+                    sdkLocalBLEOnline = promotionLocalBLEOnline
+                    guard promotionLocalBLEOnline else {
+                        await recordObservedTransportLoss(token: token)
+                        return
+                    }
+
                     phase = .observing
                     message = "Authenticated generation \(token.diagnosticGeneration) is live. Waiting for a genuine application update and the canonical 45-second horizon…"
                     log("sdk_local_ble_authenticated", [
