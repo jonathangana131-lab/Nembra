@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - capture/one-time-ble-dump-gpt56
+      - capture/v14-sdk-ledger-membership-field-gpt56sol
   workflow_dispatch:
 
 permissions:
@@ -37,7 +38,7 @@ jobs:
           grep -Fq "pod 'ThingSmartBusinessExtensionKit', '~> 7.8.0'" Podfile
           grep -Fq 'LocalSecrets/' .gitignore
 
-      - name: Enforce active Capture read-only and SDK-account contract
+      - name: Enforce active Capture truth and read-only contract
         shell: bash
         run: |
           set -euo pipefail
@@ -52,13 +53,33 @@ jobs:
             echo 'ERROR: Capture preflight must not call CoreBluetooth writeValue(...)'
             exit 1
           fi
+          if grep -Fn 'central.connect(' "$active"; then
+            echo 'ERROR: official Tuya SDK must remain the sole BLE connection owner after target discovery'
+            exit 1
+          fi
 
-          # The official SDK account gate must remain present; metadata QR approval
-          # alone is not accepted as BLE authentication authority.
+          # Account authorization, exact SDK-account device membership, tokenized
+          # session chronology, and the canonical verdict must all be app-visible.
           grep -Fq 'ThingSmartUser.sharedInstance()' "$active"
           grep -Fq 'sendVerifyCode(withUserName:' "$active"
           grep -Eq 'login\(withEmail:|login\(withMobile:' "$active"
+          grep -Fq 'ThingSmartHomeManager()' "$active"
+          grep -Fq 'getHomeList(success:' "$active"
+          grep -Fq 'getDataWithSuccess' "$active"
+          grep -Fq 'TuyaSDKAccountDeviceMembershipGate.verdict' "$active"
+          grep -Fq 'TuyaAuthenticatedReadOnlySessionLedger()' "$active"
+          grep -Fq 'TuyaAuthenticatedReadOnlyPreflight.verdict(for:' "$active"
           grep -Fq 'ThingSmartBLEManager.sharedInstance().connectBLE' "$active"
+          grep -Fq 'deviceStatue(withUUID:' "$active"
+
+          if grep -Fq 'var passed: Bool' "$active"; then
+            echo 'ERROR: field app must not own a parallel acceptance boolean'
+            exit 1
+          fi
+          if grep -Eq 'var likely: Bool[^{]*\{[^}]*score' "$active"; then
+            echo 'ERROR: candidate authorization must not depend on display score/name/RSSI hints'
+            exit 1
+          fi
 
           # Keep password-based Tuya login out of the field utility. Verification-code
           # login is sufficient and avoids collecting/persisting the account password.
@@ -67,12 +88,15 @@ jobs:
             exit 1
           fi
 
-      - name: Test Tuya authenticated preflight authority
+      - name: Test Tuya authenticated authorities
         run: |
           set -euo pipefail
           swift test \
             --package-path Packages/NembraBluetoothCapture \
             --filter TuyaAuthenticatedReadOnlyPreflightTests
+          swift test \
+            --package-path Packages/NembraBluetoothCapture \
+            --filter TuyaSDKAccountDeviceMembershipGateTests
 
       # This is the exact standalone project Joey installs for field learning.
       # CI intentionally compiles it without the private Tuya security package;
