@@ -32,7 +32,7 @@ jobs:
           from pathlib import Path
           s = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
           start = s.index("@MainActor\nprivate final class OfficialTuyaAccountAuthorizer")
-          end = s.index("#if canImport(ThingSmartHomeKit)\n@MainActor\nprivate final class OfficialTuyaMembershipProbe", start)
+          end = s.index("@MainActor\nprivate struct SecureLinkView: View", start)
           a = s[start:end]
           assert a.count("self?.finishLoginFailure(error, submittedIdentity: identity)") == 2
           assert a.count("    private func finishLoginFailure(") == 1
@@ -80,7 +80,7 @@ jobs:
           p = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           s = p.read_text()
           class_start = s.index("@MainActor\nprivate final class OfficialTuyaAccountAuthorizer")
-          class_end = s.index("#if canImport(ThingSmartHomeKit)\n@MainActor\nprivate final class OfficialTuyaMembershipProbe", class_start)
+          class_end = s.index("@MainActor\nprivate struct SecureLinkView: View", class_start)
           a = s[class_start:class_end]
           scrub_start = a.index("    private static func redactedError(")
           class_close = a.rfind("\n}\n")
@@ -121,7 +121,7 @@ jobs:
           from pathlib import Path
           source = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
           start = source.index("@MainActor\nprivate final class OfficialTuyaAccountAuthorizer")
-          end = source.index("#if canImport(ThingSmartHomeKit)\n@MainActor\nprivate final class OfficialTuyaMembershipProbe", start)
+          end = source.index("@MainActor\nprivate struct SecureLinkView: View", start)
           a = source[start:end]
           forwarded = "finishLoginFailure(error, submittedIdentity: identity, submittedVerificationCode: code)"
           assert a.count(forwarded) == 2
