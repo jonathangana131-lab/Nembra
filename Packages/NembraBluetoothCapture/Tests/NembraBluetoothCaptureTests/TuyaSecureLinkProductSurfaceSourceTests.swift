@@ -33,7 +33,11 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         #expect(body.contains("CAPTURE COMPLETE"))
         #expect(body.contains("Ready for analysis"))
         #expect(body.contains("Label(\"Share Capture\""))
-        #expect(body.contains("if accepted && test.exportData == nil { test.prepareExport() }"))
+        let seal = try #require(app.range(of: "self.sealedAcceptedExport = self.makeExport("))
+        let prepare = try #require(app.range(of: "self.prepareExport()", range: seal.upperBound..<app.endIndex))
+        #expect(seal.lowerBound < prepare.lowerBound)
+        #expect(body.contains("if let data = test.exportData"))
+        #expect(body.contains("ShareLink(item: SecureTransfer(data: data, name: test.exportName)"))
         #expect(body.contains("Button(showEngineeringDetails ? \"Hide details\" : \"View details\")"))
         #expect(body.contains("accepted artifact is sealed"))
     }
