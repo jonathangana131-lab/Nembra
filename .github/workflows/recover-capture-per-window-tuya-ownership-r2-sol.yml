@@ -1,0 +1,113 @@
+name: Recover Capture per-window Tuya ownership r2
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-per-window-tuya-ownership-r2-sol
+
+permissions:
+  contents: write
+
+jobs:
+  apply-per-window-ownership-fence:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact repair parent
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 8
+
+      - name: Verify immutable repair parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_PARENT=dd575021637f83d1b465354de2d0796f9342579f
+          WORKFLOW=.github/workflows/recover-capture-per-window-tuya-ownership-r2-sol.yml
+          git merge-base --is-ancestor "$PRODUCT_PARENT" HEAD
+          test "$(git diff --name-only "$PRODUCT_PARENT" HEAD)" = "$WORKFLOW"
+
+      - name: Fence every fresh correlation scanner admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text()
+          old = '''        guard let session = correlationSession,
+              let progress = session.progress else {
+            failLocally("Fresh Bluetooth correlation authority is unavailable. Restart from OFF1.", "target_correlation_authority_unavailable")
+            return
+        }
+
+        let label = correlationWindowLabel
+'''
+          new = '''        guard OfficialTuyaFactory.packageCorrelationMayStart else {
+            correlationSession?.abandonCurrentWindow()
+            correlationSession = nil
+            failLocally(
+                "Tuya BLE ownership was handed to the official SDK while target correlation was in progress. Relaunch Capture with the scooter OFF before a fresh OFF1→ON1→OFF2→ON2 series.",
+                "process_tuya_ble_ownership_changed_during_target_correlation"
+            )
+            return
+        }
+        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {
+            correlationSession?.abandonCurrentWindow()
+            correlationSession = nil
+            failLocally(
+                "Tuya acquired current local-BLE ownership while target correlation was in progress. Wait for that session to clear or relaunch Capture, then restart from OFF1. Package-owned correlation will not start another scanner window while Tuya owns local BLE.",
+                "sdk_local_ble_ownership_changed_during_target_correlation"
+            )
+            return
+        }
+        guard let session = correlationSession,
+              let progress = session.progress else {
+            failLocally("Fresh Bluetooth correlation authority is unavailable. Restart from OFF1.", "target_correlation_authority_unavailable")
+            return
+        }
+
+        let label = correlationWindowLabel
+'''
+          count = source.count(old)
+          if count != 1:
+              raise SystemExit(f"expected exactly one per-window admission seam, found {count}")
+          source = source.replace(old, new, 1)
+          path.write_text(source)
+
+          start = source.index("    private func startCurrentCorrelationWindow()")
+          end = source.index("    func finishCorrelationWindow()", start)
+          body = source[start:end]
+          process = body.index("OfficialTuyaFactory.packageCorrelationMayStart")
+          live = body.index("OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID)")
+          scanner = body.index("try session.startCurrentWindow()")
+          if not process < live < scanner:
+              raise SystemExit("ownership fences are not ordered before package scanner start")
+          if "return" not in body[process:live] or "return" not in body[live:scanner]:
+              raise SystemExit("ownership fence is not fail-closed before scanner start")
+          for forbidden in ("disconnectBLE", "publishDps", "queryDps", "writeValue", "sessionLedger.endConnection"):
+              if forbidden in body:
+                  raise SystemExit(f"per-window ownership fence gained forbidden mutation path: {forbidden}")
+          PY
+
+          git diff --check
+          grep -Fq 'process_tuya_ble_ownership_changed_during_target_correlation' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'sdk_local_ble_ownership_changed_during_target_correlation' NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Commit product-only repair and remove runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_PARENT=dd575021637f83d1b465354de2d0796f9342579f
+          WORKFLOW=.github/workflows/recover-capture-per-window-tuya-ownership-r2-sol.yml
+          PRODUCT=NembraApp/App/NembraCaptureEntrypoint.swift
+
+          rm "$WORKFLOW"
+          git diff --check
+          test "$(git diff --name-only "$PRODUCT_PARENT")" = "$PRODUCT"
+
+          git add "$PRODUCT" "$WORKFLOW"
+          git config user.name "nembra-recovery-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "fix(capture): fence Tuya ownership before every correlation window"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
