@@ -261,22 +261,22 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertNotIn(self.PRIVATE_UDID, json.dumps(report))
         self.assertNotIn(str(symlink_parent), json.dumps(report))
 
-    def test_production_handoff_uses_descriptor_bound_private_input_before_signing(self):
+    def test_production_handoff_consumes_accepted_descriptor_bound_private_input_before_signing(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
-        directory_guard = 'if [[ -L "$PRIVATE_DIR" ]]; then'
-        target_guard = 'if [[ -e "$UDID_FILE" || -L "$UDID_FILE" ]]; then'
-        helper_path = "scripts/ci/es80_private_intended_device_input.py"
-        helper_blob = "7de2eb55c138f578cf3c0a53d0f12db823fa276d"
-        helper_invoke = '/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER" --output-path "$UDID_FILE"'
+        helper_commit = "05ce6d9a20487ab34aa31c5b6456910ed2ed438f"
+        helper_path = "scripts/ci/es80_today_private_device_input.py"
+        helper_blob = "9a9f7f724ceaf895e52d6d443d326043f97645c8"
+        helper_invoke = '/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER"'
+        private_directory_arg = '--private-directory "$PRIVATE_DIR"'
+        source_repo_arg = '--source-repo "$FIELD_SOURCE"'
         producer_invoke = "./scripts/ci/xcode27_today_research_field_candidate.sh"
 
-        self.assertIn(directory_guard, handoff)
-        self.assertIn(target_guard, handoff)
+        self.assertIn(helper_commit, handoff)
         self.assertIn(helper_path, handoff)
         self.assertIn(helper_blob, handoff)
         self.assertIn(helper_invoke, handoff)
-        self.assertLess(handoff.index(directory_guard), handoff.index(helper_invoke))
-        self.assertLess(handoff.index(target_guard), handoff.index(helper_invoke))
+        self.assertIn(private_directory_arg, handoff)
+        self.assertIn(source_repo_arg, handoff)
         self.assertLess(handoff.index(helper_invoke), handoff.index(producer_invoke))
         self.assertNotIn("IFS= read -r -s INTENDED_UDID", handoff)
         self.assertNotIn("set -o noclobber", handoff)
@@ -287,7 +287,7 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
         home_resolution = 'HOME_PHYSICAL="$(cd -P -- "$HOME" && /bin/pwd -P)"'
         private_dir = 'PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"'
-        helper_invoke = '/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER" --output-path "$UDID_FILE"'
+        helper_invoke = '/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER"'
 
         self.assertIn(home_resolution, handoff)
         self.assertIn(private_dir, handoff)
