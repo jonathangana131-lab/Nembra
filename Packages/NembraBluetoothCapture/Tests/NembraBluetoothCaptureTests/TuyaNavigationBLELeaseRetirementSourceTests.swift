@@ -7,23 +7,34 @@ struct TuyaNavigationBLELeaseRetirementSourceTests {
     @Test("leaving Secure Link deterministically retires package correlation before controller loss")
     func secureLinkNavigationExitRetiresCorrelationLease() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let controller = String(try section(
+        let hook = String(try section(
             in: source,
-            from: "private final class SecureLinkController",
-            to: "@MainActor\nprivate protocol OfficialTuyaDriver"
+            from: "func abandonCorrelationForViewExit()",
+            to: "var privateConfig: Bool"
         ))
-        let view = String(try section(
+        let viewLifecycle = String(try section(
             in: source,
-            from: "private struct SecureLinkView: View",
-            to: "private extension SecureLinkView"
+            from: ".task {",
+            to: ".onChange(of: sdkAccount.loggedIn)"
         ))
 
-        #expect(controller.contains("func abandonCorrelationForViewExit()"))
-        #expect(controller.contains("guard processCorrelationLease != nil || correlationSession != nil else { return }"))
-        #expect(controller.contains("abandonPackageCorrelation()"))
-        #expect(controller.contains("target_correlation_abandoned_on_view_exit"))
-        #expect(view.contains(".onDisappear"))
-        #expect(view.contains("test.abandonCorrelationForViewExit()"))
+        let guardLine = try requiredLine(
+            containing: "guard processCorrelationLease != nil || correlationSession != nil else { return }",
+            in: hook
+        )
+        let abandonLine = try requiredLine(containing: "abandonPackageCorrelation()", in: hook)
+        let failureLine = try requiredLine(containing: "phase = .failed", in: hook)
+        let recoveryLine = try requiredLine(containing: "Restart from OFF1", in: hook)
+        let logLine = try requiredLine(containing: "target_correlation_abandoned_on_view_exit", in: hook)
+
+        #expect(guardLine < abandonLine)
+        #expect(abandonLine < failureLine)
+        #expect(failureLine < recoveryLine)
+        #expect(recoveryLine < logLine)
+
+        let disappearLine = try requiredLine(containing: ".onDisappear", in: viewLifecycle)
+        let hookCallLine = try requiredLine(containing: "test.abandonCorrelationForViewExit()", in: viewLifecycle)
+        #expect(disappearLine < hookCallLine)
     }
 
     @Test("cleanup reuses transport-first package abandonment path")
