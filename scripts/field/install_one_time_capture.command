@@ -196,7 +196,6 @@ fi
 DERIVED="${TMPDIR:-/tmp}/NembraAuthenticatedCaptureDerived"
 rm -rf "$DERIVED"
 BUNDLE_ID="com.jonathangana131.nembra.capturelearn"
-EXPECTED_APPLICATION_IDENTIFIER="${TEAM_ID}.${BUNDLE_ID}"
 PROCEDURE_ID="ES80-AUTHENTICATED-STATIONARY-v1"
 BUILD_LABEL="capture-v14-${SOURCE_SHA:0:12}"
 verify_private_tuya_inputs
@@ -265,8 +264,11 @@ if apple == ["Default"] and isinstance(application, str) and isinstance(team, st
     die "Final signed Capture app is missing required Sign in with Apple or exact application/team identity entitlements. Discard this candidate."
 BUILT_APPLICATION_IDENTIFIER="${BUILT_SIGNING_IDENTITY%%$'\t'*}"
 BUILT_TEAM_IDENTIFIER="${BUILT_SIGNING_IDENTITY#*$'\t'}"
-[[ "$BUILT_APPLICATION_IDENTIFIER" == "$EXPECTED_APPLICATION_IDENTIFIER" ]] || \
-    die "Final signed Capture app application-identifier does not match the selected team and Capture bundle identifier. Discard this candidate."
+[[ "$BUILT_APPLICATION_IDENTIFIER" == *."$BUNDLE_ID" ]] || \
+    die "Final signed Capture app application-identifier does not end in the exact Capture bundle identifier. Discard this candidate."
+BUILT_APP_ID_PREFIX="${BUILT_APPLICATION_IDENTIFIER%.$BUNDLE_ID}"
+[[ -n "$BUILT_APP_ID_PREFIX" && "$BUILT_APP_ID_PREFIX" != *"*"* ]] || \
+    die "Final signed Capture app application-identifier has an empty or wildcard App ID prefix. Discard this candidate."
 [[ "$BUILT_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \
     die "Final signed Capture app team identifier does not match the selected Apple Development team. Discard this candidate."
 
@@ -287,19 +289,23 @@ except Exception:
     raise SystemExit(2)
 if (apple == ["Default"] and isinstance(application, str) and isinstance(entitlement_team, str)
         and isinstance(team_identifiers, list) and len(team_identifiers) == 1
-        and team_identifiers[0] == entitlement_team):
-    sys.stdout.write(application + "\t" + entitlement_team)
+        and isinstance(team_identifiers[0], str)):
+    sys.stdout.write(application + "\t" + entitlement_team + "\t" + team_identifiers[0])
 ' || true)"
-[[ "$PROFILE_SIGNING_IDENTITY" == *$'\t'* ]] || \
+[[ "$PROFILE_SIGNING_IDENTITY" == *$'\t'*$'\t'* ]] || \
     die "Embedded provisioning profile is missing required Sign in with Apple or exact application/team identity custody. Discard this candidate."
 PROFILE_APPLICATION_IDENTIFIER="${PROFILE_SIGNING_IDENTITY%%$'\t'*}"
-PROFILE_TEAM_IDENTIFIER="${PROFILE_SIGNING_IDENTITY#*$'\t'}"
-[[ "$PROFILE_APPLICATION_IDENTIFIER" == "$EXPECTED_APPLICATION_IDENTIFIER" ]] || \
-    die "Embedded provisioning profile application identifier does not match the selected team and Capture bundle identifier. Discard this candidate."
+PROFILE_REMAINDER="${PROFILE_SIGNING_IDENTITY#*$'\t'}"
+PROFILE_TEAM_IDENTIFIER="${PROFILE_REMAINDER%%$'\t'*}"
+PROFILE_ROOT_TEAM_IDENTIFIER="${PROFILE_REMAINDER#*$'\t'}"
+[[ "$PROFILE_APPLICATION_IDENTIFIER" == "$BUILT_APPLICATION_IDENTIFIER" ]] || \
+    die "Embedded provisioning profile application-identifier does not exactly match the final signed Capture app. Discard this candidate."
 [[ "$PROFILE_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \
-    die "Embedded provisioning profile team identity does not match the selected Apple Development team. Discard this candidate."
-say "Final signed app and embedded provisioning profile authorize Sign in with Apple for the exact selected App ID and team"
-unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_SIGNING_IDENTITY BUILT_APPLICATION_IDENTIFIER BUILT_TEAM_IDENTIFIER PROFILE_PLIST_XML PROFILE_SIGNING_IDENTITY PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_IDENTIFIER BUILT_PROFILE
+    die "Embedded provisioning profile entitlement team identifier does not match the selected Apple Development team. Discard this candidate."
+[[ "$PROFILE_ROOT_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \
+    die "Embedded provisioning profile root TeamIdentifier does not match the selected Apple Development team. Discard this candidate."
+say "Final signed app and embedded provisioning profile authorize Sign in with Apple for one exact App ID and the selected team"
+unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_SIGNING_IDENTITY BUILT_APPLICATION_IDENTIFIER BUILT_TEAM_IDENTIFIER BUILT_APP_ID_PREFIX PROFILE_PLIST_XML PROFILE_SIGNING_IDENTITY PROFILE_APPLICATION_IDENTIFIER PROFILE_REMAINDER PROFILE_TEAM_IDENTIFIER PROFILE_ROOT_TEAM_IDENTIFIER BUILT_PROFILE
 unset BUILT_BUILD_IDENTIFIER BUILT_SOURCE_SHA BUILT_TUYA_DEPENDENCY_LOCK_SHA256 BUILT_PROCEDURE_IDENTIFIER BUILT_BUNDLE_ID APP_INFO_PLIST
 
 say "Installing SDK-integrated Capture on the intended iPhone"
