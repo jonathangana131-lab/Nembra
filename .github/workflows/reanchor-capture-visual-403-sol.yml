@@ -1,0 +1,71 @@
+name: Reanchor Capture Visual 403
+
+on:
+  push:
+    branches:
+      - qa/v14-capture-visual-403-sol
+
+permissions:
+  contents: write
+
+jobs:
+  reanchor:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: qa/v14-capture-visual-403-sol
+          fetch-depth: 0
+
+      - name: Guard exact product and QA-only staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='403f2c1901fc4793f22f755cfc447f6c28a9dd41'
+          test "$(git merge-base HEAD "$base")" = "$base"
+          test "$(git diff --name-only "$base"...HEAD)" = '.github/workflows/reanchor-capture-visual-403-sol.yml'
+          grep -Fq 'if dynamicTypeSize.isAccessibilitySize {' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'func abandonCorrelationForViewExit()' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'test_capture_apple_signin_field_entitlement_custody.py' .github/workflows/capture-field-build-provenance.yml
+
+      - name: Copy reviewed standalone visual evidence harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          donor='fca7d56a4452b1cfbf5a823434dbed25382377cc'
+          paths=(
+            '.github/workflows/capture-standalone-visual-evidence.yml'
+            'scripts/ci/capture_standalone_visual_evidence.sh'
+            'scripts/ci/tests/test_capture_standalone_visual_evidence.py'
+          )
+          git fetch --no-tags origin "$donor"
+          for path in "${paths[@]}"; do
+            mkdir -p "$(dirname "$path")"
+            git show "$donor:$path" > "$path"
+          done
+          bash -n scripts/ci/capture_standalone_visual_evidence.sh
+          python3 -m py_compile scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          git diff --check
+
+      - name: Publish clean exact-product visual child
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='403f2c1901fc4793f22f755cfc447f6c28a9dd41'
+          rm -f .github/workflows/reanchor-capture-visual-403-sol.yml
+          git add -A
+          git diff --cached --check
+          mapfile -t effective < <(git diff --name-only "$base" | sort)
+          mapfile -t wanted < <(printf '%s\n' \
+            '.github/workflows/capture-standalone-visual-evidence.yml' \
+            'scripts/ci/capture_standalone_visual_evidence.sh' \
+            'scripts/ci/tests/test_capture_standalone_visual_evidence.py' | sort)
+          test "${#effective[@]}" -eq "${#wanted[@]}"
+          for i in "${!wanted[@]}"; do test "${effective[$i]}" = "${wanted[$i]}"; done
+          git config user.name 'nembra-v14-bot'
+          git config user.email 'nembra-v14-bot@users.noreply.github.com'
+          git commit -m 'qa(capture): reanchor exact iPhone 12 visual evidence to 403'
+          git push origin HEAD:qa/v14-capture-visual-403-sol
