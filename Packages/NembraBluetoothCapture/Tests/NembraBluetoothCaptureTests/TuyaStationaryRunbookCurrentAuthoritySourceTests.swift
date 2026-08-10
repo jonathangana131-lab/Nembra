@@ -44,6 +44,22 @@ struct TuyaStationaryRunbookCurrentAuthoritySourceTests {
         #expect(!provisioning.contains("OFF baseline then ON correlation"))
     }
 
+    @Test("legacy secure-link runbook is a tombstone and cannot remain executable")
+    func legacySecureLinkRunbookCannotCarryStalePhysicalInstructions() throws {
+        let legacy = try readRepositoryFile("docs/CAPTURE_NEXT_TUYA_SECURE_LINK_TEST.md")
+
+        #expect(legacy.contains("DEPRECATED / DO NOT USE"))
+        #expect(legacy.contains("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md"))
+        #expect(legacy.contains("OFF1 → ON1 → OFF2 → ON2"))
+        #expect(legacy.contains("no historical UUID/name/RSSI/FD50/Tuya-hint fallback authority"))
+        #expect(legacy.contains("PHYSICAL STATUS: NO-GO"))
+
+        #expect(!legacy.contains("With scooter OFF, collect a short local Bluetooth baseline"))
+        #expect(!legacy.contains("previous CoreBluetooth UUID plus FD50 / Tuya company-ID / power-on-delta evidence"))
+        #expect(!legacy.contains("NEMBRA_TUYA_APP_KEY"))
+        #expect(!legacy.contains("NEMBRA_TUYA_APP_SECRET"))
+    }
+
     private func readRepositoryFile(_ relativePath: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
