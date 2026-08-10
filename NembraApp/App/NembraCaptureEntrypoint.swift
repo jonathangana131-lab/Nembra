@@ -370,6 +370,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     )
     @Published private(set) var exportData: Data?
     @Published private(set) var exportName = "Nembra-Secure-Link-Diagnostics.json"
+    @Published private(set) var diagnosticExportError: String?
 
     let deviceID: String
     let deviceName: String
@@ -2037,6 +2038,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func prepareExport() {
+        diagnosticExportError = nil
         let envelope: Export
         if phase == .accepted {
             guard let sealedAcceptedExport else {
@@ -2064,7 +2066,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
             }
         } catch {
             exportData = nil
-            message = "Diagnostic export failed: \(error.localizedDescription)"
+            if phase == .failed {
+                diagnosticExportError = "Diagnostics could not be prepared: \(error.localizedDescription)"
+            } else {
+                message = "Diagnostic export failed: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -2101,6 +2107,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         pendingCorrelatedTargetID = nil
         sdkLocalBLEOnline = false
         exportData = nil
+        diagnosticExportError = nil
         // Active authenticated generations must be terminally retired by their
         // owning outcome path before a new discovery attempt. Generic reset never
         // manufactures a transport-disconnect terminal.
@@ -3321,6 +3328,17 @@ private struct SecureLinkView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.large)
                 .accessibilityHint("Prepares sanitized evidence from this stopped attempt for troubleshooting. It does not accept the Capture.")
+            }
+
+            if let diagnosticExportError = test.diagnosticExportError {
+                Label("Diagnostics preparation issue", systemImage: "exclamationmark.triangle")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.orange)
+                Text(diagnosticExportError)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Diagnostics preparation issue. \(diagnosticExportError)")
             }
 
             Text("Diagnostics preserve legitimate failed-attempt evidence for analysis. They never turn this stopped attempt into an accepted Capture.")
