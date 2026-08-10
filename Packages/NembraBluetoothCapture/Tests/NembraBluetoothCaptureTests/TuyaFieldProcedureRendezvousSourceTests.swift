@@ -9,8 +9,12 @@ struct TuyaFieldProcedureRendezvousSourceTests {
     @Test("compiled app identity and immutable accepted export record one exact procedure")
     func appAndAcceptedArtifactShareCanonicalProcedure() throws {
         let identity = try readRepositoryFile("NembraApp/App/NembraCaptureBuildIdentity.swift")
+        let project = try readRepositoryFile("NembraCapture.xcodeproj/project.pbxproj")
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
+        #expect(identity.contains("procedureIdentifierInfoKey"))
+        #expect(identity.contains("procedureIdentifier == Self.fieldProcedureIdentifier"))
+        #expect(project.contains("INFOPLIST_KEY_NembraCaptureProcedureIdentifier"))
         #expect(identity.contains("fieldProcedureIdentifier"))
         #expect(identity.contains(Self.procedure))
         #expect(app.contains("let procedureIdentifier: String"))
@@ -26,6 +30,9 @@ struct TuyaFieldProcedureRendezvousSourceTests {
 
         #expect(runbook.contains("PROCEDURE_ID: `\(Self.procedure)`"))
         #expect(installer.contains("PROCEDURE_ID=\"\(Self.procedure)\""))
+        #expect(installer.contains("NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER=$PROCEDURE_ID"))
+        #expect(installer.contains("plutil -extract NembraCaptureProcedureIdentifier"))
+        #expect(installer.contains("BUILT_PROCEDURE_ID\" == \"$PROCEDURE_ID"))
         #expect(installer.contains("Field procedure: $PROCEDURE_ID"))
     }
 
