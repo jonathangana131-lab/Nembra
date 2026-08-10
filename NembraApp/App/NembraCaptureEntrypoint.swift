@@ -419,7 +419,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
     func activateMembershipRequestsForView() {
         // A fast inactive -> active transition must not reset the duplicate-retirement fence
         // while the exact authenticated generation from foreground loss is still terminalizing.
-        guard currentConnectionToken == nil else { return }
+        // OfficialTuyaFactory.make() retires package correlation before the async package token
+        // exists, so token-nil alone cannot authorize reactivation after Tuya BLE handoff.
+        guard OfficialTuyaFactory.packageCorrelationMayStart,
+              currentConnectionToken == nil else { return }
         foregroundIntegrityLossHandled = false
         acceptsViewScopedMembershipRequests = true
     }
@@ -431,6 +434,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Exact scooter membership must be freshly verified for this Secure Link session."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -488,6 +492,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Exact scooter membership must be freshly verified for this Secure Link session."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -1414,6 +1419,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
             )
             return
         }
+        guard let verifiedAccountUID = membershipAccountUID, !verifiedAccountUID.isEmpty else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "The verified Tuya account-identity lease disappeared before application evidence custody.",
+                kind: "sdk_account_identity_lease_missing_during_application_update"
+            )
+            return
+        }
         guard driver.isLocallyConnected(uuid: tuyaUUID) else {
             await recordObservedTransportLoss(token: token)
             return
@@ -1425,9 +1438,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            let redactedUpdate = redactVerifiedAccountUID(update, verifiedAccountUID: verifiedAccountUID)
+            log("tuya_application_update", redactedUpdate.merging([
                 "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -1452,6 +1466,31 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 kind: "application_update_lifecycle_rejected"
             )
         }
+    }
+
+
+    private func redactVerifiedAccountUID(
+        _ update: [String: String],
+        verifiedAccountUID: String
+    ) -> [String: String] {
+        let marker = "<redacted-account-uid>"
+        var redacted: [String: String] = [:]
+        for key in update.keys.sorted() {
+            guard let value = update[key] else { continue }
+            let redactedKey = key.replacingOccurrences(of: verifiedAccountUID, with: marker)
+            let redactedValue = value.replacingOccurrences(of: verifiedAccountUID, with: marker)
+
+            // Exact-value redaction can collapse two malformed keys onto one safe spelling.
+            // Preserve both evidence values without ever restoring the account UID into the key.
+            var admittedKey = redactedKey
+            var collisionIndex = 2
+            while redacted[admittedKey] != nil {
+                admittedKey = "\(redactedKey)#\(collisionIndex)"
+                collisionIndex += 1
+            }
+            redacted[admittedKey] = redactedValue
+        }
+        return redacted
     }
 
     private func startWatchdog(token: TuyaReadOnlyConnectionToken) {
@@ -2241,7 +2280,6 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "accounttoken",
         "accesstoken",
         "refreshtoken",
-        "sessionkey",
         "authkey",
         "seckey",
     ]
