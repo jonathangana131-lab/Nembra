@@ -38,14 +38,18 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+
           path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           source = path.read_text(encoding='utf-8')
 
-          marker = '    var privateConfig: Bool { OfficialTuyaFactory.configured }\n'
-          if source.count(marker) != 1:
-              raise SystemExit('controller insertion marker mismatch')
+          def replace_once(text: str, needle: str, replacement: str, label: str) -> str:
+              count = text.count(needle)
+              if count != 1:
+                  raise SystemExit(f'{label} marker count={count}')
+              return text.replace(needle, replacement, 1)
 
-          method = '''    func appDidLoseForeground() {
+          controller_marker = '    var privateConfig: Bool { OfficialTuyaFactory.configured }'
+          method = r'''    func appDidLoseForeground() {
               // Capture evidence is foreground-only. Close view-scoped admission and revoke every
               // pending asynchronous grant before inspecting active radio/session state.
               acceptsViewScopedMembershipRequests = false
@@ -107,27 +111,33 @@ jobs:
           }
 
           '''
-          source = source.replace(marker, method + marker, 1)
+          source = replace_once(
+              source,
+              controller_marker,
+              method + controller_marker,
+              'controller insertion'
+          )
 
-          env = '    @Environment(\\.dynamicTypeSize) private var dynamicTypeSize\n'
-          if source.count(env) != 1:
-              raise SystemExit('scene environment marker mismatch')
-          source = source.replace(env, env + '    @Environment(\\.scenePhase) private var scenePhase\n', 1)
+          env_marker = r'    @Environment(\.dynamicTypeSize) private var dynamicTypeSize'
+          source = replace_once(
+              source,
+              env_marker,
+              env_marker + '\n' + r'    @Environment(\.scenePhase) private var scenePhase',
+              'scene environment'
+          )
 
           view_exit = '''        .onDisappear {
               test.abandonCorrelationForViewExit()
-          }
-          '''
-          if source.count(view_exit) != 1:
-              raise SystemExit('view lifecycle marker mismatch')
-          scene = '''        .onChange(of: scenePhase) { _, newPhase in
+          }'''
+          scene = '''
+          .onChange(of: scenePhase) { _, newPhase in
               if newPhase != .active {
                   test.appDidLoseForeground()
               }
-          }
-          '''
-          source = source.replace(view_exit, view_exit + scene, 1)
+          }'''
+          source = replace_once(source, view_exit, view_exit + scene, 'view lifecycle')
           path.write_text(source, encoding='utf-8')
+          print('foreground-integrity transform applied')
           PY
 
       - name: Verify foreground truth boundary
