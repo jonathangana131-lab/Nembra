@@ -27,8 +27,9 @@ jobs:
           git diff --quiet "$parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
           mapfile -t changed < <(git diff --name-only "$parent"...HEAD | sort)
           printf '%s\n' "${changed[@]}"
-          test "${#changed[@]}" = 1
+          test "${#changed[@]}" = 2
           test "${changed[0]}" = '.github/workflows/materialize-capture-current-truth-uid-closure-8ff-sol.yml'
+          test "${changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift'
 
       - name: Bind accepted application evidence to verified account UID custody
         shell: bash
@@ -36,187 +37,84 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           source = path.read_text(encoding='utf-8')
-
           receiver_marker = '    private func receivedApplicationUpdate(\n'
           if source.count(receiver_marker) != 1:
               raise SystemExit('receivedApplicationUpdate marker is ambiguous')
           if '<redacted-account-uid>' in source:
               raise SystemExit('account UID custody repair already present or ambiguous')
-
-          helper = '''    private func applicationUpdateForEventCustody(_ update: [String: String]) -> [String: String]? {
-        guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !verifiedAccountUID.isEmpty else { return nil }
-
-        var redacted: [String: String] = [:]
-        for key in update.keys.sorted() {
-            guard let value = update[key] else { continue }
-            let safeKey = key.replacingOccurrences(
-                of: verifiedAccountUID,
-                with: "<redacted-account-uid>",
-                options: [.caseInsensitive, .literal]
-            )
-            let safeValue = value.replacingOccurrences(
-                of: verifiedAccountUID,
-                with: "<redacted-account-uid>",
-                options: [.caseInsensitive, .literal]
-            )
-
-            // Malformed UID-bearing keys may collapse after redaction. Preserve every field under
-            // a deterministic non-authoritative suffix rather than silently dropping evidence.
-            var uniqueKey = safeKey
-            var collisionSuffix = 2
-            while redacted[uniqueKey] != nil {
-                uniqueKey = "\\(safeKey)#\\(collisionSuffix)"
-                collisionSuffix += 1
-            }
-            redacted[uniqueKey] = safeValue
-        }
-        return redacted
-    }
-
-'''
+          helper_lines = [
+              '    private func applicationUpdateForEventCustody(_ update: [String: String]) -> [String: String]? {',
+              '        guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),',
+              '              !verifiedAccountUID.isEmpty else { return nil }',
+              '',
+              '        var redacted: [String: String] = [:]',
+              '        for key in update.keys.sorted() {',
+              '            guard let value = update[key] else { continue }',
+              '            let safeKey = key.replacingOccurrences(',
+              '                of: verifiedAccountUID,',
+              '                with: "<redacted-account-uid>",',
+              '                options: [.caseInsensitive, .literal]',
+              '            )',
+              '            let safeValue = value.replacingOccurrences(',
+              '                of: verifiedAccountUID,',
+              '                with: "<redacted-account-uid>",',
+              '                options: [.caseInsensitive, .literal]',
+              '            )',
+              '',
+              '            // Malformed UID-bearing keys may collapse after redaction. Preserve every field under',
+              '            // a deterministic non-authoritative suffix rather than silently dropping evidence.',
+              '            var uniqueKey = safeKey',
+              '            var collisionSuffix = 2',
+              '            while redacted[uniqueKey] != nil {',
+              '                uniqueKey = "\\(safeKey)#\\(collisionSuffix)"',
+              '                collisionSuffix += 1',
+              '            }',
+              '            redacted[uniqueKey] = safeValue',
+              '        }',
+              '        return redacted',
+              '    }',
+              '',
+          ]
+          helper = '\n'.join(helper_lines) + '\n'
           source = source.replace(receiver_marker, helper + receiver_marker, 1)
-
           receiver_start = source.index('    private func receivedApplicationUpdate(')
           receiver_end = source.index('    private func startWatchdog', receiver_start)
           receiver = source[receiver_start:receiver_end]
-
-          admission_marker = '''        applicationUpdateAdmissionsInFlight += 1
-        defer { applicationUpdateAdmissionsInFlight -= 1 }
-
-        do {
-'''
-          safe_admission = '''        guard let custodySafeUpdate = applicationUpdateForEventCustody(update) else {
-            await invalidateSourceAuthority(
-                token: token,
-                message: "Verified Tuya account identity became unavailable before application evidence could enter immutable custody.",
-                kind: "sdk_account_uid_custody_unavailable"
-            )
-            return
-        }
-
-        applicationUpdateAdmissionsInFlight += 1
-        defer { applicationUpdateAdmissionsInFlight -= 1 }
-
-        do {
-'''
+          admission_marker = '        applicationUpdateAdmissionsInFlight += 1\n        defer { applicationUpdateAdmissionsInFlight -= 1 }\n\n        do {\n'
+          safe_admission_lines = [
+              '        guard let custodySafeUpdate = applicationUpdateForEventCustody(update) else {',
+              '            await invalidateSourceAuthority(',
+              '                token: token,',
+              '                message: "Verified Tuya account identity became unavailable before application evidence could enter immutable custody.",',
+              '                kind: "sdk_account_uid_custody_unavailable"',
+              '            )',
+              '            return',
+              '        }',
+              '',
+              '        applicationUpdateAdmissionsInFlight += 1',
+              '        defer { applicationUpdateAdmissionsInFlight -= 1 }',
+              '',
+              '        do {',
+              '',
+          ]
+          safe_admission = '\n'.join(safe_admission_lines)
           if receiver.count(admission_marker) != 1:
               raise SystemExit('application admission point changed or is ambiguous')
           receiver = receiver.replace(admission_marker, safe_admission, 1)
-
-          log_marker = '''            log("tuya_application_update", update.merging([
-                "generation": String(token.diagnosticGeneration)
-            ]) { _, trusted in trusted })'''
-          safe_log = '''            log("tuya_application_update", custodySafeUpdate.merging([
-                "generation": String(token.diagnosticGeneration)
-            ]) { _, trusted in trusted })'''
+          log_marker = '            log("tuya_application_update", update.merging([\n                "generation": String(token.diagnosticGeneration)\n            ]) { _, trusted in trusted })'
+          safe_log = '            log("tuya_application_update", custodySafeUpdate.merging([\n                "generation": String(token.diagnosticGeneration)\n            ]) { _, trusted in trusted })'
           if receiver.count(log_marker) != 1:
               raise SystemExit('trusted application-event merge shape changed or is ambiguous')
           receiver = receiver.replace(log_marker, safe_log, 1)
           source = source[:receiver_start] + receiver + source[receiver_end:]
-
-          duplicate = '''        "refreshtoken",
-        "sessionkey",
-        "authkey",'''
+          duplicate = '        "refreshtoken",\n        "sessionkey",\n        "authkey",'
           if source.count(duplicate) != 1:
               raise SystemExit('expected duplicated sessionkey tail shape not found exactly once')
-          source = source.replace(duplicate, '''        "refreshtoken",
-        "authkey",''', 1)
-
+          source = source.replace(duplicate, '        "refreshtoken",\n        "authkey",', 1)
           path.write_text(source, encoding='utf-8')
           PY
-
-      - name: Add exact account UID custody regression
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift <<'SWIFT'
-          import Foundation
-          import Testing
-          @testable import NembraBluetoothCapture
-
-          @Suite("Tuya application account-UID export custody")
-          struct TuyaApplicationAccountUIDExportCustodySourceTests {
-              @Test("accepted application evidence redacts the verified account UID before event custody")
-              func applicationEvidenceCannotExportVerifiedAccountUID() throws {
-                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-                  let helper = String(try section(
-                      in: source,
-                      from: "private func applicationUpdateForEventCustody(",
-                      to: "private func receivedApplicationUpdate("
-                  ))
-                  let updateAdmission = String(try section(
-                      in: source,
-                      from: "private func receivedApplicationUpdate(",
-                      to: "private func startWatchdog"
-                  ))
-                  let prepareExport = String(try section(
-                      in: source,
-                      from: "func prepareExport()",
-                      to: "private func abandonPackageCorrelation()"
-                  ))
-
-                  #expect(prepareExport.contains("No account UID"))
-                  #expect(helper.contains("membershipAccountUID?.trimmingCharacters"))
-                  #expect(helper.contains("<redacted-account-uid>"))
-                  #expect(helper.contains("key.replacingOccurrences("))
-                  #expect(helper.contains("value.replacingOccurrences("))
-                  #expect(helper.contains("update.keys.sorted()"))
-                  #expect(helper.contains("while redacted[uniqueKey] != nil"))
-                  #expect(updateAdmission.contains("guard let custodySafeUpdate = applicationUpdateForEventCustody(update)"))
-                  #expect(updateAdmission.contains("sdk_account_uid_custody_unavailable"))
-                  #expect(updateAdmission.contains("log(\"tuya_application_update\", custodySafeUpdate.merging(["))
-                  #expect(!updateAdmission.contains("log(\"tuya_application_update\", update.merging(["))
-                  #expect(updateAdmission.contains("]) { _, trusted in trusted })"))
-                  #expect(!updateAdmission.contains("]) { current, _ in current })"))
-              }
-
-              @Test("account UID custody is value-bound rather than a blanket generic uid-key rule")
-              func accountUIDCustodyDoesNotEraseGenericDeviceUIDKeys() throws {
-                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-                  let driver = String(try section(
-                      in: source,
-                      from: "@MainActor\nprivate final class SmartLifeDriver",
-                      to: "#endif\n\nprivate enum AppleAccountAuthorizationError"
-                  ))
-                  let fragments = String(try section(
-                      in: driver,
-                      from: "private static let secretKeyFragments",
-                      to: "private static func redactApplicationSecrets"
-                  ))
-
-                  #expect(!fragments.contains("\"uid\","))
-                  #expect(!fragments.contains("\"uid\"\n"))
-                  #expect(fragments.components(separatedBy: "\"sessionkey\"").count - 1 == 1)
-              }
-
-              private func section(in source: String, from start: String, to end: String) throws -> Substring {
-                  guard let startRange = source.range(of: start),
-                        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
-                      Issue.record("Expected source section missing: \(start) ... \(end)")
-                      throw SourceContractError.sectionMissing
-                  }
-                  return source[startRange.lowerBound..<endRange.lowerBound]
-              }
-
-              private func readRepositoryFile(_ relativePath: String) throws -> String {
-                  let repositoryRoot = URL(fileURLWithPath: #filePath)
-                      .deletingLastPathComponent()
-                      .deletingLastPathComponent()
-                      .deletingLastPathComponent()
-                      .deletingLastPathComponent()
-                      .deletingLastPathComponent()
-                  return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
-              }
-
-              private enum SourceContractError: Error {
-                  case sectionMissing
-              }
-          }
-          SWIFT
 
       - name: Verify combined truth closure and narrow scope
         shell: bash
@@ -224,14 +122,12 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
           helper_start = s.index('private func applicationUpdateForEventCustody(')
           receiver_start = s.index('private func receivedApplicationUpdate(', helper_start)
           receiver_end = s.index('private func startWatchdog', receiver_start)
           helper = s[helper_start:receiver_start]
           receiver = s[receiver_start:receiver_end]
-
           assert 'membershipAccountUID?.trimmingCharacters' in helper
           assert '<redacted-account-uid>' in helper
           assert 'update.keys.sorted()' in helper
@@ -242,7 +138,6 @@ jobs:
           assert 'log("tuya_application_update", update.merging([' not in receiver
           assert ']) { _, trusted in trusted })' in receiver
           assert ']) { current, _ in current })' not in receiver
-
           exit_start = s.index('func abandonCorrelationForViewExit()')
           fg_start = s.index('func appDidLoseForeground()', exit_start)
           private_start = s.index('var privateConfig: Bool', fg_start)
@@ -254,7 +149,6 @@ jobs:
               revoke = cleanup.index('membershipRequestID = UUID()')
               assert clear < status < revoke
               assert 'membership verified and leased' not in cleanup.lower()
-
           completed = fg_cleanup.index('if phase == .correlated || phase == .selected')
           token = fg_cleanup.index('guard let token = currentConnectionToken else')
           assert completed < token
@@ -266,7 +160,6 @@ jobs:
           assert 'Task { @MainActor [self] in' in fg_cleanup
           assert 'guard self.currentConnectionToken == token else { return }' in fg_cleanup
           assert '@Environment(\\.scenePhase) private var scenePhase' in s
-
           driver_start = s.index('@MainActor\nprivate final class SmartLifeDriver')
           driver_end = s.index('#endif\n\nprivate enum AppleAccountAuthorizationError', driver_start)
           driver = s[driver_start:driver_end]
@@ -276,11 +169,9 @@ jobs:
           assert fragments.count('"sessionkey"') == 1
           assert '"uid",' not in fragments
           assert '"uid"\n' not in fragments
-
           for block in (helper, receiver, exit_cleanup, fg_cleanup):
               for forbidden in ('queryDps','publishDps','writeValue','writeWithoutResponse','disconnectBLE','endConnection('):
                   assert forbidden not in block, forbidden
-
           test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift')
           assert test_path.exists()
           print('Capture combined current-truth closure contract: PASS')
@@ -293,12 +184,10 @@ jobs:
           set -euo pipefail
           parent='8ff67f8217b78f3aae2f64510e5d73004b254265'
           rm .github/workflows/materialize-capture-current-truth-uid-closure-8ff-sol.yml
-          git add NembraApp/App/NembraCaptureEntrypoint.swift \
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
           git add -u .github/workflows/materialize-capture-current-truth-uid-closure-8ff-sol.yml
           git diff --cached --check
-          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' \
-            commit -m 'fix(capture): close account UID custody on current truth head'
+          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' commit -m 'fix(capture): close account UID custody on current truth head'
           mapfile -t changed < <(git diff --name-only "$parent" HEAD | sort)
           printf '%s\n' "${changed[@]}"
           test "${#changed[@]}" = 2
