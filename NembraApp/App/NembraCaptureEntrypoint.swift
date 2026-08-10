@@ -431,6 +431,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -488,6 +489,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -1381,6 +1383,38 @@ private final class SecureLinkController: NSObject, ObservableObject {
         log(kind, ["generation": String(token.diagnosticGeneration)])
     }
 
+    private func redactVerifiedAccountUID(in update: [String: String]) -> [String: String] {
+        guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !verifiedAccountUID.isEmpty else {
+            return update
+        }
+
+        let marker = "<redacted-account-uid>"
+        var sanitized: [String: String] = [:]
+        for key in update.keys.sorted() {
+            guard let value = update[key] else { continue }
+            let safeKey = key.replacingOccurrences(
+                of: verifiedAccountUID,
+                with: marker,
+                options: [.caseInsensitive]
+            )
+            let safeValue = value.replacingOccurrences(
+                of: verifiedAccountUID,
+                with: marker,
+                options: [.caseInsensitive]
+            )
+
+            var outputKey = safeKey
+            var collision = 2
+            while sanitized[outputKey] != nil {
+                outputKey = "\(safeKey) [redacted-key-\(collision)]"
+                collision += 1
+            }
+            sanitized[outputKey] = safeValue
+        }
+        return sanitized
+    }
+
     private func receivedApplicationUpdate(
         _ update: [String: String],
         token: TuyaReadOnlyConnectionToken
@@ -1423,11 +1457,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
         defer { applicationUpdateAdmissionsInFlight -= 1 }
 
         do {
-            try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
+            let custodySafeUpdate = redactVerifiedAccountUID(in: update)
+            try await sessionLedger.recordApplicationUpdate(isNonEmpty: !custodySafeUpdate.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            log("tuya_application_update", custodySafeUpdate.merging([
                 "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -2241,7 +2276,6 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "accounttoken",
         "accesstoken",
         "refreshtoken",
-        "sessionkey",
         "authkey",
         "seckey",
     ]
