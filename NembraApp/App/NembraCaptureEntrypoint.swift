@@ -1753,6 +1753,21 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
     }
 
+    func abandonCorrelationForViewExit() {
+        // A SwiftUI navigation exit must not rely on controller/session deinit to retire radio
+        // ownership. Stop the package scanner first, then release only this controller's opaque
+        // process lease through the existing ordered cleanup path. If the same view instance is
+        // ever presented again, expose a recoverable failed state rather than a dead correlation UI.
+        guard processCorrelationLease != nil || correlationSession != nil else { return }
+        abandonPackageCorrelation()
+        pendingCorrelatedTargetID = nil
+        watchdog?.cancel()
+        watchdog = nil
+        phase = .failed
+        message = "Bluetooth correlation stopped because Capture left Secure Link. Return with the scooter OFF and restart from OFF1."
+        log("target_correlation_abandoned_on_view_exit")
+    }
+
     private func abandonPackageCorrelation() {
         // Radio transport first, process lease second. The owner token prevents an old controller
         // from clearing a lease that belongs to a newer correlation attempt.
@@ -2405,6 +2420,9 @@ private struct SecureLinkView: View {
         .onChange(of: sdkAccount.loggedIn) { _, loggedIn in
             if loggedIn { test.verifySDKMembership() }
             else { test.invalidateSDKMembership() }
+        }
+        .onDisappear {
+            test.abandonCorrelationForViewExit()
         }
     }
 
