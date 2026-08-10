@@ -25,26 +25,25 @@ struct TuyaApplicationEvidenceAdmissionSealRaceSourceTests {
 
         guard let beginAdmission = receiptBody.range(of: "beginApplicationEvidenceAdmission"),
               let packageAdmission = receiptBody.range(of: "sessionLedger.recordApplicationUpdate"),
-              let structuredPromotion = receiptBody.range(of: "log(\"tuya_application_update\""),
-              let finishAdmission = receiptBody.range(of: "endApplicationEvidenceAdmission") else {
-            Issue.record("Application callback must be fenced around package admission and structured-value promotion.")
+              let structuredPromotion = receiptBody.range(of: "log(\"tuya_application_update\"") else {
+            Issue.record("Application callback must fence package admission before promoting the structured value.")
             throw SourceContractError.sectionMissing
         }
         #expect(beginAdmission.lowerBound < packageAdmission.lowerBound)
         #expect(packageAdmission.lowerBound < structuredPromotion.lowerBound)
-        #expect(structuredPromotion.lowerBound < finishAdmission.lowerBound)
+        #expect(receiptBody.contains("defer { endApplicationEvidenceAdmission"))
 
-        guard let closeAdmissions = watchdogBody.range(of: "closeApplicationEvidenceAdmissions"),
-              let pendingFence = watchdogBody.range(of: "hasPendingApplicationEvidenceAdmissions"),
+        guard let pendingFence = watchdogBody.range(of: "hasPendingApplicationEvidenceAdmissions"),
+              let closeAdmissions = watchdogBody.range(of: "closeApplicationEvidenceAdmissions"),
               let packageSeal = watchdogBody.range(of: "sessionLedger.sealAcceptedObservation") else {
-            Issue.record("Canonical seal must close new admissions and fence already-started admissions before package seal.")
+            Issue.record("Canonical seal must drain started admissions and close new admissions before package seal.")
             throw SourceContractError.sectionMissing
         }
-        #expect(closeAdmissions.lowerBound < packageSeal.lowerBound)
         #expect(pendingFence.lowerBound < packageSeal.lowerBound)
+        #expect(closeAdmissions.lowerBound < packageSeal.lowerBound)
     }
 
-    @Test("a generation whose app admission is closed cannot start a new accepted package application mutation")
+    @Test("a seal-closed generation cannot start a new accepted package application mutation")
     func closedGenerationBlocksNewPackageAdmission() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let receipt = try section(
@@ -55,11 +54,27 @@ struct TuyaApplicationEvidenceAdmissionSealRaceSourceTests {
         let body = String(receipt)
 
         guard let closedCheck = body.range(of: "applicationEvidenceAdmissionClosedGeneration"),
+              let beginAdmission = body.range(of: "beginApplicationEvidenceAdmission"),
               let packageAdmission = body.range(of: "sessionLedger.recordApplicationUpdate") else {
             Issue.record("Application receipt must reject a seal-closed generation before package admission.")
             throw SourceContractError.sectionMissing
         }
-        #expect(closedCheck.lowerBound < packageAdmission.lowerBound)
+        #expect(closedCheck.lowerBound < beginAdmission.lowerBound)
+        #expect(beginAdmission.lowerBound < packageAdmission.lowerBound)
+    }
+
+    @Test("fresh correlation retires admission state from the prior generation")
+    func freshCorrelationClearsAdmissionFenceState() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let reset = try section(
+            in: app,
+            from: "private func resetDiscoverySessionOnly()",
+            to: "private func failLocally"
+        )
+        let body = String(reset)
+
+        #expect(body.contains("applicationEvidenceAdmissionClosedGeneration = nil"))
+        #expect(body.contains("pendingApplicationEvidenceAdmissions.removeAll()"))
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
