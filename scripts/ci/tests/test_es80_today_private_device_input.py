@@ -4,11 +4,11 @@ from __future__ import annotations
 import importlib.util
 import os
 from pathlib import Path
-import shutil
 import stat
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "es80_today_private_device_input.py"
 spec = importlib.util.spec_from_file_location("private_device_input", MODULE_PATH)
@@ -134,6 +134,64 @@ class PrivateDeviceInputTests(unittest.TestCase):
 
             self.assertFalse((moved_dir / "es80-intended-device.udid").exists())
             self.assertFalse((private_dir / "es80-intended-device.udid").exists())
+
+    def test_write_failure_after_creation_removes_created_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+
+            with mock.patch.object(module, "_write_all", side_effect=OSError("injected write failure")):
+                with self.assertRaisesRegex(OSError, "injected write failure"):
+                    module.create_private_input(
+                        private_dir,
+                        repo,
+                        target.name,
+                        secret_provider=lambda: self.SECRET,
+                    )
+
+            self.assertFalse(target.exists())
+
+    def test_fsync_failure_after_creation_removes_created_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+
+            with mock.patch.object(module.os, "fsync", side_effect=OSError("injected fsync failure")):
+                with self.assertRaisesRegex(OSError, "injected fsync failure"):
+                    module.create_private_input(
+                        private_dir,
+                        repo,
+                        target.name,
+                        secret_provider=lambda: self.SECRET,
+                    )
+
+            self.assertFalse(target.exists())
+
+    def test_failure_cleanup_never_unlinks_a_path_replacement(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+
+            def replace_then_fail(_descriptor: int, _payload: bytes) -> None:
+                target.unlink()
+                target.write_text("KEEP", encoding="utf-8")
+                target.chmod(0o600)
+                raise OSError("injected write failure after replacement")
+
+            with mock.patch.object(module, "_write_all", side_effect=replace_then_fail):
+                with self.assertRaisesRegex(OSError, "injected write failure after replacement"):
+                    module.create_private_input(
+                        private_dir,
+                        repo,
+                        target.name,
+                        secret_provider=lambda: self.SECRET,
+                    )
+
+            self.assertTrue(target.exists())
+            self.assertEqual(target.read_text(encoding="utf-8"), "KEEP")
 
     def test_surrounding_whitespace_is_rejected_and_no_file_is_created(self):
         with tempfile.TemporaryDirectory() as temporary:
