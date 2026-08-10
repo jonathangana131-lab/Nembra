@@ -1,0 +1,64 @@
+name: V14 Capture Account Switch Touch Target 172D
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-account-switch-touch-target-172d-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          ref: fix/v14-capture-account-switch-touch-target-172d-sol
+      - name: Materialize exact-current accessibility repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          PARENT='172dca56a1bc018e192feec197ceb17f81db5dab'
+          APP='NembraApp/App/NembraCaptureEntrypoint.swift'
+          TEST='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureAccountSwitchTouchTargetSourceTests.swift'
+          test "$(git rev-parse HEAD^)" = "$PARENT"
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s=p.read_text()
+          old='''                        .buttonStyle(.plain)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.cyan)
+                        .disabled(test.membershipBusy || sdkAccount.busy)
+                        .accessibilityHint("Signs out of the official Tuya SDK account so you can log in with the account that owns this scooter.")
+'''
+          new='''                        .buttonStyle(.plain)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.cyan)
+                        .frame(minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .disabled(test.membershipBusy || sdkAccount.busy)
+                        .accessibilityHint("Signs out of the official Tuya SDK account so you can log in with the account that owns this scooter.")
+'''
+          if s.count(old) != 1:
+              raise SystemExit(f'account-switch seam drifted: {s.count(old)}')
+          p.write_text(s.replace(old,new,1))
+          PY
+          git fetch --no-tags origin sol/v14-capture-account-switch-touch-target-37bf:refs/remotes/origin/account-switch-red
+          git show "origin/account-switch-red:$TEST" > "$TEST"
+          swiftc -parse "$APP"
+          swiftc -parse "$TEST"
+          git add "$APP" "$TEST"
+          git diff --cached --check
+          mapfile -t EFFECTIVE < <(git diff --cached --name-only HEAD)
+          test "${#EFFECTIVE[@]}" = '2'
+          printf '%s\n' "${EFFECTIVE[@]}" | grep -Fx "$APP"
+          printf '%s\n' "${EFFECTIVE[@]}" | grep -Fx "$TEST"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/v14-account-switch-touch-target-172d.yml
+          git commit -m 'fix(capture): restore 44pt account switch target'
+          git push origin HEAD:fix/v14-capture-account-switch-touch-target-172d-sol
