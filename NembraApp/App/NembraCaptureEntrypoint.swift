@@ -783,7 +783,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
             guard let self else { return }
             guard stillAuthorized,
                   self.sdkAccountLoggedIn,
+                  self.sdkDeviceMembershipVerified,
                   self.accountIdentityLeaseIsAuthorized,
+                  self.phase == .selected,
+                  self.targetCorrelationOperatorConfirmed,
                   self.selectedID == candidate.id else {
                 self.failLocally("Exact scooter/account authority could not be re-verified immediately before BLE authentication.", "sdk_device_membership_recheck_failed")
                 return
@@ -793,8 +796,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func beginOfficialConnection(candidate: Candidate) {
-        guard phase == .selected || phase == .failed else { return }
+        guard phase == .selected else { return }
         guard candidate.likely,
+              targetCorrelationOperatorConfirmed,
+              selectedID == candidate.id,
               sdkDeviceMembershipVerified,
               sdkAccountLoggedIn,
               accountIdentityLeaseIsAuthorized else {
@@ -1001,6 +1006,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private func authenticationFailed(token: TuyaReadOnlyConnectionToken) async {
         guard currentConnectionToken == token else {
             log("stale_connect_failure_ignored", ["generation": String(token.diagnosticGeneration)])
+            return
+        }
+        guard sdkAccountLoggedIn,
+              sdkDeviceMembershipVerified,
+              accountIdentityLeaseIsAuthorized else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "Tuya account/device source authority changed before the SDK failure callback was classified.",
+                kind: "sdk_source_authority_lost_before_auth_failure"
+            )
             return
         }
         await authenticationAcquisitionFailed(
