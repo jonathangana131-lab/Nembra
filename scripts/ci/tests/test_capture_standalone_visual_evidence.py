@@ -18,7 +18,7 @@ required = [
     'EXPECTED_BUILD_IDENTIFIER="capture-v14-${SOURCE_SHA:0:12}"',
     'CHECKOUT_SHA="$(git rev-parse HEAD',
     '[[ "$SOURCE_SHA" != "$CHECKOUT_SHA" ]]',
-    'static let fieldProcedureIdentifier = \\"$EXPECTED_PROCEDURE_IDENTIFIER\\"',
+    'static let fieldProcedureIdentifier = \"$EXPECTED_PROCEDURE_IDENTIFIER\"',
     'SIMCTL_CHILD_*|NEMBRA_SIMULATION_*)',
     'done < <(compgen -v)',
     'xcrun simctl ui "$UDID" appearance dark',
