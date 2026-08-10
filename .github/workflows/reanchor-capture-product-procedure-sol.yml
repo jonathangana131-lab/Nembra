@@ -27,8 +27,10 @@ jobs:
           echo "::notice title=reanchor-truth::remote=$(git rev-parse refs/remotes/origin/integration/v14-capture-final-stationary-convergence-sol) expected=$truth"
           git config user.name 'nembra-go-bot'
           git config user.email 'nembra-go-bot@users.noreply.github.com'
+          set +e
           git merge --no-commit --no-ff "$truth"
           status=$?
+          set -e
           unresolved="$(git diff --name-only --diff-filter=U | tr '\n' '|')"
           echo "::notice title=reanchor-merge::status=$status unresolved=$unresolved"
           git merge --abort >/dev/null 2>&1 || true
