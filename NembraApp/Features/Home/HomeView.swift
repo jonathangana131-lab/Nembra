@@ -4,6 +4,7 @@ import UIKit
 struct HomeView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showLockConfirmation = false
 
     var body: some View {
@@ -111,29 +112,56 @@ struct HomeView: View {
                     .accessibilityHint("These values may be stale until the scooter reconnects.")
             }
 
-            HStack(spacing: 0) {
-                statusMetric(
-                    title: "Battery",
-                    value: batteryText,
-                    icon: batteryIcon,
-                    accessibilityIdentifier: "home.metric.battery",
-                    valueStyle: batteryValueStyle
-                )
-                metricDivider
-                statusMetric(
-                    title: "Trip",
-                    value: tripDistanceText,
-                    icon: "point.bottomleft.forward.to.point.topright.scurvepath",
-                    accessibilityTitle: "Scooter Trip",
-                    accessibilityIdentifier: "home.metric.trip"
-                )
-                metricDivider
-                statusMetric(
-                    title: "Mode",
-                    value: vehicle.state.rideMode?.displayName ?? "—",
-                    icon: "gauge.with.dots.needle.67percent",
-                    accessibilityIdentifier: "home.metric.mode"
-                )
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 0) {
+                    statusMetric(
+                        title: "Battery",
+                        value: batteryText,
+                        icon: batteryIcon,
+                        accessibilityIdentifier: "home.metric.battery",
+                        valueStyle: batteryValueStyle
+                    )
+                    accessibilityMetricDivider
+                    statusMetric(
+                        title: "Trip",
+                        value: tripDistanceText,
+                        icon: "point.bottomleft.forward.to.point.topright.scurvepath",
+                        accessibilityTitle: "Scooter Trip",
+                        accessibilityIdentifier: "home.metric.trip"
+                    )
+                    accessibilityMetricDivider
+                    statusMetric(
+                        title: "Mode",
+                        value: vehicle.state.rideMode?.displayName ?? "—",
+                        icon: "gauge.with.dots.needle.67percent",
+                        accessibilityIdentifier: "home.metric.mode"
+                    )
+                }
+            } else {
+                HStack(spacing: 0) {
+                    statusMetric(
+                        title: "Battery",
+                        value: batteryText,
+                        icon: batteryIcon,
+                        accessibilityIdentifier: "home.metric.battery",
+                        valueStyle: batteryValueStyle
+                    )
+                    metricDivider
+                    statusMetric(
+                        title: "Trip",
+                        value: tripDistanceText,
+                        icon: "point.bottomleft.forward.to.point.topright.scurvepath",
+                        accessibilityTitle: "Scooter Trip",
+                        accessibilityIdentifier: "home.metric.trip"
+                    )
+                    metricDivider
+                    statusMetric(
+                        title: "Mode",
+                        value: vehicle.state.rideMode?.displayName ?? "—",
+                        icon: "gauge.with.dots.needle.67percent",
+                        accessibilityIdentifier: "home.metric.mode"
+                    )
+                }
             }
         }
         .padding(16)
@@ -151,6 +179,11 @@ struct HomeView: View {
         Divider()
             .frame(height: 44)
             .padding(.horizontal, 12)
+    }
+
+    private var accessibilityMetricDivider: some View {
+        Divider()
+            .padding(.vertical, 12)
     }
 
     private func statusMetric(
