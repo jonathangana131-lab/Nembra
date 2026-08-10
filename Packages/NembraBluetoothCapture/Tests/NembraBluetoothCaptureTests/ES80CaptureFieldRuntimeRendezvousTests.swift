@@ -85,7 +85,7 @@ struct ES80CaptureFieldRuntimeRendezvousTests {
         let readyStart = try #require(source.range(of: "private var authorityReady: Bool {"))
         let readyEnd = try #require(
             source.range(
-                of: "private var engineeringDisclosure: some View",
+                of: "private var currentStageIndex: Int",
                 range: readyStart.upperBound..<source.endIndex
             )
         )
