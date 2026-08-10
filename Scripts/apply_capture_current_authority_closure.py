@@ -12,7 +12,6 @@ def replace_once(old: str, new: str, label: str) -> None:
     s = s.replace(old, new, 1)
 
 
-# Separate current-session correlation evidence from operator-confirmed target authority.
 replace_once(
     "        case idle, baseline, powerOn, scanning, selected, authenticating, observing, accepted, failed",
     "        case idle, baseline, powerOn, scanning, correlated, selected, authenticating, observing, accepted, failed",
@@ -131,8 +130,6 @@ replace_once(
     "        selectedID = nil\n        pendingCorrelatedTargetID = nil\n        sdkLocalBLEOnline = false\n        exportData = nil",
     "reset pending correlation target",
 )
-
-# Make exact compiled field-build provenance visible and fail closed before field actions.
 replace_once(
     "    var privateConfig: Bool { OfficialTuyaFactory.configured }\n    var sdkAccountLoggedIn: Bool { OfficialTuyaFactory.accountLoggedIn }",
     "    var privateConfig: Bool { OfficialTuyaFactory.configured }\n    var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }\n    var sdkAccountLoggedIn: Bool { OfficialTuyaFactory.accountLoggedIn }",
@@ -154,21 +151,14 @@ replace_once(
     "OFF1 action build authority",
 )
 
-# Present the explicit confirmation rung before authentication becomes visible.
-replace_once(
-    '''            case .powerOn:
-                Text("Next: \\(test.correlationWindowLabel) · \\(test.correlationWindowInstruction)")
-                    .foregroundStyle(.secondary)
-                Button("Start \\(test.correlationWindowLabel) window") { test.startNextCorrelationWindow() }
-                    .buttonStyle(.borderedProminent)
-
-            default:''',
-    '''            case .powerOn:
-                Text("Next: \\(test.correlationWindowLabel) · \\(test.correlationWindowInstruction)")
-                    .foregroundStyle(.secondary)
-                Button("Start \\(test.correlationWindowLabel) window") { test.startNextCorrelationWindow() }
-                    .buttonStyle(.borderedProminent)
-
+# Scope the UI insertion to discoveryCard so Swift interpolation text is not an anchor.
+discovery_start = s.index("    private var discoveryCard: some View")
+discovery_end = s.index("    private func authenticationCard", discovery_start)
+discovery = s[discovery_start:discovery_end]
+default_anchor = "\n            default:\n                EmptyView()"
+if discovery.count(default_anchor) != 1:
+    raise SystemExit(f"explicit confirmation UI: expected one discovery default anchor, got {discovery.count(default_anchor)}")
+correlated_ui = '''
             case .correlated:
                 Text("Scooter signal found")
                     .font(.headline)
@@ -178,17 +168,15 @@ replace_once(
                 Button("Confirm correlated Bluetooth target") { test.confirmCorrelatedTarget() }
                     .buttonStyle(.borderedProminent)
                     .disabled(!test.fieldBuildIsAuthoritative || !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized || test.membershipBusy)
+'''
+discovery = discovery.replace(default_anchor, "\n" + correlated_ui + default_anchor, 1)
+s = s[:discovery_start] + discovery + s[discovery_end:]
 
-            default:''',
-    "explicit confirmation UI",
-)
 replace_once(
     "                    !candidate.likely\n                        || !test.privateConfig",
     "                    !candidate.likely\n                        || !test.fieldBuildIsAuthoritative\n                        || !test.privateConfig",
     "authentication UI build authority",
 )
-
-# Preserve source-authority truth if an SDK failure races account/device drift.
 replace_once(
     '''    private func authenticationFailed(token: TuyaReadOnlyConnectionToken) async {
         guard currentConnectionToken == token else {
