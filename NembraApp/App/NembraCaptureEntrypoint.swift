@@ -2786,7 +2786,7 @@ private struct SecureLinkView: View {
                             .lineLimit(1)
                     }
                     .frame(maxWidth: .infinity)
-                    .accessibilityLabel("Step \(index + 1), \(label)\(index == currentStageIndex ? ", current" : index < currentStageIndex ? ", complete" : ", upcoming")")
+                    .accessibilityLabel("Step \(index + 1), \(label)\(test.phase == .accepted || index < currentStageIndex ? ", complete" : index == currentStageIndex ? ", current" : ", upcoming")")
                 }
             }
         }
