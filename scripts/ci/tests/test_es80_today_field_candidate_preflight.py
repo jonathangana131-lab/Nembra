@@ -179,6 +179,52 @@ class FieldCandidatePreflightTests(unittest.TestCase):
                 self.assertIn(problem, report["problems"])
                 self.assertEqual(report["physicalExperimentAuthorization"], "not-granted")
 
+    def test_export_options_path_must_be_absolute(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inputs = self.make_inputs(root)
+            inputs = replace(inputs, export_options_plist=Path("private-export-options.plist"))
+            report, exit_code = preflight.evaluate_preflight(
+                inputs,
+                runner=FakeRunner(self.SOURCE),
+                system_name="Darwin",
+            )
+
+        self.assertEqual(exit_code, 2)
+        self.assertFalse(report["checks"]["exportOptionsPlist"])
+        self.assertIn("export-options-input-invalid", report["problems"])
+        self.assertNotIn("private-export-options.plist", json.dumps(report))
+
+    def test_symlinked_export_options_parent_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inputs = self.make_inputs(root)
+            real_parent = root / "real-export-parent"
+            real_parent.mkdir()
+            export_options = real_parent / "ExportOptions.plist"
+            with export_options.open("wb") as handle:
+                plistlib.dump({"method": "development"}, handle)
+            symlink_parent = root / "symlink-export-parent"
+            try:
+                symlink_parent.symlink_to(real_parent, target_is_directory=True)
+            except (OSError, NotImplementedError) as error:
+                self.skipTest(f"symlink creation unavailable: {error}")
+            inputs = replace(
+                inputs,
+                export_options_plist=symlink_parent / "ExportOptions.plist",
+            )
+
+            report, exit_code = preflight.evaluate_preflight(
+                inputs,
+                runner=FakeRunner(self.SOURCE),
+                system_name="Darwin",
+            )
+
+        self.assertEqual(exit_code, 2)
+        self.assertFalse(report["checks"]["exportOptionsPlist"])
+        self.assertIn("export-options-input-invalid", report["problems"])
+        self.assertNotIn(str(symlink_parent), json.dumps(report))
+
     def test_private_udid_file_must_be_mode_0600(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
