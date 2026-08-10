@@ -369,6 +369,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         connectionGeneration: 0
     )
     @Published private(set) var exportData: Data?
+    @Published private(set) var diagnosticExportError: String?
     @Published private(set) var exportName = "Nembra-Secure-Link-Diagnostics.json"
 
     let deviceID: String
@@ -2037,6 +2038,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func prepareExport() {
+        diagnosticExportError = nil
         let envelope: Export
         if phase == .accepted {
             guard let sealedAcceptedExport else {
@@ -2064,7 +2066,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
             }
         } catch {
             exportData = nil
-            message = "Diagnostic export failed: \(error.localizedDescription)"
+            let exportError = "Diagnostic export failed: \(error.localizedDescription)"
+            if phase == .failed {
+                diagnosticExportError = exportError
+            } else {
+                message = exportError
+            }
         }
     }
 
@@ -2101,6 +2108,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         pendingCorrelatedTargetID = nil
         sdkLocalBLEOnline = false
         exportData = nil
+        diagnosticExportError = nil
         // Active authenticated generations must be terminally retired by their
         // owning outcome path before a new discovery attempt. Generic reset never
         // manufactures a transport-disconnect terminal.
@@ -3321,6 +3329,15 @@ private struct SecureLinkView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.large)
                 .accessibilityHint("Prepares sanitized evidence from this stopped attempt for troubleshooting. It does not accept the Capture.")
+            }
+
+            if let diagnosticExportError = test.diagnosticExportError {
+                Label(diagnosticExportError, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Diagnostic preparation error")
+                    .accessibilityValue(diagnosticExportError)
             }
 
             Text("Diagnostics preserve legitimate failed-attempt evidence for analysis. They never turn this stopped attempt into an accepted Capture.")
