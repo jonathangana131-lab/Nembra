@@ -18,17 +18,17 @@ jobs:
           ref: repair/v14-capture-auth-promotion-transport-truth-d56-sol
           fetch-depth: 0
 
-      - name: Guard exact current product and scaffold-only branch
+      - name: Guard exact product ancestry and scaffold-only effective scope
         shell: bash
         run: |
           set -euo pipefail
           base='d56a30c699fbdecec6130537d3f3f4f4232f5c47'
-          test "$(git rev-parse HEAD^)" = "$base"
+          test "$(git merge-base "$base" HEAD)" = "$base"
           test "$(git diff --name-only "$base" HEAD)" = '.github/workflows/materialize-capture-auth-promotion-transport-truth-d56.yml'
           git diff --quiet "$base" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
           test ! -e Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticationPromotionTransportTruthSourceTests.swift
 
-      - name: Apply previously source-green semantic repair
+      - name: Apply source-green auth transport repair
         shell: bash
         run: |
           set -euo pipefail
@@ -37,21 +37,18 @@ jobs:
           app = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           source = app.read_text(encoding='utf-8')
           old = '''                    guard sdkAccountLoggedIn,
-                                sdkDeviceMembershipVerified,
-                                accountIdentityLeaseIsAuthorized else {
-                              await invalidateSourceAuthority(
-                                  token: token,
-                                  message: "Tuya account/device source authority changed while authentication promotion was suspended.",
-                                  kind: "sdk_source_authority_lost_during_auth_promotion"
-                              )
-                              return
-                          }
+                          sdkDeviceMembershipVerified,
+                          accountIdentityLeaseIsAuthorized else {
+                        await invalidateSourceAuthority(
+                            token: token,
+                            message: "Tuya account/device source authority changed while authentication promotion was suspended.",
+                            kind: "sdk_source_authority_lost_during_auth_promotion"
+                        )
+                        return
+                    }
 
-                          phase = .observing
+                    phase = .observing
           '''
-          old = old.replace('                                sdkDeviceMembershipVerified', '                          sdkDeviceMembershipVerified')
-          old = old.replace('                                accountIdentityLeaseIsAuthorized', '                          accountIdentityLeaseIsAuthorized')
-          old = old.replace('                              await', '                        await').replace('                                  token:', '                            token:').replace('                                  message:', '                            message:').replace('                                  kind:', '                            kind:').replace('                              )', '                        )').replace('                              return', '                        return').replace('                          }', '                    }').replace('                          phase', '                    phase')
           new = '''                    guard sdkAccountLoggedIn,
                           sdkDeviceMembershipVerified,
                           accountIdentityLeaseIsAuthorized else {
@@ -85,7 +82,7 @@ jobs:
           PY
           git show 739871ba42bad20e4a9c0f54836128a3ff6f7200:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticationPromotionTransportTruthSourceTests.swift > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticationPromotionTransportTruthSourceTests.swift
 
-      - name: Validate exact post-await truth ordering
+      - name: Validate post-await transport truth ordering
         shell: bash
         run: |
           set -euo pipefail
@@ -112,15 +109,14 @@ jobs:
           positions = [fence.index(token) for token in ordered]
           if positions != sorted(positions):
               raise SystemExit(f'promotion fence ordering drifted: {positions}')
-          if auth.index('startWatchdog(token: token)', observing) <= observing:
-              raise SystemExit('watchdog ordering invalid')
+          assert auth.index('startWatchdog(token: token)', observing) > observing
           print('post-await auth transport truth fence: PASS')
           PY
           swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
           swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticationPromotionTransportTruthSourceTests.swift
           git diff --check
 
-      - name: Publish clean exact-current two-path repair
+      - name: Collapse to exact two-path repair
         shell: bash
         run: |
           set -euo pipefail
@@ -138,4 +134,4 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'fix(capture): recheck transport before auth promotion'
-          git push origin HEAD:repair/v14-capture-auth-promotion-transport-truth-d56-sol
+          git push --force-with-lease origin HEAD:repair/v14-capture-auth-promotion-transport-truth-d56-sol
