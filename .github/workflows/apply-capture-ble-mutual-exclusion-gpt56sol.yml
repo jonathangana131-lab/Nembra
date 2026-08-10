@@ -1,0 +1,305 @@
+name: Apply Capture BLE mutual exclusion
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-process-ble-mutual-exclusion-gpt56sol
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-ble-mutual-exclusion-gpt56sol
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-process-ble-mutual-exclusion-gpt56sol
+          fetch-depth: 0
+
+      - name: Guard exact dc8 product source and child scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='dc8f2472812b77ee609f89a228dc38195ba9edac'
+          test "$(git merge-base HEAD "$parent")" = "$parent"
+          unexpected="$(git diff --name-only "$parent"...HEAD | grep -Ev '^(.github/workflows/apply-capture-ble-mutual-exclusion-gpt56sol.yml|Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCrossControllerBLEOwnershipSourceTests.swift)$' || true)"
+          test -z "$unexpected"
+          test "$(git rev-parse "$parent:NembraApp/App/NembraCaptureEntrypoint.swift")" = "$(git rev-parse HEAD:NembraApp/App/NembraCaptureEntrypoint.swift)"
+
+      - name: Materialize process owner and per-window contamination fence
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text(encoding="utf-8")
+
+          def replace_once(old, new, label):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one anchor, found {count}")
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              "    private let buildIdentity = NembraCaptureBuildIdentity.current\n",
+              "    private let buildIdentity = NembraCaptureBuildIdentity.current\n"
+              "    private let controllerOwnershipID = UUID()\n",
+              "controller ownership id"
+          )
+
+          start = text.index("    private func beginCorrelationSeries()")
+          end = text.index("    func startNextCorrelationWindow()", start)
+          section = text[start:end]
+          claim_anchor = "        resetDiscoverySessionOnly()\n        do {\n"
+          claim = (
+              "        resetDiscoverySessionOnly()\n"
+              "        guard OfficialTuyaFactory.claimPackageCorrelation(ownerID: controllerOwnershipID) else {\n"
+              "            failLocally(\n"
+              "                \"Another Capture controller currently owns package Bluetooth correlation, or Tuya BLE ownership already retired correlation for this app process. Relaunch Capture before retrying OFF1.\",\n"
+              "                \"package_correlation_process_claim_rejected\"\n"
+              "            )\n"
+              "            return\n"
+              "        }\n"
+              "        do {\n"
+          )
+          if section.count(claim_anchor) != 1:
+              raise SystemExit("beginCorrelationSeries reset anchor changed")
+          section = section.replace(claim_anchor, claim, 1)
+          text = text[:start] + section + text[end:]
+
+          start = text.index("    private func startCurrentCorrelationWindow()")
+          end = text.index("    func finishCorrelationWindow()", start)
+          section = text[start:end]
+          func_anchor = "    private func startCurrentCorrelationWindow() {\n"
+          guards = (
+              "        guard OfficialTuyaFactory.ownsPackageCorrelation(ownerID: controllerOwnershipID) else {\n"
+              "            correlationSession?.abandonCurrentWindow()\n"
+              "            correlationSession = nil\n"
+              "            failLocally(\n"
+              "                \"Process-wide Bluetooth correlation ownership was lost. Relaunch Capture before another OFF1 series.\",\n"
+              "                \"package_correlation_process_ownership_lost\"\n"
+              "            )\n"
+              "            return\n"
+              "        }\n"
+              "        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {\n"
+              "            correlationSession?.abandonCurrentWindow()\n"
+              "            correlationSession = nil\n"
+              "            failLocally(\n"
+              "                \"Tuya local-BLE ownership appeared while package correlation was active. This series is contaminated and cannot continue; relaunch Capture before another OFF1 series.\",\n"
+              "                \"sdk_local_ble_ownership_appeared_during_correlation\"\n"
+              "            )\n"
+              "            return\n"
+              "        }\n"
+          )
+          if section.count(func_anchor) != 1:
+              raise SystemExit("startCurrentCorrelationWindow anchor changed")
+          section = section.replace(func_anchor, func_anchor + guards, 1)
+          text = text[:start] + section + text[end:]
+
+          start = text.index("    func finishCorrelationWindow()")
+          end = text.index("    private func finishCorrelationSeries", start)
+          section = text[start:end]
+          phase_guard = "        guard phase == .baseline || phase == .scanning,\n              let session = correlationSession else { return }\n"
+          finish_guards = (
+              phase_guard
+              + "        guard OfficialTuyaFactory.ownsPackageCorrelation(ownerID: controllerOwnershipID) else {\n"
+              "            session.abandonCurrentWindow()\n"
+              "            correlationSession = nil\n"
+              "            failLocally(\n"
+              "                \"Process-wide Bluetooth correlation ownership changed before this window could be sealed. Relaunch Capture before another OFF1 series.\",\n"
+              "                \"package_correlation_process_ownership_lost\"\n"
+              "            )\n"
+              "            return\n"
+              "        }\n"
+              "        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {\n"
+              "            session.abandonCurrentWindow()\n"
+              "            correlationSession = nil\n"
+              "            failLocally(\n"
+              "                \"Tuya local-BLE ownership appeared before this package window could be sealed. The window is discarded; relaunch Capture before another OFF1 series.\",\n"
+              "                \"sdk_local_ble_ownership_appeared_during_correlation\"\n"
+              "            )\n"
+              "            return\n"
+              "        }\n"
+          )
+          if section.count(phase_guard) != 1:
+              raise SystemExit("finishCorrelationWindow phase guard changed")
+          section = section.replace(phase_guard, finish_guards, 1)
+          text = text[:start] + section + text[end:]
+
+          replace_once(
+              "        targetCorrelationOperatorConfirmed = false\n        switch result.correlation.disposition {\n",
+              "        targetCorrelationOperatorConfirmed = false\n"
+              "        OfficialTuyaFactory.releasePackageCorrelation(ownerID: controllerOwnershipID)\n"
+              "        switch result.correlation.disposition {\n",
+              "final correlation release"
+          )
+
+          replace_once(
+              "    func invalidateSDKMembership() {\n        let token = currentConnectionToken\n",
+              "    func invalidateSDKMembership() {\n"
+              "        let token = currentConnectionToken\n"
+              "        OfficialTuyaFactory.releasePackageCorrelation(ownerID: controllerOwnershipID)\n",
+              "membership invalidation release"
+          )
+
+          make_guard = "        guard let newDriver = OfficialTuyaFactory.make() else {\n"
+          controller_guard = (
+              "        guard OfficialTuyaFactory.packageCorrelationOwnerIsClear else {\n"
+              "            failLocally(\n"
+              "                \"Package-owned Bluetooth correlation is active elsewhere in this app process. Tuya BLE ownership will not start. Relaunch Capture and run one correlation/authentication path at a time.\",\n"
+              "                \"package_correlation_blocks_tuya_ble_ownership\"\n"
+              "            )\n"
+              "            return\n"
+              "        }\n"
+          )
+          start = text.index("    private func beginOfficialConnection(candidate:")
+          end = text.index("    private func authenticated(token:", start)
+          section = text[start:end]
+          if section.count(make_guard) != 1:
+              raise SystemExit("beginOfficialConnection make guard changed")
+          section = section.replace(make_guard, controller_guard + make_guard, 1)
+          text = text[:start] + section + text[end:]
+
+          replace_once(
+              "    private func resetDiscoverySessionOnly() {\n        acceptanceCutIsClosed = false\n",
+              "    private func resetDiscoverySessionOnly() {\n"
+              "        OfficialTuyaFactory.releasePackageCorrelation(ownerID: controllerOwnershipID)\n"
+              "        acceptanceCutIsClosed = false\n",
+              "reset ownership release"
+          )
+          replace_once(
+              "    private func failLocally(_ text: String, _ kind: String) {\n        if phase == .baseline || phase == .powerOn || phase == .scanning || phase == .correlated {\n",
+              "    private func failLocally(_ text: String, _ kind: String) {\n"
+              "        OfficialTuyaFactory.releasePackageCorrelation(ownerID: controllerOwnershipID)\n"
+              "        if phase == .baseline || phase == .powerOn || phase == .scanning || phase == .correlated {\n",
+              "failure ownership release"
+          )
+
+          factory_anchor = (
+              "private enum OfficialTuyaFactory {\n"
+              "    private static var didBootstrap = false\n"
+              "    private static var packageCorrelationRetiredForProcess = false\n"
+          )
+          factory_state = (
+              factory_anchor
+              + "    private static var packageCorrelationOwnerID: UUID?\n\n"
+              "    static var packageCorrelationOwnerIsClear: Bool { packageCorrelationOwnerID == nil }\n\n"
+              "    static func claimPackageCorrelation(ownerID: UUID) -> Bool {\n"
+              "        guard packageCorrelationMayStart else { return false }\n"
+              "        guard packageCorrelationOwnerID == nil || packageCorrelationOwnerID == ownerID else { return false }\n"
+              "        packageCorrelationOwnerID = ownerID\n"
+              "        return true\n"
+              "    }\n\n"
+              "    static func ownsPackageCorrelation(ownerID: UUID) -> Bool {\n"
+              "        packageCorrelationOwnerID == ownerID\n"
+              "    }\n\n"
+              "    static func releasePackageCorrelation(ownerID: UUID) {\n"
+              "        guard packageCorrelationOwnerID == ownerID else { return }\n"
+              "        packageCorrelationOwnerID = nil\n"
+              "    }\n"
+          )
+          replace_once(factory_anchor, factory_state, "OfficialTuyaFactory process owner")
+
+          make_old = (
+              "        guard bootstrap(), accountLoggedIn, currentAccountUID != nil else { return nil }\n"
+              "        packageCorrelationRetiredForProcess = true\n"
+              "        return SmartLifeDriver()\n"
+          )
+          make_new = (
+              "        guard bootstrap(), accountLoggedIn, currentAccountUID != nil else { return nil }\n"
+              "        guard packageCorrelationOwnerID == nil else { return nil }\n"
+              "        packageCorrelationRetiredForProcess = true\n"
+              "        return SmartLifeDriver()\n"
+          )
+          replace_once(make_old, make_new, "factory driver-handoff owner recheck")
+
+          path.write_text(text, encoding="utf-8")
+
+      - name: Verify race-oriented portable source contract
+        shell: python
+        run: |
+          from pathlib import Path
+          app = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text(encoding="utf-8")
+          test = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCrossControllerBLEOwnershipSourceTests.swift").read_text(encoding="utf-8")
+
+          for needle in (
+              "private let controllerOwnershipID = UUID()",
+              "private static var packageCorrelationOwnerID: UUID?",
+              "static var packageCorrelationOwnerIsClear: Bool",
+              "static func claimPackageCorrelation(ownerID: UUID) -> Bool",
+              "static func ownsPackageCorrelation(ownerID: UUID) -> Bool",
+              "static func releasePackageCorrelation(ownerID: UUID)",
+              "guard packageCorrelationOwnerID == nil else { return nil }",
+          ):
+              if needle not in app: raise SystemExit("missing mutual-exclusion contract: " + needle)
+
+          begin = app[app.index("private func beginCorrelationSeries()"):app.index("func startNextCorrelationWindow()")]
+          ordered = (
+              "OfficialTuyaFactory.packageCorrelationMayStart",
+              "OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID)",
+              "resetDiscoverySessionOnly()",
+              "OfficialTuyaFactory.claimPackageCorrelation(ownerID: controllerOwnershipID)",
+              "PassiveBluetoothPowerCycleObservationSession(minimumWindowDuration: 10)",
+          )
+          positions = [begin.index(x) for x in ordered]
+          if positions != sorted(positions): raise SystemExit("OFF1 admission ordering regressed")
+
+          start = app[app.index("private func startCurrentCorrelationWindow()"):app.index("func finishCorrelationWindow()")]
+          finish = app[app.index("func finishCorrelationWindow()"):app.index("private func finishCorrelationSeries")]
+          for section in (start, finish):
+              for needle in (
+                  "OfficialTuyaFactory.ownsPackageCorrelation(ownerID: controllerOwnershipID)",
+                  "OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID)",
+                  "sdk_local_ble_ownership_appeared_during_correlation",
+              ):
+                  if needle not in section: raise SystemExit("missing per-window contamination fence: " + needle)
+
+          final = app[app.index("private func finishCorrelationSeries"):app.index("func confirmCorrelatedTarget()")]
+          if final.index("OfficialTuyaFactory.releasePackageCorrelation(ownerID: controllerOwnershipID)") >= final.index("phase = .correlated"):
+              raise SystemExit("package owner must release before correlated handoff")
+
+          connection = app[app.index("private func beginOfficialConnection(candidate:"):app.index("private func authenticated(token:")]
+          if connection.index("OfficialTuyaFactory.packageCorrelationOwnerIsClear") >= connection.index("OfficialTuyaFactory.make()"):
+              raise SystemExit("controller package-owner guard must precede driver creation")
+          if "await " in connection[connection.index("OfficialTuyaFactory.packageCorrelationOwnerIsClear"):connection.index("OfficialTuyaFactory.make()")]:
+              raise SystemExit("unexpected suspension inside owner handoff")
+
+          factory = app[app.index("private enum OfficialTuyaFactory"):app.index("private final class OfficialTuyaMembershipProbe")]
+          make = factory[factory.index("static func make() -> OfficialTuyaDriver?"):]
+          for needle in ("guard packageCorrelationOwnerID == nil else { return nil }", "packageCorrelationRetiredForProcess = true", "return SmartLifeDriver()"):
+              if needle not in make: raise SystemExit("missing driver-handoff fence: " + needle)
+          if not (make.index("guard packageCorrelationOwnerID == nil else { return nil }") < make.index("packageCorrelationRetiredForProcess = true") < make.index("return SmartLifeDriver()")):
+              raise SystemExit("driver handoff ordering regressed")
+
+          for prohibited in ("disconnectBLE", "publishDps", "queryDps", "sessionLedger.endConnection"):
+              if prohibited in factory: raise SystemExit("coordinator manufactures transport/command outcome: " + prohibited)
+
+          for needle in (
+              "package correlation claims one process owner before scanner creation",
+              "every correlation window retains process ownership and rejects Tuya overlap",
+              "final correlation result releases process ownership before correlated handoff",
+              "Tuya driver handoff refuses an active package owner and still retires correlation for process",
+              "ownership coordinator stays MainActor serialized and observation only",
+          ):
+              if needle not in test: raise SystemExit("missing adversarial regression: " + needle)
+
+      - name: Commit clean repair and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          rm .github/workflows/apply-capture-ble-mutual-exclusion-gpt56sol.yml
+          git config user.name nembra-go-bot
+          git config user.email nembra-go-bot@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(capture): make package and Tuya BLE ownership mutually exclusive' \
+            -m 'Augment the accepted process-lifetime Tuya fence with one MainActor package-correlation owner held across OFF1/ON1/OFF2/ON2. Driver handout refuses an active package owner and still permanently retires future correlation; every package window start/seal also discards the series if official same-device local BLE appears. No disconnect, write, DP query/command, manufactured terminal, or physical claim.'
+          git push origin HEAD:fix/v14-capture-process-ble-mutual-exclusion-gpt56sol
