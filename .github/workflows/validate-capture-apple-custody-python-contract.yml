@@ -1,0 +1,47 @@
+name: Validate Capture Apple Custody Python Contract
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-apple-custody-python-contract-sol
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-apple-custody-python-contract-sol
+          fetch-depth: 0
+
+      - name: Guard current product parent and one-file scope
+        run: |
+          set -euo pipefail
+          parent='518fe048b11a1e666e04976a7f7bd4fcb1a4af69'
+          git merge-base --is-ancestor "$parent" HEAD
+          test "$(git diff --name-only "$parent" HEAD | grep -Ev '^(.github/workflows/validate-capture-apple-custody-python-contract.yml|scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py)$' || true)" = ""
+
+      - name: Run exact custody contract
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
+          python3 scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
+          bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+
+      - name: Remove validation workflow and publish clean checkpoint
+        run: |
+          set -euo pipefail
+          parent='518fe048b11a1e666e04976a7f7bd4fcb1a4af69'
+          rm .github/workflows/validate-capture-apple-custody-python-contract.yml
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(capture): remove custody validation workflow"
+          test "$(git diff --name-only "$parent" HEAD)" = "scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py"
+          git push origin HEAD:fix/v14-capture-apple-custody-python-contract-sol
