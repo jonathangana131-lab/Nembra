@@ -20,6 +20,7 @@ struct TuyaApplicationUpdateSecretRedactionSourceTests {
         #expect(driver.contains("refreshtoken"))
         #expect(driver.contains("authkey"))
         #expect(driver.contains("seckey"))
+        #expect(driver.contains("sessionkey"))
         #expect(driver.contains("keyString.lowercased().filter"))
         #expect(driver.contains("$0.isLetter || $0.isNumber"))
         #expect(driver.contains("array.map(redactApplicationSecrets)"))
