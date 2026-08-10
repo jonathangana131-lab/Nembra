@@ -4,20 +4,30 @@ import Testing
 
 @Suite("Tuya application update secret sanitizer")
 struct TuyaApplicationUpdateSecretSanitizerTests {
-    @Test("credential-shaped top-level keys redact their values")
+    @Test("credential-shaped top-level keys match the accepted export secret promise")
     func topLevelCredentialKeysAreRedacted() {
         let input: [AnyHashable: Any] = [
             "local_key": "local-secret",
+            "session-key": "session-secret",
+            "App-Key": "app-key-secret",
+            "appSecret": "app-secret",
+            "password": "password-secret",
+            "account_token": "account-token-secret",
             "ACCESS-TOKEN": "access-secret",
             "refresh.token": "refresh-secret",
             "authKey": "auth-secret",
-            "sec_key": "session-secret",
+            "sec_key": "security-secret",
             "speed": 17,
         ]
 
         let output = TuyaApplicationUpdateSecretSanitizer.sanitize(input)
 
         #expect(output["local_key"] == "<redacted>")
+        #expect(output["session-key"] == "<redacted>")
+        #expect(output["App-Key"] == "<redacted>")
+        #expect(output["appSecret"] == "<redacted>")
+        #expect(output["password"] == "<redacted>")
+        #expect(output["account_token"] == "<redacted>")
         #expect(output["ACCESS-TOKEN"] == "<redacted>")
         #expect(output["refresh.token"] == "<redacted>")
         #expect(output["authKey"] == "<redacted>")
@@ -36,6 +46,8 @@ struct TuyaApplicationUpdateSecretSanitizerTests {
                     "access_token": nestedSecret,
                     "items": [
                         ["localKey": nestedSecret],
+                        ["session_key": nestedSecret],
+                        ["app_secret": nestedSecret],
                         ["plain": "still-kept"],
                     ],
                 ],
@@ -70,12 +82,15 @@ struct TuyaApplicationUpdateSecretSanitizerTests {
     func allSecretUpdatePreservesReceiptStructure() {
         let input: [AnyHashable: Any] = [
             "localKey": "one",
-            "refresh_token": "two",
+            "session_key": "two",
+            "appSecret": "three",
+            "password": "four",
+            "account-token": "five",
         ]
 
         let output = TuyaApplicationUpdateSecretSanitizer.sanitize(input)
 
-        #expect(output.count == 2)
+        #expect(output.count == input.count)
         #expect(output.values.allSatisfy { $0 == TuyaApplicationUpdateSecretSanitizer.redactedValue })
     }
 }
