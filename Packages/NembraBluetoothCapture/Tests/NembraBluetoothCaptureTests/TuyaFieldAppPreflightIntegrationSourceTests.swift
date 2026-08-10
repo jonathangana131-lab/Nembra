@@ -24,11 +24,45 @@ struct TuyaFieldAppPreflightIntegrationSourceTests {
         )
         #expect(
             entrypoint.contains("TuyaReadOnlyAuthenticationSessionProvider"),
-            "The field app must obtain the verdict snapshot through the accepted session-provider boundary so authentication provenance and connection generation stay attached to the payload chronology."
+            "The field app must obtain the verdict snapshot through the accepted session-provider boundary so authentication provenance and connection generation stay attached to payload chronology."
         )
         #expect(
-            !entrypoint.contains("var passed: Bool { secure &&"),
-            "Do not duplicate the physical acceptance authority with a local secure/payload/timer boolean."
+            !entrypoint.contains("var passed: Bool { secure") && !entrypoint.contains("var passed: Bool { secureSessionEstablished"),
+            "Do not duplicate physical acceptance authority with a local secure/payload/timer boolean."
+        )
+    }
+
+    @Test("Tuya SDK remains the sole BLE owner after authentication begins")
+    func secureObservationDoesNotOpenSecondCoreBluetoothConnection() throws {
+        let entrypoint = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let runbook = try readRepositoryFile("docs/CAPTURE_NEXT_TUYA_SECURE_LINK_TEST.md")
+
+        #expect(
+            !entrypoint.contains("central.connect("),
+            "Once the official Tuya SDK owns the authenticated BLE link, the field app must not open a second Nembra-owned CoreBluetooth connection to manufacture post-auth evidence."
+        )
+        #expect(
+            entrypoint.contains("ThingSmartDeviceDelegate"),
+            "Authenticated application evidence must come from the SDK-owned device/session boundary."
+        )
+        #expect(
+            runbook.contains("SDK exclusively own the authenticated BLE connection"),
+            "The executable source contract must stay aligned with the locked one-owner physical runbook."
+        )
+    }
+
+    @Test("SDK initialization precedes the first account-session authority read")
+    func sdkInitializationPrecedesAccountAuthorityRead() throws {
+        let entrypoint = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        guard let start = entrypoint.range(of: "start(withAppKey:"),
+              let isLogin = entrypoint.range(of: "isLogin") else {
+            Issue.record("Field source must explicitly initialize ThingSmartSDK and inspect the official ThingSmartUser login state.")
+            return
+        }
+
+        #expect(
+            start.lowerBound < isLogin.lowerBound,
+            "A fresh install must initialize ThingSmartSDK with the private app identity before ThingSmartUser.isLogin is allowed to gate the secure-link flow."
         )
     }
 
