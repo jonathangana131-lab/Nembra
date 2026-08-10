@@ -112,26 +112,28 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         latestApplicationPayloadUptimeNanoseconds = nil
     }
 
-    /// Retires current authentication authority when the official SDK reports a terminal failure.
-    /// A failure may arrive after the initial success callback; it must still clear provenance and
-    /// application evidence rather than leave the generation looking authenticated. The token is
-    /// retired so a delayed callback cannot resurrect the failed generation.
+    /// Retires current session authority when the official SDK reports a terminal failure.
+    ///
+    /// Before authentication there is no provenance to retain. After an authenticated session has
+    /// genuinely been observed, earned authentication/application chronology remains diagnostic
+    /// evidence even though `.failed` and token retirement make it non-authorizing. A failure
+    /// callback is not a successful liveness observation, so it never advances the witnessed clock.
     public func markAuthenticationFailed(for token: TuyaReadOnlyConnectionToken) throws {
         try requireCurrent(token)
         switch authenticationState {
-        case .authenticating, .authenticated:
+        case .authenticating:
+            authenticationMethod = nil
+            authenticatedAtUptimeNanoseconds = nil
+            applicationPayloadCount = 0
+            latestApplicationPayloadUptimeNanoseconds = nil
+        case .authenticated:
             break
         case .waitingForAuthentication, .unavailable, .failed:
             throw MutationError.invalidAuthenticationTransition
         }
 
-        let now = try nextMonotonicObservation()
-        authenticationState = .failed(reason: "Tuya authentication failed.")
-        authenticationMethod = nil
-        authenticatedAtUptimeNanoseconds = nil
-        latestObservedUptimeNanoseconds = now
-        applicationPayloadCount = 0
-        latestApplicationPayloadUptimeNanoseconds = nil
+        _ = try nextMonotonicObservation()
+        authenticationState = .failed(reason: "Tuya SDK session failed.")
         currentToken = nil
     }
 
@@ -173,32 +175,30 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     }
 
     /// Seals an authenticated attempt that stayed connected but produced no required application
-    /// evidence. This is not a transport-disconnect claim. Earned auth chronology remains visible
-    /// for diagnostics, while the token is retired so a late application callback cannot heal it.
+    /// evidence. This is not a transport-disconnect claim. The deadline-detection clock is checked
+    /// for monotonicity but is never promoted into witnessed liveness.
     public func markApplicationObservationTimedOut(for token: TuyaReadOnlyConnectionToken) throws {
         try requireCurrent(token)
         guard case .authenticated = authenticationState else {
             throw MutationError.authenticationRequired
         }
 
-        let now = try nextMonotonicObservation()
+        _ = try nextMonotonicObservation()
         authenticationState = .failed(reason: "Authenticated session produced no application update before the observation deadline.")
-        latestObservedUptimeNanoseconds = now
         currentToken = nil
     }
 
     /// Seals an authenticated attempt whose observation continuity became invalid. This does not
     /// claim BLE disconnected: app suspension or a scheduling gap may coexist with an SDK-owned
-    /// transport link. Earned evidence is preserved, but later callbacks cannot heal the horizon.
+    /// transport link. The last legitimate liveness observation is frozen field-for-field.
     public func markObservationContinuityInvalidated(for token: TuyaReadOnlyConnectionToken) throws {
         try requireCurrent(token)
         guard case .authenticated = authenticationState else {
             throw MutationError.authenticationRequired
         }
 
-        let now = try nextMonotonicObservation()
+        _ = try nextMonotonicObservation()
         authenticationState = .failed(reason: "Authenticated observation continuity was invalidated.")
-        latestObservedUptimeNanoseconds = now
         currentToken = nil
     }
 
