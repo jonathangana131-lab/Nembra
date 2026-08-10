@@ -2474,7 +2474,7 @@ private struct SecureLinkView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                if test.failedAttemptCanRestartFromOFF1 && test.canRestartFromFreshOFF1 {
+                if failedRecoveryCanRestartInProcess {
                     Text("Nothing was promoted after the blocker. Re-establish the required field authority, then begin a fresh OFF1 attempt.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -2701,6 +2701,10 @@ private struct SecureLinkView: View {
             }
     }
 
+    private var failedRecoveryCanRestartInProcess: Bool {
+        test.failedAttemptCanRestartFromOFF1 && test.canRestartFromFreshOFF1
+    }
+
     private var authorityReady: Bool {
         test.fieldBuildIsAuthoritative
             && test.privateConfig
@@ -2753,7 +2757,9 @@ private struct SecureLinkView: View {
                 ? "The evidence horizon is sealed. Prepare the immutable artifact before sharing it for analysis."
                 : "The immutable accepted artifact is encoded and ready to share for analysis."
         case .failed:
-            return "No evidence was promoted past the blocker. Fix the condition and restart from scooter OFF."
+            return failedRecoveryCanRestartInProcess
+                ? "No evidence was promoted past the blocker. Fix the condition and restart from scooter OFF."
+                : "The prior session cannot restart safely in-process. Relaunch Capture before another scooter-OFF attempt."
         case .baseline, .scanning, .powerOn, .correlated:
             return "A fresh four-window power pattern identifies the nearby Bluetooth target for this attempt only."
         case .selected, .authenticating:
