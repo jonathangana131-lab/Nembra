@@ -67,13 +67,19 @@ struct TuyaTransportSuccessAuthoritySourceTests {
         #expect(promotionTerminal.contains("MutationError.monotonicClockRegressed"))
         #expect(promotionTerminal.contains("invalidateInternalLifecycle"))
 
-        guard let chronologyCatch = promotionTerminal.range(of: "catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed"),
-              let sourceRecheck = promotionTerminal.range(of: "sdk_source_authority_lost_during_auth_promotion", range: chronologyCatch.upperBound..<promotionTerminal.endIndex) else {
-            Issue.record("Could not isolate ledger chronology retirement from the post-suspension source-authority recheck.")
+        guard let sourceRecheck = promotionTerminal.range(of: "sdk_source_authority_lost_during_auth_promotion"),
+              let driverRecheck = promotionTerminal.range(of: "sdk_driver_authority_lost_during_auth_promotion", range: sourceRecheck.upperBound..<promotionTerminal.endIndex),
+              let chronologyCatch = promotionTerminal.range(of: "catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed", range: driverRecheck.upperBound..<promotionTerminal.endIndex),
+              let genericCatch = promotionTerminal.range(of: "} catch {", range: chronologyCatch.upperBound..<promotionTerminal.endIndex) else {
+            Issue.record("Could not isolate post-suspension authority rechecks from ledger chronology retirement.")
             return
         }
-        let chronologyTerminal = promotionTerminal[chronologyCatch.lowerBound..<sourceRecheck.lowerBound]
+        #expect(sourceRecheck.lowerBound < driverRecheck.lowerBound)
+        #expect(driverRecheck.lowerBound < chronologyCatch.lowerBound)
+
+        let chronologyTerminal = promotionTerminal[chronologyCatch.lowerBound..<genericCatch.lowerBound]
         #expect(chronologyTerminal.contains("invalidateInternalLifecycle"))
+        #expect(chronologyTerminal.contains("session_auth_promotion_clock_regressed"))
         #expect(!chronologyTerminal.contains("invalidateSourceAuthority"))
 
         #expect(!promotionTerminal.contains("authenticationAcquisitionFailed"))
