@@ -1,0 +1,199 @@
+name: Materialize Capture UID Custody BA3
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-uid-custody-ba3-r1
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Guard exact current product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='ba3a1eeae36caca6dd84beaabd0f15f4f0b57925'
+          test "$(git rev-parse HEAD^)" = "$expected"
+          test "$(git diff --name-only "$expected"..HEAD)" = '.github/workflows/materialize-capture-uid-custody-ba3.yml'
+
+      - name: Bind UID scrub to admitted lease before suspension
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = app.read_text()
+
+          old = '''        applicationUpdateAdmissionsInFlight += 1
+                  defer { applicationUpdateAdmissionsInFlight -= 1 }
+
+                  do {
+                      try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
+                      await refreshLedgerSnapshot()
+                      var eventDetails = redactedApplicationEventDetails(update)
+                      eventDetails["generation"] = String(token.diagnosticGeneration)
+                      log("tuya_application_update", eventDetails)
+          '''
+          new = '''        guard let custodyAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                        !custodyAccountUID.isEmpty else {
+                      await invalidateSourceAuthority(
+                          token: token,
+                          message: "The verified account-identity lease disappeared before application evidence could enter custody.",
+                          kind: "sdk_account_uid_lease_missing_during_application_admission"
+                      )
+                      return
+                  }
+                  let custodySafeUpdate = redactedApplicationEventDetails(update, accountUID: custodyAccountUID)
+
+                  applicationUpdateAdmissionsInFlight += 1
+                  defer { applicationUpdateAdmissionsInFlight -= 1 }
+
+                  do {
+                      try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
+                      await refreshLedgerSnapshot()
+                      var eventDetails = custodySafeUpdate
+                      eventDetails["generation"] = String(token.diagnosticGeneration)
+                      log("tuya_application_update", eventDetails)
+          '''
+          if source.count(old) != 1:
+              raise SystemExit('application custody admission block drifted')
+          source = source.replace(old, new)
+
+          old_helper = '''    private func redactedApplicationEventDetails(_ update: [String: String]) -> [String: String] {
+                  guard let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                        !accountUID.isEmpty else {
+                      return update
+                  }
+
+                  var redacted: [String: String] = [:]
+                  redacted.reserveCapacity(update.count)
+                  for (key, value) in update {
+                      let redactedKey = key.replacingOccurrences(
+                          of: accountUID,
+                          with: "<redacted-account-uid>",
+                          options: [.caseInsensitive, .literal]
+                      )
+                      redacted[redactedKey] = value.replacingOccurrences(
+                          of: accountUID,
+                          with: "<redacted-account-uid>",
+                          options: [.caseInsensitive, .literal]
+                      )
+                  }
+                  return redacted
+              }
+          '''
+          new_helper = '''    private func redactedApplicationEventDetails(
+                  _ update: [String: String],
+                  accountUID: String
+              ) -> [String: String] {
+                  var redacted: [String: String] = [:]
+                  redacted.reserveCapacity(update.count)
+                  for key in update.keys.sorted() {
+                      guard let value = update[key] else { continue }
+                      let redactedKey = key.replacingOccurrences(
+                          of: accountUID,
+                          with: "<redacted-account-uid>",
+                          options: [.caseInsensitive, .literal]
+                      )
+                      let redactedValue = value.replacingOccurrences(
+                          of: accountUID,
+                          with: "<redacted-account-uid>",
+                          options: [.caseInsensitive, .literal]
+                      )
+
+                      var outputKey = redactedKey
+                      var suffix = 2
+                      while redacted[outputKey] != nil {
+                          outputKey = "\\(redactedKey)#\\(suffix)"
+                          suffix += 1
+                      }
+                      redacted[outputKey] = redactedValue
+                  }
+                  return redacted
+              }
+          '''
+          if source.count(old_helper) != 1:
+              raise SystemExit('account UID helper drifted')
+          source = source.replace(old_helper, new_helper)
+          app.write_text(source)
+
+          test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift')
+          test_source = test.read_text()
+          old_test = '''        #expect(receiver.contains("redactedApplicationEventDetails(update)"))
+                  #expect(receiver.contains("membershipAccountUID?.trimmingCharacters"))
+                  #expect(receiver.contains("let redactedKey = key.replacingOccurrences("))
+                  #expect(receiver.contains("value.replacingOccurrences("))
+                  #expect(receiver.contains("<redacted-account-uid>"))
+                  #expect(receiver.contains("options: [.caseInsensitive, .literal]"))
+                  #expect(!receiver.contains("log(\\"tuya_application_update\\", update"))
+          '''
+          new_test = '''        let scrub = try requiredOffset(containing: "let custodySafeUpdate = redactedApplicationEventDetails(update, accountUID: custodyAccountUID)", in: receiver)
+                  let ledgerAwait = try requiredOffset(containing: "try await sessionLedger.recordApplicationUpdate", in: receiver)
+                  #expect(scrub < ledgerAwait)
+                  #expect(receiver.contains("guard let custodyAccountUID = membershipAccountUID?.trimmingCharacters"))
+                  #expect(receiver.contains("var eventDetails = custodySafeUpdate"))
+                  #expect(receiver.contains("for key in update.keys.sorted()"))
+                  #expect(receiver.contains("while redacted[outputKey] != nil"))
+                  #expect(receiver.contains("redacted[outputKey] = redactedValue"))
+                  #expect(receiver.contains("<redacted-account-uid>"))
+                  #expect(receiver.contains("options: [.caseInsensitive, .literal]"))
+                  #expect(!receiver.contains("return update"))
+                  #expect(!receiver.contains("redactedApplicationEventDetails(update)"))
+                  #expect(!receiver.contains("log(\\"tuya_application_update\\", update"))
+          '''
+          if test_source.count(old_test) != 1:
+              raise SystemExit('UID custody source test drifted')
+          test_source = test_source.replace(old_test, new_test)
+          helper_anchor = '''    private func section(in source: String, from start: String, to end: String) throws -> Substring {
+          '''
+          required_helper = '''    private func requiredOffset(containing token: String, in source: String) throws -> String.Index {
+                  guard let range = source.range(of: token) else { throw Error.sectionMissing }
+                  return range.lowerBound
+              }
+
+          '''
+          if test_source.count(helper_anchor) != 1:
+              raise SystemExit('test helper anchor drifted')
+          test_source = test_source.replace(helper_anchor, required_helper + helper_anchor)
+          test.write_text(test_source)
+          PY
+
+      - name: Exact source smoke checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          receiver = s[s.index('    private func receivedApplicationUpdate('):s.index('    private func startWatchdog')]
+          assert receiver.index('let custodySafeUpdate = redactedApplicationEventDetails(update, accountUID: custodyAccountUID)') < receiver.index('try await sessionLedger.recordApplicationUpdate')
+          assert 'var eventDetails = custodySafeUpdate' in receiver
+          assert 'redactedApplicationEventDetails(update)' not in receiver
+          assert 'for key in update.keys.sorted()' in receiver
+          assert 'while redacted[outputKey] != nil' in receiver
+          assert 'return update' not in receiver
+          PY
+          git diff --check
+
+      - name: Commit durable exact-current repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-uid-custody-ba3.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift \
+            .github/workflows/materialize-capture-uid-custody-ba3.yml
+          git commit -m 'fix(capture): bind account UID scrub before suspension'
+          git push origin HEAD:sol/v14-capture-uid-custody-ba3-r1
