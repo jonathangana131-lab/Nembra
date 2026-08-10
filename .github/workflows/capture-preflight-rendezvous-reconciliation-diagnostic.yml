@@ -1,0 +1,94 @@
+name: Capture Preflight Rendezvous Reconciliation Diagnostic
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureFieldRuntimeRendezvousTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureSimulatorPreflightSnapshotHandoffTests.swift'
+      - '.github/workflows/capture-preflight-rendezvous-reconciliation-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  package-differential:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Bind diagnostic to exact PR head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Run full Capture package
+        id: package
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/capture-preflight-rendezvous-swift-test.log"
+          set +e
+          (cd Packages/NembraBluetoothCapture && swift test) 2>&1 | tee "$log"
+          status="${PIPESTATUS[0]}"
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Verify targeted issue differential
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I - "$RUNNER_TEMP/capture-preflight-rendezvous-swift-test.log" <<'PY'
+          import re
+          import sys
+          from collections import Counter
+          from pathlib import Path
+
+          failures = Counter()
+          for line in Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace").splitlines():
+              match = re.search(r"recorded an issue at ([^:]+):", line)
+              if match:
+                  failures[Path(match.group(1)).name] += 1
+
+          targets = {
+              "ES80CaptureFieldRuntimeRendezvousTests.swift",
+              "ES80CaptureSimulatorPreflightSnapshotHandoffTests.swift",
+          }
+          targeted_remaining = {name: failures[name] for name in sorted(targets) if failures[name]}
+          total = sum(failures.values())
+          print(f"Capture package recorded issues after preflight rendezvous reconciliation: {total}")
+          for name, count in failures.most_common():
+              print(f"{count:3} {name}")
+
+          if targeted_remaining:
+              raise SystemExit(f"targeted preflight-rendezvous issues remain: {targeted_remaining}")
+          if total > 66:
+              raise SystemExit(f"expected no replacement regression beyond the 72 -> 66 targeted differential, observed {total}")
+          PY
+
+      - name: Upload exact diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: capture-preflight-rendezvous-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/capture-preflight-rendezvous-swift-test.log
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Report package global status
+        if: always()
+        env:
+          PACKAGE_STATUS: ${{ steps.package.outputs.status }}
+        run: |
+          if [[ "$PACKAGE_STATUS" == "0" ]]; then
+            echo "Full Capture package is globally green on this diagnostic head."
+          else
+            echo "Full Capture package remains globally red; this workflow validates only the targeted preflight-rendezvous differential."
+          fi
