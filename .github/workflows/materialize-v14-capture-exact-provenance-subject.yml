@@ -1,0 +1,46 @@
+name: V14 Capture Exact Provenance Subject Materializer
+
+on:
+  push:
+    branches:
+      - product/v14-capture-guided-final-truth-gpt56sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply exact provenance checkout/build subject binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/apply_v14_capture_exact_provenance_subject.py
+          python3 scripts/ci/apply_v14_capture_exact_provenance_subject.py
+          grep -Fq 'ref: ${{ github.event.pull_request.head.sha || github.sha }}' .github/workflows/capture-field-build-provenance.yml
+          grep -Fq 'CAPTURE_PROVENANCE_SOURCE_SHA=%s' .github/workflows/capture-field-build-provenance.yml
+          grep -Fq 'sha="${CAPTURE_PROVENANCE_SOURCE_SHA:?exact source was not established}"' .github/workflows/capture-field-build-provenance.yml
+          grep -Fq 'NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER="$procedure"' .github/workflows/capture-field-build-provenance.yml
+          test "$(grep -Fc 'INFOPLIST_KEY_NembraCaptureProcedureIdentifier = "$(NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER)";' NembraCapture.xcodeproj/project.pbxproj)" = 2
+          ! grep -Fq 'INFOPLIST_KEY_NembraCaptureProcedureIdentifier="$procedure"' .github/workflows/capture-field-build-provenance.yml
+          git diff --check
+
+      - name: Publish clean provenance product bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm scripts/ci/apply_v14_capture_exact_provenance_subject.py
+          rm .github/workflows/materialize-v14-capture-exact-provenance-subject.yml
+          git add -A
+          git diff --cached --check
+          git diff --cached --quiet && { echo 'ERROR: exact provenance materializer produced no delta' >&2; exit 1; }
+          git config user.name 'nembra-v14-agent'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'ci(capture): bind provenance to exact candidate source'
+          git push origin HEAD:product/v14-capture-guided-final-truth-gpt56sol
