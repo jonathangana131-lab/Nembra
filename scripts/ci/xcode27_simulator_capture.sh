@@ -78,6 +78,7 @@ xcodebuild \
   -maximum-test-execution-time-allowance 120 \
   -collect-test-diagnostics never \
   CODE_SIGNING_ALLOWED=NO \
+  ONLY_ACTIVE_ARCH=YES \
   test \
   | tee "$ARTIFACTS_DIR/logs/xcodebuild-test.log"
 TEST_STATUS=${PIPESTATUS[0]}
