@@ -1,0 +1,52 @@
+name: Materialize Capture Source Contract Quote Fix
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-gate-diagnostics-417dca
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: sol/v14-capture-gate-diagnostics-417dca
+          fetch-depth: 0
+      - name: Align source assertions to guarded xcodebuild argv
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/capture-field-build-provenance.yml')
+          text = path.read_text(encoding='utf-8')
+          replacements = {
+              "grep -Fq 'NEMBRA_CAPTURE_BUILD_IDENTIFIER=\"$BUILD_LABEL\"' \"$installer\"":
+                  "grep -Fq 'NEMBRA_CAPTURE_BUILD_IDENTIFIER=$BUILD_LABEL' \"$installer\"",
+              "grep -Fq 'NEMBRA_CAPTURE_BUILD_COMMIT_SHA=\"$SOURCE_SHA\"' \"$installer\"":
+                  "grep -Fq 'NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$SOURCE_SHA' \"$installer\"",
+          }
+          for old, new in replacements.items():
+              if text.count(old) != 1:
+                  raise SystemExit(f'expected exactly one stale source assertion: {old}')
+              text = text.replace(old, new)
+          path.write_text(text, encoding='utf-8')
+          PY
+          git diff --check
+          git diff -- .github/workflows/capture-field-build-provenance.yml
+      - name: Commit staged source-contract repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/capture-field-build-provenance.yml
+          git commit -m 'ci(capture): align guarded build-setting source contract'
+          git push origin HEAD:sol/v14-capture-gate-diagnostics-417dca
