@@ -34,11 +34,8 @@ jobs:
           new = "CBAdvertisementDataIsConnectable"
           if text.count(old) != 2:
               raise SystemExit(f"expected exactly 2 invalid connectable-key references, found {text.count(old)}")
-          if new in text:
-              raise SystemExit("replacement symbol already present before materialization; source drifted")
           path.write_text(text.replace(old, new), encoding="utf-8")
           PY
-          test "$(grep -c 'CBAdvertisementDataIsConnectable$' "$path" || true)" = '0' || true
           test "$(grep -o 'CBAdvertisementDataIsConnectable' "$path" | wc -l | tr -d ' ')" = '2'
           ! grep -Fq 'CBAdvertisementDataIsConnectableKey' "$path"
           git diff --check
