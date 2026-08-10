@@ -261,34 +261,39 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertNotIn(self.PRIVATE_UDID, json.dumps(report))
         self.assertNotIn(str(symlink_parent), json.dumps(report))
 
-    def test_production_handoff_refuses_private_path_clobber_before_secret_write(self):
+    def test_production_handoff_uses_descriptor_bound_private_input_before_signing(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
         directory_guard = 'if [[ -L "$PRIVATE_DIR" ]]; then'
         target_guard = 'if [[ -e "$UDID_FILE" || -L "$UDID_FILE" ]]; then'
-        secret_read = "IFS= read -r -s INTENDED_UDID"
-        raw_write = 'printf \'%s\' "$INTENDED_UDID" > "$UDID_FILE"'
-        guarded_write = f"( set -o noclobber; {raw_write} )"
+        helper_path = "scripts/ci/es80_private_intended_device_input.py"
+        helper_blob = "7de2eb55c138f578cf3c0a53d0f12db823fa276d"
+        helper_invoke = '/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER" --output-path "$UDID_FILE"'
+        producer_invoke = "./scripts/ci/xcode27_today_research_field_candidate.sh"
 
         self.assertIn(directory_guard, handoff)
         self.assertIn(target_guard, handoff)
-        self.assertIn(guarded_write, handoff)
-        self.assertLess(handoff.index(directory_guard), handoff.index(secret_read))
-        self.assertLess(handoff.index(target_guard), handoff.index(secret_read))
-        self.assertLess(handoff.index(target_guard), handoff.index(guarded_write))
-        self.assertEqual(handoff.count(raw_write), 1)
+        self.assertIn(helper_path, handoff)
+        self.assertIn(helper_blob, handoff)
+        self.assertIn(helper_invoke, handoff)
+        self.assertLess(handoff.index(directory_guard), handoff.index(helper_invoke))
+        self.assertLess(handoff.index(target_guard), handoff.index(helper_invoke))
+        self.assertLess(handoff.index(helper_invoke), handoff.index(producer_invoke))
+        self.assertNotIn("IFS= read -r -s INTENDED_UDID", handoff)
+        self.assertNotIn("set -o noclobber", handoff)
+        self.assertNotIn('printf \'%s\' "$INTENDED_UDID" > "$UDID_FILE"', handoff)
         self.assertNotIn('printf \'%s\\n\' "$INTENDED_UDID" > "$UDID_FILE"', handoff)
 
-    def test_production_handoff_resolves_physical_home_before_private_path_and_secret(self):
+    def test_production_handoff_resolves_physical_home_before_private_path_and_helper(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
         home_resolution = 'HOME_PHYSICAL="$(cd -P -- "$HOME" && /bin/pwd -P)"'
         private_dir = 'PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"'
-        secret_read = "IFS= read -r -s INTENDED_UDID"
+        helper_invoke = '/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER" --output-path "$UDID_FILE"'
 
         self.assertIn(home_resolution, handoff)
         self.assertIn(private_dir, handoff)
         self.assertNotIn('PRIVATE_DIR="$HOME/.nembra-private"', handoff)
         self.assertLess(handoff.index(home_resolution), handoff.index(private_dir))
-        self.assertLess(handoff.index(private_dir), handoff.index(secret_read))
+        self.assertLess(handoff.index(private_dir), handoff.index(helper_invoke))
 
     def test_non_xcode_27_selection_fails_closed(self):
         with tempfile.TemporaryDirectory() as temporary:
