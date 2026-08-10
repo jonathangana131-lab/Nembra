@@ -113,22 +113,30 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         latestApplicationPayloadUptimeNanoseconds = nil
     }
 
+    /// Retires current session authority when the official SDK reports a terminal failure.
+    ///
+    /// If failure occurs before authentication, no authentication provenance exists and the
+    /// pre-auth fields remain empty. If the SDK reports failure after an authenticated session was
+    /// already observed, that earned chronology is retained for diagnostics while `.failed` and
+    /// token retirement make it non-authorizing. Failure must never rewrite real prior evidence as
+    /// though authentication or application updates had never occurred.
     public func markAuthenticationFailed(for token: TuyaReadOnlyConnectionToken) throws {
         try requireCurrent(token)
         switch authenticationState {
         case .waitingForAuthentication, .authenticating:
+            authenticationMethod = nil
+            authenticatedAtUptimeNanoseconds = nil
+            applicationPayloadCount = 0
+            latestApplicationPayloadUptimeNanoseconds = nil
+        case .authenticated:
             break
-        case .unavailable, .authenticated, .failed:
+        case .unavailable, .failed:
             throw MutationError.invalidAuthenticationTransition
         }
 
         let now = try nextMonotonicObservation()
-        authenticationState = .failed(reason: "Tuya authentication failed.")
-        authenticationMethod = nil
-        authenticatedAtUptimeNanoseconds = nil
+        authenticationState = .failed(reason: "Tuya SDK session failed.")
         latestObservedUptimeNanoseconds = now
-        applicationPayloadCount = 0
-        latestApplicationPayloadUptimeNanoseconds = nil
         currentToken = nil
     }
 
