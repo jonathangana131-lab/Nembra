@@ -11,6 +11,7 @@ on:
       - NembraApp/App/NembraCaptureEntrypoint.swift
       - NembraCapture.xcodeproj/project.pbxproj
       - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift
       - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift
       - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerPrivateInstallLogCustodySourceTests.swift
       - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift
@@ -18,6 +19,7 @@ on:
       - Scripts/capture_tuya_private_input_provenance.py
       - scripts/ci/tests/test_capture_tuya_private_input_provenance.py
       - scripts/field/install_one_time_capture.command
+      - docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md
       - .github/workflows/capture-field-build-provenance.yml
   workflow_dispatch:
 
@@ -48,8 +50,10 @@ jobs:
           entrypoint='NembraApp/App/NembraCaptureEntrypoint.swift'
           project='NembraCapture.xcodeproj/project.pbxproj'
           installer='scripts/field/install_one_time_capture.command'
+          runbook='docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md'
           bootstrap='Scripts/bootstrap_capture_tuya_sdk.sh'
           private_provenance='Scripts/capture_tuya_private_input_provenance.py'
+          procedure='ES80-AUTHENTICATED-STATIONARY-v1'
 
           bash -n "$installer"
           grep -Fq 'EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"' "$installer"
@@ -68,6 +72,19 @@ jobs:
           grep -Fq 'NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256' "$installer"
           if grep -Fq 'Switch to capture/one-time-ble-dump-gpt56 first' "$installer"; then
             echo 'ERROR: field-build authority must bind the accepted source SHA, not a branch name.' >&2
+            exit 1
+          fi
+
+          grep -Fq "PROCEDURE_ID=\"$procedure\"" "$installer"
+          grep -Fq 'Field procedure: $PROCEDURE_ID' "$installer"
+          grep -Fq "PROCEDURE_ID: \`$procedure\`" "$runbook"
+          grep -Fq "static let fieldProcedureIdentifier = \"$procedure\"" "$identity"
+          grep -Fq 'let procedureIdentifier: String' "$entrypoint"
+          grep -Fq 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier' "$entrypoint"
+          grep -Fq 'LabeledContent("Procedure", value: test.fieldProcedureIdentifier)' "$entrypoint"
+          grep -Fq 'schemaVersion: 10' "$entrypoint"
+          if grep -Fq 'schemaVersion: 9' "$entrypoint"; then
+            echo 'ERROR: procedure-bearing accepted export must not retain dependency-only schema 9.' >&2
             exit 1
           fi
 
