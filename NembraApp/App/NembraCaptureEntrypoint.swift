@@ -318,6 +318,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var targetCorrelationOperatorConfirmed = false
     private var driver: OfficialTuyaDriver?
     private var events: [Event] = []
+    private var applicationUpdateAdmissionsInFlight = 0
+    private var acceptanceCutIsClosed = false
     private var sealedAcceptedEventPrefix: [Event]?
     private var watchdog: Task<Void, Never>?
     private let sessionLedger = TuyaAuthenticatedReadOnlySessionLedger()
@@ -353,6 +355,18 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var correlationWindowIsScanning: Bool { correlationProgress?.isScanning == true }
     var correlationObservedCandidateCount: Int { correlationProgress?.currentObservedCandidateCount ?? 0 }
     var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }
+
+    func consumeCorrelationAsyncInvalidation() {
+        guard phase == .baseline || phase == .scanning,
+              correlationProgress?.isSeriesInvalidated == true else { return }
+
+        correlationSession?.abandonCurrentWindow()
+        correlationSession = nil
+        failLocally(
+            "Bluetooth correlation scan authority ended asynchronously. Restart from OFF1 and repeat the complete OFF1→ON1→OFF2→ON2 series; prior windows cannot be reused.",
+            "target_correlation_async_invalidated"
+        )
+    }
 
     var correlationWindowLabel: String {
         guard let phase = correlationProgress?.phase else { return "OFF1" }
@@ -1082,6 +1096,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
             ])
             return
         }
+        guard !acceptanceCutIsClosed else {
+            log("application_update_after_acceptance_cut_ignored", [
+                "generation": String(token.diagnosticGeneration)
+            ])
+            return
+        }
         guard sdkAccountLoggedIn,
               sdkDeviceMembershipVerified,
               accountIdentityLeaseIsAuthorized,
@@ -1097,6 +1117,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
             await recordObservedTransportLoss(token: token)
             return
         }
+
+        applicationUpdateAdmissionsInFlight += 1
+        defer { applicationUpdateAdmissionsInFlight -= 1 }
 
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
@@ -1229,9 +1252,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
                         )
                         return
                     }
+                    guard self.applicationUpdateAdmissionsInFlight == 0 else {
+                        break
+                    }
+                    self.acceptanceCutIsClosed = true
+                    let acceptedEventPrefixAtCut = self.events
                     do {
                         try await sessionLedger.sealAcceptedObservation(for: token)
-                        self.sealedAcceptedEventPrefix = self.events
+                        self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut
                         self.currentConnectionToken = nil
                         await self.refreshLedgerSnapshot()
                         self.phase = .accepted
@@ -1267,7 +1295,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     break
                 }
 
-                if (self.canonicalObservedAgeSeconds ?? 0) > 60,
+                if self.applicationUpdateAdmissionsInFlight == 0,
+                   (self.canonicalObservedAgeSeconds ?? 0) > 60,
                    self.applicationUpdateCount == 0 {
                     do {
                         try await sessionLedger.markApplicationObservationTimedOut(for: token)
@@ -1526,6 +1555,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func resetDiscoverySessionOnly() {
+        acceptanceCutIsClosed = false
         sealedAcceptedEventPrefix = nil
         correlationSession?.abandonCurrentWindow()
         correlationSession = nil
@@ -1977,6 +2007,10 @@ private struct SecureLinkView: View {
                 .frame(maxWidth: .infinity)
             }
             .background(Color.black.ignoresSafeArea())
+            .onChange(of: test.correlationProgress?.isSeriesInvalidated) { _, isInvalidated in
+                guard isInvalidated == true else { return }
+                test.consumeCorrelationAsyncInvalidation()
+            }
         }
         .navigationTitle("Secure Link")
         .task {
