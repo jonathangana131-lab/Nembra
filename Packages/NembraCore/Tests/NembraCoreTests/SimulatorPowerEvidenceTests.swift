@@ -115,6 +115,55 @@ struct SimulatorPowerEvidenceTests {
         #expect(after == before)
     }
 
+    @Test("speed-only evidence gap leaves propulsion evidence unchanged")
+    func speedGapDoesNotMintOrDemotePower() async throws {
+        let service = SimulatedScooterService(
+            initialState: SimulatedScooterService.state(for: .connectedStopped),
+            commandLatencyNanoseconds: 0
+        )
+
+        guard case let .live(before) = await service.simulatorPowerEvidenceSnapshot() else {
+            Issue.record("Expected initial live Simulator power")
+            return
+        }
+
+        await service.simulateSpeedEvidenceGap()
+
+        guard case .retained = await service.speedEvidenceSnapshot() else {
+            Issue.record("The fixture must retire speed evidence independently")
+            return
+        }
+        guard case let .live(after) = await service.simulatorPowerEvidenceSnapshot() else {
+            Issue.record("A speed-only gap must not demote propulsion evidence")
+            return
+        }
+        #expect(after == before)
+    }
+
+    @Test("availability stream publishes exact live-to-retained demotion")
+    func availabilityStreamPublishesDemotionWithoutRewritingReceipt() async throws {
+        let service = SimulatedScooterService(
+            initialState: SimulatedScooterService.state(for: .riding),
+            commandLatencyNanoseconds: 0
+        )
+        let stream = await service.simulatorPowerEvidenceUpdates()
+        var iterator = stream.makeAsyncIterator()
+
+        guard case let .live(initial)? = await iterator.next() else {
+            Issue.record("Atomic initial replay must expose the current live receipt")
+            return
+        }
+
+        await service.simulateConnectionDrop()
+
+        guard case let .retained(retained)? = await iterator.next() else {
+            Issue.record("The source stream must publish retained state after connection loss")
+            return
+        }
+        #expect(retained == initial)
+        #expect(retained.watts == 356)
+    }
+
     @Test("late subscriber replays retained receipt without rewriting identity")
     func lateSubscriberGetsExactRetainedReceipt() async throws {
         let service = SimulatedScooterService(
@@ -163,16 +212,18 @@ struct SimulatorPowerEvidenceTests {
         #expect(constructionError(watts: 0) == nil)
     }
 
-    @Test("non-Simulator profile cannot expose synthetic power authority")
-    func physicalProfileFailsClosed() async throws {
-        let service = SimulatedScooterService(
-            profile: .aovoproES80,
-            initialState: SimulatedScooterService.state(for: .riding),
-            commandLatencyNanoseconds: 0
-        )
+    @Test("physical and deferred profiles cannot expose synthetic power authority")
+    func nonSimulatorProfilesFailClosed() async throws {
+        for profile in [VehicleProfile.aovoproES80, .maxshotV1SPro] {
+            let service = SimulatedScooterService(
+                profile: profile,
+                initialState: SimulatedScooterService.state(for: .riding),
+                commandLatencyNanoseconds: 0
+            )
 
-        #expect(await service.simulatorPowerEvidenceSnapshot() == .unavailable)
-        await service.simulateRide(speedKilometersPerHour: 18.4, elapsedSeconds: 0)
-        #expect(await service.simulatorPowerEvidenceSnapshot() == .unavailable)
+            #expect(await service.simulatorPowerEvidenceSnapshot() == .unavailable)
+            await service.simulateRide(speedKilometersPerHour: 18.4, elapsedSeconds: 0)
+            #expect(await service.simulatorPowerEvidenceSnapshot() == .unavailable)
+        }
     }
 }
