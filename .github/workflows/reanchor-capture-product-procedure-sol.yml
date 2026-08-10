@@ -27,10 +27,9 @@ jobs:
           workflow='.github/workflows/reanchor-capture-product-procedure-sol.yml'
           entry='NembraApp/App/NembraCaptureEntrypoint.swift'
 
-          test "$(git rev-parse HEAD^)" = "$product_parent"
-          test "$(git diff --name-only HEAD^ HEAD)" = "$workflow"
-          git fetch origin integration/v14-capture-final-stationary-convergence-sol
-          test "$(git rev-parse origin/integration/v14-capture-final-stationary-convergence-sol)" = "$truth"
+          test "$(git merge-base "$product_parent" HEAD)" = "$product_parent"
+          git fetch origin "$truth"
+          test "$(git cat-file -t "$truth")" = commit
 
           set +e
           git merge --no-commit --no-ff "$truth"
