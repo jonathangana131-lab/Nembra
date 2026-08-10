@@ -23,6 +23,7 @@ final class AppRuntime {
     private let simulatorAutoCompletesRide: Bool
     private let simulatorStartsWithSpeedEvidenceGap: Bool
     private let simulatorStartsWithRetainedPowerAfterReconnect: Bool
+    private let simulatorDrivesDashboardStress: Bool
     private let simulatorRouteRecorder: RideRouteRecorder?
     private var didStart = false
     private var simulatorRideDriverTask: Task<Void, Never>?
@@ -37,6 +38,7 @@ final class AppRuntime {
         simulatorAutoCompletesRide: Bool,
         simulatorStartsWithSpeedEvidenceGap: Bool,
         simulatorStartsWithRetainedPowerAfterReconnect: Bool,
+        simulatorDrivesDashboardStress: Bool,
         simulatorRouteRecorder: RideRouteRecorder?
     ) {
         self.vehicleStore = vehicleStore
@@ -48,6 +50,7 @@ final class AppRuntime {
         self.simulatorAutoCompletesRide = simulatorAutoCompletesRide
         self.simulatorStartsWithSpeedEvidenceGap = simulatorStartsWithSpeedEvidenceGap
         self.simulatorStartsWithRetainedPowerAfterReconnect = simulatorStartsWithRetainedPowerAfterReconnect
+        self.simulatorDrivesDashboardStress = simulatorDrivesDashboardStress
         self.simulatorRouteRecorder = simulatorRouteRecorder
     }
 
@@ -89,6 +92,33 @@ final class AppRuntime {
 
         guard simulationScenario == .riding,
               let simulatorService else { return }
+
+        // Simulator-only sustained Dashboard stress fixture. This cadence is an
+        // intentionally synthetic QA load and makes no claim about AOVOPRO ES80
+        // packet cadence. `elapsedSeconds: 0` means every call mints genuine
+        // Simulator-owned speed/power source receipts through the normal source
+        // boundary while adding zero synthetic trip/odometer distance. Run the
+        // driver detached so the harness itself does not schedule its 10 Hz loop on
+        // the app MainActor that the hitch metric is trying to evaluate.
+        if simulatorDrivesDashboardStress {
+            let speedsKilometersPerHour: [Double] = [
+                8, 16, 22, 12, 19, 6, 24, 14, 18, 10
+            ]
+            simulatorRideDriverTask = Task.detached(priority: .userInitiated) {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                guard !Task.isCancelled else { return }
+
+                for index in 0..<120 {
+                    guard !Task.isCancelled else { return }
+                    await simulatorService.simulateRide(
+                        speedKilometersPerHour: speedsKilometersPerHour[index % speedsKilometersPerHour.count],
+                        elapsedSeconds: 0
+                    )
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                }
+            }
+            return
+        }
 
         simulatorRideDriverTask = Task {
             try? await Task.sleep(nanoseconds: 350_000_000)
@@ -192,6 +222,7 @@ enum AppBootstrap {
     static let simulationAutoCompleteRideEnvironmentKey = "NEMBRA_SIMULATION_AUTOCOMPLETE_RIDE"
     static let simulationSpeedEvidenceGapEnvironmentKey = "NEMBRA_SIMULATION_SPEED_EVIDENCE_GAP"
     static let simulationRetainedPowerAfterReconnectEnvironmentKey = "NEMBRA_SIMULATION_RETAINED_POWER_AFTER_RECONNECT"
+    static let simulationDashboardStressEnvironmentKey = "NEMBRA_SIMULATION_DASHBOARD_STRESS"
 
     private struct VehicleBootstrap {
         let service: any ScooterService
@@ -314,6 +345,8 @@ enum AppBootstrap {
             && environment[simulationSpeedEvidenceGapEnvironmentKey] == "1"
         let simulatorStartsWithRetainedPowerAfterReconnect = bootstrap.scenario == .riding
             && environment[simulationRetainedPowerAfterReconnectEnvironmentKey] == "1"
+        let simulatorDrivesDashboardStress = bootstrap.scenario == .riding
+            && environment[simulationDashboardStressEnvironmentKey] == "1"
         let simulatorRouteRecorder: RideRouteRecorder?
         if bootstrap.scenario != nil,
            let routeStore = persistence?.routeStore {
@@ -335,6 +368,7 @@ enum AppBootstrap {
             simulatorAutoCompletesRide: simulatorAutoCompletesRide,
             simulatorStartsWithSpeedEvidenceGap: simulatorStartsWithSpeedEvidenceGap,
             simulatorStartsWithRetainedPowerAfterReconnect: simulatorStartsWithRetainedPowerAfterReconnect,
+            simulatorDrivesDashboardStress: simulatorDrivesDashboardStress,
             simulatorRouteRecorder: simulatorRouteRecorder
         )
     }

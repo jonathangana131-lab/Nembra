@@ -342,6 +342,62 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testLandscapeDashboardSustainedSpeedPowerStressMetrics() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        XCUIDevice.shared.orientation = .landscapeRight
+
+        let app = XCUIApplication()
+        app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = "riding"
+        app.launchEnvironment["NEMBRA_SIMULATION_DASHBOARD_STRESS"] = "1"
+        app.launchEnvironment["NEMBRA_SIMULATION_STORAGE_NAMESPACE"] = "dashboard-performance-stress"
+        app.launch()
+
+        let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
+        XCTAssertTrue(
+            cockpit.waitForExistence(timeout: 4),
+            "Sustained performance evidence is valid only when the real landscape Cockpit is mounted."
+        )
+
+        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
+        XCTAssertTrue(
+            energyRail.waitForExistence(timeout: 2),
+            "The sustained performance run must exercise the real mounted Energy Rail."
+        )
+        let initialPowerValue = energyRail.value as? String ?? ""
+        let sourceMoved = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value != %@", initialPowerValue),
+            object: energyRail
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [sourceMoved], timeout: 2),
+            .completed,
+            "The performance window must begin only after fresh synthetic speed/power source receipts are actively retargeting the cockpit."
+        )
+
+        let options = XCTMeasureOptions()
+        // XCTest executes one warm-up plus one recorded iteration when this is 1.
+        // The app stress fixture runs long enough to cover both 3-second windows.
+        options.iterationCount = 1
+
+        measure(
+            metrics: [
+                XCTHitchMetric(application: app),
+                XCTCPUMetric(application: app),
+                XCTMemoryMetric(application: app)
+            ],
+            options: options
+        ) {
+            Thread.sleep(forTimeInterval: 3)
+        }
+
+        XCTAssertTrue(
+            energyRail.exists,
+            "The measured cockpit must remain mounted for the whole sustained stress interval."
+        )
+        keepScreenshot(named: "Dashboard Sustained Stress Landscape")
+    }
+
+    @MainActor
     private func selectDashboardMode(
         identifier: String,
         expectedValue: String,
