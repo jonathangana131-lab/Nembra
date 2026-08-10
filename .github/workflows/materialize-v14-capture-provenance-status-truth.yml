@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 4
+          fetch-depth: 8
 
       - name: Verify exact construction parent
         shell: bash
@@ -205,20 +205,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_parent='1c40853f6991b4d09206df1d25ecff021458b7eb'
           workflow='.github/workflows/materialize-v14-capture-provenance-status-truth.yml'
-          allowed='^(NembraApp/App/NembraCaptureEntrypoint.swift|Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift|Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift)$'
+          expected_paths=$'.github/workflows/materialize-v14-capture-provenance-status-truth.yml\nNembraApp/App/NembraCaptureEntrypoint.swift\nPackages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift\nPackages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift'
           test ! -e "$workflow"
-          printf 'Materialized working-tree scope:\n'
-          git status --short
-          unexpected="$(git diff --name-only "$expected_parent" -- . | grep -Ev "$allowed|^$workflow$" || true)"
-          test -z "$unexpected"
-          for required in \
-            NembraApp/App/NembraCaptureEntrypoint.swift \
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift \
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift; do
-            git diff --name-only "$expected_parent" -- "$required" | grep -Fxq "$required"
-          done
+          actual_paths="$(git status --porcelain=v1 --untracked-files=all | sed -E 's/^.. //' | sort)"
+          printf 'Materialized working-tree scope:\n%s\n' "$actual_paths"
+          test "$actual_paths" = "$(printf '%s\n' "$expected_paths" | sort)"
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift
           git diff --check
           /usr/bin/python3 <<'PY'
           from pathlib import Path
@@ -227,6 +221,10 @@ jobs:
           assert ']) { current, _ in current })' not in source
           assert source.count(']) { _, trusted in trusted })') == 1
           assert source.count('"generation": String(token.diagnosticGeneration)') >= 1
+          generation_test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift').read_text()
+          status_test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift').read_text()
+          assert 'trustedGenerationWinsReservedKeyCollision' in generation_test
+          assert 'lifecycleRevocationsResetMembershipStatusWithProof' in status_test
           PY
 
       - name: Commit materialized successor
