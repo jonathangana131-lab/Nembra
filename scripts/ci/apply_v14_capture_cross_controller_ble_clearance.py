@@ -3,6 +3,9 @@ from pathlib import Path
 path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
 text = path.read_text(encoding="utf-8")
 
+begin_start = text.index("private func beginCorrelationSeries()")
+begin_end = text.index("func startNextCorrelationWindow()", begin_start)
+begin = text[begin_start:begin_end]
 scan_anchor = '''        guard currentConnectionToken == nil else {
 '''
 scan_insert = '''        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {
@@ -13,11 +16,12 @@ scan_insert = '''        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuy
             return
         }
 '''
-if text.count(scan_anchor) != 1:
-    raise SystemExit(f"expected one currentConnectionToken scan anchor, found {text.count(scan_anchor)}")
-if "existing_sdk_local_ble_ownership_blocks_scan" in text:
-    raise SystemExit("cross-controller BLE gate already exists")
-text = text.replace(scan_anchor, scan_insert + scan_anchor, 1)
+if begin.count(scan_anchor) != 1:
+    raise SystemExit(f"expected one currentConnectionToken guard inside beginCorrelationSeries, found {begin.count(scan_anchor)}")
+if "existing_sdk_local_ble_ownership_blocks_scan" in begin:
+    raise SystemExit("cross-controller BLE gate already exists in beginCorrelationSeries")
+begin = begin.replace(scan_anchor, scan_insert + scan_anchor, 1)
+text = text[:begin_start] + begin + text[begin_end:]
 
 factory_anchor = '''    static func make() -> OfficialTuyaDriver? {
 '''
