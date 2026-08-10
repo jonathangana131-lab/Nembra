@@ -1,0 +1,133 @@
+name: V14 Capture Canonical Procedure Rendezvous Repair V2
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-canonical-procedure-rendezvous-sol
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-canonical-procedure-rendezvous-sol
+          fetch-depth: 0
+
+      - name: Patch and validate canonical procedure
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor dee52e17577d25dd6d928378b2fb530f321923bb HEAD
+          python3 - <<'PY'
+          from pathlib import Path
+          P = "ES80-AUTHENTICATED-STATIONARY-v1"
+
+          def once(path, old, new):
+              f = Path(path)
+              s = f.read_text(encoding="utf-8")
+              n = s.count(old)
+              if n != 1:
+                  raise SystemExit(f"{path}: expected one anchor, found {n}")
+              f.write_text(s.replace(old, new, 1), encoding="utf-8")
+
+          once(
+              "NembraApp/App/NembraCaptureBuildIdentity.swift",
+              '    static let tuyaDependencyLockSHA256InfoKey = "NembraCaptureTuyaDependencyLockSHA256"\n',
+              '    static let tuyaDependencyLockSHA256InfoKey = "NembraCaptureTuyaDependencyLockSHA256"\n'
+              f'    static let fieldProcedureIdentifier = "{P}"\n'
+          )
+          once(
+              "NembraApp/App/NembraCaptureEntrypoint.swift",
+              "        let tuyaDependencyLockSHA256: String\n        let tuyaDeviceID: String\n",
+              "        let tuyaDependencyLockSHA256: String\n        let procedureIdentifier: String\n        let tuyaDeviceID: String\n"
+          )
+          once(
+              "NembraApp/App/NembraCaptureEntrypoint.swift",
+              "    var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }\n    var sdkAccountLoggedIn: Bool",
+              "    var fieldBuildSourceCommitSHA: String { buildIdentity.sourceCommitSHA }\n"
+              "    var fieldProcedureIdentifier: String { NembraCaptureBuildIdentity.fieldProcedureIdentifier }\n"
+              "    var sdkAccountLoggedIn: Bool"
+          )
+          once(
+              "NembraApp/App/NembraCaptureEntrypoint.swift",
+              "            schemaVersion: 9,\n            purpose: \"Sanitized Tuya authenticated read-only stationary preflight\",\n",
+              "            schemaVersion: 10,\n            purpose: \"Sanitized Tuya authenticated read-only stationary preflight\",\n"
+          )
+          once(
+              "NembraApp/App/NembraCaptureEntrypoint.swift",
+              "            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,\n            tuyaDeviceID: deviceID,\n",
+              "            tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,\n"
+              "            procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier,\n"
+              "            tuyaDeviceID: deviceID,\n"
+          )
+          once(
+              "NembraApp/App/NembraCaptureEntrypoint.swift",
+              "            LabeledContent(\"Source commit\", value: test.fieldBuildSourceCommitSHA)\n            LabeledContent(\"Private SDK config\", value: test.privateConfig ? \"Present\" : \"Missing\")\n",
+              "            LabeledContent(\"Source commit\", value: test.fieldBuildSourceCommitSHA)\n"
+              "            LabeledContent(\"Procedure\", value: test.fieldProcedureIdentifier)\n"
+              "            LabeledContent(\"Private SDK config\", value: test.privateConfig ? \"Present\" : \"Missing\")\n"
+          )
+          once(
+              "docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md",
+              "# Nembra Capture P0 — secure-link gate\n\n",
+              f"# Nembra Capture P0 — secure-link gate\n\nPROCEDURE_ID: `{P}`\n\n"
+          )
+
+          installer = Path("scripts/field/install_one_time_capture.command")
+          source = installer.read_text(encoding="utf-8")
+          old = 'EXPECTED_SOURCE_SHA="' + '$' + '{1:-' + '$' + '{NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"\n'
+          new = f'PROCEDURE_ID="{P}"\n' + old
+          if source.count(old) != 1:
+              raise SystemExit("installer source-SHA anchor changed")
+          source = source.replace(old, new, 1)
+          old = 'say "SDK-INTEGRATED CAPTURE LAUNCHED"\nprintf \'%s\\n\' \\\n'
+          new = old + '    "Field procedure: $PROCEDURE_ID" \\\n'
+          if source.count(old) != 1:
+              raise SystemExit("installer launch-summary anchor changed")
+          installer.write_text(source.replace(old, new, 1), encoding="utf-8")
+
+          wf = Path(".github/workflows/capture-field-build-provenance.yml")
+          source = wf.read_text(encoding="utf-8")
+          old = "      - NembraApp/App/NembraCaptureEntrypoint.swift\n"
+          new = old + "      - docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md\n      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift\n"
+          if source.count(old) != 1:
+              raise SystemExit("provenance trigger anchor changed")
+          source = source.replace(old, new, 1)
+          old = "          private_provenance='Scripts/capture_tuya_private_input_provenance.py'\n"
+          new = old + "          runbook='docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md'\n          procedure_test='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift'\n"
+          if source.count(old) != 1:
+              raise SystemExit("provenance variable anchor changed")
+          source = source.replace(old, new, 1)
+          old = "          grep -Fq 'envelope = sealedAcceptedExport' \"$entrypoint\"\n"
+          new = old + "          grep -Fq 'static let fieldProcedureIdentifier = \"ES80-AUTHENTICATED-STATIONARY-v1\"' \"$identity\"\n          grep -Fq 'let procedureIdentifier: String' \"$entrypoint\"\n          grep -Fq 'schemaVersion: 10' \"$entrypoint\"\n          grep -Fq 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier' \"$entrypoint\"\n          grep -Fq 'PROCEDURE_ID: `ES80-AUTHENTICATED-STATIONARY-v1`' \"$runbook\"\n          grep -Fq 'PROCEDURE_ID=\"ES80-AUTHENTICATED-STATIONARY-v1\"' \"$installer\"\n          grep -Fq 'Field procedure: $PROCEDURE_ID' \"$installer\"\n          grep -Fq 'ES80-AUTHENTICATED-STATIONARY-v1' \"$procedure_test\"\n"
+          if source.count(old) != 1:
+              raise SystemExit("provenance assertion anchor changed")
+          wf.write_text(source.replace(old, new, 1), encoding="utf-8")
+          PY
+
+          swiftc -frontend -parse NembraApp/App/NembraCaptureBuildIdentity.swift
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift
+          bash -n scripts/field/install_one_time_capture.command
+          grep -Fq 'schemaVersion: 10' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'PROCEDURE_ID: `ES80-AUTHENTICATED-STATIONARY-v1`' docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md
+          grep -Fq 'Field procedure: $PROCEDURE_ID' scripts/field/install_one_time_capture.command
+          git diff --check
+
+      - name: Commit repaired product tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/v14-capture-canonical-procedure-rendezvous-repair.yml
+          rm -f .github/workflows/v14-capture-canonical-procedure-rendezvous-repair-v2.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(capture): pin canonical stationary procedure rendezvous'
+          git push origin HEAD:repair/v14-capture-canonical-procedure-rendezvous-sol
