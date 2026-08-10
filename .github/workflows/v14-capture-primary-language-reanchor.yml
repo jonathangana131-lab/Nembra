@@ -1,0 +1,34 @@
+name: V14 Capture Primary Language Reanchor
+
+on:
+  push:
+    branches:
+      - product/v14-capture-primary-language-e618-sol
+
+permissions:
+  contents: write
+
+jobs:
+  reanchor:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: product/v14-capture-primary-language-e618-sol
+          fetch-depth: 0
+      - name: Guard and cherry-pick reviewed product delta
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "e618f4d0b6507078a4505238ac6439f98fe1bbd1"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git cherry-pick 7536648b9a094f67ad1e32c720b389503dfaabfa
+          git diff HEAD^ --check
+          grep -Fq 'Only the full OFF → ON → OFF → ON pattern can authorize the nearby signal for this attempt.' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Capture stays read-only and cannot send scooter commands.' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Application values are sanitized SDK-level projections, not raw FD50 bytes.' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'No DP query or scooter command is authorized by this surface.' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'fieldProcedureIdentifier' NembraApp/App/NembraCaptureEntrypoint.swift
+          test -s Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCapturePrimaryLanguageSourceTests.swift
+          git push origin HEAD:product/v14-capture-primary-language-e618-sol
