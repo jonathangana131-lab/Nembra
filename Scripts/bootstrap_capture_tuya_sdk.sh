@@ -26,17 +26,39 @@ if [[ ! -d NembraCapture.xcodeproj ]]; then
   exit 4
 fi
 
+TUYA_SECURITY_ROOT="$REPO_ROOT/LocalSecrets/TuyaSDK"
+if [[ ! -f "$TUYA_SECURITY_ROOT/ThingSmartCryption.podspec" || ! -e "$TUYA_SECURITY_ROOT/Build" ]]; then
+  cat >&2 <<EOF
+ERROR: Tuya's app-specific iOS security SDK is not provisioned.
+
+For the Tuya Developer Platform SmartLife SDK app whose iOS Bundle ID exactly
+matches Nembra Capture, download and extract ios_core_sdk.tar.gz, then keep the
+following private files only on this Mac under:
+
+  $TUYA_SECURITY_ROOT/
+
+Required:
+  ThingSmartCryption.podspec
+  Build
+
+LocalSecrets/ is git-ignored. Do not commit, upload, paste, or attach this
+security package. A public ThingSmartHomeKit pod by itself is not a complete
+SmartLife App SDK v5+ integration.
+EOF
+  exit 5
+fi
+
 printf 'Installing the official Tuya SmartLife iOS SDK for Nembra Capture...\n'
 pod install
 
 if [[ ! -d NembraCapture.xcworkspace ]]; then
   echo "ERROR: CocoaPods did not create NembraCapture.xcworkspace." >&2
-  exit 5
+  exit 6
 fi
 
 cat <<'EOF'
 
-Tuya SDK integration is installed locally.
+Tuya SDK dependencies and the app-specific security component are installed locally.
 
 NEXT BUILD RULE:
   Open NembraCapture.xcworkspace, not NembraCapture.xcodeproj.
