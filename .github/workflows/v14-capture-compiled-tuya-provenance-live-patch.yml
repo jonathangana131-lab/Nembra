@@ -1,0 +1,209 @@
+name: V14 Capture Compiled Tuya Provenance Live Patch
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-compiled-tuya-provenance-sol
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/v14-capture-compiled-tuya-provenance-sol
+          fetch-depth: 0
+
+      - name: Apply guarded vertical provenance repair
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"guard failed for {path}: expected one match, found {count}: {old[:120]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          def replace_exact_count(path: str, old: str, new: str, expected: int) -> None:
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != expected:
+                  raise SystemExit(f"guard failed for {path}: expected {expected} matches, found {count}: {old[:120]!r}")
+              p.write_text(text.replace(old, new))
+
+          installer = "scripts/field/install_one_time_capture.command"
+          replace_once(
+              installer,
+              '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"\n[[ -d "$ROOT/NembraCapture.xcworkspace" ]] || die "NembraCapture.xcworkspace was not generated. Do not use NembraCapture.xcodeproj for the authenticated field build."\n\n',
+              '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"\n[[ -d "$ROOT/NembraCapture.xcworkspace" ]] || die "NembraCapture.xcworkspace was not generated. Do not use NembraCapture.xcodeproj for the authenticated field build."\n\n# Git source identity alone is not enough for the private field instrument: the\n# ignored CocoaPods lock is part of the exact SDK-integrated bytes. Recompute the\n# resolved graph fingerprint and require it to match the bootstrap custody record\n# before stamping that non-secret hash into the compiled app.\nTUYA_LOCK_FILE="$ROOT/Podfile.lock"\nTUYA_PROVENANCE_FILE="$ROOT/LocalSecrets/TuyaRuntime/ResolvedTuyaDependencyProvenance.txt"\n[[ -f "$TUYA_LOCK_FILE" ]] || die "Tuya Podfile.lock is missing after bootstrap. Do not build an unauditable private dependency graph."\n[[ -f "$TUYA_PROVENANCE_FILE" ]] || die "Resolved Tuya dependency provenance is missing after bootstrap. Re-run provisioning/bootstrap before building."\nTUYA_LOCK_SHA256="$(shasum -a 256 "$TUYA_LOCK_FILE" | awk \'{print $1}\' | tr \'[:upper:]\' \'[:lower:]\')"\n[[ "$TUYA_LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "Could not compute a valid full SHA-256 for Podfile.lock."\nRECORDED_TUYA_LOCK_SHA256="$(awk -F= \'$1 == "podfile_lock_sha256" { print $2 }\' "$TUYA_PROVENANCE_FILE" | tail -n 1 | tr \'[:upper:]\' \'[:lower:]\')"\n[[ "$RECORDED_TUYA_LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "Bootstrap Tuya dependency provenance does not contain a valid full Podfile.lock SHA-256."\n[[ "$TUYA_LOCK_SHA256" == "$RECORDED_TUYA_LOCK_SHA256" ]] || die "Podfile.lock changed after bootstrap provenance was recorded. Re-run bootstrap; do not install this field build."\nsay "Resolved Tuya dependency graph fingerprint matched bootstrap provenance: $TUYA_LOCK_SHA256"\n\n'
+          )
+          replace_once(
+              installer,
+              '    "NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$SOURCE_SHA" \\\n    build',
+              '    "NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$SOURCE_SHA" \\\n    "NEMBRA_CAPTURE_TUYA_PODFILE_LOCK_SHA256=$TUYA_LOCK_SHA256" \\\n    build'
+          )
+
+          project = "NembraCapture.xcodeproj/project.pbxproj"
+          old_project_line = '\t\t\t\tINFOPLIST_KEY_NembraCaptureSourceCommitSHA = "$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)";\n'
+          new_project_line = old_project_line + '\t\t\t\tINFOPLIST_KEY_NembraCaptureTuyaPodfileLockSHA256 = "$(NEMBRA_CAPTURE_TUYA_PODFILE_LOCK_SHA256)";\n'
+          replace_exact_count(project, old_project_line, new_project_line, 2)
+
+          Path("NembraApp/App/NembraCaptureBuildIdentity.swift").write_text('''import Foundation
+
+struct NembraCaptureBuildIdentity: Codable, Equatable, Sendable {
+    static let buildIdentifierInfoKey = "NembraCaptureBuildIdentifier"
+    static let sourceCommitSHAInfoKey = "NembraCaptureSourceCommitSHA"
+    static let tuyaPodfileLockSHA256InfoKey = "NembraCaptureTuyaPodfileLockSHA256"
+
+    let buildIdentifier: String
+    let sourceCommitSHA: String
+    let tuyaPodfileLockSHA256: String
+
+    static var current: Self {
+        from(infoDictionary: Bundle.main.infoDictionary ?? [:])
+    }
+
+    static func from(infoDictionary: [String: Any]) -> Self {
+        Self(
+            buildIdentifier: (infoDictionary[buildIdentifierInfoKey] as? String) ?? "",
+            sourceCommitSHA: ((infoDictionary[sourceCommitSHAInfoKey] as? String) ?? "").lowercased(),
+            tuyaPodfileLockSHA256: ((infoDictionary[tuyaPodfileLockSHA256InfoKey] as? String) ?? "").lowercased()
+        )
+    }
+
+    var isAuthoritativeFieldBuild: Bool {
+        guard Self.isLowercaseHex(sourceCommitSHA, count: 40),
+              tuyaPodfileLockSHA256.count == 64,
+              Self.isLowercaseHex(tuyaPodfileLockSHA256, count: 64) else { return false }
+
+        let expectedIdentifier = "capture-v14-\(sourceCommitSHA.prefix(12))"
+        return buildIdentifier == expectedIdentifier
+    }
+
+    var blocker: String? {
+        guard isAuthoritativeFieldBuild else {
+            return "This build has no valid exact source + Tuya dependency provenance. Install Capture through the repository field installer before physical evidence collection."
+        }
+        return nil
+    }
+
+    private static func isLowercaseHex(_ value: String, count: Int) -> Bool {
+        guard value.count == count else { return false }
+        return value.utf8.allSatisfy { byte in
+            (byte >= 48 && byte <= 57) || (byte >= 97 && byte <= 102)
+        }
+    }
+}
+''')
+
+          entrypoint = "NembraApp/App/NembraCaptureEntrypoint.swift"
+          replace_once(
+              entrypoint,
+              '        let sourceCommitSHA: String\n        let tuyaDeviceID: String',
+              '        let sourceCommitSHA: String\n        let tuyaPodfileLockSHA256: String\n        let tuyaDeviceID: String'
+          )
+          replace_once(entrypoint, '            schemaVersion: 8,', '            schemaVersion: 9,')
+          replace_once(
+              entrypoint,
+              '            sourceCommitSHA: buildIdentity.sourceCommitSHA,\n            tuyaDeviceID: deviceID,',
+              '            sourceCommitSHA: buildIdentity.sourceCommitSHA,\n            tuyaPodfileLockSHA256: buildIdentity.tuyaPodfileLockSHA256,\n            tuyaDeviceID: deviceID,'
+          )
+          replace_once(
+              entrypoint,
+              '            message = "Sanitized diagnostics ready with exact compiled build provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."',
+              '            message = "Sanitized diagnostics ready with exact compiled source + Tuya dependency provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."'
+          )
+
+          workflow = ".github/workflows/capture-field-build-provenance.yml"
+          replace_once(
+              workflow,
+              '      - NembraApp/App/NembraCaptureBuildIdentity.swift\n      - NembraCapture.xcodeproj/project.pbxproj',
+              '      - NembraApp/App/NembraCaptureBuildIdentity.swift\n      - NembraApp/App/NembraCaptureEntrypoint.swift\n      - NembraCapture.xcodeproj/project.pbxproj'
+          )
+          replace_once(
+              workflow,
+              "          identity='NembraApp/App/NembraCaptureBuildIdentity.swift'\n          project='NembraCapture.xcodeproj/project.pbxproj'\n          installer='scripts/field/install_one_time_capture.command'",
+              "          identity='NembraApp/App/NembraCaptureBuildIdentity.swift'\n          entrypoint='NembraApp/App/NembraCaptureEntrypoint.swift'\n          project='NembraCapture.xcodeproj/project.pbxproj'\n          installer='scripts/field/install_one_time_capture.command'"
+          )
+          replace_once(
+              workflow,
+              "          grep -Fq 'NEMBRA_CAPTURE_BUILD_COMMIT_SHA=\"$SOURCE_SHA\"' \"$installer\"\n",
+              "          grep -Fq 'NEMBRA_CAPTURE_BUILD_COMMIT_SHA=\"$SOURCE_SHA\"' \"$installer\"\n          grep -Fq 'ResolvedTuyaDependencyProvenance.txt' \"$installer\"\n          grep -Fq 'podfile_lock_sha256' \"$installer\"\n          grep -Fq 'NEMBRA_CAPTURE_TUYA_PODFILE_LOCK_SHA256=\"$TUYA_LOCK_SHA256\"' \"$installer\"\n"
+          )
+          replace_once(
+              workflow,
+              "          grep -Fq 'INFOPLIST_KEY_NembraCaptureSourceCommitSHA = \"$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)\";' \"$project\"\n",
+              "          grep -Fq 'INFOPLIST_KEY_NembraCaptureSourceCommitSHA = \"$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)\";' \"$project\"\n          grep -Fq 'INFOPLIST_KEY_NembraCaptureTuyaPodfileLockSHA256 = \"$(NEMBRA_CAPTURE_TUYA_PODFILE_LOCK_SHA256)\";' \"$project\"\n"
+          )
+          replace_once(
+              workflow,
+              "          grep -Fq 'static let sourceCommitSHAInfoKey = \"NembraCaptureSourceCommitSHA\"' \"$identity\"\n          grep -Fq 'sourceCommitSHA.count == 40' \"$identity\"\n",
+              "          grep -Fq 'static let sourceCommitSHAInfoKey = \"NembraCaptureSourceCommitSHA\"' \"$identity\"\n          grep -Fq 'static let tuyaPodfileLockSHA256InfoKey = \"NembraCaptureTuyaPodfileLockSHA256\"' \"$identity\"\n          grep -Fq 'tuyaPodfileLockSHA256.count == 64' \"$identity\"\n"
+          )
+          replace_once(
+              workflow,
+              "          grep -Fq 'let expectedIdentifier = \"capture-v14-\\(sourceCommitSHA.prefix(12))\"' \"$identity\"\n",
+              "          grep -Fq 'let expectedIdentifier = \"capture-v14-\\(sourceCommitSHA.prefix(12))\"' \"$identity\"\n          grep -Fq 'let tuyaPodfileLockSHA256: String' \"$entrypoint\"\n          grep -Fq 'tuyaPodfileLockSHA256: buildIdentity.tuyaPodfileLockSHA256' \"$entrypoint\"\n          grep -Fq 'schemaVersion: 9' \"$entrypoint\"\n"
+          )
+          replace_once(
+              workflow,
+              "          label='capture-v14-0123456789ab'\n",
+              "          label='capture-v14-0123456789ab'\n          tuya_lock_sha='abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'\n"
+          )
+          replace_once(
+              workflow,
+              '            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" \\\n            build',
+              '            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" \\\n            NEMBRA_CAPTURE_TUYA_PODFILE_LOCK_SHA256="$tuya_lock_sha" \\\n            build'
+          )
+          replace_once(
+              workflow,
+              '          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$sha"',
+              '          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$sha"\n          test "$(plutil -extract NembraCaptureTuyaPodfileLockSHA256 raw -o - "$plist")" = "$tuya_lock_sha"'
+          )
+
+      - name: Validate guarded source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/field/install_one_time_capture.command
+          python - <<'PY'
+          from pathlib import Path
+          installer = Path('scripts/field/install_one_time_capture.command').read_text()
+          identity = Path('NembraApp/App/NembraCaptureBuildIdentity.swift').read_text()
+          entrypoint = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          project = Path('NembraCapture.xcodeproj/project.pbxproj').read_text()
+          assert 'NEMBRA_CAPTURE_TUYA_PODFILE_LOCK_SHA256="$TUYA_LOCK_SHA256"' in installer
+          assert installer.count('INFOPLIST_KEY_NembraCaptureTuyaPodfileLockSHA256') == 0
+          assert project.count('INFOPLIST_KEY_NembraCaptureTuyaPodfileLockSHA256') == 2
+          assert 'tuyaPodfileLockSHA256.count == 64' in identity
+          assert 'let tuyaPodfileLockSHA256: String' in entrypoint
+          assert 'tuyaPodfileLockSHA256: buildIdentity.tuyaPodfileLockSHA256' in entrypoint
+          assert 'schemaVersion: 9' in entrypoint
+          PY
+          git diff --check
+
+      - name: Commit production repair and retire patch runner
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/v14-capture-compiled-tuya-provenance-live-patch.yml
+          git diff --check
+          git status --short
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            scripts/field/install_one_time_capture.command \
+            NembraCapture.xcodeproj/project.pbxproj \
+            NembraApp/App/NembraCaptureBuildIdentity.swift \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            .github/workflows/capture-field-build-provenance.yml \
+            .github/workflows/v14-capture-compiled-tuya-provenance-live-patch.yml
+          git commit -m "fix(capture): compile Tuya dependency fingerprint into provenance"
+          git push origin HEAD:agent/v14-capture-compiled-tuya-provenance-sol
