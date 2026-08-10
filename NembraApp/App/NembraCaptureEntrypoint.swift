@@ -417,6 +417,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
     deinit { watchdog?.cancel() }
 
     func activateMembershipRequestsForView() {
+        // A fast inactive -> active transition must not reset the duplicate-retirement fence
+        // while the exact authenticated generation from foreground loss is still terminalizing.
+        guard currentConnectionToken == nil else { return }
         foregroundIntegrityLossHandled = false
         acceptsViewScopedMembershipRequests = true
     }
