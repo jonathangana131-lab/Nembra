@@ -1,0 +1,63 @@
+name: Apply V14 Capture final product R3
+
+on:
+  push:
+    branches: [agent/v14-capture-final-product-r3]
+    paths:
+      - '.github/workflows/apply-v14-capture-final-product-r3.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Assert exact current convergence parent
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 890d92859737adfd153ad165dab0c717c7fe986c HEAD
+          test "$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)" = "be6f3271b83a7f23172b4d7eb0bfb675d2f98545"
+          test "$(git hash-object Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift)" = "0950b34fbc56fdfd8ea2f723cedea21ede42c38c"
+          test "$(git hash-object Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaExplicitCorrelatedTargetConfirmationSourceTests.swift)" = "50b374f32a42577387cd3add8ac2a16e6c786eda"
+          test "$(git hash-object Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelatedTargetExportProvenanceSourceTests.swift)" = "1f331126d2d1bc2cf488c49fdf4e3d5515a117f5"
+          test "$(git hash-object Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSessionTerminalRetirementSourceTests.swift)" = "9ba411557e8ee044dd73290f56a272f52bdad4a3"
+          python3 -m py_compile .ci-patches/apply-v14-capture-final-product-r3.py
+
+      - name: Apply product repair
+        run: |
+          set -euo pipefail
+          python3 .ci-patches/apply-v14-capture-final-product-r3.py
+          git diff --check
+
+          grep -Fq 'case idle, baseline, powerOn, scanning, correlated, selected' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq '@Published private(set) var correlationProgress' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'startCorrelationProgressObservation(session:' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'func confirmCorrelatedTarget' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'targetCorrelationOperatorConfirmed = true' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'targetCorrelationMethod:' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'operator-confirmed-current-session-correlation' NembraApp/App/NembraCaptureEntrypoint.swift
+          ! grep -Fq 'selectedID = id' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'fieldBuildIsAuthoritative' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'invalidateChronologyIntegrity' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'markChronologyIntegrityInvalidated' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'sdk_source_authority_lost_before_auth_failure' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'authenticated_application_timeout_chronology_fallback' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Confirm correlated Bluetooth target' NembraApp/App/NembraCaptureEntrypoint.swift
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationSourceTests.swift
+
+      - name: Commit product result and retire helper
+        run: |
+          set -euo pipefail
+          rm .ci-patches/apply-v14-capture-final-product-r3.py
+          rm .github/workflows/apply-v14-capture-final-product-r3.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(capture): close stationary field authority UX"
+          git push origin HEAD:agent/v14-capture-final-product-r3
