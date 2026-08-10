@@ -1,0 +1,196 @@
+name: Diagnose Capture source contract 581b
+
+on:
+  push:
+    branches:
+      - diagnostic/v14-capture-source-contract-581b-sol
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: diagnostic/v14-capture-source-contract-581b-sol
+      - name: Enumerate exact source-contract mismatches
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          files = {
+              'identity': Path('NembraApp/App/NembraCaptureBuildIdentity.swift'),
+              'entrypoint': Path('NembraApp/App/NembraCaptureEntrypoint.swift'),
+              'project': Path('NembraCapture.xcodeproj/project.pbxproj'),
+              'installer': Path('scripts/field/install_one_time_capture.command'),
+              'procedure_test': Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift'),
+              'bootstrap': Path('Scripts/bootstrap_capture_tuya_sdk.sh'),
+              'private_provenance': Path('Scripts/capture_tuya_private_input_provenance.py'),
+          }
+          text = {name: path.read_text() for name, path in files.items()}
+          failures = []
+
+          def need(label, file, needle):
+              if needle not in text[file]:
+                  failures.append(f'{label}: missing {needle!r} in {files[file]}')
+
+          def forbid(label, file, needle):
+              if needle in text[file]:
+                  failures.append(f'{label}: forbidden {needle!r} in {files[file]}')
+
+          procedure = 'ES80-AUTHENTICATED-STATIONARY-v1'
+          installer_checks = [
+              ('expected-source-input', 'EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"'),
+              ('source-head-read', 'SOURCE_SHA="$(git rev-parse HEAD | tr '),
+              ('source-equality', '[[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]]'),
+              ('source-mismatch-message', 'Current checkout $SOURCE_SHA does not match accepted Capture source $EXPECTED_SOURCE_SHA'),
+              ('requested-source-message', 'Exact requested Capture source matched: $SOURCE_SHA'),
+              ('build-label', 'BUILD_LABEL="capture-v14-${SOURCE_SHA:0:12}"'),
+              ('build-identifier-env', 'NEMBRA_CAPTURE_BUILD_IDENTIFIER="$BUILD_LABEL"'),
+              ('build-commit-env', 'NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$SOURCE_SHA"'),
+              ('lock-sha', 'TUYA_DEPENDENCY_LOCK_SHA256="$(shasum -a 256 "$ROOT/Podfile.lock"'),
+              ('lock-sha-env', 'NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256'),
+              ('procedure-id', f'PROCEDURE_ID="{procedure}"'),
+              ('procedure-plist-stamp', 'INFOPLIST_KEY_NembraCaptureProcedureIdentifier=$PROCEDURE_ID'),
+              ('intended-device-file', 'NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE'),
+              ('private-id-reader', 'read_private_identifier'),
+              ('device-list', 'devicectl list devices --hide-headers'),
+              ('coredevice-domain', '.coredevice.local'),
+              ('ios27', '[[ "$DEVICE_OS_VERSION" == 27.* ]]'),
+              ('iphone12', '[[ "$DEVICE_MODEL" == "iPhone13,2" ]]'),
+              ('install-coredevice', 'devicectl device install app --device "$COREDEVICE_ID"'),
+              ('coredevice-argv', '--device "$COREDEVICE_ID"'),
+              ('verify-function', 'verify_private_tuya_inputs()'),
+              ('verify-record', '--record "$TUYA_DEPENDENCY_PROVENANCE"'),
+              ('plutil-available', '[[ -x /usr/bin/plutil ]]'),
+              ('app-plist', 'APP_INFO_PLIST="$APP/Info.plist"'),
+              ('read-build-id', 'plutil -extract NembraCaptureBuildIdentifier raw -o - "$APP_INFO_PLIST"'),
+              ('read-source-sha', 'plutil -extract NembraCaptureSourceCommitSHA raw -o - "$APP_INFO_PLIST"'),
+              ('read-lock-sha', 'plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$APP_INFO_PLIST"'),
+              ('read-procedure', 'plutil -extract NembraCaptureProcedureIdentifier raw -o - "$APP_INFO_PLIST"'),
+              ('read-bundle', 'plutil -extract CFBundleIdentifier raw -o - "$APP_INFO_PLIST"'),
+              ('check-build-id', '[[ "$BUILT_BUILD_IDENTIFIER" == "$BUILD_LABEL" ]]'),
+              ('check-source-sha', '[[ "$BUILT_SOURCE_SHA" == "$SOURCE_SHA" ]]'),
+              ('check-lock-sha', '[[ "$BUILT_TUYA_DEPENDENCY_LOCK_SHA256" == "$TUYA_DEPENDENCY_LOCK_SHA256" ]]'),
+              ('check-procedure', '[[ "$BUILT_PROCEDURE_IDENTIFIER" == "$PROCEDURE_ID" ]]'),
+              ('check-bundle', '[[ "$BUILT_BUNDLE_ID" == "$BUNDLE_ID" ]]'),
+              ('private-install-log', 'mktemp "${TMPDIR:-/tmp}/nembra-authenticated-capture-install.XXXXXX"'),
+              ('install-log-trap', 'trap \'rm -f -- "$INSTALL_LOG"\' EXIT'),
+              ('install-log-mode', 'chmod 600 "$INSTALL_LOG"'),
+              ('stdin-bytes', 'payload = sys.stdin.buffer.read()'),
+              ('nul-split', 'private_udid_raw, selector_raw = payload.split(b"\\0", 1)'),
+              ('normalize-private-id', 'secret.replace("-", "")'),
+              ('case-insensitive', 'flags=re.IGNORECASE'),
+              ('trap-clear', 'trap - EXIT'),
+          ]
+          for label, needle in installer_checks:
+              need(label, 'installer', needle)
+          forbid('no-self-acceptance-message', 'installer', 'Exact accepted Capture source: $SOURCE_SHA')
+          forbid('no-branch-authority', 'installer', 'Switch to capture/one-time-ble-dump-gpt56 first')
+          forbid('no-private-udid-argv', 'installer', '--device "$DEVICE_UDID"')
+          forbid('no-predictable-install-log', 'installer', 'nembra-authenticated-capture-install.log')
+
+          provenance_checks = [
+              ('prov-schema', 'SCHEMA = "nembra-capture-tuya-dependencies-v2"'),
+              ('prov-security-podspec', 'thing_smart_cryption_podspec_sha256'),
+              ('prov-security-tree', 'thing_smart_cryption_build_tree_sha256'),
+              ('prov-id-podspec', 'private_identity_podspec_sha256'),
+              ('prov-id-tree', 'private_identity_sources_tree_sha256'),
+              ('prov-nofollow', 'O_NOFOLLOW'),
+          ]
+          for label, needle in provenance_checks:
+              need(label, 'private_provenance', needle)
+
+          bootstrap_checks = [
+              ('bootstrap-snapshot', '"$PROVENANCE_HELPER" snapshot'),
+              ('bootstrap-security-podspec', '--security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec"'),
+              ('bootstrap-security-build', '--security-build "$TUYA_PRIVATE_SDK/Build"'),
+              ('bootstrap-id-podspec', '--identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec"'),
+              ('bootstrap-id-sources', '--identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig"'),
+              ('bootstrap-record-mode', 'private Tuya dependency provenance record is not mode 0600'),
+          ]
+          for label, needle in bootstrap_checks:
+              need(label, 'bootstrap', needle)
+
+          project_checks = [
+              ('project-build-identity-source', 'NembraCaptureBuildIdentity.swift in Sources'),
+              ('project-build-id', 'INFOPLIST_KEY_NembraCaptureBuildIdentifier = "$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)";'),
+              ('project-source-sha', 'INFOPLIST_KEY_NembraCaptureSourceCommitSHA = "$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)";'),
+              ('project-lock-sha', 'INFOPLIST_KEY_NembraCaptureTuyaDependencyLockSHA256 = "$(NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256)";'),
+          ]
+          for label, needle in project_checks:
+              need(label, 'project', needle)
+
+          identity_checks = [
+              ('identity-build-key', 'static let buildIdentifierInfoKey = "NembraCaptureBuildIdentifier"'),
+              ('identity-source-key', 'static let sourceCommitSHAInfoKey = "NembraCaptureSourceCommitSHA"'),
+              ('identity-lock-key', 'static let tuyaDependencyLockSHA256InfoKey = "NembraCaptureTuyaDependencyLockSHA256"'),
+              ('identity-procedure-key', 'static let procedureIdentifierInfoKey = "NembraCaptureProcedureIdentifier"'),
+              ('identity-required-procedure', f'static let requiredFieldProcedureIdentifier = "{procedure}"'),
+              ('identity-procedure-var', 'static var fieldProcedureIdentifier: String'),
+              ('identity-current-procedure', 'current.procedureIdentifier'),
+              ('identity-source-length', 'sourceCommitSHA.count == 40'),
+              ('identity-lock-length', 'tuyaDependencyLockSHA256.count == 64'),
+              ('identity-procedure-equality', 'procedureIdentifier == Self.requiredFieldProcedureIdentifier'),
+              ('identity-derived-label', 'let expectedIdentifier = "capture-v14-\\(sourceCommitSHA.prefix(12))"'),
+          ]
+          for label, needle in identity_checks:
+              need(label, 'identity', needle)
+
+          procedure_checks = [
+              ('procedure-test-id', procedure),
+              ('procedure-test-stamp', 'INFOPLIST_KEY_NembraCaptureProcedureIdentifier=$PROCEDURE_ID'),
+              ('procedure-test-current', 'current.procedureIdentifier'),
+          ]
+          for label, needle in procedure_checks:
+              need(label, 'procedure_test', needle)
+
+          entrypoint_checks = [
+              ('entrypoint-lock-field', 'let tuyaDependencyLockSHA256: String'),
+              ('entrypoint-lock-value', 'tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256'),
+              ('entrypoint-procedure-value', 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier'),
+              ('entrypoint-seal', 'self.sealedAcceptedExport = self.makeExport('),
+              ('entrypoint-export-seal', 'envelope = sealedAcceptedExport'),
+          ]
+          for label, needle in entrypoint_checks:
+              need(label, 'entrypoint', needle)
+
+          exact_verify_lines = [line for line in text['installer'].splitlines() if line == 'verify_private_tuya_inputs']
+          if len(exact_verify_lines) != 2:
+              failures.append(f'verify-call-count: expected 2 exact calls, got {len(exact_verify_lines)}')
+
+          def position(label, needle):
+              p = text['installer'].find(needle)
+              if p < 0:
+                  failures.append(f'{label}: ordering anchor missing {needle!r}')
+              return p
+
+          first_verify = text['installer'].find('\nverify_private_tuya_inputs\n')
+          guard = position('guard-order-anchor', '/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD" \\\n')
+          build = position('build-order-anchor', '-- xcodebuild \\\n')
+          second_verify = text['installer'].find('\nverify_private_tuya_inputs\n', first_verify + 1) if first_verify >= 0 else -1
+          if min(first_verify, guard, build, second_verify) >= 0 and not (first_verify < guard < build < second_verify):
+              failures.append(f'private-build-order: {first_verify=} {guard=} {build=} {second_verify=}')
+
+          readback = position('procedure-readback-anchor', 'BUILT_PROCEDURE_IDENTIFIER="$(/usr/bin/plutil')
+          procedure_check = position('procedure-check-anchor', '[[ "$BUILT_PROCEDURE_IDENTIFIER" == "$PROCEDURE_ID" ]]')
+          install = position('install-anchor', 'say "Installing SDK-integrated Capture on the intended iPhone"')
+          if min(readback, procedure_check, install, second_verify) >= 0 and not (second_verify < readback < procedure_check < install):
+              failures.append(f'procedure-install-order: {second_verify=} {readback=} {procedure_check=} {install=}')
+
+          syntax = subprocess.run(['bash', '-n', str(files['installer'])], capture_output=True, text=True)
+          if syntax.returncode:
+              failures.append(f'bash-syntax: {syntax.stderr.strip()}')
+
+          if failures:
+              for failure in failures:
+                  print(f'::error title=Capture source contract::{failure}')
+              raise SystemExit(f'{len(failures)} source-contract mismatch(es)')
+          print('All mirrored source-contract assertions pass.')
+          PY
