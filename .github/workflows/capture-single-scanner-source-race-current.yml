@@ -1,0 +1,312 @@
+name: Capture single-scanner source-race current repair
+
+on:
+  push:
+    branches:
+      - recovery/v14-capture-single-scanner-source-race-current-sol
+
+permissions:
+  contents: write
+
+jobs:
+  apply-repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Apply exact current-spine product repair
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s = path.read_text()
+
+          def block(*lines):
+              return '\n'.join(lines) + '\n'
+
+          def swap(label, old, new):
+              global s
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: anchor count={count}, expected 1')
+              s = s.replace(old, new, 1)
+
+          swap('corebluetooth-import', '@preconcurrency import CoreBluetooth\n', '')
+          swap('legacy-connectable-key', 'let CBAdvertisementDataIsConnectableKey = CBAdvertisementDataIsConnectable\n\n', '')
+          swap('legacy-fd50', '    static let fd50 = CBUUID(string: "FD50")\n', '')
+
+          swap('published-correlation-progress', block(
+              '    @Published private(set) var selectedID: UUID?',
+              '    @Published private(set) var pendingCorrelatedTargetID: UUID?',
+              '    @Published private(set) var sdkLocalBLEOnline = false',
+          ), block(
+              '    @Published private(set) var selectedID: UUID?',
+              '    @Published private(set) var pendingCorrelatedTargetID: UUID?',
+              '    @Published private(set) var correlationProgress: PassiveBluetoothPowerCycleObservationProgress?',
+              '    @Published private(set) var sdkLocalBLEOnline = false',
+          ))
+
+          swap('legacy-central-properties', block(
+              '    private let buildIdentity = NembraCaptureBuildIdentity.current',
+              '    private var central: CBCentralManager!',
+              '    private var byID: [UUID: Candidate] = [:]',
+              '    private var baseline = Set<UUID>()',
+              '    private var correlationSession: PassiveBluetoothPowerCycleObservationSession?',
+          ), block(
+              '    private let buildIdentity = NembraCaptureBuildIdentity.current',
+              '    private var byID: [UUID: Candidate] = [:]',
+              '    private var correlationSession: PassiveBluetoothPowerCycleObservationSession?',
+              '    private var correlationProgressTask: Task<Void, Never>?',
+          ))
+
+          swap('legacy-central-init', block(
+              '        tuyaUUID = device.uuid',
+              '        super.init()',
+              '        central = CBCentralManager(delegate: self, queue: .main)',
+              '        log("controller_created")',
+          ), block(
+              '        tuyaUUID = device.uuid',
+              '        super.init()',
+              '        log("controller_created")',
+          ))
+
+          swap('deinit-progress-task', '    deinit { watchdog?.cancel() }\n', block(
+              '    deinit {',
+              '        watchdog?.cancel()',
+              '        correlationProgressTask?.cancel()',
+              '    }',
+          ))
+
+          swap('computed-correlation-progress', '    var correlationProgress: PassiveBluetoothPowerCycleObservationProgress? { correlationSession?.progress }\n', '')
+
+          swap('begin-correlation-active-generation', block(
+              '        guard currentConnectionToken == nil else {',
+              '            failLocally(',
+              '                "A prior authenticated generation has not been terminally retired. Relaunch Capture before starting another attempt.",',
+              '                "active_generation_blocks_discovery_reset"',
+              '            )',
+              '            return',
+              '        }',
+          ), block(
+              '        guard currentConnectionToken == nil else {',
+              '            if let token = currentConnectionToken {',
+              '                Task { @MainActor [weak self] in',
+              '                    await self?.invalidateInternalLifecycle(',
+              '                        token: token,',
+              '                        message: "An impossible active authenticated generation existed before OFF1. It was retired fail-closed; restart the attempt.",',
+              '                        kind: "active_generation_blocks_discovery_reset"',
+              '                    )',
+              '                }',
+              '            }',
+              '            return',
+              '        }',
+          ))
+
+          swap('start-progress-observer', block(
+              '        do {',
+              '            try session.startCurrentWindow()',
+              '            phase = progress.phase.operatorExpectedPowerOn ? .scanning : .baseline',
+          ), block(
+              '        do {',
+              '            try session.startCurrentWindow()',
+              '            startCorrelationProgressObservation(session: session)',
+              '            phase = progress.phase.operatorExpectedPowerOn ? .scanning : .baseline',
+          ))
+
+          anchor = '    func finishCorrelationWindow() {\n'
+          observer = block(
+              '    private func startCorrelationProgressObservation(session: PassiveBluetoothPowerCycleObservationSession) {',
+              '        stopCorrelationProgressObservation()',
+              '        correlationProgress = session.progress',
+              '        correlationProgressTask = Task { @MainActor [weak self] in',
+              '            while !Task.isCancelled {',
+              '                guard let self, self.correlationSession === session else { return }',
+              '                if let progress = session.progress {',
+              '                    self.correlationProgress = progress',
+              '                }',
+              '                try? await Task.sleep(for: .milliseconds(100))',
+              '            }',
+              '        }',
+              '    }',
+              '',
+              '    private func stopCorrelationProgressObservation() {',
+              '        correlationProgressTask?.cancel()',
+              '        correlationProgressTask = nil',
+              '    }',
+              '',
+          )
+          if s.count(anchor) != 1:
+              raise SystemExit('finish-window anchor missing')
+          s = s.replace(anchor, observer + anchor, 1)
+
+          swap('finish-progress-observer', block(
+              '        do {',
+              '            let final = try session.finishCurrentWindow()',
+              '            if let final {',
+          ), block(
+              '        do {',
+              '            let final = try session.finishCurrentWindow()',
+              '            stopCorrelationProgressObservation()',
+              '            correlationProgress = session.progress',
+              '            if let final {',
+          ))
+
+          swap('finish-window-error-stop', block(
+              '            default:',
+              '                session.abandonCurrentWindow()',
+              '                correlationSession = nil',
+          ), block(
+              '            default:',
+              '                stopCorrelationProgressObservation()',
+              '                session.abandonCurrentWindow()',
+              '                correlationSession = nil',
+          ))
+
+          swap('finish-generic-error-stop', block(
+              '        } catch {',
+              '            session.abandonCurrentWindow()',
+              '            correlationSession = nil',
+              '            failLocally("\\(sealedLabel) failed closed: \\(error.localizedDescription). Restart the complete correlation series.", "target_correlation_window_failed")',
+          ), block(
+              '        } catch {',
+              '            stopCorrelationProgressObservation()',
+              '            session.abandonCurrentWindow()',
+              '            correlationSession = nil',
+              '            failLocally("\\(sealedLabel) failed closed: \\(error.localizedDescription). Restart the complete correlation series.", "target_correlation_window_failed")',
+          ))
+
+          swap('authenticate-confirmation-defense', block(
+              '    func authenticate() {',
+              '        guard let candidate = selected, candidate.likely else {',
+          ), block(
+              '    func authenticate() {',
+              '        guard targetCorrelationOperatorConfirmed,',
+              '              let candidate = selected, candidate.likely else {',
+          ))
+
+          swap('sdk-failure-source-race', block(
+              '    private func authenticationFailed(token: TuyaReadOnlyConnectionToken) async {',
+              '        guard currentConnectionToken == token else {',
+              '            log("stale_connect_failure_ignored", ["generation": String(token.diagnosticGeneration)])',
+              '            return',
+              '        }',
+              '        await authenticationAcquisitionFailed(',
+              '            token: token,',
+              '            message: "Tuya SmartLife SDK did not establish the supported BLE session.",',
+              '            kind: "official_connect_failed"',
+              '        )',
+              '    }',
+          ), block(
+              '    private func authenticationFailed(token: TuyaReadOnlyConnectionToken) async {',
+              '        guard currentConnectionToken == token else {',
+              '            log("stale_connect_failure_ignored", ["generation": String(token.diagnosticGeneration)])',
+              '            return',
+              '        }',
+              '        guard sdkAccountLoggedIn,',
+              '              sdkDeviceMembershipVerified,',
+              '              accountIdentityLeaseIsAuthorized else {',
+              '            await invalidateSourceAuthority(',
+              '                token: token,',
+              '                message: "Tuya account/device source authority changed before the SDK failure callback was classified.",',
+              '                kind: "sdk_source_authority_lost_before_connect_failure"',
+              '            )',
+              '            return',
+              '        }',
+              '        await authenticationAcquisitionFailed(',
+              '            token: token,',
+              '            message: "Tuya SmartLife SDK did not establish the supported BLE session.",',
+              '            kind: "official_connect_failed"',
+              '        )',
+              '    }',
+          ))
+
+          central_stop_count = s.count('        central.stopScan()\n')
+          if central_stop_count < 3:
+              raise SystemExit(f'expected legacy stopScan calls, found {central_stop_count}')
+          s = s.replace('        central.stopScan()\n', '')
+
+          swap('reset-progress-and-baseline', block(
+              '    private func resetDiscoverySessionOnly() {',
+              '        correlationSession?.abandonCurrentWindow()',
+              '        correlationSession = nil',
+              '        correlationProvenance = nil',
+          ), block(
+              '    private func resetDiscoverySessionOnly() {',
+              '        stopCorrelationProgressObservation()',
+              '        correlationSession?.abandonCurrentWindow()',
+              '        correlationSession = nil',
+              '        correlationProgress = nil',
+              '        correlationProvenance = nil',
+          ))
+          swap('reset-baseline', '        baseline.removeAll()\n', '')
+
+          swap('fail-progress-stop', block(
+              '    private func failLocally(_ text: String, _ kind: String) {',
+              '        if phase == .baseline || phase == .powerOn || phase == .scanning || phase == .correlated {',
+          ), block(
+              '    private func failLocally(_ text: String, _ kind: String) {',
+              '        stopCorrelationProgressObservation()',
+              '        correlationProgress = nil',
+              '        if phase == .baseline || phase == .powerOn || phase == .scanning || phase == .correlated {',
+          ))
+
+          legacy_start = s.find('    private static func hasTuyaCompanyID')
+          protocol_start = s.find('private protocol OfficialTuyaDriver')
+          if legacy_start == -1 or protocol_start == -1 or protocol_start <= legacy_start:
+              raise SystemExit('legacy scanner/delegate slice anchors missing')
+          s = s[:legacy_start] + '}\n\n' + s[protocol_start:]
+
+          forbidden = [
+              '@preconcurrency import CoreBluetooth',
+              'private var central: CBCentralManager',
+              'CBCentralManager(delegate: self',
+              'CBCentralManagerDelegate',
+              'central.scanForPeripherals',
+              'central.stopScan',
+              'private func updateCandidate',
+              'didDiscover peripheral',
+              'CBAdvertisementDataServiceUUIDsKey',
+              'CBAdvertisementDataManufacturerDataKey',
+              'private var baseline',
+          ]
+          for token in forbidden:
+              if token in s:
+                  raise SystemExit(f'forbidden legacy scanner token remains: {token}')
+
+          required = [
+              '@Published private(set) var correlationProgress: PassiveBluetoothPowerCycleObservationProgress?',
+              'startCorrelationProgressObservation(session: session)',
+              'PassiveBluetoothPowerCycleObservationSession',
+              'targetCorrelationOperatorConfirmed,',
+              'sdk_source_authority_lost_before_connect_failure',
+              'invalidateSourceAuthority(',
+              'active_generation_blocks_discovery_reset',
+          ]
+          for token in required:
+              if token not in s:
+                  raise SystemExit(f'required product token missing: {token}')
+
+          path.write_text(s)
+          PY
+
+          git diff --check
+          test "$(grep -F 'sdk_source_authority_lost_before_connect_failure' NembraApp/App/NembraCaptureEntrypoint.swift | wc -l | tr -d ' ')" = 1
+          test "$(grep -F '@Published private(set) var correlationProgress' NembraApp/App/NembraCaptureEntrypoint.swift | wc -l | tr -d ' ')" = 1
+          ! grep -F 'CBCentralManagerDelegate' NembraApp/App/NembraCaptureEntrypoint.swift
+          ! grep -F 'central.stopScan' NembraApp/App/NembraCaptureEntrypoint.swift
+          ! grep -F 'private func updateCandidate' NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Commit product repair and self-retire tooling
+        shell: bash
+        run: |
+          git config user.name 'nembra-v14-integration'
+          git config user.email 'actions@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git rm .github/workflows/capture-single-scanner-source-race-current.yml
+          git commit -m 'fix(capture): converge correlation ownership and source failure truth'
+          git push origin HEAD:recovery/v14-capture-single-scanner-source-race-current-sol
