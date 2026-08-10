@@ -1280,6 +1280,24 @@ private final class SecureLinkController: NSObject, ObservableObject {
                             ])
                             return
                         }
+
+                        // Package seal retires callback authority. Re-sample the official SDK's
+                        // same-device local-BLE status synchronously before freezing/presenting the
+                        // accepted envelope; do not manufacture a second ledger terminal here.
+                        let postSealLocalBLEOnline = driver.isLocallyConnected(uuid: self.tuyaUUID)
+                        self.sdkLocalBLEOnline = postSealLocalBLEOnline
+                        guard postSealLocalBLEOnline else {
+                            self.currentConnectionToken = nil
+                            self.localBLESettlementToken = nil
+                            self.driver = nil
+                            self.phase = .failed
+                            self.message = "Tuya local-BLE authority was lost while canonical acceptance was sealing. Restart from OFF1; the sealed package chronology is diagnostic only."
+                            self.log("sdk_local_ble_authority_lost_during_acceptance_seal", [
+                                "generation": String(token.diagnosticGeneration)
+                            ])
+                            return
+                        }
+
                         self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut
                         self.currentConnectionToken = nil
                         self.sealedAcceptedExport = self.makeExport(
