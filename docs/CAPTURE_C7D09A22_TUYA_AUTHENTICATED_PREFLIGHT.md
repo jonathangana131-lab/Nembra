@@ -28,6 +28,8 @@ The preflight MUST NOT:
 - log Tuya passwords, account tokens, AppSecret, local/session keys, auth keys, device secrets, QR authorization tokens, or full decrypted secure frames;
 - claim speed/battery/power/mode/brake/light/odometer semantics before repeatable authenticated payload evidence exists.
 
+A `local_key` returned by the account/device metadata flow may be retained privately as provisioning evidence, but its presence MUST NOT by itself be treated as proof that the BLE secure session is authenticated. The physical gate is earned only by current-connection authentication chronology plus a genuine post-auth application notification and the full stability window below.
+
 ## Allowed authentication routes
 
 Only an official/documented Tuya route may provide authentication material.
@@ -41,6 +43,8 @@ After login, Nembra may locate the already-bound scooter in the user's home/devi
 ### Alternate route B — official Tuya device-sharing authorization
 
 If App SDK setup is not used, an official Tuya device-sharing / QR authorization flow may be used to grant Nembra read access to the user's already-linked Tuya account/device. This route is acceptable only if it produces documented read access without unbinding/re-pairing the scooter. Keep cloud authorization material out of logs and local JSON exports.
+
+Device-sharing metadata or a retained `local_key` alone does not satisfy the BLE authentication gate. A documented secure-session implementation is still required.
 
 ## Read-only preflight state machine
 
@@ -65,17 +69,19 @@ If App SDK setup is not used, an official Tuya device-sharing / QR authorization
    - No Nembra-authored raw application command frames.
 
 5. `authenticatedObservation`
-   - Start a 45-second stationary observation.
+   - Start a stationary observation only after the current connection generation reaches authenticated state.
+   - Record monotonic timestamps for connection start, authentication, each admitted application notification, and the latest observation.
    - Record only metadata needed to prove the channel is alive plus redacted/raw application payload bytes that are safe for protocol analysis.
    - Do not send control commands.
 
 6. `accepted`
-   - At least one real application notification payload is observed; AND
-   - the secure connection remains alive past `35 s` (comfortably past the previous ~29.93 s rejection window); AND
+   - At least one genuine application notification payload is observed **after authentication in the current connection generation**; AND
+   - the authenticated connection remains alive for at least `45 s` measured monotonically from the accepted authentication timestamp; AND
+   - connection start <= authentication <= admitted application payload <= latest observation; AND
    - no unbind/reset/pair/activation/control action occurred.
 
 7. `failed`
-   - If notifications remain empty or the peripheral repeats the ~30 s rejection, export a small diagnostic artifact and stop. Do not automatically retry forever and do not move to outdoor scenarios.
+   - If notifications remain empty, chronology is invalid/stale, or the peripheral repeats the ~30 s rejection, export a small diagnostic artifact and stop. Do not automatically retry forever and do not move to outdoor scenarios.
 
 ## Export requirements
 
@@ -84,17 +90,21 @@ The next JSON should add:
 - `transportFamily: "tuya-fd50"`
 - `authMethod: "tuya-smartlife-sdk" | "tuya-device-sharing"`
 - `authenticationResult: "accepted" | "rejected" | "not-configured"`
+- current `connectionGeneration`
+- monotonic connection-start and authentication timestamps
 - `secureConnectionDurationSeconds`
 - `applicationNotificationCount`
-- notification timestamp / characteristic UUID / payload hex or base64
+- notification monotonic timestamp / characteristic UUID / payload hex or base64
 - explicit redaction marker proving auth credentials/session keys were excluded
 - no account password, cloud token, AppSecret, local/session/auth key, or QR authorization token
+
+A payload count from an older connection generation is not admissible evidence for a newer authenticated connection.
 
 ## First physical acceptance gate
 
 Do not repeat the full outside run until BOTH are true:
 
-1. `applicationNotificationCount > 0`
-2. secure BLE stays connected for `> 35 s`
+1. `applicationNotificationCount > 0`, with at least one admitted payload timestamped after authentication in the current connection generation.
+2. The authenticated BLE session stays alive for `>= 45 s` after the accepted authentication timestamp.
 
 Once that passes, the next experiment is stationary only: idle -> mode changes -> light -> brake -> optional charger plug/unplug. Only after those DPs are repeatable should speed/power correlation use another short outdoor ride.
