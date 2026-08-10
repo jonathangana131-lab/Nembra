@@ -69,7 +69,10 @@ public struct OdometerContinuitySnapshot: Codable, Sendable, Equatable {
     }
 
     public var confidence: OdometerContinuityConfidence {
-        let sources = completedSegments.map(\.source) + currentReading.map { [$0.source] }.get(or: [])
+        var sources = completedSegments.map(\.source)
+        if let currentReading {
+            sources.append(currentReading.source)
+        }
         guard !sources.isEmpty else { return .referenceOnly }
         let hasReference = sources.contains(.userRecorded)
         let hasVerified = sources.contains { $0 == .deviceVerified || $0 == .rideReconciled }
@@ -142,11 +145,5 @@ public struct OdometerContinuityLedger: Codable, Sendable, Equatable {
     /// live by the scooter transport.
     public mutating func appendHistoricalSegment(_ segment: OdometerContinuitySegment) {
         completedSegments.append(segment)
-    }
-}
-
-private extension Optional where Wrapped == [OdometerContinuitySource] {
-    func get(or fallback: [OdometerContinuitySource]) -> [OdometerContinuitySource] {
-        self ?? fallback
     }
 }
