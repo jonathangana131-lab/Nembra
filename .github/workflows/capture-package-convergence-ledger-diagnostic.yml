@@ -1,0 +1,84 @@
+name: Capture Package Convergence Ledger Diagnostic
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlySessionLedgerTests.swift'
+      - '.github/workflows/capture-package-convergence-ledger-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  package-differential:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Bind diagnostic to exact PR head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Run full Capture package
+        id: package
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/capture-package-convergence-ledger.log"
+          set +e
+          (cd Packages/NembraBluetoothCapture && swift test) 2>&1 | tee "$log"
+          status="${PIPESTATUS[0]}"
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Require exact 51 to 50 differential
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I - "$RUNNER_TEMP/capture-package-convergence-ledger.log" <<'PY'
+          import re
+          import sys
+          from collections import Counter
+          from pathlib import Path
+
+          failures = Counter()
+          for line in Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace").splitlines():
+              match = re.search(r"recorded an issue at ([^:]+):", line)
+              if match:
+                  failures[Path(match.group(1)).name] += 1
+
+          target = "TuyaAuthenticatedReadOnlySessionLedgerTests.swift"
+          total = sum(failures.values())
+          print(f"TOTAL_PACKAGE_ISSUES {total}")
+          for name, count in failures.most_common():
+              print(f"PACKAGE_ISSUES {count:3d} {name}")
+          print(f"TARGET_ISSUES {failures[target]:3d} {target}")
+
+          if failures[target] != 0:
+              raise SystemExit(f"ledger target still reports {failures[target]} issue(s)")
+          if total != 50:
+              raise SystemExit(f"expected exact 51 -> 50 differential, observed {total} issues")
+          PY
+
+      - name: Preserve global package failure truth
+        env:
+          PACKAGE_STATUS: ${{ steps.package.outputs.status }}
+        run: test "$PACKAGE_STATUS" -ne 0
+
+      - name: Upload exact package log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: capture-package-convergence-ledger-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/capture-package-convergence-ledger.log
+          retention-days: 7
+          if-no-files-found: error
