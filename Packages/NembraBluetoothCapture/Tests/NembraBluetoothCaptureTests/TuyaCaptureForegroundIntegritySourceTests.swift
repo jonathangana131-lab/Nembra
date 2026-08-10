@@ -41,10 +41,14 @@ struct TuyaCaptureForegroundIntegritySourceTests {
         #expect(view.contains("if scenePhase == .active"))
 
         // Reactivation may not reopen view-scoped authority while the exact old authenticated
-        // generation is still being terminally retired. Otherwise an active transition can reset
-        // the duplicate-retirement fence before a following onDisappear arrives.
+        // generation is still being terminally retired. Once official Tuya ownership has retired
+        // package correlation for this process, an active transition also may not reopen admission.
         let retiredGenerationGate = try requiredOffset(
-            containing: "guard currentConnectionToken == nil else { return }",
+            containing: "guard currentConnectionToken == nil,",
+            in: activation
+        )
+        let packageCorrelationOwnershipGate = try requiredOffset(
+            containing: "OfficialTuyaFactory.packageCorrelationMayStart else { return }",
             in: activation
         )
         let resetForegroundFence = try requiredOffset(
@@ -55,7 +59,8 @@ struct TuyaCaptureForegroundIntegritySourceTests {
             containing: "acceptsViewScopedMembershipRequests = true",
             in: activation
         )
-        #expect(retiredGenerationGate < resetForegroundFence)
+        #expect(retiredGenerationGate < packageCorrelationOwnershipGate)
+        #expect(packageCorrelationOwnershipGate < resetForegroundFence)
         #expect(resetForegroundFence < reopenAdmission)
         #expect(viewExit.contains("if foregroundIntegrityLossHandled { return }"))
 
