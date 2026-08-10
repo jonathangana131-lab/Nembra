@@ -1,0 +1,313 @@
+name: Materialize Capture Record Coherence 88EB
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-private-record-coherence-3a90
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Guard exact current product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='88eb3d1e2876c01beb1d5298c5c28388c0bc7c3c'
+          test "$(git rev-parse HEAD^)" = "$expected"
+          test "$(git diff --name-only "$expected"..HEAD)" = '.github/workflows/materialize-capture-record-coherence-88eb.yml'
+          grep -Fq '_stat_identity(current_path) != _stat_identity(after)' Scripts/capture_tuya_private_input_provenance.py
+
+      - name: Add coherent whole-record snapshot fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          helper = Path('Scripts/capture_tuya_private_input_provenance.py')
+          source = helper.read_text()
+
+          function_anchor = '\n\ndef build_record(\n'
+          if source.count(function_anchor) != 1:
+              raise SystemExit('build_record anchor drifted')
+
+          snapshot_helpers = r'''
+
+          def _regular_input_snapshot(path: Path) -> tuple[int, ...]:
+              try:
+                  metadata = path.lstat()
+              except OSError as error:
+                  raise ProvenanceError(f"required private build input is unavailable: {path.name}") from error
+              if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+                  raise ProvenanceError(f"required private build input is not a real regular file: {path.name}")
+              return _stat_identity(metadata)
+
+
+          def _tree_input_snapshot(root: Path) -> tuple[tuple[object, ...], ...]:
+              try:
+                  root_metadata = root.lstat()
+              except OSError as error:
+                  raise ProvenanceError(f"required private build directory is unavailable: {root.name}") from error
+              if stat.S_ISLNK(root_metadata.st_mode) or not stat.S_ISDIR(root_metadata.st_mode):
+                  raise ProvenanceError(f"required private build directory is not a real directory: {root.name}")
+
+              root_resolved = root.resolve(strict=True)
+              states: list[tuple[object, ...]] = []
+              for current_text, directory_names, file_names in os.walk(root, topdown=True, followlinks=False):
+                  current = Path(current_text)
+                  try:
+                      current_metadata = current.lstat()
+                  except OSError as error:
+                      raise ProvenanceError("private build tree changed during record snapshot") from error
+                  if stat.S_ISLNK(current_metadata.st_mode) or not stat.S_ISDIR(current_metadata.st_mode):
+                      raise ProvenanceError("private build tree changed during record snapshot")
+
+                  relative_current = "." if current == root else current.relative_to(root).as_posix()
+                  member_names = tuple(sorted((*directory_names, *file_names), key=os.fsencode))
+                  states.append(("D", relative_current, _stat_identity(current_metadata), member_names, ""))
+
+                  kept_directories: list[str] = []
+                  for name in sorted(directory_names, key=os.fsencode):
+                      child = current / name
+                      relative = child.relative_to(root).as_posix()
+                      try:
+                          metadata = child.lstat()
+                      except OSError as error:
+                          raise ProvenanceError("private build tree changed during record snapshot") from error
+                      if stat.S_ISLNK(metadata.st_mode):
+                          target = _assert_internal_symlink(child, root_resolved)
+                          states.append(("L", relative, _stat_identity(metadata), (), target))
+                      elif stat.S_ISDIR(metadata.st_mode):
+                          states.append(("D_ENTRY", relative, _stat_identity(metadata), (), ""))
+                          kept_directories.append(name)
+                      else:
+                          raise ProvenanceError("private build tree contains an unsupported directory entry")
+                  directory_names[:] = kept_directories
+
+                  for name in sorted(file_names, key=os.fsencode):
+                      child = current / name
+                      relative = child.relative_to(root).as_posix()
+                      try:
+                          metadata = child.lstat()
+                      except OSError as error:
+                          raise ProvenanceError("private build tree changed during record snapshot") from error
+                      if stat.S_ISLNK(metadata.st_mode):
+                          target = _assert_internal_symlink(child, root_resolved)
+                          states.append(("L", relative, _stat_identity(metadata), (), target))
+                      elif stat.S_ISREG(metadata.st_mode):
+                          states.append(("F", relative, _stat_identity(metadata), (), ""))
+                      else:
+                          raise ProvenanceError("private build tree contains an unsupported file entry")
+
+              return tuple(sorted(states, key=lambda state: (str(state[1]), str(state[0]))))
+
+
+          def _record_input_snapshot(
+              *,
+              lockfile: Path,
+              security_podspec: Path,
+              security_build: Path,
+              identity_podspec: Path,
+              identity_sources: Path,
+          ) -> tuple[tuple[str, object], ...]:
+              return (
+                  ("lockfile", _regular_input_snapshot(lockfile)),
+                  ("security_podspec", _regular_input_snapshot(security_podspec)),
+                  ("security_build", _tree_input_snapshot(security_build)),
+                  ("identity_podspec", _regular_input_snapshot(identity_podspec)),
+                  ("identity_sources", _tree_input_snapshot(identity_sources)),
+              )
+          '''
+          snapshot_helpers = textwrap.dedent(snapshot_helpers).rstrip()
+          source = source.replace(function_anchor, '\n\n' + snapshot_helpers + function_anchor)
+
+          old_body = '''    return {
+                  "schema": SCHEMA,
+                  "podfile_lock_sha256": _read_stable_regular_file_sha256(lockfile)[1],
+                  "thing_smart_home_kit": THING_SMART_HOME_KIT_VERSION,
+                  "thing_smart_business_extension_kit": THING_SMART_BUSINESS_EXTENSION_KIT_VERSION,
+                  "thing_smart_cryption_podspec_sha256": _file_fingerprint(security_podspec),
+                  "thing_smart_cryption_build_tree_sha256": _tree_fingerprint(security_build),
+                  "private_identity_podspec_sha256": _file_fingerprint(identity_podspec),
+                  "private_identity_sources_tree_sha256": _tree_fingerprint(identity_sources),
+              }
+          '''
+          new_body = '''    snapshot_arguments = {
+                  "lockfile": lockfile,
+                  "security_podspec": security_podspec,
+                  "security_build": security_build,
+                  "identity_podspec": identity_podspec,
+                  "identity_sources": identity_sources,
+              }
+              before_snapshot = _record_input_snapshot(**snapshot_arguments)
+              record = {
+                  "schema": SCHEMA,
+                  "podfile_lock_sha256": _read_stable_regular_file_sha256(lockfile)[1],
+                  "thing_smart_home_kit": THING_SMART_HOME_KIT_VERSION,
+                  "thing_smart_business_extension_kit": THING_SMART_BUSINESS_EXTENSION_KIT_VERSION,
+                  "thing_smart_cryption_podspec_sha256": _file_fingerprint(security_podspec),
+                  "thing_smart_cryption_build_tree_sha256": _tree_fingerprint(security_build),
+                  "private_identity_podspec_sha256": _file_fingerprint(identity_podspec),
+                  "private_identity_sources_tree_sha256": _tree_fingerprint(identity_sources),
+              }
+              after_snapshot = _record_input_snapshot(**snapshot_arguments)
+              if before_snapshot != after_snapshot:
+                  raise ProvenanceError(
+                      "private Tuya build inputs changed while the coherent provenance record was constructed"
+                  )
+              return record
+          '''
+          if source.count(old_body) != 1:
+              raise SystemExit('build_record direct-return body drifted')
+          source = source.replace(old_body, new_body)
+          helper.write_text(source)
+
+          test = Path('scripts/ci/tests/test_capture_tuya_private_input_record_snapshot_coherence.py')
+          if test.exists():
+              raise SystemExit('coherent-record regression already exists')
+          test.write_text(textwrap.dedent(r'''
+              #!/usr/bin/env python3
+              from __future__ import annotations
+
+              import importlib.util
+              import tempfile
+              import unittest
+              from pathlib import Path
+              from unittest import mock
+
+              REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+              HELPER_PATH = REPOSITORY_ROOT / "Scripts" / "capture_tuya_private_input_provenance.py"
+              SPEC = importlib.util.spec_from_file_location("capture_tuya_private_input_provenance", HELPER_PATH)
+              if SPEC is None or SPEC.loader is None:
+                  raise RuntimeError("could not load Capture private-input provenance helper")
+              provenance = importlib.util.module_from_spec(SPEC)
+              SPEC.loader.exec_module(provenance)
+
+
+              class CaptureTuyaPrivateInputRecordSnapshotCoherenceTests(unittest.TestCase):
+                  def setUp(self) -> None:
+                      self.temporary = tempfile.TemporaryDirectory()
+                      self.root = Path(self.temporary.name)
+                      self.sdk = self.root / "TuyaSDK"
+                      self.identity = self.root / "TuyaRuntime"
+                      self.security_build = self.sdk / "Build"
+                      self.identity_sources = self.identity / "Sources" / "NembraTuyaPrivateConfig"
+                      self.security_build.mkdir(parents=True)
+                      self.identity_sources.mkdir(parents=True)
+                      self.security_podspec = self.sdk / "ThingSmartCryption.podspec"
+                      self.identity_podspec = self.identity / "NembraTuyaPrivateConfig.podspec"
+                      self.lockfile = self.root / "Podfile.lock"
+                      self.security_podspec.write_text("security-podspec-v1", encoding="utf-8")
+                      (self.security_build / "ThingSmartCryption.bin").write_bytes(b"security-bytes-v1")
+                      self.identity_podspec.write_text("private-config-podspec-v1", encoding="utf-8")
+                      (self.identity_sources / "NembraTuyaPrivateIdentity.swift").write_text(
+                          'private let encodedAppKey = "TOPSECRET-APPKEY"\n'
+                          'private let encodedAppSecret = "TOPSECRET-APPSECRET"\n',
+                          encoding="utf-8",
+                      )
+                      self.original_lockfile = (
+                          "  - ThingSmartHomeKit (7.8.0)\n"
+                          "  - ThingSmartBusinessExtensionKit (7.8.0)\n"
+                      )
+                      self.lockfile.write_text(self.original_lockfile, encoding="utf-8")
+
+                  def tearDown(self) -> None:
+                      self.temporary.cleanup()
+
+                  def build_record(self) -> dict[str, str]:
+                      return provenance.build_record(
+                          lockfile=self.lockfile,
+                          security_podspec=self.security_podspec,
+                          security_build=self.security_build,
+                          identity_podspec=self.identity_podspec,
+                          identity_sources=self.identity_sources,
+                      )
+
+                  def test_record_rejects_earlier_input_mutation_during_later_tree_fingerprint(self) -> None:
+                      original_tree_fingerprint = provenance._tree_fingerprint
+                      mutated_and_restored = False
+
+                      def fingerprint_then_cross_input_mutation(path: Path) -> str:
+                          nonlocal mutated_and_restored
+                          result = original_tree_fingerprint(path)
+                          if path == self.identity_sources and not mutated_and_restored:
+                              self.lockfile.write_text("different resolution", encoding="utf-8")
+                              self.lockfile.write_text(self.original_lockfile, encoding="utf-8")
+                              mutated_and_restored = True
+                          return result
+
+                      with mock.patch.object(provenance, "_tree_fingerprint", side_effect=fingerprint_then_cross_input_mutation):
+                          with self.assertRaises(provenance.ProvenanceError):
+                              self.build_record()
+                      self.assertTrue(mutated_and_restored)
+
+                  def test_record_rejects_tree_member_mutation_restored_after_earlier_tree_fingerprint(self) -> None:
+                      original_file_fingerprint = provenance._file_fingerprint
+                      member = self.security_build / "ThingSmartCryption.bin"
+                      original = member.read_bytes()
+                      mutated_and_restored = False
+
+                      def fingerprint_then_cross_tree_mutation(path: Path) -> str:
+                          nonlocal mutated_and_restored
+                          result = original_file_fingerprint(path)
+                          if path == self.identity_podspec and not mutated_and_restored:
+                              member.write_bytes(b"temporary-different-bytes")
+                              member.write_bytes(original)
+                              mutated_and_restored = True
+                          return result
+
+                      with mock.patch.object(provenance, "_file_fingerprint", side_effect=fingerprint_then_cross_tree_mutation):
+                          with self.assertRaises(provenance.ProvenanceError):
+                              self.build_record()
+                      self.assertTrue(mutated_and_restored)
+
+                  def test_build_record_has_one_whole_snapshot_boundary_not_only_per_component_reads(self) -> None:
+                      source = HELPER_PATH.read_text(encoding="utf-8")
+                      start = source.index("def build_record(")
+                      end = source.index("\ndef _record_text", start)
+                      build_record_source = source[start:end]
+                      self.assertNotIn("    return {", build_record_source)
+                      self.assertIn("_record_input_snapshot", build_record_source)
+                      self.assertIn("before_snapshot", build_record_source)
+                      self.assertIn("after_snapshot", build_record_source)
+                      self.assertIn("before_snapshot != after_snapshot", build_record_source)
+
+
+              if __name__ == "__main__":
+                  unittest.main()
+          ''').lstrip())
+          PY
+
+      - name: Run complete portable provenance acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
+          for test_file in scripts/ci/tests/test_capture_tuya_private_input*.py; do
+            echo "==> $test_file"
+            python3 "$test_file"
+          done
+          grep -Fq '_stat_identity(current_path) != _stat_identity(after)' Scripts/capture_tuya_private_input_provenance.py
+          git diff --check
+
+      - name: Commit durable exact-current checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-record-coherence-88eb.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Scripts/capture_tuya_private_input_provenance.py \
+            scripts/ci/tests/test_capture_tuya_private_input_record_snapshot_coherence.py \
+            .github/workflows/materialize-capture-record-coherence-88eb.yml
+          git commit -m 'fix(capture): fence coherent private provenance record'
+          git push origin HEAD:sol/v14-capture-private-record-coherence-3a90
