@@ -53,7 +53,11 @@ def _stat_identity(metadata: os.stat_result) -> tuple[int, ...]:
     )
 
 
-def _read_stable_regular_file_sha256(path: Path) -> tuple[os.stat_result, str]:
+def _read_stable_regular_file_sha256(
+    path: Path,
+    *,
+    expected_identity: tuple[int, ...] | None = None,
+) -> tuple[os.stat_result, str]:
     nofollow = getattr(os, "O_NOFOLLOW", None)
     if nofollow is None:
         raise ProvenanceError("private build input admission requires O_NOFOLLOW support")
@@ -68,6 +72,10 @@ def _read_stable_regular_file_sha256(path: Path) -> tuple[os.stat_result, str]:
         if not stat.S_ISREG(before.st_mode):
             raise ProvenanceError(f"required private build input is not a regular file: {path.name}")
 
+        before_identity = _stat_identity(before)
+        if expected_identity is not None and before_identity != expected_identity:
+            raise ProvenanceError("private build tree changed before an admitted file was opened")
+
         digest = hashlib.sha256()
         bytes_read = 0
         while True:
@@ -78,8 +86,11 @@ def _read_stable_regular_file_sha256(path: Path) -> tuple[os.stat_result, str]:
             digest.update(chunk)
 
         after = os.fstat(descriptor)
-        if _stat_identity(before) != _stat_identity(after) or bytes_read != after.st_size:
+        after_identity = _stat_identity(after)
+        if before_identity != after_identity or bytes_read != after.st_size:
             raise ProvenanceError(f"private build input changed while it was fingerprinted: {path.name}")
+        if expected_identity is not None and after_identity != expected_identity:
+            raise ProvenanceError("private build tree changed while an admitted file was fingerprinted")
 
         try:
             current_path = path.lstat()
@@ -88,8 +99,7 @@ def _read_stable_regular_file_sha256(path: Path) -> tuple[os.stat_result, str]:
         if (
             stat.S_ISLNK(current_path.st_mode)
             or not stat.S_ISREG(current_path.st_mode)
-            or current_path.st_dev != after.st_dev
-            or current_path.st_ino != after.st_ino
+            or _stat_identity(current_path) != _stat_identity(after)
         ):
             raise ProvenanceError(f"private build input pathname changed during fingerprinting: {path.name}")
         return after, digest.hexdigest()
@@ -97,15 +107,21 @@ def _read_stable_regular_file_sha256(path: Path) -> tuple[os.stat_result, str]:
         os.close(descriptor)
 
 
-def _file_fingerprint(path: Path) -> str:
-    metadata, content_sha256 = _read_stable_regular_file_sha256(path)
+def _file_fingerprint(
+    path: Path,
+    *,
+    expected_identity: tuple[int, ...] | None = None,
+) -> str:
+    metadata, content_sha256 = _read_stable_regular_file_sha256(
+        path,
+        expected_identity=expected_identity,
+    )
     digest = hashlib.sha256()
     _feed(digest, b"nembra-private-file-v1")
     _feed(digest, stat.S_IMODE(metadata.st_mode).to_bytes(4, "big"))
     _feed(digest, metadata.st_size.to_bytes(8, "big"))
     _feed(digest, bytes.fromhex(content_sha256))
     return digest.hexdigest()
-
 
 def _assert_internal_symlink(path: Path, root: Path) -> str:
     try:
@@ -197,13 +213,16 @@ def _tree_fingerprint(root: Path) -> str:
                 observed_states.append((path, identity, "L"))
                 entries.append(("L", relative, mode, os.fsencode(target)))
             elif stat.S_ISREG(metadata.st_mode):
-                fingerprint = _file_fingerprint(path)
+                fingerprint = _file_fingerprint(path, expected_identity=identity)
                 _assert_unchanged_tree_entry(path, identity, "F")
                 observed_states.append((path, identity, "F"))
                 entries.append(("F", relative, mode, bytes.fromhex(fingerprint)))
             else:
                 raise ProvenanceError("private build tree contains an unsupported file entry")
 
+    # A per-file descriptor proves the bytes read from that one inode. The tree
+    # record is stronger: every admitted pathname and every directory membership
+    # must still describe the same finite snapshot after the full traversal.
     for path, identity, kind in observed_states:
         _assert_unchanged_tree_entry(path, identity, kind)
     for directory, members in observed_directory_members.items():
@@ -221,67 +240,99 @@ def _tree_fingerprint(root: Path) -> str:
     return digest.hexdigest()
 
 
-def _regular_file_identity_snapshot(path: Path) -> tuple[str, tuple[int, ...]]:
+def _regular_file_generation_identity(path: Path) -> tuple[int, ...]:
     try:
         metadata = path.lstat()
     except OSError as error:
-        raise ProvenanceError(f"required private build input is unavailable: {path.name}") from error
+        raise ProvenanceError(
+            f"required private build input is unavailable: {path.name}"
+        ) from error
     if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
-        raise ProvenanceError(f"required private build input is not a regular file: {path.name}")
-    return ("F", _stat_identity(metadata))
+        raise ProvenanceError(
+            f"required private build input is not a regular file: {path.name}"
+        )
+    return _stat_identity(metadata)
 
 
-def _tree_identity_snapshot(root: Path) -> tuple[tuple[str, str, tuple[int, ...], str], ...]:
+def _tree_generation_snapshot(root: Path) -> tuple[tuple[object, ...], ...]:
     try:
         root_metadata = root.lstat()
     except OSError as error:
-        raise ProvenanceError(f"required private build directory is unavailable: {root.name}") from error
+        raise ProvenanceError(
+            f"required private build directory is unavailable: {root.name}"
+        ) from error
     if stat.S_ISLNK(root_metadata.st_mode) or not stat.S_ISDIR(root_metadata.st_mode):
-        raise ProvenanceError(f"required private build directory is not a real directory: {root.name}")
+        raise ProvenanceError(
+            f"required private build directory is not a real directory: {root.name}"
+        )
 
     root_resolved = root.resolve(strict=True)
-    entries: list[tuple[str, str, tuple[int, ...], str]] = [
-        (".", "D", _stat_identity(root_metadata), "")
+    states: list[tuple[str, str, tuple[int, ...], str]] = [
+        ("D", ".", _stat_identity(root_metadata), "")
     ]
-    for current_text, directory_names, file_names in os.walk(root, topdown=True, followlinks=False):
+    observed_states: list[tuple[Path, tuple[int, ...], str]] = [
+        (root, _stat_identity(root_metadata), "D")
+    ]
+    observed_members: dict[Path, tuple[str, ...]] = {}
+
+    for current_text, directory_names, file_names in os.walk(
+        root,
+        topdown=True,
+        followlinks=False,
+    ):
         current = Path(current_text)
+        observed_members[current] = tuple(
+            sorted((*directory_names, *file_names), key=os.fsencode)
+        )
         kept_directories: list[str] = []
+
         for name in sorted(directory_names, key=os.fsencode):
-            path = current / name
-            relative = path.relative_to(root).as_posix()
-            try:
-                metadata = path.lstat()
-            except OSError as error:
-                raise ProvenanceError("private build tree changed during record snapshot") from error
+            candidate = current / name
+            relative = candidate.relative_to(root).as_posix()
+            metadata = candidate.lstat()
+            identity = _stat_identity(metadata)
             if stat.S_ISLNK(metadata.st_mode):
-                target = _assert_internal_symlink(path, root_resolved)
-                entries.append((relative, "L", _stat_identity(metadata), target))
+                target = _assert_internal_symlink(candidate, root_resolved)
+                observed_states.append((candidate, identity, "L"))
+                states.append(("L", relative, identity, target))
             elif stat.S_ISDIR(metadata.st_mode):
-                entries.append((relative, "D", _stat_identity(metadata), ""))
+                observed_states.append((candidate, identity, "D"))
+                states.append(("D", relative, identity, ""))
                 kept_directories.append(name)
             else:
-                raise ProvenanceError("private build tree contains an unsupported directory entry")
+                raise ProvenanceError(
+                    "private build tree contains an unsupported directory entry"
+                )
         directory_names[:] = kept_directories
 
         for name in sorted(file_names, key=os.fsencode):
-            path = current / name
-            relative = path.relative_to(root).as_posix()
-            try:
-                metadata = path.lstat()
-            except OSError as error:
-                raise ProvenanceError("private build tree changed during record snapshot") from error
+            candidate = current / name
+            relative = candidate.relative_to(root).as_posix()
+            metadata = candidate.lstat()
+            identity = _stat_identity(metadata)
             if stat.S_ISLNK(metadata.st_mode):
-                target = _assert_internal_symlink(path, root_resolved)
-                entries.append((relative, "L", _stat_identity(metadata), target))
+                target = _assert_internal_symlink(candidate, root_resolved)
+                observed_states.append((candidate, identity, "L"))
+                states.append(("L", relative, identity, target))
             elif stat.S_ISREG(metadata.st_mode):
-                entries.append((relative, "F", _stat_identity(metadata), ""))
+                observed_states.append((candidate, identity, "F"))
+                states.append(("F", relative, identity, ""))
             else:
-                raise ProvenanceError("private build tree contains an unsupported file entry")
+                raise ProvenanceError(
+                    "private build tree contains an unsupported file entry"
+                )
 
-    return tuple(sorted(entries, key=lambda entry: os.fsencode(entry[0])))
+    for candidate, identity, kind in observed_states:
+        _assert_unchanged_tree_entry(candidate, identity, kind)
+    for directory, members in observed_members.items():
+        if _directory_member_names(directory) != members:
+            raise ProvenanceError(
+                "private build tree changed while its record generation was snapshotted"
+            )
+    return tuple(sorted(states, key=lambda item: os.fsencode(str(item[1]))))
 
 
-def _record_identity_snapshot(
+def _private_input_record_generation_snapshot(
     *,
     lockfile: Path,
     security_podspec: Path,
@@ -290,11 +341,11 @@ def _record_identity_snapshot(
     identity_sources: Path,
 ) -> tuple[object, ...]:
     return (
-        ("lockfile", _regular_file_identity_snapshot(lockfile)),
-        ("security_podspec", _regular_file_identity_snapshot(security_podspec)),
-        ("security_build", _tree_identity_snapshot(security_build)),
-        ("identity_podspec", _regular_file_identity_snapshot(identity_podspec)),
-        ("identity_sources", _tree_identity_snapshot(identity_sources)),
+        ("podfile_lock", _regular_file_generation_identity(lockfile)),
+        ("security_podspec", _regular_file_generation_identity(security_podspec)),
+        ("security_build", _tree_generation_snapshot(security_build)),
+        ("identity_podspec", _regular_file_generation_identity(identity_podspec)),
+        ("identity_sources", _tree_generation_snapshot(identity_sources)),
     )
 
 
@@ -306,18 +357,13 @@ def build_record(
     identity_podspec: Path,
     identity_sources: Path,
 ) -> dict[str, str]:
-    snapshot_arguments = {
-        "lockfile": lockfile,
-        "security_podspec": security_podspec,
-        "security_build": security_build,
-        "identity_podspec": identity_podspec,
-        "identity_sources": identity_sources,
-    }
-    record_snapshot_before = _record_identity_snapshot(**snapshot_arguments)
-    record_snapshot_confirmed = _record_identity_snapshot(**snapshot_arguments)
-    if record_snapshot_before != record_snapshot_confirmed:
-        raise ProvenanceError("private Tuya inputs changed while the record snapshot boundary was established")
-
+    generation_snapshot = _private_input_record_generation_snapshot(
+        lockfile=lockfile,
+        security_podspec=security_podspec,
+        security_build=security_build,
+        identity_podspec=identity_podspec,
+        identity_sources=identity_sources,
+    )
     record = {
         "schema": SCHEMA,
         "podfile_lock_sha256": _read_stable_regular_file_sha256(lockfile)[1],
@@ -328,12 +374,17 @@ def build_record(
         "private_identity_podspec_sha256": _file_fingerprint(identity_podspec),
         "private_identity_sources_tree_sha256": _tree_fingerprint(identity_sources),
     }
-
-    record_snapshot_after = _record_identity_snapshot(**snapshot_arguments)
-    if record_snapshot_after != record_snapshot_confirmed:
-        raise ProvenanceError("private Tuya inputs changed while one provenance record was constructed")
+    if _private_input_record_generation_snapshot(
+        lockfile=lockfile,
+        security_podspec=security_podspec,
+        security_build=security_build,
+        identity_podspec=identity_podspec,
+        identity_sources=identity_sources,
+    ) != generation_snapshot:
+        raise ProvenanceError(
+            "private build inputs changed while the provenance record was constructed"
+        )
     return record
-
 
 def _record_text(record: dict[str, str]) -> str:
     if set(record) != set(_RECORD_KEYS):
