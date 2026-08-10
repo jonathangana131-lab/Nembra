@@ -23,7 +23,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 Scripts/apply_capture_current_authority_closure.py
+          if ! python3 Scripts/apply_capture_current_authority_closure.py 2>PATCH_FAILURE.txt; then
+            git config user.name nembra-v14-integration
+            git config user.email actions@users.noreply.github.com
+            git add PATCH_FAILURE.txt
+            git commit -m "chore(capture): persist authority patch failure label"
+            git push origin HEAD:integration/v14-capture-current-authority-closure-sol
+            exit 0
+          fi
+          rm -f PATCH_FAILURE.txt
           rm Scripts/apply_capture_current_authority_closure.py
           rm .github/workflows/capture-current-authority-closure-patch.yml
           git config user.name nembra-v14-integration
