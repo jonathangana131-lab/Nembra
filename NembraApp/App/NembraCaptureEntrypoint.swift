@@ -2135,10 +2135,7 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
 
     func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {
         guard let dps, !dps.isEmpty else { return }
-        var sanitized: [String: String] = [:]
-        for (key, value) in dps {
-            sanitized[String(describing: key)] = String(describing: value)
-        }
+        let sanitized = TuyaApplicationUpdateSecretSanitizer.sanitize(dps)
         onApplicationUpdate?(sanitized)
     }
 }
