@@ -1,0 +1,286 @@
+name: Materialize Capture Event Custody TOCTOU Sol
+
+on:
+  push:
+    branches:
+      - "fix/v14-capture-event-custody-toctou-sol"
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 4
+
+      - name: Verify exact current-product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="ba3a1eeae36caca6dd84beaabd0f15f4f0b57925"
+          test "$(git rev-parse HEAD^)" = "$expected" || {
+            echo "Expected parent $expected, got $(git rev-parse HEAD^)" >&2
+            exit 1
+          }
+
+      - name: Materialize fail-closed immutable UID custody snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app_path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = app_path.read_text(encoding="utf-8")
+          start = source.index("    private func receivedApplicationUpdate(")
+          end = source.index("    private func startWatchdog", start)
+          section = source[start:end]
+
+          local_guard = '''        guard driver.isLocallyConnected(uuid: tuyaUUID) else {
+              await recordObservedTransportLoss(token: token)
+              return
+          }
+
+          applicationUpdateAdmissionsInFlight += 1
+          '''
+          snapshot_guard = '''        guard driver.isLocallyConnected(uuid: tuyaUUID) else {
+              await recordObservedTransportLoss(token: token)
+              return
+          }
+          // Freeze the already-authorized account identity before the first suspension point.
+          // Later foreground/account revocation may clear controller lease fields while this
+          // accepted callback is awaiting the ledger; privacy custody must never fail open.
+          guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                !verifiedAccountUID.isEmpty else {
+              await invalidateSourceAuthority(
+                  token: token,
+                  message: "The verified Tuya account identity lease became unavailable before application evidence custody.",
+                  kind: "sdk_account_uid_lease_missing_during_observation"
+              )
+              return
+          }
+
+          applicationUpdateAdmissionsInFlight += 1
+          '''
+          if section.count(local_guard) != 1:
+              raise SystemExit(f"expected one local-BLE/in-flight boundary, found {section.count(local_guard)}")
+          section = section.replace(local_guard, snapshot_guard, 1)
+
+          old_call = "            var eventDetails = redactedApplicationEventDetails(update)\n"
+          new_call = "            var eventDetails = redactedApplicationEventDetails(update, verifiedAccountUID: verifiedAccountUID)\n"
+          if section.count(old_call) != 1:
+              raise SystemExit(f"expected one live-lease redaction call, found {section.count(old_call)}")
+          section = section.replace(old_call, new_call, 1)
+
+          helper_start = section.index("    private func redactedApplicationEventDetails(")
+          old_helper = section[helper_start:]
+          new_helper = '''    private func redactedApplicationEventDetails(
+              _ update: [String: String],
+              verifiedAccountUID: String
+          ) -> [String: String] {
+              let marker = "<redacted-account-uid>"
+              var redacted: [String: String] = [:]
+              redacted.reserveCapacity(update.count)
+
+              // Sorting only makes collision suffix assignment deterministic. It does not make
+              // dictionary order evidence or alter the package ledger's accepted chronology.
+              for (key, value) in update.sorted(by: { $0.key < $1.key }) {
+                  let baseKey = key.replacingOccurrences(
+                      of: verifiedAccountUID,
+                      with: marker,
+                      options: [.literal]
+                  )
+                  let redactedValue = value.replacingOccurrences(
+                      of: verifiedAccountUID,
+                      with: marker,
+                      options: [.literal]
+                  )
+
+                  // Redacting an untrusted key can collide with an already-redacted spelling.
+                  // Preserve both opaque fields instead of silently discarding one.
+                  var admittedKey = baseKey
+                  var collisionOrdinal = 2
+                  while redacted[admittedKey] != nil {
+                      admittedKey = "\\(baseKey)#\\(collisionOrdinal)"
+                      collisionOrdinal += 1
+                  }
+                  redacted[admittedKey] = redactedValue
+              }
+              return redacted
+          }
+
+          '''
+          section = section[:helper_start] + new_helper
+          source = source[:start] + section + source[end:]
+          app_path.write_text(source, encoding="utf-8")
+
+          test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift")
+          test_path.write_text(r'''import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Tuya application account UID export custody")
+          struct TuyaApplicationAccountUIDExportCustodySourceTests {
+              @Test("accepted event snapshots the exact leased account UID before any suspension")
+              func accountUIDCustodyCannotFailOpenAcrossAwait() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let receiver = String(try section(
+                      in: source,
+                      from: "private func receivedApplicationUpdate(",
+                      to: "private func startWatchdog"
+                  ))
+
+                  let snapshot = try #require(receiver.range(of: "guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters"))
+                  let inFlight = try #require(receiver.range(of: "applicationUpdateAdmissionsInFlight += 1"))
+                  let firstAwait = try #require(receiver.range(of: "try await sessionLedger.recordApplicationUpdate"))
+                  #expect(snapshot.lowerBound < inFlight.lowerBound)
+                  #expect(snapshot.lowerBound < firstAwait.lowerBound)
+                  #expect(receiver.contains("!verifiedAccountUID.isEmpty"))
+                  #expect(receiver.contains("sdk_account_uid_lease_missing_during_observation"))
+                  #expect(receiver.contains("redactedApplicationEventDetails(update, verifiedAccountUID: verifiedAccountUID)"))
+                  #expect(!receiver.contains("guard let accountUID = membershipAccountUID"))
+                  #expect(!receiver.contains("return update"))
+              }
+
+              @Test("exact leased UID is scrubbed from keys and values without dropping colliding opaque fields")
+              func acceptedEventPreservesSanitizedKeyCollisions() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let receiver = String(try section(
+                      in: source,
+                      from: "private func receivedApplicationUpdate(",
+                      to: "private func startWatchdog"
+                  ))
+
+                  #expect(receiver.contains("key.replacingOccurrences("))
+                  #expect(receiver.contains("value.replacingOccurrences("))
+                  #expect(receiver.components(separatedBy: "of: verifiedAccountUID").count - 1 == 2)
+                  #expect(receiver.contains("<redacted-account-uid>"))
+                  #expect(receiver.contains("options: [.literal]"))
+                  #expect(receiver.contains("update.sorted(by: { $0.key < $1.key })"))
+                  #expect(receiver.contains("while redacted[admittedKey] != nil"))
+                  #expect(receiver.contains("collisionOrdinal += 1"))
+                  #expect(receiver.contains("eventDetails[\"generation\"] = String(token.diagnosticGeneration)"))
+                  #expect(!receiver.contains("log(\"tuya_application_update\", update"))
+              }
+
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let a = source.range(of: start),
+                        let b = source.range(of: end, range: a.upperBound..<source.endIndex) else {
+                      throw Error.sectionMissing
+                  }
+                  return source[a.lowerBound..<b.lowerBound]
+              }
+
+              private func readRepositoryFile(_ path: String) throws -> String {
+                  let root = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+              }
+
+              private enum Error: Swift.Error { case sectionMissing }
+          }
+          ''', encoding="utf-8")
+          PY
+
+      - name: Validate parse source invariants and adversarial behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="NembraApp/App/NembraCaptureEntrypoint.swift"
+          test_file="Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift"
+          swiftc -frontend -parse "$app"
+          swiftc -frontend -parse "$test_file"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text(encoding="utf-8")
+          start = source.index("    private func receivedApplicationUpdate(")
+          end = source.index("    private func startWatchdog", start)
+          body = source[start:end]
+          snapshot = body.index("guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters")
+          in_flight = body.index("applicationUpdateAdmissionsInFlight += 1")
+          first_await = body.index("try await sessionLedger.recordApplicationUpdate")
+          assert snapshot < in_flight < first_await
+          assert "sdk_account_uid_lease_missing_during_observation" in body
+          assert "redactedApplicationEventDetails(update, verifiedAccountUID: verifiedAccountUID)" in body
+          assert "guard let accountUID = membershipAccountUID" not in body
+          assert "return update" not in body
+          assert body.count("of: verifiedAccountUID") == 2
+          assert "options: [.literal]" in body
+          assert "options: [.caseInsensitive, .literal]" not in body
+          assert "update.sorted(by: { $0.key < $1.key })" in body
+          assert "while redacted[admittedKey] != nil" in body
+          assert 'eventDetails["generation"] = String(token.diagnosticGeneration)' in body
+          print("Capture event custody TOCTOU source invariants: PASS")
+          PY
+
+          cat > /tmp/nembra_uid_custody_probe.swift <<'SWIFT'
+          import Foundation
+
+          func redact(_ update: [String: String], verifiedAccountUID: String) -> [String: String] {
+              let marker = "<redacted-account-uid>"
+              var redacted: [String: String] = [:]
+              for (key, value) in update.sorted(by: { $0.key < $1.key }) {
+                  let baseKey = key.replacingOccurrences(of: verifiedAccountUID, with: marker, options: [.literal])
+                  let redactedValue = value.replacingOccurrences(of: verifiedAccountUID, with: marker, options: [.literal])
+                  var admittedKey = baseKey
+                  var collisionOrdinal = 2
+                  while redacted[admittedKey] != nil {
+                      admittedKey = "\(baseKey)#\(collisionOrdinal)"
+                      collisionOrdinal += 1
+                  }
+                  redacted[admittedKey] = redactedValue
+              }
+              return redacted
+          }
+
+          let uid = "Account-AbC-123"
+          let raw = [
+              "owner": "prefix Account-AbC-123 suffix",
+              "Account-AbC-123-key": "first",
+              "<redacted-account-uid>-key": "second",
+              "uid": "device-uid-kept",
+              "case-variant": "account-abc-123-is-not-the-exact-opaque-id",
+          ]
+          let cleaned = redact(raw, verifiedAccountUID: uid)
+          precondition(cleaned.count == raw.count)
+          precondition(!cleaned.keys.joined().contains(uid))
+          precondition(!cleaned.values.joined().contains(uid))
+          precondition(cleaned.values.contains("first"))
+          precondition(cleaned.values.contains("second"))
+          precondition(cleaned["uid"] == "device-uid-kept")
+          precondition(cleaned["case-variant"] == "account-abc-123-is-not-the-exact-opaque-id")
+          SWIFT
+          swift /tmp/nembra_uid_custody_probe.swift
+          git diff --check
+
+      - name: Commit durable two-path repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          product="ba3a1eeae36caca6dd84beaabd0f15f4f0b57925"
+          rm .github/workflows/materialize-capture-event-custody-toctou-sol.yml
+          git add -A
+          git diff --cached --check
+          mapfile -t changed < <(git diff --cached --name-only "$product" | sort)
+          expected=(
+            "NembraApp/App/NembraCaptureEntrypoint.swift"
+            "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift"
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          test "${changed[*]}" = "${expected_sorted[*]}" || {
+            printf 'Unexpected effective paths:\n' >&2
+            printf '  %s\n' "${changed[@]}" >&2
+            exit 1
+          }
+          git config user.name "Nembra V14 Sol"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "fix(capture): freeze account UID before event custody await"
+          git push origin HEAD:fix/v14-capture-event-custody-toctou-sol
