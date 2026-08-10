@@ -1,0 +1,112 @@
+name: Capture Secure Link Contract Diagnostic
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/capture-secure-link-contract-diagnostic.yml'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaExplicitCorrelatedTargetConfirmationSourceTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductSurfaceSourceTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteRecoverySourceTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductRecoveryTruthSourceTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkAccountRecoverySourceTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundTargetRevocationSourceTests.swift'
+
+permissions:
+  contents: read
+
+jobs:
+  package-diagnostic:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact diagnostic composition
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          PRODUCT_PARENT: 53a5ffb921d195d053744eb974ced672e8b18d75
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          actual="$(git diff --name-only "$PRODUCT_PARENT" HEAD | sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/capture-secure-link-contract-diagnostic.yml' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundTargetRevocationSourceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaExplicitCorrelatedTargetConfirmationSourceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteRecoverySourceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkAccountRecoverySourceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductRecoveryTruthSourceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkProductSurfaceSourceTests.swift' | sort)"
+          test "$actual" = "$expected"
+          git diff --check "$PRODUCT_PARENT" HEAD
+
+      - name: Run Capture package and retain exact differential
+        id: package
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/capture-secure-link-contract.log"
+          set +e
+          (cd Packages/NembraBluetoothCapture && swift test) 2>&1 | tee "$log"
+          status="${PIPESTATUS[0]}"
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          /usr/bin/python3 -I - "$log" <<'PY'
+          import re, sys
+          from collections import Counter
+          from pathlib import Path
+
+          lines = Path(sys.argv[1]).read_text(errors='replace').splitlines()
+          files = Counter()
+          total = None
+          for line in lines:
+              match = re.search(r'at ([A-Za-z0-9_]+\.swift):\d+:\d+:', line)
+              if match and ('recorded an issue' in line or 'Caught error' in line):
+                  files[match.group(1)] += 1
+              final = re.search(r'Test run with 923 tests in 226 suites failed .* with (\d+) issues\.', line)
+              if final:
+                  total = int(final.group(1))
+
+          targets = (
+              'TuyaExplicitCorrelatedTargetConfirmationSourceTests.swift',
+              'TuyaSecureLinkProductSurfaceSourceTests.swift',
+              'TuyaFailedPrerequisiteRecoverySourceTests.swift',
+              'TuyaSecureLinkProductRecoveryTruthSourceTests.swift',
+              'ES80CaptureRiderLanguageAcceptanceTests.swift',
+              'TuyaSecureLinkAccountRecoverySourceTests.swift',
+              'TuyaCaptureForegroundTargetRevocationSourceTests.swift',
+          )
+
+          for name, count in files.most_common():
+              print(f'PACKAGE_ISSUES {count:3d} {name}')
+          dirty = {name: files[name] for name in targets if files[name]}
+          if dirty:
+              raise SystemExit(f'target files still report issues: {dirty}')
+          if total != 72:
+              raise SystemExit(f'expected exact 82 -> 72 differential; observed total={total!r}')
+          print('EXACT_DIFFERENTIAL 82 -> 72; all seven target files 0 issues')
+          PY
+
+      - name: Upload exact package log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: capture-secure-link-contract-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/capture-secure-link-contract.log
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Preserve global package failure truth
+        env:
+          PACKAGE_STATUS: ${{ steps.package.outputs.status }}
+        run: |
+          test "$PACKAGE_STATUS" != 0
+          echo 'Targeted differential passed, but the Capture package remains globally red by design.'
