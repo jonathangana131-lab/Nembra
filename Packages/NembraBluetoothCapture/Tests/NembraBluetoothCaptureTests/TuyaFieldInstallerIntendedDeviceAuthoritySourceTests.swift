@@ -69,6 +69,26 @@ struct TuyaFieldInstallerIntendedDeviceAuthoritySourceTests {
         #expect(installer.contains("-scheme \"Nembra Capture\""))
     }
 
+    @Test("exact built device app provenance is read back before installation")
+    func builtArtifactMustMatchRequestedSourceAndFieldProduct() throws {
+        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
+        let readbackRange = try requiredRange(
+            in: installer,
+            from: "APP_INFO_PLIST=\"$APP/Info.plist\"",
+            to: "say \"Installing SDK-integrated Capture on the intended iPhone\""
+        )
+        let readback = installer[readbackRange]
+
+        #expect(installer.contains("[[ -x /usr/bin/plutil ]]"))
+        #expect(readback.contains("NembraCaptureBuildIdentifier"))
+        #expect(readback.contains("NembraCaptureSourceCommitSHA"))
+        #expect(readback.contains("CFBundleIdentifier"))
+        #expect(readback.contains("$BUILT_BUILD_IDENTIFIER\" == \"$BUILD_LABEL"))
+        #expect(readback.contains("$BUILT_SOURCE_SHA\" == \"$SOURCE_SHA"))
+        #expect(readback.contains("$BUILT_BUNDLE_ID\" == \"$BUNDLE_ID"))
+        #expect(readback.contains("Built app provenance matched exact requested source and field product"))
+    }
+
     @Test("installer does not echo the private device identifier through normal diagnostics")
     func deviceIdentifierStaysOutOfNembraPresentation() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
@@ -83,6 +103,15 @@ struct TuyaFieldInstallerIntendedDeviceAuthoritySourceTests {
         #expect(!installer.contains("printf '%s\\n' \"$DEVICE_UDID\""))
     }
 
+    private func requiredRange(in source: String, from start: String, to end: String) throws -> Range<String.Index> {
+        guard let startRange = source.range(of: start),
+              let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+            Issue.record("Expected source section missing: \(start) ... \(end)")
+            throw SourceContractError.sectionMissing
+        }
+        return startRange.lowerBound..<endRange.lowerBound
+    }
+
     private func readRepositoryFile(_ relativePath: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -91,5 +120,9 @@ struct TuyaFieldInstallerIntendedDeviceAuthoritySourceTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+    }
+
+    private enum SourceContractError: Error {
+        case sectionMissing
     }
 }
