@@ -2153,9 +2153,13 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
 
     private static let secretKeyFragments = [
         "localkey",
+        "sessionkey",
+        "appkey",
+        "appsecret",
+        "password",
+        "accounttoken",
         "accesstoken",
         "refreshtoken",
-        "sessionkey",
         "authkey",
         "seckey",
     ]
