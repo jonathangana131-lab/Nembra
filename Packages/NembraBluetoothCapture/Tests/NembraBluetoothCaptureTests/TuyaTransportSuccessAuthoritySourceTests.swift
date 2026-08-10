@@ -29,7 +29,7 @@ struct TuyaTransportSuccessAuthoritySourceTests {
         #expect(sourceTerminal.lowerBound < settlement.lowerBound)
     }
 
-    @Test("duplicate success callbacks share one local-BLE settlement owner and auth rejection retires authority")
+    @Test("duplicate success callbacks share one settlement owner and auth mutation failure retires internally")
     func duplicateSuccessCannotStartParallelSettlement() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
@@ -48,12 +48,21 @@ struct TuyaTransportSuccessAuthoritySourceTests {
         #expect(handler.contains("sessionLedger.markAuthenticated"))
         #expect(handler.contains("session_auth_callback_rejected"))
 
-        guard let rejected = handler.range(of: "session_auth_callback_rejected") else {
-            Issue.record("Authentication chronology rejection needs a terminal source-authority route.")
+        guard let promotion = handler.range(of: "sessionLedger.markAuthenticated"),
+              let keepWaiting = handler.range(of: "case .keepWaiting:", range: promotion.upperBound..<handler.endIndex) else {
+            Issue.record("Could not isolate authentication promotion failure cleanup.")
             return
         }
-        let prefix = String(handler[..<rejected.lowerBound])
-        #expect(prefix.contains("invalidateSourceAuthority"))
+        let promotionTerminal = String(handler[promotion.lowerBound..<keepWaiting.lowerBound])
+
+        // Current Tuya account/device source authority has already been checked before promotion.
+        // If the owner-bound ledger mutation itself rejects chronology/invariants, cleanup must use
+        // the package's exact-token no-resample internal-lifecycle terminal, not invent source drift.
+        #expect(promotionTerminal.contains("MutationError.monotonicClockRegressed"))
+        #expect(promotionTerminal.contains("invalidateInternalLifecycle"))
+        #expect(!promotionTerminal.contains("invalidateSourceAuthority"))
+        #expect(!promotionTerminal.contains("authenticationAcquisitionFailed"))
+        #expect(!promotionTerminal.contains("markAuthenticationFailed"))
         #expect(!handler.contains("failLocally(\"Authenticated-session chronology rejected"))
     }
 
