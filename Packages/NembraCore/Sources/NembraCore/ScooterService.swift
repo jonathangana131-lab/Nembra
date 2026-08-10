@@ -47,6 +47,63 @@ public extension SpeedEvidenceProvider {
     }
 }
 
+/// One synthetic power observation minted by the Simulator source itself.
+///
+/// The receipt identity and monotonic receipt clock belong to the power source;
+/// consumers must not substitute a speed receipt, aggregate `VehicleState`
+/// timestamp, render clock, or view-lifecycle time. The initializer is internal so
+/// external app code cannot manufacture Simulator power authority from a cached
+/// watt number.
+public struct SimulatorPowerEvidenceSample: Equatable, Sendable {
+    public let watts: Double
+    public let receivedAtUptimeNanoseconds: UInt64
+    public let receiptID: UUID
+
+    init?(
+        watts: Double,
+        receivedAtUptimeNanoseconds: UInt64,
+        receiptID: UUID = UUID()
+    ) {
+        guard watts.isFinite,
+              watts >= 0,
+              receivedAtUptimeNanoseconds > 0 else {
+            return nil
+        }
+        self.watts = watts
+        self.receivedAtUptimeNanoseconds = receivedAtUptimeNanoseconds
+        self.receiptID = receiptID
+    }
+}
+
+/// Simulator-only field currentness for synthetic power QA.
+///
+/// `retained` preserves the last legitimate synthetic observation across a known
+/// gap without claiming it is current. `unavailable` carries no numeric authority.
+/// This type is never physical ES80 power evidence.
+public enum SimulatorPowerEvidenceAvailability: Equatable, Sendable {
+    case live(SimulatorPowerEvidenceSample)
+    case retained(SimulatorPowerEvidenceSample)
+    case unavailable
+}
+
+/// Optional source-owned Simulator power projection.
+///
+/// This deliberately does not define a generic production power provider. It is
+/// only the software QA seam needed to exercise Dashboard propulsion presentation
+/// without promoting cached aggregate watts or another field's freshness.
+public protocol SimulatorPowerEvidenceProvider: Sendable {
+    func simulatorPowerEvidenceUpdates() async -> AsyncStream<SimulatorPowerEvidenceAvailability>
+    func simulatorPowerEvidenceSnapshot() async -> SimulatorPowerEvidenceAvailability
+}
+
+public extension SimulatorPowerEvidenceProvider {
+    func simulatorPowerEvidenceSnapshot() async -> SimulatorPowerEvidenceAvailability {
+        let stream = await simulatorPowerEvidenceUpdates()
+        var iterator = stream.makeAsyncIterator()
+        return await iterator.next() ?? .unavailable
+    }
+}
+
 /// Consumer-side admission for one asynchronous refresh of source-owned speed
 /// currentness. The opaque token makes supersession mechanical rather than a
 /// scheduling assumption: once a connection transition or a newer refresh calls
