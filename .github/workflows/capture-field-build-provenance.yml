@@ -1,72 +1,70 @@
-name: Capture Field Build Provenance
+name: Capture Already-Terminal Continuity Patch
 
 on:
   push:
     branches:
-      - capture/field-build-provenance-gpt56
-      - capture/one-time-ble-dump-gpt56
-  pull_request:
+      - repair/v14-capture-already-terminal-continuity-r4-sol
     paths:
-      - NembraApp/App/NembraCaptureBuildIdentity.swift
-      - NembraCapture.xcodeproj/project.pbxproj
-      - scripts/field/install_one_time_capture.command
+      - Scripts/apply_capture_already_terminal_continuity_patch.py
       - .github/workflows/capture-field-build-provenance.yml
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  provenance:
-    name: Stamp and verify Capture provenance
-    runs-on: xcode-27
-    timeout-minutes: 20
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-already-terminal-continuity-r4-sol
+          fetch-depth: 0
 
-      - name: Verify source contract
+      - name: Verify exact live parent and regression
         shell: bash
         run: |
           set -euo pipefail
-          identity='NembraApp/App/NembraCaptureBuildIdentity.swift'
-          project='NembraCapture.xcodeproj/project.pbxproj'
-          installer='scripts/field/install_one_time_capture.command'
+          git merge-base --is-ancestor 75e39f708f58734dd32bd61471bd13dada9d8546 HEAD
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAlreadyTerminalObservationContinuitySourceTests.swift
+          test -f Scripts/apply_capture_already_terminal_continuity_patch.py
 
-          bash -n "$installer"
-          grep -Fq 'SOURCE_SHA="$(git rev-parse HEAD)' "$installer"
-          grep -Fq 'BUILD_LABEL="capture-v14-${SOURCE_SHA:0:12}"' "$installer"
-          grep -Fq 'NEMBRA_CAPTURE_BUILD_IDENTIFIER="$BUILD_LABEL"' "$installer"
-          grep -Fq 'NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$SOURCE_SHA"' "$installer"
-
-          grep -Fq 'NembraCaptureBuildIdentity.swift in Sources' "$project"
-          grep -Fq 'INFOPLIST_KEY_NembraCaptureBuildIdentifier = "$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)";' "$project"
-          grep -Fq 'INFOPLIST_KEY_NembraCaptureSourceCommitSHA = "$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)";' "$project"
-
-          grep -Fq 'static let buildIdentifierInfoKey = "NembraCaptureBuildIdentifier"' "$identity"
-          grep -Fq 'static let sourceCommitSHAInfoKey = "NembraCaptureSourceCommitSHA"' "$identity"
-          grep -Fq 'sourceCommitSHA.count == 40' "$identity"
-          grep -Fq 'let expectedIdentifier = "capture-v14-\(sourceCommitSHA.prefix(12))"' "$identity"
-
-      - name: Build stamped standalone Simulator app
+      - name: Apply bounded continuity mirror repair
         shell: bash
         run: |
           set -euo pipefail
-          sha='0123456789abcdef0123456789abcdef01234567'
-          label='capture-v14-0123456789ab'
-          rm -rf /tmp/NembraCaptureProvenanceDerived
-          xcodebuild \
-            -project NembraCapture.xcodeproj \
-            -scheme 'Nembra Capture' \
-            -configuration Debug \
-            -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath /tmp/NembraCaptureProvenanceDerived \
-            CODE_SIGNING_ALLOWED=NO \
-            NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
-            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" \
-            build
+          python3 Scripts/apply_capture_already_terminal_continuity_patch.py
+          file=NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'private func mirrorAlreadyTerminalObservationContinuity' "$file"
+          grep -Fq 'accepted_prefix_seal_continuity_invalidated' "$file"
+          grep -Fq 'accepted_prefix_seal_lifecycle_rejected' "$file"
 
-          plist='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
-          test -f "$plist"
-          test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
-          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$sha"
+      - name: Run focused source regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaAlreadyTerminalObservationContinuitySourceTests
+
+      - name: Self-retire staging and publish product commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm Scripts/apply_capture_already_terminal_continuity_patch.py
+          git checkout 75e39f708f58734dd32bd61471bd13dada9d8546 -- .github/workflows/capture-field-build-provenance.yml
+
+          git config user.name nembra-v14-integration
+          git config user.email actions@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+
+          effective="$(git diff --name-only 75e39f708f58734dd32bd61471bd13dada9d8546 --)"
+          expected="$(printf '%s\n%s' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAlreadyTerminalObservationContinuitySourceTests.swift')"
+          test "$effective" = "$expected" || {
+            printf 'unexpected final state relative to live parent:\n%s\n' "$effective" >&2
+            exit 1
+          }
+
+          git commit -m 'fix(capture): mirror package-terminal continuity once' \
+            -m 'When the package continuous-observation guard has already failed and retired its token before throwing, mirror that exact terminal into app-local ownership/presentation instead of issuing a second ledger terminal. Handle application receipt, watchdog liveness and acceptance seal explicitly; classify unrelated seal failures as internal lifecycle. Physical status remains NO-GO.'
+          git push origin HEAD:repair/v14-capture-already-terminal-continuity-r4-sol
