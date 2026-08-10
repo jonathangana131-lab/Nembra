@@ -20,138 +20,104 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Verify exact product parent and bind descriptor reads to enumeration identity
+      - name: Verify exact lineage and bind descriptor reads to admitted identity
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "9695af19c21c93b3eb4bc867613a6df0c9a3b3d4"
-          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/materialize-capture-private-tree-descriptor-identity-9695-sol.yml"
+          git merge-base --is-ancestor 9695af19c21c93b3eb4bc867613a6df0c9a3b3d4 HEAD
+          test "$(git diff --name-only 9695af19c21c93b3eb4bc867613a6df0c9a3b3d4 HEAD)" = ".github/workflows/materialize-capture-private-tree-descriptor-identity-9695-sol.yml"
           python3 - <<'PY'
           from pathlib import Path
 
-          source_path = Path('Scripts/capture_tuya_private_input_provenance.py')
-          source = source_path.read_text(encoding='utf-8')
+          path = Path('Scripts/capture_tuya_private_input_provenance.py')
+          source = path.read_text(encoding='utf-8')
 
-          def replace_once(text: str, old: str, new: str, label: str) -> str:
-              count = text.count(old)
+          def once(old: str, new: str, label: str) -> None:
+              global source
+              count = source.count(old)
               if count != 1:
                   raise SystemExit(f'{label}: expected one anchor, found {count}')
-              return text.replace(old, new, 1)
+              source = source.replace(old, new, 1)
 
-          source = replace_once(
-              source,
+          once(
               'def _read_stable_regular_file_sha256(path: Path) -> tuple[os.stat_result, str]:',
               'def _read_stable_regular_file_sha256(\n    path: Path,\n    *,\n    expected_identity: tuple[int, ...] | None = None,\n) -> tuple[os.stat_result, str]:',
               'stable-read signature',
           )
-
-          source = replace_once(
-              source,
-              '''        before = os.fstat(descriptor)
-                  if not stat.S_ISREG(before.st_mode):
-                      raise ProvenanceError(f"required private build input is not a regular file: {path.name}")
-
-                  digest = hashlib.sha256()
-          ''',
-              '''        before = os.fstat(descriptor)
-                  if not stat.S_ISREG(before.st_mode):
-                      raise ProvenanceError(f"required private build input is not a regular file: {path.name}")
-                  before_identity = _stat_identity(before)
-                  if expected_identity is not None and before_identity != expected_identity:
-                      raise ProvenanceError("private build tree changed before an admitted file was opened")
-
-                  digest = hashlib.sha256()
-          ''',
+          once(
+              '        digest = hashlib.sha256()\n        bytes_read = 0\n',
+              '        before_identity = _stat_identity(before)\n'
+              '        if expected_identity is not None and before_identity != expected_identity:\n'
+              '            raise ProvenanceError("private build tree changed before an admitted file was opened")\n\n'
+              '        digest = hashlib.sha256()\n        bytes_read = 0\n',
               'pre-read expected identity fence',
           )
-
-          source = replace_once(
-              source,
-              '''        after = os.fstat(descriptor)
-                  if _stat_identity(before) != _stat_identity(after) or bytes_read != after.st_size:
-                      raise ProvenanceError(f"private build input changed while it was fingerprinted: {path.name}")
-
-                  try:
-          ''',
-              '''        after = os.fstat(descriptor)
-                  after_identity = _stat_identity(after)
-                  if before_identity != after_identity or bytes_read != after.st_size:
-                      raise ProvenanceError(f"private build input changed while it was fingerprinted: {path.name}")
-                  if expected_identity is not None and after_identity != expected_identity:
-                      raise ProvenanceError("private build tree changed while an admitted file was fingerprinted")
-
-                  try:
-          ''',
+          once(
+              '        after = os.fstat(descriptor)\n'
+              '        if _stat_identity(before) != _stat_identity(after) or bytes_read != after.st_size:\n'
+              '            raise ProvenanceError(f"private build input changed while it was fingerprinted: {path.name}")\n',
+              '        after = os.fstat(descriptor)\n'
+              '        after_identity = _stat_identity(after)\n'
+              '        if before_identity != after_identity or bytes_read != after.st_size:\n'
+              '            raise ProvenanceError(f"private build input changed while it was fingerprinted: {path.name}")\n'
+              '        if expected_identity is not None and after_identity != expected_identity:\n'
+              '            raise ProvenanceError("private build tree changed while an admitted file was fingerprinted")\n',
               'post-read expected identity fence',
           )
-
-          source = replace_once(
-              source,
-              '''def _file_fingerprint(path: Path) -> str:
-                  metadata, content_sha256 = _read_stable_regular_file_sha256(path)
-          ''',
-              '''def _file_fingerprint(
-                  path: Path,
-                  *,
-                  expected_identity: tuple[int, ...] | None = None,
-              ) -> str:
-                  metadata, content_sha256 = _read_stable_regular_file_sha256(
-                      path,
-                      expected_identity=expected_identity,
-                  )
-          ''',
-              'file fingerprint expected identity plumbing',
+          once(
+              'def _file_fingerprint(path: Path) -> str:\n    metadata, content_sha256 = _read_stable_regular_file_sha256(path)\n',
+              'def _file_fingerprint(\n'
+              '    path: Path,\n'
+              '    *,\n'
+              '    expected_identity: tuple[int, ...] | None = None,\n'
+              ') -> str:\n'
+              '    metadata, content_sha256 = _read_stable_regular_file_sha256(\n'
+              '        path,\n'
+              '        expected_identity=expected_identity,\n'
+              '    )\n',
+              'file fingerprint identity plumbing',
           )
-
-          source = replace_once(
-              source,
+          once(
               '                fingerprint = _file_fingerprint(path)',
               '                fingerprint = _file_fingerprint(path, expected_identity=identity)',
-              'tree file admission binding',
+              'tree-to-descriptor identity binding',
           )
-          source_path.write_text(source, encoding='utf-8')
+          path.write_text(source, encoding='utf-8')
 
           test_path = Path('scripts/ci/tests/test_capture_tuya_private_input_provenance.py')
           tests = test_path.read_text(encoding='utf-8')
           anchor = '    def test_tree_rejects_entry_added_after_directory_enumeration(self) -> None:\n'
           if tests.count(anchor) != 1:
               raise SystemExit('ABA regression insertion anchor missing')
-          regression = '''    def test_tree_binds_open_descriptor_to_enumerated_file_identity(self) -> None:
-              target = self.security_build / "ThingSmartCryption.bin"
-              replacement = self.root / "replacement-before-open.bin"
-              replacement.write_bytes(b"attacker-replacement-bytes")
-              original_open = provenance.os.open
-              original_lstat = Path.lstat
-              substituted_open = False
-              post_open_target_lstat_calls = 0
-
-              def open_replacement(path: object, flags: int, *args: object, **kwargs: object) -> int:
-                  nonlocal substituted_open
-                  if Path(path) == target:
-                      substituted_open = True
-                      return original_open(replacement, flags, *args, **kwargs)
-                  return original_open(path, flags, *args, **kwargs)
-
-              def lstat_aba(path: Path) -> os.stat_result:
-                  nonlocal post_open_target_lstat_calls
-                  if path == target and substituted_open and post_open_target_lstat_calls == 0:
-                      post_open_target_lstat_calls += 1
-                      return original_lstat(replacement)
-                  return original_lstat(path)
-
-              with mock.patch.object(provenance.os, "open", side_effect=open_replacement), mock.patch.object(
-                  Path,
-                  "lstat",
-                  autospec=True,
-                  side_effect=lstat_aba,
-              ):
-                  with self.assertRaises(provenance.ProvenanceError):
-                      provenance._tree_fingerprint(self.security_build)
-
-              self.assertTrue(substituted_open)
-              self.assertEqual(target.read_bytes(), b"security-bytes-v1")
-
-          '''.replace('          ', '')
+          regression = ''.join([
+              '    def test_tree_binds_open_descriptor_to_enumerated_file_identity(self) -> None:\n',
+              '        target = self.security_build / "ThingSmartCryption.bin"\n',
+              '        replacement = self.root / "replacement-before-open.bin"\n',
+              '        replacement.write_bytes(b"attacker-replacement-bytes")\n',
+              '        original_open = provenance.os.open\n',
+              '        original_lstat = Path.lstat\n',
+              '        substituted_open = False\n',
+              '        post_open_target_lstat_calls = 0\n\n',
+              '        def open_replacement(path: object, flags: int, *args: object, **kwargs: object) -> int:\n',
+              '            nonlocal substituted_open\n',
+              '            if Path(path) == target:\n',
+              '                substituted_open = True\n',
+              '                return original_open(replacement, flags, *args, **kwargs)\n',
+              '            return original_open(path, flags, *args, **kwargs)\n\n',
+              '        def lstat_aba(path: Path) -> os.stat_result:\n',
+              '            nonlocal post_open_target_lstat_calls\n',
+              '            if path == target and substituted_open and post_open_target_lstat_calls == 0:\n',
+              '                post_open_target_lstat_calls += 1\n',
+              '                return original_lstat(replacement)\n',
+              '            return original_lstat(path)\n\n',
+              '        with mock.patch.object(provenance.os, "open", side_effect=open_replacement), mock.patch.object(\n',
+              '            Path, "lstat", autospec=True, side_effect=lstat_aba\n',
+              '        ):\n',
+              '            with self.assertRaises(provenance.ProvenanceError):\n',
+              '                provenance._tree_fingerprint(self.security_build)\n\n',
+              '        self.assertTrue(substituted_open)\n',
+              '        self.assertEqual(target.read_bytes(), b"security-bytes-v1")\n\n',
+          ])
           test_path.write_text(tests.replace(anchor, regression + anchor, 1), encoding='utf-8')
           PY
 
@@ -164,6 +130,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           source = Path('Scripts/capture_tuya_private_input_provenance.py').read_text(encoding='utf-8')
+          tests = Path('scripts/ci/tests/test_capture_tuya_private_input_provenance.py').read_text(encoding='utf-8')
           for token in [
               'expected_identity: tuple[int, ...] | None = None',
               'before_identity != expected_identity',
@@ -172,6 +139,8 @@ jobs:
           ]:
               if token not in source:
                   raise SystemExit(f'descriptor/enumeration identity contract missing: {token}')
+          if 'test_tree_binds_open_descriptor_to_enumerated_file_identity' not in tests:
+              raise SystemExit('pre-open descriptor substitution regression missing')
           print('Capture private-tree descriptor/enumeration identity contract: PASS')
           PY
           git diff --check
