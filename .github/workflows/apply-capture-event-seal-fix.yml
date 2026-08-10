@@ -1,0 +1,79 @@
+name: Apply Capture accepted-event seal repair
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-repair:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'fix/v14-capture-sealed-accepted-event-prefix-sol'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact repair branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Apply fail-closed accepted-event prefix seal
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+
+          replacements = [
+              (
+                  '    private var events: [Event] = []\n    private var watchdog: Task<Void, Never>?',
+                  '    private var events: [Event] = []\n    private var sealedAcceptedEventPrefix: [Event]?\n    private var watchdog: Task<Void, Never>?',
+              ),
+              (
+                  '                        try await sessionLedger.sealAcceptedObservation(for: token)\n                        self.currentConnectionToken = nil',
+                  '                        try await sessionLedger.sealAcceptedObservation(for: token)\n                        self.sealedAcceptedEventPrefix = self.events\n                        self.currentConnectionToken = nil',
+              ),
+              (
+                  '    func prepareExport() {\n        let envelope = Export(',
+                  '''    func prepareExport() {\n        let sealedAcceptedEventPrefix: [Event]\n        if phase == .accepted {\n            guard let acceptedEventPrefix = self.sealedAcceptedEventPrefix else {\n                exportData = nil\n                message = "Accepted diagnostics cannot be exported because the immutable accepted event prefix is unavailable. Restart from OFF1 rather than exporting mutable post-seal diagnostics."\n                return\n            }\n            sealedAcceptedEventPrefix = acceptedEventPrefix\n        } else {\n            sealedAcceptedEventPrefix = events\n        }\n\n        let envelope = Export(''',
+              ),
+              (
+                  '            candidates: candidates,\n            events: events\n        )',
+                  '            candidates: candidates,\n            events: sealedAcceptedEventPrefix\n        )',
+              ),
+              (
+                  '    private func resetDiscoverySessionOnly() {\n        correlationSession?.abandonCurrentWindow()',
+                  '    private func resetDiscoverySessionOnly() {\n        sealedAcceptedEventPrefix = nil\n        correlationSession?.abandonCurrentWindow()',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one source match, found {count}: {old[:80]!r}')
+              source = source.replace(old, new, 1)
+
+          # Architectural invariants: one frozen app-side copy is minted synchronously after
+          # package acceptance, accepted export fails closed without it, and a fresh correlation
+          # life retires it. Array value semantics isolate later diagnostic appends.
+          assert 'try await sessionLedger.sealAcceptedObservation(for: token)\n                        self.sealedAcceptedEventPrefix = self.events\n                        self.currentConnectionToken = nil' in source
+          assert 'events: sealedAcceptedEventPrefix' in source
+          assert 'sealedAcceptedEventPrefix = nil\n        correlationSession?.abandonCurrentWindow()' in source
+          path.write_text(source, encoding='utf-8')
+          PY
+
+          rm -- .github/workflows/apply-capture-event-seal-fix.yml
+
+          git diff --check
+          git config user.name 'nembra-go-bot'
+          git config user.email 'nembra-go-bot@users.noreply.github.com'
+          git add -A
+          git diff --cached --exit-code && { echo 'No repair delta to commit'; exit 1; }
+          git commit -m 'fix(capture): freeze accepted event prefix before export'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
