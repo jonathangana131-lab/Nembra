@@ -22,8 +22,13 @@ required = [
     'SIMCTL_CHILD_*|NEMBRA_SIMULATION_*)',
     'done < <(compgen -v)',
     'xcrun simctl ui "$UDID" appearance dark',
+    'xcrun simctl ui "$UDID" content_size accessibility-extra-extra-extra-large',
+    'xcrun simctl ui "$UDID" content_size large',
     'launch_output="$(xcrun simctl launch "$UDID" "$BUNDLE_ID"',
-    'xcrun simctl io "$UDID" screenshot "$SCREENSHOT"',
+    'xcrun simctl io "$UDID" screenshot "$STANDARD_SCREENSHOT"',
+    'xcrun simctl io "$UDID" screenshot "$AX5_SCREENSHOT"',
+    'standalone-unprovisioned-dark-iphone12.png',
+    'standalone-unprovisioned-dark-iphone12-ax5.png',
     '"tuyaDependencyLockSHA256": ""',
     '"tuyaDependencyProvenanceClass": "deliberately-absent-public-ci"',
     '"expectedFieldBuildAuthority": False',
@@ -35,6 +40,8 @@ required = [
     '"visualAcceptanceRequiresHumanReview": True',
     '"physicalAuthorityCreated": False',
     '"protocolAuthorityCreated": False',
+    '"state": "unprovisioned-dark-standard"',
+    '"state": "unprovisioned-dark-accessibility-xxxl"',
 ]
 for needle in required:
     if needle not in script:
