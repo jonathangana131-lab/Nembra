@@ -24,6 +24,40 @@ struct TuyaApplicationAccountUIDExportCustodySourceTests {
         #expect(!updateAdmission.contains("log(\"tuya_application_update\", update.merging(["))
     }
 
+    @Test("UID scrubber is bound to the exact pre-await membership lease")
+    func accountUIDLeaseIsCapturedBeforeAsyncAdmission() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let receiver = String(try section(
+            in: source,
+            from: "private func receivedApplicationUpdate(",
+            to: "private func redactedApplicationUpdateForEventCustody"
+        ))
+        let scrubber = String(try section(
+            in: source,
+            from: "private func redactedApplicationUpdateForEventCustody",
+            to: "private func startWatchdog"
+        ))
+
+        let capturedLease = try requiredOffset(
+            containing: "let verifiedAccountUID = membershipAccountUID",
+            in: receiver
+        )
+        let firstAwait = try requiredOffset(
+            containing: "try await sessionLedger.recordApplicationUpdate",
+            in: receiver
+        )
+        let scrubCall = try requiredOffset(
+            containing: "verifiedAccountUID: verifiedAccountUID",
+            in: receiver
+        )
+
+        #expect(capturedLease < firstAwait)
+        #expect(firstAwait < scrubCall)
+        #expect(receiver.contains("!verifiedAccountUID.isEmpty"))
+        #expect(scrubber.contains("verifiedAccountUID: String"))
+        #expect(!scrubber.contains("membershipAccountUID"))
+    }
+
     @Test("account UID custody scrubs both application keys and values without blanket uid-key erasure")
     func accountUIDCustodyIsValueBound() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
@@ -43,6 +77,26 @@ struct TuyaApplicationAccountUIDExportCustodySourceTests {
         #expect(controller.contains("with: \"<redacted-account-uid>\""))
         #expect(!driver.contains("\"uid\","))
         #expect(!driver.contains("\"uid\"\n"))
+    }
+
+    @Test("application secret classifier carries one session-key rule")
+    func duplicateSessionKeyClassifierIsRemoved() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let driver = String(try section(
+            in: source,
+            from: "@MainActor\nprivate final class SmartLifeDriver",
+            to: "#endif\n\nprivate enum AppleAccountAuthorizationError"
+        ))
+
+        #expect(driver.components(separatedBy: "\"sessionkey\",").count - 1 == 1)
+    }
+
+    private func requiredOffset(containing token: String, in source: String) throws -> String.Index {
+        guard let range = source.range(of: token) else {
+            Issue.record("Expected source token missing: \(token)")
+            throw SourceContractError.sectionMissing
+        }
+        return range.lowerBound
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
