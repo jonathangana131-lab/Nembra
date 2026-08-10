@@ -318,6 +318,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var targetCorrelationOperatorConfirmed = false
     private var driver: OfficialTuyaDriver?
     private var events: [Event] = []
+    private var captureAttemptEventStartIndex = 0
     private var applicationUpdateAdmissionsInFlight = 0
     private var acceptanceCutIsClosed = false
     private var sealedAcceptedEventPrefix: [Event]?
@@ -431,6 +432,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
             failLocally("Private Tuya app identity and a current SDK login are required before any scooter correlation scan.", "sdk_authority_required_before_scan")
             return
         }
+
+        // Accepted app evidence belongs to this physical attempt only. The controller's
+        // diagnostic log intentionally survives failures for troubleshooting, so establish an
+        // explicit custody boundary before fresh membership/correlation evidence can begin.
+        captureAttemptEventStartIndex = events.count
+        sealedAcceptedEventPrefix = nil
 
         // Every physical attempt receives a fresh complete current-account membership verdict
         // before the package-owned four-window Bluetooth correlation series may start.
@@ -1254,7 +1261,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
                         break
                     }
                     self.acceptanceCutIsClosed = true
-                    let acceptedEventPrefixAtCut = self.events
+                    // Freeze only the current physical attempt. Older failed-attempt diagnostics stay
+                    // available in the live controller log but cannot contaminate accepted evidence.
+                    let acceptedEventPrefixAtCut = Array(self.events.dropFirst(self.captureAttemptEventStartIndex))
                     do {
                         try await sessionLedger.sealAcceptedObservation(for: token)
                         self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut

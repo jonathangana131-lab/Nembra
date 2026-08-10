@@ -12,7 +12,7 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
 
         guard let noInflight = body.range(of: "guard self.applicationUpdateAdmissionsInFlight == 0"),
               let closeCut = body.range(of: "self.acceptanceCutIsClosed = true", range: noInflight.upperBound..<body.endIndex),
-              let frozenPrefix = body.range(of: "let acceptedEventPrefixAtCut = self.events", range: closeCut.upperBound..<body.endIndex),
+              let frozenPrefix = body.range(of: "let acceptedEventPrefixAtCut = Array(self.events.dropFirst(self.captureAttemptEventStartIndex))", range: closeCut.upperBound..<body.endIndex),
               let packageSeal = body.range(of: "try await sessionLedger.sealAcceptedObservation(for: token)", range: frozenPrefix.upperBound..<body.endIndex),
               let publishPrefix = body.range(of: "self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut", range: packageSeal.upperBound..<body.endIndex) else {
             Issue.record("Canonical acceptance must close admission, freeze the quiescent app prefix before the sealing await, then publish that exact prefix after package seal succeeds.")
@@ -90,6 +90,30 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
 
         #expect(reset.contains("acceptanceCutIsClosed = false"))
         #expect(reset.contains("sealedAcceptedEventPrefix = nil"))
+    }
+
+
+    @Test("accepted export starts at the current physical attempt boundary")
+    func acceptedExportCannotInheritOlderFailedAttemptEvents() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let start = try section(in: app, from: "func startBaseline()", to: "private func beginCorrelationSeries")
+        let watchdog = try section(in: app, from: "private func startWatchdog", to: "private func recordObservedTransportLoss")
+        let startBody = String(start)
+        let watchdogBody = String(watchdog)
+
+        guard let boundary = startBody.range(of: "captureAttemptEventStartIndex = events.count"),
+              let membership = startBody.range(of: "verifySDKMembership", range: boundary.upperBound..<startBody.endIndex),
+              let closeCut = watchdogBody.range(of: "self.acceptanceCutIsClosed = true"),
+              let freeze = watchdogBody.range(of: "let acceptedEventPrefixAtCut = Array(self.events.dropFirst(self.captureAttemptEventStartIndex))", range: closeCut.upperBound..<watchdogBody.endIndex),
+              let packageSeal = watchdogBody.range(of: "try await sessionLedger.sealAcceptedObservation(for: token)", range: freeze.upperBound..<watchdogBody.endIndex) else {
+            Issue.record("Accepted evidence must establish a fresh-attempt boundary before membership and freeze only that suffix before package seal.")
+            throw SourceContractError.sectionMissing
+        }
+
+        #expect(app.contains("private var captureAttemptEventStartIndex = 0"))
+        #expect(boundary.lowerBound < membership.lowerBound)
+        #expect(closeCut.lowerBound < freeze.lowerBound)
+        #expect(freeze.lowerBound < packageSeal.lowerBound)
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
