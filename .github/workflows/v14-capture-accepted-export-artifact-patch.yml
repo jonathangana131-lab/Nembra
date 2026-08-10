@@ -35,7 +35,7 @@ jobs:
 
           replace_once(
               "    private var events: [Event] = []\n    private var sealedAcceptedEventPrefix: [Event]?\n    private var watchdog: Task<Void, Never>?",
-              "    private var events: [Event] = []\n    private var sealedAcceptedEventPrefix: [Event]?\n    private var sealedAcceptedExport: Export?\n    private var watchdog: Task<Void, Never)?".replace("Never)?", "Never>?")
+              "    private var events: [Event] = []\n    private var sealedAcceptedEventPrefix: [Event]?\n    private var sealedAcceptedExport: Export?\n    private var watchdog: Task<Void, Never>?"
           )
 
           replace_once(
@@ -55,73 +55,75 @@ jobs:
           if start == -1 or end == -1:
               raise SystemExit("guard failed: prepareExport/reset section not found")
 
-          replacement = '''    private func makeExport(exportedAt: Date, phase: Phase, events: [Event]) -> Export {
-        Export(
-            schemaVersion: 8,
-            purpose: "Sanitized Tuya authenticated read-only stationary preflight",
-            exportedAt: exportedAt,
-            buildIdentifier: buildIdentity.buildIdentifier,
-            sourceCommitSHA: buildIdentity.sourceCommitSHA,
-            tuyaDeviceID: deviceID,
-            tuyaUUID: tuyaUUID,
-            productID: productID,
-            selectedPeripheralID: selectedID?.uuidString,
-            targetCorrelationMethod: targetCorrelationMethod,
-            targetCorrelationWindowCount: targetCorrelationWindowCount,
-            targetCorrelationOperatorConfirmed: targetCorrelationOperatorConfirmed,
-            targetCorrelationProvenance: correlationProvenance,
-            phase: phase,
-            privateConfigPresent: privateConfig,
-            sdkAccountLoggedIn: sdkAccountLoggedIn,
-            sdkDeviceMembershipVerified: sdkDeviceMembershipVerified,
-            secureSessionEstablished: secureSessionEstablished,
-            canonicalObservedAgeSeconds: canonicalObservedAgeSeconds,
-            sdkLocalBLEOnline: sdkLocalBLEOnline,
-            applicationUpdateCount: applicationUpdateCount,
-            connectionGeneration: ledgerSnapshot.connectionGeneration,
-            authenticationMethod: ledgerSnapshot.authenticationMethod?.rawValue,
-            preflightVerdict: preflightVerdictText,
-            applicationValueRepresentation: "ThingSmartDeviceDelegate dpsUpdate values projected with String(describing:); application-level SDK data, not byte-exact or raw FD50 transport",
-            rawFD50BytesCaptured: false,
-            secretsRedacted: true,
-            dpQueriesSent: false,
-            dpCommandsSent: false,
-            candidates: candidates,
-            events: events
-        )
-    }
-
-    func prepareExport() {
-        let envelope: Export
-        if phase == .accepted {
-            guard let sealedAcceptedExport else {
-                exportData = nil
-                message = "Accepted diagnostics cannot be exported because the immutable accepted artifact is unavailable. Restart from OFF1 rather than rebuilding accepted evidence from mutable post-seal state."
-                return
-            }
-            envelope = sealedAcceptedExport
-        } else {
-            envelope = makeExport(
-                exportedAt: Date(),
-                phase: phase,
-                events: events
-            )
-        }
-
-        do {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-            encoder.dateEncodingStrategy = .iso8601
-            exportData = try encoder.encode(envelope)
-            exportName = "Nembra-Secure-Link-\(deviceID.prefix(8))-Diagnostics.json"
-            message = "Sanitized diagnostics ready with exact compiled build provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."
-        } catch {
-            exportData = nil
-            message = "Diagnostic export failed: \(error.localizedDescription)"
-        }
-    }
-
-'''
+          replacement_lines = [
+              "    private func makeExport(exportedAt: Date, phase: Phase, events: [Event]) -> Export {",
+              "        Export(",
+              "            schemaVersion: 8,",
+              "            purpose: \"Sanitized Tuya authenticated read-only stationary preflight\",",
+              "            exportedAt: exportedAt,",
+              "            buildIdentifier: buildIdentity.buildIdentifier,",
+              "            sourceCommitSHA: buildIdentity.sourceCommitSHA,",
+              "            tuyaDeviceID: deviceID,",
+              "            tuyaUUID: tuyaUUID,",
+              "            productID: productID,",
+              "            selectedPeripheralID: selectedID?.uuidString,",
+              "            targetCorrelationMethod: targetCorrelationMethod,",
+              "            targetCorrelationWindowCount: targetCorrelationWindowCount,",
+              "            targetCorrelationOperatorConfirmed: targetCorrelationOperatorConfirmed,",
+              "            targetCorrelationProvenance: correlationProvenance,",
+              "            phase: phase,",
+              "            privateConfigPresent: privateConfig,",
+              "            sdkAccountLoggedIn: sdkAccountLoggedIn,",
+              "            sdkDeviceMembershipVerified: sdkDeviceMembershipVerified,",
+              "            secureSessionEstablished: secureSessionEstablished,",
+              "            canonicalObservedAgeSeconds: canonicalObservedAgeSeconds,",
+              "            sdkLocalBLEOnline: sdkLocalBLEOnline,",
+              "            applicationUpdateCount: applicationUpdateCount,",
+              "            connectionGeneration: ledgerSnapshot.connectionGeneration,",
+              "            authenticationMethod: ledgerSnapshot.authenticationMethod?.rawValue,",
+              "            preflightVerdict: preflightVerdictText,",
+              "            applicationValueRepresentation: \"ThingSmartDeviceDelegate dpsUpdate values projected with String(describing:); application-level SDK data, not byte-exact or raw FD50 transport\",",
+              "            rawFD50BytesCaptured: false,",
+              "            secretsRedacted: true,",
+              "            dpQueriesSent: false,",
+              "            dpCommandsSent: false,",
+              "            candidates: candidates,",
+              "            events: events",
+              "        )",
+              "    }",
+              "",
+              "    func prepareExport() {",
+              "        let envelope: Export",
+              "        if phase == .accepted {",
+              "            guard let sealedAcceptedExport else {",
+              "                exportData = nil",
+              "                message = \"Accepted diagnostics cannot be exported because the immutable accepted artifact is unavailable. Restart from OFF1 rather than rebuilding accepted evidence from mutable post-seal state.\"",
+              "                return",
+              "            }",
+              "            envelope = sealedAcceptedExport",
+              "        } else {",
+              "            envelope = makeExport(",
+              "                exportedAt: Date(),",
+              "                phase: phase,",
+              "                events: events",
+              "            )",
+              "        }",
+              "",
+              "        do {",
+              "            let encoder = JSONEncoder()",
+              "            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]",
+              "            encoder.dateEncodingStrategy = .iso8601",
+              "            exportData = try encoder.encode(envelope)",
+              "            exportName = \"Nembra-Secure-Link-\\(deviceID.prefix(8))-Diagnostics.json\"",
+              "            message = \"Sanitized diagnostics ready with exact compiled build provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported.\"",
+              "        } catch {",
+              "            exportData = nil",
+              "            message = \"Diagnostic export failed: \\(error.localizedDescription)\"",
+              "        }",
+              "    }",
+              "",
+          ]
+          replacement = "\n".join(replacement_lines) + "\n"
           text = text[:start] + replacement + text[end:]
 
           replace_once(
@@ -151,7 +153,6 @@ jobs:
               "envelope = sealedAcceptedExport",
               "private func invalidatePreparedMutableExport()",
               "guard phase != .accepted else { return }",
-              "invalidatePreparedMutableExport()",
               "sealedAcceptedExport = nil",
           ]
           missing = [item for item in required if item not in source]
