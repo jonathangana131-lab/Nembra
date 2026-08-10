@@ -2060,7 +2060,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
             encoder.dateEncodingStrategy = .iso8601
             exportData = try encoder.encode(envelope)
-            exportName = "Nembra-Secure-Link-\(deviceID.prefix(8))-Diagnostics.json"
+            if phase == .accepted {
+      exportName = "Nembra-Capture-\(deviceID.prefix(8)).json"
+  } else {
+      exportName = "Nembra-Secure-Link-\(deviceID.prefix(8))-Diagnostics.json"
+  }
             if phase != .failed {
                 message = "Sanitized diagnostics ready with exact compiled source + reviewed Tuya dependency-lock provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."
             }
