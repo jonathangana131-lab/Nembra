@@ -1,0 +1,92 @@
+name: Materialize Capture Legacy Research Executable Retirement 6b778
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-retire-legacy-research-executables-6b778
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact current product and retired-doc / live-executable split
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='6b778f2104af34dbe5b80da31ddb3ca422f9667c'
+          test "$(git rev-parse HEAD^)" = "$parent"
+          mapfile -t changed < <(git diff --name-only "$parent"...HEAD | sort)
+          test "${#changed[@]}" = 1
+          test "${changed[0]}" = '.github/workflows/materialize-capture-retire-legacy-research-executables-6b778.yml'
+          test "$(git rev-parse "$parent:CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md")" = '5f1092ee8a744e1417bf3659a9f9b02086afee84'
+          test "$(git rev-parse "$parent:scripts/ci/xcode27_today_research_field_candidate.sh")" = 'b42ab38b98609c14f7b8cdcc46d653a7a3468cc6'
+          test "$(git rev-parse "$parent:scripts/ci/xcode27_signed_field_candidate.sh")" = 'd9a3621ef5b0b3cdd2a70163ca71b35a1ce28b50'
+          grep -Fq 'RETIRED / NON-AUTHORITATIVE / PHYSICAL NO-GO' CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md
+          grep -Fq 'exec "$CANONICAL_PRODUCER" --nembra-today-research-build "$@"' scripts/ci/xcode27_today_research_field_candidate.sh
+          grep -Fq 'TODAY_RESEARCH_BUILD_MODE=1' scripts/ci/xcode27_signed_field_candidate.sh
+          test ! -e Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayExecutableAuthorityRetirementSourceTests.swift
+
+      - name: Apply previously validated executable retirement only
+        shell: bash
+        run: |
+          set -euo pipefail
+          donor='b305d4487bb2ac31e99df994a64f494eed2c4bf9'
+          git fetch --no-tags origin sol/v14-capture-retire-today-fingerprint-3f269
+          test "$(git rev-parse FETCH_HEAD)" = "$donor"
+          git checkout "$donor" -- scripts/ci/xcode27_today_research_field_candidate.sh scripts/ci/xcode27_signed_field_candidate.sh
+          printf '%s' 'aW1wb3J0IEZvdW5kYXRpb24KaW1wb3J0IFRlc3RpbmcKQHRlc3RhYmxlIGltcG9ydCBOZW1icmFCbHVldG9vdGhDYXB0dXJlCgpAU3VpdGUoIkxlZ2FjeSBUT0RBWSBleGVjdXRhYmxlIGF1dGhvcml0eSByZXRpcmVtZW50IikKc3RydWN0IFR1eWFMZWdhY3lUb2RheUV4ZWN1dGFibGVBdXRob3JpdHlSZXRpcmVtZW50U291cmNlVGVzdHMgewogICAgcHJpdmF0ZSBsZXQgY3VycmVudFByb2NlZHVyZSA9ICJFUzgwLUFVVEhFTlRJQ0FURUQtU1RBVElPTkFSWS12MSIKCiAgICBAVGVzdCgicmV0aXJlZCBUT0RBWSBkaXJlY3RpdmUgYW5kIGV4ZWN1dGFibGUgd3JhcHBlciBjYW5ub3QgYXV0aG9yaXplIGN1cnJlbnQgZmllbGQgd29yayIpCiAgICBmdW5jIHJldGlyZWRUb2RheVdyYXBwZXJGYWlsc0Nsb3NlZCgpIHRocm93cyB7CiAgICAgICAgbGV0IGRpcmVjdGl2ZSA9IHRyeSByZWFkUmVwb3NpdG9yeUZpbGUoIkNBUFRVUkVfVE9EQVlfRklFTERfUkVBRFlfRElSRUNUSVZFLm1kIikKICAgICAgICBsZXQgd3JhcHBlciA9IHRyeSByZWFkUmVwb3NpdG9yeUZpbGUoInNjcmlwdHMvY2kveGNvZGUyN190b2RheV9yZXNlYXJjaF9maWVsZF9jYW5kaWRhdGUuc2giKQoKICAgICAgICAjZXhwZWN0KGRpcmVjdGl2ZS5jb250YWlucygiUkVUSVJFRCAvIE5PTi1BVVRIT1JJVEFUSVZFIC8gUEhZU0lDQUwgTk8tR08iKSkKICAgICAgICAjZXhwZWN0KGRpcmVjdGl2ZS5jb250YWlucyhjdXJyZW50UHJvY2VkdXJlKSkKICAgICAgICAjZXhwZWN0KGRpcmVjdGl2ZS5jb250YWlucygiZG9jcy9DQVBUVVJFX1AwX1NFQ1VSRV9MSU5LX05FWFRfVEVTVC5tZCIpKQogICAgICAgICNleHBlY3QoZGlyZWN0aXZlLmNvbnRhaW5zKCJtdXN0IG5vdCBiZSB1c2VkIHRvIGJ5cGFzcywgZG93bmdyYWRlLCBvciBzdWJzdGl0dXRlIikpCiAgICAgICAgI2V4cGVjdCh3cmFwcGVyLmNvbnRhaW5zKCJTVVBFUlNFREVEOiIpKQogICAgICAgICNleHBlY3Qod3JhcHBlci5jb250YWlucyhjdXJyZW50UHJvY2VkdXJlKSkKICAgICAgICAjZXhwZWN0KHdyYXBwZXIuY29udGFpbnMoInNjcmlwdHMvZmllbGQvaW5zdGFsbF9vbmVfdGltZV9jYXB0dXJlLmNvbW1hbmQiKSkKICAgICAgICAjZXhwZWN0KHdyYXBwZXIuY29udGFpbnMoImV4aXQgNjQiKSkKICAgICAgICAjZXhwZWN0KCF3cmFwcGVyLmNvbnRhaW5zKCJDQU5PTklDQUxfUFJPRFVDRVI9IikpCiAgICAgICAgI2V4cGVjdCghd3JhcHBlci5jb250YWlucygiZXhlYyBcIiRDQU5PTklDQUxfUFJPRFVDRVJcIiIpKQogICAgfQoKICAgIEBUZXN0KCJzaWduZWQgbGVnYWN5IHByb2R1Y2VyIGNhbm5vdCBtaW50IHRoZSByZXRpcmVkIFJlc2VhcmNoIGNvbXBpbGUgY2FwYWJpbGl0eSIpCiAgICBmdW5jIHNpZ25lZFByb2R1Y2VyUmVqZWN0c1JldGlyZWRSZXNlYXJjaE1vZGUoKSB0aHJvd3MgewogICAgICAgIGxldCBwcm9kdWNlciA9IHRyeSByZWFkUmVwb3NpdG9yeUZpbGUoInNjcmlwdHMvY2kveGNvZGUyN19zaWduZWRfZmllbGRfY2FuZGlkYXRlLnNoIikKCiAgICAgICAgI2V4cGVjdChwcm9kdWNlci5jb250YWlucygiaWYgW1sgXCIkezE6LX1cIiA9PSBcIi0tbmVtYnJhLXRvZGF5LXJlc2VhcmNoLWJ1aWxkXCIgXV07IHRoZW4iKSkKICAgICAgICAjZXhwZWN0KHByb2R1Y2VyLmNvbnRhaW5zKCJTVVBFUlNFREVEOiAtLW5lbWJyYS10b2RheS1yZXNlYXJjaC1idWlsZCIpKQogICAgICAgICNleHBlY3QocHJvZHVjZXIuY29udGFpbnMoImV4aXQgNjQiKSkKICAgICAgICAjZXhwZWN0KCFwcm9kdWNlci5jb250YWlucygiVE9EQVlfUkVTRUFSQ0hfQlVJTERfTU9ERT0xIikpCiAgICAgICAgI2V4cGVjdCghcHJvZHVjZXIuY29udGFpbnMoImNhbm9uaWNhbC1wcm9kdWNlci1leHBsaWNpdC1tb2RlIikpCiAgICAgICAgI2V4cGVjdCghcHJvZHVjZXIuY29udGFpbnMoIlJFU0VBUkNIX0NPTVBJTEVfQ09ORElUSU9OPVwiTkVNQlJBX0VTODBfVE9EQVlfUkVTRUFSQ0hcIiIpKQogICAgfQoKICAgIEBUZXN0KCJjdXJyZW50IGZpZWxkIGF1dGhvcml0eSByZW1haW5zIGF1dGhlbnRpY2F0ZWQgc3RhdGlvbmFyeSBlbmQgdG8gZW5kIikKICAgIGZ1bmMgY3VycmVudEF1dGhvcml0eUFncmVlc09uUHJvY2VkdXJlKCkgdGhyb3dzIHsKICAgICAgICBsZXQgaW5zdGFsbGVyID0gdHJ5IHJlYWRSZXBvc2l0b3J5RmlsZSgic2NyaXB0cy9maWVsZC9pbnN0YWxsX29uZV90aW1lX2NhcHR1cmUuY29tbWFuZCIpCiAgICAgICAgbGV0IGlkZW50aXR5ID0gdHJ5IHJlYWRSZXBvc2l0b3J5RmlsZSgiTmVtYnJhQXBwL0FwcC9OZW1icmFDYXB0dXJlQnVpbGRJZGVudGl0eS5zd2lmdCIpCiAgICAgICAgbGV0IHByb3ZlbmFuY2UgPSB0cnkgcmVhZFJlcG9zaXRvcnlGaWxlKCIuZ2l0aHViL3dvcmtmbG93cy9jYXB0dXJlLWZpZWxkLWJ1aWxkLXByb3ZlbmFuY2UueW1sIikKICAgICAgICBsZXQgcnVuYm9vayA9IHRyeSByZWFkUmVwb3NpdG9yeUZpbGUoImRvY3MvQ0FQVFVSRV9QMF9TRUNVUkVfTElOS19ORVhUX1RFU1QubWQiKQoKICAgICAgICAjZXhwZWN0KGluc3RhbGxlci5jb250YWlucygiUFJPQ0VEVVJFX0lEPVwiXChjdXJyZW50UHJvY2VkdXJlKVwiIikpCiAgICAgICAgI2V4cGVjdChpZGVudGl0eS5jb250YWlucygicmVxdWlyZWRGaWVsZFByb2NlZHVyZUlkZW50aWZpZXIgPSBcIlwoY3VycmVudFByb2NlZHVyZSlcIiIpKQogICAgICAgICNleHBlY3QocHJvdmVuYW5jZS5jb250YWlucygicHJvY2VkdXJlPSdcKGN1cnJlbnRQcm9jZWR1cmUpJyIpKQogICAgICAgICNleHBlY3QocnVuYm9vay5jb250YWlucygiUFJPQ0VEVVJFX0lEOiBgXChjdXJyZW50UHJvY2VkdXJlKWAiKSkKICAgICAgICAjZXhwZWN0KHJ1bmJvb2suY29udGFpbnMoInNjcmlwdHMvZmllbGQvaW5zdGFsbF9vbmVfdGltZV9jYXB0dXJlLmNvbW1hbmQiKSkKICAgICAgICAjZXhwZWN0KHJ1bmJvb2suY29udGFpbnMoIk5PLUdPIikpCiAgICB9CgogICAgcHJpdmF0ZSBmdW5jIHJlYWRSZXBvc2l0b3J5RmlsZShfIHJlbGF0aXZlUGF0aDogU3RyaW5nKSB0aHJvd3MgLT4gU3RyaW5nIHsKICAgICAgICBsZXQgcmVwb3NpdG9yeVJvb3QgPSBVUkwoZmlsZVVSTFdpdGhQYXRoOiAjZmlsZVBhdGgpCiAgICAgICAgICAgIC5kZWxldGluZ0xhc3RQYXRoQ29tcG9uZW50KCkKICAgICAgICAgICAgLmRlbGV0aW5nTGFzdFBhdGhDb21wb25lbnQoKQogICAgICAgICAgICAuZGVsZXRpbmdMYXN0UGF0aENvbXBvbmVudCgpCiAgICAgICAgICAgIC5kZWxldGluZ0xhc3RQYXRoQ29tcG9uZW50KCkKICAgICAgICAgICAgLmRlbGV0aW5nTGFzdFBhdGhDb21wb25lbnQoKQogICAgICAgIHJldHVybiB0cnkgU3RyaW5nKAogICAgICAgICAgICBjb250ZW50c09mOiByZXBvc2l0b3J5Um9vdC5hcHBlbmRpbmdQYXRoQ29tcG9uZW50KHJlbGF0aXZlUGF0aCksCiAgICAgICAgICAgIGVuY29kaW5nOiAudXRmOAogICAgICAgICkKICAgIH0KfQo=' | base64 -d > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayExecutableAuthorityRetirementSourceTests.swift
+          git diff --check
+
+      - name: Validate fail-closed legacy execution and current authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ci/xcode27_today_research_field_candidate.sh
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          set +e
+          wrapper_output="$(bash -p scripts/ci/xcode27_today_research_field_candidate.sh 2>&1)"
+          wrapper_status=$?
+          producer_output="$(bash -p scripts/ci/xcode27_signed_field_candidate.sh --nembra-today-research-build 2>&1)"
+          producer_status=$?
+          set -e
+          test "$wrapper_status" = 64
+          test "$producer_status" = 64
+          grep -Fq 'SUPERSEDED:' <<< "$wrapper_output"
+          grep -Fq 'ES80-AUTHENTICATED-STATIONARY-v1' <<< "$wrapper_output"
+          grep -Fq 'SUPERSEDED: --nembra-today-research-build' <<< "$producer_output"
+          grep -Fq 'RETIRED / NON-AUTHORITATIVE / PHYSICAL NO-GO' CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md
+          grep -Fq 'PROCEDURE_ID="ES80-AUTHENTICATED-STATIONARY-v1"' scripts/field/install_one_time_capture.command
+          grep -Fq 'requiredFieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"' NembraApp/App/NembraCaptureBuildIdentity.swift
+          grep -Fq "procedure='ES80-AUTHENTICATED-STATIONARY-v1'" .github/workflows/capture-field-build-provenance.yml
+          grep -Fq 'PROCEDURE_ID: `ES80-AUTHENTICATED-STATIONARY-v1`' docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayExecutableAuthorityRetirementSourceTests.swift
+
+      - name: Collapse helper and publish clean current-product repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='6b778f2104af34dbe5b80da31ddb3ca422f9667c'
+          rm .github/workflows/materialize-capture-retire-legacy-research-executables-6b778.yml
+          git add scripts/ci/xcode27_today_research_field_candidate.sh \
+            scripts/ci/xcode27_signed_field_candidate.sh \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayExecutableAuthorityRetirementSourceTests.swift
+          git add -u .github/workflows/materialize-capture-retire-legacy-research-executables-6b778.yml
+          git diff --cached --check
+          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' commit -m 'fix(capture): retire legacy Research executable authority'
+          mapfile -t changed < <(git diff --name-only "$parent" HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 3
+          test "${changed[0]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayExecutableAuthorityRetirementSourceTests.swift'
+          test "${changed[1]}" = 'scripts/ci/xcode27_signed_field_candidate.sh'
+          test "${changed[2]}" = 'scripts/ci/xcode27_today_research_field_candidate.sh'
+          git diff --check "$parent" HEAD
+          git push origin HEAD:sol/v14-capture-retire-legacy-research-executables-6b778
