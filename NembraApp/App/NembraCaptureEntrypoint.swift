@@ -350,6 +350,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var selected: Candidate? { selectedID.flatMap { byID[$0] } }
     var applicationUpdateCount: Int { ledgerSnapshot.applicationPayloadCount }
     var correlationProgress: PassiveBluetoothPowerCycleObservationProgress? { correlationSession?.progress }
+    var correlationSeriesIsInvalidated: Bool { correlationProgress?.isSeriesInvalidated == true }
     var correlationWindowIsScanning: Bool { correlationProgress?.isScanning == true }
     var correlationObservedCandidateCount: Int { correlationProgress?.currentObservedCandidateCount ?? 0 }
     var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }
@@ -472,6 +473,24 @@ private final class SecureLinkController: NSObject, ObservableObject {
     func startNextCorrelationWindow() {
         guard phase == .powerOn else { return }
         startCurrentCorrelationWindow()
+    }
+
+
+    func consumeAsynchronousCorrelationInvalidation() {
+        guard phase == .baseline || phase == .scanning,
+              let session = correlationSession,
+              session.progress?.isSeriesInvalidated == true else { return }
+
+        let invalidatedWindow = correlationWindowLabel
+        // The package has already retired this observation-series authority. Releasing the
+        // app reference and entering the existing local failure path creates no new receipt,
+        // candidate authority, timestamp, BLE fact, or physical claim.
+        session.abandonCurrentWindow()
+        correlationSession = nil
+        failLocally(
+            "\(invalidatedWindow) Bluetooth correlation was invalidated before it could be sealed. Restart the complete OFF1→ON1→OFF2→ON2 series from OFF1.",
+            "target_correlation_async_invalidated"
+        )
     }
 
     private func startCurrentCorrelationWindow() {
@@ -1977,6 +1996,9 @@ private struct SecureLinkView: View {
                 .frame(maxWidth: .infinity)
             }
             .background(Color.black.ignoresSafeArea())
+            .onChange(of: test.correlationSeriesIsInvalidated) { _, invalidated in
+                if invalidated { test.consumeAsynchronousCorrelationInvalidation() }
+            }
         }
         .navigationTitle("Secure Link")
         .task {
