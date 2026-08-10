@@ -1,0 +1,54 @@
+name: Capture current truth convergence cleanup
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-current-truth-convergence-sol
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-current-truth-convergence-sol
+          fetch-depth: 0
+      - name: Clean emitted Swift and re-prove source invariants
+        shell: python3 {0}
+        run: |
+          from pathlib import Path
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text()
+          old = 'message: "Verified Tuya account identity became unavailable before application evidence could enter event custody." ,'
+          new = 'message: "Verified Tuya account identity became unavailable before application evidence could enter event custody.",'
+          if source.count(old) != 1:
+              raise SystemExit(f'expected one emitted spacing cleanup, found {source.count(old)}')
+          source = source.replace(old, new, 1)
+          assert source.count('membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."') == 2
+          assert source.count('<redacted-account-uid>') == 2
+          assert 'log("tuya_application_update", exportSafeUpdate.merging([' in source
+          assert ']) { _, trusted in trusted })' in source
+          assert ']) { current, _ in current })' not in source
+          path.write_text(source)
+      - name: Verify clean effective scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test "$(git diff --name-only | wc -l | tr -d ' ')" = 1
+          test "$(git diff --name-only)" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
+      - name: Self-remove helper and publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-current-truth-convergence-cleanup.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift .github/workflows/capture-current-truth-convergence-cleanup.yml
+          git diff --cached --check
+          git commit -m 'style(capture): clean account UID custody callsite'
+          git push origin HEAD:fix/v14-capture-current-truth-convergence-sol
