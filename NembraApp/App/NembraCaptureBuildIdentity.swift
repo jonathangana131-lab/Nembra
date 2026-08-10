@@ -24,7 +24,7 @@ struct NembraCaptureBuildIdentity: Codable, Equatable, Sendable {
                   (byte >= 48 && byte <= 57) || (byte >= 97 && byte <= 102)
               }) else { return false }
 
-        let expectedIdentifier = "capture-v14-\(sourceCommitSHA.prefix(12))"
+        let expectedIdentifier = "Authenticated stationary capture \(sourceCommitSHA.prefix(12))"
         return buildIdentifier == expectedIdentifier
     }
 
