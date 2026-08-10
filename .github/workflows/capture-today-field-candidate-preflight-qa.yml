@@ -7,6 +7,7 @@ on:
       - scripts/ci/es80_today_field_candidate_preflight.py
       - scripts/ci/tests/test_es80_today_field_candidate_preflight.py
       - scripts/ci/tests/test_es80_today_field_candidate_developer_dir_handoff.py
+      - scripts/ci/tests/test_es80_today_field_source_scope.py
       - scripts/ci/tests/test_es80_today_private_helper_handoff_pin.py
       - scripts/ci/tests/test_es80_export_options_coherence.py
       - scripts/ci/es80_today_private_device_input.py
@@ -46,6 +47,7 @@ jobs:
             scripts/ci/es80_today_field_candidate_preflight.py \
             scripts/ci/tests/test_es80_today_field_candidate_preflight.py \
             scripts/ci/tests/test_es80_today_field_candidate_developer_dir_handoff.py \
+            scripts/ci/tests/test_es80_today_field_source_scope.py \
             scripts/ci/tests/test_es80_today_private_helper_handoff_pin.py \
             scripts/ci/tests/test_es80_export_options_coherence.py \
             scripts/ci/es80_today_private_device_input.py \
@@ -56,6 +58,7 @@ jobs:
           set -euo pipefail
           python3 scripts/ci/tests/test_es80_today_field_candidate_preflight.py -v
           python3 scripts/ci/tests/test_es80_today_field_candidate_developer_dir_handoff.py -v
+          python3 scripts/ci/tests/test_es80_today_field_source_scope.py -v
           python3 scripts/ci/tests/test_es80_today_private_helper_handoff_pin.py -v
           python3 scripts/ci/tests/test_es80_export_options_coherence.py -v
           python3 scripts/ci/tests/test_es80_today_private_device_input.py -v
