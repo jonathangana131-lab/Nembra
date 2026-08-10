@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Capture navigation BLE lease retirement source contract")
 struct TuyaNavigationBLELeaseRetirementSourceTests {
-    @Test("leaving Secure Link deterministically retires package correlation before controller loss")
+    @Test("leaving Secure Link revokes pending membership starts before retiring active package correlation")
     func secureLinkNavigationExitRetiresCorrelationLease() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let controller = String(try section(
@@ -17,11 +17,31 @@ struct TuyaNavigationBLELeaseRetirementSourceTests {
             from: "private struct SecureLinkView: View",
             to: "private extension SecureLinkView"
         ))
+        let cleanup = String(try section(
+            in: controller,
+            from: "func abandonCorrelationForViewExit()",
+            to: "var privateConfig: Bool"
+        ))
 
-        #expect(controller.contains("func abandonCorrelationForViewExit()"))
-        #expect(controller.contains("guard processCorrelationLease != nil || correlationSession != nil else { return }"))
-        #expect(controller.contains("abandonPackageCorrelation()"))
-        #expect(controller.contains("target_correlation_abandoned_on_view_exit"))
+        // Secure Link can disappear while either startBaseline() membership enumeration or the
+        // selected-phase authenticate() membership recheck is still in flight. Both callbacks are
+        // fenced by membershipRequestID; rotate that generation before any scanner/lease early return
+        // so a stale success cannot call beginCorrelationSeries() or beginOfficialConnection().
+        let requestRevocation = try requiredLine(containing: "membershipRequestID = UUID()", in: cleanup)
+        let busyClear = try requiredLine(containing: "membershipBusy = false", in: cleanup)
+        let probeRetirement = try requiredLine(containing: "membershipProbe = nil", in: cleanup)
+        let activeCorrelationGuard = try requiredLine(
+            containing: "guard processCorrelationLease != nil || correlationSession != nil else { return }",
+            in: cleanup
+        )
+        let packageAbandon = try requiredLine(containing: "abandonPackageCorrelation()", in: cleanup)
+
+        #expect(requestRevocation < activeCorrelationGuard)
+        #expect(busyClear < activeCorrelationGuard)
+        #expect(probeRetirement < activeCorrelationGuard)
+        #expect(activeCorrelationGuard < packageAbandon)
+        #expect(cleanup.contains("target_correlation_abandoned_on_view_exit"))
+        #expect(!cleanup.contains("releasePackageCorrelationLease()"))
         #expect(view.contains(".onDisappear"))
         #expect(view.contains("test.abandonCorrelationForViewExit()"))
     }
