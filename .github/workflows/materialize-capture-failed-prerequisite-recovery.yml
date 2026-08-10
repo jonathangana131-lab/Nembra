@@ -18,16 +18,21 @@ jobs:
           ref: product/v14-capture-failed-prerequisite-recovery-sol
           fetch-depth: 0
 
-      - name: Guard exact product parent
+      - name: Guard unchanged product bytes
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "522716b8112fda6456beba24a62a6a563e66629a"
-          git diff --quiet HEAD^ HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+          product_parent='522716b8112fda6456beba24a62a6a563e66629a'
+          git merge-base --is-ancestor "$product_parent" HEAD
+          git diff --quiet "$product_parent" HEAD -- \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteRecoverySourceTests.swift
 
       - name: Apply recovery product repair
-        shell: python
+        shell: bash
         run: |
+          set -euo pipefail
+          python3 - <<'PY'
           from pathlib import Path
 
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
@@ -121,10 +126,12 @@ jobs:
 """
           text = text.replace(controller_anchor, retry + controller_anchor, 1)
           path.write_text(text, encoding="utf-8")
+          PY
 
       - name: Add focused source regression
         shell: bash
         run: |
+          set -euo pipefail
           cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteRecoverySourceTests.swift <<'SWIFT'
           import Foundation
           import Testing
@@ -197,7 +204,7 @@ jobs:
           if missing:
               raise SystemExit(f'missing recovery contracts: {missing}')
           if app.count('private var correlationDisplayedWindowOrdinal: Int') != 1:
-              raise SystemExit('current accepted correlation presentation was not preserved exactly once')
+              raise SystemExit('current correlation presentation was not preserved exactly once')
           PY
 
       - name: Publish clean product bytes
