@@ -626,9 +626,10 @@ final class TuyaAccountBridge: ObservableObject {
     private static func redactSecrets(_ object: Any) -> Any {
         if let dictionary = object as? [String: Any] {
             var output: [String: Any] = [:]
+            let secretKeyFragments = ["localkey", "accesstoken", "refreshtoken", "seckey", "authkey"]
             for (key, value) in dictionary {
-                let normalized = key.lowercased()
-                if normalized == "local_key" || normalized == "localkey" || normalized.contains("access_token") || normalized.contains("refresh_token") || normalized == "seckey" || normalized == "sec_key" || normalized == "auth_key" || normalized == "authkey" {
+                let normalized = String(key.lowercased().filter { $0.isLetter || $0.isNumber })
+                if secretKeyFragments.contains(where: normalized.contains) {
                     output[key] = "<redacted>"
                 } else {
                     output[key] = redactSecrets(value)
