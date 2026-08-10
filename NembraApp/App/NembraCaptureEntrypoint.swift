@@ -431,6 +431,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -488,6 +489,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -1425,9 +1427,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
-                "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            var eventDetails = redactedApplicationEventDetails(update)
+            eventDetails["generation"] = String(token.diagnosticGeneration)
+            log("tuya_application_update", eventDetails)
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -1452,6 +1454,29 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 kind: "application_update_lifecycle_rejected"
             )
         }
+    }
+
+    private func redactedApplicationEventDetails(_ update: [String: String]) -> [String: String] {
+        guard let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !accountUID.isEmpty else {
+            return update
+        }
+
+        var redacted: [String: String] = [:]
+        redacted.reserveCapacity(update.count)
+        for (key, value) in update {
+            let redactedKey = key.replacingOccurrences(
+                of: accountUID,
+                with: "<redacted-account-uid>",
+                options: [.caseInsensitive, .literal]
+            )
+            redacted[redactedKey] = value.replacingOccurrences(
+                of: accountUID,
+                with: "<redacted-account-uid>",
+                options: [.caseInsensitive, .literal]
+            )
+        }
+        return redacted
     }
 
     private func startWatchdog(token: TuyaReadOnlyConnectionToken) {
@@ -2241,7 +2266,6 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "accounttoken",
         "accesstoken",
         "refreshtoken",
-        "sessionkey",
         "authkey",
         "seckey",
     ]
