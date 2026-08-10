@@ -1,0 +1,50 @@
+name: V14 Capture OAuth Custody 483
+on:
+  push:
+    branches:
+      - fix/v14-capture-apple-oauth-custody-483-sol
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-apple-oauth-custody-483-sol
+          fetch-depth: 0
+      - name: Guard exact product parent
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 483b9fb943f1ba2825e24955b5a819fec7d2a449 HEAD
+          grep -Fq 'submittedIdentityToken:' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'redactedAppleOAuthError' NembraApp/App/NembraCaptureEntrypoint.swift
+      - name: Apply custody repair
+        run: python3 .github/scripts/v14_capture_apple_oauth_custody.py
+      - name: Verify repair
+        run: |
+          set -euo pipefail
+          app=NembraApp/App/NembraCaptureEntrypoint.swift
+          test=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAppleOAuthCredentialCustodySourceTests.swift
+          grep -Fq 'finishAppleLoginFailure(error)' "$app"
+          grep -Fq 'let code = (error as NSError?)?.code ?? -1' "$app"
+          ! grep -Fq 'submittedIdentityToken:' "$app"
+          ! grep -Fq 'redactedAppleOAuthError' "$app"
+          grep -Fq 'func signOut()' "$app"
+          grep -Fq 'SignInWithAppleButton(.signIn)' "$app"
+          grep -Fq '.onChange(of: sdkAccount.loggedIn)' "$app"
+          grep -Fq 'failureRecoveryContextPanel' "$app"
+          swiftc -frontend -parse "$app"
+          swiftc -frontend -parse "$test"
+          git diff --check
+      - name: Commit clean product delta
+        run: |
+          set -euo pipefail
+          rm .github/scripts/v14_capture_apple_oauth_custody.py
+          rm .github/workflows/v14-capture-oauth-custody-483.yml
+          git add -A
+          git diff --cached --check
+          git config user.name nembra-v14-bot
+          git config user.email nembra-v14-bot@users.noreply.github.com
+          git commit -m 'harden(capture): keep Apple OAuth credentials out of error presentation'
+          git push origin HEAD:fix/v14-capture-apple-oauth-custody-483-sol
