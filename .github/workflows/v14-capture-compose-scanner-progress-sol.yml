@@ -29,32 +29,15 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          import re
           p = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           s = p.read_text()
-          old = '''        guard currentConnectionToken == nil else {
-            failLocally(
-                "A prior authenticated generation has not been terminally retired. Relaunch Capture before starting another attempt.",
-                "active_generation_blocks_discovery_reset"
-            )
-            return
-        }
-'''
-          new = '''        guard currentConnectionToken == nil else {
-            if let token = currentConnectionToken {
-                Task { @MainActor [weak self] in
-                    await self?.invalidateInternalLifecycle(
-                        token: token,
-                        message: "An active authenticated generation existed when OFF1 restart was requested. It was retired fail-closed; restart from OFF1 after relaunch if retirement cannot be proven.",
-                        kind: "active_generation_blocks_discovery_reset"
-                    )
-                }
-            }
-            return
-        }
-'''
-          if old not in s:
-              raise SystemExit('expected current OFF1 custody block not found')
-          p.write_text(s.replace(old, new, 1))
+          pattern = r'''        guard currentConnectionToken == nil else \{\n            failLocally\(\n                "A prior authenticated generation has not been terminally retired\. Relaunch Capture before starting another attempt\.",\n                "active_generation_blocks_discovery_reset"\n            \)\n            return\n        \}\n'''
+          replacement = '        guard currentConnectionToken == nil else {\n            if let token = currentConnectionToken {\n                Task { @MainActor [weak self] in\n                    await self?.invalidateInternalLifecycle(\n                        token: token,\n                        message: "An active authenticated generation existed when OFF1 restart was requested. It was retired fail-closed; restart from OFF1 after relaunch if retirement cannot be proven.",\n                        kind: "active_generation_blocks_discovery_reset"\n                    )\n                }\n            }\n            return\n        }\n'
+          s2, n = re.subn(pattern, replacement, s, count=1)
+          if n != 1:
+              raise SystemExit(f'expected one current OFF1 custody block, found {n}')
+          p.write_text(s2)
           PY
 
       - name: Assert current authority and parse
