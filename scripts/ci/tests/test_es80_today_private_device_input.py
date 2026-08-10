@@ -240,6 +240,31 @@ class PrivateDeviceInputTests(unittest.TestCase):
                 "failed private-input fsync retained a secret-bearing file",
             )
 
+    def test_terminal_abort_after_secret_write_removes_created_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+            real_write_all = module._write_all
+
+            def write_then_interrupt(descriptor: int, payload: bytes) -> None:
+                real_write_all(descriptor, payload)
+                raise KeyboardInterrupt()
+
+            with mock.patch.object(module, "_write_all", side_effect=write_then_interrupt):
+                with self.assertRaises(KeyboardInterrupt):
+                    module.create_private_input(
+                        private_dir,
+                        repo,
+                        target.name,
+                        secret_provider=lambda: self.SECRET,
+                    )
+
+            self.assertFalse(
+                target.exists(),
+                "terminal abort retained a secret-bearing intended-device file",
+            )
+
     def test_partial_write_unlink_failure_leaves_only_durably_scrubbed_inode(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
