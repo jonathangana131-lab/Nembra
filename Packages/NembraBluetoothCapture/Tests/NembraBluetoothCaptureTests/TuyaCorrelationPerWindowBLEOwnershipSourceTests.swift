@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Capture per-window Tuya BLE ownership")
 struct TuyaCorrelationPerWindowBLEOwnershipSourceTests {
-    @Test("every fresh correlation window rechecks global Tuya local-BLE ownership before package scan")
+    @Test("every fresh correlation window rechecks process and live Tuya ownership before package scan")
     func everyWindowRechecksGlobalOwnership() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let window = try section(
@@ -14,13 +14,16 @@ struct TuyaCorrelationPerWindowBLEOwnershipSourceTests {
         )
         let body = String(window)
 
-        guard let ownershipRead = body.range(of: "OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID)"),
+        guard let processFence = body.range(of: "OfficialTuyaFactory.packageCorrelationMayStart"),
+              let ownershipRead = body.range(of: "OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID)"),
               let scannerStart = body.range(of: "try session.startCurrentWindow()") else {
-            Issue.record("Each fresh OFF1/ON1/OFF2/ON2 scanner window must synchronously recheck process-global Tuya local-BLE ownership before package-owned scanning starts.")
+            Issue.record("Each fresh OFF1/ON1/OFF2/ON2 scanner window must synchronously recheck process-lifetime and current same-device Tuya ownership before package-owned scanning starts.")
             throw SourceContractError.sectionMissing
         }
 
+        #expect(processFence.lowerBound < ownershipRead.lowerBound)
         #expect(ownershipRead.lowerBound < scannerStart.lowerBound)
+        #expect(body[processFence.upperBound..<ownershipRead.lowerBound].contains("return"))
         #expect(body[ownershipRead.upperBound..<scannerStart.lowerBound].contains("return"))
     }
 
