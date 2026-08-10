@@ -1,0 +1,83 @@
+name: Materialize Capture foreground runbook boundary
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-runbook-foreground-boundary-6b778
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact current-product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "6b778f2104af34dbe5b80da31ddb3ca422f9667c"
+          test "$(git diff --name-only HEAD^..HEAD)" = ".github/workflows/materialize-capture-runbook-foreground-boundary.yml"
+
+      - name: Materialize foreground-integrity operator contract
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
+          source = path.read_text()
+
+          old_step = "15. Keep the scooter stationary, keep Capture in the foreground, and do not change mode/light/brake/throttle/charger state during this preflight.\n16. Acceptance requires one uninterrupted current generation with all of the following:"
+          new_step = "15. Keep the scooter stationary, keep Capture in the foreground, and do not change mode/light/brake/throttle/charger state during this preflight. If Secure Link leaves the active foreground before canonical acceptance seals, the current mutable attempt is invalid. Before official Tuya BLE handoff, any already-correlated/selected target authority must be discarded and the next attempt starts from a fresh OFF1 series. After official Tuya BLE handoff, relaunch Capture before any new stationary read-only attempt; do not reinterpret foreground loss as BLE disconnect and do not promise an in-process OFF1 restart. A previously sealed accepted artifact remains immutable and is not invalidated by a later scene transition.\n16. Acceptance requires one uninterrupted current generation with all of the following:"
+          if source.count(old_step) != 1:
+              raise SystemExit(f"expected one step-15 foreground anchor, found {source.count(old_step)}")
+          source = source.replace(old_step, new_step)
+
+          old_stop = "- authenticated observation has a disqualifying gap/clock regression;\n- Tuya local BLE is actually observed offline;"
+          new_stop = "- authenticated observation has a disqualifying gap/clock regression;\n- Secure Link leaves the active foreground before canonical acceptance seals;\n- Tuya local BLE is actually observed offline;"
+          if source.count(old_stop) != 1:
+              raise SystemExit(f"expected one stop-condition anchor, found {source.count(old_stop)}")
+          source = source.replace(old_stop, new_stop)
+          path.write_text(source)
+
+      - name: Validate procedure coherence and scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md').read_text()
+          required = [
+              'PROCEDURE_ID: `ES80-AUTHENTICATED-STATIONARY-v1`',
+              'If Secure Link leaves the active foreground before canonical acceptance seals, the current mutable attempt is invalid.',
+              'any already-correlated/selected target authority must be discarded',
+              'After official Tuya BLE handoff, relaunch Capture before any new stationary read-only attempt',
+              'do not reinterpret foreground loss as BLE disconnect',
+              'A previously sealed accepted artifact remains immutable',
+              '- Secure Link leaves the active foreground before canonical acceptance seals;',
+              '**NO-GO**',
+          ]
+          missing = [item for item in required if item not in source]
+          if missing:
+              raise SystemExit(f'missing foreground/runbook invariants: {missing}')
+          if 'repeat the completed 17-step ride capture' not in source:
+              raise SystemExit('historical no-repeat boundary changed unexpectedly')
+          PY
+          test "$(git diff --name-only | sort)" = "$(printf '%s\n' '.github/workflows/materialize-capture-runbook-foreground-boundary.yml' 'docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md' | sort)"
+          git diff --check
+
+      - name: Publish clean runbook-only repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-runbook-foreground-boundary.yml
+          git config user.name "nembra-sol-worker"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n' '.github/workflows/materialize-capture-runbook-foreground-boundary.yml' 'docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md' | sort)"
+          git commit -m "docs(capture): pin foreground-loss field boundary"
+          git push origin HEAD:sol/v14-capture-runbook-foreground-boundary-6b778
