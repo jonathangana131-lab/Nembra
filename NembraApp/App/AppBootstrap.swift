@@ -22,6 +22,7 @@ final class AppRuntime {
     private let simulationScenario: ScooterSimulationScenario?
     private let simulatorAutoCompletesRide: Bool
     private let simulatorStartsWithSpeedEvidenceGap: Bool
+    private let simulatorStartsWithRetainedPowerAfterReconnect: Bool
     private let simulatorRouteRecorder: RideRouteRecorder?
     private var didStart = false
     private var simulatorRideDriverTask: Task<Void, Never>?
@@ -35,6 +36,7 @@ final class AppRuntime {
         simulationScenario: ScooterSimulationScenario?,
         simulatorAutoCompletesRide: Bool,
         simulatorStartsWithSpeedEvidenceGap: Bool,
+        simulatorStartsWithRetainedPowerAfterReconnect: Bool,
         simulatorRouteRecorder: RideRouteRecorder?
     ) {
         self.vehicleStore = vehicleStore
@@ -45,6 +47,7 @@ final class AppRuntime {
         self.simulationScenario = simulationScenario
         self.simulatorAutoCompletesRide = simulatorAutoCompletesRide
         self.simulatorStartsWithSpeedEvidenceGap = simulatorStartsWithSpeedEvidenceGap
+        self.simulatorStartsWithRetainedPowerAfterReconnect = simulatorStartsWithRetainedPowerAfterReconnect
         self.simulatorRouteRecorder = simulatorRouteRecorder
     }
 
@@ -69,6 +72,20 @@ final class AppRuntime {
         if simulatorStartsWithSpeedEvidenceGap,
            let simulatorService {
             await simulatorService.simulateSpeedEvidenceGap()
+        }
+
+        // Explicit Simulator-only retained-power fixture. Begin from the riding
+        // source so one legitimate 356 W observation already exists, then exercise
+        // a real synthetic transport drop followed by the production Simulator
+        // reconnect path. Reconnect emits fresh source-owned speed but deliberately
+        // does not mint a power receipt, leaving propulsion RETAINED while transport
+        // is connected. Returning here prevents the normal ride driver from creating
+        // a later fresh power observation before screenshot/accessibility QA.
+        if simulatorStartsWithRetainedPowerAfterReconnect,
+           let simulatorService {
+            await simulatorService.simulateConnectionDrop()
+            await simulatorService.connect()
+            return
         }
 
         guard simulationScenario == .riding,
@@ -175,6 +192,7 @@ enum AppBootstrap {
     static let simulationStorageNamespaceEnvironmentKey = "NEMBRA_SIMULATION_STORAGE_NAMESPACE"
     static let simulationAutoCompleteRideEnvironmentKey = "NEMBRA_SIMULATION_AUTOCOMPLETE_RIDE"
     static let simulationSpeedEvidenceGapEnvironmentKey = "NEMBRA_SIMULATION_SPEED_EVIDENCE_GAP"
+    static let simulationRetainedPowerAfterReconnectEnvironmentKey = "NEMBRA_SIMULATION_RETAINED_POWER_AFTER_RECONNECT"
 
     private struct VehicleBootstrap {
         let service: any ScooterService
@@ -295,6 +313,8 @@ enum AppBootstrap {
             && environment[simulationAutoCompleteRideEnvironmentKey] == "1"
         let simulatorStartsWithSpeedEvidenceGap = bootstrap.scenario == .connectedStopped
             && environment[simulationSpeedEvidenceGapEnvironmentKey] == "1"
+        let simulatorStartsWithRetainedPowerAfterReconnect = bootstrap.scenario == .riding
+            && environment[simulationRetainedPowerAfterReconnectEnvironmentKey] == "1"
         let simulatorRouteRecorder: RideRouteRecorder?
         if bootstrap.scenario != nil,
            let routeStore = persistence?.routeStore {
@@ -315,6 +335,7 @@ enum AppBootstrap {
             simulationScenario: bootstrap.scenario,
             simulatorAutoCompletesRide: simulatorAutoCompletesRide,
             simulatorStartsWithSpeedEvidenceGap: simulatorStartsWithSpeedEvidenceGap,
+            simulatorStartsWithRetainedPowerAfterReconnect: simulatorStartsWithRetainedPowerAfterReconnect,
             simulatorRouteRecorder: simulatorRouteRecorder
         )
     }
