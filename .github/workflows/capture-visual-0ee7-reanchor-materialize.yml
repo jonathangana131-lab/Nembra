@@ -1,0 +1,96 @@
+name: Capture visual 0ee7 reanchor materializer
+
+on:
+  push:
+    branches:
+      - qa/v14-capture-visual-0ee7-sol
+    paths:
+      - .github/workflows/capture-visual-0ee7-reanchor-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: qa/v14-capture-visual-0ee7-sol
+          fetch-depth: 0
+
+      - name: Verify donor paths stayed product-disjoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          old_product='b615375e12e43abc55e111deb5dc36f3790c7506'
+          current_product='0ee7aab76b4880c9871404b23755f27e539b5351'
+          donor='f1ad408e267f77b465b6808d8f2e4a5df9306cf3'
+          git merge-base --is-ancestor "$current_product" HEAD
+          git fetch --no-tags origin qa/v14-capture-visual-b615-sol
+          git diff --quiet "$old_product" "$current_product" -- \
+            .github/workflows/capture-standalone-visual-evidence.yml \
+            scripts/ci/capture_standalone_visual_evidence.sh \
+            scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          git cat-file -e "$donor^{commit}"
+
+      - name: Reanchor exact visual harness without Mac admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          donor='f1ad408e267f77b465b6808d8f2e4a5df9306cf3'
+          mkdir -p .github/workflows scripts/ci/tests
+          git show "$donor:.github/workflows/capture-standalone-visual-evidence.yml" > .github/workflows/capture-standalone-visual-evidence.yml
+          git show "$donor:scripts/ci/capture_standalone_visual_evidence.sh" > scripts/ci/capture_standalone_visual_evidence.sh
+          git show "$donor:scripts/ci/tests/test_capture_standalone_visual_evidence.py" > scripts/ci/tests/test_capture_standalone_visual_evidence.py
+
+          python3 - <<'PY'
+          from pathlib import Path
+          workflow = Path('.github/workflows/capture-standalone-visual-evidence.yml')
+          source = workflow.read_text()
+          start = source.index('on:\n')
+          permissions = source.index('\npermissions:\n', start)
+          source = source[:start] + 'on:\n  workflow_dispatch:\n' + source[permissions:]
+          workflow.write_text(source)
+
+          test = Path('scripts/ci/tests/test_capture_standalone_visual_evidence.py')
+          t = test.read_text()
+          marker = 'for needle in [\n    \'NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=""\','
+          if marker not in t:
+              raise SystemExit('visual workflow test insertion marker changed')
+          guard = '''if "pull_request:" in workflow:
+              raise SystemExit("exact-current visual evidence must remain manual-only while xcode-27 capacity is unavailable")
+          if "workflow_dispatch:" not in workflow:
+              raise SystemExit("exact-current visual evidence must retain an explicit manual dispatch gate")
+
+          '''
+          guard = '\n'.join(line[10:] if line.startswith('          ') else line for line in guard.splitlines()) + '\n'
+          t = t.replace(marker, guard + marker, 1)
+          test.write_text(t)
+          PY
+
+          bash -n scripts/ci/capture_standalone_visual_evidence.sh
+          python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          git diff --check
+
+      - name: Collapse to three QA-only paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='0ee7aab76b4880c9871404b23755f27e539b5351'
+          rm .github/workflows/capture-visual-0ee7-reanchor-materialize.yml
+          git add -A
+          git diff --cached --check "$base"
+          git diff --cached --name-only "$base" | sort > /tmp/actual
+          cat > /tmp/expected <<'EOF'
+          .github/workflows/capture-standalone-visual-evidence.yml
+          scripts/ci/capture_standalone_visual_evidence.sh
+          scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          EOF
+          sort -o /tmp/expected /tmp/expected
+          diff -u /tmp/expected /tmp/actual
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'qa(capture): reanchor exact-current manual visual evidence'
+          git push origin HEAD:qa/v14-capture-visual-0ee7-sol
