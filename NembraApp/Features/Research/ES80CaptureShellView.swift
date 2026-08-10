@@ -1,1305 +1,1981 @@
 @preconcurrency import CoreBluetooth
-import Combine
-@preconcurrency import CoreLocation
 import CoreTransferable
 import Dispatch
 import Foundation
+import NembraBluetoothCapture
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// One-purpose capture utility: learn a scooter from raw, passive CoreBluetooth evidence.
+/// Presentation-only polling for the non-observable package coordinator.
 ///
-/// This intentionally exposes no application-characteristic write API. It may scan, connect,
-/// discover GATT topology, read characteristics/descriptors, subscribe to notify/indicate
-/// characteristics, sample RSSI/location reference data, and record operator scenario markers.
-@MainActor
-final class ES80GuidedBluetoothCapture: NSObject, ObservableObject {
-    struct Candidate: Identifiable, Equatable {
-        let id: UUID
-        var name: String?
-        var rssi: Int?
-        var connectable: Bool?
-        var firstSeen: Date
-        var lastSeen: Date
-        var advertisementCount: Int
-        var appearedAfterPowerOn: Bool
-
-        var displayName: String {
-            guard let name, !name.isEmpty else { return "Unnamed peripheral" }
-            return name
-        }
-
-        var rssiText: String {
-            rssi.map { "\($0) dBm" } ?? "RSSI unavailable"
-        }
-    }
-
-    struct ErrorRecord: Codable, Equatable {
-        let domain: String
-        let code: Int
-        let description: String
-    }
-
-    struct Event: Codable, Identifiable {
-        let id: Int
-        let wallClock: Date
-        let monotonicNanoseconds: UInt64
-        let kind: String
-        let peripheralID: String?
-        let serviceUUID: String?
-        let characteristicUUID: String?
-        let descriptorUUID: String?
-        let origin: String?
-        let valueBase64: String?
-        let valueHex: String?
-        let rssi: Int?
-        let scenarioID: String?
-        let scenarioTitle: String?
-        let details: [String: String]
-        let error: ErrorRecord?
-    }
-
-    struct ScenarioRun: Codable, Identifiable, Equatable {
-        enum State: String, Codable {
-            case completed
-            case skipped
-        }
-
-        let id: UUID
-        let scenarioID: String
-        let scenarioTitle: String
-        let phase: String
-        let startedAt: Date
-        let finishedAt: Date
-        let startedAtMonotonicNanoseconds: UInt64
-        let finishedAtMonotonicNanoseconds: UInt64
-        let state: State
-        let note: String?
-        let startEventID: Int
-        let endEventID: Int
-
-        var durationSeconds: Double {
-            guard finishedAtMonotonicNanoseconds >= startedAtMonotonicNanoseconds else { return 0 }
-            return Double(finishedAtMonotonicNanoseconds - startedAtMonotonicNanoseconds) / 1_000_000_000
-        }
-    }
-
-    struct CaptureSummary: Codable {
-        let advertisementCount: Int
-        let serviceUUIDs: [String]
-        let characteristicUUIDs: [String]
-        let readableCharacteristicUUIDs: [String]
-        let notifyingCharacteristicUUIDs: [String]
-        let descriptorUUIDs: [String]
-        let characteristicValueEventCount: Int
-        let descriptorValueEventCount: Int
-        let locationReferenceSampleCount: Int
-        let completedScenarioCount: Int
-        let skippedScenarioCount: Int
-    }
-
-    struct ExportEnvelope: Codable {
-        let schemaVersion: Int
-        let purpose: String
-        let captureID: String
-        let createdAt: Date
-        let finishedAt: Date
-        let selectedPeripheralID: String?
-        let selectedPeripheralName: String?
-        let eventCount: Int
-        let buildIdentifier: String?
-        let buildSourceCommit: String?
-        let locationReferenceAuthorization: String
-        let summary: CaptureSummary
-        let scenarioRuns: [ScenarioRun]
-        let limitations: [String]
-        let events: [Event]
-    }
-
-    struct ScenarioDefinition: Identifiable, Equatable {
-        enum MotionClass: String {
-            case stationary
-            case walking
-            case moving
-            case elevatedWheel
-        }
-
-        let id: String
-        let phase: String
-        let title: String
-        let instruction: String
-        let completionHint: String
-        let recommendedSeconds: Int
-        let optional: Bool
-        let motionClass: MotionClass
-        let caution: String?
-    }
-
-    enum DiscoveryStage: Equatable {
-        case idle
-        case baselineScanning
-        case waitingForPowerOn
-        case poweredOnScanning
-        case quickScanning
-        case connecting
-        case reconnecting
-        case connected
-    }
-
-    static let scenarios: [ScenarioDefinition] = [
-        .init(id: "stationary-idle", phase: "Stationary", title: "Idle baseline", instruction: "Leave the scooter powered on, stationary, and untouched. This gives us a clean baseline for every live Bluetooth stream.", completionHint: "Let it sit for about 20 seconds, then complete the step.", recommendedSeconds: 20, optional: false, motionClass: .stationary, caution: nil),
-        .init(id: "eco-mode", phase: "Modes", title: "ECO mode", instruction: "While fully stopped, switch the scooter to ECO mode using the scooter's own controls. Do not use another Bluetooth app while Nembra is connected.", completionHint: "Leave ECO selected for about 10 seconds.", recommendedSeconds: 10, optional: true, motionClass: .stationary, caution: "Skip this step if your scooter does not have ECO mode."),
-        .init(id: "drive-mode", phase: "Modes", title: "Drive / Normal mode", instruction: "While fully stopped, switch to the normal/Drive mode using the scooter's own controls.", completionHint: "Leave the mode selected for about 10 seconds.", recommendedSeconds: 10, optional: true, motionClass: .stationary, caution: "Skip if your scooter has no separate normal/Drive mode."),
-        .init(id: "sport-mode", phase: "Modes", title: "Sport mode", instruction: "While fully stopped, switch to Sport/high-performance mode using the scooter's own controls.", completionHint: "Leave Sport selected for about 10 seconds.", recommendedSeconds: 10, optional: true, motionClass: .stationary, caution: "Skip if your scooter has no Sport mode."),
-        .init(id: "light-off", phase: "Controls", title: "Light OFF", instruction: "While stopped, make sure the headlight is OFF. Leave it that way briefly so we can identify any state change.", completionHint: "Wait about 8 seconds.", recommendedSeconds: 8, optional: true, motionClass: .stationary, caution: "Skip if there is no user-controlled light."),
-        .init(id: "light-on", phase: "Controls", title: "Light ON", instruction: "While stopped, turn the headlight ON using the scooter's own controls.", completionHint: "Leave it ON for about 8 seconds.", recommendedSeconds: 8, optional: true, motionClass: .stationary, caution: "Skip if there is no user-controlled light."),
-        .init(id: "brake-hold", phase: "Controls", title: "Brake held", instruction: "While fully stationary, squeeze and hold the brake lever. Keep the scooter from moving.", completionHint: "Hold about 5 seconds, release, then complete.", recommendedSeconds: 5, optional: false, motionClass: .stationary, caution: nil),
-        .init(id: "brake-pulses", phase: "Controls", title: "Brake pulses", instruction: "While stationary, squeeze and release the brake three times with a clear pause between each press.", completionHint: "Complete after the third release.", recommendedSeconds: 8, optional: false, motionClass: .stationary, caution: nil),
-        .init(id: "walk-roll", phase: "Motion", title: "Walking wheel roll", instruction: "Walk the scooter forward slowly by hand for a short distance, then stop. Do not ride it during this step.", completionHint: "A few seconds of clean rolling is enough.", recommendedSeconds: 10, optional: false, motionClass: .walking, caution: "Keep both hands on the scooter and do not touch the phone until the scooter is stopped again."),
-        .init(id: "elevated-wheel", phase: "Motion", title: "Optional unloaded motor sweep", instruction: "Only if the scooter can be supported securely with the driven wheel completely clear: gently apply throttle for a few seconds, release, and let the wheel stop.", completionHint: "Complete only after the wheel is fully stopped.", recommendedSeconds: 8, optional: true, motionClass: .elevatedWheel, caution: "Skip unless the scooter is genuinely stable. Keep hands, clothing, cables, and people away from the spinning wheel."),
-        .init(id: "ride-slow", phase: "Ride", title: "Slow straight ride", instruction: "Start this step while fully stopped. Secure the phone in a pocket or fixed mount, then ride straight at a slow steady speed. Stop completely before touching the phone again.", completionHint: "Aim for roughly 20 seconds of steady low-speed riding.", recommendedSeconds: 20, optional: false, motionClass: .moving, caution: "Never interact with the phone while the scooter is moving."),
-        .init(id: "ride-medium", phase: "Ride", title: "Medium straight ride", instruction: "Start while stopped, secure the phone, then ride at a comfortable medium speed. Stop fully before completing this step.", completionHint: "Aim for roughly 20 seconds at a fairly steady speed.", recommendedSeconds: 20, optional: false, motionClass: .moving, caution: "Use a safe, legal, low-traffic area. Do not watch or touch the phone while moving."),
-        .init(id: "accelerate-coast-brake", phase: "Ride", title: "Accelerate → coast → brake", instruction: "Start while stopped and secure the phone. Accelerate smoothly, hold briefly, release throttle to coast, then brake normally to a complete stop.", completionHint: "Complete the step only after you are fully stopped.", recommendedSeconds: 25, optional: false, motionClass: .moving, caution: "No phone interaction while moving. Use a clear, safe area with plenty of stopping distance."),
-        .init(id: "eco-ride", phase: "Mode rides", title: "ECO ride", instruction: "While stopped, select ECO. Start the step, secure the phone, then do one short straight acceleration and steady segment. Stop fully before touching the phone.", completionHint: "About 20 seconds is enough.", recommendedSeconds: 20, optional: true, motionClass: .moving, caution: "Skip if ECO does not exist. Never use the phone while moving."),
-        .init(id: "drive-ride", phase: "Mode rides", title: "Drive / Normal ride", instruction: "While stopped, select normal/Drive. Start the step, secure the phone, ride one short straight segment, then stop fully.", completionHint: "About 20 seconds is enough.", recommendedSeconds: 20, optional: true, motionClass: .moving, caution: "Skip if there is no separate normal/Drive mode. Never use the phone while moving."),
-        .init(id: "sport-ride", phase: "Mode rides", title: "Sport ride", instruction: "While stopped, select Sport. Start the step, secure the phone, then do one short controlled straight segment. Stop fully before touching the phone.", completionHint: "We need a clean change, not maximum speed.", recommendedSeconds: 20, optional: true, motionClass: .moving, caution: "Do not chase top speed. Use only a speed and location that are safe and legal. Never interact with the phone while moving."),
-        .init(id: "post-ride-idle", phase: "Finish", title: "Post-ride idle", instruction: "Leave the scooter powered on and stationary after the ride segments. Do not touch any controls.", completionHint: "Wait about 20 seconds so we can compare hot/post-motion idle with the opening baseline.", recommendedSeconds: 20, optional: false, motionClass: .stationary, caution: nil)
-    ]
-
-    @Published private(set) var bluetoothState: CBManagerState = .unknown
-    @Published private(set) var discoveryStage: DiscoveryStage = .idle
-    @Published private(set) var isScanning = false
-    @Published private(set) var candidates: [Candidate] = []
-    @Published private(set) var selectedPeripheralID: UUID?
-    @Published private(set) var selectedPeripheralName: String?
-    @Published private(set) var isConnecting = false
-    @Published private(set) var isConnected = false
-    @Published private(set) var isRecoveringConnection = false
-    @Published private(set) var reconnectAttempt = 0
-    @Published private(set) var connectionDropCount = 0
-    @Published private(set) var activeScenarioHadConnectionGap = false
-    @Published private(set) var eventCount = 0
-    @Published private(set) var connectedAt: Date?
-    @Published private(set) var lastMessage = "Start with the scooter OFF so Nembra can learn which Bluetooth device appears when you power it on."
-    @Published private(set) var exportData: Data?
-    @Published private(set) var exportFilename = "Nembra-Scooter-Learning-Capture.json"
-    @Published private(set) var activeScenarioID: String?
-    @Published private(set) var activeScenarioStartedAt: Date?
-    @Published private(set) var activeScenarioStartedUptimeNanoseconds: UInt64?
-    @Published private(set) var currentScenarioIndex = 0
-    @Published private(set) var scenarioRuns: [ScenarioRun] = []
-    @Published private(set) var locationAuthorizationText = "Not requested"
-    @Published private(set) var latestReferenceSpeedMPH: Double?
-    @Published private(set) var latestReferenceHorizontalAccuracy: Double?
-    @Published private(set) var droppedEventCount = 0
-    @Published private(set) var isFrozen = false
-
-    private var central: CBCentralManager!
-    private let locationManager = CLLocationManager()
-    private var peripheralByID: [UUID: CBPeripheral] = [:]
-    private var candidateByID: [UUID: Candidate] = [:]
-    private var baselinePeripheralIDs: Set<UUID> = []
-    private var activePeripheral: CBPeripheral?
-    private var events: [Event] = []
-    private var nextEventID = 1
-    private let captureID = UUID()
-    private let createdAt = Date()
-    private var pendingReadOrigins: [ObjectIdentifier: String] = [:]
-    private var readableCharacteristicByID: [ObjectIdentifier: CBCharacteristic] = [:]
-    private var readPollingDisabledByID = Set<ObjectIdentifier>()
-    private var subscribeAfterRead = Set<ObjectIdentifier>()
-    private var rssiTask: Task<Void, Never>?
-    private var readPollTask: Task<Void, Never>?
-    private var reconnectTask: Task<Void, Never>?
-    private var activeScenarioRunID: UUID?
-    private var activeScenarioStartEventID: Int?
-    private var observedServices: Set<String> = []
-    private var observedCharacteristics: Set<String> = []
-    private var readableCharacteristics: Set<String> = []
-    private var notifyingCharacteristics: Set<String> = []
-    private var observedDescriptors: Set<String> = []
-    private var advertisementCount = 0
-    private var characteristicValueEventCount = 0
-    private var descriptorValueEventCount = 0
-    private var locationReferenceSampleCount = 0
-    private let maximumInMemoryEvents = 500_000
-    private var acceptingEvents = true
-    private var automaticReconnectEnabled = false
-    private var connectionGapStartedAtNanoseconds: UInt64?
-
-    override init() {
-        super.init()
-        central = CBCentralManager(delegate: self, queue: .main)
-        bluetoothState = central.state
-        locationManager.delegate = self
-        locationManager.desiredAccuracy = kCLLocationAccuracyBest
-        locationManager.distanceFilter = kCLDistanceFilterNone
-        locationManager.activityType = .otherNavigation
-        refreshLocationAuthorizationText()
-    }
-
-    deinit {
-        rssiTask?.cancel()
-        readPollTask?.cancel()
-        reconnectTask?.cancel()
-        locationManager.stopUpdatingLocation()
-    }
-
-    var currentScenario: ScenarioDefinition? {
-        guard Self.scenarios.indices.contains(currentScenarioIndex) else { return nil }
-        return Self.scenarios[currentScenarioIndex]
-    }
-    var completedScenarioCount: Int { scenarioRuns.filter { $0.state == .completed }.count }
-    var skippedScenarioCount: Int { scenarioRuns.filter { $0.state == .skipped }.count }
-    var scenarioProgressFraction: Double { guard !Self.scenarios.isEmpty else { return 1 }; return min(1, Double(currentScenarioIndex) / Double(Self.scenarios.count)) }
-
-    func beginBaselineScan() {
-        guard central.state == .poweredOn, !isConnected, !isConnecting else { lastMessage = "Bluetooth must be on and no scooter can already be connected."; return }
-        stopScanningIfNeeded(recordStop: false)
-        baselinePeripheralIDs.removeAll()
-        candidateByID.removeAll()
-        candidates.removeAll()
-        peripheralByID.removeAll()
-        exportData = nil
-        discoveryStage = .baselineScanning
-        record(kind: "discovery_baseline_started")
-        central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
-        isScanning = true
-        lastMessage = "Scooter OFF baseline is running. Leave the scooter OFF for about 8–10 seconds."
-    }
-
-    func finishBaseline() {
-        guard discoveryStage == .baselineScanning else { return }
-        stopScanningIfNeeded()
-        baselinePeripheralIDs = Set(candidateByID.keys)
-        discoveryStage = .waitingForPowerOn
-        record(kind: "discovery_baseline_finished", details: ["baselinePeripheralCount": String(baselinePeripheralIDs.count)])
-        lastMessage = "Baseline saved. Now turn the scooter ON, then tap Scan after power-on."
-    }
-
-    func beginPoweredOnScan() {
-        guard central.state == .poweredOn, !isConnected, !isConnecting else { return }
-        stopScanningIfNeeded(recordStop: false)
-        candidateByID.removeAll()
-        candidates.removeAll()
-        peripheralByID.removeAll()
-        discoveryStage = .poweredOnScanning
-        record(kind: "discovery_power_on_scan_started", details: ["baselinePeripheralCount": String(baselinePeripheralIDs.count)])
-        central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
-        isScanning = true
-        lastMessage = "Scanning after power-on. Devices marked NEW were not present in the OFF baseline."
-    }
-
-    func beginQuickScan() {
-        guard central.state == .poweredOn, !isConnected, !isConnecting else { return }
-        stopScanningIfNeeded(recordStop: false)
-        baselinePeripheralIDs.removeAll()
-        candidateByID.removeAll()
-        candidates.removeAll()
-        peripheralByID.removeAll()
-        discoveryStage = .quickScanning
-        record(kind: "discovery_quick_scan_started")
-        central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
-        isScanning = true
-        lastMessage = "Quick scanning. Pick the scooter only if you are confident which Bluetooth device it is."
-    }
-
-    func stopScan() {
-        stopScanningIfNeeded()
-        if discoveryStage == .baselineScanning {
-            baselinePeripheralIDs = Set(candidateByID.keys)
-            discoveryStage = .waitingForPowerOn
-        }
-        lastMessage = "Scan stopped."
-    }
-
-    func connect(to candidate: Candidate) {
-        guard central.state == .poweredOn, !isConnecting, !isConnected, candidate.connectable != false, let peripheral = peripheralByID[candidate.id] else { return }
-        stopScanningIfNeeded()
-        reconnectTask?.cancel()
-        reconnectTask = nil
-        exportData = nil
-        selectedPeripheralID = candidate.id
-        selectedPeripheralName = candidate.name
-        activePeripheral = peripheral
-        peripheral.delegate = self
-        automaticReconnectEnabled = true
-        reconnectAttempt = 0
-        connectionDropCount = 0
-        connectionGapStartedAtNanoseconds = nil
-        isRecoveringConnection = false
-        isConnecting = true
-        discoveryStage = .connecting
-        lastMessage = "Connecting to \(candidate.displayName)…"
-        record(kind: "connect_requested", peripheral: peripheral, details: ["displayName": candidate.displayName, "appearedAfterPowerOn": candidate.appearedAfterPowerOn ? "true" : "false", "advertisementCountBeforeConnect": String(candidate.advertisementCount)])
-        central.connect(peripheral)
-    }
-
-    func retrySelectedPeripheralNow() {
-        guard let activePeripheral, selectedPeripheralID == activePeripheral.identifier, !isFrozen else { return }
-        scheduleReconnect(to: activePeripheral, reason: "operator_retry", immediate: true)
-    }
-
-    func requestReferenceLocationIfNeeded() {
-        refreshLocationAuthorizationText()
-        switch locationManager.authorizationStatus {
-        case .notDetermined: locationManager.requestWhenInUseAuthorization()
-        case .authorizedAlways, .authorizedWhenInUse: startReferenceLocation()
-        default: record(kind: "location_reference_unavailable", details: ["authorization": locationAuthorizationText])
-        }
-    }
-
-    func beginScenario(_ scenario: ScenarioDefinition) {
-        guard !isFrozen else { lastMessage = "This dataset is already frozen. Reset only if you intentionally want to start over."; return }
-        guard isConnected else { lastMessage = "Wait for the scooter to reconnect before starting this step."; return }
-        guard activeScenarioID == nil else { lastMessage = "Finish or skip the current step first."; return }
-        let runID = UUID()
-        activeScenarioRunID = runID
-        activeScenarioID = scenario.id
-        activeScenarioStartedAt = Date()
-        activeScenarioStartedUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
-        activeScenarioHadConnectionGap = false
-        record(kind: "scenario_started", peripheral: activePeripheral, scenario: scenario, details: ["phase": scenario.phase, "recommendedSeconds": String(scenario.recommendedSeconds), "optional": scenario.optional ? "true" : "false", "motionClass": scenario.motionClass.rawValue])
-        activeScenarioStartEventID = nextEventID - 1
-        pollReadableValues(origin: "scenario_start_snapshot")
-        lastMessage = scenario.motionClass == .moving ? "Recording \(scenario.title). Do not touch the phone until you are fully stopped again." : "Recording \(scenario.title)."
-    }
-
-    func completeActiveScenario(note: String? = nil) {
-        guard isConnected else { lastMessage = "The scooter is reconnecting. Wait until it is connected, repeat the action if needed, then complete this step."; return }
-        guard let scenarioID = activeScenarioID, let scenario = Self.scenarios.first(where: { $0.id == scenarioID }), let runID = activeScenarioRunID, let startedAt = activeScenarioStartedAt, let startedUptime = activeScenarioStartedUptimeNanoseconds, let startEventID = activeScenarioStartEventID else { return }
-        let finishedAt = Date()
-        let finishedUptime = DispatchTime.now().uptimeNanoseconds
-        record(kind: "scenario_completed", peripheral: activePeripheral, scenario: scenario, details: ["durationSeconds": String(format: "%.3f", Double(finishedUptime - startedUptime) / 1_000_000_000), "operatorNote": normalizedOptional(note) ?? "", "hadConnectionGap": activeScenarioHadConnectionGap ? "true" : "false"])
-        let endEventID = nextEventID - 1
-        scenarioRuns.append(ScenarioRun(id: runID, scenarioID: scenario.id, scenarioTitle: scenario.title, phase: scenario.phase, startedAt: startedAt, finishedAt: finishedAt, startedAtMonotonicNanoseconds: startedUptime, finishedAtMonotonicNanoseconds: finishedUptime, state: .completed, note: normalizedOptional(note), startEventID: startEventID, endEventID: endEventID))
-        clearActiveScenario()
-        advancePastScenario(scenario.id)
-        lastMessage = "Saved \(scenario.title). Continue to the next step when ready."
-    }
-
-    func skipScenario(_ scenario: ScenarioDefinition, reason: String? = nil) {
-        guard activeScenarioID == nil else { return }
-        let now = Date()
-        let uptime = DispatchTime.now().uptimeNanoseconds
-        record(kind: "scenario_skipped", peripheral: activePeripheral, scenario: scenario, details: ["reason": normalizedOptional(reason) ?? "not available / intentionally skipped"])
-        let eventID = nextEventID - 1
-        scenarioRuns.append(ScenarioRun(id: UUID(), scenarioID: scenario.id, scenarioTitle: scenario.title, phase: scenario.phase, startedAt: now, finishedAt: now, startedAtMonotonicNanoseconds: uptime, finishedAtMonotonicNanoseconds: uptime, state: .skipped, note: normalizedOptional(reason), startEventID: eventID, endEventID: eventID))
-        advancePastScenario(scenario.id)
-        lastMessage = "Skipped \(scenario.title)."
-    }
-
-    func recordCustomAction(_ label: String) {
-        guard let normalized = normalizedOptional(label) else { return }
-        record(kind: "operator_custom_action", peripheral: activePeripheral, details: ["label": normalized])
-        lastMessage = "Marked: \(normalized)"
-    }
-
-    func recordReference(label: String, value: String) {
-        guard let normalizedLabel = normalizedOptional(label), let normalizedValue = normalizedOptional(value) else { return }
-        record(kind: "operator_reference_value", peripheral: activePeripheral, details: ["label": normalizedLabel, "value": normalizedValue])
-        lastMessage = "Reference saved: \(normalizedLabel) = \(normalizedValue)"
-    }
-
-    func prepareJSON() {
-        if let scenarioID = activeScenarioID, let scenario = Self.scenarios.first(where: { $0.id == scenarioID }) {
-            record(kind: "scenario_capture_exported_while_active", peripheral: activePeripheral, scenario: scenario)
-        }
-        let summary = CaptureSummary(advertisementCount: advertisementCount, serviceUUIDs: observedServices.sorted(), characteristicUUIDs: observedCharacteristics.sorted(), readableCharacteristicUUIDs: readableCharacteristics.sorted(), notifyingCharacteristicUUIDs: notifyingCharacteristics.sorted(), descriptorUUIDs: observedDescriptors.sorted(), characteristicValueEventCount: characteristicValueEventCount, descriptorValueEventCount: descriptorValueEventCount, locationReferenceSampleCount: locationReferenceSampleCount, completedScenarioCount: completedScenarioCount, skippedScenarioCount: skippedScenarioCount)
-        let envelope = ExportEnvelope(schemaVersion: 2, purpose: "Guided scooter Bluetooth learning capture for Nembra protocol/capability calibration", captureID: captureID.uuidString, createdAt: createdAt, finishedAt: Date(), selectedPeripheralID: selectedPeripheralID?.uuidString, selectedPeripheralName: selectedPeripheralName, eventCount: events.count, buildIdentifier: normalizedBundleString("NembraCaptureBuildIdentifier"), buildSourceCommit: normalizedBundleString("NembraCaptureBuildCommitSHA"), locationReferenceAuthorization: locationAuthorizationText, summary: summary, scenarioRuns: scenarioRuns, limitations: ["This is a CoreBluetooth application-level capture, not an over-the-air BLE packet sniffer.", "It records advertisements exposed by iOS, GATT topology, initial and gently resampled readable characteristic values, notify/indicate callbacks, descriptor values exposed by CoreBluetooth, RSSI, lifecycle/errors, automatic reconnect gaps, operator scenario markers, and optional iPhone location speed reference.", "This utility never issues CoreBluetooth application-characteristic value writes.", "Notification subscription may update the standard GATT Client Characteristic Configuration descriptor as required by CoreBluetooth; that is subscription transport state, not a scooter command.", "Observed bytes are raw evidence. Battery, speed, power, mode, brake, throttle, light, lock, cruise, and other semantics must be inferred only from repeatable scenario correlations.", "Another scooter app may not be able to stay connected at the same time. The guided flow is designed around scooter-local controls while Nembra owns the Bluetooth connection.", "Transient Bluetooth disconnects are retained as timeline evidence and Nembra automatically attempts to reconnect to the same selected peripheral without discarding scenario progress.", "Moving scenarios are started and completed only while fully stopped; the phone must not be handled while the scooter is moving."], events: events)
-        do {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-            encoder.dateEncodingStrategy = .iso8601
-            exportData = try encoder.encode(envelope)
-            exportFilename = "Nembra-Scooter-Learning-\(captureID.uuidString.prefix(8)).json"
-            lastMessage = "Dataset ready. Share this exact JSON back into ChatGPT so the Bluetooth values can be mapped into Nembra."
-        } catch {
-            lastMessage = "JSON encoding failed: \(error.localizedDescription)"
-        }
-    }
-
-    func finishCaptureAndPrepareJSON() {
-        guard activeScenarioID == nil else { lastMessage = "Complete the active calibration step while fully stopped before freezing the dataset."; return }
-        if isScanning { stopScanningIfNeeded() }
-        automaticReconnectEnabled = false
-        reconnectTask?.cancel()
-        reconnectTask = nil
-        isRecoveringConnection = false
-        isConnecting = false
-        locationManager.stopUpdatingLocation()
-        rssiTask?.cancel()
-        rssiTask = nil
-        readPollTask?.cancel()
-        readPollTask = nil
-        record(kind: "operator_capture_finished", peripheral: activePeripheral)
-        acceptingEvents = false
-        isFrozen = true
-        if let activePeripheral, activePeripheral.state != .disconnected { central.cancelPeripheralConnection(activePeripheral) }
-        prepareJSON()
-    }
-
-    func reset() {
-        automaticReconnectEnabled = false
-        reconnectTask?.cancel()
-        reconnectTask = nil
-        stopScanningIfNeeded(recordStop: false)
-        rssiTask?.cancel()
-        rssiTask = nil
-        readPollTask?.cancel()
-        readPollTask = nil
-        locationManager.stopUpdatingLocation()
-        if let activePeripheral, activePeripheral.state != .disconnected { central.cancelPeripheralConnection(activePeripheral) }
-        activePeripheral = nil
-        isConnecting = false
-        isConnected = false
-        isRecoveringConnection = false
-        reconnectAttempt = 0
-        connectionDropCount = 0
-        connectionGapStartedAtNanoseconds = nil
-        activeScenarioHadConnectionGap = false
-        connectedAt = nil
-        selectedPeripheralID = nil
-        selectedPeripheralName = nil
-        discoveryStage = .idle
-        peripheralByID.removeAll()
-        candidateByID.removeAll()
-        baselinePeripheralIDs.removeAll()
-        candidates.removeAll()
-        pendingReadOrigins.removeAll()
-        readableCharacteristicByID.removeAll()
-        readPollingDisabledByID.removeAll()
-        subscribeAfterRead.removeAll()
-        events.removeAll(keepingCapacity: true)
-        nextEventID = 1
-        eventCount = 0
-        exportData = nil
-        activeScenarioID = nil
-        activeScenarioStartedAt = nil
-        activeScenarioStartedUptimeNanoseconds = nil
-        activeScenarioRunID = nil
-        activeScenarioStartEventID = nil
-        currentScenarioIndex = 0
-        scenarioRuns.removeAll()
-        latestReferenceSpeedMPH = nil
-        latestReferenceHorizontalAccuracy = nil
-        observedServices.removeAll()
-        observedCharacteristics.removeAll()
-        readableCharacteristics.removeAll()
-        notifyingCharacteristics.removeAll()
-        observedDescriptors.removeAll()
-        advertisementCount = 0
-        characteristicValueEventCount = 0
-        descriptorValueEventCount = 0
-        locationReferenceSampleCount = 0
-        droppedEventCount = 0
-        acceptingEvents = true
-        isFrozen = false
-        lastMessage = "Reset complete. Start with the scooter OFF for the cleanest device identification."
-    }
-
-    func elapsedSecondsForActiveScenario(nowUptimeNanoseconds: UInt64 = DispatchTime.now().uptimeNanoseconds) -> Double {
-        guard let start = activeScenarioStartedUptimeNanoseconds, nowUptimeNanoseconds >= start else { return 0 }
-        return Double(nowUptimeNanoseconds - start) / 1_000_000_000
-    }
-
-    private func clearActiveScenario() {
-        activeScenarioID = nil
-        activeScenarioStartedAt = nil
-        activeScenarioStartedUptimeNanoseconds = nil
-        activeScenarioRunID = nil
-        activeScenarioStartEventID = nil
-        activeScenarioHadConnectionGap = false
-    }
-
-    private func advancePastScenario(_ id: String) {
-        guard let index = Self.scenarios.firstIndex(where: { $0.id == id }) else { return }
-        currentScenarioIndex = min(index + 1, Self.scenarios.count)
-    }
-
-    private func stopScanningIfNeeded(recordStop: Bool = true) {
-        guard isScanning else { return }
-        central.stopScan()
-        isScanning = false
-        if recordStop { record(kind: "scan_stopped") }
-    }
-
-    private func scheduleReconnect(to peripheral: CBPeripheral, reason: String, immediate: Bool = false) {
-        guard automaticReconnectEnabled, !isFrozen, selectedPeripheralID == peripheral.identifier else { return }
-        reconnectTask?.cancel()
-        reconnectTask = nil
-        isConnected = false
-        isConnecting = true
-        isRecoveringConnection = true
-        discoveryStage = .reconnecting
-        reconnectAttempt += 1
-        let delaySeconds: Double = immediate ? 0 : min(8, pow(2, Double(min(max(reconnectAttempt - 1, 0), 3))))
-        record(kind: "reconnect_scheduled", peripheral: peripheral, details: ["attempt": String(reconnectAttempt), "delaySeconds": String(format: "%.1f", delaySeconds), "reason": reason])
-        lastMessage = reconnectAttempt == 1 ? "Bluetooth dropped. Keeping this capture open and reconnecting to the same scooter automatically…" : "Still reconnecting to the same scooter automatically (attempt \(reconnectAttempt)). Your captured data and step progress are safe."
-        reconnectTask = Task { @MainActor [weak self, weak peripheral] in
-            if delaySeconds > 0 {
-                try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
-            }
-            guard let self, let peripheral, !Task.isCancelled, self.automaticReconnectEnabled, !self.isFrozen, self.selectedPeripheralID == peripheral.identifier else { return }
-            guard self.central.state == .poweredOn else {
-                self.isConnecting = false
-                self.lastMessage = "Waiting for Bluetooth to become available. This capture will reconnect automatically when it comes back."
-                return
-            }
-            if peripheral.state == .connected {
-                self.isConnecting = false
-                self.isRecoveringConnection = false
-                self.isConnected = true
-                self.discoveryStage = .connected
-                return
-            }
-            self.record(kind: "reconnect_requested", peripheral: peripheral, details: ["attempt": String(self.reconnectAttempt)])
-            self.central.connect(peripheral)
-        }
-    }
-
-    private func startRSSIPolling() {
-        rssiTask?.cancel()
-        rssiTask = Task { @MainActor [weak self] in
-            while !Task.isCancelled {
-                guard let self, self.isConnected, let peripheral = self.activePeripheral else { return }
-                peripheral.readRSSI()
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-            }
-        }
-    }
-
-    /// Poll gently instead of blasting every readable characteristic at the same instant each second.
-    /// Cheap scooter BLE stacks can disconnect when their GATT queue is flooded.
-    private func startReadableValuePolling() {
-        readPollTask?.cancel()
-        readPollTask = Task { @MainActor [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                guard let self, self.isConnected, let peripheral = self.activePeripheral else { return }
-                let entries = Array(self.readableCharacteristicByID)
-                for (key, characteristic) in entries {
-                    guard !Task.isCancelled, self.isConnected else { return }
-                    guard !self.readPollingDisabledByID.contains(key), self.pendingReadOrigins[key] == nil else { continue }
-                    self.pendingReadOrigins[key] = "periodic_read"
-                    self.record(kind: "characteristic_read_requested", peripheral: peripheral, characteristic: characteristic, origin: "periodic_read")
-                    peripheral.readValue(for: characteristic)
-                    try? await Task.sleep(nanoseconds: 100_000_000)
-                }
-            }
-        }
-    }
-
-    private func pollReadableValues(origin: String) {
-        guard isConnected, let peripheral = activePeripheral else { return }
-        for (key, characteristic) in readableCharacteristicByID {
-            guard !readPollingDisabledByID.contains(key), pendingReadOrigins[key] == nil else { continue }
-            pendingReadOrigins[key] = origin
-            record(kind: "characteristic_read_requested", peripheral: peripheral, characteristic: characteristic, origin: origin)
-            peripheral.readValue(for: characteristic)
-        }
-    }
-
-    private func startReferenceLocation() {
-        guard CLLocationManager.locationServicesEnabled() else {
-            locationAuthorizationText = "Location Services disabled"
-            record(kind: "location_reference_unavailable", details: ["reason": "services_disabled"])
-            return
-        }
-        switch locationManager.authorizationStatus {
-        case .authorizedAlways, .authorizedWhenInUse:
-            locationManager.startUpdatingLocation()
-            record(kind: "location_reference_started")
-        default: break
-        }
-    }
-
-    private func refreshLocationAuthorizationText() {
-        switch locationManager.authorizationStatus {
-        case .notDetermined: locationAuthorizationText = "Not requested"
-        case .restricted: locationAuthorizationText = "Restricted"
-        case .denied: locationAuthorizationText = "Denied"
-        case .authorizedAlways: locationAuthorizationText = "Authorized always"
-        case .authorizedWhenInUse: locationAuthorizationText = "Authorized while using app"
-        @unknown default: locationAuthorizationText = "Future authorization state"
-        }
-    }
-
-    private func normalizedBundleString(_ key: String) -> String? {
-        guard let raw = Bundle.main.object(forInfoDictionaryKey: key) as? String else { return nil }
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.hasPrefix("$(") else { return nil }
-        return trimmed
-    }
-
-    private func normalizedOptional(_ value: String?) -> String? {
-        guard let value else { return nil }
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private func record(kind: String, peripheral: CBPeripheral? = nil, service: CBService? = nil, characteristic: CBCharacteristic? = nil, descriptor: CBDescriptor? = nil, origin: String? = nil, value: Data? = nil, rssi: Int? = nil, scenario: ScenarioDefinition? = nil, details: [String: String] = [:], error: Error? = nil) {
-        guard acceptingEvents else { return }
-        guard events.count < maximumInMemoryEvents else { droppedEventCount += 1; return }
-        let activeScenario = scenario ?? activeScenarioID.flatMap { id in Self.scenarios.first(where: { $0.id == id }) }
-        let event = Event(id: nextEventID, wallClock: Date(), monotonicNanoseconds: DispatchTime.now().uptimeNanoseconds, kind: kind, peripheralID: peripheral?.identifier.uuidString, serviceUUID: service?.uuid.uuidString.uppercased() ?? characteristic?.service?.uuid.uuidString.uppercased() ?? descriptor?.characteristic?.service?.uuid.uuidString.uppercased(), characteristicUUID: characteristic?.uuid.uuidString.uppercased() ?? descriptor?.characteristic?.uuid.uuidString.uppercased(), descriptorUUID: descriptor?.uuid.uuidString.uppercased(), origin: origin, valueBase64: value?.base64EncodedString(), valueHex: value.map(Self.hex), rssi: rssi, scenarioID: activeScenario?.id, scenarioTitle: activeScenario?.title, details: details, error: error.map(Self.errorRecord))
-        events.append(event)
-        nextEventID += 1
-        eventCount = events.count
-    }
-
-    private static func errorRecord(_ error: Error) -> ErrorRecord {
-        let ns = error as NSError
-        return ErrorRecord(domain: ns.domain, code: ns.code, description: ns.localizedDescription)
-    }
-
-    private static func hex(_ data: Data) -> String { data.map { String(format: "%02X", $0) }.joined() }
-
-    private static func characteristicProperties(_ properties: CBCharacteristicProperties) -> String {
-        var names: [String] = []
-        if properties.contains(.broadcast) { names.append("broadcast") }
-        if properties.contains(.read) { names.append("read") }
-        if properties.contains(.writeWithoutResponse) { names.append("writeWithoutResponse") }
-        if properties.contains(.write) { names.append("write") }
-        if properties.contains(.notify) { names.append("notify") }
-        if properties.contains(.indicate) { names.append("indicate") }
-        if properties.contains(.authenticatedSignedWrites) { names.append("authenticatedSignedWrites") }
-        if properties.contains(.extendedProperties) { names.append("extendedProperties") }
-        if properties.contains(.notifyEncryptionRequired) { names.append("notifyEncryptionRequired") }
-        if properties.contains(.indicateEncryptionRequired) { names.append("indicateEncryptionRequired") }
-        return names.joined(separator: ",")
-    }
-
-    private static func describeDescriptorValue(_ value: Any?) -> [String: String] {
-        guard let value else { return ["valueType": "nil"] }
-        if let data = value as? Data { return ["valueType": "Data", "valueBase64": data.base64EncodedString(), "valueHex": hex(data)] }
-        if let string = value as? String { return ["valueType": "String", "value": string] }
-        if let number = value as? NSNumber { return ["valueType": "NSNumber", "value": number.stringValue] }
-        return ["valueType": String(describing: type(of: value)), "value": String(describing: value)]
-    }
-
-    private static func advertisementDetails(_ advertisementData: [String: Any], rssi: NSNumber) -> [String: String] {
-        var details: [String: String] = [:]
-        if let name = advertisementData[CBAdvertisementDataLocalNameKey] as? String { details["localName"] = name }
-        if let connectable = advertisementData[CBAdvertisementDataIsConnectable] as? NSNumber { details["isConnectable"] = connectable.boolValue ? "true" : "false" }
-        if let tx = advertisementData[CBAdvertisementDataTxPowerLevelKey] as? NSNumber { details["txPower"] = tx.stringValue }
-        if let manufacturer = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data { details["manufacturerDataBase64"] = manufacturer.base64EncodedString(); details["manufacturerDataHex"] = hex(manufacturer) }
-        if let uuids = advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] { details["serviceUUIDs"] = uuids.map { $0.uuidString.uppercased() }.joined(separator: ",") }
-        if let uuids = advertisementData[CBAdvertisementDataOverflowServiceUUIDsKey] as? [CBUUID] { details["overflowServiceUUIDs"] = uuids.map { $0.uuidString.uppercased() }.joined(separator: ",") }
-        if let uuids = advertisementData[CBAdvertisementDataSolicitedServiceUUIDsKey] as? [CBUUID] { details["solicitedServiceUUIDs"] = uuids.map { $0.uuidString.uppercased() }.joined(separator: ",") }
-        if let serviceData = advertisementData[CBAdvertisementDataServiceDataKey] as? [CBUUID: Data] {
-            for (uuid, data) in serviceData {
-                let key = uuid.uuidString.uppercased()
-                details["serviceData.\(key).base64"] = data.base64EncodedString()
-                details["serviceData.\(key).hex"] = hex(data)
-            }
-        }
-        details["rssiRaw"] = rssi.stringValue
-        details["advertisementKeys"] = advertisementData.keys.sorted().joined(separator: ",")
-        for key in advertisementData.keys.sorted() where details["raw.\(key)"] == nil {
-            let value = advertisementData[key]
-            if let data = value as? Data {
-                details["raw.\(key).base64"] = data.base64EncodedString()
-                details["raw.\(key).hex"] = hex(data)
-            } else {
-                details["raw.\(key)"] = String(describing: value ?? "nil")
-            }
-        }
-        return details
-    }
-
-    private static func centralStateName(_ state: CBManagerState) -> String {
-        switch state {
-        case .unknown: return "unknown"
-        case .resetting: return "resetting"
-        case .unsupported: return "unsupported"
-        case .unauthorized: return "unauthorized"
-        case .poweredOff: return "poweredOff"
-        case .poweredOn: return "poweredOn"
-        @unknown default: return "future"
-        }
-    }
+/// Capture authority and all evidence clocks remain package-owned. The shell polls often enough
+/// to keep state changes subsecond while avoiding four full hierarchy evaluations per second for
+/// integer-second guidance that is never evidence.
+enum ES80CaptureRefreshPolicy {
+    static let statusPollInterval: TimeInterval = 0.5
 }
 
-extension ES80GuidedBluetoothCapture: @preconcurrency CBCentralManagerDelegate {
-    func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        bluetoothState = central.state
-        record(kind: "central_state", details: ["state": Self.centralStateName(central.state)])
-
-        if central.state != .poweredOn {
-            if isScanning { isScanning = false }
-            if automaticReconnectEnabled, selectedPeripheralID != nil, !isFrozen {
-                isConnecting = false
-                isConnected = false
-                isRecoveringConnection = true
-                discoveryStage = .reconnecting
-                lastMessage = "Bluetooth became unavailable. Keep this screen open; Capture will reconnect to the same scooter automatically when Bluetooth returns."
-            } else {
-                lastMessage = "Bluetooth became unavailable."
-            }
-            return
-        }
-
-        if automaticReconnectEnabled, !isFrozen, let activePeripheral, selectedPeripheralID == activePeripheral.identifier, activePeripheral.state != .connected, !isConnecting {
-            scheduleReconnect(to: activePeripheral, reason: "bluetooth_powered_on", immediate: true)
-        }
-    }
-
-    func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) {
-        let normalizedRSSI = RSSI.intValue == 127 ? nil : RSSI.intValue
-        let localName = (advertisementData[CBAdvertisementDataLocalNameKey] as? String) ?? peripheral.name
-        let connectable = (advertisementData[CBAdvertisementDataIsConnectable] as? NSNumber)?.boolValue
-        peripheralByID[peripheral.identifier] = peripheral
-        if discoveryStage == .baselineScanning { baselinePeripheralIDs.insert(peripheral.identifier) }
-        let existing = candidateByID[peripheral.identifier]
-        let candidate = Candidate(id: peripheral.identifier, name: localName ?? existing?.name, rssi: normalizedRSSI, connectable: connectable ?? existing?.connectable, firstSeen: existing?.firstSeen ?? Date(), lastSeen: Date(), advertisementCount: (existing?.advertisementCount ?? 0) + 1, appearedAfterPowerOn: discoveryStage == .poweredOnScanning && !baselinePeripheralIDs.contains(peripheral.identifier))
-        candidateByID[peripheral.identifier] = candidate
-        candidates = candidateByID.values.sorted {
-            if $0.appearedAfterPowerOn != $1.appearedAfterPowerOn { return $0.appearedAfterPowerOn && !$1.appearedAfterPowerOn }
-            switch ($0.rssi, $1.rssi) {
-            case let (.some(left), .some(right)) where left != right: return left > right
-            case (.some, .none): return true
-            case (.none, .some): return false
-            default: return $0.id.uuidString < $1.id.uuidString
-            }
-        }
-        advertisementCount += 1
-        record(kind: "advertisement", peripheral: peripheral, rssi: normalizedRSSI, details: Self.advertisementDetails(advertisementData, rssi: RSSI).merging(["appearedAfterPowerOn": candidate.appearedAfterPowerOn ? "true" : "false"], uniquingKeysWith: { current, _ in current }))
-    }
-
-    func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        let wasRecovery = isRecoveringConnection || reconnectAttempt > 0 || connectionGapStartedAtNanoseconds != nil
-        let attemptsUsed = reconnectAttempt
-        let now = DispatchTime.now().uptimeNanoseconds
-        let gapSeconds = connectionGapStartedAtNanoseconds.flatMap { start in now >= start ? Double(now - start) / 1_000_000_000 : nil }
-
-        reconnectTask?.cancel()
-        reconnectTask = nil
-        isConnecting = false
-        isConnected = true
-        isRecoveringConnection = false
-        discoveryStage = .connected
-        connectedAt = connectedAt ?? Date()
-        activePeripheral = peripheral
-        peripheral.delegate = self
-        selectedPeripheralName = peripheral.name ?? selectedPeripheralName
-        reconnectAttempt = 0
-        connectionGapStartedAtNanoseconds = nil
-        pendingReadOrigins.removeAll()
-        readableCharacteristicByID.removeAll()
-        readPollingDisabledByID.removeAll()
-        subscribeAfterRead.removeAll()
-
-        var details = ["peripheralName": peripheral.name ?? ""]
-        if wasRecovery {
-            details["attempts"] = String(attemptsUsed)
-            if let gapSeconds { details["gapSeconds"] = String(format: "%.3f", gapSeconds) }
-        }
-        record(kind: wasRecovery ? "reconnected" : "connected", peripheral: peripheral, details: details)
-        lastMessage = wasRecovery ? "Reconnected to the same scooter. Your capture and calibration progress were kept." : "Connected. Nembra is dumping all discoverable/readable/notifying GATT data. Start the guided calibration steps."
-        peripheral.discoverServices(nil)
-        peripheral.readRSSI()
-        startRSSIPolling()
-        startReadableValuePolling()
-        requestReferenceLocationIfNeeded()
-    }
-
-    func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        isConnecting = false
-        isConnected = false
-        record(kind: "connect_failed", peripheral: peripheral, details: ["attempt": String(reconnectAttempt)], error: error)
-        if automaticReconnectEnabled, !isFrozen, selectedPeripheralID == peripheral.identifier {
-            scheduleReconnect(to: peripheral, reason: "connect_failed")
-        } else {
-            isRecoveringConnection = false
-            discoveryStage = baselinePeripheralIDs.isEmpty ? .idle : .waitingForPowerOn
-            lastMessage = "Connection failed. Scan again and retry the candidate."
-        }
-    }
-
-    func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        rssiTask?.cancel()
-        rssiTask = nil
-        readPollTask?.cancel()
-        readPollTask = nil
-        pendingReadOrigins.removeAll()
-        readableCharacteristicByID.removeAll()
-        readPollingDisabledByID.removeAll()
-        subscribeAfterRead.removeAll()
-        isConnecting = false
-        isConnected = false
-        record(kind: "disconnected", peripheral: peripheral, details: ["automaticReconnectEnabled": automaticReconnectEnabled ? "true" : "false"], error: error)
-
-        guard automaticReconnectEnabled, !isFrozen, selectedPeripheralID == peripheral.identifier else {
-            isRecoveringConnection = false
-            return
-        }
-
-        connectionDropCount += 1
-        if connectionGapStartedAtNanoseconds == nil { connectionGapStartedAtNanoseconds = DispatchTime.now().uptimeNanoseconds }
-        if activeScenarioID != nil {
-            activeScenarioHadConnectionGap = true
-            record(kind: "scenario_connection_gap", peripheral: peripheral, details: ["dropCount": String(connectionDropCount)])
-        }
-        scheduleReconnect(to: peripheral, reason: "unexpected_disconnect")
-    }
-}
-
-extension ES80GuidedBluetoothCapture: @preconcurrency CBPeripheralDelegate {
-    func peripheralDidUpdateName(_ peripheral: CBPeripheral) {
-        selectedPeripheralName = peripheral.name ?? selectedPeripheralName
-        record(kind: "peripheral_name_updated", peripheral: peripheral, details: ["name": peripheral.name ?? ""])
-    }
-
-    func peripheral(_ peripheral: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {
-        record(kind: "services_invalidated", peripheral: peripheral, details: ["serviceUUIDs": invalidatedServices.map { $0.uuid.uuidString.uppercased() }.joined(separator: ",")])
-        peripheral.discoverServices(nil)
-    }
-
-    func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
-        record(kind: "services_discovered", peripheral: peripheral, error: error)
-        guard error == nil, let services = peripheral.services else { return }
-        for service in services {
-            let uuid = service.uuid.uuidString.uppercased()
-            observedServices.insert(uuid)
-            record(kind: "service", peripheral: peripheral, service: service, details: ["isPrimary": service.isPrimary ? "true" : "false"])
-            peripheral.discoverIncludedServices(nil, for: service)
-            peripheral.discoverCharacteristics(nil, for: service)
-        }
-    }
-
-    func peripheral(_ peripheral: CBPeripheral, didDiscoverIncludedServicesFor service: CBService, error: Error?) {
-        record(kind: "included_services_discovered", peripheral: peripheral, service: service, error: error)
-        guard error == nil else { return }
-        for included in service.includedServices ?? [] {
-            let includedUUID = included.uuid.uuidString.uppercased()
-            observedServices.insert(includedUUID)
-            record(kind: "included_service", peripheral: peripheral, service: service, details: ["includedServiceUUID": includedUUID, "includedServiceIsPrimary": included.isPrimary ? "true" : "false"])
-            peripheral.discoverCharacteristics(nil, for: included)
-        }
-    }
-
-    func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
-        record(kind: "characteristics_discovered", peripheral: peripheral, service: service, error: error)
-        guard error == nil else { return }
-        for characteristic in service.characteristics ?? [] {
-            let characteristicUUID = characteristic.uuid.uuidString.uppercased()
-            observedCharacteristics.insert(characteristicUUID)
-            let properties = Self.characteristicProperties(characteristic.properties)
-            let canRead = characteristic.properties.contains(.read)
-            let canNotify = characteristic.properties.contains(.notify) || characteristic.properties.contains(.indicate)
-            if canRead { readableCharacteristics.insert(characteristicUUID) }
-            if canNotify { notifyingCharacteristics.insert(characteristicUUID) }
-            record(kind: "characteristic", peripheral: peripheral, characteristic: characteristic, details: ["properties": properties, "isNotifyingAtDiscovery": characteristic.isNotifying ? "true" : "false"])
-            peripheral.discoverDescriptors(for: characteristic)
-            let key = ObjectIdentifier(characteristic)
-            if canRead {
-                readableCharacteristicByID[key] = characteristic
-                pendingReadOrigins[key] = "initial_read"
-                if canNotify { subscribeAfterRead.insert(key) }
-                record(kind: "characteristic_read_requested", peripheral: peripheral, characteristic: characteristic, origin: "initial_read")
-                peripheral.readValue(for: characteristic)
-            } else if canNotify {
-                record(kind: "subscription_requested", peripheral: peripheral, characteristic: characteristic)
-                peripheral.setNotifyValue(true, for: characteristic)
-            }
-        }
-    }
-
-    func peripheral(_ peripheral: CBPeripheral, didDiscoverDescriptorsFor characteristic: CBCharacteristic, error: Error?) {
-        record(kind: "descriptors_discovered", peripheral: peripheral, characteristic: characteristic, error: error)
-        guard error == nil else { return }
-        for descriptor in characteristic.descriptors ?? [] {
-            observedDescriptors.insert(descriptor.uuid.uuidString.uppercased())
-            record(kind: "descriptor", peripheral: peripheral, descriptor: descriptor)
-            record(kind: "descriptor_read_requested", peripheral: peripheral, descriptor: descriptor)
-            peripheral.readValue(for: descriptor)
-        }
-    }
-
-    func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
-        let key = ObjectIdentifier(characteristic)
-        let pendingReadOrigin = pendingReadOrigins.removeValue(forKey: key)
-        let wasPendingRead = pendingReadOrigin != nil
-        let shouldSubscribeNow = wasPendingRead && subscribeAfterRead.remove(key) != nil
-        let origin = pendingReadOrigin ?? (characteristic.isNotifying ? "notify_or_indicate" : "unsolicited_callback")
-        if let error {
-            if wasPendingRead { readPollingDisabledByID.insert(key) }
-            record(kind: "characteristic_value_error", peripheral: peripheral, characteristic: characteristic, origin: origin, details: ["futurePollingDisabled": wasPendingRead ? "true" : "false"], error: error)
-        } else {
-            characteristicValueEventCount += 1
-            record(kind: "characteristic_value", peripheral: peripheral, characteristic: characteristic, origin: origin, value: characteristic.value, details: ["byteCount": String(characteristic.value?.count ?? 0), "isNotifying": characteristic.isNotifying ? "true" : "false"])
-        }
-        if shouldSubscribeNow {
-            record(kind: "subscription_requested_after_read", peripheral: peripheral, characteristic: characteristic)
-            peripheral.setNotifyValue(true, for: characteristic)
-        }
-    }
-
-    func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
-        record(kind: "subscription_state", peripheral: peripheral, characteristic: characteristic, details: ["isNotifying": characteristic.isNotifying ? "true" : "false"], error: error)
-    }
-
-    func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor descriptor: CBDescriptor, error: Error?) {
-        var details = Self.describeDescriptorValue(descriptor.value)
-        details["descriptorUUID"] = descriptor.uuid.uuidString.uppercased()
-        if error == nil { descriptorValueEventCount += 1 }
-        record(kind: error == nil ? "descriptor_value" : "descriptor_value_error", peripheral: peripheral, descriptor: descriptor, details: details, error: error)
-    }
-
-    func peripheral(_ peripheral: CBPeripheral, didReadRSSI RSSI: NSNumber, error: Error?) {
-        let normalizedRSSI = RSSI.intValue == 127 ? nil : RSSI.intValue
-        record(kind: "rssi", peripheral: peripheral, rssi: normalizedRSSI, details: ["raw": RSSI.stringValue], error: error)
-    }
-}
-
-extension ES80GuidedBluetoothCapture: @preconcurrency CLLocationManagerDelegate {
-    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        refreshLocationAuthorizationText()
-        record(kind: "location_authorization", details: ["authorization": locationAuthorizationText])
-        if manager.authorizationStatus == .authorizedAlways || manager.authorizationStatus == .authorizedWhenInUse { startReferenceLocation() }
-    }
-
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard selectedPeripheralID != nil, !isFrozen else { return }
-        for location in locations {
-            guard location.horizontalAccuracy >= 0 else { continue }
-            let speedMetersPerSecond = location.speed >= 0 ? location.speed : 0
-            let speedMPH = speedMetersPerSecond * 2.2369362920544
-            latestReferenceSpeedMPH = speedMPH
-            latestReferenceHorizontalAccuracy = location.horizontalAccuracy
-            locationReferenceSampleCount += 1
-            record(kind: "location_reference", peripheral: activePeripheral, details: ["speedMetersPerSecond": String(format: "%.4f", speedMetersPerSecond), "speedMPH": String(format: "%.4f", speedMPH), "horizontalAccuracyMeters": String(format: "%.3f", location.horizontalAccuracy), "verticalAccuracyMeters": String(format: "%.3f", location.verticalAccuracy), "courseDegrees": location.course >= 0 ? String(format: "%.3f", location.course) : "", "courseAccuracyDegrees": location.courseAccuracy >= 0 ? String(format: "%.3f", location.courseAccuracy) : "", "altitudeMeters": String(format: "%.3f", location.altitude), "bluetoothConnected": isConnected ? "true" : "false"])
-        }
-    }
-
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        record(kind: "location_reference_error", error: error)
-    }
-}
-
-private struct GuidedCaptureTransfer: Transferable {
+/// Exact verified Share bytes are the transfer authority. The system may materialize these bytes
+/// for a destination, but Nembra never reopens a mutable pathname after integrity verification.
+private struct VerifiedFinalShareTransfer: Transferable {
     let data: Data
     let filename: String
+
     static var transferRepresentation: some TransferRepresentation {
-        DataRepresentation(exportedContentType: .json) { transfer in transfer.data }
-            .suggestedFileName { transfer in transfer.filename }
+        DataRepresentation(exportedContentType: .json) { transfer in
+            transfer.data
+        }
+        .suggestedFileName { transfer in
+            transfer.filename
+        }
     }
 }
 
+/// Product-facing Nembra Capture shell for ES80 Experiment One.
+///
+/// One package-owned coordinator now carries the complete software provenance life from
+/// OFF1 -> ON1 -> OFF2 -> ON2 through explicit correlated-target confirmation, fresh
+/// post-admission rediscovery, passive acquisition, Ready, monotonic Horizon, and immutable
+/// finalized JSON. SwiftUI never constructs a second correlation producer, never selects an
+/// authoritative UUID, and never receives the sealed admission or mutable recorder.
+///
+/// A repeated full CoreBluetooth UUID remains correlated Bluetooth-target evidence only. It is
+/// not permanent hardware authentication, RF emission-time proof, protocol semantics, or telemetry.
 @MainActor
-struct ES80OneTimeBluetoothDumpView: View {
-    @StateObject private var capture = ES80GuidedBluetoothCapture()
-    @State private var customAction = ""
-    @State private var referenceLabel = ""
-    @State private var referenceValue = ""
-    @State private var scenarioNote = ""
-    @State private var showingAdvanced = false
+struct ES80CaptureShellView: View {
+    private enum Phase: Equatable {
+        case physicalProcedureLocked
+        case bluetoothUnavailable(String)
+        case correlationReady(PassiveBluetoothPowerCycleObservationPhase)
+        case correlationStarting(PassiveBluetoothPowerCycleObservationPhase)
+        case correlationObserving(PassiveBluetoothPowerCycleObservationPhase)
+        case correlationFailed(String)
+        case noRepeatableTarget
+        case ambiguousTargets(Int)
+        case correlatedTarget
+        case rediscoveringTarget
+        case targetReacquired
+        case connecting
+        case acquiring
+        case observing
+        case readyToSeal
+        case finalizing
+        case complete
+        case failed(String)
+    }
+
+    private static let requiredCorrelationWindowDuration: TimeInterval = 10
+    private static let requiredCorrelationWindowNanoseconds: UInt64 = 10_000_000_000
+    private static let requiredObservationGuidanceNanoseconds: UInt64 = 60_000_000_000
+
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var accessibilityDifferentiateWithoutColor
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
+    @State private var coordinator: PassiveBluetoothExperimentOneCoordinator
+    @State private var observedScanBeganAtUptimeNanoseconds: UInt64?
+    @State private var observationReadyBeganAtUptimeNanoseconds: UInt64?
+    @State private var captureConnectionAttempted = false
+    @State private var finalizationInFlight = false
+    @State private var diagnosticMessage: String?
+    @State private var localFailureMessage: String?
+    @State private var didPresentAnalysisReadySemantics = false
+    @State private var successHapticTick = 0
+    @State private var warningHapticTick = 0
+    @State private var finalShareData: Data?
+    @State private var finalShareFilename: String?
+    @State private var finalShareIntegrityReport: PassiveBluetoothExperimentOneFinalShareIntegrityReport?
+    @State private var sharePreparationWarning: String?
+    @State private var declaredStationarySetup: PassiveBluetoothStationaryCaptureSetup?
+    @State private var showingDetails = false
+
+    private let onFreshExperimentRequested: () throws -> PassiveBluetoothExperimentOneCoordinator
+#if DEBUG && targetEnvironment(simulator)
+    private let simulatorQASnapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot?
+#endif
+
+    init(
+        coordinator: PassiveBluetoothExperimentOneCoordinator,
+        onFreshExperimentRequested: @escaping () throws -> PassiveBluetoothExperimentOneCoordinator
+    ) {
+        _coordinator = State(initialValue: coordinator)
+        self.onFreshExperimentRequested = onFreshExperimentRequested
+#if DEBUG && targetEnvironment(simulator)
+        simulatorQASnapshot = nil
+#endif
+    }
+
+#if DEBUG && targetEnvironment(simulator)
+    init(
+        coordinator: PassiveBluetoothExperimentOneCoordinator,
+        simulatorQASnapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot,
+        onFreshExperimentRequested: @escaping () throws -> PassiveBluetoothExperimentOneCoordinator
+    ) {
+        _coordinator = State(initialValue: coordinator)
+        self.onFreshExperimentRequested = onFreshExperimentRequested
+        self.simulatorQASnapshot = simulatorQASnapshot
+    }
+#endif
 
     var body: some View {
-        NavigationStack {
-            TimelineView(.periodic(from: .now, by: 0.5)) { _ in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        header
-                        statusCard
-                        if capture.selectedPeripheralID == nil {
-                            discoveryCard
-                        } else {
-                            connectedScooterCard
-                            if capture.isRecoveringConnection { reconnectCard }
-                            calibrationCard
-                            referenceCard
-                            captureHealthCard
-                            finishCard
-                        }
-                        if let data = capture.exportData { shareCard(data: data) }
-                        advancedDisclosure
+        TimelineView(.periodic(
+            from: .now,
+            by: ES80CaptureRefreshPolicy.statusPollInterval
+        )) { _ in
+            let status = coordinator.status
+            let currentPhase = phase(status: status)
+            let now = DispatchTime.now().uptimeNanoseconds
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: captureVerticalSpacing) {
+                    hero(for: currentPhase)
+#if DEBUG && targetEnvironment(simulator)
+                    if let simulatorQASnapshot {
+                        simulatorQABadge(simulatorQASnapshot)
                     }
-                    .frame(maxWidth: 760)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 20)
-                    .frame(maxWidth: .infinity)
+#endif
+                    if dynamicTypeSize.isAccessibilitySize {
+                        primaryContent(
+                            for: currentPhase,
+                            status: status,
+                            nowUptimeNanoseconds: now
+                        )
+                        passiveSafetyPanel
+                        progressRail(status: status)
+                    } else {
+                        passiveSafetyPanel
+                        progressRail(status: status)
+                        primaryContent(
+                            for: currentPhase,
+                            status: status,
+                            nowUptimeNanoseconds: now
+                        )
+                    }
+
+                    if let diagnosticMessage {
+                        diagnosticBanner(diagnosticMessage)
+                    }
                 }
-                .background(Color.black.ignoresSafeArea())
+                .frame(maxWidth: 660)
+                .padding(.horizontal, 22)
+                .padding(.top, captureTopPadding)
+                .padding(.bottom, captureBottomPadding)
+                .frame(maxWidth: .infinity)
             }
-            .navigationTitle("Nembra Capture")
-            .navigationBarTitleDisplayMode(.inline)
-            .preferredColorScheme(.dark)
-            .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
-            .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+            .accessibilityIdentifier("es80.capture.scroll")
+            .background(Color.black.ignoresSafeArea())
+            .onAppear {
+                synchronizeIdleTimer(for: currentPhase)
+                synchronizeObservedScanClock(isScanning: status.powerCycleProgress?.isScanning == true)
+                synchronizeObservationReadyClock(isReady: presentationObservationReady(status: status))
+            }
+            .onChange(of: currentPhase) { _, newPhase in
+                synchronizeIdleTimer(for: newPhase)
+                handleSemanticPhaseTransition(newPhase)
+                announceAccessibilityStatus(newPhase)
+            }
+            .onChange(of: diagnosticMessage) { _, message in
+                announceAccessibilityAlert(message)
+            }
+            .onChange(of: sharePreparationWarning) { _, message in
+                announceAccessibilityAlert(message)
+            }
+            .onChange(of: presentationAnalysisReady) { _, isReady in
+                guard isReady, currentPhase == .complete else { return }
+                presentAnalysisReadySemanticsIfNeeded()
+            }
+            .onChange(of: status.powerCycleProgress?.isScanning == true) { _, isScanning in
+                synchronizeObservedScanClock(isScanning: isScanning)
+            }
+            .onChange(of: presentationObservationReady(status: status)) { _, isReady in
+                synchronizeObservationReadyClock(isReady: isReady)
+            }
+        }
+        .navigationTitle("Nembra Capture")
+        .navigationBarTitleDisplayMode(.inline)
+        .onDisappear {
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
+        .onChange(of: scenePhase) { _, newScenePhase in
+            handleScenePhaseChange(newScenePhase)
+        }
+        .sheet(isPresented: $showingDetails) {
+            captureDetailsSheet
+        }
+        .accessibilityIdentifier("es80.capture-shell")
+        .sensoryFeedback(.success, trigger: successHapticTick)
+        .sensoryFeedback(.warning, trigger: warningHapticTick)
+    }
+
+    private var captureVerticalSpacing: CGFloat {
+        if verticalSizeClass == .compact { return 16 }
+        return dynamicTypeSize.isAccessibilitySize ? 10 : 24
+    }
+
+    private var captureTopPadding: CGFloat {
+        if verticalSizeClass == .compact { return 10 }
+        return dynamicTypeSize.isAccessibilitySize ? 8 : 18
+    }
+
+    private var captureBottomPadding: CGFloat { verticalSizeClass == .compact ? 20 : 42 }
+
+    @ViewBuilder
+    private func hero(for phase: Phase) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("NEMBRA CAPTURE")
+                    .font(.caption.monospaced().weight(.bold))
+                    .tracking(1.4)
+                    .foregroundStyle(.secondary)
+
+                Text(heroTitle(for: phase))
+                    .font(.system(.title2, design: .rounded, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Image(systemName: statusSymbol(for: phase))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(statusColor(for: phase))
+                        .accessibilityHidden(true)
+
+                    Text(statusTitle(for: phase))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Text("PASSIVE / READ ONLY")
+                    .font(.caption2.monospaced().weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .center, spacing: 14) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 15, style: .continuous)
+                            .fill(.white.opacity(0.08))
+                            .frame(width: 52, height: 52)
+
+                        Image(systemName: "wave.3.right.circle.fill")
+                            .font(.system(size: 25, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+                    .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("NEMBRA CAPTURE")
+                            .font(.caption.monospaced().weight(.bold))
+                            .tracking(1.4)
+                            .foregroundStyle(.secondary)
+
+                        Text(heroTitle(for: phase))
+                            .font(.system(.largeTitle, design: .rounded, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.isHeader)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+
+                HStack(spacing: 10) {
+                    Image(systemName: statusSymbol(for: phase))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(statusColor(for: phase))
+                        .accessibilityHidden(true)
+
+                    Text(statusTitle(for: phase))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+
+                    Spacer(minLength: 8)
+
+                    Text("PASSIVE / READ ONLY")
+                        .font(.caption2.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("SCOOTER LEARNING").font(.caption.monospaced().weight(.bold)).tracking(1.3).foregroundStyle(.secondary)
-            Text("Teach Nembra your scooter.").font(.system(.largeTitle, design: .rounded, weight: .bold)).foregroundStyle(.white)
-            Text("Nembra will find the scooter, record every passive Bluetooth value iOS exposes, and guide you through the actions that make those values change.").font(.body).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Label("READ / NOTIFY ONLY · NO SCOOTER COMMAND WRITES", systemImage: "shield.checkered").font(.caption.monospaced().weight(.bold)).foregroundStyle(.green)
-        }
-    }
-
-    private var statusCard: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: capture.isConnected ? "antenna.radiowaves.left.and.right.circle.fill" : capture.isRecoveringConnection ? "arrow.triangle.2.circlepath.circle.fill" : "wave.3.right")
-                .font(.title2)
-                .foregroundStyle(capture.isConnected ? .green : capture.isRecoveringConnection ? .orange : .white)
+#if DEBUG && targetEnvironment(simulator)
+    private func simulatorQABadge(
+        _ snapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot
+    ) -> some View {
+        HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: 9) {
+            Image(systemName: "hammer.fill")
                 .accessibilityHidden(true)
+            Text(
+                dynamicTypeSize.isAccessibilitySize
+                    ? "SIMULATOR QA · SYNTHETIC"
+                    : "\(snapshot.evidenceLabel) · SYNTHETIC SOFTWARE STATE"
+            )
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.caption.monospaced().weight(.bold))
+        .foregroundStyle(.orange)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            .orange.opacity(0.10),
+            in: RoundedRectangle(
+                cornerRadius: dynamicTypeSize.isAccessibilitySize ? 14 : 999,
+                style: .continuous
+            )
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            snapshot.accessibilitySummary
+                + " No Bluetooth transport or capture evidence is created by this presentation fixture."
+        )
+        .accessibilityIdentifier("es80.capture.simulator-qa")
+    }
+#endif
+
+    private var passiveSafetyPanel: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "shield.lefthalf.filled")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.white)
+                .accessibilityHidden(true)
+
             VStack(alignment: .leading, spacing: 5) {
-                Text(connectionHeadline).font(.headline).foregroundStyle(.white)
-                Text(capture.lastMessage).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text("One continuous capture")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+
+                Text("Nembra keeps signal matching and read-only capture in one continuous run. It never sends scooter commands and never chooses a signal from its name, signal strength, or service hints.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 8)
-            Text("\(capture.eventCount)").font(.headline.monospacedDigit()).foregroundStyle(.white).accessibilityLabel("\(capture.eventCount) captured events")
         }
         .padding(16)
-        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("es80.capture.single-authority")
     }
 
-    private var discoveryCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label("1 · FIND THE SCOOTER", systemImage: "scope").font(.headline).foregroundStyle(.white)
-            switch capture.discoveryStage {
-            case .idle:
-                Text("Best method: leave the scooter OFF, scan the room for 8–10 seconds, save that baseline, then power the scooter ON. Nembra will mark Bluetooth devices that newly appeared.").font(.subheadline).foregroundStyle(.secondary)
-                Button("Start scooter-OFF baseline") { capture.beginBaselineScan() }.buttonStyle(.borderedProminent).disabled(capture.bluetoothState != .poweredOn)
-                Button("I already know the device · quick scan") { capture.beginQuickScan() }.buttonStyle(.bordered).disabled(capture.bluetoothState != .poweredOn)
-            case .baselineScanning:
-                Text("Keep the scooter OFF. Let this run for about 8–10 seconds.").foregroundStyle(.secondary)
-                Button("Baseline done") { capture.finishBaseline() }.buttonStyle(.borderedProminent)
-            case .waitingForPowerOn:
-                Text("Now turn the scooter ON. Wait a moment, then start the second scan.").foregroundStyle(.secondary)
-                Button("Scan after power-on") { capture.beginPoweredOnScan() }.buttonStyle(.borderedProminent)
-            case .poweredOnScanning, .quickScanning:
-                Text(capture.discoveryStage == .poweredOnScanning ? "Tap the likely scooter. NEW means the device was not present while the scooter was OFF." : "Tap the scooter only when you are confident which device it is.").foregroundStyle(.secondary)
-                Button("Stop scan") { capture.stopScan() }.buttonStyle(.bordered)
-            case .connecting:
-                ProgressView("Connecting…").tint(.white)
-            case .reconnecting, .connected:
-                EmptyView()
-            }
-            if !capture.candidates.isEmpty {
-                VStack(spacing: 10) {
-                    ForEach(capture.candidates) { candidate in
-                        Button { capture.connect(to: candidate) } label: {
-                            HStack(spacing: 12) {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    HStack(spacing: 7) {
-                                        Text(candidate.displayName).font(.headline).foregroundStyle(.white)
-                                        if candidate.appearedAfterPowerOn {
-                                            Text("NEW").font(.caption2.monospaced().weight(.bold)).foregroundStyle(.black).padding(.horizontal, 7).padding(.vertical, 3).background(.green, in: Capsule())
-                                        }
-                                    }
-                                    Text(candidate.id.uuidString).font(.caption2.monospaced()).foregroundStyle(.secondary).lineLimit(1)
-                                    Text("\(candidate.rssiText) · \(candidate.advertisementCount) ads").font(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right").foregroundStyle(.secondary)
-                            }
-                            .padding(14)
-                            .background(candidate.appearedAfterPowerOn ? .green.opacity(0.10) : .white.opacity(0.05), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    private func progressRail(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> some View {
+        let completed = presentationCompletedWindows(status: status)
+        let current = presentationCurrentWindow(status: status)
+        let labels = ["OFF 1", "ON 1", "OFF 2", "ON 2", "READY", "SEAL"]
+
+        return VStack(alignment: .leading, spacing: 10) {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("CAPTURE PROGRESS")
+                        .font(.caption.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+                    Text(progressStage(status: status, completedWindows: completed))
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2),
+                    spacing: 12
+                ) {
+                    ForEach(0..<6, id: \.self) { index in
+                        VStack(alignment: .leading, spacing: 6) {
+                            progressSegment(
+                                index: index,
+                                completedWindows: completed,
+                                currentWindow: current,
+                                status: status
+                            )
+                            Text(labels[index])
+                                .font(.caption2.monospaced().weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-                        .buttonStyle(.plain)
-                        .disabled(candidate.connectable == false || capture.isConnecting)
                     }
+                }
+            } else {
+                HStack {
+                    Text("CAPTURE PROGRESS")
+                        .font(.caption.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(progressStage(status: status, completedWindows: completed))
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack(spacing: 6) {
+                    ForEach(0..<6, id: \.self) { index in
+                        progressSegment(
+                            index: index,
+                            completedWindows: completed,
+                            currentWindow: current,
+                            status: status
+                        )
+                    }
+                }
+
+                HStack {
+                    Text("OFF 1")
+                    Spacer()
+                    Text("ON 1")
+                    Spacer()
+                    Text("OFF 2")
+                    Spacer()
+                    Text("ON 2")
+                    Spacer()
+                    Text("READY")
+                    Spacer()
+                    Text("SEAL")
+                }
+                .font(.caption2.monospaced().weight(.semibold))
+                .foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            progressAccessibilityLabel(
+                status: status,
+                completedWindows: completed,
+                analysisReady: presentationAnalysisReady
+            )
+        )
+        .accessibilityIdentifier("es80.capture.experiment-progress")
+    }
+
+    @ViewBuilder
+    private func primaryContent(
+        for phase: Phase,
+        status: PassiveBluetoothExperimentOneCoordinator.Status,
+        nowUptimeNanoseconds: UInt64
+    ) -> some View {
+        switch phase {
+        case .physicalProcedureLocked:
+            statePanel(
+                eyebrow: "CAPTURE LOCKED",
+                title: "This build is not ready for a field capture",
+                message: "Field capture is locked for this build. OFF / ON checks, connection, capture, and sealing stay unavailable until this exact build is authorized.",
+                symbol: "lock.shield.fill"
+            )
+
+        case let .bluetoothUnavailable(message):
+            statePanel(
+                eyebrow: "PREFLIGHT",
+                title: "Bluetooth is not ready",
+                message: message,
+                symbol: "antenna.radiowaves.left.and.right.slash"
+            )
+            primaryButton(
+                "Begin OFF 1 check",
+                systemImage: "power",
+                disabled: true,
+                identifier: "es80.capture.begin-window"
+            ) {}
+
+        case let .correlationReady(window):
+            if window == .firstPoweredOff, declaredStationarySetup == nil {
+                statePanel(
+                    eyebrow: "PREFLIGHT / DECLARATION",
+                    title: "Confirm stationary setup",
+                    message: "Before OFF 1, unplug the scooter charger, keep Nembra foregrounded with the screen unlocked, and keep the stock scooter app closed. Confirm only when those are your declared setup conditions for this capture.",
+                    symbol: "checkmark.shield"
+                )
+                primaryButton(
+                    "Confirm setup",
+                    systemImage: "checkmark.circle.fill",
+                    identifier: "es80.capture.confirm-setup"
+                ) {
+                    declaredStationarySetup = PassiveBluetoothStationaryCaptureSetup(
+                        chargerState: .disconnected,
+                        executionContext: .foregroundUnlockedScreenOn,
+                        stockAppReferenceSetup: .none
+                    )
+                }
+                guidanceFootnote("This records what you confirmed. Nembra cannot independently verify that the condition stayed true for the whole Capture.")
+            } else {
+                correlationReadyPanel(window)
+                primaryButton(
+                    "Begin \(phaseShortName(window)) check",
+                    systemImage: window.operatorExpectedPowerOn ? "power.circle.fill" : "power.circle",
+                    identifier: "es80.capture.begin-window"
+                ) {
+                    beginCorrelationWindow()
+                }
+            }
+
+        case let .correlationStarting(window):
+            statePanel(
+                eyebrow: "\(phaseShortName(window)) / STARTING",
+                title: "Starting the Bluetooth check",
+                message: "Nembra is waiting for Bluetooth scanning to begin. This check has not started yet.",
+                symbol: "dot.radiowaves.left.and.right"
+            )
+            reduceMotionActivityIndicator
+
+        case let .correlationObserving(window):
+            correlationObservingPanel(
+                window,
+                nowUptimeNanoseconds: nowUptimeNanoseconds
+            )
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(phaseShortName(window)) observation")
+            .accessibilityValue(
+                window.operatorExpectedPowerOn
+                    ? "Keep the scooter on"
+                    : "Keep the scooter off"
+            )
+            .accessibilityHint("Nembra is recording this Bluetooth check.")
+
+            let remaining = correlationGuidanceRemainingSeconds(
+                nowUptimeNanoseconds: nowUptimeNanoseconds
+            )
+            primaryButton(
+                remaining == 0 ? "Complete \(phaseShortName(window)) check" : "Hold state — \(remaining)s",
+                systemImage: remaining == 0 ? "checkmark.circle.fill" : "timer",
+                disabled: remaining != 0,
+                identifier: "es80.capture.complete-window"
+            ) {
+                completeCorrelationWindow()
+            }
+            .accessibilityLabel("\(phaseShortName(window)) check timer")
+            .accessibilityValue(
+                remaining == 0
+                    ? "Display guidance complete; ready to finish this check"
+                    : "\(remaining) seconds of display guidance remaining"
+            )
+            .accessibilityHint("This timer is guidance only. Nembra verifies the required observation before accepting this check.")
+
+            guidanceFootnote("This countdown is guidance only. Nembra accepts the check only after the required observation time is recorded; finishing early cannot create a valid result.")
+
+        case let .correlationFailed(message):
+            statePanel(
+                eyebrow: "SIGNAL CHECK STOPPED",
+                title: "Restart from OFF 1",
+                message: message,
+                symbol: "arrow.counterclockwise.circle"
+            )
+            primaryButton(
+                "Start a fresh capture",
+                systemImage: "arrow.counterclockwise",
+                identifier: "es80.capture.restart-correlation"
+            ) {
+                restartExperiment()
+            }
+
+        case .noRepeatableTarget:
+            statePanel(
+                eyebrow: "NO UNIQUE SIGNAL",
+                title: "No scooter signal repeated twice",
+                message: "No single Bluetooth signal disappeared in both OFF checks and returned in both ON checks. Nembra will not guess from name, signal strength, service hints, or short IDs.",
+                symbol: "questionmark.circle"
+            )
+            primaryButton(
+                "Repeat all four checks",
+                systemImage: "arrow.counterclockwise",
+                identifier: "es80.capture.restart-correlation"
+            ) {
+                restartExperiment()
+            }
+
+        case let .ambiguousTargets(count):
+            statePanel(
+                eyebrow: "MULTIPLE MATCHES",
+                title: "\(count) signals followed the same pattern",
+                message: "More than one Bluetooth signal followed the same OFF / ON pattern. Nembra will not guess which one is the scooter from name, signal strength, services, or a short ID.",
+                symbol: "point.3.filled.connected.trianglepath.dotted"
+            )
+            primaryButton(
+                "Repeat all four checks",
+                systemImage: "arrow.counterclockwise",
+                identifier: "es80.capture.restart-correlation"
+            ) {
+                restartExperiment()
+            }
+
+        case .correlatedTarget:
+            statePanel(
+                eyebrow: "SCOOTER SIGNAL FOUND",
+                title: "One signal matched twice",
+                message: "One Bluetooth signal appeared in both ON checks and disappeared in both OFF checks. Treat it only as the matched scooter signal for this Capture, not permanent scooter identity.",
+                symbol: "checkmark.circle"
+            )
+            primaryButton(
+                "Confirm scooter signal",
+                systemImage: "checkmark.shield",
+                identifier: "es80.capture.confirm-correlated-target"
+            ) {
+                confirmCorrelatedTarget()
+            }
+
+        case .rediscoveringTarget:
+            statePanel(
+                eyebrow: "SIGNAL CONFIRMED",
+                title: "Checking the same signal again",
+                message: "Nembra is checking for the same Bluetooth signal again. Keep the scooter ON after the final check.",
+                symbol: "scope"
+            )
+            reduceMotionActivityIndicator
+            secondaryButton(
+                "Restart signal check",
+                systemImage: "arrow.clockwise",
+                identifier: "es80.capture.restart-rediscovery"
+            ) {
+                restartRediscovery()
+            }
+
+        case .targetReacquired:
+            statePanel(
+                eyebrow: "MATCHED SIGNAL",
+                title: "Same signal found again",
+                message: "The same Bluetooth signal appeared again after confirmation. This match applies only to this Capture and does not permanently identify the scooter.",
+                symbol: "checkmark.circle"
+            )
+            primaryButton(
+                "Begin read-only observation",
+                systemImage: "wave.3.right",
+                identifier: "es80.capture.connect-prepared-target"
+            ) {
+                connectPreparedCapture()
+            }
+
+        case .connecting:
+            statePanel(
+                eyebrow: "READ-ONLY CONNECTION",
+                title: "Opening the matched signal",
+                message: "Nembra is connecting only to the matched scooter signal. This Capture remains read only and sends no scooter commands.",
+                symbol: "link"
+            )
+            reduceMotionActivityIndicator
+
+        case .acquiring:
+            statePanel(
+                eyebrow: "READ-ONLY DISCOVERY",
+                title: "Learning what is available",
+                message: "Nembra is learning what the matched signal exposes over Bluetooth. Observation starts only after this read-only discovery is complete.",
+                symbol: "waveform.path.ecg.rectangle"
+            )
+            reduceMotionActivityIndicator
+
+        case .observing:
+            let remaining = observationGuidanceRemainingSeconds(
+                nowUptimeNanoseconds: nowUptimeNanoseconds
+            )
+            statePanel(
+                eyebrow: "OBSERVATION READY",
+                title: remaining == 0 ? "Waiting for seal readiness" : "Hold observation — \(remaining)s",
+                message: "Passive discovery is complete. Keep Nembra foregrounded and the scooter stationary while the required observation period finishes. The displayed timer is guidance only.",
+                symbol: "timer"
+            )
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Observation ready")
+            .accessibilityValue(
+                remaining == 0
+                    ? "Display guidance complete; waiting for seal readiness"
+                    : "\(remaining) seconds of display guidance remaining"
+            )
+            .accessibilityHint("Keep Nembra foregrounded and the scooter stationary.")
+            observationHealthStrip(status: status)
+            let canFinalize = presentationCanFinalizeObservationHorizon(status: status)
+            primaryButton(
+                canFinalize ? "Seal Capture" : "Observation in progress",
+                systemImage: canFinalize ? "checkmark.seal.fill" : "timer",
+                disabled: !canFinalize,
+                identifier: "es80.capture.finish"
+            ) {
+                finalizeCapture()
+            }
+            .accessibilityLabel("Seal Capture")
+            .accessibilityValue(
+                canFinalize
+                    ? "Ready"
+                    : "Unavailable; waiting for the required observation period"
+            )
+            .accessibilityHint("Available only after Nembra verifies the required observation time.")
+
+        case .readyToSeal:
+            statePanel(
+                eyebrow: "READY TO SEAL",
+                title: "Capture can be sealed",
+                message: "Passive discovery and the required observation period are complete. Finishing now seals one final capture from this same run.",
+                symbol: "checkmark.seal"
+            )
+            observationHealthStrip(status: status)
+            primaryButton(
+                "Seal Capture",
+                systemImage: "checkmark.seal.fill",
+                identifier: "es80.capture.finish"
+            ) {
+                finalizeCapture()
+            }
+
+        case .finalizing:
+            statePanel(
+                eyebrow: "SEALING",
+                title: "Securing capture",
+                message: "Nembra is finishing the accepted observations, checking Capture integrity, and preparing the Capture to share. Keep Nembra open until sealing finishes.",
+                symbol: "lock.doc"
+            )
+            reduceMotionActivityIndicator
+
+        case .complete:
+            completionPanel
+#if DEBUG && targetEnvironment(simulator)
+            if let simulatorQASnapshot {
+                simulatorCompletionPrimaryAction(simulatorQASnapshot)
+            } else {
+                finalSharePrimaryAction
+            }
+#else
+            finalSharePrimaryAction
+#endif
+            if let sharePreparationWarning {
+                diagnosticBanner(sharePreparationWarning)
+            }
+            secondaryButton(
+                "View Details",
+                systemImage: "doc.text.magnifyingglass",
+                identifier: "es80.capture.view-details"
+            ) {
+                showingDetails = true
+            }
+
+        case let .failed(message):
+            statePanel(
+                eyebrow: "CAPTURE STOPPED",
+                title: "Capture stopped safely",
+                message: message,
+                symbol: "exclamationmark.triangle"
+            )
+            primaryButton(
+                "Start a fresh capture",
+                systemImage: "arrow.counterclockwise",
+                identifier: "es80.capture.restart-experiment"
+            ) {
+                restartExperiment()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var finalSharePrimaryAction: some View {
+        if let finalShareTransfer {
+            ShareLink(
+                item: finalShareTransfer,
+                preview: SharePreview(finalShareTransfer.filename)
+            ) {
+                Label("Share Capture", systemImage: "square.and.arrow.up")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 56)
+                    .foregroundStyle(.black)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("es80.capture.share")
+        } else if coordinator.finalizedArtifact != nil {
+            primaryButton(
+                finalShareIntegrityReport == nil ? "Verify Capture file" : "Retry Share file",
+                systemImage: "arrow.clockwise",
+                identifier: "es80.capture.prepare-share"
+            ) {
+                prepareFinalShareForAnalysisAndSharing()
+            }
+        } else {
+            primaryButton(
+                "Share unavailable",
+                systemImage: "exclamationmark.triangle",
+                disabled: true,
+                identifier: "es80.capture.share-unavailable"
+            ) {}
+        }
+    }
+
+#if DEBUG && targetEnvironment(simulator)
+    @ViewBuilder
+    private func simulatorCompletionPrimaryAction(
+        _ snapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot
+    ) -> some View {
+        if snapshot.artifactState == .shareRetry {
+            primaryButton(
+                "Retry Share file",
+                systemImage: "arrow.clockwise",
+                identifier: "es80.capture.prepare-share"
+            ) {}
+        } else {
+            primaryButton(
+                "Share Capture",
+                systemImage: "square.and.arrow.up",
+                identifier: "es80.capture.share"
+            ) {}
+        }
+    }
+#endif
+
+    private func correlationReadyPanel(_ window: PassiveBluetoothPowerCycleObservationPhase) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("\(phaseShortName(window)) / READY")
+                .font(.caption.monospaced().weight(.bold))
+                .foregroundStyle(.secondary)
+
+            Text(window.operatorExpectedPowerOn ? "Scooter ON" : "Scooter OFF")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.white)
+
+            Text(window.operatorExpectedPowerOn
+                 ? "Set the scooter to ON, keep the stock app closed, then begin this Bluetooth check."
+                 : "Set the scooter fully OFF, keep the stock app closed, then begin this Bluetooth check.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func correlationObservingPanel(
+        _ window: PassiveBluetoothPowerCycleObservationPhase,
+        nowUptimeNanoseconds: UInt64
+    ) -> some View {
+        let remaining = correlationGuidanceRemainingSeconds(nowUptimeNanoseconds: nowUptimeNanoseconds)
+
+        return VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("\(phaseShortName(window)) / LIVE")
+                    .font(.caption.monospaced().weight(.bold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(remaining == 0 ? "READY" : "\(remaining)s")
+                    .font(.title3.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(.white)
+            }
+
+            Text(window.operatorExpectedPowerOn ? "Keep the scooter ON." : "Keep the scooter OFF.")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.white)
+
+            Text("Nembra is recording nearby Bluetooth signals for this check. Keep the phone nearby and Nembra open; do not open the stock scooter app during these four checks.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(18)
+        .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private func observationHealthStrip(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> some View {
+        let connection = presentationConnection(status: status)
+        let observationReady = presentationObservationReady(status: status)
+        let horizonReady = presentationCanFinalizeObservationHorizon(status: status)
+
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    healthItem("SIGNAL", value: connection == .connected ? "MATCHED" : "WAIT")
+                    Divider().overlay(.white.opacity(0.12))
+                    healthItem("DISCOVERY", value: observationReady ? "READY" : "WAIT")
+                    Divider().overlay(.white.opacity(0.12))
+                    healthItem("SEAL", value: horizonReady ? "READY" : "HOLD")
+                }
+            } else {
+                HStack(spacing: 12) {
+                    healthItem("SIGNAL", value: connection == .connected ? "MATCHED" : "WAIT")
+                    Divider().frame(height: 28).overlay(.white.opacity(0.12))
+                    healthItem("DISCOVERY", value: observationReady ? "READY" : "WAIT")
+                    Divider().frame(height: 28).overlay(.white.opacity(0.12))
+                    healthItem("SEAL", value: horizonReady ? "READY" : "HOLD")
                 }
             }
         }
-        .padding(18)
-        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(14)
+        .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "Capture health. Signal \(connection == .connected ? "matched" : "waiting"). Discovery \(observationReady ? "ready" : "waiting"). Seal \(horizonReady ? "ready" : "waiting")."
+        )
+        .accessibilityIdentifier("es80.capture.health")
     }
 
-    private var connectedScooterCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label("2 · LIVE BLUETOOTH DUMP", systemImage: "dot.radiowaves.left.and.right").font(.headline).foregroundStyle(.white)
-            LabeledContent("Device", value: capture.selectedPeripheralName ?? "Unnamed")
-            LabeledContent("UUID", value: capture.selectedPeripheralID?.uuidString ?? "Unknown")
-            LabeledContent("Connection", value: capture.isConnected ? "Connected" : capture.isRecoveringConnection ? "Reconnecting automatically" : capture.isFrozen ? "Capture finished" : "Disconnected")
-            LabeledContent("Reference speed", value: referenceSpeedText)
-            LabeledContent("Location reference", value: capture.locationAuthorizationText)
-            Text("Every scenario marker below is written into the same timeline as the raw Bluetooth callbacks. Temporary disconnects no longer throw you back to device search; Capture keeps the same scooter selected and reconnects automatically.").font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(18)
-        .background(.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-    }
+    private var completionPanel: some View {
+        let analysisReady = presentationAnalysisReady
+        return VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 8 : 16) {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(analysisReady ? "CAPTURE COMPLETE" : "CAPTURE SEALED")
+                        .font(.caption.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+                    Text(analysisReady ? "Ready for analysis" : "Integrity check required")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(analysisReady ? .white : .white.opacity(0.12))
+                            .frame(width: 52, height: 52)
+                        Image(systemName: analysisReady ? "checkmark" : "lock.fill")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(analysisReady ? .black : .white)
+                    }
+                    .accessibilityHidden(true)
 
-    private var reconnectCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                ProgressView().tint(.orange)
-                Text("KEEP THIS CAPTURE OPEN").font(.caption.monospaced().weight(.bold)).foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(analysisReady ? "CAPTURE COMPLETE" : "CAPTURE SEALED")
+                            .font(.caption.monospaced().weight(.bold))
+                            .foregroundStyle(.secondary)
+                        Text(analysisReady ? "Ready for analysis" : "Integrity check required")
+                            .font(.title2.weight(.semibold))
+                            .foregroundStyle(.white)
+                    }
+                }
             }
-            Text("The scooter dropped the Bluetooth link. Nembra is reconnecting to the same device automatically — do not go back to search and do not restart your calibration.").font(.subheadline).foregroundStyle(.white).fixedSize(horizontal: false, vertical: true)
-            Text("Attempt \(max(capture.reconnectAttempt, 1)) · \(capture.connectionDropCount) connection drop\(capture.connectionDropCount == 1 ? "" : "s") recorded in the dataset").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-            Button("Retry connection now") { capture.retrySelectedPeripheralNow() }.buttonStyle(.bordered)
+
+            completionDescription
+
+            if coordinator.status.finalizationCleanup == .failed {
+                Text("The Capture is sealed, but Bluetooth cleanup did not finish. Keep this Capture and restart Nembra before starting another one.")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
-        .padding(16)
-        .background(.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(dynamicTypeSize.isAccessibilitySize ? 12 : 18)
+        .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(analysisReady ? "Ready for analysis" : "Capture sealed, integrity check required")
+        .accessibilityIdentifier("es80.capture.complete")
     }
 
-    private var calibrationCard: some View {
+    @ViewBuilder
+    private var completionDescription: some View {
+#if DEBUG && targetEnvironment(simulator)
+        if simulatorQASnapshot != nil {
+            if dynamicTypeSize.isAccessibilitySize {
+                Text("Synthetic QA only. No physical capture artifact was created.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Synthetic Simulator QA presentation only. No capture artifact bytes were created, and no physical, RF, protocol, telemetry, or command evidence is claimed.")
+            } else {
+                Text("Synthetic Simulator QA presentation only. No capture artifact bytes were created, and no physical, RF, protocol, telemetry, or command evidence is claimed.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
+            verifiedCompletionDescription
+        }
+#else
+        verifiedCompletionDescription
+#endif
+    }
+
+    @ViewBuilder
+    private var verifiedCompletionDescription: some View {
+        if let report = finalShareIntegrityReport {
+            Text("The exact \(report.finalShareByteCount.formatted())-byte Capture passed every required file-integrity check and is ready to share for analysis. Nembra has not identified scooter data fields from this file yet.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if let artifact = coordinator.finalizedArtifact {
+            Text("\(artifact.captureJSON.count.formatted()) Capture bytes are sealed. Nembra still needs to verify the final Share file before this run is ready for analysis.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var captureDetailsSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("Experiment One")
+                        .font(.system(.largeTitle, design: .rounded, weight: .semibold))
+                        .accessibilityAddTraits(.isHeader)
+#if DEBUG && targetEnvironment(simulator)
+                    if let simulatorQASnapshot {
+                        simulatorCaptureDetails(simulatorQASnapshot)
+                    } else {
+                        captureArtifactDetails
+                    }
+#else
+                    captureArtifactDetails
+#endif
+
+                    Divider()
+
+                    Text("Truth boundary")
+                        .font(.headline)
+                        .accessibilityAddTraits(.isHeader)
+                    Text("This artifact is passive software evidence. File and build hashes are software provenance, not independent field authorization. CoreBluetooth correlation uses full peripheral identity, but it does not authenticate the physical ES80. This screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics.")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(22)
+                .frame(maxWidth: 660, alignment: .leading)
+            }
+            .navigationTitle("Capture Details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showingDetails = false }
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    @ViewBuilder
+    private var captureArtifactDetails: some View {
+        detailRow("Correlation", value: correlationDetailValue)
+        detailRow("Cleanup", value: finalizationCleanupDetailValue)
+
+        if let report = finalShareIntegrityReport {
+            detailRow("Analysis readiness", value: "Ready")
+            detailRow("Recipe", value: report.experimentRecipeID.rawValue)
+            detailRow("Procedure", value: report.procedureVersion)
+            detailRow("Final Share bytes", value: report.finalShareByteCount.formatted())
+            digestDetailRow("Final Share SHA-256", value: report.finalShareSHA256)
+            digestDetailRow("Software Export SHA-256", value: report.softwareExport.envelopeSHA256)
+            digestDetailRow("Capture SHA-256", value: report.softwareExport.capture.sha256)
+            detailRow("Capture session", value: report.softwareExport.capture.captureSessionID.uuidString)
+            detailRow("Recorded events", value: report.softwareExport.capture.recordCount.formatted())
+            detailRow("Raw value events", value: report.softwareExport.capture.rawValueRecordCount.formatted())
+            detailRow("Build", value: report.softwareExport.buildIdentifier)
+            detailRow("Build instance", value: report.buildInstanceID)
+            detailRow("Source commit", value: report.softwareExport.sourceCommitSHA)
+            digestDetailRow("Runtime executable SHA-256", value: report.softwareExport.executableSHA256)
+        } else if let artifact = coordinator.finalizedArtifact {
+            detailRow("Analysis readiness", value: "Not yet verified")
+            detailRow("Capture bytes", value: artifact.captureJSON.count.formatted())
+            detailRow("Observation windows", value: artifact.powerCycleResult.windows.count.formatted())
+        }
+    }
+
+#if DEBUG && targetEnvironment(simulator)
+    @ViewBuilder
+    private func simulatorCaptureDetails(
+        _ snapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot
+    ) -> some View {
+        Text("SIMULATOR QA / SYNTHETIC SOFTWARE STATE")
+            .font(.caption.monospaced().weight(.bold))
+            .foregroundStyle(.orange)
+            .accessibilityIdentifier("es80.capture.details.simulator-qa")
+        detailRow("Scenario", value: snapshot.title)
+        detailRow("Recipe", value: snapshot.recipeID.rawValue)
+        detailRow("Physical procedure", value: "Locked")
+        detailRow("Bluetooth transport", value: "Not used")
+        detailRow("Capture artifact", value: "Not created")
+        Text("These details describe presentation QA only. They do not read, summarize, or imply a live coordinator evidence state.")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+#endif
+
+    private func phase(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> Phase {
+        if let localFailureMessage {
+            return .failed(localFailureMessage)
+        }
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot {
+            return simulatorQAPhase(simulatorQASnapshot.scenario)
+        }
+#endif
+        guard status.physicalProcedurePermitted else {
+            return .physicalProcedureLocked
+        }
+        if status.foregroundIntegrityLost {
+            return .failed("Nembra left the foreground after capture began. This run can no longer continue; start a fresh capture.")
+        }
+        if finalizationInFlight {
+            return .finalizing
+        }
+        if status.artifactFinalized || coordinator.finalizedArtifact != nil {
+            return .complete
+        }
+
+        switch status.connection {
+        case .connecting:
+            return .connecting
+        case .connected:
+            if status.canFinalizeObservationHorizon {
+                return .readyToSeal
+            }
+            if status.observationReady {
+                return .observing
+            }
+            return .acquiring
+        case .idle:
+            if captureConnectionAttempted && !status.hasPreparedCaptureAdmission {
+                return .failed("The passive Bluetooth connection ended before capture could be sealed. Start a fresh capture.")
+            }
+        case .unavailable:
+            return .bluetoothUnavailable("Bluetooth capture is unavailable for this run.")
+        }
+
+        if status.hasPreparedCaptureAdmission {
+            return status.isCorrelatedTargetRediscovered ? .targetReacquired : .rediscoveringTarget
+        }
+
+        switch status.correlation {
+        case .invalidEvidence:
+            return .correlationFailed("The four Bluetooth checks did not preserve the required OFF 1, ON 1, OFF 2, ON 2 order. Start again from OFF 1.")
+        case .noRepeatableCandidate:
+            return .noRepeatableTarget
+        case let .ambiguousRepeatableCandidates(count):
+            return .ambiguousTargets(count)
+        case .singleRepeatableCandidate:
+            return .correlatedTarget
+        case .incomplete:
+            break
+        }
+
+        if status.bluetoothState != .poweredOn {
+            return .bluetoothUnavailable(bluetoothUnavailableMessage(status.bluetoothState))
+        }
+        guard let progress = status.powerCycleProgress else {
+            return .correlationFailed("The OFF / ON setup is unavailable for this run. Start a fresh capture.")
+        }
+        if progress.isSeriesInvalidated {
+            return .correlationFailed("Bluetooth scanning or a foreground interruption invalidated this OFF / ON series. Start a fresh capture.")
+        }
+        if progress.isScanning {
+            return .correlationObserving(progress.phase)
+        }
+        if progress.isAwaitingBluetoothPower || progress.isAwaitingScanReadiness {
+            return .correlationStarting(progress.phase)
+        }
+        return .correlationReady(progress.phase)
+    }
+
+#if DEBUG && targetEnvironment(simulator)
+    private func simulatorQAPhase(
+        _ scenario: PassiveBluetoothExperimentOneSimulatorQAFixture.Scenario
+    ) -> Phase {
+        switch scenario {
+        case .stationaryPreflight, .firstPoweredOff:
+            return .correlationReady(.firstPoweredOff)
+        case .firstPoweredOn:
+            return .correlationReady(.firstPoweredOn)
+        case .secondPoweredOff:
+            return .correlationReady(.secondPoweredOff)
+        case .secondPoweredOn, .targetConfirmation:
+            return .correlatedTarget
+        case .passiveDiscovery:
+            return .connecting
+        case .observationReady, .captureInProgress:
+            return .observing
+        case .observationHorizonReady:
+            return .readyToSeal
+        case .horizonSealed:
+            return .finalizing
+        case .captureComplete, .shareRetry:
+            return .complete
+        case .foregroundInterrupted:
+            return .failed("Simulator QA interruption fixture. This synthetic state represents a foreground-interrupted capture; it is not physical evidence.")
+        }
+    }
+#endif
+
+    private var finalShareTransfer: VerifiedFinalShareTransfer? {
+        guard let data = finalShareData,
+              let filename = finalShareFilename,
+              finalShareIntegrityReport != nil else {
+            return nil
+        }
+        return VerifiedFinalShareTransfer(data: data, filename: filename)
+    }
+
+    private var presentationAnalysisReady: Bool {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot {
+            return simulatorQASnapshot.artifactState == .completeReadyForAnalysis
+                || simulatorQASnapshot.artifactState == .shareRetry
+        }
+#endif
+        return finalShareIntegrityReport != nil
+    }
+
+    private func presentationCompletedWindows(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> Int {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot {
+            switch simulatorQASnapshot.scenario {
+            case .stationaryPreflight, .firstPoweredOff: return 0
+            case .firstPoweredOn: return 1
+            case .secondPoweredOff: return 2
+            default: return 4
+            }
+        }
+#endif
+        return status.powerCycleProgress?.completedWindowCount
+            ?? coordinator.powerCycleResult?.windows.count
+            ?? 0
+    }
+
+    private func presentationCurrentWindow(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> Int? {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot {
+            switch simulatorQASnapshot.scenario {
+            case .stationaryPreflight, .firstPoweredOff:
+                return PassiveBluetoothPowerCycleObservationPhase.firstPoweredOff.rawValue
+            case .firstPoweredOn:
+                return PassiveBluetoothPowerCycleObservationPhase.firstPoweredOn.rawValue
+            case .secondPoweredOff:
+                return PassiveBluetoothPowerCycleObservationPhase.secondPoweredOff.rawValue
+            default:
+                return nil
+            }
+        }
+#endif
+        return status.powerCycleProgress?.phase.rawValue
+    }
+
+    private func presentationObservationReady(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> Bool {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot { return simulatorQASnapshot.observationReady }
+#endif
+        return status.observationReady
+    }
+
+    private func presentationCanFinalizeObservationHorizon(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> Bool {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot { return simulatorQASnapshot.canFinalizeObservationHorizon }
+#endif
+        return status.canFinalizeObservationHorizon
+    }
+
+    private func presentationConnection(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> PassiveBluetoothExperimentOneCoordinator.ConnectionStatus {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot { return simulatorQASnapshot.connection }
+#endif
+        return status.connection
+    }
+
+    private func presentationHasPreparedCaptureAdmission(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> Bool {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot { return simulatorQASnapshot.hasPreparedCaptureAdmission }
+#endif
+        return status.hasPreparedCaptureAdmission
+    }
+
+    private func presentationArtifactFinalized(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> Bool {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot {
+            return simulatorQASnapshot.artifactState == .sealed
+                || simulatorQASnapshot.artifactState == .completeReadyForAnalysis
+                || simulatorQASnapshot.artifactState == .shareRetry
+        }
+#endif
+        return status.artifactFinalized
+    }
+
+    private func beginCorrelationWindow() {
+        diagnosticMessage = nil
+        do {
+            try coordinator.startCurrentPowerCycleWindow()
+        } catch {
+            diagnosticMessage = experimentErrorMessage(error)
+        }
+    }
+
+    private func completeCorrelationWindow() {
+        diagnosticMessage = nil
+        do {
+            _ = try coordinator.finishCurrentPowerCycleWindow()
+            observedScanBeganAtUptimeNanoseconds = nil
+        } catch {
+            diagnosticMessage = experimentErrorMessage(error)
+        }
+    }
+
+    private func confirmCorrelatedTarget() {
+        diagnosticMessage = nil
+        do {
+            try coordinator.confirmCorrelatedTargetAndBeginRediscovery()
+        } catch {
+            diagnosticMessage = experimentErrorMessage(error)
+        }
+    }
+
+    private func restartRediscovery() {
+        diagnosticMessage = nil
+        do {
+            try coordinator.restartPreparedRediscovery()
+        } catch {
+            diagnosticMessage = experimentErrorMessage(error)
+        }
+    }
+
+    private func connectPreparedCapture() {
+        diagnosticMessage = nil
+        do {
+            try coordinator.connectPreparedCapture()
+            captureConnectionAttempted = true
+        } catch {
+            diagnosticMessage = experimentErrorMessage(error)
+        }
+    }
+
+    private func finalizeCapture() {
+        guard !finalizationInFlight else { return }
+        diagnosticMessage = nil
+        sharePreparationWarning = nil
+        finalizationInFlight = true
+
+        Task {
+            do {
+                _ = try await coordinator.finalizeObservationHorizon()
+            } catch {
+                finalizationInFlight = false
+                localFailureMessage = "Capture sealing failed: \(experimentErrorMessage(error))"
+                return
+            }
+
+            // Horizon is already immutable here. Final-share verification and byte-backed transfer
+            // preparation are recoverable product layers and must never relabel seal truth.
+            finalizationInFlight = false
+            prepareFinalShareForAnalysisAndSharing()
+        }
+    }
+
+    private func prepareFinalShareForAnalysisAndSharing() {
+        guard coordinator.finalizedArtifact != nil else { return }
+        guard let setup = declaredStationarySetup else {
+            sharePreparationWarning = "Capture is sealed, but its setup confirmation is missing. Start a fresh capture instead of exporting incomplete setup information."
+            return
+        }
+
+        // A previously verified exact artifact remains the transfer authority. Retrying Share never
+        // reopens a pathname or silently mints new evidence bytes.
+        if finalShareData != nil,
+           finalShareIntegrityReport != nil,
+           finalShareFilename != nil {
+            sharePreparationWarning = nil
+            return
+        }
+
+        let artifact: PassiveBluetoothExperimentOneFinalShareArtifact
+        let report: PassiveBluetoothExperimentOneFinalShareIntegrityReport
+        do {
+            artifact = try coordinator.finalizedShareArtifactForCurrentApplication(setup: setup)
+            report = try PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)
+        } catch {
+            finalShareData = nil
+            finalShareFilename = nil
+            finalShareIntegrityReport = nil
+            sharePreparationWarning = "Capture remains sealed, but Nembra could not verify the Share file for analysis: \(experimentErrorMessage(error))"
+            return
+        }
+
+        finalShareData = artifact.json
+        finalShareFilename = artifact.suggestedFilename
+        finalShareIntegrityReport = report
+        sharePreparationWarning = nil
+    }
+
+    private func restartExperiment() {
+        coordinator.abandonExperiment()
+        diagnosticMessage = nil
+        localFailureMessage = nil
+        captureConnectionAttempted = false
+        finalizationInFlight = false
+        finalShareData = nil
+        finalShareFilename = nil
+        finalShareIntegrityReport = nil
+        sharePreparationWarning = nil
+        didPresentAnalysisReadySemantics = false
+        declaredStationarySetup = nil
+        showingDetails = false
+        observedScanBeganAtUptimeNanoseconds = nil
+        observationReadyBeganAtUptimeNanoseconds = nil
+
+        do {
+            coordinator = try onFreshExperimentRequested()
+        } catch {
+            localFailureMessage = "Nembra could not start a fresh capture. Close and reopen Nembra, then try again."
+        }
+    }
+
+    private func handleScenePhaseChange(_ newScenePhase: ScenePhase) {
+        guard newScenePhase != .active else { return }
+        coordinator.invalidateForForegroundLoss()
+        UIApplication.shared.isIdleTimerDisabled = false
+    }
+
+    private func synchronizeIdleTimer(for phase: Phase) {
+        switch phase {
+        case .correlationStarting,
+             .correlationObserving,
+             .rediscoveringTarget,
+             .targetReacquired,
+             .connecting,
+             .acquiring,
+             .observing,
+             .readyToSeal,
+             .finalizing:
+            UIApplication.shared.isIdleTimerDisabled = true
+        default:
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
+    }
+
+    private func synchronizeObservedScanClock(isScanning: Bool) {
+        if isScanning {
+            if observedScanBeganAtUptimeNanoseconds == nil {
+                observedScanBeganAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
+            }
+        } else {
+            observedScanBeganAtUptimeNanoseconds = nil
+        }
+    }
+
+    private func synchronizeObservationReadyClock(isReady: Bool) {
+        if isReady {
+            if observationReadyBeganAtUptimeNanoseconds == nil {
+                observationReadyBeganAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
+            }
+        } else {
+            observationReadyBeganAtUptimeNanoseconds = nil
+        }
+    }
+
+    private func correlationGuidanceRemainingSeconds(nowUptimeNanoseconds: UInt64) -> Int {
+        guard let beganAt = observedScanBeganAtUptimeNanoseconds,
+              nowUptimeNanoseconds >= beganAt else {
+            return Int(Self.requiredCorrelationWindowDuration)
+        }
+        let elapsed = nowUptimeNanoseconds - beganAt
+        guard elapsed < Self.requiredCorrelationWindowNanoseconds else { return 0 }
+        let remaining = Self.requiredCorrelationWindowNanoseconds - elapsed
+        return Int((remaining + 999_999_999) / 1_000_000_000)
+    }
+
+    private func observationGuidanceRemainingSeconds(nowUptimeNanoseconds: UInt64) -> Int {
+        guard let beganAt = observationReadyBeganAtUptimeNanoseconds,
+              nowUptimeNanoseconds >= beganAt else {
+            return 60
+        }
+        let elapsed = nowUptimeNanoseconds - beganAt
+        guard elapsed < Self.requiredObservationGuidanceNanoseconds else { return 0 }
+        let remaining = Self.requiredObservationGuidanceNanoseconds - elapsed
+        return Int((remaining + 999_999_999) / 1_000_000_000)
+    }
+
+    private func experimentErrorMessage(_ error: Error) -> String {
+        if let error = error as? PassiveBluetoothExperimentOneCoordinator.CoordinatorError {
+            switch error {
+            case .physicalProcedureLocked:
+                return "Field capture is locked for this build."
+            case .foregroundIntegrityLost:
+                return "Nembra left the foreground after capture began. Start a fresh capture."
+            case .captureAdmissionAlreadyPrepared:
+                return "The matched scooter signal is already prepared. Continue the current signal check."
+            case .captureAdmissionNotPrepared:
+                return "No confirmed scooter signal is ready for this step."
+            case .correlationIncomplete:
+                return "Complete all four OFF / ON checks before confirming the scooter signal."
+            case .correlationEvidenceInvalid:
+                return "The four OFF / ON checks are invalid or out of order."
+            case .correlationNotUnique:
+                return "The four OFF / ON checks did not produce one unique scooter signal."
+            case .targetNotRediscovered:
+                return "The matched scooter signal has not appeared again yet. Keep the scooter ON and retry the signal check."
+            case .targetNotConnectable:
+                return "The matched scooter signal is visible but cannot accept a read-only Bluetooth connection."
+            case .controllerUnavailable:
+                return "Bluetooth capture is unavailable in this session."
+            case .observationNotReady:
+                return "The required observation time is not complete yet."
+            case .artifactAlreadyFinalized:
+                return "This capture is already sealed."
+            }
+        }
+
+        if let error = error as? PassiveBluetoothPowerCycleObservationSessionError {
+            switch error {
+            case .invalidMinimumWindowDuration:
+                return "This build has an invalid OFF / ON check duration. Capture cannot continue."
+            case .seriesComplete:
+                return "All four OFF / ON checks are already complete."
+            case .seriesInvalidated:
+                return "These OFF / ON checks were interrupted. Start a fresh capture."
+            case .windowAlreadyActive:
+                return "This OFF / ON check is already running."
+            case .windowNotActive:
+                return "No OFF / ON check is currently running."
+            case .bluetoothBecameUnavailable:
+                return "Bluetooth became unavailable during this check."
+            case .scanReadinessPending:
+                return "Bluetooth scanning is starting. Keep Nembra open until this check is ready."
+            case .scanReadinessTimedOut:
+                return "Bluetooth did not become ready in time. Keep Nembra open and try this check again."
+            case .scanBecameInactive:
+                return "Bluetooth scanning stopped during this check."
+            case .minimumWindowDurationNotReached:
+                return "This OFF / ON check has not recorded enough observation time yet."
+            case .nonMonotonicWindowClock:
+                return "Nembra could not verify the required timing for this check. Restart the four OFF / ON checks."
+            case .windowSequenceExhausted:
+                return "This OFF / ON sequence cannot continue. Start a fresh capture."
+            }
+        }
+
+        return "Capture stopped because an unexpected error occurred. Start a fresh capture."
+    }
+
+    private func bluetoothUnavailableMessage(_ state: CBManagerState?) -> String {
+        guard let state else {
+            return "Bluetooth capture is not available for this build."
+        }
+        switch state {
+        case .unknown:
+            return "Waiting for Bluetooth to become ready."
+        case .resetting:
+            return "Bluetooth is resetting. Keep Nembra open until the radio becomes ready."
+        case .unsupported:
+            return "This device cannot provide the Bluetooth access required for Capture."
+        case .unauthorized:
+            return "Bluetooth permission is unavailable. Allow Nembra to use Bluetooth before starting Capture."
+        case .poweredOff:
+            return "Turn Bluetooth on before beginning OFF 1. The scooter's OFF state and the phone's Bluetooth state are separate requirements."
+        case .poweredOn:
+            return "Bluetooth is ready."
+        @unknown default:
+            return "Bluetooth reported an unknown state. Capture remains unavailable."
+        }
+    }
+
+    private func statePanel(
+        eyebrow: String,
+        title: String,
+        message: String,
+        symbol: String
+    ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Label("3 · GUIDED CALIBRATION", systemImage: "list.bullet.clipboard").font(.headline).foregroundStyle(.white)
+                Text(eyebrow)
+                    .font(.caption.monospaced().weight(.bold))
+                    .foregroundStyle(.secondary)
                 Spacer()
-                Text("\(min(capture.currentScenarioIndex, ES80GuidedBluetoothCapture.scenarios.count))/\(ES80GuidedBluetoothCapture.scenarios.count)").font(.caption.monospacedDigit().weight(.semibold)).foregroundStyle(.secondary)
+                Image(systemName: symbol)
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
-            ProgressView(value: capture.scenarioProgressFraction).tint(.green)
-            if !capture.isConnected, !capture.isFrozen {
-                Label("Calibration is paused until Bluetooth reconnects. Your completed steps are still here.", systemImage: "pause.circle.fill").font(.footnote.weight(.semibold)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+
+            Text(title)
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+
+            Text(message)
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var captureSurfaceFill: Color {
+        if accessibilityReduceTransparency {
+            return .white.opacity(colorSchemeContrast == .increased ? 0.22 : 0.16)
+        }
+        return .white.opacity(colorSchemeContrast == .increased ? 0.11 : 0.055)
+    }
+
+    @ViewBuilder
+    private var reduceMotionActivityIndicator: some View {
+        if accessibilityReduceMotion {
+            Image(systemName: "ellipsis")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+                .accessibilityHidden(true)
+        } else {
+            ProgressView()
+                .tint(.white)
+                .controlSize(.large)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private func primaryButton(
+        _ title: String,
+        systemImage: String,
+        disabled: Bool = false,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 56)
+                .foregroundStyle(disabled ? Color.secondary : Color.black)
+                .background(
+                    disabled ? .white.opacity(0.08) : .white,
+                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .accessibilityIdentifier(identifier)
+    }
+
+    private func secondaryButton(
+        _ title: String,
+        systemImage: String,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 50)
+                .foregroundStyle(.white)
+                .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
+    }
+
+    private func diagnosticBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.circle")
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Capture alert")
+        .accessibilityValue(message)
+    }
+
+    /// Automatic accessibility speech is event-driven and never runs from the 2 Hz display clock.
+    private func announceAccessibilityStatus(_ phase: Phase) {
+        guard UIAccessibility.isVoiceOverRunning else { return }
+        let announcement: String?
+        switch phase {
+        case let .bluetoothUnavailable(message): announcement = "Bluetooth is not ready. \(message)"
+        case let .correlationFailed(message): announcement = "Capture stopped. \(message)"
+        case .noRepeatableTarget: announcement = "No unique scooter signal was found. Repeat the OFF / ON sequence."
+        case let .ambiguousTargets(count): announcement = "\(count) Bluetooth signals matched. Repeat the OFF / ON sequence."
+        case .readyToSeal: announcement = "Capture is ready to seal. Seal Capture is now available."
+        case .complete:
+            announcement = presentationAnalysisReady ? nil : "Capture sealed. Final artifact verification is still required."
+        case let .failed(message): announcement = "Capture stopped safely. \(message)"
+        default: announcement = nil
+        }
+        guard let announcement else { return }
+        UIAccessibility.post(notification: .announcement, argument: announcement)
+    }
+
+    private func announceAccessibilityAlert(_ message: String?) {
+        guard UIAccessibility.isVoiceOverRunning, let message, !message.isEmpty else { return }
+        UIAccessibility.post(notification: .announcement, argument: "Capture alert. \(message)")
+    }
+
+    private func handleSemanticPhaseTransition(_ phase: Phase) {
+        if phase != .complete {
+            didPresentAnalysisReadySemantics = false
+        }
+        if isBlockingHapticPhase(phase) {
+            warningHapticTick &+= 1
+        }
+        if phase == .complete {
+            presentAnalysisReadySemanticsIfNeeded()
+        }
+    }
+
+    private func presentAnalysisReadySemanticsIfNeeded() {
+        guard presentationAnalysisReady,
+              phase(status: coordinator.status) == .complete,
+              !didPresentAnalysisReadySemantics else { return }
+        didPresentAnalysisReadySemantics = true
+        successHapticTick &+= 1
+        guard UIAccessibility.isVoiceOverRunning else { return }
+        UIAccessibility.post(
+            notification: .announcement,
+            argument: "Capture complete. Ready for analysis and sharing."
+        )
+    }
+
+    private func isBlockingHapticPhase(_ phase: Phase) -> Bool {
+        switch phase {
+        case .bluetoothUnavailable, .correlationFailed, .noRepeatableTarget, .ambiguousTargets, .failed:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func guidanceFootnote(_ text: String) -> some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func healthItem(_ title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.caption2.monospaced().weight(.bold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption.monospaced().weight(.semibold))
+                .foregroundStyle(.white)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func detailRow(_ title: String, value: String) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.body.monospacedDigit().weight(.medium))
+                    .multilineTextAlignment(.leading)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            if let scenario = capture.currentScenario {
-                scenarioCard(scenario)
-            } else {
-                Label("Guided sequence complete", systemImage: "checkmark.seal.fill").font(.title3.weight(.semibold)).foregroundStyle(.green)
-                Text("You can still add custom capability/reference markers below, then prepare the final JSON.").foregroundStyle(.secondary)
-            }
-            if capture.completedScenarioCount > 0 || capture.skippedScenarioCount > 0 {
-                Text("\(capture.completedScenarioCount) completed · \(capture.skippedScenarioCount) skipped").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-            }
-        }
-        .padding(18)
-        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-    }
-
-    private func scenarioCard(_ scenario: ES80GuidedBluetoothCapture.ScenarioDefinition) -> some View {
-        let isActive = capture.activeScenarioID == scenario.id
-        let elapsed = isActive ? capture.elapsedSecondsForActiveScenario() : 0
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(scenario.phase.uppercased()).font(.caption2.monospaced().weight(.bold)).foregroundStyle(.secondary)
-                    Text(scenario.title).font(.title3.weight(.semibold)).foregroundStyle(.white)
-                }
-                Spacer()
-                if scenario.optional { Text("OPTIONAL").font(.caption2.monospaced().weight(.bold)).foregroundStyle(.secondary) }
-            }
-            Text(scenario.instruction).font(.body).foregroundStyle(.white).fixedSize(horizontal: false, vertical: true)
-            if let caution = scenario.caution { Label(caution, systemImage: "exclamationmark.triangle.fill").font(.footnote.weight(.semibold)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
-            Text(scenario.completionHint).font(.footnote).foregroundStyle(.secondary)
-            if isActive {
-                HStack {
-                    Label("RECORDING", systemImage: "record.circle.fill").font(.caption.monospaced().weight(.bold)).foregroundStyle(.red)
-                    Spacer()
-                    Text(timeText(elapsed)).font(.title3.monospacedDigit().weight(.semibold)).foregroundStyle(.white)
-                }
-                if scenario.recommendedSeconds > 0 { ProgressView(value: min(1, elapsed / Double(scenario.recommendedSeconds))).tint(elapsed >= Double(scenario.recommendedSeconds) ? .green : .white) }
-                if capture.activeScenarioHadConnectionGap {
-                    Label("Bluetooth dropped during this step. Wait for reconnection, then repeat the physical action once before completing so we still get a clean sample.", systemImage: "arrow.clockwise.circle.fill").font(.footnote.weight(.semibold)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
-                }
-                TextField("Optional note about what happened", text: $scenarioNote, axis: .vertical).textFieldStyle(.roundedBorder).lineLimit(2...4)
-                Button(scenario.motionClass == .moving ? "I am fully stopped · complete step" : "Complete step") { capture.completeActiveScenario(note: scenarioNote); scenarioNote = "" }.buttonStyle(.borderedProminent).disabled(!capture.isConnected)
-            } else {
-                Button(startButtonTitle(for: scenario)) { scenarioNote = ""; capture.beginScenario(scenario) }.buttonStyle(.borderedProminent).disabled(!capture.isConnected)
-                if scenario.optional { Button("Skip — scooter doesn't have this / not safe here") { capture.skipScenario(scenario) }.buttonStyle(.bordered) }
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 14) {
+                Text(title)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 12)
+                Text(value)
+                    .font(.body.monospacedDigit().weight(.medium))
+                    .multilineTextAlignment(.trailing)
+                    .textSelection(.enabled)
             }
         }
-        .padding(16)
-        .background(.black.opacity(0.32), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
-    private var referenceCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label("EXTRA CAPABILITIES + REFERENCE VALUES", systemImage: "plus.circle").font(.headline).foregroundStyle(.white)
-            Text("Use these while stopped for anything the guided list does not cover. Examples: horn, cruise, lock state, units, zero-start, speed limit, a dashboard battery %, or a display reading.").font(.footnote).foregroundStyle(.secondary)
-            TextField("Action you just triggered (example: horn pressed)", text: $customAction).textFieldStyle(.roundedBorder)
-            Button("Mark custom action now") { capture.recordCustomAction(customAction); customAction = "" }.buttonStyle(.bordered).disabled(customAction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            Divider().overlay(.white.opacity(0.12))
-            TextField("Reference label (example: dashboard battery)", text: $referenceLabel).textFieldStyle(.roundedBorder)
-            TextField("Reference value (example: 73%)", text: $referenceValue).textFieldStyle(.roundedBorder)
-            Button("Record reference value") { capture.recordReference(label: referenceLabel, value: referenceValue); referenceLabel = ""; referenceValue = "" }.buttonStyle(.bordered).disabled(referenceLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || referenceValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    private func digestDetailRow(_ title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption.monospaced())
+                .foregroundStyle(.white)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(18)
-        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .accessibilityElement(children: .combine)
     }
 
-    private var captureHealthCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label("CAPTURE HEALTH", systemImage: "waveform.path.ecg").font(.headline).foregroundStyle(.white)
-            LabeledContent("Raw events", value: "\(capture.eventCount)")
-            LabeledContent("Completed steps", value: "\(capture.completedScenarioCount)")
-            LabeledContent("Skipped steps", value: "\(capture.skippedScenarioCount)")
-            LabeledContent("Bluetooth drops", value: "\(capture.connectionDropCount)")
-            LabeledContent("GPS reference", value: referenceSpeedText)
-            LabeledContent("Dataset state", value: capture.isFrozen ? "Frozen" : "Recording")
-            if capture.droppedEventCount > 0 { Label("\(capture.droppedEventCount) events exceeded the in-memory safety ceiling", systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(.orange) }
-            Text("Keep the stock scooter app closed while Nembra owns the Bluetooth connection. Capture now automatically recovers transient BLE drops and uses gentler staggered reads to avoid flooding cheap scooter Bluetooth stacks.").font(.footnote).foregroundStyle(.secondary)
-        }
-        .padding(18)
-        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-    }
-
-    private var finishCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("4 · FINISH + SHARE", systemImage: "square.and.arrow.up").font(.headline).foregroundStyle(.white)
-            Text("When you have finished the guided steps, prepare one JSON. It contains the complete event timeline plus scenario boundaries so we can map the real scooter protocol.").font(.subheadline).foregroundStyle(.secondary)
-            Button("Finish capture & prepare JSON") { capture.finishCaptureAndPrepareJSON() }.buttonStyle(.borderedProminent).disabled(capture.activeScenarioID != nil || capture.isFrozen)
-            if capture.activeScenarioID != nil { Text("Finish is locked while a calibration step is active. Stop safely and complete that step first.").font(.footnote).foregroundStyle(.orange) }
-            Button("Prepare a snapshot without ending capture") { capture.prepareJSON() }.buttonStyle(.bordered)
-        }
-        .padding(18)
-        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-    }
-
-    private func shareCard(data: Data) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("DATASET READY", systemImage: "checkmark.circle.fill").font(.headline).foregroundStyle(.green)
-            Text(capture.exportFilename).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
-            Text("Share this exact JSON back into ChatGPT. That is the evidence used to identify services, characteristics, modes, speed, battery, power, brake/throttle state, lights, and other repeatable capabilities.").font(.subheadline).foregroundStyle(.secondary)
-            ShareLink(item: GuidedCaptureTransfer(data: data, filename: capture.exportFilename), preview: SharePreview(capture.exportFilename)) { Label("Share learning dataset", systemImage: "square.and.arrow.up.fill").frame(maxWidth: .infinity) }.buttonStyle(.borderedProminent)
-        }
-        .padding(18)
-        .background(.green.opacity(0.10), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-    }
-
-    private var advancedDisclosure: some View {
-        DisclosureGroup("Advanced / reset", isExpanded: $showingAdvanced) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("This tool intentionally does not decode or control the scooter yet. It gathers evidence first. Future universal-scooter support can reuse this same guided scenario model to learn a new scooter before enabling only capabilities that are actually verified.").font(.footnote).foregroundStyle(.secondary)
-                Button("Reset entire capture", role: .destructive) { capture.reset(); customAction = ""; referenceLabel = ""; referenceValue = ""; scenarioNote = "" }
+    private func progressSegment(
+        index: Int,
+        completedWindows: Int,
+        currentWindow: Int?,
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> some View {
+        Capsule(style: .continuous)
+            .fill(progressSegmentFill(
+                index: index,
+                completedWindows: completedWindows,
+                currentWindow: currentWindow,
+                status: status
+            ))
+            .overlay {
+                Capsule(style: .continuous)
+                    .stroke(
+                        .white.opacity(accessibilityDifferentiateWithoutColor ? 0.82 : 0),
+                        lineWidth: progressSegmentStroke(
+                            index: index,
+                            completedWindows: completedWindows,
+                            currentWindow: currentWindow,
+                            status: status
+                        )
+                    )
             }
-            .padding(.top, 10)
+            .frame(height: 5)
+    }
+
+    private func progressSegmentStroke(
+        index: Int,
+        completedWindows: Int,
+        currentWindow: Int?,
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> CGFloat {
+        guard accessibilityDifferentiateWithoutColor else { return 0 }
+        if index < 4 {
+            if currentWindow == index { return 2 }
+            return index < completedWindows ? 1 : 0
         }
-        .foregroundStyle(.secondary)
+        if index == 4 {
+            return presentationObservationReady(status: status) ? 1 : 0
+        }
+        return presentationArtifactFinalized(status: status) ? 1 : 0
     }
 
-    private var connectionHeadline: String {
-        if capture.isConnected { return "Scooter connected" }
-        if capture.isRecoveringConnection { return "Reconnecting to scooter…" }
-        return bluetoothStateTitle
+    private func progressSegmentFill(
+        index: Int,
+        completedWindows: Int,
+        currentWindow: Int?,
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> Color {
+        if index < 4 {
+            if index < completedWindows { return .white }
+            if currentWindow == index { return .white.opacity(0.42) }
+            return .white.opacity(0.12)
+        }
+        if index == 4 {
+            return presentationObservationReady(status: status) ? .white : .white.opacity(0.12)
+        }
+        return presentationArtifactFinalized(status: status) ? .white : .white.opacity(0.12)
     }
 
-    private var bluetoothStateTitle: String {
-        switch capture.bluetoothState {
-        case .unknown: return "Bluetooth starting…"
-        case .resetting: return "Bluetooth resetting…"
-        case .unsupported: return "Bluetooth unsupported"
-        case .unauthorized: return "Bluetooth permission required"
-        case .poweredOff: return "Turn Bluetooth on"
-        case .poweredOn: return "Ready to find scooter"
-        @unknown default: return "Bluetooth state changed"
+    private func progressStage(
+        status: PassiveBluetoothExperimentOneCoordinator.Status,
+        completedWindows: Int
+    ) -> String {
+        if presentationArtifactFinalized(status: status) { return "SEALED" }
+        if presentationCanFinalizeObservationHorizon(status: status) { return "SEAL READY" }
+        if presentationObservationReady(status: status) { return "OBSERVE" }
+        if presentationConnection(status: status) == .connected { return "DISCOVER" }
+        if presentationConnection(status: status) == .connecting { return "CONNECT" }
+        if presentationHasPreparedCaptureAdmission(status: status) { return "MATCH" }
+        return "\(min(completedWindows, 4)) / 4"
+    }
+
+    private func progressAccessibilityLabel(
+        status: PassiveBluetoothExperimentOneCoordinator.Status,
+        completedWindows: Int,
+        analysisReady: Bool
+    ) -> String {
+        if presentationArtifactFinalized(status: status) {
+            return analysisReady
+                ? "Capture progress, sealed and ready for analysis"
+                : "Capture progress, sealed; final file integrity not yet verified"
+        }
+        if presentationCanFinalizeObservationHorizon(status: status) {
+            return "Capture progress, required observation complete and ready to seal"
+        }
+        if presentationObservationReady(status: status) {
+            return "Capture progress, four OFF / ON checks complete and read-only observation ready"
+        }
+        return "Capture progress, \(min(completedWindows, 4)) of 4 OFF / ON checks complete"
+    }
+
+    private func phaseShortName(_ phase: PassiveBluetoothPowerCycleObservationPhase) -> String {
+        switch phase {
+        case .firstPoweredOff: return "OFF 1"
+        case .firstPoweredOn: return "ON 1"
+        case .secondPoweredOff: return "OFF 2"
+        case .secondPoweredOn: return "ON 2"
         }
     }
 
-    private var referenceSpeedText: String {
-        guard let speed = capture.latestReferenceSpeedMPH else { return "Waiting / unavailable" }
-        if let accuracy = capture.latestReferenceHorizontalAccuracy { return String(format: "%.1f mph · ±%.0f m", speed, accuracy) }
-        return String(format: "%.1f mph", speed)
-    }
-
-    private func startButtonTitle(for scenario: ES80GuidedBluetoothCapture.ScenarioDefinition) -> String {
-        switch scenario.motionClass {
-        case .stationary: return "Start \(scenario.title)"
-        case .walking: return "Start while stopped · then walk scooter"
-        case .moving: return "Start while stopped · then secure phone"
-        case .elevatedWheel: return "Start optional bench step"
+    private var correlationDetailValue: String {
+        switch coordinator.status.correlation {
+        case .incomplete: return "Incomplete"
+        case .invalidEvidence: return "Invalid evidence"
+        case .noRepeatableCandidate: return "No repeatable target"
+        case let .ambiguousRepeatableCandidates(count): return "Ambiguous (\(count))"
+        case .singleRepeatableCandidate: return "One repeatable full UUID"
         }
     }
 
-    private func timeText(_ seconds: Double) -> String {
-        let total = max(0, Int(seconds))
-        return String(format: "%d:%02d", total / 60, total % 60)
+    private var finalizationCleanupDetailValue: String {
+        switch coordinator.status.finalizationCleanup {
+        case .notAttempted: return "Not attempted"
+        case .complete: return "Complete"
+        case .failed: return "Recovery needed"
+        }
+    }
+
+    private func heroTitle(for phase: Phase) -> String {
+        switch phase {
+        case .complete: return "Capture sealed."
+        case .readyToSeal, .observing: return "Keep the capture steady."
+        case .acquiring, .connecting, .rediscoveringTarget, .targetReacquired: return "Confirm the scooter signal."
+        default: return "Find the scooter signal."
+        }
+    }
+
+    private func statusTitle(for phase: Phase) -> String {
+        switch phase {
+        case .physicalProcedureLocked: return "Capture locked"
+        case .bluetoothUnavailable: return "Preflight required"
+        case let .correlationReady(window): return "Ready for \(phaseShortName(window))"
+        case let .correlationStarting(window): return "Starting \(phaseShortName(window))"
+        case let .correlationObserving(window): return "Observing \(phaseShortName(window))"
+        case .correlationFailed, .failed: return "Capture stopped"
+        case .noRepeatableTarget: return "No unique signal"
+        case .ambiguousTargets: return "Multiple signal matches"
+        case .correlatedTarget: return "Scooter signal matched"
+        case .rediscoveringTarget: return "Checking signal again"
+        case .targetReacquired: return "Same signal found"
+        case .connecting: return "Opening read-only connection"
+        case .acquiring: return "Read-only discovery"
+        case .observing: return "Observation running"
+        case .readyToSeal: return "Ready to seal"
+        case .finalizing: return "Sealing capture"
+        case .complete: return presentationAnalysisReady ? "Capture complete" : "Capture sealed"
+        }
+    }
+
+    private func statusSymbol(for phase: Phase) -> String {
+        switch phase {
+        case .complete, .readyToSeal, .targetReacquired, .correlatedTarget:
+            return "checkmark.circle.fill"
+        case .physicalProcedureLocked, .correlationFailed, .failed, .noRepeatableTarget, .ambiguousTargets:
+            return "exclamationmark.circle.fill"
+        case .bluetoothUnavailable:
+            return "antenna.radiowaves.left.and.right.slash"
+        default:
+            return "circle.fill"
+        }
+    }
+
+    private func statusColor(for phase: Phase) -> Color {
+        switch phase {
+        case .complete, .readyToSeal, .targetReacquired, .correlatedTarget:
+            return .green
+        case .physicalProcedureLocked, .correlationFailed, .failed, .noRepeatableTarget, .ambiguousTargets:
+            return .orange
+        default:
+            return .secondary
+        }
     }
 }
