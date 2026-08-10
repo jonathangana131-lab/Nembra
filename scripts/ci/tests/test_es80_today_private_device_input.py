@@ -48,7 +48,7 @@ class PrivateDeviceInputTests(unittest.TestCase):
             self.assertEqual(output.read_text(encoding="utf-8"), self.SECRET)
             self.assertEqual(stat.S_IMODE(private_dir.lstat().st_mode), 0o700)
 
-    def test_existing_target_is_never_clobbered(self):
+    def test_existing_target_is_rejected_before_secret_provider_runs(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             repo, private_dir = self.make_layout(root)
@@ -56,14 +56,42 @@ class PrivateDeviceInputTests(unittest.TestCase):
             target = private_dir / "es80-intended-device.udid"
             target.write_text("KEEP", encoding="utf-8")
             target.chmod(0o600)
+            called = False
+
+            def secret_provider():
+                nonlocal called
+                called = True
+                return self.SECRET
+
             with self.assertRaisesRegex(module.PrivateInputError, "already-exists"):
                 module.create_private_input(
                     private_dir,
                     repo,
                     target.name,
-                    secret_provider=lambda: self.SECRET,
+                    secret_provider=secret_provider,
                 )
+            self.assertFalse(called)
             self.assertEqual(target.read_text(encoding="utf-8"), "KEEP")
+
+    def test_target_appearing_after_precheck_is_caught_by_exclusive_create(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+
+            def secret_provider():
+                target.write_text("RACE", encoding="utf-8")
+                target.chmod(0o600)
+                return self.SECRET
+
+            with self.assertRaisesRegex(module.PrivateInputError, "already-exists"):
+                module.create_private_input(
+                    private_dir,
+                    repo,
+                    target.name,
+                    secret_provider=secret_provider,
+                )
+            self.assertEqual(target.read_text(encoding="utf-8"), "RACE")
 
     def test_symlinked_ancestor_is_rejected_before_secret_provider_runs(self):
         with tempfile.TemporaryDirectory() as temporary:
