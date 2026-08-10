@@ -53,15 +53,23 @@ struct TuyaAppChronologyIntegrityTerminalSourceTests {
             from: "case .observedOnline:",
             to: "case .keepWaiting:"
         )
+        let clockRegression = try section(
+            in: String(observedOnline),
+            from: "catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed",
+            to: "} catch {"
+        )
 
         #expect(observedOnline.contains("sessionLedger.markAuthenticated(for: token"))
         #expect(observedOnline.contains("MutationError.monotonicClockRegressed"))
-        #expect(observedOnline.contains("invalidateInternalLifecycle"))
-        #expect(!observedOnline.contains("invalidateSourceAuthority"))
-        #expect(!observedOnline.contains("authenticationAcquisitionFailed"))
-        #expect(!observedOnline.contains("markAuthenticationFailed"))
-        #expect(!observedOnline.contains("invalidateObservationContinuity"))
-        #expect(!observedOnline.contains("endConnection"))
+        #expect(observedOnline.contains("sdk_source_authority_lost_during_auth_promotion"))
+        #expect(observedOnline.contains("sdk_driver_authority_lost_during_auth_promotion"))
+
+        #expect(clockRegression.contains("invalidateInternalLifecycle"))
+        #expect(!clockRegression.contains("invalidateSourceAuthority"))
+        #expect(!clockRegression.contains("authenticationAcquisitionFailed"))
+        #expect(!clockRegression.contains("markAuthenticationFailed"))
+        #expect(!clockRegression.contains("invalidateObservationContinuity"))
+        #expect(!clockRegression.contains("endConnection"))
     }
 
     @Test("application receipt clock regression cannot be relabeled as an observation gap")
