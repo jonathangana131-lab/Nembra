@@ -24,18 +24,22 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         #expect(!app.contains("func card() -> some View"))
     }
 
-    @Test("accepted experience prepares the sealed artifact and makes Share Capture primary")
+    @Test("accepted experience makes immutable Share Capture primary and preserves sealed encoding recovery")
     func acceptedExperienceIsCaptureCompleteShareFlow() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let surface = try section(in: app, from: "private struct SecureLinkView: View", to: "private struct SecureTransfer: Transferable")
         let body = String(surface)
+        let completion = try section(in: body, from: "private var completionPanel: some View", to: "private var sdkAuthorizationPanel: some View")
 
-        #expect(body.contains("CAPTURE COMPLETE"))
-        #expect(body.contains("Ready for analysis"))
-        #expect(body.contains("Label(\"Share Capture\""))
-        #expect(body.contains("if accepted && test.exportData == nil { test.prepareExport() }"))
-        #expect(body.contains("Button(showEngineeringDetails ? \"Hide details\" : \"View details\")"))
-        #expect(body.contains("accepted artifact is sealed"))
+        #expect(completion.contains("if let data = test.exportData"))
+        #expect(completion.contains("CAPTURE COMPLETE"))
+        #expect(completion.contains("Ready for analysis"))
+        #expect(completion.contains("Label(\"Share Capture\""))
+        #expect(completion.contains("The accepted artifact is sealed and encoded."))
+        #expect(completion.contains("CAPTURE SEALED"))
+        #expect(completion.contains("Retry sealed Capture preparation"))
+        #expect(completion.contains("test.prepareExport()"))
+        #expect(completion.contains("Button(showEngineeringDetails ? \"Hide details\" : \"View details\")"))
     }
 
     @Test("truth gates remain visible in the guided product surface")
@@ -51,7 +55,7 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         #expect(body.contains("test.authenticate()"))
         #expect(body.contains("test.sdkLocalBLEOnline"))
         #expect(body.contains("test.applicationUpdateCount > 0"))
-        #expect(body.contains("Historical UUID, name, RSSI, FD50, and Tuya hints never authorize the target."))
+        #expect(body.contains("Only the full OFF → ON → OFF → ON pattern can authorize the nearby signal for this attempt."))
         #expect(body.contains("No DP query or scooter command is authorized by this surface."))
     }
 
