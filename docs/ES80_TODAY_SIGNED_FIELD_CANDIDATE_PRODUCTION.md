@@ -92,14 +92,15 @@ Accepted current helper provenance:
 - exact tested predecessor head carrying the same helper blob: `90d3578a1d39a1d019000583a712306b67786acf`;
 - focused `Capture TODAY Field Candidate Preflight QA`: run `31350094260`, job `93339137927` — terminal success.
 
-Failed private-input acquisition is nondestructive with respect to mutable pathnames: the accepted helper scrubs only the exact still-open created inode with `ftruncate` + `fsync` + zero-length `fstat` proof and never unlinks a pathname after secret bytes may exist. A failed attempt may leave a mode-0600 zero-length spent subject; preserve it and choose a fresh path for retry.
+The current helper keeps failure cleanup bound to the exact still-open inode. If a post-create failure occurs after private bytes may have been written, it truncates that inode to zero, fsyncs it, and proves zero length; it does **not** unlink a mutable pathname entry. A zero-length mode-`0600` spent subject may therefore remain after a failed attempt. Treat that pathname as occupied and choose a fresh filename for any retry.
 
 ```bash
 umask 077
 HOME_PHYSICAL="$(cd -P -- "$HOME" && /bin/pwd -P)"
 test -n "$HOME_PHYSICAL" && test "${HOME_PHYSICAL#/}" != "$HOME_PHYSICAL"
 PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"
-UDID_FILE="$PRIVATE_DIR/es80-intended-device.udid"
+UDID_FILENAME='es80-intended-device.udid'
+UDID_FILE="$PRIVATE_DIR/$UDID_FILENAME"
 TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
 
 PRIVATE_INPUT_HELPER_COMMIT='b479d851a54437ef394a4901c69db2d829d280e4'
@@ -115,13 +116,14 @@ test "$(/usr/bin/git hash-object --no-filters -- "$PRIVATE_INPUT_HELPER")" = "$P
 
 /usr/bin/python3 -I "$PRIVATE_INPUT_HELPER" \
   --private-directory "$PRIVATE_DIR" \
-  --source-repo "$FIELD_SOURCE"
+  --source-repo "$FIELD_SOURCE" \
+  --filename "$UDID_FILENAME"
 
 test -f "$UDID_FILE" && test ! -L "$UDID_FILE"
 test "$(/usr/bin/stat -f '%Lp' "$UDID_FILE")" = '600'
 ```
 
-If the helper reports `NOT_READY`, stop before signing and preserve the exact blocker. Do not fall back to `printf >`, `tee`, `echo`, `noclobber`, or another pathname-based secret write. Keep the resulting file private; do not commit it and do not copy it into the retained candidate directory. If the chosen final path already exists, preserve it and choose a fresh filename/path rather than deleting or overwriting it just to satisfy the helper.
+If the helper reports `NOT_READY`, stop before signing and preserve the exact blocker. Do not fall back to `printf >`, `tee`, `echo`, `noclobber`, or another pathname-based secret write. Keep the resulting file private; do not commit it and do not copy it into the retained candidate directory. If the chosen final path already exists—including a zero-length spent subject from an earlier failed attempt—preserve it, set `UDID_FILENAME` to a fresh leaf name under the same `PRIVATE_DIR`, let `UDID_FILE` derive from it, and rerun the exact pinned helper with `--filename "$UDID_FILENAME"`. Do not delete or overwrite an occupied subject just to satisfy the helper.
 
 ## 3. Set the signing inputs without changing the source subject
 
