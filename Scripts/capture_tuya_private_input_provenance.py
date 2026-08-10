@@ -94,15 +94,17 @@ def _read_stable_regular_file_sha256(
 
         try:
             current_path = path.lstat()
+            final_descriptor = os.fstat(descriptor)
         except OSError as error:
             raise ProvenanceError(f"private build input pathname changed during fingerprinting: {path.name}") from error
         if (
             stat.S_ISLNK(current_path.st_mode)
             or not stat.S_ISREG(current_path.st_mode)
             or _stat_identity(current_path) != _stat_identity(after)
+            or _stat_identity(final_descriptor) != _stat_identity(after)
         ):
-            raise ProvenanceError(f"private build input pathname changed during fingerprinting: {path.name}")
-        return after, digest.hexdigest()
+            raise ProvenanceError(f"private build input changed during final fingerprint custody: {path.name}")
+        return final_descriptor, digest.hexdigest()
     finally:
         os.close(descriptor)
 
