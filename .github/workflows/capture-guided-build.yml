@@ -37,13 +37,21 @@ jobs:
           grep -Fq "pod 'ThingSmartBusinessExtensionKit', '~> 7.8.0'" Podfile
           grep -Fq 'LocalSecrets/' .gitignore
 
-      - name: Enforce no application characteristic writes
+      - name: Enforce Capture read-only control boundary
         shell: bash
         run: |
           set -euo pipefail
-          file='NembraApp/Features/Research/ES80CaptureShellView.swift'
-          if grep -En '(^|[^A-Za-z])writeValue[[:space:]]*\(' "$file"; then
-            echo 'ERROR: guided Capture utility must not call CoreBluetooth writeValue(...)'
+          files=(
+            'NembraApp/Features/Research/ES80CaptureShellView.swift'
+            'NembraApp/App/NembraCaptureEntrypoint.swift'
+          )
+          banned='writeValue[[:space:]]*\(|publishDps[[:space:]]*\(|publishDps[[:space:]]*:|setDps[[:space:]]*\(|removeDevice[[:space:]]*\(|resetFactory[[:space:]]*\(|unbind[[:space:]]*\('
+          if grep -En "$banned" "${files[@]}"; then
+            echo 'ERROR: Capture must not expose CoreBluetooth writes or Tuya DP/control/reset/unbind calls.'
+            exit 1
+          fi
+          if grep -En 'central[[:space:]]*\.[[:space:]]*connect[[:space:]]*\(' NembraApp/App/NembraCaptureEntrypoint.swift; then
+            echo 'ERROR: after identification, the official Tuya SDK must remain the sole authenticated BLE connection owner.'
             exit 1
           fi
 
@@ -54,7 +62,43 @@ jobs:
             --package-path Packages/NembraBluetoothCapture \
             --filter TuyaAuthenticatedReadOnlyPreflightTests
 
-      - name: Build iOS Simulator app
+      - name: Build standalone Capture Simulator target
+        run: |
+          set -o pipefail
+          rm -rf /tmp/NembraStandaloneCaptureSimulatorDerived
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/NembraStandaloneCaptureSimulatorDerived \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tee /tmp/nembra-standalone-capture-simulator-build.log
+
+      - name: Verify standalone Capture Simulator product exists
+        run: |
+          test -d '/tmp/NembraStandaloneCaptureSimulatorDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app'
+
+      - name: Build standalone Capture physical-iPhone target unsigned
+        run: |
+          set -o pipefail
+          rm -rf /tmp/NembraStandaloneCaptureDeviceDerived
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath /tmp/NembraStandaloneCaptureDeviceDerived \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tee /tmp/nembra-standalone-capture-device-build.log
+
+      - name: Verify standalone Capture iPhone product exists
+        run: |
+          test -d '/tmp/NembraStandaloneCaptureDeviceDerived/Build/Products/Debug-iphoneos/Nembra Capture.app'
+
+      - name: Build integrated Nembra Simulator app
         run: |
           set -o pipefail
           rm -rf /tmp/NembraGuidedCaptureSimulatorDerived
@@ -68,11 +112,11 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build | tee /tmp/nembra-guided-capture-simulator-build.log
 
-      - name: Verify Simulator product exists
+      - name: Verify integrated Simulator product exists
         run: |
           test -d /tmp/NembraGuidedCaptureSimulatorDerived/Build/Products/Debug-iphonesimulator/Nembra.app
 
-      - name: Build physical iPhone target unsigned
+      - name: Build integrated Nembra physical iPhone target unsigned
         run: |
           set -o pipefail
           rm -rf /tmp/NembraGuidedCaptureDeviceDerived
@@ -86,7 +130,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build | tee /tmp/nembra-guided-capture-device-build.log
 
-      - name: Verify iPhone product exists
+      - name: Verify integrated iPhone product exists
         run: |
           test -d /tmp/NembraGuidedCaptureDeviceDerived/Build/Products/Debug-iphoneos/Nembra.app
 
@@ -96,6 +140,8 @@ jobs:
         with:
           name: guided-capture-build-logs
           path: |
+            /tmp/nembra-standalone-capture-simulator-build.log
+            /tmp/nembra-standalone-capture-device-build.log
             /tmp/nembra-guided-capture-simulator-build.log
             /tmp/nembra-guided-capture-device-build.log
           if-no-files-found: ignore
