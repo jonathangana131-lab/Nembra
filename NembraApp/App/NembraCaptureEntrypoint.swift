@@ -1753,6 +1753,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
     }
 
+    func abandonCorrelationForViewExit() {
+        // Navigation can destroy this controller while OFF1/ON1/OFF2/ON2 still owns
+        // a package CoreBluetooth scanner. Retire the transport before releasing its
+        // process-global owner token; do nothing once correlation has already ended.
+        guard correlationSession != nil || processCorrelationLease != nil else { return }
+        abandonPackageCorrelation()
+        pendingCorrelatedTargetID = nil
+        log("target_correlation_abandoned_on_view_exit")
+    }
+
     private func abandonPackageCorrelation() {
         // Radio transport first, process lease second. The owner token prevents an old controller
         // from clearing a lease that belongs to a newer correlation attempt.
@@ -2405,6 +2415,9 @@ private struct SecureLinkView: View {
         .onChange(of: sdkAccount.loggedIn) { _, loggedIn in
             if loggedIn { test.verifySDKMembership() }
             else { test.invalidateSDKMembership() }
+        }
+        .onDisappear {
+            test.abandonCorrelationForViewExit()
         }
     }
 
