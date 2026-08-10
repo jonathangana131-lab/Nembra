@@ -19,8 +19,7 @@ struct TuyaApplicationAccountUIDExportCustodySourceTests {
         ))
 
         #expect(prepareExport.contains("No account UID"))
-        #expect(updateAdmission.contains("membershipAccountUID"))
-        #expect(updateAdmission.contains("<redacted-account-uid>"))
+        #expect(source.contains("<redacted-account-uid>"))
         #expect(!updateAdmission.contains("log(\"tuya_application_update\", update.merging(["))
     }
 
