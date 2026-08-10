@@ -58,10 +58,8 @@ jobs:
           PY
           git diff --check
 
-      - name: Remove temporary patch transport
-        run: |
-          git rm .github/workflows/_temp_capture_procedure_rendezvous.yml
-          git rm scripts/_temp_apply_capture_procedure_rendezvous.py
+      - name: Restore restricted workflow path for product-only branch push
+        run: git restore .github/workflows/capture-field-build-provenance.yml
 
       - name: Commit product-only procedure rendezvous
         shell: bash
@@ -75,7 +73,6 @@ jobs:
             NembraCapture.xcodeproj/project.pbxproj \
             docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md \
             scripts/field/install_one_time_capture.command \
-            .github/workflows/capture-field-build-provenance.yml \
             Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift
           git diff --cached --check
           git diff --cached --stat
