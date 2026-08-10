@@ -1,0 +1,118 @@
+name: V14 Capture Bridge Custody Simplify
+
+on:
+  push:
+    branches:
+      - integration/v14-capture-bridge-custody-simplify-e8ac-sol
+
+permissions:
+  contents: write
+
+jobs:
+  converge:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/v14-capture-bridge-custody-simplify-e8ac-sol
+          fetch-depth: 0
+
+      - name: Guard exact product parent
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "e8acd80c6f220529a98a4a4829514829c3321daa"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/v14-capture-bridge-custody-simplify.yml"
+
+      - name: Close status custody and retire dead root
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/Features/Research/TuyaAccountBridge.swift')
+          text = path.read_text()
+
+          replacements = [
+              (
+                  'selectedDeviceStatus = statusMap',
+                  'selectedDeviceStatus = Self.redactSecrets(statusMap) as? [String: Any] ?? [:]',
+              ),
+              (
+                  '"status": selectedDeviceStatus ?? [:],',
+                  '"status": Self.redactSecrets(selectedDeviceStatus ?? [:]),',
+              ),
+          ]
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one bridge match for {old!r}, found {count}')
+              text = text.replace(old, new, 1)
+
+          marker = '\nstruct NembraCaptureRootView: View {\n'
+          if text.count(marker) != 1:
+              raise SystemExit('legacy Capture root marker is not unique')
+          text = text[:text.index(marker)].rstrip() + '\n'
+
+          required = [
+              'final class TuyaAccountBridge: ObservableObject',
+              'struct TuyaQRCodeExport: Transferable',
+              'struct TuyaMetadataExport: Transferable',
+              'selectedDeviceStatus = Self.redactSecrets(statusMap) as? [String: Any] ?? [:]',
+              '"status": Self.redactSecrets(selectedDeviceStatus ?? [:])',
+          ]
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'live bridge/export surface missing after convergence: {missing}')
+          forbidden = [
+              'struct NembraCaptureRootView: View',
+              'func captureCard() -> some View',
+              'ES80OneTimeBluetoothDumpView()',
+              'We already proved this scooter uses Tuya FD50.',
+          ]
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise SystemExit(f'legacy Capture surface remains: {present}')
+
+          path.write_text(text)
+          PY
+
+      - name: Absorb current regressions
+        run: |
+          set -euo pipefail
+          git show 932ddedee12d6bb885a7f897e07df52e389b9e4e:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaMetadataStatusSecretRedactionSourceTests.swift > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaMetadataStatusSecretRedactionSourceTests.swift
+          git show 9832ccc3207534f156465e53575b984965034ae7:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyCaptureRootRetirementSourceTests.swift > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyCaptureRootRetirementSourceTests.swift
+
+      - name: Verify exact convergence
+        run: |
+          set -euo pipefail
+          git diff --check
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaMetadataStatusSecretRedactionSourceTests.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyCaptureRootRetirementSourceTests.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          bridge = Path('NembraApp/Features/Research/TuyaAccountBridge.swift').read_text()
+          assert 'selectedDeviceStatus = Self.redactSecrets(statusMap) as? [String: Any] ?? [:]' in bridge
+          assert '"status": Self.redactSecrets(selectedDeviceStatus ?? [:])' in bridge
+          assert 'selectedDeviceStatus = statusMap' not in bridge
+          assert '"status": selectedDeviceStatus ?? [:]' not in bridge
+          assert 'struct NembraCaptureRootView: View' not in bridge
+          assert 'func captureCard() -> some View' not in bridge
+          assert 'ES80OneTimeBluetoothDumpView()' not in bridge
+          PY
+
+      - name: Commit clean bridge successor
+        run: |
+          set -euo pipefail
+          rm .github/workflows/v14-capture-bridge-custody-simplify.yml
+          git add -A
+          git diff --cached --check
+          changed="$(git diff --cached --name-only)"
+          printf '%s\n' "$changed"
+          test "$(printf '%s\n' "$changed" | wc -l | tr -d ' ')" = "3"
+          printf '%s\n' "$changed" | grep -Fxq 'NembraApp/Features/Research/TuyaAccountBridge.swift'
+          printf '%s\n' "$changed" | grep -Fxq 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaMetadataStatusSecretRedactionSourceTests.swift'
+          printf '%s\n' "$changed" | grep -Fxq 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyCaptureRootRetirementSourceTests.swift'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): close bridge secret custody and retire legacy root'
+          git push origin HEAD:integration/v14-capture-bridge-custody-simplify-e8ac-sol
