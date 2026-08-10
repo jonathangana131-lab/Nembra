@@ -44,8 +44,9 @@ final class VehicleStore {
     let profile: VehicleProfile
     let speedInstrumentInterpolationPolicy: SpeedInstrumentInterpolationPolicy
     /// True only when the app owns the explicit Simulator QA profile, that profile
-    /// declares synthetic power support, and the injected service provides the
-    /// source-owned Simulator power-evidence contract. This is app capability
+    /// declares synthetic power support, and the injected service is the exact
+    /// synthetic source actor. Provider conformance or profile metadata alone cannot
+    /// transfer source ownership through a forwarding wrapper. This is app capability
     /// authority for mounting Simulator QA instrumentation, not physical ES80 proof.
     let hasSimulatorPowerEvidenceSource: Bool
     private let service: any ScooterService
@@ -169,7 +170,7 @@ final class VehicleStore {
         self.speedInstrumentInterpolationPolicy = speedInstrumentInterpolationPolicy
         self.hasSimulatorPowerEvidenceSource = service.profile == .simulatorQA
             && service.profile.capabilities.supportsPowerWatts
-            && service is any SimulatorPowerEvidenceProvider
+            && service is SimulatedScooterService
         self.retainedBatteryStorage = retainedBatteryStorage
         self.batteryObservationAuthority = batteryObservationAuthority
 
