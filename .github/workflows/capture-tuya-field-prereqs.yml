@@ -1,0 +1,34 @@
+name: Capture Tuya Field Prerequisite QA
+
+on:
+  pull_request:
+    paths:
+      - 'Scripts/validate_capture_tuya_field_prereqs.sh'
+      - 'Scripts/test_capture_tuya_field_prereqs.sh'
+      - '.github/workflows/capture-tuya-field-prereqs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prerequisite-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Parse field scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n Scripts/validate_capture_tuya_field_prereqs.sh
+          bash -n Scripts/test_capture_tuya_field_prereqs.sh
+
+      - name: Run secret-free prerequisite regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash Scripts/test_capture_tuya_field_prereqs.sh
