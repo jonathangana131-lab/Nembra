@@ -1,0 +1,54 @@
+name: Check Capture Apple custody Python contract
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-align-apple-custody-python-sol
+
+permissions:
+  contents: write
+
+jobs:
+  source-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 8
+
+      - name: Bind validation scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_PARENT=518fe048b11a1e666e04976a7f7bd4fcb1a4af69
+          WORKFLOW=.github/workflows/check-capture-apple-custody-python-sol.yml
+          TEST=scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
+          git merge-base --is-ancestor "$PRODUCT_PARENT" HEAD
+          actual="$(git diff --name-only "$PRODUCT_PARENT" HEAD | sort)"
+          expected="$(printf '%s\n%s\n' "$WORKFLOW" "$TEST" | sort)"
+          test "$actual" = "$expected"
+
+      - name: Run aligned signing-custody contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
+          python3 scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
+          bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+
+      - name: Remove temporary validation workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_PARENT=518fe048b11a1e666e04976a7f7bd4fcb1a4af69
+          WORKFLOW=.github/workflows/check-capture-apple-custody-python-sol.yml
+          TEST=scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
+          rm "$WORKFLOW"
+          test "$(git diff --name-only "$PRODUCT_PARENT")" = "$TEST"
+          git diff --check
+          git add "$WORKFLOW"
+          git config user.name "nembra-recovery-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "ci(capture): retire Apple custody validation runner"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
