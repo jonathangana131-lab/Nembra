@@ -105,6 +105,55 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         #expect(app.contains("$0.kind == \"tuya_application_update\" && $0.details[\"generation\"] == generation"))
     }
 
+
+    @Test("canonical seal closes new application admission before awaiting package seal")
+    func canonicalSealUsesMainActorAdmissionLatch() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let receive = try section(
+            in: app,
+            from: "private func receivedApplicationUpdate(",
+            to: "private func startWatchdog"
+        )
+        let watchdog = try section(
+            in: app,
+            from: "private func startWatchdog",
+            to: "private func recordObservedTransportLoss"
+        )
+        let receiveBody = String(receive)
+        let watchdogBody = String(watchdog)
+
+        guard let sealGuard = receiveBody.range(of: "guard !acceptanceSealInProgress else"),
+              let increment = receiveBody.range(of: "applicationAdmissionInFlightCount += 1"),
+              let record = receiveBody.range(of: "try await sessionLedger.recordApplicationUpdate", range: increment.upperBound..<receiveBody.endIndex) else {
+            Issue.record("Application admission must be latched before package mutation.")
+            throw SourceContractError.sectionMissing
+        }
+        #expect(sealGuard.lowerBound < increment.lowerBound)
+        #expect(increment.lowerBound < record.lowerBound)
+        #expect(receiveBody.contains("defer { applicationAdmissionInFlightCount -= 1 }"))
+
+        guard let readyCase = watchdogBody.range(of: "case .readyForStationaryMapping:"),
+              let inFlightFence = watchdogBody.range(of: "applicationAdmissionInFlightCount == 0", range: readyCase.upperBound..<watchdogBody.endIndex),
+              let latch = watchdogBody.range(of: "acceptanceSealInProgress = true", range: inFlightFence.upperBound..<watchdogBody.endIndex),
+              let packageSeal = watchdogBody.range(of: "try await sessionLedger.sealAcceptedObservation(for: token)", range: latch.upperBound..<watchdogBody.endIndex) else {
+            Issue.record("Canonical seal must fence in-flight admission and close the latch before awaiting package seal.")
+            throw SourceContractError.sectionMissing
+        }
+        #expect(inFlightFence.lowerBound < latch.lowerBound)
+        #expect(latch.lowerBound < packageSeal.lowerBound)
+    }
+
+    @Test("fresh correlation life reopens application admission only after the prior life is retired")
+    func freshCorrelationResetsSealLatch() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let reset = try section(
+            in: app,
+            from: "private func resetDiscoverySessionOnly()",
+            to: "private func failLocally"
+        )
+        #expect(reset.contains("acceptanceSealInProgress = false"))
+    }
+
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
         guard let startRange = source.range(of: start),
               let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {

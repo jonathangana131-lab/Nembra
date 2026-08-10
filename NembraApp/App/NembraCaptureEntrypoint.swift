@@ -319,6 +319,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var driver: OfficialTuyaDriver?
     private var events: [Event] = []
     private var sealedAcceptedEventPrefix: [Event]?
+    private var applicationAdmissionInFlightCount = 0
+    private var acceptanceSealInProgress = false
     private var watchdog: Task<Void, Never>?
     private let sessionLedger = TuyaAuthenticatedReadOnlySessionLedger()
     private var currentConnectionToken: TuyaReadOnlyConnectionToken?
@@ -1103,6 +1105,18 @@ private final class SecureLinkController: NSObject, ObservableObject {
             await recordObservedTransportLoss(token: token)
             return
         }
+        guard !acceptanceSealInProgress else {
+            log("application_update_during_acceptance_seal_ignored", [
+                "generation": String(token.diagnosticGeneration)
+            ])
+            return
+        }
+
+        // MainActor serialization makes the guard + increment atomic with respect to the watchdog.
+        // The counter stays non-zero across every suspension in this handler, so canonical sealing
+        // cannot overtake a package-admitted receipt whose structured values are not settled yet.
+        applicationAdmissionInFlightCount += 1
+        defer { applicationAdmissionInFlightCount -= 1 }
 
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
@@ -1223,8 +1237,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 case .readyForStationaryMapping:
                     // The ledger actor can admit an application receipt before the corresponding
                     // MainActor continuation copies its structured values into `events`. A ready
-                    // ledger snapshot therefore cannot seal until the current generation's
-                    // structured evidence count has caught up exactly.
+                    // ledger snapshot therefore cannot seal until no admission is in flight and the
+                    // current generation's structured evidence count has caught up exactly.
+                    guard self.applicationAdmissionInFlightCount == 0 else {
+                        self.message = "Settling accepted application evidence before canonical seal…"
+                        break
+                    }
                     guard self.acceptedApplicationEventCount(for: token) == self.applicationUpdateCount else {
                         self.message = "Synchronizing accepted application evidence before canonical seal…"
                         break
@@ -1245,6 +1263,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
                         )
                         return
                     }
+                    // Close application admission synchronously on MainActor before the seal await.
+                    // New SDK callbacks may remain diagnostic, but they cannot race a ledger mutation
+                    // against the package-owned immutable horizon.
+                    self.acceptanceSealInProgress = true
                     do {
                         try await sessionLedger.sealAcceptedObservation(for: token)
                         self.sealedAcceptedEventPrefix = self.events
@@ -1543,6 +1565,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     private func resetDiscoverySessionOnly() {
         sealedAcceptedEventPrefix = nil
+        acceptanceSealInProgress = false
         correlationSession?.abandonCurrentWindow()
         correlationSession = nil
         correlationProvenance = nil
