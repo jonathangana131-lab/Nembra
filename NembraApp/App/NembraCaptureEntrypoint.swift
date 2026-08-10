@@ -1000,6 +1000,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
             log("stale_connect_failure_ignored", ["generation": String(token.diagnosticGeneration)])
             return
         }
+        guard sdkAccountLoggedIn,
+              sdkDeviceMembershipVerified,
+              accountIdentityLeaseIsAuthorized else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "Tuya account/device source authority changed before the SDK failure callback was classified.",
+                kind: "sdk_source_authority_lost_before_auth_failure"
+            )
+            return
+        }
         await authenticationAcquisitionFailed(
             token: token,
             message: "Tuya SmartLife SDK did not establish the supported BLE session.",
