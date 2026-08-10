@@ -14,171 +14,119 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 3
+          fetch-depth: 5
 
-      - name: Verify exact ancestry and helper-only scope
+      - name: Verify exact base and helper-only pre-materialization scope
         shell: bash
         run: |
           set -euo pipefail
           expected='8e4d28c9bd1c3ba6dd3a9c9292bd9f1ff27a40ac'
-          test "$(git rev-parse HEAD^^)" = "$expected"
+          git merge-base --is-ancestor "$expected" HEAD
           test "$(git diff --name-only "$expected" HEAD)" = '.github/workflows/materialize-capture-app-update-redaction-sol.yml'
 
-      - name: Materialize product repair and source regression
+      - name: Materialize fail-closed SDK application redaction
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
 
-          source_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
-          source = source_path.read_text()
-          old = '''    func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {
-              guard let dps, !dps.isEmpty else { return }
-              var sanitized: [String: String] = [:]
-              for (key, value) in dps {
-                  sanitized[String(describing: key)] = String(describing: value)
-              }
-              onApplicationUpdate?(sanitized)
-          }
-          '''
-          new = '''    private static let secretKeyFragments = [
-              "localkey",
-              "accesstoken",
-              "refreshtoken",
-              "authkey",
-              "seckey"
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text()
+          class_marker = '@MainActor\nprivate final class SmartLifeDriver'
+          method_marker = '    func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {'
+          end_marker = '\n    }\n}\n#endif\n\nprivate enum AppleAccountAuthorizationError'
+
+          class_start = source.index(class_marker)
+          method_start = source.index(method_marker, class_start)
+          end_boundary = source.index(end_marker, method_start)
+          method_end = end_boundary + len('\n    }')
+          old_block = source[method_start:method_end]
+
+          legacy = 'sanitized[String(describing: key)] = String(describing: value)'
+          if legacy not in old_block:
+              raise SystemExit('expected unsanitized SmartLifeDriver application projection was not found')
+          if 'redactApplicationSecrets' in old_block:
+              raise SystemExit('redaction helper already present; refusing concurrent overwrite')
+
+          lines = [
+              '    private static let secretKeyFragments = [',
+              '        "localkey",',
+              '        "accesstoken",',
+              '        "refreshtoken",',
+              '        "authkey",',
+              '        "seckey"',
+              '    ]',
+              '',
+              '    private static func normalizedApplicationKey(_ key: String) -> String {',
+              '        key.lowercased().filter { $0.isLetter || $0.isNumber }',
+              '    }',
+              '',
+              '    private static func redactApplicationSecrets(_ object: Any) -> Any {',
+              '        if let dictionary = object as? [AnyHashable: Any] {',
+              '            var sanitized: [String: Any] = [:]',
+              '            for (key, value) in dictionary {',
+              '                let keyString = String(describing: key)',
+              '                let normalizedKey = normalizedApplicationKey(keyString)',
+              '                if secretKeyFragments.contains(where: { normalizedKey.contains($0) }) {',
+              '                    sanitized[keyString] = "<redacted>"',
+              '                } else {',
+              '                    sanitized[keyString] = redactApplicationSecrets(value)',
+              '                }',
+              '            }',
+              '            return sanitized',
+              '        }',
+              '        if let array = object as? [Any] {',
+              '            return array.map(redactApplicationSecrets)',
+              '        }',
+              '        return object',
+              '    }',
+              '',
+              '    func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {',
+              '        guard let dps, !dps.isEmpty else { return }',
+              '        var sanitized: [String: String] = [:]',
+              '        for (key, value) in dps {',
+              '            let keyString = String(describing: key)',
+              '            let normalizedKey = Self.normalizedApplicationKey(keyString)',
+              '            if Self.secretKeyFragments.contains(where: { normalizedKey.contains($0) }) {',
+              '                sanitized[keyString] = "<redacted>"',
+              '            } else {',
+              '                sanitized[keyString] = String(describing: Self.redactApplicationSecrets(value))',
+              '            }',
+              '        }',
+              '        onApplicationUpdate?(sanitized)',
+              '    }',
           ]
+          replacement = '\n'.join(lines)
+          updated = source[:method_start] + replacement + source[method_end:]
 
-          private static func redactApplicationSecrets(_ object: Any) -> Any {
-              if let dictionary = object as? [AnyHashable: Any] {
-                  var sanitized: [String: Any] = [:]
-                  for (key, value) in dictionary {
-                      let keyString = String(describing: key)
-                      let normalizedKey = keyString.lowercased().filter { $0.isLetter || $0.isNumber }
-                      if secretKeyFragments.contains(where: normalizedKey.contains) {
-                          sanitized[keyString] = "<redacted>"
-                      } else {
-                          sanitized[keyString] = redactApplicationSecrets(value)
-                      }
-                  }
-                  return sanitized
-              }
-              if let array = object as? [Any] {
-                  return array.map(redactApplicationSecrets)
-              }
-              return object
-          }
+          required = [
+              'private static func redactApplicationSecrets(_ object: Any) -> Any',
+              'key.lowercased().filter { $0.isLetter || $0.isNumber }',
+              'array.map(redactApplicationSecrets)',
+              'String(describing: Self.redactApplicationSecrets(value))',
+              'sanitized[keyString] = "<redacted>"',
+              'onApplicationUpdate?(sanitized)',
+          ]
+          for needle in required:
+              if needle not in updated:
+                  raise SystemExit(f'materialized source missing: {needle}')
+          if legacy in updated[class_start:source.index('#endif', class_start)]:
+              raise SystemExit('legacy unsanitized application projection survived materialization')
 
-          func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {
-              guard let dps, !dps.isEmpty else { return }
-              var sanitized: [String: String] = [:]
-              for (key, value) in dps {
-                  let keyString = String(describing: key)
-                  let normalizedKey = keyString.lowercased().filter { $0.isLetter || $0.isNumber }
-                  if Self.secretKeyFragments.contains(where: normalizedKey.contains) {
-                      sanitized[keyString] = "<redacted>"
-                  } else {
-                      sanitized[keyString] = String(describing: Self.redactApplicationSecrets(value))
-                  }
-              }
-              onApplicationUpdate?(sanitized)
-          }
-          '''
-          if source.count(old) != 1:
-              raise SystemExit(f'expected one unsanitized SmartLifeDriver callback; found {source.count(old)}')
-          source_path.write_text(source.replace(old, new, 1))
-
-          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationUpdateSecretRedactionSourceTests.swift')
-          if test_path.exists():
-              raise SystemExit('regression path already exists; refusing concurrent overwrite')
-          test_path.write_text(r'''import Foundation
-          import Testing
-          @testable import NembraBluetoothCapture
-
-          @Suite("Tuya authenticated application update secret redaction source contract")
-          struct TuyaApplicationUpdateSecretRedactionSourceTests {
-              @Test("authenticated application update details are recursively redacted before controller custody")
-              func applicationUpdateCannotRetainCredentialShapedValues() throws {
-                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-                  let driver = String(try section(
-                      in: source,
-                      from: "@MainActor\nprivate final class SmartLifeDriver",
-                      to: "#endif\n\nprivate enum AppleAccountAuthorizationError"
-                  ))
-
-                  #expect(driver.contains("private static func redactApplicationSecrets(_ object: Any) -> Any"))
-                  #expect(driver.contains("secretKeyFragments"))
-                  #expect(driver.contains("localkey"))
-                  #expect(driver.contains("accesstoken"))
-                  #expect(driver.contains("refreshtoken"))
-                  #expect(driver.contains("authkey"))
-                  #expect(driver.contains("seckey"))
-                  #expect(driver.contains("key.lowercased().filter"))
-                  #expect(driver.contains("$0.isLetter || $0.isNumber"))
-                  #expect(driver.contains("array.map(redactApplicationSecrets)"))
-                  #expect(driver.contains("String(describing: Self.redactApplicationSecrets(value))"))
-                  #expect(driver.contains("sanitized[keyString] = \"<redacted>\""))
-                  #expect(driver.contains("onApplicationUpdate?(sanitized)"))
-                  #expect(!driver.contains("sanitized[String(describing: key)] = String(describing: value)"))
-              }
-
-              @Test("export redaction claim remains coupled to the application-event path")
-              func exportRedactionClaimIncludesApplicationEvents() throws {
-                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-                  let export = String(try section(
-                      in: source,
-                      from: "private func makeExport(exportedAt:",
-                      to: "func prepareExport()"
-                  ))
-                  let updates = String(try section(
-                      in: source,
-                      from: "private func receivedApplicationUpdate(",
-                      to: "private func startWatchdog"
-                  ))
-
-                  #expect(export.contains("secretsRedacted: true"))
-                  #expect(updates.contains("log(\"tuya_application_update\", update.merging(["))
-              }
-
-              private func section(in source: String, from start: String, to end: String) throws -> Substring {
-                  guard let startRange = source.range(of: start),
-                        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
-                      Issue.record("Expected source section missing: \(start) ... \(end)")
-                      throw SourceContractError.sectionMissing
-                  }
-                  return source[startRange.lowerBound..<endRange.lowerBound]
-              }
-
-              private func readRepositoryFile(_ relativePath: String) throws -> String {
-                  let repositoryRoot = URL(fileURLWithPath: #filePath)
-                      .deletingLastPathComponent()
-                      .deletingLastPathComponent()
-                      .deletingLastPathComponent()
-                      .deletingLastPathComponent()
-                      .deletingLastPathComponent()
-                  return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
-              }
-
-              private enum SourceContractError: Error {
-                  case sectionMissing
-              }
-          }
-          ''')
+          path.write_text(updated)
           PY
 
           rm .github/workflows/materialize-capture-app-update-redaction-sol.yml
           git diff --check
 
-      - name: Commit materialized repair
+      - name: Commit materialized product repair
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          paths="$(git diff --cached --name-only)"
-          printf '%s\n' "$paths"
-          test "$(printf '%s\n' "$paths" | wc -l | tr -d ' ')" = '3'
+          test "$(git diff --cached --name-only)" = $'.github/workflows/materialize-capture-app-update-redaction-sol.yml\nNembraApp/App/NembraCaptureEntrypoint.swift'
           git commit -m 'fix(capture): redact authenticated application secrets'
           git push origin HEAD:agent/v14-capture-app-update-redaction-sol
