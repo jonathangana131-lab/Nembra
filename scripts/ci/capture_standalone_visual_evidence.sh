@@ -49,6 +49,9 @@ if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   echo "Standalone Capture source identity must be one lowercase 40-hex SHA." >&2
   exit 8
 fi
+# Public Simulator visual evidence intentionally has no reviewed private Podfile.lock fingerprint.
+# Keeping this field empty mechanically prevents NembraCaptureBuildIdentity from promoting the
+# screenshot subject into an authoritative field build merely because a shape-valid fixture exists.
 if [[ -n "$TUYA_DEPENDENCY_LOCK_SHA256" ]]; then
   echo "Public standalone visual evidence must not carry Tuya dependency authority: $TUYA_DEPENDENCY_LOCK_SHA256" >&2
   exit 9
@@ -126,6 +129,8 @@ xcrun simctl status_bar "$UDID" override \
   --cellularBars 4 >/dev/null 2>&1 || true
 xcrun simctl ui "$UDID" appearance dark
 
+# `simctl launch` forwards host variables prefixed with SIMCTL_CHILD_ into the app. Refuse any
+# inherited synthetic-authority fixture instead of merely promising that this script does not set one.
 while IFS= read -r variable_name; do
   case "$variable_name" in
     SIMCTL_CHILD_*|NEMBRA_SIMULATION_*)
@@ -135,6 +140,9 @@ while IFS= read -r variable_name; do
   esac
 done < <(compgen -v)
 
+# Deliberately launch the real standalone product with no SIMCTL_CHILD_* variables, no
+# NEMBRA_SIMULATION_* scenario, no private dependency provenance, and no fake Tuya account/device
+# authority. The screenshots are presentation evidence only and must remain fail-closed.
 launch_output="$(xcrun simctl launch "$UDID" "$BUNDLE_ID" | tee "$ARTIFACTS_DIR/logs/launch.log")"
 pid="${launch_output##*: }"
 if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
