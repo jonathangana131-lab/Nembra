@@ -1,0 +1,125 @@
+name: Materialize Capture Lossless Generation Custody 172D
+
+on:
+  push:
+    branches: ["sol/v14-capture-lossless-generation-custody-172d"]
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sol/v14-capture-lossless-generation-custody-172d
+          fetch-depth: 2
+          persist-credentials: true
+
+      - name: Require exact current parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='172dca56a1bc018e192feec197ceb17f81db5dab'
+          test "$(git rev-parse HEAD^)" = "$parent"
+          test "$(git diff --name-only "$parent" HEAD)" = '.github/workflows/materialize-capture-lossless-generation-custody-172d.yml'
+
+      - name: Materialize lossless reserved-key custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, textwrap
+
+          p=Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source=p.read_text(encoding='utf-8')
+          a=source.index('    private func redactedApplicationEventDetails(')
+          b=source.index('    private func startWatchdog',a)
+          helper=source[a:b]
+          pattern=r'''(?m)^(?P<i>\s*)var custodyKey = redactedKey\n(?P=i)var collisionOrdinal = 2\n(?P=i)while redacted\[custodyKey\] != nil \{\n(?P=i)    custodyKey = "\\\(redactedKey\)#\\\(collisionOrdinal\)"\n(?P=i)    collisionOrdinal \+= 1\n(?P=i)\}'''
+          m=re.search(pattern,helper)
+          if not m:
+              raise SystemExit('live redacted-key collision block not found')
+          i=m.group('i')
+          replacement=(
+              f'{i}// `generation` is Nembra-owned provenance. Preserve a colliding SDK\n'
+              f'{i}// field as opaque application evidence instead of destroying it.\n'
+              f'{i}let reservedCustodyKey = redactedKey == "generation"\n'
+              f'{i}    ? "application.generation"\n'
+              f'{i}    : redactedKey\n'
+              f'{i}var custodyKey = reservedCustodyKey\n'
+              f'{i}var collisionOrdinal = 2\n'
+              f'{i}while redacted[custodyKey] != nil {{\n'
+              f'{i}    custodyKey = "\\(reservedCustodyKey)#\\(collisionOrdinal)"\n'
+              f'{i}    collisionOrdinal += 1\n'
+              f'{i}}}'
+          )
+          helper=helper[:m.start()]+replacement+helper[m.end():]
+          p.write_text(source[:a]+helper+source[b:],encoding='utf-8')
+
+          t=Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationReservedMetadataLosslessSourceTests.swift')
+          if t.exists(): raise SystemExit('regression already exists; refresh product')
+          t.write_text(textwrap.dedent(r'''\
+          import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Tuya reserved application metadata custody")
+          struct TuyaApplicationReservedMetadataLosslessSourceTests {
+              @Test("SDK generation collision is preserved before trusted generation is stamped")
+              func preservesReservedCollisionWithoutMintingAuthority() throws {
+                  let s = try read("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let receiver = String(try section(s, "private func receivedApplicationUpdate(", "private func redactedApplicationEventDetails("))
+                  let helper = String(try section(s, "private func redactedApplicationEventDetails(", "private func startWatchdog"))
+                  #expect(helper.contains("redactedKey == \"generation\""))
+                  #expect(helper.contains("? \"application.generation\""))
+                  #expect(helper.contains("var custodyKey = reservedCustodyKey"))
+                  #expect(helper.contains("\\(reservedCustodyKey)#\\(collisionOrdinal)"))
+                  #expect(helper.contains("update.sorted"))
+                  #expect(!helper.contains("trustedGeneration"))
+                  #expect(!helper.contains("diagnosticGeneration"))
+                  #expect(receiver.contains("var eventDetails = custodySafeUpdate"))
+                  #expect(receiver.contains("eventDetails[\"generation\"] = String(token.diagnosticGeneration)"))
+              }
+
+              private func section(_ s: String, _ a: String, _ b: String) throws -> Substring {
+                  guard let x=s.range(of:a), let y=s.range(of:b,range:x.upperBound..<s.endIndex) else {
+                      Issue.record("Expected source section missing")
+                      throw E.missing
+                  }
+                  return s[x.lowerBound..<y.lowerBound]
+              }
+              private func read(_ path:String) throws -> String {
+                  let root=URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+                  return try String(contentsOf:root.appendingPathComponent(path),encoding:.utf8)
+              }
+              private enum E:Error { case missing }
+          }
+          '''),encoding='utf-8')
+          PY
+
+      - name: Validate and collapse
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationReservedMetadataLosslessSourceTests.swift
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaApplicationReservedMetadataLosslessSourceTests
+          git diff --check
+          parent='172dca56a1bc018e192feec197ceb17f81db5dab'
+          rm .github/workflows/materialize-capture-lossless-generation-custody-172d.yml
+          git add -A
+          mapfile -t changed < <(git diff --cached --name-only "$parent" | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 2
+          test "${changed[0]}" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          test "${changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationReservedMetadataLosslessSourceTests.swift'
+          git diff --cached --check
+          git config user.name 'Nembra V14 Sol'
+          git config user.email 'actions@users.noreply.github.com'
+          git commit -m 'fix(capture): preserve colliding application generation evidence'
+          git push origin HEAD:sol/v14-capture-lossless-generation-custody-172d
