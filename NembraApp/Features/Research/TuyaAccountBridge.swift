@@ -224,8 +224,8 @@ final class TuyaAccountBridge: ObservableObject {
                 "online": device.online
             ],
             "status": Self.redactSecrets(selectedDeviceStatus ?? [:]),
-            "specifications": selectedDeviceSpecifications ?? [:],
-            "localStrategy": selectedDeviceLocalStrategy ?? [:],
+            "specifications": Self.redactSecrets(selectedDeviceSpecifications ?? [:]),
+            "localStrategy": Self.redactSecrets(selectedDeviceLocalStrategy ?? [:]),
             "safety": [
                 "readOnlyCloudCalls": true,
                 "localKeyRetained": false,
