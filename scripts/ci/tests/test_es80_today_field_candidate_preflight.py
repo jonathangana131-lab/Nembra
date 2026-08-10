@@ -263,21 +263,27 @@ class FieldCandidatePreflightTests(unittest.TestCase):
 
     def test_production_handoff_consumes_accepted_descriptor_bound_private_input_before_signing(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
-        helper_commit = "05ce6d9a20487ab34aa31c5b6456910ed2ed438f"
+        helper_merge_commit = "4a2aa4c3e44bf6127ac841471d356044f0cfce8d"
+        helper_accepted_head = "abaabe628a0a4b40498147229acd23ff7052012c"
         helper_path = "scripts/ci/es80_today_private_device_input.py"
-        helper_blob = "9a9f7f724ceaf895e52d6d443d326043f97645c8"
+        helper_blob = "c87dca57361d53ab58b7c2565b414b2c469b58f2"
+        helper_qa_run = "31349711857"
         helper_invoke = '/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER"'
         private_directory_arg = '--private-directory "$PRIVATE_DIR"'
         source_repo_arg = '--source-repo "$FIELD_SOURCE"'
         producer_invoke = "./scripts/ci/xcode27_today_research_field_candidate.sh"
 
-        self.assertIn(helper_commit, handoff)
+        self.assertIn(helper_merge_commit, handoff)
+        self.assertIn(helper_accepted_head, handoff)
         self.assertIn(helper_path, handoff)
         self.assertIn(helper_blob, handoff)
+        self.assertIn(helper_qa_run, handoff)
         self.assertIn(helper_invoke, handoff)
         self.assertIn(private_directory_arg, handoff)
         self.assertIn(source_repo_arg, handoff)
         self.assertLess(handoff.index(helper_invoke), handoff.index(producer_invoke))
+        self.assertNotIn("05ce6d9a20487ab34aa31c5b6456910ed2ed438f", handoff)
+        self.assertNotIn("9a9f7f724ceaf895e52d6d443d326043f97645c8", handoff)
         self.assertNotIn("IFS= read -r -s INTENDED_UDID", handoff)
         self.assertNotIn("set -o noclobber", handoff)
         self.assertNotIn('printf \'%s\' "$INTENDED_UDID" > "$UDID_FILE"', handoff)
@@ -328,8 +334,11 @@ class FieldCandidatePreflightTests(unittest.TestCase):
 
     def test_signed_field_handoff_pins_accepted_preflight_and_non_authorization(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
-        self.assertIn("9b5bde849e6b8f6b76e2a15abb52d643e3616a7a", handoff)
-        self.assertIn("fcc2243c005c5f6df2d2f5bd8b8c948e785f07d8", handoff)
+        self.assertIn("74f4e88e4efb78bf69fe504f407ef42398e4b6ab", handoff)
+        self.assertIn("1b0155ab8d990420c33ad4c65461e7663612f9fb", handoff)
+        self.assertIn("31349183788", handoff)
+        self.assertIn("93336690257", handoff)
+        self.assertIn("Superseded preflight provenance", handoff)
         self.assertIn("scripts/ci/es80_today_field_candidate_preflight.py", handoff)
         self.assertIn("READY_TO_INVOKE_SIGNED_FIELD_PRODUCER", handoff)
         self.assertIn("operator-pre-signing-readiness-not-field-authorization", handoff)
