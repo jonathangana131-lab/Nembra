@@ -35,10 +35,48 @@ struct TuyaCaptureRedTeamConvergenceSourceTests {
             to: "private func startWatchdog"
         ))
 
-        #expect(receipt.contains("log(\"tuya_application_update\", update.merging(["))
+        #expect(receipt.contains("let custodySafeUpdate = Self.redactVerifiedAccountUID("))
+        #expect(receipt.contains("log(\"tuya_application_update\", custodySafeUpdate.merging(["))
         #expect(receipt.contains("\"generation\": String(token.diagnosticGeneration)"))
         #expect(receipt.contains("]) { _, trusted in trusted })"))
+        #expect(!receipt.contains("log(\"tuya_application_update\", update.merging(["))
         #expect(!receipt.contains("{ current, _ in current }"))
+    }
+
+    @Test("verified account UID is scrubbed from application keys and values before event custody")
+    func accountUIDCannotEnterAcceptedApplicationEvent() throws {
+        let source = try entrypointSource()
+        let controller = String(try section(
+            in: source,
+            from: "private final class SecureLinkController",
+            to: "@MainActor\nprivate protocol OfficialTuyaDriver"
+        ))
+        let receipt = String(try section(
+            in: controller,
+            from: "private func receivedApplicationUpdate(",
+            to: "private func startWatchdog"
+        ))
+        let driver = String(try section(
+            in: source,
+            from: "@MainActor\nprivate final class SmartLifeDriver",
+            to: "#endif\n\nprivate enum AppleAccountAuthorizationError"
+        ))
+        let secretFragments = String(try section(
+            in: driver,
+            from: "private static let secretKeyFragments = [",
+            to: "private static func redactApplicationSecrets"
+        ))
+
+        #expect(controller.contains("<redacted-account-uid>"))
+        #expect(controller.contains("private static func redactVerifiedAccountUID("))
+        #expect(controller.contains("redactAccountUIDOccurrences(in: key, accountUID: accountUID)"))
+        #expect(controller.contains("redactAccountUIDOccurrences(in: value, accountUID: accountUID)"))
+        #expect(receipt.contains("let verifiedAccountUID = membershipAccountUID"))
+        #expect(receipt.contains("let custodySafeUpdate = Self.redactVerifiedAccountUID("))
+        #expect(!receipt.contains("log(\"tuya_application_update\", update.merging(["))
+
+        #expect(!secretFragments.contains("\"uid\""))
+        #expect(secretFragments.components(separatedBy: "\"sessionkey\"").count - 1 == 1)
     }
 
     @Test("foreground loss preserves sealed acceptance and invalidates post-correlation target authority")
