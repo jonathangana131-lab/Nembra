@@ -104,6 +104,17 @@ xcrun simctl status_bar "$UDID" override \
   --cellularMode active \
   --cellularBars 4 >/dev/null 2>&1 || true
 
+# `simctl launch` forwards host variables prefixed with SIMCTL_CHILD_ into the app. Refuse any
+# inherited synthetic-authority fixture instead of merely promising that this script does not set one.
+while IFS= read -r variable_name; do
+  case "$variable_name" in
+    SIMCTL_CHILD_*|NEMBRA_SIMULATION_*)
+      echo "Refusing standalone visual evidence with inherited synthetic authority: $variable_name" >&2
+      exit 18
+      ;;
+  esac
+done < <(compgen -v)
+
 # Deliberately launch the real standalone product with no SIMCTL_CHILD_* variables, no
 # NEMBRA_SIMULATION_* scenario, and no fake Tuya account/device authority. The screenshot is
 # presentation evidence only; a human reviewer must confirm the fail-closed UI state.
@@ -167,7 +178,8 @@ record = {
     "bundleIdentifier": bundle_id,
     "simulatorRuntime": runtime_id,
     "simulatorDeviceType": device_type,
-    "launchContext": "real standalone bundle; no SIMCTL_CHILD/NEMBRA_SIMULATION authority injected",
+    "launchContext": "real standalone bundle; inherited SIMCTL_CHILD/NEMBRA_SIMULATION authority rejected before launch",
+    "syntheticAuthorityEnvironmentRejected": True,
     "expectedReviewState": "public/unprovisioned root presentation; reviewer must verify fail-closed messaging visually",
     "visualAcceptanceRequiresHumanReview": True,
     "physicalAuthorityCreated": False,
