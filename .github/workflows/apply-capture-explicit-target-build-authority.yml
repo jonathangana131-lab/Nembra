@@ -1,0 +1,38 @@
+name: Apply Capture explicit target authority repair
+
+on:
+  push:
+    branches:
+      - 'agent/v14-capture-explicit-target-build-authority'
+    paths:
+      - '.github/workflows/apply-capture-explicit-target-build-authority.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply narrow Capture authority patch
+        run: |
+          set -euo pipefail
+          git apply --check .ci-patches/capture-explicit-target-build-authority.patch
+          git apply .ci-patches/capture-explicit-target-build-authority.patch
+
+      - name: Run Capture package tests
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test
+
+      - name: Commit verified Capture authority repair
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldBuildPresentationAuthoritySourceTests.swift
+          git commit -m "fix: require explicit correlated target authority"
+          git push origin HEAD:agent/v14-capture-explicit-target-build-authority
