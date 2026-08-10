@@ -639,7 +639,7 @@ final class TuyaAccountBridge: ObservableObject {
     private static func redactSecrets(_ object: Any) -> Any {
         if let dictionary = object as? [String: Any] {
             var output: [String: Any] = [:]
-            let secretKeyFragments = ["localkey", "accesstoken", "refreshtoken", "sessionkey", "seckey", "authkey"]
+            let secretKeyFragments = ["localkey", "sessionkey", "appkey", "appsecret", "password", "accounttoken", "accesstoken", "refreshtoken", "authkey", "seckey"]
             for (key, value) in dictionary {
                 let normalized = String(key.lowercased().filter { $0.isLetter || $0.isNumber })
                 if secretKeyFragments.contains(where: normalized.contains) {
