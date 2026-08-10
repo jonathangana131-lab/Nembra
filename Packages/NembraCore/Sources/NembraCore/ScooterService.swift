@@ -13,6 +13,82 @@ public enum ScooterCommandError: Error, Equatable, Sendable {
     case commandInProgress
 }
 
+public enum SimulatorPowerObservationError: Error, Equatable, Sendable {
+    case invalidWatts
+    case invalidReceiptSequence
+    case invalidContinuityGeneration
+}
+
+/// One source-owned synthetic propulsion-power observation.
+///
+/// This type is intentionally Simulator-only. It is not verified scooter power,
+/// cannot authorize physical ES80 watts/current semantics, and must never be
+/// promoted merely from cached `VehicleState.powerWatts`, a view lifecycle, or a
+/// display/render clock. Repeated equal-valued observations remain distinct when
+/// the Simulator source actually produced them because receipt identity advances.
+public struct SimulatorPowerObservation: Equatable, Sendable {
+    public let watts: Double
+    public let receiptSequenceNumber: UInt64
+    public let receivedAtUptimeNanoseconds: UInt64
+    public let continuityGeneration: UInt64
+
+    /// Construction is intentionally module-internal. External consumers may read
+    /// source-issued observations but cannot manufacture one and wrap it in a
+    /// caller-created `.live` availability value. `@testable` package tests still
+    /// exercise the fail-closed numeric/identity guards directly.
+    init(
+        watts: Double,
+        receiptSequenceNumber: UInt64,
+        receivedAtUptimeNanoseconds: UInt64,
+        continuityGeneration: UInt64
+    ) throws {
+        guard watts.isFinite, watts >= 0 else {
+            throw SimulatorPowerObservationError.invalidWatts
+        }
+        guard receiptSequenceNumber > 0 else {
+            throw SimulatorPowerObservationError.invalidReceiptSequence
+        }
+        guard continuityGeneration > 0 else {
+            throw SimulatorPowerObservationError.invalidContinuityGeneration
+        }
+
+        self.watts = watts
+        self.receiptSequenceNumber = receiptSequenceNumber
+        self.receivedAtUptimeNanoseconds = receivedAtUptimeNanoseconds
+        self.continuityGeneration = continuityGeneration
+    }
+}
+
+/// Source-owned currentness for Simulator propulsion power. A disconnect can
+/// retain the last legitimate observation for explicit last-known presentation,
+/// but reconnect alone never promotes that retained value back to `.live`.
+public enum SimulatorPowerEvidenceAvailability: Equatable, Sendable {
+    case unavailable
+    case retained(SimulatorPowerObservation)
+    case live(SimulatorPowerObservation)
+}
+
+/// Optional Simulator-only source boundary for consumers that need propulsion
+/// receipt/currentness truth rather than aggregate `VehicleState.powerWatts`.
+///
+/// Implementations must atomically register the stream and replay their current
+/// availability as its first element. Availability is state, not an event log, so
+/// slow consumers must not receive obsolete queued `.live` states after a newer
+/// retained/unavailable transition exists. Genuine equal-valued source observations
+/// are allowed and must carry new source receipt identity.
+public protocol SimulatorPowerEvidenceProvider: Sendable {
+    func simulatorPowerEvidenceUpdates() async -> AsyncStream<SimulatorPowerEvidenceAvailability>
+    func simulatorPowerEvidenceSnapshot() async -> SimulatorPowerEvidenceAvailability
+}
+
+public extension SimulatorPowerEvidenceProvider {
+    func simulatorPowerEvidenceSnapshot() async -> SimulatorPowerEvidenceAvailability {
+        let stream = await simulatorPowerEvidenceUpdates()
+        var iterator = stream.makeAsyncIterator()
+        return await iterator.next() ?? .unavailable
+    }
+}
+
 /// Optional source-owned projection for consumers that require field-specific
 /// current speed truth rather than cached `VehicleState` values.
 ///
