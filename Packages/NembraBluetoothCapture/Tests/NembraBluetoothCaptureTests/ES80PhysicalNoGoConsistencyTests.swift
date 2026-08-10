@@ -12,24 +12,26 @@ struct ES80PhysicalNoGoConsistencyTests {
         return root
     }
 
-    private func physicalRunbook() throws -> String {
+    private func repositoryFile(_ relativePath: String) throws -> String {
         try String(
-            contentsOf: repositoryRoot
-                .appendingPathComponent("docs")
-                .appendingPathComponent("ES80_PHYSICAL_CAPTURE_RUNBOOK.md"),
+            contentsOf: repositoryRoot.appendingPathComponent(relativePath),
             encoding: .utf8
         )
     }
 
-    @Test("durable runbook and compiled field gate remain locked together")
-    func runbookAndCompiledGateAreBothNoGo() throws {
-        let runbook = try physicalRunbook()
+    @Test("retired passive runbook cannot authorize the current physical experiment")
+    func retiredPassiveRunbookRemainsATombstone() throws {
+        let retired = try repositoryFile("docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md")
 
-        #expect(
-            runbook.contains(
-                "Status: **NO-GO — PHYSICAL EXPERIMENT ONE MUST NOT RUN FROM THE CURRENT SOFTWARE LINEAGE.**"
-            )
-        )
+        #expect(retired.contains("RETIRED V14 LANE"))
+        #expect(retired.contains("Status: **RETIRED / NON-AUTHORITATIVE / PHYSICAL NO-GO.**"))
+        #expect(retired.contains("It is **not** the current physical-procedure gate"))
+        #expect(retired.contains("ES80-AUTHENTICATED-STATIONARY-v1"))
+        #expect(retired.contains("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md"))
+        #expect(retired.contains("must not be edited from NO-GO to GO for the current Capture product"))
+
+        // The historical passive package gate is still deliberately unable to authorize a run.
+        // Its NO-GO state is not the current authenticated-stationary procedure contract.
         #expect(
             PassiveBluetoothExperimentOneFieldExecutionGate.status
                 == .noGo(.finalComposedBuildNotAuthorized)
@@ -38,9 +40,9 @@ struct ES80PhysicalNoGoConsistencyTests {
         #expect(PassiveBluetoothExperimentOneFieldExecutionGate.recipeID == .es80FingerprintV1)
     }
 
-    @Test("authoritative OFF ON window timing remains the V14 ten-second procedure")
-    func runbookAndCompiledPolicyAgreeOnCorrelationWindowDuration() throws {
-        let runbook = try physicalRunbook()
+    @Test("current runbook delegates correlation duration to the accepted package policy")
+    func currentRunbookAndPackageAgreeOnCorrelationAuthority() throws {
+        let runbook = try repositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
         let tenSecondsInNanoseconds: UInt64 = 10_000_000_000
 
         #expect(
@@ -48,88 +50,55 @@ struct ES80PhysicalNoGoConsistencyTests {
                 .minimumPowerCycleWindowDurationNanoseconds
                 == tenSecondsInNanoseconds
         )
-        #expect(
-            runbook.contains(
-                "Each OFF / ON observation window must span **at least 10 seconds** under the package-owned monotonic receipt-time policy"
-            )
-        )
-        #expect(
-            runbook.contains(
-                "This minimum is **not** a BLE cadence claim, RF-completeness proof, or proof that OFF-window non-observation means physical absence."
-            )
-        )
-        #expect(
-            runbook.contains(
-                "any OFF / ON correlation window cannot prove the accepted **>=10-second** package monotonic receipt-time minimum"
-            )
-        )
+        #expect(runbook.contains("OFF1 → ON1 → OFF2 → ON2"))
+        #expect(runbook.contains("accepted receipt-bounded minimum duration"))
+        #expect(runbook.contains("elapsed UI time is not evidence"))
+        #expect(runbook.contains("exactly one repeatable full CoreBluetooth UUID"))
+        #expect(runbook.contains("Confirm correlated Bluetooth target"))
+        #expect(runbook.contains("There is no hint-based override."))
     }
 
-    @Test("authoritative Ready to Horizon timing remains the V14 sixty-second procedure")
-    func runbookAndCompiledPolicyAgreeOnObservationDuration() throws {
-        let runbook = try physicalRunbook()
-        let sixtySecondsInNanoseconds: UInt64 = 60_000_000_000
+    @Test("current authenticated observation horizon is forty-five seconds")
+    func currentRunbookAndPreflightAgreeOnAuthenticatedDuration() throws {
+        let runbook = try repositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
+        let fortyFiveSecondsInNanoseconds: UInt64 = 45_000_000_000
 
         #expect(
-            PassiveBluetoothExperimentOneCapturePolicy
-                .minimumPostReadyObservationDurationNanoseconds
-                == sixtySecondsInNanoseconds
+            TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds
+                == fortyFiveSecondsInNanoseconds
         )
-        #expect(
-            PassiveCoreBluetoothObservationHorizonMinimumDurationGate
-                .experimentOneMinimumDurationNanoseconds
-                == PassiveBluetoothExperimentOneCapturePolicy
-                    .minimumPostReadyObservationDurationNanoseconds
-        )
-        #expect(
-            runbook.contains(
-                "an authoritative observation horizon of **at least 60 seconds after accepted Ready**"
-            )
-        )
-        #expect(
-            runbook.contains(
-                "Observe for **at least 60 seconds after Ready** under the accepted monotonic evidence contract."
-            )
-        )
+        #expect(runbook.contains("at least 45 seconds of canonical authenticated observation"))
+        #expect(runbook.contains("at least one genuine non-empty same-generation `ThingSmartDeviceDelegate.dpsUpdate`"))
+        #expect(runbook.contains("The app must seal the canonical ready prefix before presenting success."))
     }
 
-    @Test("final physical GO record remains intentionally unissued")
-    func finalGoRecordIsBlankWhileGateIsNoGo() throws {
-        let runbook = try physicalRunbook()
-        let requiredBlankRecordLines = [
-            "- Accepted exact build/commit: **NOT YET AUTHORIZED**",
-            "- Accepted signed-device/installable artifact identity/digest: **NOT YET AUTHORIZED**",
-            "- Independent field-build acceptance / attestation subject: **NOT YET AUTHORIZED**",
-            "- Accepted field-authorization envelope SHA-256 (`envelopeSHA256`): **NOT YET AUTHORIZED**",
-            "- Accepted authorization payload SHA-256 (`authorizationPayloadSHA256`): **NOT YET AUTHORIZED**",
-            "- Accepted external build record SHA-256 (`externalBuildRecordSHA256`): **NOT YET AUTHORIZED**",
-            "- Accepted field-build evidence record SHA-256 (`fieldBuildEvidenceRecordSHA256`): **NOT YET AUTHORIZED**",
-            "- Accepted authority public-key X9.63 SHA-256 (`authorityPublicKeyX963SHA256`): **NOT YET AUTHORIZED**",
-            "- Package field-execution gate state: **NO-GO / NOT YET AUTHORIZED**",
-            "- Procedure version: **V14 / NOT YET AUTHORIZED**",
-            "- Experiment recipe: **ES80-FINGERPRINT-v1 candidate; final recipe authority not yet issued**",
-            "- Expected artifact: **NOT YET AUTHORIZED**",
-            "- Physical result collected: **NO**",
-        ]
+    @Test("current physical procedure remains explicitly NO-GO")
+    func currentSecureLinkProcedureRemainsNoGo() throws {
+        let runbook = try repositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
 
-        for line in requiredBlankRecordLines {
-            #expect(runbook.contains(line))
-        }
+        #expect(runbook.contains("PROCEDURE_ID: `ES80-AUTHENTICATED-STATIONARY-v1`"))
+        #expect(runbook.contains("Until all applicable software/private-device prerequisites are true"))
+        #expect(runbook.contains("the repository explicitly records `GO`"))
+        #expect(runbook.contains("the physical secure-link experiment is **NO-GO**"))
+        #expect(runbook.contains("Smallest physical test — only after repository status explicitly flips to GO"))
+        #expect(runbook.contains("**Do not repeat the completed 17-step ride capture.**"))
     }
 
-    @Test("future GO must update package authority and runbook in one accepted change")
-    func runbookPinsJointGoTransition() throws {
-        let runbook = try physicalRunbook()
+    @Test("NO-GO cannot be bypassed by simulator or stale physical evidence")
+    func currentRunbookPinsEvidenceBoundaries() throws {
+        let retired = try repositoryFile("docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md")
+        let runbook = try repositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
 
         #expect(
-            runbook.contains(
-                "replace this section in the same acceptance change that flips the status above to `GO`"
+            retired.contains(
+                "Queued, running, skipped, ancestor-green, package-only, Simulator-only, source-review-only, self-described, or historical passive evidence cannot authorize that experiment."
             )
         )
-        #expect(
-            runbook.contains(
-                "a deliberate package-owned `PassiveBluetoothExperimentOneFieldExecutionGate` GO state"
-            )
-        )
+        #expect(runbook.contains("The historical CoreBluetooth UUID is **descriptive capture-local evidence only**."))
+        #expect(runbook.contains("Nembra sends no scooter DP query/control command"))
+        #expect(runbook.contains("opens no second CoreBluetooth connection"))
+        #expect(runbook.contains("rawFD50BytesCaptured=false"))
+        #expect(runbook.contains("dpQueriesSent=false"))
+        #expect(runbook.contains("dpCommandsSent=false"))
     }
 }
