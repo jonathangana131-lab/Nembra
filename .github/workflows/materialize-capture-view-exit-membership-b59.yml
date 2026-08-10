@@ -4,14 +4,15 @@ on:
   push:
     branches:
       - fix/v14-capture-view-exit-membership-b59-sol
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   materialize:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -19,57 +20,51 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Guard exact current product parent and untouched product paths
+      - name: Guard exact parent and apply bounded lifecycle repair
         shell: bash
         run: |
           set -euo pipefail
           parent='b59cd71272b465bcad70fcc3425382bb29541b2e'
           git merge-base --is-ancestor "$parent" HEAD
           git diff --quiet "$parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift
-          test "$(git diff --name-only "$parent" HEAD | grep -Ev '^.github/workflows/materialize-capture-view-exit-membership-b59.yml$' || true)" = ""
-
-      - name: Strengthen view-exit authority retirement
-        shell: bash
-        run: |
-          set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           app = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
-          source = app.read_text(encoding='utf-8')
+          source = app.read_text()
           start_token = '    func abandonCorrelationForViewExit() {'
           end_token = '\n\n    var privateConfig: Bool'
-          if source.count(start_token) != 1:
-              raise SystemExit(f'expected one view-exit cleanup function, found {source.count(start_token)}')
+          assert source.count(start_token) == 1
           start = source.index(start_token)
           end = source.index(end_token, start)
           replacement = '''    func abandonCorrelationForViewExit() {
-        // Revoke an in-flight membership callback before checking scanner ownership. Otherwise a
-        // successful membership result can arrive after navigation exit and start hidden OFF1.
-        membershipRequestID = UUID()
-        membershipBusy = false
-#if canImport(ThingSmartHomeKit)
-        membershipProbe = nil
-#endif
+              membershipRequestID = UUID()
+              membershipBusy = false
+          #if canImport(ThingSmartHomeKit)
+              membershipProbe = nil
+          #endif
 
-        guard processCorrelationLease != nil || correlationSession != nil else { return }
-        // Existing helper retires package transport before releasing the owner-token lease.
-        abandonPackageCorrelation()
-        phase = .failed
-        message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
-        log("target_correlation_abandoned_on_view_exit")
-    }'''
-          source = source[:start] + replacement + source[end:]
-          app.write_text(source, encoding='utf-8')
+              guard processCorrelationLease != nil || correlationSession != nil else { return }
+              abandonPackageCorrelation()
+              phase = .failed
+              message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
+              log("target_correlation_abandoned_on_view_exit")
+          }'''
+          app.write_text(source[:start] + replacement + source[end:])
 
           test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift')
-          contract = test.read_text(encoding='utf-8')
+          contract = test.read_text()
           old = '''        #expect(controller.contains("func abandonCorrelationForViewExit()"))
+              #expect(controller.contains("guard processCorrelationLease != nil || correlationSession != nil else { return }"))
+              #expect(controller.contains("abandonPackageCorrelation()"))
+              #expect(controller.contains("target_correlation_abandoned_on_view_exit"))
+              #expect(view.contains(".onDisappear"))'''
+          if contract.count(old) != 1:
+              old = '''        #expect(controller.contains("func abandonCorrelationForViewExit()"))
         #expect(controller.contains("guard processCorrelationLease != nil || correlationSession != nil else { return }"))
         #expect(controller.contains("abandonPackageCorrelation()"))
         #expect(controller.contains("target_correlation_abandoned_on_view_exit"))
-        #expect(view.contains(".onDisappear"))
-'''
+        #expect(view.contains(".onDisappear"))'''
+          assert contract.count(old) == 1
           new = '''        let cleanup = String(try section(
             in: controller,
             from: "func abandonCorrelationForViewExit()",
@@ -81,48 +76,41 @@ jobs:
         #expect(cleanup.contains("guard processCorrelationLease != nil || correlationSession != nil else { return }"))
         #expect(cleanup.contains("abandonPackageCorrelation()"))
         #expect(cleanup.contains("target_correlation_abandoned_on_view_exit"))
-        #expect(!cleanup.contains("releasePackageCorrelationLease()"))
+        #expect(!cleanup.contains("releasePackageCorrelationLease"))
         #expect(cleanup.range(of: "membershipRequestID = UUID()")!.lowerBound < cleanup.range(of: "guard processCorrelationLease")!.lowerBound)
-        #expect(view.contains(".onDisappear"))
-'''
-          if contract.count(old) != 1:
-              raise SystemExit(f'expected current navigation regression anchor once, found {contract.count(old)}')
-          test.write_text(contract.replace(old, new, 1), encoding='utf-8')
+        #expect(view.contains(".onDisappear"))'''
+          test.write_text(contract.replace(old, new, 1))
           PY
 
-      - name: Validate truth boundary and clean diff
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
-          start = s.index('func abandonCorrelationForViewExit()')
-          end = s.index('var privateConfig: Bool', start)
-          cleanup = s[start:end]
-          for needle in ('membershipRequestID = UUID()', 'membershipBusy = false', 'membershipProbe = nil', 'abandonPackageCorrelation()'):
-              assert needle in cleanup, needle
-          assert cleanup.index('membershipRequestID = UUID()') < cleanup.index('guard processCorrelationLease')
-          assert cleanup.index('membershipProbe = nil') < cleanup.index('guard processCorrelationLease')
-          assert 'releasePackageCorrelationLease()' not in cleanup
-          for forbidden in ('connectBLE(', 'disconnectBLE', 'queryDps', 'publishDps', 'writeValue'):
-              assert forbidden not in cleanup, forbidden
-          print('view-exit hidden-start retirement: PASS')
-          PY
-          git diff --check
-
-      - name: Publish clean two-path repair
+      - name: Validate and publish clean two-path commit
         shell: bash
         run: |
           set -euo pipefail
           parent='b59cd71272b465bcad70fcc3425382bb29541b2e'
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          start = s.index('func abandonCorrelationForViewExit()')
+          end = s.index('var privateConfig: Bool', start)
+          cleanup = s[start:end]
+          for needle in ('membershipRequestID = UUID()', 'membershipBusy = false', 'membershipProbe = nil', 'abandonPackageCorrelation()'):
+              assert needle in cleanup
+          assert cleanup.index('membershipRequestID = UUID()') < cleanup.index('guard processCorrelationLease')
+          assert cleanup.index('membershipProbe = nil') < cleanup.index('guard processCorrelationLease')
+          for forbidden in ('releasePackageCorrelationLease', 'connectBLE(', 'disconnectBLE', 'queryDps', 'publishDps', 'writeValue'):
+              assert forbidden not in cleanup
+          PY
+          git diff --check
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift
           rm .github/workflows/materialize-capture-view-exit-membership-b59.yml
-          git add NembraApp/App/NembraCaptureEntrypoint.swift \
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift
-          git add -u .github/workflows/materialize-capture-view-exit-membership-b59.yml
+          git add -A
           git diff --cached --check
-          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' \
-            commit -m 'fix(capture): cancel hidden OFF1 start on view exit'
-          test "$(git diff --name-only "$parent" HEAD | sort)" = "$(printf '%s\n' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift' | sort)"
-          git diff --check "$parent" HEAD
-          git push origin HEAD:fix/v14-capture-view-exit-membership-b59-sol
+          git reset --soft "$parent"
+          git reset
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift
+          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" = 2
+          git config user.name 'nembra-sol'
+          git config user.email 'nembra-sol@users.noreply.github.com'
+          git commit -m 'fix(capture): cancel hidden OFF1 start on view exit'
+          git push --force-with-lease origin HEAD:fix/v14-capture-view-exit-membership-b59-sol
