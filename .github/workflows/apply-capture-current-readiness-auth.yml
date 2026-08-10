@@ -1,0 +1,51 @@
+name: Apply Capture current readiness/auth recovery
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-app-readiness-auth-current-sol
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard exact product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 3e4387be58a1a216afde8f47ed4185d919e32f42 HEAD
+          test "$(git rev-parse 3e4387be58a1a216afde8f47ed4185d919e32f42:NembraApp/App/NembraCaptureEntrypoint.swift)" = "48ccba544525ba13f9593c922298e9dac17fb9b0"
+          test "$(git rev-parse HEAD:NembraApp/App/NembraCaptureEntrypoint.swift)" = "48ccba544525ba13f9593c922298e9dac17fb9b0"
+
+      - name: Apply deterministic product patch
+        run: python3 scripts/ci/apply_capture_current_readiness_auth.py
+
+      - name: Validate diff and focused source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaCorrelationProgressPresentationSourceTests
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaPackageOwnedCorrelationSingleScannerSourceTests
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaAsyncAuthenticationStartAuthoritySourceTests
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaFieldBuildPresentationAuthoritySourceTests
+
+      - name: Commit product bytes and self-retire patch machinery
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm scripts/ci/apply_capture_current_readiness_auth.py
+          rm .github/workflows/apply-capture-current-readiness-auth.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(capture): publish readiness and block stale auth resurrection"
+          git push origin HEAD:${GITHUB_REF_NAME}
