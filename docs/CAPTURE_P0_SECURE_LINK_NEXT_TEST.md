@@ -47,7 +47,7 @@ The stationary field attempt may be authorized only after the final composed sta
 10. The canonical authority is generation-bound, rejects stale/late callbacks, freezes terminal chronology, retires hidden generations before retry, and cannot resurrect a failed attempt into accepted state.
 11. Package-already-terminal observation-continuity failures are mirrored into app ownership exactly once; the app does not attempt a second ledger terminal or invent a disconnect/source-loss fact.
 12. Exact-head standalone Xcode 27 / iPhone-12-class Simulator gates are terminal green on the unchanged final candidate. Public no-secret CI is software evidence only; it cannot prove the privately provisioned SDK path or physical scooter behavior.
-13. The privately provisioned workspace builds/signs/installs the exact accepted source on the intended iPhone 12 / iOS 27, with exact build identity visible in the app and retained in exported evidence.
+13. The privately provisioned workspace builds/signs the exact accepted source through `scripts/field/install_one_time_capture_authoritative.command`. That wrapper stamps `ES80-AUTHENTICATED-STATIONARY-v1` into the generated built-app Info.plist and must read the same value back from the exact built `.app` **before** the underlying installer may continue to device installation. The app must then report authoritative field-build provenance and the same procedure value, and the immutable accepted export must retain it.
 
 Until all applicable software/private-device prerequisites are true and the repository explicitly records `GO`, the physical secure-link experiment is **NO-GO**.
 
@@ -55,7 +55,7 @@ Until all applicable software/private-device prerequisites are true and the repo
 
 Provision a SmartLife App SDK app on the Tuya Developer Platform for the exact Capture bundle identifier and install the matching iOS security component under the ignored local provisioning path expected by the repo.
 
-Use the repository provisioning/bootstrap/field installer so the physical candidate is built from `NembraCapture.xcworkspace`, not the bare `.xcodeproj` or the normal Nembra app target. Preserve the accepted `Podfile.lock`; do not run an ad-hoc `pod update` before a physical evidence run.
+For a physical candidate, use `scripts/field/install_one_time_capture_authoritative.command` as the canonical field entry point. It delegates to the existing repository bootstrap/installer, so the candidate is still built from `NembraCapture.xcworkspace`, not the bare `.xcodeproj` or the normal Nembra app target, but installation is blocked unless the exact built app carries and reads back the canonical procedure identifier. Preserve the accepted `Podfile.lock`; do not run an ad-hoc `pod update` before a physical evidence run.
 
 Keep AppKey/AppSecret, account tokens, verification codes, `local_key`, scooter/session keys, and generated private security material out of Git, logs, screenshots, issues, chat, and Capture exports.
 
@@ -67,11 +67,11 @@ This test is indoors and stationary. It does **not** repeat the old ride sequenc
 
 ### Preflight
 
-1. Connect/unlock the intended iPhone 12, install the exact accepted signed Capture build, verify the app shows authoritative compiled field-build provenance, and verify `Procedure` is exactly `ES80-AUTHENTICATED-STATIONARY-v1`.
+1. Connect/unlock the intended iPhone 12 and install the exact accepted signed Capture build only through `scripts/field/install_one_time_capture_authoritative.command`. Require the wrapper to report that the built procedure was verified before installation; then require the app to show authoritative compiled field-build provenance and `Procedure` exactly `ES80-AUTHENTICATED-STATIONARY-v1`.
 2. Keep the scooter stationary and initially **OFF**.
 3. In Capture, log in to the official Tuya SDK account by verification code if needed.
 4. Require the app to freshly verify the exact expected scooter device ID in the current SDK account/home and retain the same-account UID lease.
-5. If build authority, SDK login, exact membership, or account identity changes at any point, **STOP**. Do not begin or continue Bluetooth correlation.
+5. If build authority, procedure authority, SDK login, exact membership, or account identity changes at any point, **STOP**. Do not begin or continue Bluetooth correlation.
 
 ### Fresh four-window target correlation
 
@@ -90,13 +90,13 @@ This test is indoors and stationary. It does **not** repeat the old ride sequenc
 15. Keep the scooter stationary, keep Capture in the foreground, and do not change mode/light/brake/throttle/charger state during this preflight.
 16. Acceptance requires one uninterrupted current generation with all of the following: supported SmartLife SDK authentication provenance, current same-account exact-device authority, Tuya local BLE observably online, no disqualifying continuity/clock gap, at least one genuine non-empty same-generation `ThingSmartDeviceDelegate.dpsUpdate`, and at least 45 seconds of canonical authenticated observation.
 17. The app must seal the canonical ready prefix before presenting success. Delayed callbacks after seal or failure cannot mutate the accepted artifact.
-18. Prepare/share the sanitized diagnostic JSON. The artifact must carry exact build/source provenance plus correlation provenance and must explicitly retain `rawFD50BytesCaptured=false`, `dpQueriesSent=false`, and `dpCommandsSent=false` for this supported structured-SDK path.
+18. Prepare/share the sanitized diagnostic JSON. The artifact must carry exact build/source/procedure provenance plus correlation provenance and must explicitly retain `rawFD50BytesCaptured=false`, `dpQueriesSent=false`, and `dpCommandsSent=false` for this supported structured-SDK path.
 
 ### Stop conditions
 
 Stop the attempt and preserve only already-legitimate evidence if any of these occurs:
 
-- field-build provenance becomes non-authoritative;
+- built-procedure stamping/read-back fails or field-build provenance becomes non-authoritative;
 - SDK account logout/switch or exact-device membership/UID lease changes;
 - a four-window scan never proves liveness or cannot earn its minimum receipt-bounded duration;
 - correlation is none/ambiguous or its chronology/provenance is rejected;
