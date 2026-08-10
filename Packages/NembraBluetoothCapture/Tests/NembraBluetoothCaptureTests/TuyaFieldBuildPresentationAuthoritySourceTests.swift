@@ -29,7 +29,7 @@ struct TuyaFieldBuildPresentationAuthoritySourceTests {
         #expect(!rowTail.contains("sdkDeviceMembershipVerified && test.accountIdentityLeaseIsAuthorized"))
     }
 
-    @Test("OFF-baseline affordance and NO-GO banner fail closed on non-authoritative build provenance")
+    @Test("OFF1 correlation affordance and NO-GO banner fail closed on non-authoritative build provenance")
     func physicalAffordancesConsumeBuildAuthority() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
@@ -45,17 +45,17 @@ struct TuyaFieldBuildPresentationAuthoritySourceTests {
             from: "private var discoveryCard: some View",
             to: "private func authenticationCard"
         )
-        #expect(discoveryCard.contains("Button(\"Start scooter-OFF baseline\")"))
+        #expect(discoveryCard.contains("Button(\"Start OFF1 correlation\")"))
         #expect(discoveryCard.contains("!test.fieldBuildIsAuthoritative"))
     }
 
-    @Test("runtime scan guard remains defense in depth")
+    @Test("runtime correlation-start guard remains defense in depth")
     func runtimeGuardIsPreserved() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let startBaseline = try section(
             in: app,
             from: "func startBaseline()",
-            to: "private func beginBaselineScan"
+            to: "private func beginCorrelationSeries"
         )
 
         #expect(startBaseline.contains("buildIdentity.isAuthoritativeFieldBuild"))
