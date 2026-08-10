@@ -152,6 +152,8 @@ printf '%s\n' \
     "Do NOT repeat the old 17-step ride capture." \
     "Keep the scooter stationary for this first preflight." \
     "If Capture says SDK compiled/configured, account logged in, or exact scooter membership is not proven, STOP and do not start BLE." \
-    "Only after all app gates are green: run the scooter-OFF baseline, power it ON, select the authoritative target, then Start secure read-only test." \
+    "Only after all app gates are green: complete the fresh OFF1 → ON1 → OFF2 → ON2 correlation exactly as Capture guides it; every window must reach scan liveness and its receipt-bounded minimum before sealing." \
+    "Continue only if the package reports exactly one repeatable full CoreBluetooth UUID, then explicitly tap Confirm correlated Bluetooth target. Historical UUID/name/RSSI/FD50/Tuya hints cannot override the package result." \
+    "After confirmation and the fresh same-account membership recheck, Start secure read-only test. Tuya's SDK remains the sole authenticated BLE owner; Nembra sends no DP query or command." \
     "PASS requires exact SDK scooter membership, Tuya local BLE online, a genuine same-generation dpsUpdate, canonical continuity of at least 45 seconds, and no command/pair/reset/unbind action." \
     "If any gate fails, share the sanitized diagnostic JSON and stop. No outdoor ride is authorized by this installer."
