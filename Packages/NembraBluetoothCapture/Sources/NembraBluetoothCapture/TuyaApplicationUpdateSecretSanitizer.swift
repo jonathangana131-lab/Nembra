@@ -8,8 +8,15 @@ import Foundation
 public enum TuyaApplicationUpdateSecretSanitizer {
     public static let redactedValue = "<redacted>"
 
+    /// Keep this classifier at least as strong as Capture's accepted-export secret promise.
+    /// Keys are normalized to lowercase alphanumerics before fragment matching.
     private static let secretKeyFragments = [
         "localkey",
+        "sessionkey",
+        "appkey",
+        "appsecret",
+        "password",
+        "accounttoken",
         "accesstoken",
         "refreshtoken",
         "seckey",
