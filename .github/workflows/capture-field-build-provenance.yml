@@ -50,6 +50,34 @@ jobs:
             exit 1
           fi
 
+          /usr/bin/python3 - "$installer" <<'PY'
+          from pathlib import Path
+          import sys
+
+          source = Path(sys.argv[1]).read_text()
+          required = [
+              '[[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9A-Fa-f]{40}$ ]]',
+              'EXPECTED_SOURCE_SHA="$(printf \'%s\' "$EXPECTED_SOURCE_SHA" | tr \'[:upper:]\' \'[:lower:]\')"',
+              'SOURCE_SHA="$(git rev-parse HEAD | tr \'[:upper:]\' \'[:lower:]\')"',
+              '[[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]]',
+          ]
+          missing = [anchor for anchor in required if anchor not in source]
+          if missing:
+              raise SystemExit(f"Capture exact-requested-source contract is incomplete: {missing}")
+
+          source_match = required[-1]
+          private_device = 'unset NEMBRA_INTENDED_FIELD_DEVICE_UDID || true'
+          bootstrap = '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"'
+          build_stage = 'say "Building SDK-integrated Nembra Capture for the intended iPhone"'
+          anchors = [source_match, private_device, bootstrap, build_stage]
+          missing_order = [anchor for anchor in anchors if anchor not in source]
+          if missing_order:
+              raise SystemExit(f"Capture field installer source-order anchors are missing: {missing_order}")
+          positions = [source.index(anchor) for anchor in anchors]
+          if positions != sorted(positions) or len(set(positions)) != len(positions):
+              raise SystemExit("Exact requested source SHA must be proven before private intended-device admission, workspace bootstrap, and field build")
+          PY
+
           grep -Fq 'NembraCaptureBuildIdentity.swift in Sources' "$project"
           grep -Fq 'INFOPLIST_KEY_NembraCaptureBuildIdentifier = "$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)";' "$project"
           grep -Fq 'INFOPLIST_KEY_NembraCaptureSourceCommitSHA = "$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)";' "$project"
