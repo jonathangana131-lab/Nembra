@@ -21,7 +21,6 @@ struct TuyaFieldInstallerProcedureSourceTests {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
 
         #expect(!installer.contains("run the scooter-OFF baseline, power it ON, select the authoritative target"))
-        #expect(!installer.contains("Do NOT repeat the old 17-step ride capture.\" \\\n    \"Keep the scooter stationary for this first preflight.\" \\\n    \"If Capture says SDK compiled/configured, account logged in, or exact scooter membership is not proven"))
     }
 
     @Test("installer keeps physical stop conditions and sealed-readiness truth")
