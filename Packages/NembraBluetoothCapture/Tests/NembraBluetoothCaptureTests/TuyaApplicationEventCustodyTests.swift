@@ -13,7 +13,7 @@ struct TuyaApplicationEventCustodyTests {
                 "uid": "device-opaque-identifier"
             ],
             verifiedAccountUID: uid,
-            connectionGeneration: 7
+            connectionGeneration: "7"
         ))
 
         #expect(details["owner"] == "prefix-<redacted-account-uid>-suffix")
@@ -33,7 +33,7 @@ struct TuyaApplicationEventCustodyTests {
                 "payload": "opaque"
             ],
             verifiedAccountUID: "account-123",
-            connectionGeneration: 19
+            connectionGeneration: "19"
         ))
 
         #expect(details["generation"] == "19")
@@ -47,7 +47,7 @@ struct TuyaApplicationEventCustodyTests {
         let details = try #require(TuyaApplicationEventCustody.admittedDetails(
             applicationUpdate: ["  GeNeRaTiOn  ": "untrusted"],
             verifiedAccountUID: "account-123",
-            connectionGeneration: 21
+            connectionGeneration: "21"
         ))
 
         #expect(details["generation"] == "21")
@@ -63,24 +63,30 @@ struct TuyaApplicationEventCustodyTests {
                 "echo": "\(uid)/\(uid)/abc-123"
             ],
             verifiedAccountUID: uid,
-            connectionGeneration: 1
+            connectionGeneration: "1"
         ))
 
         #expect(details["echo"] == "<redacted-account-uid>/<redacted-account-uid>/abc-123")
     }
 
-    @Test("custody refuses empty updates or missing verified identity")
+    @Test("custody refuses empty updates, missing verified identity, or missing generation")
     func incompleteAuthorityFailsClosed() {
         #expect(TuyaApplicationEventCustody.admittedDetails(
             applicationUpdate: [:],
             verifiedAccountUID: "account-123",
-            connectionGeneration: 1
+            connectionGeneration: "1"
         ) == nil)
 
         #expect(TuyaApplicationEventCustody.admittedDetails(
             applicationUpdate: ["payload": "opaque"],
             verifiedAccountUID: "   ",
-            connectionGeneration: 1
+            connectionGeneration: "1"
+        ) == nil)
+
+        #expect(TuyaApplicationEventCustody.admittedDetails(
+            applicationUpdate: ["payload": "opaque"],
+            verifiedAccountUID: "account-123",
+            connectionGeneration: "   "
         ) == nil)
     }
 }
