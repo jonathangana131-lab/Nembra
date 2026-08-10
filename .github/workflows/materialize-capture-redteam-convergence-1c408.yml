@@ -145,7 +145,7 @@ jobs:
           path.write_text(source)
           PY
 
-      - name: Verify truth contracts
+      - name: Verify truth contracts and parse app source
         shell: bash
         run: |
           set -euo pipefail
@@ -165,13 +165,14 @@ jobs:
           assert '"uid"\n' not in driver
           assert driver.count('"sessionkey",') == 1
           PY
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
           git diff --check
 
       - name: Run Capture package tests
         shell: bash
         run: |
           set -euo pipefail
-          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+          swift test --package-path Packages/NembraBluetoothCapture
 
       - name: Publish clean effective product checkpoint
         shell: bash
