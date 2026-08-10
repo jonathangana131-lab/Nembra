@@ -109,8 +109,10 @@ struct TuyaCaptureForegroundIntegritySourceTests {
         #expect(cleanup.contains("watchdog?.cancel()"))
         #expect(cleanup.contains("foregroundIntegrityLossHandled = true"))
 
-        // Package target correlation is abandoned through the existing scanner-first owner path.
-        #expect(cleanup.contains("abandonPackageCorrelation()"))
+        // Active target correlation uses the full discovery reset so scanner-first lease retirement
+        // and mutable target/provenance cleanup stay one owner operation. The foreground handler
+        // must not release the process lease directly.
+        #expect(cleanup.contains("resetDiscoverySessionOnly()"))
         #expect(cleanup.contains("foreground_integrity_lost_during_target_correlation"))
         #expect(!cleanup.contains("releasePackageCorrelationLease("))
 
