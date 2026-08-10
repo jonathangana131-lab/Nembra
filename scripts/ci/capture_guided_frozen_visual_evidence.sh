@@ -5,7 +5,7 @@ APP_PATH="${APP_PATH:-/tmp/NembraCaptureGuidedVisualDerived/Build/Products/Debug
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-${RUNNER_TEMP:-/tmp}/NembraCaptureGuidedFrozenVisualEvidence}"
 EXPECTED_VALIDATION_SHA="${EXPECTED_VALIDATION_SHA:-}"
 EXPECTED_PRODUCT_PARENT_SHA="${EXPECTED_PRODUCT_PARENT_SHA:-}"
-EXPECTED_PROCEDURE_ID="${EXPECTED_PROCEDURE_ID:-ES80-AUTHENTICATED-STATIONARY-v1}"
+PROCEDURE_SOURCE_CONTRACT_ID="${PROCEDURE_SOURCE_CONTRACT_ID:-ES80-AUTHENTICATED-STATIONARY-v1}"
 EXPECTED_BUNDLE_ID="com.jonathangana131.nembra.capturelearn"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -36,7 +36,6 @@ fi
 BUNDLE_ID="$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$INFO_PLIST")"
 BUILD_IDENTIFIER="$(/usr/bin/plutil -extract NembraCaptureBuildIdentifier raw -o - "$INFO_PLIST")"
 SOURCE_SHA="$(/usr/bin/plutil -extract NembraCaptureSourceCommitSHA raw -o - "$INFO_PLIST")"
-PROCEDURE_ID="$(/usr/bin/plutil -extract NembraCaptureProcedureIdentifier raw -o - "$INFO_PLIST" 2>/dev/null || true)"
 TUYA_DEPENDENCY_LOCK_SHA256="$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$INFO_PLIST" 2>/dev/null || true)"
 
 if [[ "$BUNDLE_ID" != "$EXPECTED_BUNDLE_ID" ]]; then
@@ -52,12 +51,12 @@ if [[ "$BUILD_IDENTIFIER" != "$EXPECTED_BUILD_IDENTIFIER" ]]; then
   echo "Standalone Capture build identifier does not rendezvous with its source SHA." >&2
   exit 9
 fi
-if [[ "$PROCEDURE_ID" != "$EXPECTED_PROCEDURE_ID" ]]; then
-  echo "Standalone Capture procedure identity does not match the canonical stationary procedure." >&2
-  exit 10
-fi
 if [[ -n "$TUYA_DEPENDENCY_LOCK_SHA256" ]]; then
   echo "Public visual evidence must not carry private Tuya dependency provenance or a shape-only substitute." >&2
+  exit 10
+fi
+if [[ "$PROCEDURE_SOURCE_CONTRACT_ID" != "ES80-AUTHENTICATED-STATIONARY-v1" ]]; then
+  echo "Visual evidence procedure source contract is not the canonical stationary procedure." >&2
   exit 11
 fi
 
@@ -168,7 +167,7 @@ done
   "$BUILD_IDENTIFIER" \
   "$SOURCE_SHA" \
   "$EXPECTED_PRODUCT_PARENT_SHA" \
-  "$PROCEDURE_ID" \
+  "$PROCEDURE_SOURCE_CONTRACT_ID" \
   "$BUNDLE_ID" \
   "$RUNTIME_ID" \
   "$DEVICE_TYPE" \
@@ -183,7 +182,7 @@ import sys
     build_identifier,
     validation_sha,
     product_parent_sha,
-    procedure_id,
+    procedure_source_contract_id,
     bundle_id,
     runtime_id,
     device_type,
@@ -201,7 +200,8 @@ record = {
     "productionBytesMatchProductParent": True,
     "buildIdentifier": build_identifier,
     "bundleIdentifier": bundle_id,
-    "procedureIdentifier": procedure_id,
+    "procedureSourceContractIdentifier": procedure_source_contract_id,
+    "procedureBuildProvenanceVerified": False,
     "tuyaDependencyLockSHA256": None,
     "tuyaDependencyProvenanceClass": "deliberately-absent-public-ci",
     "expectedFieldBuildAuthority": False,
@@ -235,7 +235,7 @@ printf '%s\n' \
   "Frozen guided Capture visual evidence captured." \
   "Validation source: $SOURCE_SHA" \
   "Frozen product parent: $EXPECTED_PRODUCT_PARENT_SHA" \
-  "Procedure: $PROCEDURE_ID" \
+  "Procedure source contract: $PROCEDURE_SOURCE_CONTRACT_ID (build provenance not verified here)" \
   "Standard screenshot: $STANDARD_SCREENSHOT" \
   "Accessibility XXXL screenshot: $AX_SCREENSHOT" \
   "Human review is required; this evidence creates no field, protocol, or physical authority."
