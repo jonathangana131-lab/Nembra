@@ -40,8 +40,12 @@ def _file_flags() -> int:
 def _validate_identifier(value: str) -> bytes:
     if not value or value != value.strip():
         raise PrivateInputError("intended-device identifier must be nonempty with no surrounding whitespace")
-    if any(ord(character) < 0x20 or ord(character) == 0x7F for character in value):
-        raise PrivateInputError("intended-device identifier contains a control character")
+    # Match the accepted preflight and frozen private runner exactly: every ASCII
+    # whitespace/control byte is invalid, including an internal ordinary space.
+    # The acquisition helper must not report success for input guaranteed to fail
+    # the next authoritative gate.
+    if any(ord(character) < 33 or ord(character) == 0x7F for character in value):
+        raise PrivateInputError("intended-device identifier contains whitespace or a control character")
     encoded = value.encode("utf-8")
     if len(encoded) > _MAX_IDENTIFIER_BYTES:
         raise PrivateInputError("intended-device identifier is unexpectedly large")
