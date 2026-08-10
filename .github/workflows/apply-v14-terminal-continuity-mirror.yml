@@ -1,0 +1,47 @@
+name: Apply V14 terminal continuity mirror repair
+
+on:
+  push:
+    branches: [repair/v14-capture-terminal-continuity-mirror-sol]
+    paths:
+      - '.github/workflows/apply-v14-terminal-continuity-mirror.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Assert exact stacked app
+        run: |
+          set -euo pipefail
+          test "$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)" = "64ab43b52a62450f43a2440c5a9dcc8a81544f31"
+          test ! -e Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAlreadyTerminalObservationContinuitySourceTests.swift
+          python3 -m py_compile .ci-patches/apply-v14-terminal-continuity-mirror.py
+
+      - name: Apply deterministic mirror repair
+        run: |
+          set -euo pipefail
+          python3 .ci-patches/apply-v14-terminal-continuity-mirror.py
+          git diff --check
+          grep -Fq 'mirrorAlreadyTerminalObservationContinuity' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'accepted_prefix_seal_continuity_invalidated' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'accepted_prefix_seal_lifecycle_rejected' NembraApp/App/NembraCaptureEntrypoint.swift
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAlreadyTerminalObservationContinuitySourceTests.swift
+
+      - name: Commit product and retire patch machinery
+        run: |
+          set -euo pipefail
+          rm .ci-patches/apply-v14-terminal-continuity-mirror.py
+          rm .github/workflows/apply-v14-terminal-continuity-mirror.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(capture): mirror package-terminal continuity"
+          git push origin HEAD:repair/v14-capture-terminal-continuity-mirror-sol
