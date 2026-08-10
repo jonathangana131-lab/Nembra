@@ -1,0 +1,101 @@
+name: Materialize Capture Timeout Presentation B615
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-timeout-terminal-presentation-b615-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard exact parent and red-test scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='b615375e12e43abc55e111deb5dc36f3790c7506'
+          test "$(git merge-base HEAD "$BASE")" = "$BASE"
+          mapfile -t paths < <(git diff --name-only "$BASE"...HEAD)
+          test "${#paths[@]}" -eq 2
+          printf '%s\n' "${paths[@]}" | grep -Fxq '.github/workflows/materialize-capture-timeout-presentation-b615.yml'
+          printf '%s\n' "${paths[@]}" | grep -Fxq 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationTimeoutPresentationRaceSourceTests.swift'
+
+      - name: Apply timeout terminal ownership fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+          terminal = 'try await sessionLedger.markApplicationObservationTimedOut(for: token)'
+          start = source.find(terminal)
+          if start < 0:
+              raise SystemExit('application-timeout terminal mutation not found')
+          tail = source[start:start + 2400]
+          if 'stale_application_timeout_completion_ignored' in tail:
+              raise SystemExit('timeout presentation ownership fence already exists; refresh live product')
+          line_end = source.find('\n', start)
+          if line_end < 0:
+              raise SystemExit('timeout terminal line boundary not found')
+          fence = '''
+                    guard self.currentConnectionToken == token,
+                          self.phase == .observing else {
+                        self.log("stale_application_timeout_completion_ignored", [
+                            "generation": String(token.diagnosticGeneration),
+                            "phase": self.phase.rawValue
+                        ])
+                        return
+                    }
+'''
+          source = source[:line_end + 1] + fence + source[line_end + 1:]
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Validate focused source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          start = source.index('if self.applicationUpdateAdmissionsInFlight == 0,')
+          end = source.index('try? await Task.sleep(for: .seconds(1))', start)
+          timeout = source[start:end]
+          terminal = timeout.index('try await sessionLedger.markApplicationObservationTimedOut(for: token)')
+          fence = timeout.index('guard self.currentConnectionToken == token', terminal)
+          phase = timeout.index('self.phase == .observing', fence)
+          message = timeout.index('Authenticated session produced no application update before the observation deadline.', phase)
+          assert terminal < fence < phase < message
+          assert 'stale_application_timeout_completion_ignored' in timeout
+          PY
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationTimeoutPresentationRaceSourceTests.swift
+          git diff --check
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors --filter TuyaApplicationTimeoutPresentationRaceSourceTests
+
+      - name: Publish clean two-path repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='b615375e12e43abc55e111deb5dc36f3790c7506'
+          rm .github/workflows/materialize-capture-timeout-presentation-b615.yml
+          git add -A
+          git diff --cached --check
+          mapfile -t paths < <(git diff --cached --name-only "$BASE")
+          test "${#paths[@]}" -eq 2
+          printf '%s\n' "${paths[@]}" | grep -Fxq 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          printf '%s\n' "${paths[@]}" | grep -Fxq 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationTimeoutPresentationRaceSourceTests.swift'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): fence timeout terminal presentation ownership'
+          git push origin HEAD:repair/v14-capture-timeout-terminal-presentation-b615-sol
