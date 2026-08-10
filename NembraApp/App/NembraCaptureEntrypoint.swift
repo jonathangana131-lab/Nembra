@@ -160,7 +160,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     enum Phase: String, Codable {
-        case idle, baseline, powerOn, scanning, selected, authenticating, observing, accepted, failed
+        case idle, baseline, powerOn, scanning, correlated, selected, authenticating, observing, accepted, failed
     }
 
     struct Export: Codable {
@@ -291,6 +291,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     @Published private(set) var message = "Log in the official SDK account and verify the exact scooter before Bluetooth discovery."
     @Published private(set) var candidates: [Candidate] = []
     @Published private(set) var selectedID: UUID?
+    @Published private(set) var pendingCorrelatedTargetID: UUID?
     @Published private(set) var sdkLocalBLEOnline = false
     @Published private(set) var sdkDeviceMembershipVerified = false
     @Published private(set) var membershipStatus = "Exact scooter membership has not been checked in the official SDK account yet."
@@ -576,13 +577,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
             )
             byID = [id: candidate]
             candidates = [candidate]
-            selectedID = id
+            selectedID = nil
+            pendingCorrelatedTargetID = id
             correlationSession = nil
-            phase = .selected
-            message = "Fresh repeated power-cycle correlation found one full CoreBluetooth target. This is current-session correlation evidence, not permanent scooter identity. Discovery is retired before Tuya's SDK takes BLE ownership."
-            log("candidate_selected", [
+            phase = .correlated
+            message = "Fresh repeated power-cycle correlation found one full CoreBluetooth target. Confirm that correlated Bluetooth target for this attempt before Tuya authentication. Correlation is current-session evidence, not permanent scooter identity."
+            log("candidate_correlated", [
                 "id": id.uuidString,
-                "authority": "fresh-repeated-off-on-full-corebluetooth-id",
+                "authority": "fresh-repeated-off-on-full-corebluetooth-id-awaiting-operator-confirmation",
                 "historicalCaptureUUIDMatch": String(historicalCaptureID),
                 "windows": String(result.windows.count)
             ])
@@ -601,6 +603,40 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
     }
 
+    func confirmCorrelatedTarget() {
+        guard phase == .correlated,
+              let id = pendingCorrelatedTargetID,
+              let candidate = byID[id],
+              candidate.freshlyCorrelated else {
+            pendingCorrelatedTargetID = nil
+            failLocally("A current-session correlated Bluetooth target is not awaiting confirmation. Restart from OFF1.", "correlated_target_confirmation_unavailable")
+            return
+        }
+        guard sdkAccountLoggedIn,
+              sdkDeviceMembershipVerified,
+              accountIdentityLeaseIsAuthorized else {
+            pendingCorrelatedTargetID = nil
+            failLocally("Tuya account/device authority changed before target confirmation. Re-verify membership and restart correlation.", "sdk_authority_changed_before_target_confirmation")
+            return
+        }
+        guard currentConnectionToken == nil else {
+            pendingCorrelatedTargetID = nil
+            failLocally("An authenticated generation already owns session authority. Relaunch Capture before confirming another target.", "active_generation_blocks_target_confirmation")
+            return
+        }
+
+        selectedID = id
+        pendingCorrelatedTargetID = nil
+        targetCorrelationOperatorConfirmed = true
+        phase = .selected
+        message = "Correlated Bluetooth target confirmed for this attempt. This remains current-session correlation evidence, not permanent scooter identity. Current same-account Tuya membership remains the independent authentication authority."
+        log("candidate_selected", [
+            "id": candidate.id.uuidString,
+            "authority": "explicit-operator-confirmation-of-current-session-correlation",
+            "historicalCaptureUUIDMatch": String(candidate.historicalCaptureID)
+        ])
+    }
+
     func invalidateSDKMembership() {
         let token = currentConnectionToken
         membershipRequestID = UUID()
@@ -608,7 +644,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
-        if phase == .baseline || phase == .powerOn || phase == .scanning {
+        pendingCorrelatedTargetID = nil
+        if phase == .baseline || phase == .powerOn || phase == .scanning || phase == .correlated {
             correlationSession?.abandonCurrentWindow()
             correlationSession = nil
         }
@@ -617,7 +654,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         membershipProbe = nil
 #endif
         central.stopScan()
-        if [.baseline, .powerOn, .scanning, .selected].contains(phase) {
+        if [.baseline, .powerOn, .scanning, .correlated, .selected].contains(phase) {
             phase = .failed
             message = "SDK account authority changed. Discovery stopped before any authenticated BLE attempt."
         }
@@ -1239,6 +1276,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         candidates.removeAll()
         baseline.removeAll()
         selectedID = nil
+        pendingCorrelatedTargetID = nil
         sdkLocalBLEOnline = false
         exportData = nil
         // Active authenticated generations must be terminally retired by their
@@ -1248,10 +1286,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func failLocally(_ text: String, _ kind: String) {
-        if phase == .baseline || phase == .powerOn || phase == .scanning {
+        if phase == .baseline || phase == .powerOn || phase == .scanning || phase == .correlated {
             correlationSession?.abandonCurrentWindow()
             correlationSession = nil
         }
+        pendingCorrelatedTargetID = nil
         watchdog?.cancel()
         watchdog = nil
         central.stopScan()
@@ -1830,6 +1869,14 @@ private struct SecureLinkView: View {
                     .foregroundStyle(.secondary)
                 Button("Start \(test.correlationWindowLabel) window") { test.startNextCorrelationWindow() }
                     .buttonStyle(.borderedProminent)
+
+            case .correlated:
+                Text("One full CoreBluetooth target repeated across the required OFF1→ON1→OFF2→ON2 series. Confirm it for this attempt before Tuya authentication. This does not establish permanent scooter identity.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Button("Confirm correlated Bluetooth target") { test.confirmCorrelatedTarget() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized || test.membershipBusy)
 
             default:
                 EmptyView()
