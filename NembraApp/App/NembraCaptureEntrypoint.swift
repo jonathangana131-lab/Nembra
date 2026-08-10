@@ -1,4 +1,5 @@
 @preconcurrency import CoreBluetooth
+import Security
 import SwiftUI
 
 // Shared by the legacy raw capture implementation that remains compiled for later targeted BLE work.
@@ -20,6 +21,7 @@ struct NembraCaptureApp: App {
 /// prepares a redacted JSON, and then stops. It does not launch the old 17-step ride capture.
 struct NembraTuyaMetadataTestView: View {
     @StateObject private var tuya = TuyaAccountBridge()
+    @State private var credentialSaved = false
 
     var body: some View {
         NavigationStack {
@@ -161,6 +163,7 @@ struct NembraTuyaMetadataTestView: View {
             } else {
                 ForEach(tuya.devices) { device in
                     Button {
+                        credentialSaved = TuyaCaptureCredentialStore.save(device: device)
                         tuya.selectDevice(device)
                     } label: {
                         HStack(spacing: 12) {
@@ -201,6 +204,15 @@ struct NembraTuyaMetadataTestView: View {
                 Text("Nembra reads the device identity, current Tuya status, DP specifications, and local strategy. Secret account tokens and local_key are excluded from the file you share.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                if credentialSaved {
+                    Label("Private scooter credential saved in this iPhone's Keychain for the next Nembra test", systemImage: "lock.shield.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.green)
+                } else if device.localKey.isEmpty {
+                    Label("Tuya did not provide a private local key for this device; the JSON is still useful", systemImage: "info.circle")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             if let data = tuya.redactedExportData {
@@ -244,6 +256,34 @@ struct NembraTuyaMetadataTestView: View {
             Text(title)
                 .font(.headline)
         }
+    }
+}
+
+private enum TuyaCaptureCredentialStore {
+    private static let service = "com.jonathangana131.nembra.capturelearn.tuya"
+    private static let account = "selected-scooter"
+
+    static func save(device: TuyaAccountBridge.LinkedDevice) -> Bool {
+        guard !device.localKey.isEmpty else { return false }
+        let payload: [String: String] = [
+            "deviceID": device.id,
+            "productID": device.productID,
+            "uuid": device.uuid,
+            "localKey": device.localKey
+        ]
+        guard let data = try? JSONEncoder().encode(payload) else { return false }
+
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        SecItemDelete(query as CFDictionary)
+
+        var insert = query
+        insert[kSecValueData as String] = data
+        insert[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        return SecItemAdd(insert as CFDictionary, nil) == errSecSuccess
     }
 }
 
