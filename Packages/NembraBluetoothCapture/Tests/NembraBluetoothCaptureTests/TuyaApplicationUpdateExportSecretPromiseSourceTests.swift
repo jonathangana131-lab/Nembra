@@ -41,8 +41,11 @@ struct TuyaApplicationUpdateExportSecretPromiseSourceTests {
             #expect(driver.contains("\"\(fragment)\""), "Application sanitizer must redact export-promised credential key: \(fragment)")
         }
 
-        #expect(driver.contains("String(describing: Self.redactApplicationSecrets(value))"))
+        #expect(driver.contains("private static func redactedApplicationDescription(_ object: Any) -> String"))
+        #expect(driver.contains("redactKnownSecretValues(in: String(describing: redactApplicationSecrets(object)))"))
+        #expect(driver.contains("sanitized[custodyKey] = Self.redactedApplicationDescription(value)"))
         #expect(driver.contains("onApplicationUpdate?(sanitized)"))
+        #expect(!driver.contains("sanitized[String(describing: key)] = String(describing: value)"))
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
