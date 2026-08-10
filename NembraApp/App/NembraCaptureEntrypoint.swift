@@ -349,6 +349,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var currentAccountUID: String? { OfficialTuyaFactory.currentAccountUID }
     var selected: Candidate? { selectedID.flatMap { byID[$0] } }
     var applicationUpdateCount: Int { ledgerSnapshot.applicationPayloadCount }
+    private func acceptedApplicationEventCount(for token: TuyaReadOnlyConnectionToken) -> Int {
+        let generation = String(token.diagnosticGeneration)
+        return events.lazy.filter {
+            $0.kind == "tuya_application_update" && $0.details["generation"] == generation
+        }.count
+    }
     var correlationProgress: PassiveBluetoothPowerCycleObservationProgress? { correlationSession?.progress }
     var correlationWindowIsScanning: Bool { correlationProgress?.isScanning == true }
     var correlationObservedCandidateCount: Int { correlationProgress?.currentObservedCandidateCount ?? 0 }
@@ -1100,10 +1106,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
-            await refreshLedgerSnapshot()
+            // The package must admit the receipt before its structured values enter accepted
+            // evidence. Once admitted, copy them before this MainActor task suspends again.
             log("tuya_application_update", update.merging([
                 "generation": String(token.diagnosticGeneration)
             ]) { current, _ in current })
+            await refreshLedgerSnapshot()
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -1213,6 +1221,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
                 switch TuyaAuthenticatedReadOnlyPreflight.verdict(for: self.ledgerSnapshot) {
                 case .readyForStationaryMapping:
+                    // The ledger actor can admit an application receipt before the corresponding
+                    // MainActor continuation copies its structured values into `events`. A ready
+                    // ledger snapshot therefore cannot seal until the current generation's
+                    // structured evidence count has caught up exactly.
+                    guard self.acceptedApplicationEventCount(for: token) == self.applicationUpdateCount else {
+                        self.message = "Synchronizing accepted application evidence before canonical seal…"
+                        break
+                    }
                     guard self.buildIdentity.isAuthoritativeFieldBuild else {
                         await self.invalidateSourceAuthority(
                             token: token,

@@ -63,6 +63,48 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         #expect(reset.contains("sealedAcceptedEventPrefix = nil"))
     }
 
+
+    @Test("package-admitted structured values are copied before the callback suspends again")
+    func acceptedApplicationValuesAreCopiedBeforeNextSuspension() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let receive = try section(
+            in: app,
+            from: "private func receivedApplicationUpdate(",
+            to: "private func startWatchdog"
+        )
+        let body = String(receive)
+
+        guard let admission = body.range(of: "try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)"),
+              let valueLog = body.range(of: "log(\"tuya_application_update\"", range: admission.upperBound..<body.endIndex),
+              let nextAwait = body.range(of: "await ", range: admission.upperBound..<body.endIndex) else {
+            Issue.record("Accepted application-value chronology anchors are missing.")
+            throw SourceContractError.sectionMissing
+        }
+
+        #expect(valueLog.lowerBound < nextAwait.lowerBound)
+    }
+
+    @Test("canonical seal waits for current-generation structured evidence parity")
+    func canonicalSealRequiresCurrentGenerationStructuredEvidenceParity() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let watchdog = try section(
+            in: app,
+            from: "private func startWatchdog",
+            to: "private func recordObservedTransportLoss"
+        )
+        let body = String(watchdog)
+
+        guard let readyCase = body.range(of: "case .readyForStationaryMapping:"),
+              let parity = body.range(of: "acceptedApplicationEventCount(for: token) == self.applicationUpdateCount", range: readyCase.upperBound..<body.endIndex),
+              let seal = body.range(of: "try await sessionLedger.sealAcceptedObservation(for: token)", range: readyCase.upperBound..<body.endIndex) else {
+            Issue.record("Canonical seal must prove current-generation structured evidence parity first.")
+            throw SourceContractError.sectionMissing
+        }
+
+        #expect(parity.lowerBound < seal.lowerBound)
+        #expect(app.contains("$0.kind == \"tuya_application_update\" && $0.details[\"generation\"] == generation"))
+    }
+
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
         guard let startRange = source.range(of: start),
               let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
