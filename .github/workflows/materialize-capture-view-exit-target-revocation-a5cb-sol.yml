@@ -1,0 +1,121 @@
+name: Materialize Capture View-Exit Target Revocation A5CB
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-view-exit-target-revocation-a5cb-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-view-exit-target-revocation-a5cb-sol
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact product parent and materialize repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "a5cb12ed97241ba274d23f311d67cf84623ceb29"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/materialize-capture-view-exit-target-revocation-a5cb-sol.yml"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = source_path.read_text(encoding='utf-8')
+          start = source.index('    func abandonCorrelationForViewExit() {')
+          end = source.index('    func appDidLoseForeground() {', start)
+          section = source[start:end]
+          anchor = '        guard processCorrelationLease != nil || correlationSession != nil else { return }'
+          if section.count(anchor) != 1:
+              raise SystemExit(f'expected one view-exit live-correlation guard, found {section.count(anchor)}')
+          repair = '''        if phase == .correlated || phase == .selected {
+              // Final-window sealing can retire the scanner/lease before the view leaves. The
+              // already-earned target remains mutable current-attempt authority and must not cross
+              // a Secure Link view lifetime without a fresh OFF1→ON1→OFF2→ON2 correlation.
+              resetDiscoverySessionOnly()
+              phase = .failed
+              message = "Capture left Secure Link after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the prior target cannot cross a view lifetime."
+              log("target_correlation_abandoned_on_view_exit")
+              return
+          }
+
+          '''
+          section = section.replace(anchor, repair + anchor, 1)
+          source_path.write_text(source[:start] + section + source[end:], encoding='utf-8')
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundTargetRevocationSourceTests.swift')
+          test = test_path.read_text(encoding='utf-8')
+          insertion_anchor = '    @Test("foreground reactivation cannot reopen membership after official driver handoff")\n'
+          if test.count(insertion_anchor) != 1:
+              raise SystemExit('current foreground target source-test insertion anchor missing')
+          regression = '''    @Test("view exit cannot retain an already-correlated or selected target")
+              func viewExitCannotCarryTargetAcrossLifetime() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let controller = String(try section(
+                      in: source,
+                      from: "private final class SecureLinkController",
+                      to: "@MainActor\\nprivate protocol OfficialTuyaDriver"
+                  ))
+                  let cleanup = String(try section(
+                      in: controller,
+                      from: "func abandonCorrelationForViewExit()",
+                      to: "func appDidLoseForeground()"
+                  ))
+
+                  #expect(cleanup.contains("if phase == .correlated || phase == .selected"))
+                  #expect(cleanup.contains("resetDiscoverySessionOnly()"))
+                  #expect(cleanup.contains("target_correlation_abandoned_on_view_exit"))
+                  #expect(cleanup.range(of: "resetDiscoverySessionOnly()")!.lowerBound < cleanup.range(of: "guard processCorrelationLease != nil || correlationSession != nil")!.lowerBound)
+                  #expect(!cleanup.contains("releasePackageCorrelationLease()"))
+              }
+
+          '''
+          test_path.write_text(test.replace(insertion_anchor, regression + insertion_anchor, 1), encoding='utf-8')
+          PY
+
+      - name: Verify source contract and focused package test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          start = source.index('    func abandonCorrelationForViewExit() {')
+          end = source.index('    func appDidLoseForeground() {', start)
+          cleanup = source[start:end]
+          reset = cleanup.index('if phase == .correlated || phase == .selected')
+          live_guard = cleanup.index('guard processCorrelationLease != nil || correlationSession != nil')
+          if reset >= live_guard:
+              raise SystemExit('already-correlated target retirement is still hidden behind live scanner/lease guard')
+          for token in ['resetDiscoverySessionOnly()', 'target_correlation_abandoned_on_view_exit']:
+              if token not in cleanup:
+                  raise SystemExit(f'missing view-exit target revocation contract: {token}')
+          if 'releasePackageCorrelationLease()' in cleanup:
+              raise SystemExit('view exit bypasses scanner-first package correlation retirement')
+          print('Capture view-exit target authority source contract: PASS')
+          PY
+          git diff --check
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundTargetRevocationSourceTests.swift
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaCaptureForegroundTargetRevocationSourceTests
+
+      - name: Collapse helper into product donor
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-sol-materializer'
+          git config user.email 'actions@users.noreply.github.com'
+          git rm .github/workflows/materialize-capture-view-exit-target-revocation-a5cb-sol.yml
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(capture): revoke correlated target on Secure Link exit'
+          git push origin HEAD:fix/v14-capture-view-exit-target-revocation-a5cb-sol
