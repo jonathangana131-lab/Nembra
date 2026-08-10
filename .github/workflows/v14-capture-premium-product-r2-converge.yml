@@ -3,7 +3,7 @@ name: V14 Capture Premium Product R2 Converge
 on:
   push:
     branches:
-      - repair/v14-capture-premium-root-recovery-r2-sol
+      - repair/v14-capture-premium-root-convergence-gate-sol
 
 permissions:
   contents: write
@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: repair/v14-capture-premium-root-recovery-r2-sol
+          ref: repair/v14-capture-premium-root-convergence-gate-sol
           fetch-depth: 0
 
       - name: Patch current-spine product surface
@@ -39,19 +39,18 @@ jobs:
           /usr/bin/python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
           git diff --check
 
-      - name: Run Capture package regression suite
+      - name: Preserve Apple-only package acceptance boundary
         shell: bash
         run: |
-          set -o pipefail
-          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors 2>&1 | tee /tmp/capture-package-test.log
-          status=${PIPESTATUS[0]}
+          set -euo pipefail
+          test -f Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/CoreBluetoothCaptureMapping.swift
+          grep -q 'import CoreBluetooth' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/CoreBluetoothCaptureMapping.swift
           {
-            echo '### Capture package regression tail'
-            echo '```text'
-            tail -n 220 /tmp/capture-package-test.log
-            echo '```'
+            echo '### Acceptance boundary'
+            echo 'This Ubuntu job only materializes and source-checks the premium Capture candidate.'
+            echo 'NembraBluetoothCapture imports Apple CoreBluetooth and cannot be accepted by Linux swift test.'
+            echo 'The resulting unchanged product SHA still requires the repository Mac/Xcode exact-head Capture suite before composition or physical GO.'
           } >> "$GITHUB_STEP_SUMMARY"
-          exit "$status"
 
       - name: Commit clean product candidate and retire convergence tooling
         shell: bash
@@ -65,4 +64,4 @@ jobs:
           git add -A
           git diff --cached --check
           git commit -m 'feat(capture): close premium root and recovery truth'
-          git push origin HEAD:repair/v14-capture-premium-root-recovery-r2-sol
+          git push origin HEAD:repair/v14-capture-premium-root-convergence-gate-sol
