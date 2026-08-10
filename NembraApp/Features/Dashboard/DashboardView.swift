@@ -121,9 +121,20 @@ struct DashboardView: View {
             statusRail
                 .frame(width: 156)
 
-            DashboardSpeedInstrumentView(modePersonality: personality)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .layoutPriority(2)
+            VStack(spacing: 0) {
+                DashboardSpeedInstrumentView(modePersonality: personality)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                // Mount the real signature instrument without inventing propulsion
+                // authority. Numeric/live construction remains sealed behind the
+                // package projection adapter; until that source boundary is wired,
+                // the Cockpit must say power is unavailable instead of borrowing
+                // VehicleState.powerWatts or a placeholder value.
+                NembraEnergyRailView(state: .unavailable)
+                    .frame(maxWidth: .infinity)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .layoutPriority(2)
 
             contextRail(personality: personality)
                 .frame(width: 176)
