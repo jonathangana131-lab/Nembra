@@ -2670,9 +2670,13 @@ private struct SecureTransfer: Transferable {
 }
 
 private extension View {
-    func card() -> some View {
-        padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 20))
+    func inputSurface() -> some View {
+        padding(12)
+            .frame(minHeight: 50)
+            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
+            }
     }
 }

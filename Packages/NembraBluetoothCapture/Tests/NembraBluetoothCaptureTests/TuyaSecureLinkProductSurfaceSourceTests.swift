@@ -19,6 +19,9 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         #expect(!body.contains("Prepare sanitized diagnostic JSON"))
         #expect(!body.contains("Share diagnostic JSON"))
         #expect(body.contains("navigationTitle(\"Capture\")"))
+        #expect(body.contains(".inputSurface()"))
+        #expect(app.contains("func inputSurface() -> some View"))
+        #expect(!app.contains("func card() -> some View"))
     }
 
     @Test("accepted experience prepares the sealed artifact and makes Share Capture primary")
