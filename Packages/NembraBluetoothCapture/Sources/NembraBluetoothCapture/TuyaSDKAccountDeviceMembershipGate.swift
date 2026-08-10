@@ -53,13 +53,12 @@ public enum TuyaSDKAccountDeviceMembershipGate {
         guard snapshot.homeEnumerationCompleted else {
             return .blocked(reason: "Tuya SDK home/device membership has not been enumerated yet.")
         }
+        guard snapshot.homeLoadFailureCount == 0 else {
+            return .blocked(reason: "Tuya SDK home/device membership is incomplete because one or more homes failed to load.")
+        }
 
         if snapshot.ownedDeviceIDs.contains(expected) || snapshot.sharedDeviceIDs.contains(expected) {
             return .authorized
-        }
-
-        if snapshot.homeLoadFailureCount > 0 {
-            return .blocked(reason: "Tuya SDK home/device membership is incomplete because one or more homes failed to load.")
         }
 
         return .blocked(reason: "The logged-in Tuya SDK account does not contain the expected scooter device.")

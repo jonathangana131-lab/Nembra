@@ -84,6 +84,23 @@ struct TuyaSDKAccountDeviceMembershipGateTests {
         )
     }
 
+    @Test("finding scooter in one loaded home cannot override incomplete membership")
+    func partialPositiveMembershipStillBlocks() {
+        let snapshot = TuyaSDKAccountDeviceMembershipGate.Snapshot(
+            isLoggedIn: true,
+            homeEnumerationCompleted: true,
+            loadedHomeCount: 1,
+            ownedDeviceIDs: [scooterID],
+            sharedDeviceIDs: [],
+            homeLoadFailureCount: 1
+        )
+
+        #expect(
+            TuyaSDKAccountDeviceMembershipGate.verdict(expectedDeviceID: scooterID, snapshot: snapshot)
+                == .blocked(reason: "Tuya SDK home/device membership is incomplete because one or more homes failed to load.")
+        )
+    }
+
     @Test("expected device ID itself is required")
     func expectedIDRequired() {
         let snapshot = TuyaSDKAccountDeviceMembershipGate.Snapshot(
