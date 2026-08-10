@@ -61,7 +61,7 @@ struct TuyaAccountBridgeAsyncCustodySourceTests {
         #expect(!manual.contains("userCode.trimmingCharacters"))
     }
 
-    @Test("device list and selection publication cannot escape their owning generation")
+    @Test("device list and selection publication cannot escape their owning generation or refresh horizon")
     func deviceResultsAreGenerationAndIdentityFenced() throws {
         let bridge = try readRepositoryFile("NembraApp/Features/Research/TuyaAccountBridge.swift")
         let refresh = try section(in: bridge, from: "func refreshDevices()", to: "func selectDevice(_ device: LinkedDevice)")
@@ -70,14 +70,27 @@ struct TuyaAccountBridgeAsyncCustodySourceTests {
         let details = try section(in: bridge, from: "private func loadSelectedDeviceDetails", to: "private func signedGET")
 
         #expect(refresh.contains("selectedDeviceTask?.cancel()"))
+        #expect(refresh.contains("homes = []"))
+        #expect(refresh.contains("devices = []"))
         #expect(refresh.contains("phase = .loadingDevices"))
         #expect(refresh.contains("scheduleDeviceLoad(generation: operationGeneration)"))
+        let refreshClear = try #require(refresh.range(of: "devices = []"))
+        let refreshSchedule = try #require(refresh.range(of: "scheduleDeviceLoad(generation: operationGeneration)"))
+        #expect(refreshClear.lowerBound < refreshSchedule.lowerBound)
 
+        #expect(selection.contains("guard devices.contains(where: { $0.id == device.id }) else"))
+        #expect(selection.contains("deviceLoadTask?.cancel()"))
+        #expect(selection.contains("deviceLoadTask = nil"))
         #expect(selection.contains("selectedDeviceTask?.cancel()"))
         #expect(selection.contains("let generation = operationGeneration"))
         #expect(selection.contains("phase = .loadingDevices"))
         #expect(selection.contains("selectedDeviceTask = Task"))
         #expect(selection.contains("selectedDeviceID == device.id"))
+        let membershipFence = try #require(selection.range(of: "guard devices.contains(where: { $0.id == device.id }) else"))
+        let listCancel = try #require(selection.range(of: "deviceLoadTask?.cancel()"))
+        let selectionTask = try #require(selection.range(of: "selectedDeviceTask = Task"))
+        #expect(membershipFence.lowerBound < listCancel.lowerBound)
+        #expect(listCancel.lowerBound < selectionTask.lowerBound)
 
         #expect(load.contains("generation == operationGeneration"))
         #expect(load.contains("session != nil"))

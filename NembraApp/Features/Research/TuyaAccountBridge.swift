@@ -159,12 +159,25 @@ final class TuyaAccountBridge: ObservableObject {
         selectedDeviceTask = nil
         selectedDeviceID = nil
         clearSelectedDeviceDetails()
+        homes = []
+        devices = []
         phase = .loadingDevices
         statusMessage = "Refreshing the linked Tuya device list…"
         scheduleDeviceLoad(generation: operationGeneration)
     }
 
     func selectDevice(_ device: LinkedDevice) {
+        guard devices.contains(where: { $0.id == device.id }) else {
+            selectedDeviceTask?.cancel()
+            selectedDeviceTask = nil
+            selectedDeviceID = nil
+            clearSelectedDeviceDetails()
+            phase = .loadingDevices
+            statusMessage = "The Tuya device list changed. Wait for refresh to finish, then choose the scooter again."
+            return
+        }
+        deviceLoadTask?.cancel()
+        deviceLoadTask = nil
         selectedDeviceTask?.cancel()
         selectedDeviceID = device.id
         clearSelectedDeviceDetails()
