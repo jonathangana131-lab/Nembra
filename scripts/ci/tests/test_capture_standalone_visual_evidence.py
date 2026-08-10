@@ -8,6 +8,8 @@ required = [
     'EXPECTED_BUNDLE_ID="com.jonathangana131.nembra.capturelearn"',
     'startswith("com.apple.CoreSimulator.SimRuntime.iOS-27")',
     'preferred=["iPhone 12", "iPhone 17", "iPhone 17 Pro", "iPhone 16"]',
+    'TUYA_DEPENDENCY_LOCK_SHA256="$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$INFO_PLIST")"',
+    '[[ ! "$TUYA_DEPENDENCY_LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]]',
     'EXPECTED_BUILD_IDENTIFIER="capture-v14-${SOURCE_SHA:0:12}"',
     'SIMCTL_CHILD_*|NEMBRA_SIMULATION_*)',
     'done < <(compgen -v)',
@@ -17,10 +19,14 @@ required = [
     '"visualAcceptanceRequiresHumanReview": True',
     '"physicalAuthorityCreated": False',
     '"protocolAuthorityCreated": False',
+    '"tuyaDependencyLockSHA256": tuya_dependency_lock_sha256',
 ]
 for needle in required:
     if needle not in script:
         raise SystemExit(f"missing standalone visual-evidence contract: {needle}")
+
+if "SIMCTL_CHILD_" not in script or "NEMBRA_SIMULATION_" not in script:
+    raise SystemExit("script must explicitly document that no simulator authority environment is injected")
 
 active_lines = [
     line.strip()
@@ -37,5 +43,9 @@ if len(launch_lines) != 1:
 launch_line = launch_lines[0]
 if "--args" in launch_line or "SIMCTL_CHILD_" in launch_line or "NEMBRA_SIMULATION_" in launch_line:
     raise SystemExit("standalone launch must not inject synthetic authority or launch fixtures")
+
+for forbidden in ("connectBLE", "writeValue", "publishDps", "publishDpsWithSuccess", "local_key"):
+    if re.search(rf"\b{re.escape(forbidden)}\b", "\n".join(active_lines)):
+        raise SystemExit(f"visual-evidence harness must not contain scooter/protocol action: {forbidden}")
 
 print("capture standalone visual evidence source contract: PASS")
