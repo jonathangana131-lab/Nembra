@@ -1,0 +1,118 @@
+name: Capture Standalone Visual Evidence
+
+on:
+  push:
+    branches:
+      - validation/v14-capture-visual-f3ec-sol
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  standalone-visual:
+    name: Exact iPhone 12 standalone Capture evidence
+    runs-on: xcode-27
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify exact checked-out subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_SHA="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$SOURCE_SHA" = "${{ github.sha }}"
+          printf 'NEMBRA_VISUAL_SOURCE_SHA=%s\n' "$SOURCE_SHA" >> "$GITHUB_ENV"
+
+      - name: Validate current procedure and visual authority contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ci/capture_standalone_visual_evidence.sh
+          /usr/bin/python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          grep -Fq 'static let requiredFieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"' NembraApp/App/NembraCaptureBuildIdentity.swift
+          grep -Fq 'static let procedureIdentifierInfoKey = "NembraCaptureProcedureIdentifier"' NembraApp/App/NembraCaptureBuildIdentity.swift
+          grep -Fq 'procedureIdentifier == Self.requiredFieldProcedureIdentifier' NembraApp/App/NembraCaptureBuildIdentity.swift
+          grep -Fq 'tuyaDependencyLockSHA256.count == 64' NembraApp/App/NembraCaptureBuildIdentity.swift
+          grep -Fq 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'schemaVersion: 10' NembraApp/App/NembraCaptureEntrypoint.swift
+          count="$(grep -Fc 'INFOPLIST_KEY_NembraCaptureProcedureIdentifier = "$(NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER)";' NembraCapture.xcodeproj/project.pbxproj)"
+          test "$count" = "2"
+
+      - name: Build exact stamped public-unprovisioned Capture app
+        shell: bash
+        run: |
+          set -euo pipefail
+          label="capture-v14-${NEMBRA_VISUAL_SOURCE_SHA:0:12}"
+          procedure='ES80-AUTHENTICATED-STATIONARY-v1'
+          rm -rf /tmp/NembraCaptureProvenanceDerived
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/NembraCaptureProvenanceDerived \
+            CODE_SIGNING_ALLOWED=NO \
+            NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
+            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$NEMBRA_VISUAL_SOURCE_SHA" \
+            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="" \
+            NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER="$procedure" \
+            build
+
+          plist='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
+          test -f "$plist"
+          test "$(/usr/bin/plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
+          test "$(/usr/bin/plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$NEMBRA_VISUAL_SOURCE_SHA"
+          test "$(/usr/bin/plutil -extract NembraCaptureProcedureIdentifier raw -o - "$plist")" = "$procedure"
+          embedded_dependency="$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist" 2>/dev/null || true)"
+          test -z "$embedded_dependency"
+
+      - name: Capture real standalone fail-closed presentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app' \
+          ARTIFACTS_DIR="$RUNNER_TEMP/NembraCaptureStandaloneVisualEvidence" \
+            scripts/ci/capture_standalone_visual_evidence.sh
+          test "$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')" = "$NEMBRA_VISUAL_SOURCE_SHA"
+          manifest="$RUNNER_TEMP/NembraCaptureStandaloneVisualEvidence/NembraCaptureStandaloneVisualEvidence.json"
+          standard="$RUNNER_TEMP/NembraCaptureStandaloneVisualEvidence/screenshots/standalone-unprovisioned-dark-iphone12.png"
+          ax5="$RUNNER_TEMP/NembraCaptureStandaloneVisualEvidence/screenshots/standalone-unprovisioned-dark-iphone12-ax5.png"
+          test -s "$manifest"
+          test -s "$standard"
+          test -s "$ax5"
+          /usr/bin/python3 - "$manifest" "$NEMBRA_VISUAL_SOURCE_SHA" <<'PY'
+          import json, sys
+          path, expected_sha = sys.argv[1:]
+          with open(path, encoding="utf-8") as handle:
+              record = json.load(handle)
+          assert record["sourceCommitSHA"] == expected_sha
+          assert record["baselineDevice"] == "iPhone 12"
+          assert record["baselineOS"] == "iOS 27"
+          assert record["procedureIdentifier"] == "ES80-AUTHENTICATED-STATIONARY-v1"
+          assert record["procedureBuildRendezvousVerified"] is True
+          assert record["tuyaDependencyLockSHA256"] == ""
+          assert record["tuyaDependencyProvenanceClass"] == "deliberately-absent-public-ci"
+          assert record["expectedFieldBuildAuthority"] is False
+          assert record["syntheticAuthorityEnvironmentRejected"] is True
+          assert record["visualAcceptanceRequiresHumanReview"] is True
+          assert record["physicalAuthorityCreated"] is False
+          assert record["protocolAuthorityCreated"] is False
+          states = {shot["state"] for shot in record["screenshots"]}
+          assert states == {"unprovisioned-dark-standard", "unprovisioned-dark-accessibility-xxxl"}
+          PY
+
+      - name: Upload standalone Capture visual evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-capture-standalone-visual-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/NembraCaptureStandaloneVisualEvidence
+          if-no-files-found: error
+          retention-days: 14
