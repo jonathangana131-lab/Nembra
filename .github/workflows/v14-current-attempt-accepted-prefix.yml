@@ -1,0 +1,42 @@
+name: V14 current-attempt accepted-prefix repair
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-current-attempt-accepted-prefix-sol
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 3
+      - name: Verify exact flagship parent
+        run: test "$(git rev-parse HEAD^^)" = "f33286e976eee89bbb92501eaad69ed493a328aa"
+      - name: Patch and validate portable custody contract
+        run: |
+          python3 scripts/ci/v14_current_attempt_accepted_prefix_patch.py
+          git diff --check
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedApplicationEvidenceSealSourceTests.swift
+      - name: Commit clean product delta and retire materializer
+        env:
+          BRANCH: repair/v14-capture-current-attempt-accepted-prefix-sol
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin "refs/heads/$BRANCH" | awk '{print $1}')" = "$EVENT_SHA"
+          rm scripts/ci/v14_current_attempt_accepted_prefix_patch.py
+          rm .github/workflows/v14-current-attempt-accepted-prefix.yml
+          git config user.name "nembra-v14-integration"
+          git config user.email "actions@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedApplicationEvidenceSealSourceTests.swift scripts/ci/v14_current_attempt_accepted_prefix_patch.py .github/workflows/v14-current-attempt-accepted-prefix.yml
+          git commit -m "fix(capture): isolate accepted evidence to current attempt"
+          git push origin "HEAD:$BRANCH"
