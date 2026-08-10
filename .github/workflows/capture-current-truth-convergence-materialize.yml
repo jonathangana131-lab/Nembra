@@ -39,74 +39,76 @@ jobs:
           path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           source = path.read_text()
 
-          status_old = '''        sdkDeviceMembershipVerified = false
-                  membershipAccountUID = nil
-                  membershipDeviceID = nil
-                  membershipRequestID = UUID()'''
-          status_new = '''        sdkDeviceMembershipVerified = false
-                  membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."
-                  membershipAccountUID = nil
-                  membershipDeviceID = nil
-                  membershipRequestID = UUID()'''
+          status_old = "\n".join([
+              "        sdkDeviceMembershipVerified = false",
+              "        membershipAccountUID = nil",
+              "        membershipDeviceID = nil",
+              "        membershipRequestID = UUID()",
+          ])
+          status_new = "\n".join([
+              "        sdkDeviceMembershipVerified = false",
+              "        membershipStatus = \"Exact scooter membership must be verified again for this Secure Link session.\"",
+              "        membershipAccountUID = nil",
+              "        membershipDeviceID = nil",
+              "        membershipRequestID = UUID()",
+          ])
           status_count = source.count(status_old)
           if status_count != 2:
               raise SystemExit(f'expected exactly two proof-revocation blocks, found {status_count}')
           source = source.replace(status_old, status_new)
 
-          uid_anchor = '''        guard driver.isLocallyConnected(uuid: tuyaUUID) else {
-                  await recordObservedTransportLoss(token: token)
-                  return
-              }
+          admission_anchor = "        applicationUpdateAdmissionsInFlight += 1"
+          if source.count(admission_anchor) != 1:
+              raise SystemExit(f'expected exactly one application admission anchor, found {source.count(admission_anchor)}')
+          uid_custody = "\n".join([
+              "        guard let verifiedAccountUID = membershipAccountUID,",
+              "              !verifiedAccountUID.isEmpty else {",
+              "            await invalidateSourceAuthority(",
+              "                token: token,",
+              "                message: \"Verified Tuya account identity became unavailable before application evidence could enter event custody.\" ,",
+              "                kind: \"sdk_account_uid_unavailable_before_application_event_custody\"",
+              "            )",
+              "            return",
+              "        }",
+              "",
+              "        let exportSafeUpdate = update.reduce(into: [String: String]()) { sanitized, entry in",
+              "            let safeKey = entry.key.replacingOccurrences(",
+              "                of: verifiedAccountUID,",
+              "                with: \"<redacted-account-uid>\"",
+              "            )",
+              "            let safeValue = entry.value.replacingOccurrences(",
+              "                of: verifiedAccountUID,",
+              "                with: \"<redacted-account-uid>\"",
+              "            )",
+              "            sanitized[safeKey] = safeValue",
+              "        }",
+              "",
+          ])
+          source = source.replace(admission_anchor, uid_custody + admission_anchor, 1)
 
-              applicationUpdateAdmissionsInFlight += 1'''
-          uid_repair = '''        guard driver.isLocallyConnected(uuid: tuyaUUID) else {
-                  await recordObservedTransportLoss(token: token)
-                  return
-              }
-              guard let verifiedAccountUID = membershipAccountUID,
-                    !verifiedAccountUID.isEmpty else {
-                  await invalidateSourceAuthority(
-                      token: token,
-                      message: "Verified Tuya account identity became unavailable before application evidence could enter event custody.",
-                      kind: "sdk_account_uid_unavailable_before_application_event_custody"
-                  )
-                  return
-              }
+          raw_log = 'log("tuya_application_update", update.merging(['
+          safe_log = 'log("tuya_application_update", exportSafeUpdate.merging(['
+          if source.count(raw_log) != 1:
+              raise SystemExit(f'expected exactly one raw application-event log merge, found {source.count(raw_log)}')
+          source = source.replace(raw_log, safe_log, 1)
 
-              let exportSafeUpdate = update.reduce(into: [String: String]()) { sanitized, entry in
-                  let safeKey = entry.key.replacingOccurrences(
-                      of: verifiedAccountUID,
-                      with: "<redacted-account-uid>"
-                  )
-                  let safeValue = entry.value.replacingOccurrences(
-                      of: verifiedAccountUID,
-                      with: "<redacted-account-uid>"
-                  )
-                  sanitized[safeKey] = safeValue
-              }
+          untrusted_precedence = ']) { current, _ in current })'
+          trusted_precedence = ']) { _, trusted in trusted })'
+          if source.count(untrusted_precedence) != 1:
+              raise SystemExit(f'expected exactly one untrusted merge precedence closure, found {source.count(untrusted_precedence)}')
+          source = source.replace(untrusted_precedence, trusted_precedence, 1)
 
-              applicationUpdateAdmissionsInFlight += 1'''
-          if source.count(uid_anchor) != 1:
-              raise SystemExit('expected exactly one application-event custody insertion anchor')
-          source = source.replace(uid_anchor, uid_repair, 1)
-
-          generation_old = '''            log("tuya_application_update", update.merging([
-                      "generation": String(token.diagnosticGeneration)
-                  ]) { current, _ in current })'''
-          generation_new = '''            log("tuya_application_update", exportSafeUpdate.merging([
-                      "generation": String(token.diagnosticGeneration)
-                  ]) { _, trusted in trusted })'''
-          if source.count(generation_old) != 1:
-              raise SystemExit('expected exactly one untrusted application-event generation merge')
-          source = source.replace(generation_old, generation_new, 1)
-
-          duplicate_session_key = '''        "refreshtoken",
-                  "sessionkey",
-                  "authkey",'''
-          deduplicated_session_key = '''        "refreshtoken",
-                  "authkey",'''
+          duplicate_session_key = "\n".join([
+              '        "refreshtoken",',
+              '        "sessionkey",',
+              '        "authkey",',
+          ])
+          deduplicated_session_key = "\n".join([
+              '        "refreshtoken",',
+              '        "authkey",',
+          ])
           if source.count(duplicate_session_key) != 1:
-              raise SystemExit('expected exactly one duplicate session-key classifier tail')
+              raise SystemExit(f'expected exactly one duplicate session-key classifier tail, found {source.count(duplicate_session_key)}')
           source = source.replace(duplicate_session_key, deduplicated_session_key, 1)
 
           path.write_text(source)
