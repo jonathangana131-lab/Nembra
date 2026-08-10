@@ -1,0 +1,100 @@
+name: Materialize Capture Private Coherent Snapshot D7FB R2
+
+on:
+  push:
+    branches:
+      - "fix/v14-capture-private-coherent-snapshot-d7fb-r2-sol"
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 8
+
+      - name: Verify exact current lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          current="d7fbec98107098d7aa70f33c3ce0cb6555dab9e0"
+          restore="305f1e71f755884387ecb1e7c32db22590cef478"
+          test "$(git rev-parse HEAD^)" = "$restore"
+          git merge-base --is-ancestor "$current" HEAD
+
+      - name: Compose restored custody with self-coherence
+        shell: bash
+        run: |
+          set -euo pipefail
+          f332="f332b37671417038e1a210476bc9129e62c9bcc7"
+          coherent="cb43895d582570e2308610707f33755b5b3f7056"
+          git fetch --no-tags origin "$f332" "$coherent"
+
+          old_test="scripts/ci/tests/test_capture_tuya_private_input_record_snapshot_coherence.py"
+          git show "$f332:$old_test" > "$old_test"
+
+          git diff --binary "$f332" "$coherent" -- \
+            Scripts/capture_tuya_private_input_provenance.py \
+            scripts/ci/tests/test_capture_tuya_private_input_record_final_snapshot_coherence.py \
+            > /tmp/final-coherence.patch
+          test -s /tmp/final-coherence.patch
+          git apply --3way --index /tmp/final-coherence.patch
+          git add "$old_test"
+
+      - name: Validate complete private-input provenance family
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
+          python3 -m unittest discover scripts/ci/tests -p 'test_capture_tuya_private_input*.py'
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("Scripts/capture_tuya_private_input_provenance.py").read_text(encoding="utf-8")
+          start = source.index("def _private_input_record_generation_snapshot(")
+          end = source.index("\ndef build_record(", start)
+          snapshot = source[start:end]
+          required = [
+              "snapshot = (",
+              "_revalidate_tree_generation_snapshot(",
+              "_revalidate_regular_file_generation_identity(",
+              "return snapshot",
+          ]
+          missing = [token for token in required if token not in snapshot]
+          if missing:
+              raise SystemExit(f"missing self-coherence invariants: {missing}")
+          if "    return (\n" in snapshot:
+              raise SystemExit("direct sequential generation snapshot return remains")
+          if "or _stat_identity(current_path) != _stat_identity(after)" not in source:
+              raise SystemExit("full pathname identity custody was not preserved")
+          if "_file_fingerprint(path, expected_identity=identity)" not in source:
+              raise SystemExit("tree file expected-identity custody was not preserved")
+          print("combined current private provenance closure: PASS")
+          PY
+          git diff --cached --check
+
+      - name: Commit clean effective current repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          current="d7fbec98107098d7aa70f33c3ce0cb6555dab9e0"
+          rm .github/workflows/materialize-capture-private-coherent-snapshot-d7fb-r2-sol.yml
+          git add -A
+          git diff --cached --check
+          mapfile -t changed < <(git diff --cached --name-only "$current" | sort)
+          expected=(
+            "Scripts/capture_tuya_private_input_provenance.py"
+            "scripts/ci/tests/test_capture_tuya_private_input_record_final_snapshot_coherence.py"
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          test "${changed[*]}" = "${expected_sorted[*]}" || {
+            printf 'Unexpected effective paths:\n' >&2
+            printf '  %s\n' "${changed[@]}" >&2
+            exit 1
+          }
+          git config user.name "Nembra V14 Sol"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "fix(capture): restore coherent private generation witness"
+          git push origin HEAD:fix/v14-capture-private-coherent-snapshot-d7fb-r2-sol
