@@ -36,26 +36,21 @@ jobs:
           from pathlib import Path
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           source = path.read_text()
-          old = '''            log("tuya_application_update", update.merging([
-                "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
-'''
-          new = '''            log("tuya_application_update", update.merging([
-                "generation": String(token.diagnosticGeneration)
-            ]) { _, trusted in trusted })
-'''
-          if source.count(old) != 1:
-              raise SystemExit(f"expected exactly one untrusted application-event collision policy, found {source.count(old)}")
-          source = source.replace(old, new, 1)
+          old = ") { current, _ in current })"
+          new = ") { _, trusted in trusted })"
+          receiver_start = source.index("    private func receivedApplicationUpdate(")
+          receiver_end = source.index("    private func startWatchdog", receiver_start)
+          receiver = source[receiver_start:receiver_end]
+          if receiver.count(old) != 1:
+              raise SystemExit(f"expected exactly one untrusted application-event collision policy, found {receiver.count(old)}")
+          repaired = receiver.replace(old, new, 1)
+          source = source[:receiver_start] + repaired + source[receiver_end:]
           path.write_text(source)
-
-          start = source.index("    private func receivedApplicationUpdate(")
-          end = source.index("    private func startWatchdog", start)
-          receiver = source[start:end]
-          if ') { current, _ in current })' in receiver:
-              raise SystemExit("untrusted SDK field still wins reserved provenance collision")
-          if ') { _, trusted in trusted })' not in receiver:
-              raise SystemExit("trusted Nembra generation precedence is not explicit")
+          receiver = repaired
+          if old in receiver or new not in receiver:
+              raise SystemExit("trusted Nembra generation precedence was not established")
+          if '"generation": String(token.diagnosticGeneration)' not in receiver:
+              raise SystemExit("exact Nembra generation metadata disappeared")
           for forbidden in ("publishDps", "queryDps", "writeValue", "disconnectBLE"):
               if forbidden in receiver:
                   raise SystemExit(f"metadata-only repair gained forbidden command path: {forbidden}")
