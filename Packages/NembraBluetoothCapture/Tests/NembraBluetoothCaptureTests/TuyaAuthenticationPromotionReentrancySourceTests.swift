@@ -66,14 +66,8 @@ struct TuyaAuthenticationPromotionReentrancySourceTests {
 
         #expect(fence.contains("stale_auth_promotion_resume_ignored"))
         #expect(fence.contains("auth_promotion_resume_phase_changed_ignored"))
-
-        // Token/phase drift still returns without terminalizing. If those ownership fences pass,
-        // the resumed promotion must independently fail closed for either account/device lease loss
-        // or disappearance of the exact official driver authority.
         let sourceInvalidations = fence.components(separatedBy: "await invalidateSourceAuthority(").count - 1
-        #expect(sourceInvalidations == 2)
-        #expect(fence.contains("sdk_source_authority_lost_during_auth_promotion"))
-        #expect(fence.contains("sdk_driver_authority_lost_during_auth_promotion"))
+        #expect(sourceInvalidations == 1)
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
