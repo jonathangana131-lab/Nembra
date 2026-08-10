@@ -26,11 +26,17 @@ struct TuyaNavigationBLELeaseRetirementSourceTests {
         // The view may disappear while current-account membership enumeration is still in flight,
         // before any package scanner/lease exists. Invalidate that callback authority first so a
         // late success cannot begin OFF1 after Secure Link has left the screen.
-        #expect(cleanup.contains("membershipRequestID = UUID()"))
-        #expect(cleanup.contains("membershipBusy = false"))
-        #expect(cleanup.contains("membershipProbe = nil"))
+        let requestRevocationLine = try requiredLine(containing: "membershipRequestID = UUID()", in: cleanup)
+        let busyClearLine = try requiredLine(containing: "membershipBusy = false", in: cleanup)
+        let probeReleaseLine = try requiredLine(containing: "membershipProbe = nil", in: cleanup)
+        let activeCorrelationGuardLine = try requiredLine(
+            containing: "guard processCorrelationLease != nil || correlationSession != nil else { return }",
+            in: cleanup
+        )
+        #expect(requestRevocationLine < activeCorrelationGuardLine)
+        #expect(busyClearLine < activeCorrelationGuardLine)
+        #expect(probeReleaseLine < activeCorrelationGuardLine)
 
-        #expect(cleanup.contains("guard processCorrelationLease != nil || correlationSession != nil else { return }"))
         #expect(cleanup.contains("abandonPackageCorrelation()"))
         #expect(cleanup.contains("target_correlation_abandoned_on_view_exit"))
         #expect(!cleanup.contains("releasePackageCorrelationLease()"))
