@@ -15,6 +15,7 @@ from pathlib import Path
 import stat
 import sys
 from typing import Callable
+import warnings
 
 MAX_PRIVATE_IDENTIFIER_BYTES = 128
 READY_MARKER = "CREATED_PRIVATE_INTENDED_DEVICE_INPUT"
@@ -198,9 +199,6 @@ def create_private_input(
         except OSError as error:
             raise PrivateInputError("private-intended-device-create-failed") from error
 
-        # Capture the created filesystem object immediately after O_EXCL succeeds. Cleanup must not
-        # depend on a later successful write/fsync/fstat: any failure after creation is responsible
-        # for removing this exact object, but never a pathname replacement created by another actor.
         opened_metadata = os.fstat(file_descriptor)
         created_object_identity = (opened_metadata.st_dev, opened_metadata.st_ino)
 
@@ -275,6 +273,15 @@ def create_private_input(
         os.close(directory_descriptor)
 
 
+def _secure_secret_provider() -> str:
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", getpass.GetPassWarning)
+            return getpass.getpass("Intended iPhone UDID: ")
+    except getpass.GetPassWarning as error:
+        raise PrivateInputError("secure-terminal-input-unavailable") from error
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--private-directory", required=True, type=Path)
@@ -290,7 +297,7 @@ def main(argv: list[str] | None = None) -> int:
             args.private_directory,
             args.source_repo,
             args.filename,
-            secret_provider=lambda: getpass.getpass("Intended iPhone UDID: "),
+            secret_provider=_secure_secret_provider,
         )
     except PrivateInputError as error:
         print(f"NOT_READY: {error}", file=sys.stderr)
