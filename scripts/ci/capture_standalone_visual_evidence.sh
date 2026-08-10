@@ -41,7 +41,7 @@ if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   exit 8
 fi
 if [[ ! "$TUYA_DEPENDENCY_LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
-  echo "Standalone Capture Tuya dependency provenance must be one lowercase 64-hex SHA-256." >&2
+  echo "Standalone Capture simulator dependency placeholder must be one lowercase 64-hex SHA-256." >&2
   exit 9
 fi
 EXPECTED_BUILD_IDENTIFIER="capture-v14-${SOURCE_SHA:0:12}"
@@ -104,9 +104,20 @@ xcrun simctl status_bar "$UDID" override \
   --cellularMode active \
   --cellularBars 4 >/dev/null 2>&1 || true
 
-# Deliberately launch the real standalone product with no SIMCTL_CHILD_* variables, no
-# NEMBRA_SIMULATION_* scenario, and no fake Tuya account/device authority. The screenshot is
-# presentation evidence only; a human reviewer must confirm the fail-closed UI state.
+# `simctl launch` forwards host variables prefixed with SIMCTL_CHILD_ into the app. Refuse any
+# inherited synthetic-authority fixture rather than merely promising that this script does not set one.
+while IFS= read -r variable_name; do
+  case "$variable_name" in
+    SIMCTL_CHILD_*|NEMBRA_SIMULATION_*)
+      echo "Refusing standalone visual evidence with inherited synthetic authority: $variable_name" >&2
+      exit 18
+      ;;
+  esac
+done < <(compgen -v)
+
+# Deliberately launch the real standalone product with no synthetic Tuya account/device authority.
+# The stamped dependency hash in this public Simulator build is presentation-only and is not proof
+# of the reviewed private Tuya workspace used by the field installer.
 launch_output="$(xcrun simctl launch "$UDID" "$BUNDLE_ID" | tee "$ARTIFACTS_DIR/logs/launch.log")"
 pid="${launch_output##*: }"
 if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
@@ -159,15 +170,17 @@ import sys
 ) = sys.argv[1:]
 
 record = {
-    "schemaVersion": 1,
+    "schemaVersion": 2,
     "authority": "standalone-capture-simulator-presentation-only",
     "buildIdentifier": build_identifier,
     "sourceCommitSHA": source_sha,
     "tuyaDependencyLockSHA256": tuya_dependency_lock_sha256,
+    "tuyaDependencyEvidenceAuthority": "simulator-placeholder-not-private-provenance",
     "bundleIdentifier": bundle_id,
     "simulatorRuntime": runtime_id,
     "simulatorDeviceType": device_type,
-    "launchContext": "real standalone bundle; no SIMCTL_CHILD/NEMBRA_SIMULATION authority injected",
+    "launchContext": "real standalone bundle; inherited SIMCTL_CHILD/NEMBRA_SIMULATION authority rejected before launch",
+    "syntheticAuthorityEnvironmentRejected": True,
     "expectedReviewState": "public/unprovisioned root presentation; reviewer must verify fail-closed messaging visually",
     "visualAcceptanceRequiresHumanReview": True,
     "physicalAuthorityCreated": False,
@@ -187,6 +200,6 @@ printf '%s\n' \
   "Standalone Nembra Capture visual evidence captured." \
   "Build: $BUILD_IDENTIFIER" \
   "Source: $SOURCE_SHA" \
-  "Tuya dependency lock: $TUYA_DEPENDENCY_LOCK_SHA256" \
+  "Simulator dependency placeholder: $TUYA_DEPENDENCY_LOCK_SHA256" \
   "Screenshot: $SCREENSHOT" \
-  "Visual review is still required; this artifact creates no physical/protocol authority."
+  "Visual review is still required; this artifact creates no physical/protocol or private-dependency authority."
