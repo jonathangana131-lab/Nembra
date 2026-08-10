@@ -1,9 +1,10 @@
 name: Temporary Capture Post-Seal Local-BLE Repair
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/capture-post-seal-local-ble-recheck
+      - integration/v14-capture-final-stationary-convergence-sol
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
@@ -15,6 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 1
 
       - name: Verify exact repair parent
