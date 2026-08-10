@@ -1,63 +1,72 @@
-name: Capture OFF1 Restart Custody Patch
+name: Capture Field Build Provenance
 
 on:
   push:
     branches:
-      - repair/v14-capture-off1-restart-generation-custody-sol
+      - capture/field-build-provenance-gpt56
+      - capture/one-time-ble-dump-gpt56
+  pull_request:
     paths:
-      - Scripts/apply_capture_off1_restart_custody_patch.py
+      - NembraApp/App/NembraCaptureBuildIdentity.swift
+      - NembraCapture.xcodeproj/project.pbxproj
+      - scripts/field/install_one_time_capture.command
       - .github/workflows/capture-field-build-provenance.yml
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+  provenance:
+    name: Stamp and verify Capture provenance
+    runs-on: xcode-27
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: repair/v14-capture-off1-restart-generation-custody-sol
-          fetch-depth: 0
 
-      - name: Verify exact live parent
+      - name: Verify source contract
         shell: bash
         run: |
           set -euo pipefail
-          git merge-base --is-ancestor d5204d8345c9210e8b6c84d1d7f13227977b29a0 HEAD
-          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationRestartLifecycleSourceTests.swift
-          test -f Scripts/apply_capture_off1_restart_custody_patch.py
+          identity='NembraApp/App/NembraCaptureBuildIdentity.swift'
+          project='NembraCapture.xcodeproj/project.pbxproj'
+          installer='scripts/field/install_one_time_capture.command'
 
-      - name: Apply one-function custody repair
+          bash -n "$installer"
+          grep -Fq 'SOURCE_SHA="$(git rev-parse HEAD)' "$installer"
+          grep -Fq 'BUILD_LABEL="capture-v14-${SOURCE_SHA:0:12}"' "$installer"
+          grep -Fq 'NEMBRA_CAPTURE_BUILD_IDENTIFIER="$BUILD_LABEL"' "$installer"
+          grep -Fq 'NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$SOURCE_SHA"' "$installer"
+
+          grep -Fq 'NembraCaptureBuildIdentity.swift in Sources' "$project"
+          grep -Fq 'INFOPLIST_KEY_NembraCaptureBuildIdentifier = "$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)";' "$project"
+          grep -Fq 'INFOPLIST_KEY_NembraCaptureSourceCommitSHA = "$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)";' "$project"
+
+          grep -Fq 'static let buildIdentifierInfoKey = "NembraCaptureBuildIdentifier"' "$identity"
+          grep -Fq 'static let sourceCommitSHAInfoKey = "NembraCaptureSourceCommitSHA"' "$identity"
+          grep -Fq 'sourceCommitSHA.count == 40' "$identity"
+          grep -Fq 'let expectedIdentifier = "capture-v14-\(sourceCommitSHA.prefix(12))"' "$identity"
+
+      - name: Build stamped standalone Simulator app
         shell: bash
         run: |
           set -euo pipefail
-          python3 Scripts/apply_capture_off1_restart_custody_patch.py
-          file=NembraApp/App/NembraCaptureEntrypoint.swift
-          grep -Fq 'private func beginCorrelationSeries()' "$file"
-          grep -Fq 'active_generation_blocks_discovery_reset' "$file"
-          grep -Fq 'await self?.invalidateInternalLifecycle(' "$file"
+          sha='0123456789abcdef0123456789abcdef01234567'
+          label='capture-v14-0123456789ab'
+          rm -rf /tmp/NembraCaptureProvenanceDerived
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/NembraCaptureProvenanceDerived \
+            CODE_SIGNING_ALLOWED=NO \
+            NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
+            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" \
+            build
 
-      - name: Self-retire staging and publish product commit
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm Scripts/apply_capture_off1_restart_custody_patch.py
-          git checkout d5204d8345c9210e8b6c84d1d7f13227977b29a0 -- .github/workflows/capture-field-build-provenance.yml
-
-          git config user.name nembra-v14-integration
-          git config user.email actions@users.noreply.github.com
-          git add -A
-          git diff --cached --check
-
-          effective="$(git diff --name-only d5204d8345c9210e8b6c84d1d7f13227977b29a0 --)"
-          test "$effective" = "NembraApp/App/NembraCaptureEntrypoint.swift" || {
-            printf 'unexpected final state relative to live parent:\n%s\n' "$effective" >&2
-            exit 1
-          }
-
-          git commit -m 'fix(capture): retire active generation before OFF1 restart' \
-            -m 'When an impossible package-owned session generation still exists at a new OFF1 correlation request, retire that exact generation through the canonical internal-lifecycle terminal instead of hiding it behind local presentation failure. Ordinary package-owned correlation remains evidence-neutral. Physical status remains NO-GO.'
-          git push origin HEAD:repair/v14-capture-off1-restart-generation-custody-sol
+          plist='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
+          test -f "$plist"
+          test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
+          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$sha"
