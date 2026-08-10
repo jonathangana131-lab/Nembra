@@ -12,8 +12,9 @@ required = [
     'startswith("com.apple.CoreSimulator.SimRuntime.iOS-27")',
     'if x.get("name") == "iPhone 12"',
     'no newer-device fallback may satisfy the V14 baseline',
-    'TUYA_DEPENDENCY_LOCK_SHA256="$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$INFO_PLIST")"',
-    '[[ ! "$TUYA_DEPENDENCY_LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]]',
+    'TUYA_DEPENDENCY_LOCK_SHA256="$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$INFO_PLIST" 2>/dev/null || true)"',
+    '[[ -n "$TUYA_DEPENDENCY_LOCK_SHA256" ]]',
+    'Public standalone visual evidence must not carry Tuya dependency authority',
     'EXPECTED_BUILD_IDENTIFIER="capture-v14-${SOURCE_SHA:0:12}"',
     'CHECKOUT_SHA="$(git rev-parse HEAD',
     '[[ "$SOURCE_SHA" != "$CHECKOUT_SHA" ]]',
@@ -23,6 +24,9 @@ required = [
     'xcrun simctl ui "$UDID" appearance dark',
     'launch_output="$(xcrun simctl launch "$UDID" "$BUNDLE_ID"',
     'xcrun simctl io "$UDID" screenshot "$SCREENSHOT"',
+    '"tuyaDependencyLockSHA256": ""',
+    '"tuyaDependencyProvenanceClass": "deliberately-absent-public-ci"',
+    '"expectedFieldBuildAuthority": False',
     '"baselineDevice": "iPhone 12"',
     '"baselineOS": "iOS 27"',
     '"procedureIdentifier": procedure_identifier',
@@ -31,7 +35,6 @@ required = [
     '"visualAcceptanceRequiresHumanReview": True',
     '"physicalAuthorityCreated": False',
     '"protocolAuthorityCreated": False',
-    '"tuyaDependencyLockSHA256": tuya_dependency_lock_sha256',
 ]
 for needle in required:
     if needle not in script:
@@ -40,6 +43,9 @@ for needle in required:
 for forbidden_fallback in ('"iPhone 17"', '"iPhone 17 Pro"', '"iPhone 16"', '"iPhone 16 Plus"'):
     if forbidden_fallback in script:
         raise SystemExit(f"newer-device fallback cannot satisfy the iPhone 12 visual baseline: {forbidden_fallback}")
+
+if re.search(r"dependency_sha=['\"][0-9a-f]{64}['\"]", script):
+    raise SystemExit("public visual harness must not synthesize a shape-valid Tuya dependency fingerprint")
 
 if "SIMCTL_CHILD_" not in script or "NEMBRA_SIMULATION_" not in script:
     raise SystemExit("script must explicitly document that no simulator authority environment is injected")
