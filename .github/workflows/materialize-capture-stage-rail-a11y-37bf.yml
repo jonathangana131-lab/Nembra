@@ -1,0 +1,97 @@
+name: Materialize exact-current Capture stage-rail accessibility repair
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-stage-rail-a11y-37bf
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard exact current regression parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='37bf3bf6502c470f69915c5e1e5f81721e846ae4'
+          test "$(git merge-base "$base" HEAD)" = "$base"
+          test "$(git rev-parse HEAD^)" = '1f5a03758608a8f58f4f7ab98e3e5364ff75ebca'
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/materialize-capture-stage-rail-a11y-37bf.yml'
+
+      - name: Align accepted stage accessibility truth
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text()
+          start = source.index('    private var stageRail: some View')
+          end = source.index('    private var primarySurface: some View', start)
+          stage = source[start:end]
+
+          collapsed_old = '''            .accessibilityElement(children: .combine)
+                  } else {'''
+          collapsed_new = '''            .accessibilityElement(children: .combine)
+                  .accessibilityLabel(
+                      test.phase == .accepted
+                          ? "All 4 Capture steps complete, Seal"
+                          : "Step \\(currentStageIndex + 1) of 4, \\(stageLabels[currentStageIndex])"
+                  )
+              } else {'''
+          if stage.count(collapsed_old) != 1:
+              raise SystemExit(f'expected one accessibility-size stage boundary, found {stage.count(collapsed_old)}')
+          stage = stage.replace(collapsed_old, collapsed_new, 1)
+
+          standard_old = '.accessibilityLabel("Step \\(index + 1), \\(label)\\(index == currentStageIndex ? \", current\" : index < currentStageIndex ? \", complete\" : \", upcoming\")")'
+          standard_new = '.accessibilityLabel("Step \\(index + 1), \\(label)\\(test.phase == .accepted || index < currentStageIndex ? \", complete\" : index == currentStageIndex ? \", current\" : \", upcoming\")")'
+          if stage.count(standard_old) != 1:
+              raise SystemExit(f'expected one standard stage accessibility label, found {stage.count(standard_old)}')
+          stage = stage.replace(standard_old, standard_new, 1)
+
+          path.write_text(source[:start] + stage + source[end:])
+          PY
+
+      - name: Validate source and preserved current truth
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureStageRailAcceptedAccessibilitySourceTests.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          start = source.index('private var stageRail: some View')
+          end = source.index('private var primarySurface: some View', start)
+          stage = source[start:end]
+          assert 'All 4 Capture steps complete, Seal' in stage
+          standard = next(line for line in stage.splitlines() if '.accessibilityLabel("Step' in line)
+          assert 'test.phase == .accepted' in standard
+          assert '", complete"' in standard and '", current"' in standard and '", upcoming"' in standard
+          # Preserve exact-current compile and accepted-event custody repairs.
+          assert 'isLoggedIn: sdkAccountLoggedIn' in source
+          assert 'sdkIsLoggedIn: sdkAccountLoggedIn' not in source
+          assert 'applicationUpdateAdmissionsInFlight' in source
+          assert 'acceptanceCutIsClosed' in source
+          PY
+          git diff --check
+
+      - name: Publish clean effective checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-stage-rail-a11y-37bf.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift .github/workflows/materialize-capture-stage-rail-a11y-37bf.yml
+          git diff --cached --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'fix(capture): align accepted stage accessibility truth'
+          git push origin HEAD:fix/v14-capture-stage-rail-a11y-37bf
