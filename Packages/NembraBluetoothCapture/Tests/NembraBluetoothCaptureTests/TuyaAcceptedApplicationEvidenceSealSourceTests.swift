@@ -20,7 +20,7 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         let body = String(seal)
 
         guard let packageSeal = body.range(of: "try await sessionLedger.sealAcceptedObservation(for: token)"),
-              let frozenPrefix = body.range(of: "sealedAcceptedEventPrefix = events", range: packageSeal.upperBound..<body.endIndex) else {
+              let frozenPrefix = body.range(of: "sealedAcceptedEventPrefix = self.events", range: packageSeal.upperBound..<body.endIndex) else {
             Issue.record("Successful package seal must synchronously snapshot the exportable accepted event prefix.")
             throw SourceContractError.sectionMissing
         }
@@ -28,6 +28,7 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         if let nextAwait = body.range(of: "await ", range: packageSeal.upperBound..<body.endIndex) {
             #expect(frozenPrefix.lowerBound < nextAwait.lowerBound)
         }
+        #expect(body.contains("exportData = nil"))
     }
 
     @Test("accepted export uses the frozen prefix instead of the mutable live event log")
