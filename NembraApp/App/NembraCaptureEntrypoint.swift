@@ -164,7 +164,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     struct Export: Codable {
         let schemaVersion: Int
         let purpose: String
-        let exportedAt: Date
+        var exportedAt: Date
         let buildIdentifier: String
         let sourceCommitSHA: String
         let tuyaDeviceID: String
@@ -319,6 +319,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var driver: OfficialTuyaDriver?
     private var events: [Event] = []
     private var sealedAcceptedEventPrefix: [Event]?
+    private var sealedAcceptedExportSnapshot: Export?
     private var watchdog: Task<Void, Never>?
     private let sessionLedger = TuyaAuthenticatedReadOnlySessionLedger()
     private var currentConnectionToken: TuyaReadOnlyConnectionToken?
@@ -1241,7 +1242,17 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     }
                     do {
                         try await sessionLedger.sealAcceptedObservation(for: token)
-                        self.sealedAcceptedEventPrefix = self.events
+                        let acceptedEventPrefix = self.events
+                        self.sealedAcceptedEventPrefix = acceptedEventPrefix
+                        // The package seal retires callback authority without advancing the
+                        // already-earned ready snapshot. Freeze every acceptance-bound export
+                        // field before the next suspension point so logout/membership changes
+                        // cannot rewrite an already accepted artifact.
+                        self.sealedAcceptedExportSnapshot = self.makeExportSnapshot(
+                            phase: .accepted,
+                            exportedAt: Date(),
+                            events: acceptedEventPrefix
+                        )
                         self.currentConnectionToken = nil
                         await self.refreshLedgerSnapshot()
                         self.phase = .accepted
@@ -1476,23 +1487,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
         ledgerSnapshot = await sessionLedger.currentPreflightSnapshot()
     }
 
-    func prepareExport() {
-        let sealedAcceptedEventPrefix: [Event]
-        if phase == .accepted {
-            guard let acceptedEventPrefix = self.sealedAcceptedEventPrefix else {
-                exportData = nil
-                message = "Accepted diagnostics cannot be exported because the immutable accepted event prefix is unavailable. Restart from OFF1 rather than exporting mutable post-seal diagnostics."
-                return
-            }
-            sealedAcceptedEventPrefix = acceptedEventPrefix
-        } else {
-            sealedAcceptedEventPrefix = events
-        }
-
-        let envelope = Export(
+    private func makeExportSnapshot(
+        phase: Phase,
+        exportedAt: Date,
+        events: [Event]
+    ) -> Export {
+        Export(
             schemaVersion: 8,
             purpose: "Sanitized Tuya authenticated read-only stationary preflight",
-            exportedAt: Date(),
+            exportedAt: exportedAt,
             buildIdentifier: buildIdentity.buildIdentifier,
             sourceCommitSHA: buildIdentity.sourceCommitSHA,
             tuyaDeviceID: deviceID,
@@ -1520,8 +1523,41 @@ private final class SecureLinkController: NSObject, ObservableObject {
             dpQueriesSent: false,
             dpCommandsSent: false,
             candidates: candidates,
-            events: sealedAcceptedEventPrefix
+            events: events
         )
+    }
+
+    func prepareExport() {
+        let sealedAcceptedEventPrefix: [Event]
+        if phase == .accepted {
+            guard let acceptedEventPrefix = self.sealedAcceptedEventPrefix else {
+                exportData = nil
+                message = "Accepted diagnostics cannot be exported because the immutable accepted event prefix is unavailable. Restart from OFF1 rather than exporting mutable post-seal diagnostics."
+                return
+            }
+            sealedAcceptedEventPrefix = acceptedEventPrefix
+        } else {
+            sealedAcceptedEventPrefix = events
+        }
+
+        let envelope: Export
+        if phase == .accepted {
+            guard var acceptedSnapshot = self.sealedAcceptedExportSnapshot else {
+                exportData = nil
+                message = "Accepted diagnostics cannot be exported because the immutable accepted evidence envelope is unavailable. Restart from OFF1 rather than exporting mutable post-seal authority."
+                return
+            }
+            // `exportedAt` is share-time metadata only. Mutating this local value copy cannot
+            // change the stored accepted snapshot or any acceptance-bound evidence field.
+            acceptedSnapshot.exportedAt = Date()
+            envelope = acceptedSnapshot
+        } else {
+            envelope = makeExportSnapshot(
+                phase: phase,
+                exportedAt: Date(),
+                events: sealedAcceptedEventPrefix
+            )
+        }
 
         do {
             let encoder = JSONEncoder()
@@ -1537,6 +1573,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     private func resetDiscoverySessionOnly() {
         sealedAcceptedEventPrefix = nil
+        sealedAcceptedExportSnapshot = nil
         correlationSession?.abandonCurrentWindow()
         correlationSession = nil
         correlationProvenance = nil
