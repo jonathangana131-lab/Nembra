@@ -1,0 +1,47 @@
+name: V14 Capture 2250 AX Convergence Materializer
+
+on:
+  push:
+    branches:
+      - recovery/v14-capture-2250-ax-convergence-gpt56sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply AX-only product reflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/apply_v14_capture_ax_only.py
+          python3 scripts/ci/apply_v14_capture_ax_only.py
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureAccessibilityXXXLSourceTests.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkAccountRecoverySourceTests.swift
+          grep -Fq 'accessibilityLabel("Correlation progress")' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'accessibilityLabel("Authenticated observation progress")' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Use a different Tuya account' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'func retry()' NembraApp/App/NembraCaptureEntrypoint.swift
+          git diff --check
+
+      - name: Publish clean AX product bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm scripts/ci/apply_v14_capture_ax_only.py
+          rm .github/workflows/materialize-v14-capture-2250-ax.yml
+          git add -A
+          git diff --cached --check
+          git diff --cached --quiet && { echo 'ERROR: AX materializer produced no product delta' >&2; exit 1; }
+          git config user.name 'nembra-v14-agent'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): reflow guided progress for AX XXXL'
+          git push origin HEAD:recovery/v14-capture-2250-ax-convergence-gpt56sol
