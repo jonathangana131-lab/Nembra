@@ -426,7 +426,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var correlationObservedCandidateCount: Int { correlationProgress?.currentObservedCandidateCount ?? 0 }
     var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }
     var failedAttemptCanRestartFromOFF1: Bool {
-        phase == .failed && currentConnectionToken == nil && localBLESettlementToken == nil && driver == nil
+        phase == .failed
+            && currentConnectionToken == nil
+            && localBLESettlementToken == nil
+            && driver == nil
+            && OfficialTuyaFactory.packageCorrelationMayStart
     }
     var canRestartFromFreshOFF1: Bool { failedAttemptCanRestartFromOFF1 }
 
@@ -533,6 +537,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
               sdkDeviceMembershipVerified,
               accountIdentityLeaseIsAuthorized else {
             failLocally("SDK account/device authority changed before Bluetooth correlation began.", "sdk_authority_changed_before_scan")
+            return
+        }
+        guard OfficialTuyaFactory.packageCorrelationMayStart else {
+            failLocally(
+                "Tuya BLE ownership was already attempted in this app process. Relaunch Capture with the scooter OFF before a fresh OFF1→ON1→OFF2→ON2 series. Package-owned correlation cannot restart in-process after Tuya BLE ownership.",
+                "process_tuya_ble_ownership_blocks_scan"
+            )
             return
         }
         guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {
@@ -1770,6 +1781,11 @@ private protocol OfficialTuyaDriver: AnyObject {
 @MainActor
 private enum OfficialTuyaFactory {
     private static var didBootstrap = false
+    private static var packageCorrelationRetiredForProcess = false
+
+    static var packageCorrelationMayStart: Bool {
+        !packageCorrelationRetiredForProcess
+    }
 
     static var configured: Bool {
 #if canImport(ThingSmartHomeKit) && canImport(NembraTuyaPrivateConfig)
@@ -1827,6 +1843,10 @@ private enum OfficialTuyaFactory {
     static func make() -> OfficialTuyaDriver? {
 #if canImport(ThingSmartHomeKit) && canImport(NembraTuyaPrivateConfig)
         guard bootstrap(), accountLoggedIn, currentAccountUID != nil else { return nil }
+        // A process-global Tuya BLE manager may outlive any one controller. Once a
+        // supported Tuya driver is handed out, package-owned correlation stays retired
+        // until app relaunch; later failures must not recreate competing BLE ownership.
+        packageCorrelationRetiredForProcess = true
         return SmartLifeDriver()
 #else
         return nil
