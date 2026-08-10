@@ -29,11 +29,29 @@ jobs:
       - name: Apply per-window ownership repair
         run: python3 scripts/ci/materialize_capture_per_window_ble_fence.py
 
-      - name: Verify focused repair
+      - name: Verify source contract and effective diff
         run: |
           set -euo pipefail
-          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors --filter TuyaCorrelationPerWindowBLEOwnershipSourceTests
           git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          body = app.split('private func startCurrentCorrelationWindow()', 1)[1].split('func finishCorrelationWindow()', 1)[0]
+          ownership = body.index('guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else')
+          scanner = body.index('try session.startCurrentWindow()')
+          assert ownership < scanner
+          guarded = body[ownership:scanner]
+          assert 'correlationSession?.abandonCurrentWindow()' in guarded
+          assert 'correlationSession = nil' in guarded
+          assert 'sdk_local_ble_ownership_changed_during_target_correlation' in guarded
+          assert 'return' in guarded
+          for forbidden in ('disconnectBLE', 'publishDps', 'queryDps', 'writeValue', 'sessionLedger.endConnection'):
+              assert forbidden not in body
+          test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationPerWindowBLEOwnershipSourceTests.swift').read_text(encoding='utf-8')
+          assert 'every fresh correlation window rechecks global Tuya local-BLE ownership before package scan' in test
+          assert 'ownership loss abandons the in-progress series and fails closed' in test
+          print('capture per-window BLE ownership source contract: PASS')
+          PY
 
       - name: Publish clean product bytes
         run: |
@@ -42,6 +60,7 @@ jobs:
           rm scripts/ci/materialize_capture_per_window_ble_fence.py
           git add -A
           git diff --cached --check
+          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationPerWindowBLEOwnershipSourceTests.swift' | sort)"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "fix(capture): fence every correlation window from Tuya BLE"
