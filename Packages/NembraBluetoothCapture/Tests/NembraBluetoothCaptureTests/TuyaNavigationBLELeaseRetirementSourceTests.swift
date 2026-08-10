@@ -15,7 +15,7 @@ struct TuyaNavigationBLELeaseRetirementSourceTests {
         let view = String(try section(
             in: source,
             from: "private struct SecureLinkView: View",
-            to: "private extension SecureLinkView"
+            to: "private var hero: some View"
         ))
         let cleanup = String(try section(
             in: controller,
