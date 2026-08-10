@@ -54,6 +54,29 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         #expect(body.contains("application_update_after_acceptance_cut_ignored"))
     }
 
+    @Test("no-application timeout cannot retire a generation while an application admission is still in flight")
+    func timeoutWaitsForApplicationAdmissionQuiescence() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let watchdog = try section(
+            in: app,
+            from: "private func startWatchdog",
+            to: "private func recordObservedTransportLoss"
+        )
+        let body = String(watchdog)
+
+        guard let timeoutGate = body.range(of: "if self.applicationUpdateAdmissionsInFlight == 0,"),
+              let ageGate = body.range(of: "(self.canonicalObservedAgeSeconds ?? 0) > 60", range: timeoutGate.upperBound..<body.endIndex),
+              let noApplication = body.range(of: "self.applicationUpdateCount == 0", range: ageGate.upperBound..<body.endIndex),
+              let terminal = body.range(of: "try await sessionLedger.markApplicationObservationTimedOut", range: noApplication.upperBound..<body.endIndex) else {
+            Issue.record("The no-application terminal must require zero in-flight application admissions before it can retire the generation.")
+            throw SourceContractError.sectionMissing
+        }
+
+        #expect(timeoutGate.lowerBound < ageGate.lowerBound)
+        #expect(ageGate.lowerBound < noApplication.lowerBound)
+        #expect(noApplication.lowerBound < terminal.lowerBound)
+    }
+
     @Test("accepted export fails closed onto the frozen prefix instead of the mutable live event log")
     func acceptedExportUsesFrozenEventPrefix() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
