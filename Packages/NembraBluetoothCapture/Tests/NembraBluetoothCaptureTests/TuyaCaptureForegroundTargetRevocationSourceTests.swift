@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Capture foreground target-authority revocation")
 struct TuyaCaptureForegroundTargetRevocationSourceTests {
-    @Test("foreground loss preserves sealed acceptance but resets mutable correlation authority")
+    @Test("foreground loss preserves sealed correlation evidence while revoking mutable target authority")
     func foregroundLossCannotCarryCorrelatedTargetAcrossBoundary() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let controller = String(try section(
@@ -17,12 +17,31 @@ struct TuyaCaptureForegroundTargetRevocationSourceTests {
             from: "func appDidLoseForeground()",
             to: "var privateConfig: Bool"
         ))
+        let activeCorrelation = String(try section(
+            in: cleanup,
+            from: "if processCorrelationLease != nil || correlationSession != nil",
+            to: "if phase == .correlated || phase == .selected"
+        ))
+        let sealedCorrelation = String(try section(
+            in: cleanup,
+            from: "if phase == .correlated || phase == .selected",
+            to: "guard let token = currentConnectionToken else"
+        ))
 
         #expect(cleanup.contains("guard phase != .accepted else { return }"))
-        #expect(cleanup.contains("if processCorrelationLease != nil || correlationSession != nil"))
-        #expect(cleanup.contains("if phase == .correlated || phase == .selected"))
-        #expect(cleanup.components(separatedBy: "resetDiscoverySessionOnly()").count - 1 == 2)
-        #expect(cleanup.contains("foreground_integrity_lost_after_target_correlation"))
+
+        #expect(activeCorrelation.contains("resetDiscoverySessionOnly()"))
+        #expect(activeCorrelation.contains("phase = .failed"))
+        #expect(activeCorrelation.contains("foreground_integrity_lost_during_target_correlation"))
+
+        #expect(!sealedCorrelation.contains("resetDiscoverySessionOnly()"))
+        #expect(sealedCorrelation.contains("pendingCorrelatedTargetID = nil"))
+        #expect(sealedCorrelation.contains("selectedID = nil"))
+        #expect(sealedCorrelation.contains("targetCorrelationOperatorConfirmed = false"))
+        #expect(sealedCorrelation.contains("phase = .failed"))
+        #expect(sealedCorrelation.contains("foreground_integrity_lost_after_target_correlation"))
+        #expect(sealedCorrelation.contains("Completed correlation evidence remains available for diagnostics."))
+
         #expect(!cleanup.contains("releasePackageCorrelationLease()"))
     }
 
