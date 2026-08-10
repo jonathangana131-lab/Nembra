@@ -81,6 +81,44 @@ public struct PropulsionGaugeCockpitSnapshot: Equatable, Sendable {
         self.recentAcceptedPeakMarkerFraction = recentAcceptedPeakMarkerFraction
         self.scaleOrigin = scaleOrigin
     }
+
+#if SWIFT_PACKAGE
+    /// Package-sealed reconstruction of an exact source-owned Simulator receipt as
+    /// retained cockpit truth. This exists specifically for app-session remounts or
+    /// source demotion that already occurred before the package runtime observed the
+    /// LIVE transition. It never creates live motion or presentation scale geometry.
+    package static func retainedSimulatorSource(
+        identity: PropulsionGaugeIdentity,
+        watts: Double,
+        receiptSequenceNumber: UInt64,
+        receivedAtUptimeNanoseconds: UInt64,
+        continuityGeneration: UInt64
+    ) -> Self? {
+        guard watts.isFinite,
+              watts >= 0,
+              receiptSequenceNumber > 0,
+              continuityGeneration > 0 else {
+            return nil
+        }
+
+        let accepted = PropulsionGaugeCockpitAcceptedMeasurement(
+            identity: identity,
+            watts: watts == 0 ? 0 : watts,
+            receiptSequenceNumber: receiptSequenceNumber,
+            receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
+            continuityGeneration: continuityGeneration,
+            authority: .simulator
+        )
+        return Self(
+            identity: identity,
+            measurement: .retained(accepted),
+            visualPropulsionFraction: nil,
+            acceptedPropulsionFraction: nil,
+            recentAcceptedPeakMarkerFraction: nil,
+            scaleOrigin: nil
+        )
+    }
+#endif
 }
 
 public extension PropulsionGaugeDisplayModel {
