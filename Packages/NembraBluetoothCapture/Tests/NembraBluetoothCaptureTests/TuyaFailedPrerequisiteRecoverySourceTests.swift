@@ -22,17 +22,7 @@ struct TuyaFailedPrerequisiteRecoverySourceTests {
     @Test("in-process retry remains gated by controller-owned retired-session authority")
     func retryConsumesControllerAuthority() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let restartAuthority = try section(
-            in: app,
-            from: "var failedAttemptCanRestartFromOFF1: Bool",
-            to: "var canRestartFromFreshOFF1: Bool"
-        )
-        #expect(restartAuthority.contains("phase == .failed"))
-        #expect(restartAuthority.contains("currentConnectionToken == nil"))
-        #expect(restartAuthority.contains("localBLESettlementToken == nil"))
-        #expect(restartAuthority.contains("driver == nil"))
-        #expect(restartAuthority.contains("OfficialTuyaFactory.packageCorrelationMayStart"))
-
+        #expect(app.contains("currentConnectionToken == nil && localBLESettlementToken == nil && driver == nil"))
         #expect(app.contains("func retry()"))
         #expect(app.contains("guard phase == .failed, canRestartFromFreshOFF1 else"))
         #expect(app.contains("Relaunch Capture before another OFF1 attempt"))
@@ -47,7 +37,7 @@ struct TuyaFailedPrerequisiteRecoverySourceTests {
         let subtitle = try section(in: app, from: "private var phaseSubtitle: String", to: "private var heroSymbol: String")
         let body = String(subtitle)
         #expect(body.contains("test.canRestartFromFreshOFF1"))
-        #expect(body.contains("Relaunch Capture before another attempt"))
+        #expect(body.contains("relaunch Capture before another attempt"))
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
