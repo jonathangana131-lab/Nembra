@@ -1,9 +1,12 @@
+import contextlib
 import importlib.util
+import io
 import os
 import pathlib
 import stat
 import tempfile
 import unittest
+import warnings
 
 MODULE_PATH = pathlib.Path(__file__).parents[1] / "es80_private_intended_device_input.py"
 REPOSITORY_ROOT = pathlib.Path(__file__).parents[3]
@@ -88,15 +91,49 @@ class PrivateInputTests(unittest.TestCase):
                 private_input.create_private_input(str(private_dir / "device.udid"), "ABC123")
 
     def test_rejects_whitespace_and_control_characters(self):
-        with self.assertRaises(private_input.PrivateInputError):
-            private_input._validate_identifier(" ABC123")
-        with self.assertRaises(private_input.PrivateInputError):
-            private_input._validate_identifier("ABC123\n")
+        for value in (" ABC123", "ABC 123", "ABC\t123", "ABC123\n"):
+            with self.subTest(value=repr(value)):
+                with self.assertRaises(private_input.PrivateInputError):
+                    private_input._validate_identifier(value)
+
+    def test_secure_input_warning_fails_closed_before_fallback_value_is_consumed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            private_dir = self.private_dir(root)
+            output = private_dir / "device.udid"
+            fallback_returned = False
+            original_getpass = private_input.getpass.getpass
+
+            def insecure_fallback(_prompt: str) -> str:
+                nonlocal fallback_returned
+                warnings.warn(
+                    "Can not control echo on the terminal.",
+                    private_input.getpass.GetPassWarning,
+                )
+                fallback_returned = True
+                return "SHOULD_NOT_BE_CONSUMED"
+
+            private_input.getpass.getpass = insecure_fallback
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    exit_code = private_input.main(["--output-path", str(output)])
+            finally:
+                private_input.getpass.getpass = original_getpass
+
+            self.assertEqual(exit_code, 2)
+            self.assertFalse(fallback_returned)
+            self.assertFalse(output.exists())
+            self.assertNotIn("SHOULD_NOT_BE_CONSUMED", stdout.getvalue())
+            self.assertNotIn("SHOULD_NOT_BE_CONSUMED", stderr.getvalue())
+            self.assertIn("secure terminal input unavailable", stderr.getvalue())
 
     def test_operator_handoff_uses_pinned_descriptor_bound_helper_not_shell_secret_redirection(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
         self.assertIn("scripts/ci/es80_private_intended_device_input.py", handoff)
-        self.assertIn("PRIVATE_INPUT_HELPER_BLOB='7de2eb55c138f578cf3c0a53d0f12db823fa276d'", handoff)
+        self.assertIn("PRIVATE_INPUT_HELPER_COMMIT='400fe2ceefeccc04c30fe7b2d8c0fdccbc15f1f1'", handoff)
+        self.assertIn("PRIVATE_INPUT_HELPER_BLOB='8f4ae28b2ad5cdb917338baf8ee412c465fc9497'", handoff)
         self.assertIn('/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER" --output-path "$UDID_FILE"', handoff)
         self.assertNotIn("IFS= read -r -s INTENDED_UDID", handoff)
         self.assertNotIn("set -o noclobber", handoff)
