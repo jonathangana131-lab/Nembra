@@ -31,6 +31,14 @@ The current supported receive surface is `ThingSmartDeviceDelegate` application/
 
 Raw authenticated FD50/ATT bytes remain a separate unresolved evidence rung. They may be claimed only if a supported same-session capture path is later proven without competing with Tuya's authenticated BLE ownership.
 
+## Account-login compatibility — pre-OFF1 NO-GO gate
+
+Current Capture field UI supports Tuya verification-code login by email or phone only. It does not currently implement a third-party SDK login path such as Apple sign-in inside Nembra. The metadata QR bridge is selection/setup context only and cannot substitute for an authenticated official SDK account session.
+
+Before OFF1, the scooter-bearing Smart Life/Tuya account must be reachable through a login method that the exact field build actually implements. Capture must then freshly prove that the exact expected scooter device ID belongs to the same current SDK account UID. A matching email address, phone number, display name, QR approval, or successful login by itself is not same-account device authority.
+
+If the scooter-bearing account is third-party-only and cannot be authenticated through the currently implemented email/phone verification-code flow, **STOP before OFF1**. Do not create or switch to a different Tuya account to bypass this gate. If a third-party SDK login path is implemented later, it must still preserve the exact current-account UID lease, exact-device membership proof, field-build provenance, and all existing pre-OFF1 fail-closed gates before it can participate in a physical run.
+
 ## Current software gates — physical test remains NO-GO until all are accepted
 
 The stationary field attempt may be authorized only after the final composed standalone Capture build proves all applicable gates at one exact head:
@@ -39,7 +47,7 @@ The stationary field attempt may be authorized only after the final composed sta
 2. The matching app-specific `ThingSmartCryption` security component is installed locally and remains outside Git.
 3. The public SmartLife dependencies are exactly pinned/resolved to the reviewed `ThingSmartHomeKit 7.8.0` and `ThingSmartBusinessExtensionKit 7.8.0` inputs, with the resolved `Podfile.lock` preserved and fingerprinted by the repository bootstrap.
 4. Private AppKey/AppSecret are provisioned only through the reviewed ignored local `NembraTuyaPrivateConfig` path. They are not committed, passed in process arguments, placed in the `devicectl` launch environment, logged, screenshot, or exported.
-5. The official Tuya SDK itself has an authorized verification-code account session; the metadata QR bridge is not treated as SDK login authority.
+5. The official Tuya SDK itself has an authorized account session through a login method actually implemented by the exact field build. The current field UI implements verification-code email/phone login only; the metadata QR bridge is not treated as SDK login authority.
 6. The exact expected scooter device ID is proven to belong to that same current SDK account/home (owned or shared membership). Login alone is insufficient, and the membership proof is leased to the exact current account UID.
 7. OFF1 discovery cannot begin until compiled field-build provenance and the same-current-account exact-device authority are current.
 8. Current target authority comes only from the package-owned fresh `OFF1 → ON1 → OFF2 → ON2` result, followed by explicit operator confirmation. Historical UUID/name/RSSI/FD50/Tuya hints remain non-authoritative.
@@ -59,7 +67,7 @@ Use the repository provisioning/bootstrap/field installer so the physical candid
 
 Keep AppKey/AppSecret, account tokens, verification codes, `local_key`, scooter/session keys, and generated private security material out of Git, logs, screenshots, issues, chat, and Capture exports.
 
-The field utility uses the official SDK's verification-code account flow rather than collecting the Tuya account password. A successful login still does not authorize any Bluetooth correlation or authentication until exact scooter membership is established and bound to the same current SDK account.
+The field utility currently uses the official SDK's verification-code email/phone account flow rather than collecting the Tuya account password. A successful login still does not authorize any Bluetooth correlation or authentication until exact scooter membership is established and bound to the same current SDK account UID. If the real scooter account is reachable only by an unimplemented third-party login method, the field attempt remains NO-GO before OFF1.
 
 ## Smallest physical test — only after repository status explicitly flips to GO
 
@@ -69,8 +77,8 @@ This test is indoors and stationary. It does **not** repeat the old ride sequenc
 
 1. Connect/unlock the intended iPhone 12, install the exact accepted signed Capture build, verify the app shows authoritative compiled field-build provenance, and verify `Procedure` is exactly `ES80-AUTHENTICATED-STATIONARY-v1`.
 2. Keep the scooter stationary and initially **OFF**.
-3. In Capture, log in to the official Tuya SDK account by verification code if needed.
-4. Require the app to freshly verify the exact expected scooter device ID in the current SDK account/home and retain the same-account UID lease.
+3. In Capture, authenticate the exact scooter-bearing Tuya SDK account through a login method implemented by this field build. The current UI supports verification-code email/phone only. If the real account is third-party-only and cannot be reached by that supported flow, **STOP before OFF1**; do not substitute another account.
+4. Require the app to freshly verify the exact expected scooter device ID in the current SDK account/home and retain the same current SDK account UID lease.
 5. If build authority, SDK login, exact membership, or account identity changes at any point, **STOP**. Do not begin or continue Bluetooth correlation.
 
 ### Fresh four-window target correlation
@@ -98,6 +106,7 @@ Stop the attempt and preserve only already-legitimate evidence if any of these o
 
 - field-build provenance becomes non-authoritative;
 - SDK account logout/switch or exact-device membership/UID lease changes;
+- the scooter-bearing Tuya account cannot be authenticated by a login method implemented in the exact field build;
 - a four-window scan never proves liveness or cannot earn its minimum receipt-bounded duration;
 - correlation is none/ambiguous or its chronology/provenance is rejected;
 - explicit target confirmation is unavailable;
