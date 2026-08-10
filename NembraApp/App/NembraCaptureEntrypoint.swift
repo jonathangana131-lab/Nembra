@@ -173,6 +173,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let tuyaUUID: String
         let productID: String
         let selectedPeripheralID: String?
+        let targetCorrelationMethod: String?
+        let targetCorrelationWindowCount: Int?
+        let targetCorrelationOperatorConfirmed: Bool
         let targetCorrelationProvenance: CorrelationProvenance?
         let phase: Phase
         let privateConfigPresent: Bool
@@ -314,6 +317,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var baseline = Set<UUID>()
     private var correlationSession: PassiveBluetoothPowerCycleObservationSession?
     private var correlationProvenance: CorrelationProvenance?
+    private var targetCorrelationMethod: String?
+    private var targetCorrelationWindowCount: Int?
+    private var targetCorrelationOperatorConfirmed = false
     private var driver: OfficialTuyaDriver?
     private var events: [Event] = []
     private var watchdog: Task<Void, Never>?
@@ -544,6 +550,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
         // Preserve the package-issued receipts + exact catalogs before releasing the live scanner.
         // The artifact can therefore audit/replay correlation without trusting a detached UUID.
         correlationProvenance = CorrelationProvenance(result: result)
+        targetCorrelationMethod = correlationProvenance?.method
+        targetCorrelationWindowCount = result.windows.count
+        targetCorrelationOperatorConfirmed = false
         switch result.correlation.disposition {
         case let .singleRepeatableCandidate(id):
             let historicalCaptureID = id == Self.historicalCapturePeripheral
@@ -1178,6 +1187,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
             tuyaUUID: tuyaUUID,
             productID: productID,
             selectedPeripheralID: selectedID?.uuidString,
+            targetCorrelationMethod: targetCorrelationMethod,
+            targetCorrelationWindowCount: targetCorrelationWindowCount,
+            targetCorrelationOperatorConfirmed: targetCorrelationOperatorConfirmed,
             targetCorrelationProvenance: correlationProvenance,
             phase: phase,
             privateConfigPresent: privateConfig,
@@ -1215,6 +1227,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
         correlationSession?.abandonCurrentWindow()
         correlationSession = nil
         correlationProvenance = nil
+        targetCorrelationMethod = nil
+        targetCorrelationWindowCount = nil
+        targetCorrelationOperatorConfirmed = false
         central.stopScan()
         watchdog?.cancel()
         watchdog = nil

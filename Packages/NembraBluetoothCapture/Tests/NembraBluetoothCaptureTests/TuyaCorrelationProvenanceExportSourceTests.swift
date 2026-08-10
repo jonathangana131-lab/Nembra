@@ -9,9 +9,15 @@ struct TuyaCorrelationProvenanceExportSourceTests {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
         #expect(source.contains("struct CorrelationProvenance: Codable, Equatable"))
+        #expect(source.contains("let targetCorrelationMethod: String?"))
+        #expect(source.contains("let targetCorrelationWindowCount: Int?"))
+        #expect(source.contains("let targetCorrelationOperatorConfirmed: Bool"))
         #expect(source.contains("let targetCorrelationProvenance: CorrelationProvenance?"))
         #expect(source.contains("private var correlationProvenance: CorrelationProvenance?"))
         #expect(source.contains("correlationProvenance = CorrelationProvenance(result: result)"))
+        #expect(source.contains("targetCorrelationMethod: targetCorrelationMethod"))
+        #expect(source.contains("targetCorrelationWindowCount: targetCorrelationWindowCount"))
+        #expect(source.contains("targetCorrelationOperatorConfirmed: targetCorrelationOperatorConfirmed"))
         #expect(source.contains("targetCorrelationProvenance: correlationProvenance"))
         #expect(source.contains("schemaVersion: 8"))
 
@@ -40,6 +46,9 @@ struct TuyaCorrelationProvenanceExportSourceTests {
         }
         let body = String(source[reset.lowerBound..<next.lowerBound])
         #expect(body.contains("correlationProvenance = nil"))
+        #expect(body.contains("targetCorrelationMethod = nil"))
+        #expect(body.contains("targetCorrelationWindowCount = nil"))
+        #expect(body.contains("targetCorrelationOperatorConfirmed = false"))
     }
 
     private func readRepositoryFile(_ relativePath: String) throws -> String {
