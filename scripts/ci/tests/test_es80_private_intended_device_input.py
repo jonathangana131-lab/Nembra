@@ -6,6 +6,8 @@ import tempfile
 import unittest
 
 MODULE_PATH = pathlib.Path(__file__).parents[1] / "es80_private_intended_device_input.py"
+REPOSITORY_ROOT = pathlib.Path(__file__).parents[3]
+HANDOFF_PATH = REPOSITORY_ROOT / "docs" / "ES80_TODAY_SIGNED_FIELD_CANDIDATE_PRODUCTION.md"
 spec = importlib.util.spec_from_file_location("private_input", MODULE_PATH)
 private_input = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
@@ -90,6 +92,15 @@ class PrivateInputTests(unittest.TestCase):
             private_input._validate_identifier(" ABC123")
         with self.assertRaises(private_input.PrivateInputError):
             private_input._validate_identifier("ABC123\n")
+
+    def test_operator_handoff_uses_pinned_descriptor_bound_helper_not_shell_secret_redirection(self):
+        handoff = HANDOFF_PATH.read_text(encoding="utf-8")
+        self.assertIn("scripts/ci/es80_private_intended_device_input.py", handoff)
+        self.assertIn("PRIVATE_INPUT_HELPER_BLOB='7de2eb55c138f578cf3c0a53d0f12db823fa276d'", handoff)
+        self.assertIn('/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER" --output-path "$UDID_FILE"', handoff)
+        self.assertNotIn("IFS= read -r -s INTENDED_UDID", handoff)
+        self.assertNotIn("set -o noclobber", handoff)
+        self.assertNotIn("printf '%s' \"$INTENDED_UDID\" > \"$UDID_FILE\"", handoff)
 
 
 if __name__ == "__main__":
