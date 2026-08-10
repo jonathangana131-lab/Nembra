@@ -12,7 +12,6 @@ struct TuyaCorrelationAsyncInvalidationPresentationSourceTests {
             from: "private final class SecureLinkController",
             to: "private protocol OfficialTuyaDriver"
         )
-
         #expect(controller.contains("var correlationSeriesIsInvalidated: Bool"))
         #expect(controller.contains("isSeriesInvalidated"))
         #expect(controller.contains("consumeCorrelationAsyncInvalidationIfNeeded"))
@@ -22,9 +21,8 @@ struct TuyaCorrelationAsyncInvalidationPresentationSourceTests {
     @Test("existing TimelineView clock consumes the package terminal without a second polling task")
     func timelineRefreshDrivesTerminalStateTransition() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let view = try section(in: app, from: "private struct SecureLinkView", to: "#Preview")
+        let view = try section(in: app, from: "private struct SecureLinkView", to: "private struct SecureTransfer")
         let body = String(view)
-
         #expect(body.contains("TimelineView(.periodic(from: .now, by: 0.5))"))
         #expect(body.contains(".onChange(of: test.correlationSeriesIsInvalidated"))
         #expect(body.contains("test.consumeCorrelationAsyncInvalidationIfNeeded()"))
@@ -36,7 +34,6 @@ struct TuyaCorrelationAsyncInvalidationPresentationSourceTests {
     func terminalConsumerDoesNotManufactureVehicleEvidence() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let function = try sourceFunction(in: app, marker: "func consumeCorrelationAsyncInvalidationIfNeeded()")
-
         #expect(function.contains("correlationSeriesIsInvalidated"))
         #expect(function.contains("correlationSession = nil"))
         #expect(function.contains("phase = .failed"))
@@ -89,7 +86,5 @@ struct TuyaCorrelationAsyncInvalidationPresentationSourceTests {
         return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
     }
 
-    private enum SourceContractError: Error {
-        case sectionMissing
-    }
+    private enum SourceContractError: Error { case sectionMissing }
 }
