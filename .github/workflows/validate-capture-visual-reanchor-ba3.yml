@@ -1,0 +1,65 @@
+name: Validate Capture visual reanchor ba3
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-visual-evidence-ba3-current-sol
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 6
+
+      - name: Verify exact product ancestry and QA-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='ba3a1eeae36caca6dd84beaabd0f15f4f0b57925'
+          git merge-base --is-ancestor "$expected" HEAD
+          actual="$(git diff --name-only "$expected" HEAD | sort)"
+          wanted="$(printf '%s\n' \
+            '.github/workflows/capture-standalone-visual-evidence.yml' \
+            '.github/workflows/validate-capture-visual-reanchor-ba3.yml' \
+            'scripts/ci/capture_standalone_visual_evidence.sh' \
+            'scripts/ci/tests/test_capture_standalone_visual_evidence.py' | sort)"
+          test "$actual" = "$wanted"
+          git diff --quiet "$expected" HEAD -- NembraApp NembraCapture.xcodeproj Packages
+
+      - name: Validate exact current presentation authority contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ci/capture_standalone_visual_evidence.sh
+          python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          python3 -m py_compile scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          grep -Fq 'static let requiredFieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"' NembraApp/App/NembraCaptureBuildIdentity.swift
+          grep -Fq 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier' NembraApp/App/NembraCaptureEntrypoint.swift
+          test "$(grep -Fc 'INFOPLIST_KEY_NembraCaptureProcedureIdentifier = "$(NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER)";' NembraCapture.xcodeproj/project.pbxproj)" = 2
+          grep -Fq 'expectedFieldBuildAuthority' scripts/ci/capture_standalone_visual_evidence.sh
+          grep -Fq 'physicalAuthorityCreated' scripts/ci/capture_standalone_visual_evidence.sh
+          grep -Fq 'protocolAuthorityCreated' scripts/ci/capture_standalone_visual_evidence.sh
+          git diff --check
+
+      - name: Retire helper and preserve three-file visual reanchor
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/validate-capture-visual-reanchor-ba3.yml
+          rm -rf scripts/ci/tests/__pycache__
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          actual="$(git diff --cached --name-only 'ba3a1eeae36caca6dd84beaabd0f15f4f0b57925' | sort)"
+          wanted="$(printf '%s\n' \
+            '.github/workflows/capture-standalone-visual-evidence.yml' \
+            'scripts/ci/capture_standalone_visual_evidence.sh' \
+            'scripts/ci/tests/test_capture_standalone_visual_evidence.py' | sort)"
+          test "$actual" = "$wanted"
+          git commit -m 'ci(capture): validate current visual evidence reanchor'
+          git push origin HEAD:agent/v14-capture-visual-evidence-ba3-current-sol
