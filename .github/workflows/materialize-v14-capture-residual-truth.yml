@@ -25,17 +25,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_parent=1c40853f6991b4d09206df1d25ecff021458b7eb
-          git merge-base --is-ancestor "$expected_parent" HEAD
-          mapfile -t paths < <(git diff --name-only "$expected_parent"...HEAD | sort)
-          expected=(
-            .github/workflows/materialize-v14-capture-residual-truth.yml
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift
-          )
-          mapfile -t wanted < <(printf '%s\n' "${expected[@]}" | sort)
-          diff -u <(printf '%s\n' "${wanted[@]}") <(printf '%s\n' "${paths[@]}")
+          python3 - <<'PY'
+          import subprocess
+
+          expected_parent = "1c40853f6991b4d09206df1d25ecff021458b7eb"
+          subprocess.run(["git", "merge-base", "--is-ancestor", expected_parent, "HEAD"], check=True)
+          actual = set(subprocess.check_output(
+              ["git", "diff", "--name-only", f"{expected_parent}...HEAD"],
+              text=True,
+          ).splitlines())
+          expected = {
+              ".github/workflows/materialize-v14-capture-residual-truth.yml",
+              "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift",
+              "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift",
+              "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift",
+          }
+          if actual != expected:
+              raise SystemExit(f"unexpected construction scope: expected={sorted(expected)!r} actual={sorted(actual)!r}")
+          PY
 
       - name: Apply fail-closed Capture repairs
         shell: bash
@@ -136,18 +143,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_parent=1c40853f6991b4d09206df1d25ecff021458b7eb
           rm .github/workflows/materialize-v14-capture-residual-truth.yml
-          mapfile -t paths < <(git diff --name-only "$expected_parent" | sort)
-          expected=(
-            NembraApp/App/NembraCaptureEntrypoint.swift
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift
-          )
-          mapfile -t wanted < <(printf '%s\n' "${expected[@]}" | sort)
-          diff -u <(printf '%s\n' "${wanted[@]}") <(printf '%s\n' "${paths[@]}")
-          git diff --check "$expected_parent"
+          python3 - <<'PY'
+          import subprocess
+
+          expected_parent = "1c40853f6991b4d09206df1d25ecff021458b7eb"
+          actual = set(subprocess.check_output(
+              ["git", "diff", "--name-only", expected_parent],
+              text=True,
+          ).splitlines())
+          expected = {
+              "NembraApp/App/NembraCaptureEntrypoint.swift",
+              "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift",
+              "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift",
+              "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift",
+          }
+          if actual != expected:
+              raise SystemExit(f"unexpected effective scope: expected={sorted(expected)!r} actual={sorted(actual)!r}")
+          PY
+          git diff --check 1c40853f6991b4d09206df1d25ecff021458b7eb
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
