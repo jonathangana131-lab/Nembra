@@ -52,9 +52,9 @@ jobs:
         // so a late successful membership result cannot start hidden package correlation.
         membershipRequestID = UUID()
         membershipBusy = false
-#if canImport(ThingSmartHomeKit)
+          #if canImport(ThingSmartHomeKit)
         membershipProbe = nil
-#endif
+          #endif
 
         guard processCorrelationLease != nil || correlationSession != nil else { return }
         // Preserve the accepted radio ordering: explicit package transport retirement first,
