@@ -293,9 +293,75 @@ final class SpeedInstrumentModel {
 /// speed observation from the same synthetic fixture, not to aggregate vehicle
 /// connection or `lastUpdated`. The full speed sample remains the wake-up identity;
 /// repeated equal watts are still de-duplicated by the package runtime.
-private struct DashboardEnergyRailSimulatorSourceSnapshot: Equatable {
+struct DashboardEnergyRailSimulatorSourceSnapshot: Equatable {
     let watts: Double
     let sourceSample: SpeedTelemetrySample
+}
+
+enum DashboardEnergyRailSimulatorSourceState: Equatable {
+    /// Actual authority/lifecycle failure, or a coherent Simulator state proving
+    /// that the declared power capability currently has no valid watt value.
+    case hardUnavailable
+
+    /// Source-owned live Simulator speed and aggregate state have not yet joined
+    /// on the same speed observation. This is async delivery skew, not evidence of
+    /// disconnect or new propulsion truth.
+    case awaitingCoherentAggregate
+
+    /// Source-owned live speed and aggregate speed agree, and the same aggregate
+    /// carries a valid synthetic watt value that can enter the Simulator runtime.
+    case coherent(DashboardEnergyRailSimulatorSourceSnapshot)
+
+    var isPresentationEligible: Bool {
+        switch self {
+        case .hardUnavailable:
+            false
+        case .awaitingCoherentAggregate, .coherent:
+            true
+        }
+    }
+}
+
+/// Deterministic join for the Simulator's independently consumed speed-evidence
+/// and aggregate-state streams. Cross-stream skew must never look like a transport
+/// loss, while a coherent aggregate with missing/invalid power must fail closed.
+func dashboardEnergyRailSimulatorSourceState(
+    allowsSimulatorQA: Bool,
+    supportsPowerWatts: Bool,
+    isConnected: Bool,
+    speedAvailability: SpeedEvidenceAvailability,
+    aggregateSpeedKilometersPerHour: Double?,
+    aggregatePowerWatts: Int?
+) -> DashboardEnergyRailSimulatorSourceState {
+    guard allowsSimulatorQA,
+          supportsPowerWatts,
+          isConnected,
+          case let .live(sourceSample) = speedAvailability.dashboardPresentationAvailability(
+              allowsSimulatorQA: true
+          ),
+          sourceSample.source == .simulatorQA,
+          sourceSample.provenance == .absoluteMeasurement else {
+        return .hardUnavailable
+    }
+
+    guard let aggregateSpeedKilometersPerHour,
+          aggregateSpeedKilometersPerHour.isFinite,
+          aggregateSpeedKilometersPerHour >= 0,
+          abs(aggregateSpeedKilometersPerHour - sourceSample.kilometersPerHour) <= 0.000_001 else {
+        return .awaitingCoherentAggregate
+    }
+
+    guard let aggregatePowerWatts,
+          aggregatePowerWatts >= 0 else {
+        return .hardUnavailable
+    }
+
+    return .coherent(
+        DashboardEnergyRailSimulatorSourceSnapshot(
+            watts: Double(aggregatePowerWatts),
+            sourceSample: sourceSample
+        )
+    )
 }
 
 /// A deliberately narrow high-frequency subtree for the landscape cockpit.
@@ -322,8 +388,8 @@ struct DashboardSpeedInstrumentView: View {
         let speedAvailability = rawSpeedAvailability.dashboardPresentationAvailability(
             allowsSimulatorQA: allowsSimulatorQA
         )
-        let energyRailSource = energyRailSimulatorSourceSnapshot
-        let energyRailPresentationEligible = energyRailSimulatorPresentationEligible
+        let propulsionSourceState = energyRailSourceState
+        let energyRailPresentationEligible = propulsionSourceState.isPresentationEligible
         let scheduleNow = DispatchTime.now().uptimeNanoseconds
         let speedShouldTick = !reduceMotion
             && model.isAnimationActive
@@ -370,7 +436,7 @@ struct DashboardSpeedInstrumentView: View {
                 vehicle.speedEvidenceAvailability,
                 allowsSimulatorQA: vehicle.profile == .simulatorQA
             )
-            synchronizeEnergyRailSourceState()
+            synchronizeEnergyRailSourceState(propulsionSourceState)
         }
         .task(id: energyRailNextTransitionUptimeNanoseconds) {
             await waitForEnergyRailPresentationTransition()
@@ -381,16 +447,8 @@ struct DashboardSpeedInstrumentView: View {
                 allowsSimulatorQA: vehicle.profile == .simulatorQA
             )
         }
-        .onChange(of: energyRailSource) { _, _ in
-            synchronizeEnergyRailSourceState()
-        }
-        .onChange(of: energyRailPresentationEligible) { _, _ in
-            synchronizeEnergyRailSourceState()
-        }
-        .onChange(of: vehicle.state.connection) { _, connection in
-            if connection != .connected {
-                synchronizeEnergyRailSource(nil)
-            }
+        .onChange(of: energyRailSourceState) { _, sourceState in
+            synchronizeEnergyRailSourceState(sourceState)
         }
         .onDisappear {
             model.stop()
@@ -398,65 +456,31 @@ struct DashboardSpeedInstrumentView: View {
         }
     }
 
-    /// Hard presentation authority excludes physical/unverified profiles, missing
-    /// capability, transport loss, retained speed, and caller-constructible source
-    /// wrappers that do not carry the accepted Simulator absolute-measurement shape.
-    /// Aggregate speed/power are intentionally *not* part of this gate because they
-    /// arrive on a separate async stream and can be temporarily skewed without a real
-    /// lifecycle interruption.
-    private var energyRailSimulatorPresentationEligible: Bool {
-        let sanitizedSpeed = vehicle.speedEvidenceAvailability.dashboardPresentationAvailability(
-            allowsSimulatorQA: true
-        )
-
-        guard vehicle.profile == .simulatorQA,
-              vehicle.profile.capabilities.supportsPowerWatts,
-              vehicle.state.connection == .connected,
-              case let .live(sourceSample) = sanitizedSpeed,
-              sourceSample.source == .simulatorQA,
-              sourceSample.provenance == .absoluteMeasurement else {
-            return false
-        }
-        return true
-    }
-
-    /// A source admission exists only when the two Simulator streams describe the
-    /// same synthetic speed observation. Cross-stream skew is neither accepted power
-    /// nor a disconnect: callers preserve the previous runtime generation while they
-    /// wait for the matching aggregate state to arrive.
-    private var energyRailSimulatorSourceSnapshot: DashboardEnergyRailSimulatorSourceSnapshot? {
-        let sanitizedSpeed = vehicle.speedEvidenceAvailability.dashboardPresentationAvailability(
-            allowsSimulatorQA: true
-        )
-
-        guard energyRailSimulatorPresentationEligible,
-              case let .live(sourceSample) = sanitizedSpeed,
-              let aggregateSpeed = vehicle.state.speedKilometersPerHour,
-              aggregateSpeed.isFinite,
-              aggregateSpeed >= 0,
-              abs(aggregateSpeed - sourceSample.kilometersPerHour) <= 0.000_001,
-              let aggregateWatts = vehicle.state.powerWatts,
-              aggregateWatts >= 0 else {
-            return nil
-        }
-
-        return DashboardEnergyRailSimulatorSourceSnapshot(
-            watts: Double(aggregateWatts),
-            sourceSample: sourceSample
+    private var energyRailSourceState: DashboardEnergyRailSimulatorSourceState {
+        dashboardEnergyRailSimulatorSourceState(
+            allowsSimulatorQA: vehicle.profile == .simulatorQA,
+            supportsPowerWatts: vehicle.profile.capabilities.supportsPowerWatts,
+            isConnected: vehicle.state.connection == .connected,
+            speedAvailability: vehicle.speedEvidenceAvailability,
+            aggregateSpeedKilometersPerHour: vehicle.state.speedKilometersPerHour,
+            aggregatePowerWatts: vehicle.state.powerWatts
         )
     }
 
-    /// Reconcile the independently delivered Simulator streams without turning a
-    /// temporary mismatch into false lifecycle evidence. A coherent snapshot may
-    /// admit a new synthetic power observation. Hard authority loss retires the
-    /// generation. An eligible-but-incoherent pair does neither.
-    private func synchronizeEnergyRailSourceState() {
-        if let snapshot = energyRailSimulatorSourceSnapshot {
-            synchronizeEnergyRailSource(snapshot)
-        } else if !energyRailSimulatorPresentationEligible {
+    private func synchronizeEnergyRailSourceState(
+        _ sourceState: DashboardEnergyRailSimulatorSourceState
+    ) {
+        switch sourceState {
+        case .hardUnavailable:
             synchronizeEnergyRailSource(nil)
-        } else {
+
+        case .awaitingCoherentAggregate:
+            // Keep the last accepted Simulator power generation intact while the
+            // independent streams catch up. No new measurement is admitted here.
             refreshEnergyRailPresentationSchedule()
+
+        case let .coherent(snapshot):
+            synchronizeEnergyRailSource(snapshot)
         }
     }
 
@@ -491,7 +515,7 @@ struct DashboardSpeedInstrumentView: View {
     }
 
     private func refreshEnergyRailPresentationSchedule() {
-        guard energyRailSimulatorPresentationEligible,
+        guard energyRailSourceState.isPresentationEligible,
               let energyRailRuntime else {
             energyRailNextTransitionUptimeNanoseconds = nil
             return
