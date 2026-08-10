@@ -1,6 +1,6 @@
 import Dispatch
 import Foundation
-import NembraCore
+import struct NembraCore.PropulsionEnergyRailSimulatorRuntime
 import Observation
 import SwiftUI
 
@@ -407,9 +407,8 @@ struct DashboardSpeedInstrumentView: View {
         let connected = vehicle.state.connection == .connected
         let watts: Double?
         if let rawWatts = vehicle.state.powerWatts,
-           rawWatts.isFinite,
            rawWatts >= 0 {
-            watts = rawWatts == 0 ? 0 : rawWatts
+            watts = Double(rawWatts)
         } else {
             watts = nil
         }
