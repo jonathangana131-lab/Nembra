@@ -43,15 +43,25 @@ struct TuyaCorrelatedTargetExportProvenanceSourceTests {
         #expect(confirmation.contains("candidate_selected"))
     }
 
-    @Test("prepared artifact embeds correlation provenance and reset cannot leak it into another attempt")
+    @Test("export constructor embeds correlation provenance and reset cannot leak it into another attempt")
     func exportAndResetPreserveSessionBoundary() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let makeExport = try section(
+            in: app,
+            from: "private func makeExport(exportedAt: Date, phase: Phase, events: [Event]) -> Export",
+            to: "func prepareExport()"
+        )
+        #expect(makeExport.contains("targetCorrelationMethod: targetCorrelationMethod"))
+        #expect(makeExport.contains("targetCorrelationWindowCount: targetCorrelationWindowCount"))
+        #expect(makeExport.contains("targetCorrelationOperatorConfirmed: targetCorrelationOperatorConfirmed"))
+        #expect(makeExport.contains("targetCorrelationProvenance: correlationProvenance"))
+
         let prepare = try section(in: app, from: "func prepareExport()", to: "private func resetDiscoverySessionOnly")
-        #expect(prepare.contains("targetCorrelationMethod:"))
-        #expect(prepare.contains("targetCorrelationWindowCount:"))
-        #expect(prepare.contains("targetCorrelationOperatorConfirmed:"))
+        #expect(prepare.contains("envelope = sealedAcceptedExport"))
+        #expect(prepare.contains("envelope = makeExport("))
 
         let reset = try section(in: app, from: "private func resetDiscoverySessionOnly", to: "private func failLocally")
+        #expect(reset.contains("correlationProvenance = nil"))
         #expect(reset.contains("targetCorrelationMethod = nil"))
         #expect(reset.contains("targetCorrelationWindowCount = nil"))
         #expect(reset.contains("targetCorrelationOperatorConfirmed = false"))
@@ -60,11 +70,15 @@ struct TuyaCorrelatedTargetExportProvenanceSourceTests {
     @Test("artifact wording never upgrades current-session correlation to permanent scooter identity")
     func exportLanguageStaysAtEarnedAuthority() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let prepare = try section(in: app, from: "func prepareExport()", to: "private func resetDiscoverySessionOnly")
+        let makeExport = try section(
+            in: app,
+            from: "private func makeExport(exportedAt: Date, phase: Phase, events: [Event]) -> Export",
+            to: "func prepareExport()"
+        )
 
-        #expect(!prepare.localizedCaseInsensitiveContains("verified AOVOPRO ES80 identity"))
-        #expect(!prepare.localizedCaseInsensitiveContains("durable scooter identity"))
-        #expect(!prepare.localizedCaseInsensitiveContains("permanent scooter identity"))
+        #expect(!makeExport.localizedCaseInsensitiveContains("verified AOVOPRO ES80 identity"))
+        #expect(!makeExport.localizedCaseInsensitiveContains("durable scooter identity"))
+        #expect(!makeExport.localizedCaseInsensitiveContains("permanent scooter identity"))
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
