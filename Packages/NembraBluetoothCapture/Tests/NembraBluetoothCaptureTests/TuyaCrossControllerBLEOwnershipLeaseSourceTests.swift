@@ -19,11 +19,8 @@ struct TuyaCrossControllerBLEOwnershipLeaseSourceTests {
         #expect(factory.contains("guard activePackageCorrelationOwner == lease else { return }"))
         #expect(factory.contains("activePackageCorrelationOwner = nil"))
 
-        let make = try section(
-            in: factory,
-            from: "static func make() -> OfficialTuyaDriver?",
-            to: "}\n}\n\n#if canImport(ThingSmartHomeKit)"
-        )
+        let makeStart = try #require(factory.range(of: "static func make() -> OfficialTuyaDriver?"))
+        let make = factory[makeStart.lowerBound...]
         let noPackageOwner = make.range(of: "guard activePackageCorrelationOwner == nil,")
         let retirePackageForever = make.range(of: "packageCorrelationRetiredForProcess = true")
         let driver = make.range(of: "return SmartLifeDriver()")
