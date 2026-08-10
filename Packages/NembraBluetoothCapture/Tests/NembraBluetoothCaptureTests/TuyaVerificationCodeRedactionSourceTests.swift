@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Tuya verification-code credential redaction source contract")
 struct TuyaVerificationCodeRedactionSourceTests {
-    @Test("login failures redact both account identity and submitted verification code")
+    @Test("both email and phone login failures redact account identity and submitted verification code")
     func loginFailureCannotEchoVerificationCode() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let authorizer = String(try section(
@@ -14,14 +14,28 @@ struct TuyaVerificationCodeRedactionSourceTests {
         ))
 
         #expect(authorizer.contains("let code = verificationCode.trimmingCharacters(in: .whitespacesAndNewlines)"))
-        #expect(authorizer.contains("finishLoginFailure(error, submittedIdentity: identity, submittedVerificationCode: code)"))
+
+        let forwardedFailure = "finishLoginFailure(error, submittedIdentity: identity, submittedVerificationCode: code)"
+        #expect(
+            authorizer.components(separatedBy: forwardedFailure).count - 1 == 2,
+            "both email and phone failure closures must forward the snapshotted verification code"
+        )
+
         #expect(authorizer.contains("private func finishLoginFailure(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String)"))
         #expect(authorizer.contains("Self.redactedError(error, submittedIdentity: submittedIdentity, submittedVerificationCode: submittedVerificationCode)"))
         #expect(authorizer.contains("private static func redactedError(_ error: Error?, submittedIdentity: String, submittedVerificationCode: String) -> String"))
-        #expect(authorizer.contains("with: \"<redacted-verification-code>\""))
+
+        let scrubber = String(try section(
+            in: authorizer,
+            from: "private static func redactedError(",
+            to: "\n    }\n}"
+        ))
+        #expect(scrubber.contains("let verificationCode = submittedVerificationCode.trimmingCharacters(in: .whitespacesAndNewlines)"))
+        #expect(scrubber.contains("of: verificationCode"))
+        #expect(scrubber.contains("with: \"<redacted-verification-code>\""))
     }
 
-    @Test("clearing the UI field does not erase the value needed for error scrubbing")
+    @Test("clearing the UI field does not erase the snapshot needed for error scrubbing")
     func loginFailureScrubsBeforeForgettingCredential() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let failure = String(try section(
