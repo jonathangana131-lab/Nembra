@@ -2333,8 +2333,8 @@ private struct SecureLinkView: View {
     }
 
     private var correlationDisplayedWindowOrdinal: Int {
-    test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)
-}
+        test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)
+    }
 
     private var correlationPanel: some View {
         panel {
