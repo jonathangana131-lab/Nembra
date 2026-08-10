@@ -1588,10 +1588,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
             // Redacting malformed keys can collapse two distinct SDK entries onto one key.
             // Preserve every admitted opaque value under a deterministic redaction-safe suffix.
-            var custodyKey = redactedKey
+            // `generation` is Nembra-owned event provenance. Preserve an opaque SDK
+            // field with the same spelling under an application namespace instead of
+            // allowing the trusted token stamp below to destroy admitted evidence.
+            let reservedCustodyKey = redactedKey == "generation"
+                ? "application.generation"
+                : redactedKey
+            var custodyKey = reservedCustodyKey
             var collisionOrdinal = 2
             while redacted[custodyKey] != nil {
-                custodyKey = "\(redactedKey)#\(collisionOrdinal)"
+                custodyKey = "\(reservedCustodyKey)#\(collisionOrdinal)"
                 collisionOrdinal += 1
             }
             redacted[custodyKey] = redactedValue
