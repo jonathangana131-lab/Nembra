@@ -470,6 +470,81 @@ private final class SecureLinkController: NSObject, ObservableObject {
         log("target_correlation_abandoned_on_view_exit")
     }
 
+    func appDidLoseForeground() {
+        // A sealed accepted artifact is immutable presentation/share authority. Do not mutate its
+        // accepted state merely because the app later becomes inactive.
+        guard phase != .accepted else { return }
+
+        // Foreground-only Capture evidence must revoke view/account authority before inspecting
+        // any transport state. Late membership/auth callbacks cannot start hidden radio work.
+        acceptsViewScopedMembershipRequests = false
+        sdkDeviceMembershipVerified = false
+        membershipAccountUID = nil
+        membershipDeviceID = nil
+        membershipStatus = "Capture left the foreground. Exact scooter membership must be verified again before another attempt."
+        membershipRequestID = UUID()
+        membershipBusy = false
+#if canImport(ThingSmartHomeKit)
+        membershipProbe = nil
+#endif
+        officialConnectionRequestID = UUID()
+        watchdog?.cancel()
+        watchdog = nil
+
+        if processCorrelationLease != nil || correlationSession != nil {
+            resetDiscoverySessionOnly()
+            phase = .failed
+            message = "Capture left the foreground during Bluetooth target correlation. Restart from OFF1; interrupted windows are never reusable evidence."
+            log("foreground_integrity_lost_during_target_correlation")
+            return
+        }
+
+        if phase == .correlated || phase == .selected {
+            resetDiscoverySessionOnly()
+            phase = .failed
+            message = "Capture left the foreground after target correlation. Restart from OFF1; correlated target authority cannot cross a foreground interruption."
+            log("foreground_integrity_lost_after_target_correlation")
+            return
+        }
+
+        if let token = currentConnectionToken {
+            let wasObserving = phase == .observing
+            phase = .failed
+            message = wasObserving
+                ? "Capture left the foreground during authenticated observation. Restart from OFF1; background time is not accepted evidence and no BLE disconnect is claimed."
+                : "Capture left the foreground before authenticated observation. Relaunch before another authenticated attempt; no BLE disconnect is claimed."
+            log(
+                wasObserving ? "foreground_integrity_lost_during_observation" : "foreground_integrity_lost_before_observation",
+                ["generation": String(token.diagnosticGeneration)]
+            )
+            Task { @MainActor [self] in
+                if wasObserving {
+                    await self.invalidateObservationContinuity(
+                        token: token,
+                        message: "App foreground integrity was lost during authenticated observation. Restart from OFF1; background time is not accepted evidence and no BLE disconnect is claimed.",
+                        kind: "foreground_integrity_lost_during_observation"
+                    )
+                } else {
+                    await self.invalidateInternalLifecycle(
+                        token: token,
+                        message: "App foreground integrity was lost before authenticated observation. Relaunch before another authenticated attempt; no BLE disconnect is claimed.",
+                        kind: "foreground_integrity_lost_before_observation"
+                    )
+                }
+            }
+            return
+        }
+
+        if phase == .authenticating {
+            localBLESettlementToken = nil
+            sdkLocalBLEOnline = false
+            driver = nil
+            phase = .failed
+            message = "Capture left the foreground during authentication. Relaunch before another authenticated attempt; no BLE disconnect is claimed."
+            log("foreground_integrity_lost_before_observation")
+        }
+    }
+
     var privateConfig: Bool { OfficialTuyaFactory.configured }
     var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }
     var fieldBuildIdentifier: String { buildIdentity.buildIdentifier }
@@ -2485,6 +2560,7 @@ private struct SecureLinkView: View {
     @StateObject private var sdkAccount = OfficialTuyaAccountAuthorizer()
     @State private var showEngineeringDetails = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.scenePhase) private var scenePhase
 
     private let stageLabels = ["Target", "Secure link", "Observe", "Seal"]
 
@@ -2538,6 +2614,14 @@ private struct SecureLinkView: View {
         }
         .onDisappear {
             test.abandonCorrelationForViewExit()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                test.activateMembershipRequestsForView()
+                if sdkAccount.loggedIn { test.verifySDKMembership() }
+            } else {
+                test.appDidLoseForeground()
+            }
         }
         .onChange(of: sdkAccount.loggedIn) { _, loggedIn in
             if loggedIn { test.verifySDKMembership() }
