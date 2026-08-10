@@ -35,27 +35,29 @@ jobs:
 
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           source = path.read_text()
-          old = '''                        try await sessionLedger.sealAcceptedObservation(for: token)
-                        guard self.buildIdentity.isAuthoritativeFieldBuild,
-                              self.accountIdentityLeaseIsAuthorized else {'''
-          new = '''                        try await sessionLedger.sealAcceptedObservation(for: token)
-                        self.sdkLocalBLEOnline = driver.isLocallyConnected(uuid: self.tuyaUUID)
-                        guard self.sdkLocalBLEOnline else {
-                            self.currentConnectionToken = nil
-                            self.localBLESettlementToken = nil
-                            self.driver = nil
-                            self.phase = .failed
-                            self.message = "Tuya local-BLE authority was no longer current after canonical acceptance sealed. Restart from OFF1; the sealed package chronology is diagnostic only."
-                            self.log("sdk_local_ble_lost_during_acceptance_seal", [
-                                "generation": String(token.diagnosticGeneration)
-                            ])
-                            return
-                        }
-                        guard self.buildIdentity.isAuthoritativeFieldBuild,
-                              self.accountIdentityLeaseIsAuthorized else {'''
-          if source.count(old) != 1:
-              raise SystemExit(f"expected exactly one repair anchor, found {source.count(old)}")
-          path.write_text(source.replace(old, new, 1))
+          marker = "try await sessionLedger.sealAcceptedObservation(for: token)"
+          if source.count(marker) != 1:
+              raise SystemExit(f"expected exactly one repair anchor, found {source.count(marker)}")
+          index = source.index(marker)
+          line_start = source.rfind("\n", 0, index) + 1
+          indent = source[line_start:index]
+          lines = [
+              marker,
+              "self.sdkLocalBLEOnline = driver.isLocallyConnected(uuid: self.tuyaUUID)",
+              "guard self.sdkLocalBLEOnline else {",
+              "    self.currentConnectionToken = nil",
+              "    self.localBLESettlementToken = nil",
+              "    self.driver = nil",
+              "    self.phase = .failed",
+              "    self.message = \"Tuya local-BLE authority was no longer current after canonical acceptance sealed. Restart from OFF1; the sealed package chronology is diagnostic only.\"",
+              "    self.log(\"sdk_local_ble_lost_during_acceptance_seal\", [",
+              "        \"generation\": String(token.diagnosticGeneration)",
+              "    ])",
+              "    return",
+              "}",
+          ]
+          replacement = ("\n" + indent).join(lines)
+          path.write_text(source.replace(marker, replacement, 1))
           PY
           git diff --check
 
@@ -70,12 +72,13 @@ jobs:
           start = source.index("private func startWatchdog")
           end = source.index("private func recordObservedTransportLoss", start)
           body = source[start:end]
-          seal = body.index("try await sessionLedger.sealAcceptedObservation(for: token)")
+          seal_text = "try await sessionLedger.sealAcceptedObservation(for: token)"
+          seal = body.index(seal_text)
           freeze = body.index("self.sealedAcceptedExport = self.makeExport(", seal)
           accepted = body.index("self.phase = .accepted", seal)
           recheck = body.index("driver.isLocallyConnected(uuid: self.tuyaUUID)", seal)
           segment = body[seal:freeze]
-          between = body[seal + len("try await sessionLedger.sealAcceptedObservation(for: token)"):recheck]
+          between = body[seal + len(seal_text):recheck]
 
           assert seal < recheck < freeze < accepted
           assert "self.sdkLocalBLEOnline" in segment
