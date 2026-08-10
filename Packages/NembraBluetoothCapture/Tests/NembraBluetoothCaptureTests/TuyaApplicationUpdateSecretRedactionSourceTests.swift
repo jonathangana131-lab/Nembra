@@ -20,6 +20,7 @@ struct TuyaApplicationUpdateSecretRedactionSourceTests {
         #expect(driver.contains("refreshtoken"))
         #expect(driver.contains("authkey"))
         #expect(driver.contains("seckey"))
+        #expect(driver.contains("sessionkey"))
         #expect(driver.contains("keyString.lowercased().filter"))
         #expect(driver.contains("$0.isLetter || $0.isNumber"))
         #expect(driver.contains("array.map(redactApplicationSecrets)"))
@@ -37,6 +38,11 @@ struct TuyaApplicationUpdateSecretRedactionSourceTests {
             from: "private func makeExport(exportedAt:",
             to: "func prepareExport()"
         ))
+        let prepareExport = String(try section(
+            in: source,
+            from: "func prepareExport()",
+            to: "private func abandonPackageCorrelation()"
+        ))
         let updates = String(try section(
             in: source,
             from: "private func receivedApplicationUpdate(",
@@ -44,6 +50,7 @@ struct TuyaApplicationUpdateSecretRedactionSourceTests {
         ))
 
         #expect(export.contains("secretsRedacted: true"))
+        #expect(prepareExport.contains("session key"))
         #expect(updates.contains("log(\"tuya_application_update\", update.merging(["))
     }
 

@@ -2157,6 +2157,7 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "refreshtoken",
         "authkey",
         "seckey",
+        "sessionkey",
     ]
 
     private static func redactApplicationSecrets(_ object: Any) -> Any {
