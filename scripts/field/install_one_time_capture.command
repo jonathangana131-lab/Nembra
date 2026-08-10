@@ -35,7 +35,7 @@ if ! /usr/bin/python3 -I "$PRIVATE_DEVICE_RUNNER" \
     --repository-root "$ROOT" >/dev/null; then
     die "The intended-device verification file failed private custody validation."
 fi
-DEVICE_UDID="$(/bin/cat -- "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE")"
+DEVICE_UDID="$(/bin/cat "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE")"
 [[ -n "$DEVICE_UDID" ]] || die "The validated intended-device file produced no identifier."
 say "Private intended-device admission validated"
 
