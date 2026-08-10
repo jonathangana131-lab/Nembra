@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 import SwiftUI
 
@@ -125,13 +126,7 @@ struct DashboardView: View {
                 DashboardSpeedInstrumentView(modePersonality: personality)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                // Mount the real signature instrument without inventing propulsion
-                // authority. Numeric/live construction remains sealed behind the
-                // package projection adapter; until that source boundary is wired,
-                // the Cockpit must say power is unavailable instead of borrowing
-                // VehicleState.powerWatts or a placeholder value.
-                NembraEnergyRailView(state: .unavailable)
-                    .frame(maxWidth: .infinity)
+                energyRailInstrument
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .layoutPriority(2)
@@ -139,6 +134,31 @@ struct DashboardView: View {
             contextRail(personality: personality)
                 .frame(width: 176)
         }
+    }
+
+    /// The Timeline owns only the display clock. Source receipts enter the package
+    /// runtime in `VehicleStore.apply`, never here. Reduced Motion pauses periodic
+    /// display ticks; parent semantic/source changes can still redraw accepted state.
+    private var energyRailInstrument: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: reduceMotion)) { _ in
+            NembraEnergyRailView(
+                state: energyRailVisualState(
+                    atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
+                )
+            )
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func energyRailVisualState(
+        atUptimeNanoseconds uptimeNanoseconds: UInt64
+    ) -> NembraEnergyRailVisualState {
+        guard let projection = vehicle.energyRailProjection(
+            atUptimeNanoseconds: uptimeNanoseconds
+        ) else {
+            return .unavailable
+        }
+        return NembraEnergyRailVisualState(projection: projection)
     }
 
     private func accessibilityCockpit(personality: DashboardModePersonality) -> some View {
