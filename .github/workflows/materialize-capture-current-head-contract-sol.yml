@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch:
-    name: Apply bounded Capture contract repair
+    name: Apply installer rendezvous repair
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -18,23 +18,22 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: recovery/v14-capture-current-head-contract-sol
-          fetch-depth: 2
+          fetch-depth: 0
 
-      - name: Prove exact predecessor and materializer-only delta
+      - name: Prove recovery lineage remains workflow-only
         shell: bash
         run: |
           set -euo pipefail
           expected='417dca6b0bc5cd6e7134768acbf5d46935070d22'
-          test "$(git rev-parse HEAD^)" = "$expected"
-          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/materialize-capture-current-head-contract-sol.yml'
+          test "$(git merge-base HEAD "$expected")" = "$expected"
+          test "$(git diff --name-only "$expected" HEAD)" = '.github/workflows/materialize-capture-current-head-contract-sol.yml'
 
-      - name: Apply narrow repair
+      - name: Apply installer procedure rendezvous
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           installer = Path('scripts/field/install_one_time_capture.command')
           text = installer.read_text()
           needle = 'PROCEDURE_ID="ES80-AUTHENTICATED-STATIONARY-v1"\nBUILD_LABEL="capture-v14-${SOURCE_SHA:0:12}"\n'
@@ -44,38 +43,18 @@ jobs:
           if 'say "Field procedure: $PROCEDURE_ID"' in text:
               raise SystemExit('installer already surfaces canonical procedure; refusing duplicate edit')
           installer.write_text(text.replace(needle, replacement, 1))
-
-          provenance = Path('.github/workflows/capture-field-build-provenance.yml')
-          workflow = provenance.read_text()
-          trigger = '      - Scripts/capture_tuya_private_input_provenance.py\n'
-          guard_trigger = '      - Scripts/capture_tuya_private_input_build_guard.py\n'
-          if workflow.count(trigger) != 1:
-              raise SystemExit('provenance trigger anchor changed; refusing broad edit')
-          if guard_trigger in workflow:
-              raise SystemExit('build-window guard already triggers provenance workflow; refusing duplicate edit')
-          provenance.write_text(workflow.replace(trigger, trigger + guard_trigger, 1))
-
-          Path('.github/workflows/materialize-capture-current-head-contract-sol.yml').unlink()
           PY
-
-      - name: Validate bounded source result
-        shell: bash
-        run: |
-          set -euo pipefail
           bash -n scripts/field/install_one_time_capture.command
           grep -Fq 'say "Field procedure: $PROCEDURE_ID"' scripts/field/install_one_time_capture.command
-          grep -Fq '      - Scripts/capture_tuya_private_input_build_guard.py' .github/workflows/capture-field-build-provenance.yml
           git diff --check
-          actual="$(git diff --name-only 417dca6b0bc5cd6e7134768acbf5d46935070d22 -- | sort)"
-          expected="$(printf '%s\n' '.github/workflows/capture-field-build-provenance.yml' 'scripts/field/install_one_time_capture.command' | sort)"
-          test "$actual" = "$expected"
+          test "$(git diff --name-only)" = 'scripts/field/install_one_time_capture.command'
 
-      - name: Commit repaired product bytes
+      - name: Commit installer repair
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'nembra-go-worker'
           git config user.email 'nembra-go-worker@users.noreply.github.com'
-          git add -A
-          git commit -m 'Capture: close procedure and provenance trigger rendezvous'
+          git add scripts/field/install_one_time_capture.command
+          git commit -m 'Capture: surface exact field procedure'
           git push origin HEAD:recovery/v14-capture-current-head-contract-sol
