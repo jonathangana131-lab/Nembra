@@ -1,0 +1,61 @@
+name: Materialize Capture Event Custody Post Await
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-event-custody-postawait-ba3a-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-event-custody-postawait-ba3a-sol
+          fetch-depth: 0
+
+      - name: Verify exact current-product anchor
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='ba3a1eeae36caca6dd84beaabd0f15f4f0b57925'
+          git merge-base --is-ancestor "$base" HEAD
+          changed="$(git diff --name-only "$base"...HEAD | sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/materialize-capture-event-custody-postawait-ba3a.yml' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift' \
+            'scripts/ci/materialize_capture_event_custody_postawait_ba3a.py' | sort)"
+          test "$changed" = "$expected"
+
+      - name: Materialize and validate custody repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/materialize_capture_event_custody_postawait_ba3a.py
+          python3 scripts/ci/materialize_capture_event_custody_postawait_ba3a.py
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+          git diff --check
+
+      - name: Publish clean two-path product delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-event-custody-postawait-ba3a.yml
+          rm scripts/ci/materialize_capture_event_custody_postawait_ba3a.py
+          rm -rf scripts/ci/__pycache__
+          git add -A
+          git diff --cached --check
+          changed="$(git diff --cached --name-only | sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/materialize-capture-event-custody-postawait-ba3a.yml' \
+            'NembraApp/App/NembraCaptureEntrypoint.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift' \
+            'scripts/ci/materialize_capture_event_custody_postawait_ba3a.py' | sort)"
+          test "$changed" = "$expected"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'Capture: fence post-await application event custody'
+          git push origin HEAD:fix/v14-capture-event-custody-postawait-ba3a-sol
