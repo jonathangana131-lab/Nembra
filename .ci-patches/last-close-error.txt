@@ -1,0 +1,23 @@
+/home/runner/work/Nembra/Nembra/.ci-patches/close-v14-stationary-product.py:185: SyntaxWarning: invalid escape sequence '\('
+  finish_replacement = '''    private func finishCorrelationSeries(_ result: PassiveBluetoothPowerCycleObservationResult) {
+/home/runner/work/Nembra/Nembra/.ci-patches/close-v14-stationary-product.py:297: SyntaxWarning: invalid escape sequence '\('
+  '''                let token = try await self.sessionLedger.beginConnection()
+/home/runner/work/Nembra/Nembra/.ci-patches/close-v14-stationary-product.py:315: SyntaxWarning: invalid escape sequence '\('
+  '''                } catch {
+/home/runner/work/Nembra/Nembra/.ci-patches/close-v14-stationary-product.py:322: SyntaxWarning: invalid escape sequence '\('
+  '''                } catch {
+/home/runner/work/Nembra/Nembra/.ci-patches/close-v14-stationary-product.py:385: SyntaxWarning: invalid escape sequence '\('
+  '''        guard currentConnectionToken == token else { return }
+/home/runner/work/Nembra/Nembra/.ci-patches/close-v14-stationary-product.py:399: SyntaxWarning: invalid escape sequence '\('
+  '''        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {
+/home/runner/work/Nembra/Nembra/.ci-patches/close-v14-stationary-product.py:408: SyntaxWarning: invalid escape sequence '\('
+  '''        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {
+/home/runner/work/Nembra/Nembra/.ci-patches/close-v14-stationary-product.py:491: SyntaxWarning: invalid escape sequence '\('
+  '''                    } catch {
+/home/runner/work/Nembra/Nembra/.ci-patches/close-v14-stationary-product.py:498: SyntaxWarning: invalid escape sequence '\('
+  '''                    } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.observationContinuityInvalidated {
+/home/runner/work/Nembra/Nembra/.ci-patches/close-v14-stationary-product.py:528: SyntaxWarning: invalid escape sequence '\('
+  '''                    do {
+/home/runner/work/Nembra/Nembra/.ci-patches/close-v14-stationary-product.py:552: SyntaxWarning: invalid escape sequence '\('
+  helpers = '''    private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken) async {
+membership revokes target promotion: expected one literal match, found 2
