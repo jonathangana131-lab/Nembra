@@ -23,10 +23,10 @@ The Simulator artifact above is software evidence only. It is **not** the signed
 
 The current accepted external pre-signing helper is also non-authorizing software tooling:
 
-- helper commit: `9b5bde849e6b8f6b76e2a15abb52d643e3616a7a`
+- helper commit: `cd44f4c8a7ecb3560fba81f624b71290b6236fc2`
 - helper path: `scripts/ci/es80_today_field_candidate_preflight.py`
-- helper blob: `fcc2243c005c5f6df2d2f5bd8b8c948e785f07d8`
-- exact focused QA run: `31340823325` — terminal success
+- helper blob: `229a91182795aee60f8f7a24744087bc33a74347`
+- exact focused QA run: `31348551871` — terminal success
 - helper authority on every report: `operator-pre-signing-readiness-not-field-authorization`
 - physical authorization on every report: `not-granted`
 
@@ -43,7 +43,7 @@ Therefore the operator must first establish and verify a clean detached checkout
 Have these available only on the private signing Mac:
 
 - Apple `TeamIdentifier` for the intended signing identity;
-- an existing valid Xcode export-options plist for that team/distribution method;
+- an existing valid Xcode export-options plist for that team/distribution method, at one absolute regular non-symlink path with no symlinked ancestor;
 - the intended iPhone's UDID, stored in one absolute mode-`0600` regular non-symlink file;
 - Xcode 27 and the intended iPhone 12 / iOS 27;
 - signing/provisioning credentials needed by Xcode.
@@ -139,13 +139,13 @@ Keep `NEMBRA_ALLOW_PROVISIONING_UPDATES=0` unless the private signing setup actu
 
 ## 3A. Run the accepted non-authorizing pre-signing preflight
 
-Do not run a moving `main` copy of the helper and do not copy the helper into the frozen source checkout. Materialize the exact accepted helper bytes from a separate local Nembra tooling repository that contains commit `9b5bde849e6b8f6b76e2a15abb52d643e3616a7a`, then run those bytes against the exact frozen `FIELD_SOURCE`.
+Do not run a moving `main` copy of the helper and do not copy the helper into the frozen source checkout. Materialize the exact accepted helper bytes from a separate local Nembra tooling repository that contains commit `cd44f4c8a7ecb3560fba81f624b71290b6236fc2`, then run those bytes against the exact frozen `FIELD_SOURCE`.
 
-The helper deliberately reads the private signing values from the environment and the intended-device value only from its mode-`0600` file. Its JSON report omits the TeamIdentifier, raw UDID, private input paths, export-options contents, and dirty-checkout text.
+The helper deliberately reads the private signing values from the environment and the intended-device value only from its mode-`0600` file. Its JSON report omits the TeamIdentifier, raw UDID, private input paths, export-options contents, and dirty-checkout text. It also fails closed unless the export-options plist is reached through one absolute non-symlink ancestor chain and is parsed from one stable opened regular-file descriptor.
 
 ```bash
-PREFLIGHT_COMMIT='9b5bde849e6b8f6b76e2a15abb52d643e3616a7a'
-PREFLIGHT_BLOB='fcc2243c005c5f6df2d2f5bd8b8c948e785f07d8'
+PREFLIGHT_COMMIT='cd44f4c8a7ecb3560fba81f624b71290b6236fc2'
+PREFLIGHT_BLOB='229a91182795aee60f8f7a24744087bc33a74347'
 TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
 PREFLIGHT_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-preflight.XXXXXX)"
 PREFLIGHT="$PREFLIGHT_DIR/es80_today_field_candidate_preflight.py"
@@ -253,6 +253,7 @@ Stop and preserve the exact blocker if any of these occurs:
 
 - the outer checkout is not exact clean detached `a0f4a33451f61411d6e0541f2e70edea5438342d`;
 - the pinned external preflight cannot be materialized exactly, exits nonzero, or does not report `READY_TO_INVOKE_SIGNED_FIELD_PRODUCER` for the exact frozen source;
+- the export-options plist path is not absolute, traverses a symlinked ancestor, names a symlink/non-regular/empty subject, cannot be parsed as a plist dictionary, or changes identity while the preflight parses it;
 - the producer reports any source, signing, provisioning, intended-device, export, inspection, or evidence failure;
 - more than one IPA is exported or the retained `NembraField.ipa` is missing;
 - the resulting evidence names a different source SHA, recipe, or build subject;
