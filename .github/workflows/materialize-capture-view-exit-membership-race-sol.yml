@@ -1,20 +1,20 @@
 name: Materialize Capture View Exit Membership Race
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - fix/v14-capture-view-exit-membership-race-sol
 
 permissions:
   contents: write
 
 jobs:
   materialize:
-    if: github.event.pull_request.head.ref == 'fix/v14-capture-view-exit-membership-race-sol'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: fix/v14-capture-view-exit-membership-race-sol
           fetch-depth: 0
           persist-credentials: true
 
@@ -102,12 +102,10 @@ jobs:
           set -euo pipefail
           parent='0693b471ed9ebc7756a78f1b9ed54fdf4d7f604c'
           rm .github/workflows/materialize-capture-view-exit-membership-race-sol.yml
-          git add NembraApp/App/NembraCaptureEntrypoint.swift \
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift
           git add -u .github/workflows/materialize-capture-view-exit-membership-race-sol.yml
           git diff --cached --check
-          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' \
-            commit -m 'fix(capture): cancel hidden correlation start on view exit'
+          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' commit -m 'fix(capture): cancel hidden correlation start on view exit'
           test "$(git diff --name-only "$parent" HEAD | sort)" = "$(printf '%s\n' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift' | sort)"
           git diff --check "$parent" HEAD
-          git push origin HEAD:${GITHUB_HEAD_REF}
+          git push origin HEAD:fix/v14-capture-view-exit-membership-race-sol
