@@ -1426,6 +1426,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
         guard sdkAccountLoggedIn,
               sdkDeviceMembershipVerified,
               accountIdentityLeaseIsAuthorized,
+              let membershipAccountUID,
+              !membershipAccountUID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let driver else {
             await invalidateSourceAuthority(
                 token: token,
@@ -1439,13 +1441,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        let exportSafeUpdate = Self.redactedApplicationEventDetails(update, accountUID: membershipAccountUID)
+
         applicationUpdateAdmissionsInFlight += 1
         defer { applicationUpdateAdmissionsInFlight -= 1 }
 
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            var eventDetails = redactedApplicationEventDetails(update)
+            var eventDetails = exportSafeUpdate
             eventDetails["generation"] = String(token.diagnosticGeneration)
             log("tuya_application_update", eventDetails)
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
@@ -1474,25 +1478,35 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
     }
 
-    private func redactedApplicationEventDetails(_ update: [String: String]) -> [String: String] {
-        guard let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !accountUID.isEmpty else {
-            return update
-        }
+    private static func redactedApplicationEventDetails(
+        _ update: [String: String],
+        accountUID: String
+    ) -> [String: String] {
+        let uid = accountUID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !uid.isEmpty else { return [:] }
 
+        let marker = "<redacted-account-uid>"
         var redacted: [String: String] = [:]
         redacted.reserveCapacity(update.count)
-        for (key, value) in update {
+        for key in update.keys.sorted() {
+            guard let value = update[key] else { continue }
             let redactedKey = key.replacingOccurrences(
-                of: accountUID,
-                with: "<redacted-account-uid>",
+                of: uid,
+                with: marker,
                 options: [.caseInsensitive, .literal]
             )
-            redacted[redactedKey] = value.replacingOccurrences(
-                of: accountUID,
-                with: "<redacted-account-uid>",
+            let safeValue = value.replacingOccurrences(
+                of: uid,
+                with: marker,
                 options: [.caseInsensitive, .literal]
             )
+            var safeKey = redactedKey
+            var collisionIndex = 2
+            while redacted[safeKey] != nil {
+                safeKey = "\(redactedKey)#\(collisionIndex)"
+                collisionIndex += 1
+            }
+            redacted[safeKey] = safeValue
         }
         return redacted
     }
