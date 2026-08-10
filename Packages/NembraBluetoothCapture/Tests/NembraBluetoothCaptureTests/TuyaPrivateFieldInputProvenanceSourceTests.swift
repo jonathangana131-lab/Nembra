@@ -36,7 +36,7 @@ struct TuyaPrivateFieldInputProvenanceSourceTests {
         }
         #expect(calls.count == 2)
 
-        let firstCall = try requiredIndex(of: "verify_private_tuya_inputs\n\nsay \"Building SDK-integrated Capture", in: installer)
+        let firstCall = try requiredIndex(of: "say \"Field procedure: $PROCEDURE_ID\"\nverify_private_tuya_inputs", in: installer)
         let build = try requiredIndex(of: "xcodebuild \\", in: installer)
         let secondCall = try requiredIndex(of: "\nverify_private_tuya_inputs\n[[ \"$(git rev-parse HEAD", in: installer)
         let appReadback = try requiredIndex(of: "APP_INFO_PLIST=\"$APP/Info.plist\"", in: installer)
