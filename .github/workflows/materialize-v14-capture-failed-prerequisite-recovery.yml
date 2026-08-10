@@ -1,0 +1,188 @@
+name: Materialize Capture failed prerequisite recovery
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-failed-prerequisite-recovery-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-failed-prerequisite-recovery-sol
+          fetch-depth: 0
+
+      - name: Guard exact product source
+        run: |
+          set -euo pipefail
+          test "$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)" = "b4fea4aa52bc38a1c14ba6b1e71a39216f6339f1"
+          test ! -e Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteActionabilitySourceTests.swift
+
+      - name: Route failed prerequisites to actionable product surfaces
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text()
+
+          old = '''        case .failed:
+              failurePanel
+          case .baseline, .scanning, .powerOn, .correlated:
+          '''
+          new = '''        case .failed:
+              if !test.fieldBuildIsAuthoritative || !test.privateConfig {
+                  VStack(spacing: 16) {
+                      failureRecoveryContextPanel
+                      preflightPanel
+                  }
+              } else if !sdkAccount.loggedIn || !test.sdkAccountLoggedIn {
+                  VStack(spacing: 16) {
+                      failureRecoveryContextPanel
+                      sdkAuthorizationPanel
+                  }
+              } else if !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized {
+                  VStack(spacing: 16) {
+                      failureRecoveryContextPanel
+                      preflightPanel
+                  }
+              } else {
+                  failurePanel
+              }
+          case .baseline, .scanning, .powerOn, .correlated:
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f"primary failed-state anchor changed: {text.count(old)} matches")
+          text = text.replace(old, new, 1)
+
+          marker = '''    private var failurePanel: some View {
+          '''
+          recovery = '''    private var failureRecoveryContextPanel: some View {
+              panel {
+                  VStack(alignment: .leading, spacing: 10) {
+                      Label("Capture paused", systemImage: "exclamationmark.circle")
+                          .font(.title2.bold())
+                          .foregroundStyle(.orange)
+                      Text(test.message)
+                          .foregroundStyle(.secondary)
+                          .fixedSize(horizontal: false, vertical: true)
+                      Text("Restore the missing prerequisite below. The failed attempt is not reused as evidence.")
+                          .font(.footnote)
+                          .foregroundStyle(.secondary)
+                  }
+              }
+          }
+
+          '''
+          if text.count(marker) != 1:
+              raise SystemExit(f"failure panel anchor changed: {text.count(marker)} matches")
+          text = text.replace(marker, recovery + marker, 1)
+          path.write_text(text)
+          PY
+
+      - name: Add actionability regression
+        run: |
+          cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteActionabilitySourceTests.swift <<'SWIFT'
+          import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Capture failed prerequisite actionability")
+          struct TuyaFailedPrerequisiteActionabilitySourceTests {
+              @Test("failed build account and membership prerequisites route back to their recovery surfaces")
+              func failedPrerequisitesRemainActionable() throws {
+                  let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let primary = try section(
+                      in: app,
+                      from: "private var primarySurface: some View",
+                      to: "private var preflightPanel: some View"
+                  )
+                  let body = String(primary)
+
+                  #expect(body.contains("case .failed:"))
+                  #expect(body.contains("!test.fieldBuildIsAuthoritative || !test.privateConfig"))
+                  #expect(body.contains("!sdkAccount.loggedIn || !test.sdkAccountLoggedIn"))
+                  #expect(body.contains("!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized"))
+                  #expect(body.contains("sdkAuthorizationPanel"))
+                  #expect(body.contains("preflightPanel"))
+                  #expect(body.contains("failureRecoveryContextPanel"))
+                  #expect(body.contains("failurePanel"))
+              }
+
+              @Test("recovery context preserves the exact blocker without promoting failed evidence")
+              func recoveryContextPreservesBlocker() throws {
+                  let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let recovery = try section(
+                      in: app,
+                      from: "private var failureRecoveryContextPanel: some View",
+                      to: "private var failurePanel: some View"
+                  )
+                  let body = String(recovery)
+
+                  #expect(body.contains("Text(test.message)"))
+                  #expect(body.contains("Restore the missing prerequisite below."))
+                  #expect(body.contains("The failed attempt is not reused as evidence."))
+              }
+
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let startRange = source.range(of: start),
+                        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+                      throw SourceContractError.sectionMissing
+                  }
+                  return source[startRange.lowerBound..<endRange.lowerBound]
+              }
+
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  let repositoryRoot = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+              }
+
+              private enum SourceContractError: Error { case sectionMissing }
+          }
+          SWIFT
+
+      - name: Verify product delta
+        run: |
+          set -euo pipefail
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          test = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteActionabilitySourceTests.swift").read_text()
+          required = [
+              "failureRecoveryContextPanel",
+              "!test.fieldBuildIsAuthoritative || !test.privateConfig",
+              "!sdkAccount.loggedIn || !test.sdkAccountLoggedIn",
+              "!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized",
+              "sdkAuthorizationPanel",
+              "The failed attempt is not reused as evidence.",
+          ]
+          missing = [needle for needle in required if needle not in app]
+          if missing:
+              raise SystemExit(f"missing product recovery contracts: {missing}")
+          if "failedPrerequisitesRemainActionable" not in test:
+              raise SystemExit("missing actionability regression")
+          PY
+
+      - name: Commit clean product repair
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-v14-capture-failed-prerequisite-recovery.yml
+          git add -A
+          git diff --cached --check
+          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" = 2
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(capture): make failed prerequisites actionable"
+          git push origin HEAD:fix/v14-capture-failed-prerequisite-recovery-sol
