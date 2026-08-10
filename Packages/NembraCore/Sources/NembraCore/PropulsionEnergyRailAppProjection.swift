@@ -52,6 +52,40 @@ public struct PropulsionEnergyRailAppProjection: Equatable, Sendable {
         self.scaleOrigin = scaleOrigin
         self.allowsLiveMotion = allowsLiveMotion
     }
+
+    /// Lowers a sealed LIVE/RETAINED package projection to RETAINED without
+    /// creating, re-dating, or relabeling an accepted measurement. This is used
+    /// when a stronger source-owned currentness boundary (for example an explicit
+    /// Simulator disconnect) demotes an exact already-accepted receipt before the
+    /// package freshness timeout would naturally expire.
+    ///
+    /// Because this operation can only remove authority/geometry/motion and keeps
+    /// the complete accepted receipt subject unchanged, it is safe for package
+    /// runtime composition but remains unavailable to app-side construction.
+    func retainedWithoutNewMeasurement() -> PropulsionEnergyRailAppProjection {
+        guard let acceptedMeasurement,
+              acceptedMeasurement.identity == identity,
+              acceptedMeasurement.watts.isFinite,
+              acceptedMeasurement.watts >= 0,
+              currentness != .unavailable else {
+            return self
+        }
+
+        return PropulsionEnergyRailAppProjection(
+            identity: identity,
+            currentness: .retained,
+            acceptedMeasurement: acceptedMeasurement,
+            accessibilityPresentation: .retained(
+                acceptedMeasurement: acceptedMeasurement
+            ),
+            displayWatts: acceptedMeasurement.watts,
+            railFraction: nil,
+            acceptedTargetFraction: nil,
+            acceptedPeakMarkerFraction: nil,
+            scaleOrigin: nil,
+            allowsLiveMotion: false
+        )
+    }
 }
 
 public extension PropulsionGaugeDisplayModel {
