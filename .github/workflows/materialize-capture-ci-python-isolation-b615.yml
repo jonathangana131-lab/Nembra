@@ -1,0 +1,139 @@
+name: Materialize Capture CI Python isolation on b615
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-ci-python-isolation-b615-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Isolate authority-bearing Python validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='b615375e12e43abc55e111deb5dc36f3790c7506'
+          materializer='.github/workflows/materialize-capture-ci-python-isolation-b615.yml'
+          producer='.github/workflows/capture-producer-custody-source.yml'
+          provenance='.github/workflows/capture-field-build-provenance.yml'
+          regression='scripts/ci/tests/test_capture_ci_python_isolation.py'
+
+          test "$(git rev-parse HEAD^)" = "$base"
+          test "$(git diff --name-only HEAD^ HEAD)" = "$materializer"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          producer = Path('.github/workflows/capture-producer-custody-source.yml')
+          text = producer.read_text(encoding='utf-8')
+          path_anchor = '      - scripts/ci/tests/test_xcode27_today_research_field_candidate.py\n'
+          if text.count(path_anchor) != 1:
+              raise SystemExit('producer path anchor drifted')
+          text = text.replace(
+              path_anchor,
+              path_anchor + '      - scripts/ci/tests/test_capture_ci_python_isolation.py\n',
+              1,
+          )
+          lines = []
+          converted = 0
+          for line in text.splitlines():
+              stripped = line.lstrip()
+              indent = line[:len(line)-len(stripped)]
+              if stripped.startswith('python3 '):
+                  line = indent + '/usr/bin/python3 -I ' + stripped[len('python3 '):]
+                  converted += 1
+              lines.append(line)
+          text = '\n'.join(lines) + '\n'
+          if converted < 8:
+              raise SystemExit(f'expected producer Python commands, converted {converted}')
+          run_anchor = '          /usr/bin/python3 -I scripts/ci/tests/test_xcode27_today_research_field_candidate.py\n'
+          if text.count(run_anchor) != 1:
+              raise SystemExit('producer run anchor drifted')
+          text = text.replace(
+              run_anchor,
+              run_anchor
+              + '          /usr/bin/python3 -I -m py_compile scripts/ci/tests/test_capture_ci_python_isolation.py\n'
+              + '          /usr/bin/python3 -I scripts/ci/tests/test_capture_ci_python_isolation.py\n',
+              1,
+          )
+          producer.write_text(text, encoding='utf-8')
+
+          provenance = Path('.github/workflows/capture-field-build-provenance.yml')
+          text = provenance.read_text(encoding='utf-8')
+          converted = 0
+          lines = []
+          for line in text.splitlines():
+              stripped = line.lstrip()
+              indent = line[:len(line)-len(stripped)]
+              if stripped.startswith('/usr/bin/python3 ') and not stripped.startswith('/usr/bin/python3 -I '):
+                  line = indent + '/usr/bin/python3 -I ' + stripped[len('/usr/bin/python3 '):]
+                  converted += 1
+              lines.append(line)
+          text = '\n'.join(lines) + '\n'
+          if converted < 4:
+              raise SystemExit(f'expected field-provenance Python commands, converted {converted}')
+          provenance.write_text(text, encoding='utf-8')
+          PY
+
+          cat > "$regression" <<'PY'
+          #!/usr/bin/env python3
+          from pathlib import Path
+          import re
+
+          ROOT = Path(__file__).resolve().parents[3]
+          PRODUCER = ROOT / '.github/workflows/capture-producer-custody-source.yml'
+          PROVENANCE = ROOT / '.github/workflows/capture-field-build-provenance.yml'
+
+          def python_commands(path: Path) -> list[str]:
+              commands = []
+              for raw in path.read_text(encoding='utf-8').splitlines():
+                  command = raw.strip()
+                  if command.startswith('python3 ') or command.startswith('/usr/bin/python3 '):
+                      commands.append(command)
+              return commands
+
+          for path in (PRODUCER, PROVENANCE):
+              commands = python_commands(path)
+              if not commands:
+                  raise SystemExit(f'expected Python validation commands in {path}')
+              for command in commands:
+                  if not re.match(r'^/usr/bin/python3\s+-I(?:\s|$)', command):
+                      raise SystemExit(f'unisolated Python validation command in {path}: {command}')
+
+          producer = PRODUCER.read_text(encoding='utf-8')
+          required = [
+              'scripts/ci/tests/test_capture_ci_python_isolation.py',
+              '/usr/bin/python3 -I -m py_compile scripts/ci/tests/test_capture_ci_python_isolation.py',
+              '/usr/bin/python3 -I scripts/ci/tests/test_capture_ci_python_isolation.py',
+          ]
+          for needle in required:
+              if needle not in producer:
+                  raise SystemExit(f'portable producer gate does not enforce CI Python isolation: {needle}')
+
+          print('capture CI authority Python isolation source contract: PASS')
+          PY
+
+          /usr/bin/python3 -I -m py_compile "$regression"
+          /usr/bin/python3 -I "$regression"
+          bash -n "$producer"
+          bash -n "$provenance"
+          git diff --check
+
+          rm "$materializer"
+          actual="$(git status --short | awk '{print $2}' | sort)"
+          expected="$(printf '%s\n%s\n%s\n%s\n' "$materializer" "$producer" "$provenance" "$regression" | sort)"
+          test "$actual" = "$expected"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'ci(capture): isolate Python acceptance authority'
+          git push origin HEAD:fix/v14-capture-ci-python-isolation-b615-sol
