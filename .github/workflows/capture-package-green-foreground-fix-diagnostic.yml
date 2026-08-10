@@ -1,0 +1,76 @@
+name: Capture Package Green Foreground Fix Diagnostic
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/capture-package-green-foreground-fix-diagnostic.yml'
+      - 'Packages/NembraBluetoothCapture/**'
+
+permissions:
+  contents: read
+
+jobs:
+  package-green:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify exact head
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          test -z "$(git status --porcelain)"
+
+      - name: Run complete Capture package and require green
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/capture-package-green-foreground-fix.log"
+          set +e
+          (cd Packages/NembraBluetoothCapture && swift test) 2>&1 | tee "$log"
+          status="${PIPESTATUS[0]}"
+          set -e
+          /usr/bin/python3 -I - "$log" "$status" <<'PY'
+          import re, sys
+          from collections import Counter
+          from pathlib import Path
+
+          lines = Path(sys.argv[1]).read_text(errors='replace').splitlines()
+          status = int(sys.argv[2])
+          files = Counter()
+          total = 0
+          for line in lines:
+              match = re.search(r'at ([A-Za-z0-9_]+\.swift):\d+:\d+:', line)
+              if match and ('recorded an issue' in line or 'Caught error' in line):
+                  files[match.group(1)] += 1
+                  total += 1
+
+          print(f'PACKAGE_GREEN_ISSUES {total}')
+          for name, count in files.most_common():
+              print(f'PACKAGE_ISSUES {count:3d} {name}')
+
+          if files['TuyaCaptureForegroundIntegritySourceTests.swift']:
+              print('::error::Corrected foreground-integrity contract is still red')
+              raise SystemExit(1)
+          if total != 0:
+              print(f'::error::Expected package green / 0 issue records; observed {total}')
+              raise SystemExit(1)
+          if status != 0:
+              print(f'::error::swift test exited {status} despite zero parsed issue records')
+              raise SystemExit(1)
+          PY
+
+      - name: Upload exact package-green log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: capture-package-green-foreground-fix-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/capture-package-green-foreground-fix.log
+          retention-days: 7
+          if-no-files-found: error
