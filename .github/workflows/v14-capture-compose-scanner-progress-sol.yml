@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   compose:
-    if: "${{ !startsWith(github.event.head_commit.message, 'app(capture): compose current scanner progress closure') }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,13 +17,13 @@ jobs:
           ref: agent/v14-capture-live-final-app-closure-sol
           fetch-depth: 0
 
-      - name: Apply reviewed scanner-progress donor without stale ancestry
+      - name: Apply reviewed scanner progress donor
         shell: bash
         run: |
           set -euo pipefail
           git cherry-pick --no-commit c039fcfc7e51e1e8853eee82093dc93ef801dbfd
 
-      - name: Repair current OFF1 generation custody and assert latest authority
+      - name: Repair current OFF1 generation custody
         shell: bash
         run: |
           set -euo pipefail
@@ -55,9 +54,16 @@ jobs:
 '''
           if old not in s:
               raise SystemExit('expected current OFF1 custody block not found')
-          s = s.replace(old, new, 1)
-          p.write_text(s)
+          p.write_text(s.replace(old, new, 1))
+          PY
 
+      - name: Assert current authority and parse
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
           required = [
               '@Published private(set) var correlationProgress: PassiveBluetoothPowerCycleObservationProgress?',
               'private var correlationProgressTask: Task<Void, Never>?',
@@ -70,7 +76,6 @@ jobs:
               'buildIdentity.isAuthoritativeFieldBuild',
               'fieldBuildIdentifier',
               'fieldBuildSourceCommitSHA',
-              'invalidateInternalLifecycle(',
               'markInternalLifecycleFailure(for: token)'
           ]
           forbidden = [
@@ -90,8 +95,7 @@ jobs:
           present = [x for x in forbidden if x in s]
           if missing or present:
               raise SystemExit(f'missing={missing}; forbidden={present}')
-
-          def function(marker):
+          def fn(marker):
               start = s.index(marker)
               opening = s.index('{', start + len(marker))
               depth = 0
@@ -101,37 +105,39 @@ jobs:
                       depth -= 1
                       if depth == 0: return s[start:i+1]
               raise RuntimeError(marker)
-
-          restart = function('private func beginCorrelationSeries()')
+          restart = fn('private func beginCorrelationSeries()')
           tail = restart[restart.index('currentConnectionToken == nil'):]
           terminal = tail[:tail.index('return') + len('return')]
           if 'invalidateInternalLifecycle' not in terminal or 'failLocally' in terminal:
-              raise SystemExit('OFF1 active-generation branch violates current custody contract')
-
+              raise SystemExit('OFF1 generation custody regression')
           authenticate = s[s.index('func authenticate()'):s.index('private func beginOfficialConnection')]
           for needle in ['self.phase == .selected', 'self.targetCorrelationOperatorConfirmed', 'self.selectedID == candidate.id']:
               if needle not in authenticate: raise SystemExit(f'async authority regression: {needle}')
           begin = s[s.index('private func beginOfficialConnection'):s.index('private func authenticated')]
           if 'guard phase == .selected else { return }' not in begin or 'phase == .selected || phase == .failed' in begin:
-              raise SystemExit('failed phase can start official connection')
+              raise SystemExit('failed phase connection-start regression')
+          print('current authority assertions: PASS')
           PY
           swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
           git diff --check
 
-      - name: Run focused portable source contracts
+      - name: Run focused Capture source contracts
         shell: bash
         run: |
           set -euo pipefail
-          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors \
-            --filter 'TuyaCorrelationProgressPresentationSourceTests|TuyaPackageOwnedCorrelationSingleScannerSourceTests|TuyaFieldBuildPresentationAuthoritySourceTests|TuyaAsyncAuthenticationStartAuthoritySourceTests|TuyaCorrelationRestartLifecycleSourceTests'
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors --filter TuyaCorrelationProgressPresentationSourceTests
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors --filter TuyaPackageOwnedCorrelationSingleScannerSourceTests
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors --filter TuyaFieldBuildPresentationAuthoritySourceTests
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors --filter TuyaAsyncAuthenticationStartAuthoritySourceTests
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors --filter TuyaCorrelationRestartLifecycleSourceTests
 
-      - name: Commit coherent current-head app closure
+      - name: Commit product and self retire runner
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "nembra-sol-worker"
           git config user.email "nembra-sol-worker@users.noreply.github.com"
+          git rm .github/workflows/v14-capture-compose-scanner-progress-sol.yml
           git add NembraApp/App/NembraCaptureEntrypoint.swift
-          git diff --cached --quiet && { echo 'No product diff produced'; exit 1; }
           git commit -m "app(capture): compose current scanner progress closure"
           git push origin HEAD:agent/v14-capture-live-final-app-closure-sol
