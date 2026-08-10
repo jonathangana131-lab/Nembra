@@ -3,6 +3,23 @@ from pathlib import Path
 PATH = Path("Scripts/capture_tuya_private_input_provenance.py")
 source = PATH.read_text()
 
+old_path_rendezvous = '''        if (
+            stat.S_ISLNK(current_path.st_mode)
+            or not stat.S_ISREG(current_path.st_mode)
+            or current_path.st_dev != after.st_dev
+            or current_path.st_ino != after.st_ino
+        ):
+'''
+new_path_rendezvous = '''        if (
+            stat.S_ISLNK(current_path.st_mode)
+            or not stat.S_ISREG(current_path.st_mode)
+            or _stat_identity(current_path) != _stat_identity(after)
+        ):
+'''
+if source.count(old_path_rendezvous) != 1:
+    raise SystemExit(f"expected one regressed pathname rendezvous, found {source.count(old_path_rendezvous)}")
+source = source.replace(old_path_rendezvous, new_path_rendezvous)
+
 tree_start = source.index("def _tree_identity_snapshot(")
 record_start = source.index("def _record_identity_snapshot(", tree_start)
 old_tree = source[tree_start:record_start]
@@ -117,7 +134,7 @@ new_record = '''def _record_identity_snapshot(
 source = source[:record_start] + new_record + source[build_start:]
 
 if "_stat_identity(current_path) != _stat_identity(after)" not in source:
-    raise SystemExit("full pathname identity rendezvous regressed")
+    raise SystemExit("full pathname identity rendezvous was not restored")
 if "record_snapshot_confirmed = _record_identity_snapshot" not in source:
     raise SystemExit("whole-record outer confirmation fence regressed")
 if old_tree == new_tree or old_record == new_record:
