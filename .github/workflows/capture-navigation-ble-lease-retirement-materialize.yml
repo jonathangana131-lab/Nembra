@@ -1,0 +1,53 @@
+name: Materialize Capture Navigation BLE Lease Retirement
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-navigation-ble-lease-retirement-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sol/v14-capture-navigation-ble-lease-retirement-sol
+          fetch-depth: 0
+
+      - name: Guard exact product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          product_parent='194197ed62ccd4f7880e314ff70e5e0229cddc30'
+          git merge-base --is-ancestor "$product_parent" HEAD
+          git diff --quiet "$product_parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+          test ! -e Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift
+
+      - name: Apply navigation retirement repair
+        run: python3 scripts/ci/materialize_capture_navigation_ble_lease_retirement.py apply
+
+      - name: Verify repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/materialize_capture_navigation_ble_lease_retirement.py verify
+          python3 -m py_compile scripts/ci/materialize_capture_navigation_ble_lease_retirement.py
+          git diff --check
+
+      - name: Publish clean product bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-navigation-ble-lease-retirement-materialize.yml
+          rm scripts/ci/materialize_capture_navigation_ble_lease_retirement.py
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(capture): retire BLE correlation on view exit"
+          git push origin HEAD:sol/v14-capture-navigation-ble-lease-retirement-sol
