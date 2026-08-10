@@ -12,6 +12,11 @@ struct TuyaApplicationAccountUIDExportCustodySourceTests {
             from: "private func receivedApplicationUpdate(",
             to: "private func startWatchdog"
         ))
+        let uidRedaction = String(try section(
+            in: source,
+            from: "private func redactAccountUIDFromApplicationDetails(",
+            to: "private func startWatchdog"
+        ))
         let prepareExport = String(try section(
             in: source,
             from: "func prepareExport()",
@@ -21,6 +26,21 @@ struct TuyaApplicationAccountUIDExportCustodySourceTests {
         #expect(prepareExport.contains("No account UID"))
         #expect(source.contains("<redacted-account-uid>"))
         #expect(!updateAdmission.contains("log(\"tuya_application_update\", update.merging(["))
+
+        // Custody binds to the exact membership UID admitted with the same account lease.
+        // The snapshot survives the actor hop so a re-entrant account change cannot make the
+        // redactor fall back to raw application evidence before event custody.
+        #expect(updateAdmission.contains("let admittedAccountUID = membershipAccountUID?.trimmingCharacters"))
+        #expect(updateAdmission.contains("membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) == admittedAccountUID"))
+        #expect(updateAdmission.contains("accountUID: admittedAccountUID"))
+
+        // Scrub the exact UID from both malformed keys and values. If redaction makes two keys
+        // collide, preserve both sanitized values instead of silently dropping one.
+        #expect(uidRedaction.contains("of: exactAccountUID"))
+        #expect(uidRedaction.contains("with: \"<redacted-account-uid>\""))
+        #expect(uidRedaction.contains("let baseKey = redacted(key)"))
+        #expect(uidRedaction.contains("while sanitized[admittedKey] != nil"))
+        #expect(uidRedaction.contains("sanitized[admittedKey] = redacted(value)"))
     }
 
     @Test("account UID custody is value-bound rather than a blanket generic uid-key rule")
