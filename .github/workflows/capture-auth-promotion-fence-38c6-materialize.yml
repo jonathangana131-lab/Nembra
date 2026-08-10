@@ -1,0 +1,59 @@
+name: Materialize Capture Auth Promotion Fence 38c6
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-auth-promotion-fence-38c6
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sol/v14-capture-auth-promotion-fence-38c6
+          fetch-depth: 0
+
+      - name: Guard exact construction parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='38c69bcf6660f42468c954a9196f35d3bdff2680'
+          test "$(git merge-base "$parent" HEAD)" = "$parent"
+          git diff --quiet "$parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticationPromotionReentrancySourceTests.swift
+
+      - name: Apply and verify post-await authority fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/materialize_capture_auth_promotion_fence_38c6.py apply
+          python3 scripts/ci/materialize_capture_auth_promotion_fence_38c6.py verify
+          python3 -m py_compile scripts/ci/materialize_capture_auth_promotion_fence_38c6.py
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticationPromotionReentrancySourceTests.swift
+          git diff --check
+
+      - name: Publish clean two-path repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='38c69bcf6660f42468c954a9196f35d3bdff2680'
+          rm .github/workflows/capture-auth-promotion-fence-38c6-materialize.yml
+          rm scripts/ci/materialize_capture_auth_promotion_fence_38c6.py
+          git add -A
+          changed="$(git diff --cached "$parent" --name-only | sort)"
+          expected="$(printf '%s\n' \
+            'NembraApp/App/NembraCaptureEntrypoint.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticationPromotionReentrancySourceTests.swift' | sort)"
+          test "$changed" = "$expected"
+          git diff --cached "$parent" --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): fence authenticated promotion after actor suspension'
+          git push origin HEAD:sol/v14-capture-auth-promotion-fence-38c6
