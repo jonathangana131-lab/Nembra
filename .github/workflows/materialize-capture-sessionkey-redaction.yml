@@ -1,4 +1,4 @@
-name: Materialize Capture Session-Key Redaction
+name: Materialize Capture Session Key Redaction
 
 on:
   push:
@@ -17,97 +17,28 @@ jobs:
         with:
           ref: sol/v14-capture-sessionkey-redaction-3f269-20260810
           fetch-depth: 0
-
-      - name: Apply session-key custody correction
-        shell: bash
+      - name: Guard source scope
         run: |
           set -euo pipefail
-          parent='3f26906d68c6d886fa5c19a3349f7c538e5392a6'
+          parent=3f26906d68c6d886fa5c19a3349f7c538e5392a6
           test "$(git merge-base "$parent" HEAD)" = "$parent"
           git diff --quiet "$parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
           git diff --quiet "$parent" HEAD -- Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationUpdateSecretRedactionSourceTests.swift
-          python3 - <<'PY'
-          from pathlib import Path
-          app=Path('NembraApp/App/NembraCaptureEntrypoint.swift')
-          s=app.read_text()
-          old='''        "authkey",
-        "seckey",
-    ]
-'''
-          new='''        "authkey",
-        "seckey",
-        "sessionkey",
-    ]
-'''
-          if s.count(old) != 1:
-              raise SystemExit(f'expected one application secret fragment list, found {s.count(old)}')
-          app.write_text(s.replace(old,new,1))
-
-          test=Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationUpdateSecretRedactionSourceTests.swift')
-          t=test.read_text()
-          secret_anchor='        #expect(driver.contains("seckey"))\n'
-          if t.count(secret_anchor) != 1:
-              raise SystemExit('secret fragment assertion anchor changed')
-          t=t.replace(secret_anchor, secret_anchor + '        #expect(driver.contains("sessionkey"))\n', 1)
-          old_export='''        let updates = String(try section(
-            in: source,
-            from: "private func receivedApplicationUpdate(",
-            to: "private func startWatchdog"
-        ))
-
-        #expect(export.contains("secretsRedacted: true"))
-        #expect(updates.contains("log(\\\"tuya_application_update\\\", update.merging(["))
-'''
-          new_export='''        let prepareExport = String(try section(
-            in: source,
-            from: "func prepareExport()",
-            to: "private func abandonPackageCorrelation()"
-        ))
-        let updates = String(try section(
-            in: source,
-            from: "private func receivedApplicationUpdate(",
-            to: "private func startWatchdog"
-        ))
-
-        #expect(export.contains("secretsRedacted: true"))
-        #expect(prepareExport.contains("session key"))
-        #expect(updates.contains("log(\\\"tuya_application_update\\\", update.merging(["))
-'''
-          if t.count(old_export) != 1:
-              raise SystemExit('export redaction coupling block changed')
-          test.write_text(t.replace(old_export,new_export,1))
-          PY
-
-      - name: Verify source contract
-        shell: bash
+      - name: Apply correction
+        run: python3 scripts/ci/materialize_capture_sessionkey_redaction.py apply
+      - name: Verify correction
         run: |
           set -euo pipefail
-          app='NembraApp/App/NembraCaptureEntrypoint.swift'
-          test_file='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationUpdateSecretRedactionSourceTests.swift'
-          swiftc -parse "$app"
-          swiftc -parse "$test_file"
-          grep -Fq '"sessionkey"' "$app"
-          grep -Fq '#expect(driver.contains("sessionkey"))' "$test_file"
-          grep -Fq '#expect(prepareExport.contains("session key"))' "$test_file"
-          python3 - <<'PY'
-          from pathlib import Path
-          s=Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
-          a=s.index('@MainActor\nprivate final class SmartLifeDriver')
-          b=s.index('#endif\n\nprivate enum AppleAccountAuthorizationError',a)
-          d=s[a:b]
-          assert '"sessionkey"' in d
-          assert 'String(describing: Self.redactApplicationSecrets(value))' in d
-          assert 'onApplicationUpdate?(sanitized)' in d
-          assert d.index('String(describing: Self.redactApplicationSecrets(value))') < d.index('onApplicationUpdate?(sanitized)')
-          assert 'sanitized[String(describing: key)] = String(describing: value)' not in d
-          PY
+          python3 scripts/ci/materialize_capture_sessionkey_redaction.py verify
+          python3 -m py_compile scripts/ci/materialize_capture_sessionkey_redaction.py
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationUpdateSecretRedactionSourceTests.swift
           git diff --check
-
-      - name: Publish clean two-path correction
-        shell: bash
+      - name: Publish clean product checkpoint
         run: |
           set -euo pipefail
           rm .github/workflows/materialize-capture-sessionkey-redaction.yml
+          rm scripts/ci/materialize_capture_sessionkey_redaction.py
           git add -A
           git diff --cached --check
           git config user.name github-actions[bot]
