@@ -1,0 +1,102 @@
+name: Temporary apply Capture async invalidation repair
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-async-invalidation-live-gpt56sol2
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-async-invalidation-live-gpt56sol2
+          fetch-depth: 0
+
+      - name: Apply exact fail-closed lifecycle repair
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text()
+
+          if "func consumeCorrelationAsyncInvalidation()" in text:
+              raise SystemExit("repair already present; refusing duplicate edit")
+
+          marker = "    var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }\n\n    var correlationWindowLabel: String {"
+          replacement = """    var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }
+
+    func consumeCorrelationAsyncInvalidation() {
+        guard phase == .baseline || phase == .scanning,
+              correlationProgress?.isSeriesInvalidated == true else { return }
+
+        // The package has already retired this invalid observation-series authority.
+        // Releasing only the app reference before the existing local failure path creates
+        // no new receipt, candidate authority, timestamp, BLE fact, or physical claim.
+        correlationSession = nil
+        failLocally(
+            "Bluetooth correlation ended before this window could be sealed. Restart from OFF1; no target evidence was promoted.",
+            "target_correlation_async_invalidated"
+        )
+    }
+
+    var correlationWindowLabel: String {"""
+          if text.count(marker) != 1:
+              raise SystemExit(f"controller insertion guard failed: {text.count(marker)} matches")
+          text = text.replace(marker, replacement, 1)
+
+          view_marker = "            .background(Color.black.ignoresSafeArea())\n        }\n        .navigationTitle(\"Secure Link\")"
+          view_replacement = """            .background(Color.black.ignoresSafeArea())
+            .onChange(of: test.correlationProgress?.isSeriesInvalidated) { _, invalidated in
+                if invalidated == true {
+                    test.consumeCorrelationAsyncInvalidation()
+                }
+            }
+        }
+        .navigationTitle("Secure Link")"""
+          if text.count(view_marker) != 1:
+              raise SystemExit(f"view insertion guard failed: {text.count(view_marker)} matches")
+          text = text.replace(view_marker, view_replacement, 1)
+
+          required = [
+              "func consumeCorrelationAsyncInvalidation()",
+              "correlationProgress?.isSeriesInvalidated == true",
+              "correlationSession = nil",
+              '"target_correlation_async_invalidated"',
+              "Restart from OFF1",
+              ".onChange(of: test.correlationProgress?.isSeriesInvalidated)",
+              "test.consumeCorrelationAsyncInvalidation()",
+          ]
+          for token in required:
+              if token not in text:
+                  raise SystemExit(f"missing repaired contract token: {token}")
+
+          forbidden = [
+              "correlationProgressTask",
+              "Task.sleep(for: .milliseconds(100))",
+          ]
+          for token in forbidden:
+              if token in text:
+                  raise SystemExit(f"forbidden second polling authority present: {token}")
+
+          path.write_text(text)
+
+      - name: Commit production-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git rm .github/workflows/_temp_apply_async_invalidation_gpt56.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git diff --cached --check
+          git diff --cached -- NembraApp/App/NembraCaptureEntrypoint.swift
+          git commit -m "fix(capture): consume async correlation invalidation"
+          git push origin HEAD:fix/v14-capture-async-invalidation-live-gpt56sol2
