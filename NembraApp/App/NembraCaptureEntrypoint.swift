@@ -2345,7 +2345,7 @@ private struct SecureLinkView: View {
                             .font(.title2.bold())
                     }
                     Spacer()
-                    Text("\(min(test.correlationCompletedWindowCount + 1, 4))/4")
+                    Text("\(correlationDisplayedWindowOrdinal)/4")
                         .font(.title3.monospacedDigit().bold())
                         .foregroundStyle(.secondary)
                 }
@@ -2717,6 +2717,9 @@ private struct SecureLinkView: View {
         case .observing: return 2
         case .accepted: return 3
         }
+    }
+    private var correlationDisplayedWindowOrdinal: Int {
+        test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)
     }
 
     private var phaseKicker: String {
