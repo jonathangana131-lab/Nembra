@@ -1,0 +1,23 @@
+name: Capture per-window BLE ownership materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-per-window-tuya-ownership-sol3
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: true
+      - name: Materialize exact current-product repair
+        shell: bash
+        run: scripts/ci/materialize_capture_per_window_ownership.sh
