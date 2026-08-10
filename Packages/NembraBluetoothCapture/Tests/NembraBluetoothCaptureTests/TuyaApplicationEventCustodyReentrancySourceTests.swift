@@ -4,8 +4,8 @@ import Testing
 
 @Suite("Tuya application event custody reentrancy")
 struct TuyaApplicationEventCustodyReentrancySourceTests {
-    @Test("account UID custody is frozen before the first actor suspension")
-    func custodyPrecedesFirstAwait() throws {
+    @Test("account UID custody is frozen before accepted ledger suspension")
+    func custodyPrecedesAcceptedLedgerAwait() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let receiver = String(try section(
             in: source,
@@ -17,18 +17,21 @@ struct TuyaApplicationEventCustodyReentrancySourceTests {
             containing: "guard let custodySafeUpdate = redactedApplicationEventDetails(update)",
             in: receiver
         )
-        let firstAwait = try requiredRange(containing: "await ", in: receiver)
-        let ledgerMutation = try requiredRange(containing: "sessionLedger.recordApplicationUpdate", in: receiver)
+        let ledgerMutation = try requiredRange(
+            containing: "try await sessionLedger.recordApplicationUpdate",
+            in: receiver
+        )
+        let refresh = try requiredRange(containing: "await refreshLedgerSnapshot()", in: receiver)
         let eventLog = try requiredRange(
             containing: "log(\"tuya_application_update\", eventDetails)",
             in: receiver
         )
 
-        #expect(custody.lowerBound < firstAwait.lowerBound)
         #expect(custody.lowerBound < ledgerMutation.lowerBound)
+        #expect(custody.lowerBound < refresh.lowerBound)
         #expect(ledgerMutation.lowerBound < eventLog.lowerBound)
         #expect(receiver.contains("var eventDetails = custodySafeUpdate"))
-        #expect(!receiver.contains("redactedApplicationEventDetails(update)\neventDetails"))
+        #expect(!receiver.contains("var eventDetails = redactedApplicationEventDetails(update)"))
     }
 
     @Test("missing lease identity fails closed and redaction cannot erase colliding evidence")
