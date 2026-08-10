@@ -199,7 +199,18 @@ struct DashboardView: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
-        .accessibilityValue(retained && value != "—" ? "Last known \(value)" : value)
+        .accessibilityValue(compactMetricAccessibilityValue(title: title, value: value, warning: warning, retained: retained))
+    }
+
+    private func compactMetricAccessibilityValue(
+        title: String,
+        value: String,
+        warning: Bool,
+        retained: Bool
+    ) -> String {
+        if retained, value != "—" { return "Last known \(value)" }
+        if warning, value != "—" { return "\(title) low, \(value)" }
+        return value
     }
 
     @ViewBuilder
@@ -298,7 +309,7 @@ struct DashboardView: View {
         .frame(minWidth: 44, minHeight: 44, alignment: .leading)
         .sensoryFeedback(.selection, trigger: batteryReadout)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(batteryReadout == .charge ? "Battery" : "Estimated range")
+        .accessibilityLabel(batteryReadout == .charge ? "Battery" : "Learned range")
         .accessibilityValue(batteryAccessibilityValue)
         .accessibilityHint("Double tap to switch between battery charge and range. Range remains unavailable until Nembra has verified battery evidence and a learned range model.")
         .accessibilityIdentifier("dashboard.battery-range")
@@ -610,6 +621,9 @@ struct DashboardView: View {
         case .charge:
             if isRetainedBatteryData, batteryPercent != nil {
                 return "Last known \(batteryText)"
+            }
+            if batteryInstrumentWarning {
+                return "Low battery, \(batteryText)"
             }
             if batteryPercent == nil {
                 return "Unavailable until battery evidence is display-authoritative"
