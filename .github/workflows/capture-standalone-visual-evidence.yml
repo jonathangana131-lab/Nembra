@@ -44,14 +44,14 @@ jobs:
           bash -n scripts/ci/capture_standalone_visual_evidence.sh
           /usr/bin/python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
           grep -Fq 'static let fieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"' NembraApp/App/NembraCaptureBuildIdentity.swift
+          grep -Fq 'tuyaDependencyLockSHA256.count == 64' NembraApp/App/NembraCaptureBuildIdentity.swift
           grep -Fq 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier' NembraApp/App/NembraCaptureEntrypoint.swift
           grep -Fq 'schemaVersion: 10' NembraApp/App/NembraCaptureEntrypoint.swift
 
-      - name: Build exact stamped standalone Capture app
+      - name: Build exact stamped public-unprovisioned Capture app
         shell: bash
         run: |
           set -euo pipefail
-          dependency_sha='abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'
           label="capture-v14-${NEMBRA_VISUAL_SOURCE_SHA:0:12}"
           rm -rf /tmp/NembraCaptureProvenanceDerived
           xcodebuild \
@@ -64,14 +64,15 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
             NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$NEMBRA_VISUAL_SOURCE_SHA" \
-            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$dependency_sha" \
+            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="" \
             build
 
           plist='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
           test -f "$plist"
           test "$(/usr/bin/plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
           test "$(/usr/bin/plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$NEMBRA_VISUAL_SOURCE_SHA"
-          test "$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist")" = "$dependency_sha"
+          embedded_dependency="$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist" 2>/dev/null || true)"
+          test -z "$embedded_dependency"
 
       - name: Capture real standalone fail-closed presentation
         shell: bash
@@ -81,8 +82,27 @@ jobs:
           ARTIFACTS_DIR="$RUNNER_TEMP/NembraCaptureStandaloneVisualEvidence" \
             scripts/ci/capture_standalone_visual_evidence.sh
           test "$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')" = "$NEMBRA_VISUAL_SOURCE_SHA"
-          test -s "$RUNNER_TEMP/NembraCaptureStandaloneVisualEvidence/NembraCaptureStandaloneVisualEvidence.json"
-          test -s "$RUNNER_TEMP/NembraCaptureStandaloneVisualEvidence/screenshots/standalone-unprovisioned-dark-iphone12.png"
+          manifest="$RUNNER_TEMP/NembraCaptureStandaloneVisualEvidence/NembraCaptureStandaloneVisualEvidence.json"
+          screenshot="$RUNNER_TEMP/NembraCaptureStandaloneVisualEvidence/screenshots/standalone-unprovisioned-dark-iphone12.png"
+          test -s "$manifest"
+          test -s "$screenshot"
+          /usr/bin/python3 - "$manifest" "$NEMBRA_VISUAL_SOURCE_SHA" <<'PY'
+          import json, sys
+          path, expected_sha = sys.argv[1:]
+          with open(path, encoding="utf-8") as handle:
+              record = json.load(handle)
+          assert record["sourceCommitSHA"] == expected_sha
+          assert record["baselineDevice"] == "iPhone 12"
+          assert record["baselineOS"] == "iOS 27"
+          assert record["procedureIdentifier"] == "ES80-AUTHENTICATED-STATIONARY-v1"
+          assert record["tuyaDependencyLockSHA256"] == ""
+          assert record["tuyaDependencyProvenanceClass"] == "deliberately-absent-public-ci"
+          assert record["expectedFieldBuildAuthority"] is False
+          assert record["syntheticAuthorityEnvironmentRejected"] is True
+          assert record["visualAcceptanceRequiresHumanReview"] is True
+          assert record["physicalAuthorityCreated"] is False
+          assert record["protocolAuthorityCreated"] is False
+          PY
 
       - name: Upload standalone Capture visual evidence
         uses: actions/upload-artifact@v4
