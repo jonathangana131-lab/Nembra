@@ -2468,14 +2468,14 @@ private struct SecureLinkView: View {
                     Text(authorityReady ? "Ready to find this scooter" : "Prove the field setup")
                         .font(.title2.bold())
                     Text(authorityReady
-                         ? "The next step is passive Bluetooth correlation. Keep the scooter stationary and begin with it powered off."
-                         : "Capture stays locked until the exact field build, Tuya SDK session, and this scooter's current account membership are all proven.")
+                         ? "Next, Nembra will match this scooter by its OFF → ON → OFF → ON signal pattern. Keep the scooter stationary and begin with it powered off."
+                         : "Capture stays locked until this Capture build, your Tuya account, and this scooter in that account are all confirmed.")
                         .foregroundStyle(.secondary)
                 }
 
                 VStack(spacing: 12) {
-                    requirementRow("Exact field build", ready: test.fieldBuildIsAuthoritative)
-                    requirementRow("Official Tuya SDK", ready: test.privateConfig)
+                    requirementRow("Capture build", ready: test.fieldBuildIsAuthoritative)
+                    requirementRow("Tuya secure service", ready: test.privateConfig)
                     requirementRow("Tuya account", ready: test.sdkAccountLoggedIn)
                     requirementRow("This scooter in account", ready: test.sdkDeviceMembershipVerified && test.accountIdentityLeaseIsAuthorized)
                 }
@@ -2514,7 +2514,7 @@ private struct SecureLinkView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
-                    .accessibilityHint("Starts the first passive Bluetooth correlation window.")
+                    .accessibilityHint("Starts the first read-only signal check with the scooter powered off.")
                 }
             }
         }
@@ -2543,7 +2543,7 @@ private struct SecureLinkView: View {
                 }
 
                 if test.phase == .correlated {
-                    Text("One Bluetooth target repeated through the full OFF → ON → OFF → ON pattern. Confirm it for this attempt before Tuya takes over the secure link.")
+                    Text("One nearby signal repeated through the full OFF → ON → OFF → ON pattern. Confirm this signal for the current attempt before Nembra opens the secure read-only link.")
                         .foregroundStyle(.secondary)
                     Button {
                         test.confirmCorrelatedTarget()
@@ -2589,10 +2589,10 @@ private struct SecureLinkView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .disabled(!test.correlationWindowIsScanning)
-                    .accessibilityHint("Finishes only when the package-owned scan window has earned its required evidence duration.")
+                    .accessibilityHint("Finishes only after this read-only signal check has run long enough to be valid.")
                 }
 
-                Text("Historical UUID, name, RSSI, FD50, and Tuya hints never authorize the target.")
+                Text("Only the full OFF → ON → OFF → ON pattern can authorize the nearby signal for this attempt.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -2607,9 +2607,9 @@ private struct SecureLinkView: View {
                         .font(.caption2.bold())
                         .tracking(1.2)
                         .foregroundStyle(.cyan)
-                    Text("Target confirmed")
+                    Text("Scooter signal confirmed")
                         .font(.title2.bold())
-                    Text("Tuya can now become the sole Bluetooth owner. Capture remains read-only. No DP query or scooter command is authorized by this surface.")
+                    Text("Nembra can now open the secure Tuya link. Capture stays read-only and cannot send scooter commands.")
                         .foregroundStyle(.secondary)
 
                     Button {
@@ -2626,7 +2626,7 @@ private struct SecureLinkView: View {
                         .controlSize(.large)
                     Text("Establishing secure link")
                         .font(.title2.bold())
-                    Text("Tuya owns Bluetooth now. Capture is waiting for the supported local session to become current.")
+                    Text("Tuya owns the secure Bluetooth link now. Capture is waiting for this scooter's current read-only session.")
                         .foregroundStyle(.secondary)
                 } else {
                     Text("OBSERVE")
@@ -2635,13 +2635,13 @@ private struct SecureLinkView: View {
                         .foregroundStyle(.cyan)
                     Text("Hold steady")
                         .font(.title2.bold())
-                    Text("Keep Capture in the foreground and leave the scooter untouched while the accepted observation horizon is earned.")
+                    Text("Keep Capture in the foreground and leave the scooter untouched until this read-only observation is complete.")
                         .foregroundStyle(.secondary)
 
                     let age = test.canonicalObservedAgeSeconds ?? 0
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Text("Authenticated observation")
+                            Text("Read-only observation")
                                 .font(.subheadline.weight(.semibold))
                             Spacer()
                             Text("\(Int(min(age, 45))) / 45 s")
@@ -2665,7 +2665,7 @@ private struct SecureLinkView: View {
                 Text(test.message)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Restore the missing prerequisite below. The failed attempt is not reused as evidence.")
+                Text("Restore the missing requirement below. This stopped attempt will not be reused.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -2683,7 +2683,7 @@ private struct SecureLinkView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 if test.canRestartFromFreshOFF1 {
-                    Text("Nothing was promoted after the blocker. Re-establish the required field authority, then begin a fresh OFF1 attempt.")
+                    Text("Nothing from the stopped attempt will carry forward. Restore the required setup, then begin again with the scooter powered off.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Button {
@@ -2698,7 +2698,7 @@ private struct SecureLinkView: View {
                 } else {
                     Label("Relaunch Capture before another attempt", systemImage: "arrow.clockwise.circle")
                         .font(.headline)
-                    Text("The prior session generation was not proven retired in-process, so Capture will not offer an OFF1 restart here.")
+                    Text("The previous secure session did not fully close inside the app, so Capture will not start another attempt until you relaunch.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -2962,7 +2962,7 @@ private struct SecureLinkView: View {
         switch test.phase {
         case .accepted: return "SEALED"
         case .failed: return "STOPPED SAFELY"
-        case .baseline, .scanning, .powerOn, .correlated: return "TARGET CORRELATION"
+        case .baseline, .scanning, .powerOn, .correlated: return "FIND SCOOTER"
         case .selected, .authenticating: return "SECURE LINK"
         case .observing: return "OBSERVATION"
         default: return "PREFLIGHT"
@@ -2989,18 +2989,18 @@ private struct SecureLinkView: View {
                 : "The immutable accepted artifact is encoded and ready to share for analysis."
         case .failed:
             return test.canRestartFromFreshOFF1
-                ? "No evidence was promoted past the blocker. Restore the required prerequisite, then restart from scooter OFF."
-                : "No evidence was promoted past the blocker. This session is not proven retired; relaunch Capture before another attempt."
+                ? "Nothing from the stopped attempt will carry forward. Restore the missing requirement, then restart with the scooter powered off."
+                : "The stopped attempt cannot be safely retired inside the app. Relaunch Capture before another attempt."
         case .baseline, .scanning, .powerOn, .correlated:
-            return "A fresh four-window power pattern identifies the nearby Bluetooth target for this attempt only."
+            return "The OFF → ON → OFF → ON signal pattern identifies the nearby scooter for this attempt only."
         case .selected, .authenticating:
-            return "Tuya becomes the sole Bluetooth owner while Capture stays read-only."
+            return "Nembra opens one secure Tuya connection while Capture stays read-only."
         case .observing:
-            return "Keep the scooter stationary and Capture in the foreground until the accepted horizon is sealed."
+            return "Keep the scooter stationary and Capture in the foreground until the read-only observation is complete."
         default:
             return authorityReady
-                ? "Everything required for a passive current-attempt target correlation is ready."
-                : "Prove the exact field build and same-account Tuya authority before Bluetooth starts."
+                ? "Everything required to find this scooter by its current signal pattern is ready."
+                : "Confirm this Capture build and the Tuya account that owns the scooter before Bluetooth starts."
         }
     }
 
