@@ -1,0 +1,36 @@
+name: Reanchor Capture visual QA ba3a
+
+on:
+  push:
+    branches:
+      - qa/v14-capture-visual-4b41-sol
+
+permissions:
+  contents: write
+
+jobs:
+  reanchor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Merge exact frozen product into QA only
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT=ba3a1eeae36caca6dd84beaabd0f15f4f0b57925
+          HELPER=.github/workflows/reanchor-capture-visual-ba3a-sol.yml
+          git fetch origin product/v14-capture-guided-truth-current-sol
+          test "$(git rev-parse origin/product/v14-capture-guided-truth-current-sol)" = "$PRODUCT"
+          git config user.name nembra-recovery-bot
+          git config user.email actions@users.noreply.github.com
+          git merge --no-edit "$PRODUCT"
+          git rm "$HELPER"
+          git commit -m "ci(capture): retire visual QA reanchor helper"
+          actual="$(git diff --name-only "$PRODUCT" HEAD | sort)"
+          expected="$(printf '%s\n%s\n%s\n' '.github/workflows/capture-standalone-visual-evidence.yml' 'scripts/ci/capture_standalone_visual_evidence.sh' 'scripts/ci/tests/test_capture_standalone_visual_evidence.py' | sort)"
+          test "$actual" = "$expected"
+          git diff --check "$PRODUCT" HEAD
+          git push origin "HEAD:${GITHUB_REF_NAME}"
