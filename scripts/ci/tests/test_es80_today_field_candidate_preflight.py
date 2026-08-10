@@ -263,9 +263,9 @@ class FieldCandidatePreflightTests(unittest.TestCase):
 
     def test_production_handoff_consumes_accepted_descriptor_bound_private_input_before_signing(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
-        helper_commit = "05ce6d9a20487ab34aa31c5b6456910ed2ed438f"
+        helper_commit = "fa5025e2bb14e7de610421bed23cd4943dfef8f1"
         helper_path = "scripts/ci/es80_today_private_device_input.py"
-        helper_blob = "9a9f7f724ceaf895e52d6d443d326043f97645c8"
+        helper_blob = "42454c0c7cb7300d03b57e93aafd4040aa7da9f0"
         helper_invoke = '/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER"'
         private_directory_arg = '--private-directory "$PRIVATE_DIR"'
         source_repo_arg = '--source-repo "$FIELD_SOURCE"'
