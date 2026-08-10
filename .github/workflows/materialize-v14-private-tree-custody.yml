@@ -1,0 +1,89 @@
+name: Materialize V14 Private Tree Custody
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-private-tree-custody-38c69
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require exact current product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "38c69bcf6660f42468c954a9196f35d3bdff2680"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/materialize-v14-private-tree-custody.yml"
+
+      - name: Apply descriptor custody and close tree snapshot race
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin a5cb12ed97241ba274d23f311d67cf84623ceb29 4401e6a31e227273da20220d351b1b85e63faa5b
+          git diff --binary a5cb12ed97241ba274d23f311d67cf84623ceb29..4401e6a31e227273da20220d351b1b85e63faa5b -- \
+            Scripts/capture_tuya_private_input_provenance.py \
+            scripts/ci/tests/test_capture_tuya_private_input_provenance.py | git apply --index
+
+          python3 - <<'PY'
+          import base64
+          from pathlib import Path
+
+          helper = Path('Scripts/capture_tuya_private_input_provenance.py')
+          source = helper.read_text(encoding='utf-8')
+          start = source.index('def _tree_fingerprint(')
+          end = source.index('\ndef build_record(', start)
+          replacement = base64.b64decode('ZGVmIF9hc3NlcnRfdW5jaGFuZ2VkX3RyZWVfZW50cnkoCiAgICBwYXRoOiBQYXRoLAogICAgZXhwZWN0ZWRfaWRlbnRpdHk6IHR1cGxlW2ludCwgLi4uXSwKICAgIGtpbmQ6IHN0ciwKKSAtPiBOb25lOgogICAgdHJ5OgogICAgICAgIG1ldGFkYXRhID0gcGF0aC5sc3RhdCgpCiAgICBleGNlcHQgT1NFcnJvciBhcyBlcnJvcjoKICAgICAgICByYWlzZSBQcm92ZW5hbmNlRXJyb3IoInByaXZhdGUgYnVpbGQgdHJlZSBjaGFuZ2VkIHdoaWxlIGl0IHdhcyBmaW5nZXJwcmludGVkIikgZnJvbSBlcnJvcgoKICAgIGlmIF9zdGF0X2lkZW50aXR5KG1ldGFkYXRhKSAhPSBleHBlY3RlZF9pZGVudGl0eToKICAgICAgICByYWlzZSBQcm92ZW5hbmNlRXJyb3IoInByaXZhdGUgYnVpbGQgdHJlZSBjaGFuZ2VkIHdoaWxlIGl0IHdhcyBmaW5nZXJwcmludGVkIikKICAgIGlmIGtpbmQgPT0gIkQiIGFuZCBub3Qgc3RhdC5TX0lTRElSKG1ldGFkYXRhLnN0X21vZGUpOgogICAgICAgIHJhaXNlIFByb3ZlbmFuY2VFcnJvcigicHJpdmF0ZSBidWlsZCB0cmVlIGNoYW5nZWQgd2hpbGUgaXQgd2FzIGZpbmdlcnByaW50ZWQiKQogICAgaWYga2luZCA9PSAiRiIgYW5kIG5vdCBzdGF0LlNfSVNSRUcobWV0YWRhdGEuc3RfbW9kZSk6CiAgICAgICAgcmFpc2UgUHJvdmVuYW5jZUVycm9yKCJwcml2YXRlIGJ1aWxkIHRyZWUgY2hhbmdlZCB3aGlsZSBpdCB3YXMgZmluZ2VycHJpbnRlZCIpCiAgICBpZiBraW5kID09ICJMIiBhbmQgbm90IHN0YXQuU19JU0xOSyhtZXRhZGF0YS5zdF9tb2RlKToKICAgICAgICByYWlzZSBQcm92ZW5hbmNlRXJyb3IoInByaXZhdGUgYnVpbGQgdHJlZSBjaGFuZ2VkIHdoaWxlIGl0IHdhcyBmaW5nZXJwcmludGVkIikKCgpkZWYgX2RpcmVjdG9yeV9tZW1iZXJfbmFtZXMocGF0aDogUGF0aCkgLT4gdHVwbGVbc3RyLCAuLi5dOgogICAgdHJ5OgogICAgICAgIHJldHVybiB0dXBsZShzb3J0ZWQob3MubGlzdGRpcihwYXRoKSwga2V5PW9zLmZzZW5jb2RlKSkKICAgIGV4Y2VwdCBPU0Vycm9yIGFzIGVycm9yOgogICAgICAgIHJhaXNlIFByb3ZlbmFuY2VFcnJvcigicHJpdmF0ZSBidWlsZCB0cmVlIGNoYW5nZWQgd2hpbGUgaXQgd2FzIGZpbmdlcnByaW50ZWQiKSBmcm9tIGVycm9yCgoKZGVmIF90cmVlX2ZpbmdlcnByaW50KHJvb3Q6IFBhdGgpIC0+IHN0cjoKICAgIHRyeToKICAgICAgICByb290X21ldGFkYXRhID0gcm9vdC5sc3RhdCgpCiAgICBleGNlcHQgT1NFcnJvciBhcyBlcnJvcjoKICAgICAgICByYWlzZSBQcm92ZW5hbmNlRXJyb3IoZiJyZXF1aXJlZCBwcml2YXRlIGJ1aWxkIGRpcmVjdG9yeSBpcyB1bmF2YWlsYWJsZToge3Jvb3QubmFtZX0iKSBmcm9tIGVycm9yCiAgICBpZiBzdGF0LlNfSVNMTksocm9vdF9tZXRhZGF0YS5zdF9tb2RlKSBvciBub3Qgc3RhdC5TX0lTRElSKHJvb3RfbWV0YWRhdGEuc3RfbW9kZSk6CiAgICAgICAgcmFpc2UgUHJvdmVuYW5jZUVycm9yKGYicmVxdWlyZWQgcHJpdmF0ZSBidWlsZCBkaXJlY3RvcnkgaXMgbm90IGEgcmVhbCBkaXJlY3Rvcnk6IHtyb290Lm5hbWV9IikKCiAgICBlbnRyaWVzOiBsaXN0W3R1cGxlW3N0ciwgc3RyLCBpbnQsIGJ5dGVzXV0gPSBbXQogICAgb2JzZXJ2ZWRfc3RhdGVzOiBsaXN0W3R1cGxlW1BhdGgsIHR1cGxlW2ludCwgLi4uXSwgc3RyXV0gPSBbCiAgICAgICAgKHJvb3QsIF9zdGF0X2lkZW50aXR5KHJvb3RfbWV0YWRhdGEpLCAiRCIpCiAgICBdCiAgICBvYnNlcnZlZF9kaXJlY3RvcnlfbWVtYmVyczogZGljdFtQYXRoLCB0dXBsZVtzdHIsIC4uLl1dID0ge30KICAgIHJvb3RfcmVzb2x2ZWQgPSByb290LnJlc29sdmUoc3RyaWN0PVRydWUpCgogICAgZm9yIGN1cnJlbnRfdGV4dCwgZGlyZWN0b3J5X25hbWVzLCBmaWxlX25hbWVzIGluIG9zLndhbGsocm9vdCwgdG9wZG93bj1UcnVlLCBmb2xsb3dsaW5rcz1GYWxzZSk6CiAgICAgICAgY3VycmVudCA9IFBhdGgoY3VycmVudF90ZXh0KQogICAgICAgIG9ic2VydmVkX2RpcmVjdG9yeV9tZW1iZXJzW2N1cnJlbnRdID0gdHVwbGUoCiAgICAgICAgICAgIHNvcnRlZCgoKmRpcmVjdG9yeV9uYW1lcywgKmZpbGVfbmFtZXMpLCBrZXk9b3MuZnNlbmNvZGUpCiAgICAgICAgKQogICAgICAgIGtlcHRfZGlyZWN0b3JpZXM6IGxpc3Rbc3RyXSA9IFtdCgogICAgICAgIGZvciBuYW1lIGluIHNvcnRlZChkaXJlY3RvcnlfbmFtZXMsIGtleT1vcy5mc2VuY29kZSk6CiAgICAgICAgICAgIHBhdGggPSBjdXJyZW50IC8gbmFtZQogICAgICAgICAgICByZWxhdGl2ZSA9IHBhdGgucmVsYXRpdmVfdG8ocm9vdCkuYXNfcG9zaXgoKQogICAgICAgICAgICBtZXRhZGF0YSA9IHBhdGgubHN0YXQoKQogICAgICAgICAgICBpZGVudGl0eSA9IF9zdGF0X2lkZW50aXR5KG1ldGFkYXRhKQogICAgICAgICAgICBtb2RlID0gc3RhdC5TX0lNT0RFKG1ldGFkYXRhLnN0X21vZGUpCiAgICAgICAgICAgIGlmIHN0YXQuU19JU0xOSyhtZXRhZGF0YS5zdF9tb2RlKToKICAgICAgICAgICAgICAgIHRhcmdldCA9IF9hc3NlcnRfaW50ZXJuYWxfc3ltbGluayhwYXRoLCByb290X3Jlc29sdmVkKQogICAgICAgICAgICAgICAgX2Fzc2VydF91bmNoYW5nZWRfdHJlZV9lbnRyeShwYXRoLCBpZGVudGl0eSwgIkwiKQogICAgICAgICAgICAgICAgb2JzZXJ2ZWRfc3RhdGVzLmFwcGVuZCgocGF0aCwgaWRlbnRpdHksICJMIikpCiAgICAgICAgICAgICAgICBlbnRyaWVzLmFwcGVuZCgoIkwiLCByZWxhdGl2ZSwgbW9kZSwgb3MuZnNlbmNvZGUodGFyZ2V0KSkpCiAgICAgICAgICAgIGVsaWYgc3RhdC5TX0lTRElSKG1ldGFkYXRhLnN0X21vZGUpOgogICAgICAgICAgICAgICAgb2JzZXJ2ZWRfc3RhdGVzLmFwcGVuZCgocGF0aCwgaWRlbnRpdHksICJEIikpCiAgICAgICAgICAgICAgICBlbnRyaWVzLmFwcGVuZCgoIkQiLCByZWxhdGl2ZSwgbW9kZSwgYiIiKSkKICAgICAgICAgICAgICAgIGtlcHRfZGlyZWN0b3JpZXMuYXBwZW5kKG5hbWUpCiAgICAgICAgICAgIGVsc2U6CiAgICAgICAgICAgICAgICByYWlzZSBQcm92ZW5hbmNlRXJyb3IoInByaXZhdGUgYnVpbGQgdHJlZSBjb250YWlucyBhbiB1bnN1cHBvcnRlZCBkaXJlY3RvcnkgZW50cnkiKQogICAgICAgIGRpcmVjdG9yeV9uYW1lc1s6XSA9IGtlcHRfZGlyZWN0b3JpZXMKCiAgICAgICAgZm9yIG5hbWUgaW4gc29ydGVkKGZpbGVfbmFtZXMsIGtleT1vcy5mc2VuY29kZSk6CiAgICAgICAgICAgIHBhdGggPSBjdXJyZW50IC8gbmFtZQogICAgICAgICAgICByZWxhdGl2ZSA9IHBhdGgucmVsYXRpdmVfdG8ocm9vdCkuYXNfcG9zaXgoKQogICAgICAgICAgICBtZXRhZGF0YSA9IHBhdGgubHN0YXQoKQogICAgICAgICAgICBpZGVudGl0eSA9IF9zdGF0X2lkZW50aXR5KG1ldGFkYXRhKQogICAgICAgICAgICBtb2RlID0gc3RhdC5TX0lNT0RFKG1ldGFkYXRhLnN0X21vZGUpCiAgICAgICAgICAgIGlmIHN0YXQuU19JU0xOSyhtZXRhZGF0YS5zdF9tb2RlKToKICAgICAgICAgICAgICAgIHRhcmdldCA9IF9hc3NlcnRfaW50ZXJuYWxfc3ltbGluayhwYXRoLCByb290X3Jlc29sdmVkKQogICAgICAgICAgICAgICAgX2Fzc2VydF91bmNoYW5nZWRfdHJlZV9lbnRyeShwYXRoLCBpZGVudGl0eSwgIkwiKQogICAgICAgICAgICAgICAgb2JzZXJ2ZWRfc3RhdGVzLmFwcGVuZCgocGF0aCwgaWRlbnRpdHksICJMIikpCiAgICAgICAgICAgICAgICBlbnRyaWVzLmFwcGVuZCgoIkwiLCByZWxhdGl2ZSwgbW9kZSwgb3MuZnNlbmNvZGUodGFyZ2V0KSkpCiAgICAgICAgICAgIGVsaWYgc3RhdC5TX0lTUkVHKG1ldGFkYXRhLnN0X21vZGUpOgogICAgICAgICAgICAgICAgZmluZ2VycHJpbnQgPSBfZmlsZV9maW5nZXJwcmludChwYXRoKQogICAgICAgICAgICAgICAgX2Fzc2VydF91bmNoYW5nZWRfdHJlZV9lbnRyeShwYXRoLCBpZGVudGl0eSwgIkYiKQogICAgICAgICAgICAgICAgb2JzZXJ2ZWRfc3RhdGVzLmFwcGVuZCgocGF0aCwgaWRlbnRpdHksICJGIikpCiAgICAgICAgICAgICAgICBlbnRyaWVzLmFwcGVuZCgoIkYiLCByZWxhdGl2ZSwgbW9kZSwgYnl0ZXMuZnJvbWhleChmaW5nZXJwcmludCkpKQogICAgICAgICAgICBlbHNlOgogICAgICAgICAgICAgICAgcmFpc2UgUHJvdmVuYW5jZUVycm9yKCJwcml2YXRlIGJ1aWxkIHRyZWUgY29udGFpbnMgYW4gdW5zdXBwb3J0ZWQgZmlsZSBlbnRyeSIpCgogICAgIyBBIHBlci1maWxlIGRlc2NyaXB0b3IgcHJvdmVzIHRoZSBieXRlcyByZWFkIGZyb20gdGhhdCBvbmUgaW5vZGUuIFRoZSB0cmVlCiAgICAjIHJlY29yZCBpcyBzdHJvbmdlcjogZXZlcnkgYWRtaXR0ZWQgcGF0aG5hbWUgYW5kIGV2ZXJ5IGRpcmVjdG9yeSBtZW1iZXJzaGlwCiAgICAjIG11c3Qgc3RpbGwgZGVzY3JpYmUgdGhlIHNhbWUgZmluaXRlIHNuYXBzaG90IGFmdGVyIHRoZSBmdWxsIHRyYXZlcnNhbC4KICAgIGZvciBwYXRoLCBpZGVudGl0eSwga2luZCBpbiBvYnNlcnZlZF9zdGF0ZXM6CiAgICAgICAgX2Fzc2VydF91bmNoYW5nZWRfdHJlZV9lbnRyeShwYXRoLCBpZGVudGl0eSwga2luZCkKICAgIGZvciBkaXJlY3RvcnksIG1lbWJlcnMgaW4gb2JzZXJ2ZWRfZGlyZWN0b3J5X21lbWJlcnMuaXRlbXMoKToKICAgICAgICBpZiBfZGlyZWN0b3J5X21lbWJlcl9uYW1lcyhkaXJlY3RvcnkpICE9IG1lbWJlcnM6CiAgICAgICAgICAgIHJhaXNlIFByb3ZlbmFuY2VFcnJvcigicHJpdmF0ZSBidWlsZCB0cmVlIGNoYW5nZWQgd2hpbGUgaXQgd2FzIGZpbmdlcnByaW50ZWQiKQoKICAgIGRpZ2VzdCA9IGhhc2hsaWIuc2hhMjU2KCkKICAgIF9mZWVkKGRpZ2VzdCwgYiJuZW1icmEtcHJpdmF0ZS10cmVlLXYxIikKICAgIF9mZWVkKGRpZ2VzdCwgc3RhdC5TX0lNT0RFKHJvb3RfbWV0YWRhdGEuc3RfbW9kZSkudG9fYnl0ZXMoNCwgImJpZyIpKQogICAgZm9yIGtpbmQsIHJlbGF0aXZlLCBtb2RlLCBwYXlsb2FkIGluIHNvcnRlZChlbnRyaWVzLCBrZXk9bGFtYmRhIGl0ZW06IG9zLmZzZW5jb2RlKGl0ZW1bMV0pKToKICAgICAgICBfZmVlZChkaWdlc3QsIGtpbmQuZW5jb2RlKCJhc2NpaSIpKQogICAgICAgIF9mZWVkKGRpZ2VzdCwgb3MuZnNlbmNvZGUocmVsYXRpdmUpKQogICAgICAgIF9mZWVkKGRpZ2VzdCwgbW9kZS50b19ieXRlcyg0LCAiYmlnIikpCiAgICAgICAgX2ZlZWQoZGlnZXN0LCBwYXlsb2FkKQogICAgcmV0dXJuIGRpZ2VzdC5oZXhkaWdlc3QoKQoKCg==').decode('utf-8')
+          source = source[:start] + replacement + source[end + 1:]
+          helper.write_text(source, encoding='utf-8')
+
+          tests = Path('scripts/ci/tests/test_capture_tuya_private_input_provenance.py')
+          test_source = tests.read_text(encoding='utf-8')
+          new_tests = base64.b64decode('ICAgIGRlZiB0ZXN0X3RyZWVfcmVqZWN0c19maWxlX3JlcGxhY2VtZW50X2FmdGVyX2luZGl2aWR1YWxfZmluZ2VycHJpbnQoc2VsZikgLT4gTm9uZToKICAgICAgICB0YXJnZXQgPSBzZWxmLnNlY3VyaXR5X2J1aWxkIC8gIlRoaW5nU21hcnRDcnlwdGlvbi5iaW4iCiAgICAgICAgcmVwbGFjZW1lbnQgPSBzZWxmLnJvb3QgLyAicmVwbGFjZW1lbnQuYmluIgogICAgICAgIHJlcGxhY2VtZW50LndyaXRlX2J5dGVzKGIicmVwbGFjZW1lbnQtYnl0ZXMiKQogICAgICAgIG9yaWdpbmFsX2ZpbmdlcnByaW50ID0gcHJvdmVuYW5jZS5fZmlsZV9maW5nZXJwcmludAogICAgICAgIHJlcGxhY2VkID0gRmFsc2UKCiAgICAgICAgZGVmIGZpbmdlcnByaW50X3RoZW5fcmVwbGFjZShwYXRoOiBQYXRoKSAtPiBzdHI6CiAgICAgICAgICAgIG5vbmxvY2FsIHJlcGxhY2VkCiAgICAgICAgICAgIHJlc3VsdCA9IG9yaWdpbmFsX2ZpbmdlcnByaW50KHBhdGgpCiAgICAgICAgICAgIGlmIHBhdGggPT0gdGFyZ2V0IGFuZCBub3QgcmVwbGFjZWQ6CiAgICAgICAgICAgICAgICByZXBsYWNlZCA9IFRydWUKICAgICAgICAgICAgICAgIG9zLnJlcGxhY2UocmVwbGFjZW1lbnQsIHRhcmdldCkKICAgICAgICAgICAgcmV0dXJuIHJlc3VsdAoKICAgICAgICB3aXRoIG1vY2sucGF0Y2gub2JqZWN0KAogICAgICAgICAgICBwcm92ZW5hbmNlLAogICAgICAgICAgICAiX2ZpbGVfZmluZ2VycHJpbnQiLAogICAgICAgICAgICBzaWRlX2VmZmVjdD1maW5nZXJwcmludF90aGVuX3JlcGxhY2UsCiAgICAgICAgKToKICAgICAgICAgICAgd2l0aCBzZWxmLmFzc2VydFJhaXNlcyhwcm92ZW5hbmNlLlByb3ZlbmFuY2VFcnJvcik6CiAgICAgICAgICAgICAgICBwcm92ZW5hbmNlLl90cmVlX2ZpbmdlcnByaW50KHNlbGYuc2VjdXJpdHlfYnVpbGQpCiAgICAgICAgc2VsZi5hc3NlcnRUcnVlKHJlcGxhY2VkKQoKICAgIGRlZiB0ZXN0X3RyZWVfcmVqZWN0c19lbnRyeV9hZGRlZF9hZnRlcl9kaXJlY3RvcnlfZW51bWVyYXRpb24oc2VsZikgLT4gTm9uZToKICAgICAgICB0YXJnZXQgPSBzZWxmLnNlY3VyaXR5X2J1aWxkIC8gIlRoaW5nU21hcnRDcnlwdGlvbi5iaW4iCiAgICAgICAgbGF0ZV9lbnRyeSA9IHNlbGYuc2VjdXJpdHlfYnVpbGQgLyAibGF0ZS5iaW4iCiAgICAgICAgb3JpZ2luYWxfZmluZ2VycHJpbnQgPSBwcm92ZW5hbmNlLl9maWxlX2ZpbmdlcnByaW50CiAgICAgICAgYWRkZWQgPSBGYWxzZQoKICAgICAgICBkZWYgZmluZ2VycHJpbnRfdGhlbl9hZGQocGF0aDogUGF0aCkgLT4gc3RyOgogICAgICAgICAgICBub25sb2NhbCBhZGRlZAogICAgICAgICAgICByZXN1bHQgPSBvcmlnaW5hbF9maW5nZXJwcmludChwYXRoKQogICAgICAgICAgICBpZiBwYXRoID09IHRhcmdldCBhbmQgbm90IGFkZGVkOgogICAgICAgICAgICAgICAgYWRkZWQgPSBUcnVlCiAgICAgICAgICAgICAgICBsYXRlX2VudHJ5LndyaXRlX2J5dGVzKGIibGF0ZSIpCiAgICAgICAgICAgIHJldHVybiByZXN1bHQKCiAgICAgICAgd2l0aCBtb2NrLnBhdGNoLm9iamVjdCgKICAgICAgICAgICAgcHJvdmVuYW5jZSwKICAgICAgICAgICAgIl9maWxlX2ZpbmdlcnByaW50IiwKICAgICAgICAgICAgc2lkZV9lZmZlY3Q9ZmluZ2VycHJpbnRfdGhlbl9hZGQsCiAgICAgICAgKToKICAgICAgICAgICAgd2l0aCBzZWxmLmFzc2VydFJhaXNlcyhwcm92ZW5hbmNlLlByb3ZlbmFuY2VFcnJvcik6CiAgICAgICAgICAgICAgICBwcm92ZW5hbmNlLl90cmVlX2ZpbmdlcnByaW50KHNlbGYuc2VjdXJpdHlfYnVpbGQpCiAgICAgICAgc2VsZi5hc3NlcnRUcnVlKGFkZGVkKQoK').decode('utf-8')
+          anchor = '    def test_record_symlink_is_rejected(self) -> None:\n'
+          if test_source.count(anchor) != 1:
+              raise SystemExit('test insertion anchor missing')
+          test_source = test_source.replace(anchor, new_tests + anchor, 1)
+          tests.write_text(test_source, encoding='utf-8')
+          PY
+
+      - name: Validate focused private provenance custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+          s = Path('Scripts/capture_tuya_private_input_provenance.py').read_text(encoding='utf-8')
+          assert 'os.open(path, flags)' in s
+          assert 'lockfile.read_bytes()' not in s
+          assert 'observed_directory_members' in s
+          assert '_directory_member_names(directory) != members' in s
+          assert '_assert_unchanged_tree_entry(path, identity, "F")' in s
+          t = Path('scripts/ci/tests/test_capture_tuya_private_input_provenance.py').read_text(encoding='utf-8')
+          assert 'test_tree_rejects_file_replacement_after_individual_fingerprint' in t
+          assert 'test_tree_rejects_entry_added_after_directory_enumeration' in t
+          PY
+          git diff --cached --check
+          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n' 'Scripts/capture_tuya_private_input_provenance.py' 'scripts/ci/tests/test_capture_tuya_private_input_provenance.py' | sort)"
+
+      - name: Commit clean closure checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-v14-private-tree-custody.yml
+          git add -A
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "fix(capture): bind private tree fingerprints to stable snapshots"
+          git push origin HEAD:sol/v14-capture-private-tree-custody-38c69
