@@ -1,0 +1,414 @@
+name: Capture current custody materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-current-custody-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact current flagship parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "1c40853f6991b4d09206df1d25ecff021458b7eb"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-current-custody-materializer.yml"
+
+      - name: Compose current custody repairs and regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          source_path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = source_path.read_text()
+
+          def section_bounds(text: str, start: str, end: str):
+              a = text.find(start)
+              if a < 0:
+                  raise SystemExit(f"missing section start: {start}")
+              b = text.find(end, a + len(start))
+              if b < 0:
+                  raise SystemExit(f"missing section end: {end}")
+              return a, b
+
+          def replace_once_in_section(text: str, start: str, end: str, old: str, new: str) -> str:
+              a, b = section_bounds(text, start, end)
+              section = text[a:b]
+              if section.count(old) != 1:
+                  raise SystemExit(f"expected one match in {start}: {old!r}; got {section.count(old)}")
+              section = section.replace(old, new, 1)
+              return text[:a] + section + text[b:]
+
+          authority_clear = """        sdkDeviceMembershipVerified = false
+          membershipAccountUID = nil
+          membershipDeviceID = nil
+          membershipRequestID = UUID()
+"""
+
+          source = replace_once_in_section(
+              source,
+              "    func abandonCorrelationForViewExit() {",
+              "    func appDidLoseForeground() {",
+              authority_clear,
+              """        sdkDeviceMembershipVerified = false
+          membershipAccountUID = nil
+          membershipDeviceID = nil
+          membershipStatus = "Secure Link left this view. Exact scooter membership must be verified again before Bluetooth discovery."
+          membershipRequestID = UUID()
+""",
+          )
+
+          source = replace_once_in_section(
+              source,
+              "    func appDidLoseForeground() {",
+              "    var privateConfig: Bool",
+              authority_clear,
+              """        sdkDeviceMembershipVerified = false
+          membershipAccountUID = nil
+          membershipDeviceID = nil
+          membershipStatus = "Capture left the foreground. Exact scooter membership must be verified again before Bluetooth discovery."
+          membershipRequestID = UUID()
+""",
+          )
+
+          update_authority_guard = """        guard sdkAccountLoggedIn,
+                sdkDeviceMembershipVerified,
+                accountIdentityLeaseIsAuthorized,
+                let driver else {
+              await invalidateSourceAuthority(
+                  token: token,
+                  message: "SDK account/device source authority changed before application evidence arrived.",
+                  kind: "sdk_source_authority_changed_during_observation"
+              )
+              return
+          }
+          guard driver.isLocallyConnected(uuid: tuyaUUID) else {
+"""
+          source = replace_once_in_section(
+              source,
+              "    private func receivedApplicationUpdate(",
+              "    private func startWatchdog",
+              update_authority_guard,
+              """        guard sdkAccountLoggedIn,
+                sdkDeviceMembershipVerified,
+                accountIdentityLeaseIsAuthorized,
+                let driver else {
+              await invalidateSourceAuthority(
+                  token: token,
+                  message: "SDK account/device source authority changed before application evidence arrived.",
+                  kind: "sdk_source_authority_changed_during_observation"
+              )
+              return
+          }
+          guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                !verifiedAccountUID.isEmpty else {
+              await invalidateSourceAuthority(
+                  token: token,
+                  message: "Verified Tuya account identity disappeared before application evidence custody.",
+                  kind: "sdk_account_uid_authority_missing_during_observation"
+              )
+              return
+          }
+          guard driver.isLocallyConnected(uuid: tuyaUUID) else {
+""",
+          )
+
+          old_log = """            log("tuya_application_update", update.merging([
+                  "generation": String(token.diagnosticGeneration)
+              ]) { current, _ in current })
+"""
+          new_log = """            let eventUpdate = scrubAccountUIDFromApplicationEvent(
+                  update,
+                  verifiedAccountUID: verifiedAccountUID
+              )
+              log("tuya_application_update", eventUpdate.merging([
+                  "generation": String(token.diagnosticGeneration)
+              ]) { _, trusted in trusted })
+"""
+          source = replace_once_in_section(
+              source,
+              "    private func receivedApplicationUpdate(",
+              "    private func startWatchdog",
+              old_log,
+              new_log,
+          )
+
+          helper = """
+              private func scrubAccountUIDFromApplicationEvent(
+                  _ update: [String: String],
+                  verifiedAccountUID: String
+              ) -> [String: String] {
+                  let marker = "<redacted-account-uid>"
+                  var sanitized: [String: String] = [:]
+                  sanitized.reserveCapacity(update.count)
+                  for (key, value) in update {
+                      let redactedKey = key.replacingOccurrences(of: verifiedAccountUID, with: marker)
+                      let redactedValue = value.replacingOccurrences(of: verifiedAccountUID, with: marker)
+                      sanitized[redactedKey] = redactedValue
+                  }
+                  return sanitized
+              }
+
+          """
+          marker = "    private func startWatchdog(token: TuyaReadOnlyConnectionToken) {"
+          if source.count(marker) != 1:
+              raise SystemExit("startWatchdog marker not unique")
+          source = source.replace(marker, helper + marker, 1)
+
+          duplicate_secret = """        "refreshtoken",
+          "sessionkey",
+          "authkey",
+"""
+          if source.count(duplicate_secret) != 1:
+              raise SystemExit("expected one duplicate sessionkey sequence")
+          source = source.replace(
+              duplicate_secret,
+              """        "refreshtoken",
+          "authkey",
+""",
+              1,
+          )
+
+          source_path.write_text(source)
+
+          tests_dir = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests")
+
+          membership_test = r'''import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Secure Link membership status revocation")
+          struct TuyaSecureLinkViewMembershipStatusRevocationSourceTests {
+              @Test("view exit revokes operator-facing membership copy with proof")
+              func viewExitRevokesMembershipStatusWithProof() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let cleanup = String(try section(
+                      in: source,
+                      from: "func abandonCorrelationForViewExit()",
+                      to: "func appDidLoseForeground()"
+                  ))
+                  try assertRevocationOrdering(in: cleanup)
+                  #expect(cleanup.contains("membershipStatus = \"Secure Link left this view."))
+              }
+
+              @Test("foreground loss revokes operator-facing membership copy with proof")
+              func foregroundLossRevokesMembershipStatusWithProof() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let cleanup = String(try section(
+                      in: source,
+                      from: "func appDidLoseForeground()",
+                      to: "var privateConfig: Bool"
+                  ))
+                  try assertRevocationOrdering(in: cleanup)
+                  #expect(cleanup.contains("membershipStatus = \"Capture left the foreground."))
+              }
+
+              private func assertRevocationOrdering(in cleanup: String) throws {
+                  let clearVerified = try requiredOffset(containing: "sdkDeviceMembershipVerified = false", in: cleanup)
+                  let statusReset = try requiredOffset(containing: "membershipStatus =", in: cleanup)
+                  let revokeMembershipRequest = try requiredOffset(containing: "membershipRequestID = UUID()", in: cleanup)
+                  #expect(clearVerified < statusReset)
+                  #expect(statusReset < revokeMembershipRequest)
+                  #expect(!cleanup.contains("membershipStatus = \"Exact scooter membership verified and leased to this current SDK account.\""))
+              }
+
+              private func requiredOffset(containing token: String, in source: String) throws -> String.Index {
+                  guard let range = source.range(of: token) else {
+                      Issue.record("Expected source token missing: \(token)")
+                      throw SourceContractError.sectionMissing
+                  }
+                  return range.lowerBound
+              }
+
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let startRange = source.range(of: start),
+                        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+                      Issue.record("Expected source section missing: \(start) ... \(end)")
+                      throw SourceContractError.sectionMissing
+                  }
+                  return source[startRange.lowerBound..<endRange.lowerBound]
+              }
+
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  let repositoryRoot = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+              }
+
+              private enum SourceContractError: Error { case sectionMissing }
+          }
+          '''
+
+          precedence_test = r'''import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Tuya application event metadata precedence")
+          struct TuyaApplicationEventMetadataPrecedenceSourceTests {
+              @Test("SDK application keys cannot overwrite Nembra generation provenance")
+              func trustedGenerationWinsReservedKeyCollision() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let receiver = String(try section(
+                      in: source,
+                      from: "private func receivedApplicationUpdate(",
+                      to: "private func startWatchdog"
+                  ))
+                  #expect(receiver.contains("log(\"tuya_application_update\""))
+                  #expect(receiver.contains("\"generation\": String(token.diagnosticGeneration)"))
+                  #expect(!receiver.contains(") { current, _ in current })"))
+                  #expect(receiver.contains(") { _, trusted in trusted })"))
+              }
+
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let startRange = source.range(of: start),
+                        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+                      Issue.record("Expected source section missing: \(start) ... \(end)")
+                      throw SourceContractError.sectionMissing
+                  }
+                  return source[startRange.lowerBound..<endRange.lowerBound]
+              }
+
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  let repositoryRoot = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+              }
+
+              private enum SourceContractError: Error { case sectionMissing }
+          }
+          '''
+
+          uid_test = r'''import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Tuya application account-UID export custody")
+          struct TuyaApplicationAccountUIDExportCustodySourceTests {
+              @Test("accepted application evidence scrubs exact verified account UID before event custody")
+              func applicationEvidenceCannotExportVerifiedAccountUID() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let admission = String(try section(
+                      in: source,
+                      from: "private func receivedApplicationUpdate(",
+                      to: "private func startWatchdog"
+                  ))
+                  let export = String(try section(
+                      in: source,
+                      from: "func prepareExport()",
+                      to: "private func abandonPackageCorrelation()"
+                  ))
+                  #expect(export.contains("No account UID"))
+                  #expect(source.contains("<redacted-account-uid>"))
+                  #expect(admission.contains("verifiedAccountUID"))
+                  #expect(admission.contains("scrubAccountUIDFromApplicationEvent"))
+                  #expect(!admission.contains("log(\"tuya_application_update\", update.merging(["))
+              }
+
+              @Test("UID scrub covers exact account identity in keys and values without blanket uid-key deletion")
+              func accountUIDCustodyIsValueBound() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let helper = String(try section(
+                      in: source,
+                      from: "private func scrubAccountUIDFromApplicationEvent(",
+                      to: "private func startWatchdog"
+                  ))
+                  let driver = String(try section(
+                      in: source,
+                      from: "@MainActor\nprivate final class SmartLifeDriver",
+                      to: "#endif\n\nprivate enum AppleAccountAuthorizationError"
+                  ))
+                  #expect(helper.contains("key.replacingOccurrences(of: verifiedAccountUID"))
+                  #expect(helper.contains("value.replacingOccurrences(of: verifiedAccountUID"))
+                  #expect(!driver.contains("\"uid\","))
+                  #expect(!driver.contains("\"uid\"\n"))
+              }
+
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let startRange = source.range(of: start),
+                        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+                      Issue.record("Expected source section missing: \(start) ... \(end)")
+                      throw SourceContractError.sectionMissing
+                  }
+                  return source[startRange.lowerBound..<endRange.lowerBound]
+              }
+
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  let repositoryRoot = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+              }
+
+              private enum SourceContractError: Error { case sectionMissing }
+          }
+          '''
+
+          for path, content in [
+              (tests_dir / "TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift", membership_test),
+              (tests_dir / "TuyaApplicationEventMetadataPrecedenceSourceTests.swift", precedence_test),
+              (tests_dir / "TuyaApplicationAccountUIDExportCustodySourceTests.swift", uid_test),
+          ]:
+              if path.exists():
+                  raise SystemExit(f"refusing to overwrite existing path: {path}")
+              path.write_text("\n".join(line[10:] if line.startswith("          ") else line for line in content.splitlines()) + "\n")
+          PY
+
+      - name: Verify exact semantic delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          assert source.count('<redacted-account-uid>') >= 1
+          assert ']) { _, trusted in trusted })' in source
+          assert source.count('"sessionkey",') == 1
+          assert 'membershipStatus = "Secure Link left this view.' in source
+          assert 'membershipStatus = "Capture left the foreground.' in source
+          assert 'log("tuya_application_update", update.merging([' not in source
+          expected = {
+              'NembraApp/App/NembraCaptureEntrypoint.swift',
+              'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift',
+              'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift',
+              'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift',
+              '.github/workflows/capture-current-custody-materializer.yml',
+          }
+          changed = set(__import__('subprocess').check_output(['git','status','--short'], text=True).splitlines())
+          paths = {line[3:] for line in changed}
+          assert paths == expected, (paths, expected)
+          PY
+
+      - name: Commit product repair and retire materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-current-custody-materializer.yml
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "fix(capture): close current membership and export custody"
+          git push origin HEAD:repair/v14-capture-current-custody-sol
