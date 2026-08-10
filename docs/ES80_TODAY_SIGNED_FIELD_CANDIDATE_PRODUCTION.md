@@ -79,7 +79,7 @@ The producer itself will create another fresh detached worktree internally. The 
 
 Choose a private path outside the repository. The producer requires an absolute regular non-symlink mode-`0600` file and independently validates its contents/mode.
 
-Do not acquire the raw identifier through ordinary shell redirection. Even with `noclobber`, a checked parent directory pathname can be renamed and replaced before `> "$UDID_FILE"` re-resolves it. Use the accepted descriptor-bound private-input helper instead. It opens directory components with no-follow descriptors, creates the final file relative to the pinned directory descriptor, rebinds the pathname after creation, verifies directory/file identity and exact readback, and fails closed if the path was retargeted.
+Do not acquire the raw identifier through ordinary shell redirection. Even with `noclobber`, a checked parent directory pathname can be renamed and replaced before `> "$UDID_FILE"` re-resolves it. Use the accepted descriptor-bound private-input helper instead. It opens directory components with no-follow descriptors, refuses an already-occupied target before acquiring the secret, creates the final file relative to the pinned directory descriptor, refuses echoed-input fallback, rebinds the pathname after creation, verifies directory/file identity and exact readback, and removes only the exact created inode on ordinary failures or terminal abort before failing closed.
 
 The accepted helper identity is fixed below. These helper bytes are operator-custody tooling only; they do not alter the frozen `a0f4…` app subject and do not authorize signing acceptance or Bluetooth activity.
 
@@ -91,8 +91,8 @@ PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"
 UDID_FILE="$PRIVATE_DIR/es80-intended-device.udid"
 TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
 
-PRIVATE_INPUT_HELPER_COMMIT='05ce6d9a20487ab34aa31c5b6456910ed2ed438f'
-PRIVATE_INPUT_HELPER_BLOB='9a9f7f724ceaf895e52d6d443d326043f97645c8'
+PRIVATE_INPUT_HELPER_COMMIT='c8c706e3d67d2aeab37341035468437dc2af0491'
+PRIVATE_INPUT_HELPER_BLOB='38eb695792fb759428a98686081b883e39c3b118'
 PRIVATE_INPUT_HELPER_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-private-input.XXXXXX)"
 PRIVATE_INPUT_HELPER="$PRIVATE_INPUT_HELPER_DIR/es80_today_private_device_input.py"
 
