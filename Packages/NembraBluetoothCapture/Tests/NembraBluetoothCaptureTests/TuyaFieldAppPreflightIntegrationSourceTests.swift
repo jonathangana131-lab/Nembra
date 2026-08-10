@@ -4,13 +4,15 @@ import Testing
 
 @Suite("Capture field-app authenticated preflight integration")
 struct TuyaFieldAppPreflightIntegrationSourceTests {
-    @Test("standalone Capture target compiles the authoritative Tuya preflight")
-    func standaloneTargetCompilesAuthoritativePreflight() throws {
+    @Test("standalone Capture target links the authoritative Bluetooth Capture package")
+    func standaloneTargetLinksAuthoritativeCapturePackage() throws {
         let project = try readRepositoryFile("NembraCapture.xcodeproj/project.pbxproj")
 
         #expect(
-            project.contains("TuyaAuthenticatedReadOnlyPreflight.swift"),
-            "The physical field target must compile the same authenticated preflight that package tests accept. Package-only truth cannot authorize a phone test."
+            project.contains("XCLocalSwiftPackageReference \"Packages/NembraBluetoothCapture\"") &&
+            project.contains("NembraBluetoothCapture in Frameworks") &&
+            project.contains("productName = NembraBluetoothCapture"),
+            "The physical field target must link the canonical NembraBluetoothCapture package product. Package-only truth cannot authorize a phone test, and direct source duplication is not an acceptable substitute for the module dependency."
         )
     }
 
@@ -18,6 +20,10 @@ struct TuyaFieldAppPreflightIntegrationSourceTests {
     func fieldEntrypointConsumesAuthoritativeVerdict() throws {
         let entrypoint = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
+        #expect(
+            entrypoint.contains("import NembraBluetoothCapture"),
+            "The standalone field app must import the linked authority module before it can consume the accepted preflight contract."
+        )
         #expect(
             entrypoint.contains("TuyaAuthenticatedReadOnlyPreflight.verdict"),
             "The standalone field app must make its pass/blocked decision through TuyaAuthenticatedReadOnlyPreflight.verdict(for:)."
