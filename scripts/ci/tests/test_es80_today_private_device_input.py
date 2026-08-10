@@ -9,6 +9,7 @@ import stat
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "es80_today_private_device_input.py"
 spec = importlib.util.spec_from_file_location("private_device_input", MODULE_PATH)
@@ -147,6 +148,37 @@ class PrivateDeviceInputTests(unittest.TestCase):
                     secret_provider=lambda: self.SECRET + "\n",
                 )
             self.assertFalse((private_dir / "es80-intended-device.udid").exists())
+
+    def test_partial_write_failure_removes_secret_bearing_output(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+            real_write = os.write
+            write_calls = 0
+
+            def fail_after_prefix(descriptor: int, payload: bytes) -> int:
+                nonlocal write_calls
+                write_calls += 1
+                if write_calls == 1:
+                    prefix = payload[:4]
+                    return real_write(descriptor, prefix)
+                raise OSError("simulated private-input write failure")
+
+            with mock.patch.object(module.os, "write", side_effect=fail_after_prefix):
+                with self.assertRaisesRegex(OSError, "simulated private-input write failure"):
+                    module.create_private_input(
+                        private_dir,
+                        repo,
+                        target.name,
+                        secret_provider=lambda: self.SECRET,
+                    )
+
+            self.assertGreaterEqual(write_calls, 2)
+            self.assertFalse(
+                target.exists(),
+                "failed private-input acquisition retained a partial secret-bearing file",
+            )
 
 
 if __name__ == "__main__":
