@@ -10,7 +10,7 @@ struct TuyaVerificationCodeRedactionSourceTests {
         let authorizer = String(try section(
             in: source,
             from: "@MainActor\nprivate final class OfficialTuyaAccountAuthorizer",
-            to: "#if canImport(ThingSmartHomeKit)\n@MainActor\nprivate final class OfficialTuyaMembershipProbe"
+            to: "@MainActor\nprivate struct SecureLinkView: View"
         ))
 
         #expect(authorizer.contains("let code = verificationCode.trimmingCharacters(in: .whitespacesAndNewlines)"))
