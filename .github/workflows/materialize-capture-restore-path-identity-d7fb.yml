@@ -1,0 +1,68 @@
+name: Materialize Capture Restore Path Identity D7FB
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-restore-path-identity-d7fb-r1
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Guard exact regressed product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='d7fbec98107098d7aa70f33c3ce0cb6555dab9e0'
+          test "$(git rev-parse HEAD^)" = "$expected"
+          test "$(git diff --name-only "$expected"..HEAD)" = '.github/workflows/materialize-capture-restore-path-identity-d7fb.yml'
+          grep -Fq 'def test_file_fingerprint_rejects_same_inode_mutation_after_final_descriptor_stat' scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          ! grep -Fq '_stat_identity(current_path) != _stat_identity(after)' Scripts/capture_tuya_private_input_provenance.py
+          grep -Fq 'record_snapshot_after = _record_identity_snapshot' Scripts/capture_tuya_private_input_provenance.py
+
+      - name: Restore complete pathname identity fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          path=Path('Scripts/capture_tuya_private_input_provenance.py')
+          source=path.read_text()
+          old='''        if (\n            stat.S_ISLNK(current_path.st_mode)\n            or not stat.S_ISREG(current_path.st_mode)\n            or current_path.st_dev != after.st_dev\n            or current_path.st_ino != after.st_ino\n        ):\n            raise ProvenanceError(f"private build input pathname changed during fingerprinting: {path.name}")\n'''
+          new='''        if (\n            stat.S_ISLNK(current_path.st_mode)\n            or not stat.S_ISREG(current_path.st_mode)\n            or _stat_identity(current_path) != _stat_identity(after)\n        ):\n            raise ProvenanceError(f"private build input pathname changed during fingerprinting: {path.name}")\n'''
+          if source.count(old) != 1:
+              raise SystemExit('regressed pathname block drifted')
+          source=source.replace(old,new)
+          path.write_text(source)
+          PY
+
+      - name: Run complete portable private provenance suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
+          for test_file in scripts/ci/tests/test_capture_tuya_private_input*.py; do
+            echo "==> $test_file"
+            python3 "$test_file"
+          done
+          grep -Fq '_stat_identity(current_path) != _stat_identity(after)' Scripts/capture_tuya_private_input_provenance.py
+          grep -Fq 'record_snapshot_after = _record_identity_snapshot' Scripts/capture_tuya_private_input_provenance.py
+          git diff --check
+
+      - name: Commit durable exact-parent repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-restore-path-identity-d7fb.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Scripts/capture_tuya_private_input_provenance.py .github/workflows/materialize-capture-restore-path-identity-d7fb.yml
+          git commit -m 'fix(capture): restore final pathname identity fence'
+          git push origin HEAD:sol/v14-capture-restore-path-identity-d7fb-r1
