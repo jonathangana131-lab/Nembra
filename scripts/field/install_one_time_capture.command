@@ -243,7 +243,7 @@ say "Built app provenance matched exact requested source, reviewed Tuya dependen
 # Apple verifiers with a closed startup environment and parse an XML plist from either display stream.
 SIGNED_ENTITLEMENTS_OUTPUT="$(/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/codesign -d --entitlements :- --xml "$APP" 2>&1)" || \
     die "Could not read effective entitlements from the final signed Capture app. Discard this candidate."
-BUILT_APPLE_SIGNIN_ENTITLEMENT="$(printf '%s' "$SIGNED_ENTITLEMENTS_OUTPUT" | /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c '
+BUILT_APPLE_IDENTITY="$(printf '%s' "$SIGNED_ENTITLEMENTS_OUTPUT" | /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c '
 import plistlib, sys
 payload = sys.stdin.buffer.read()
 start = payload.find(b"<?xml")
@@ -251,12 +251,20 @@ end = payload.rfind(b"</plist>")
 if start < 0 or end < start:
     raise SystemExit(2)
 try:
-    value = plistlib.loads(payload[start:end + len(b"</plist>")]).get("com.apple.developer.applesignin")
+    root = plistlib.loads(payload[start:end + len(b"</plist>")])
+    signin = root.get("com.apple.developer.applesignin")
+    application_identifier = root.get("application-identifier")
+    team_identifier = root.get("com.apple.developer.team-identifier")
 except Exception:
     raise SystemExit(2)
-if value == ["Default"]:
-    sys.stdout.write("Default")
+if signin != ["Default"] or not isinstance(application_identifier, str) or not isinstance(team_identifier, str):
+    raise SystemExit(2)
+if any((not value) or "\t" in value or "\n" in value for value in (application_identifier, team_identifier)):
+    raise SystemExit(2)
+sys.stdout.write("Default\t" + application_identifier + "\t" + team_identifier)
 ' || true)"
+IFS=$'\t' read -r BUILT_APPLE_SIGNIN_ENTITLEMENT BUILT_APPLICATION_IDENTIFIER BUILT_TEAM_IDENTIFIER <<< "$BUILT_APPLE_IDENTITY"
+unset BUILT_APPLE_IDENTITY
 [[ "$BUILT_APPLE_SIGNIN_ENTITLEMENT" == "Default" ]] || \
     die "Final signed Capture app does not carry the required Sign in with Apple entitlement. Enable the capability for this App ID/team and rebuild; do not install this candidate."
 
@@ -264,20 +272,45 @@ BUILT_PROFILE="$APP/embedded.mobileprovision"
 [[ -f "$BUILT_PROFILE" ]] || die "Final signed Capture app is missing embedded.mobileprovision. Discard this candidate."
 PROFILE_PLIST_XML="$(/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/security cms -D -i "$BUILT_PROFILE" 2>/dev/null)" || \
     die "Could not decode the exact provisioning profile embedded in the final signed Capture app. Discard this candidate."
-PROFILE_APPLE_SIGNIN_ENTITLEMENT="$(printf '%s' "$PROFILE_PLIST_XML" | /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c '
+PROFILE_APPLE_IDENTITY="$(printf '%s' "$PROFILE_PLIST_XML" | /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c '
 import plistlib, sys
 try:
     root = plistlib.loads(sys.stdin.buffer.read())
-    value = root.get("Entitlements", {}).get("com.apple.developer.applesignin")
+    signin = root.get("Entitlements", {}).get("com.apple.developer.applesignin")
+    entitlements = root.get("Entitlements", {})
+    application_identifier = entitlements.get("application-identifier")
+    team_identifier = entitlements.get("com.apple.developer.team-identifier")
+    root_team_identifiers = root.get("TeamIdentifier")
 except Exception:
     raise SystemExit(2)
-if value == ["Default"]:
-    sys.stdout.write("Default")
+if signin != ["Default"] or not isinstance(application_identifier, str) or not isinstance(team_identifier, str):
+    raise SystemExit(2)
+if not isinstance(root_team_identifiers, list) or len(root_team_identifiers) != 1 or not isinstance(root_team_identifiers[0], str):
+    raise SystemExit(2)
+root_team_identifier = root_team_identifiers[0]
+if any((not value) or "\t" in value or "\n" in value for value in (application_identifier, team_identifier, root_team_identifier)):
+    raise SystemExit(2)
+sys.stdout.write("Default\t" + application_identifier + "\t" + team_identifier + "\t" + root_team_identifier)
 ' || true)"
+IFS=$'\t' read -r PROFILE_APPLE_SIGNIN_ENTITLEMENT PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_IDENTIFIER PROFILE_ROOT_TEAM_IDENTIFIER <<< "$PROFILE_APPLE_IDENTITY"
+unset PROFILE_APPLE_IDENTITY
 [[ "$PROFILE_APPLE_SIGNIN_ENTITLEMENT" == "Default" ]] || \
     die "Embedded provisioning profile does not authorize Sign in with Apple for the final Capture app. Enable the capability for this App ID/team and rebuild; do not install this candidate."
+
+[[ "$BUILT_APPLICATION_IDENTIFIER" == *".$BUNDLE_ID" ]] || \
+    die "Final signed Capture app application identifier does not end in the exact standalone Capture bundle identifier. Discard this candidate."
+[[ "$BUILT_APPLICATION_IDENTIFIER" != *"*"* ]] || \
+    die "Final signed Capture app application identifier is wildcard-shaped. Discard this candidate."
+[[ "$PROFILE_APPLICATION_IDENTIFIER" == "$BUILT_APPLICATION_IDENTIFIER" ]] || \
+    die "Embedded provisioning profile application identifier does not exactly match the final signed Capture app. Discard this candidate."
+[[ "$BUILT_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \
+    die "Final signed Capture app team identifier does not match the selected Apple Development team. Discard this candidate."
+[[ "$PROFILE_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \
+    die "Embedded provisioning profile team entitlement does not match the selected Apple Development team. Discard this candidate."
+[[ "$PROFILE_ROOT_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \
+    die "Embedded provisioning profile root TeamIdentifier does not match the selected Apple Development team. Discard this candidate."
 say "Final signed app and embedded provisioning profile both authorize Sign in with Apple"
-unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_APPLE_SIGNIN_ENTITLEMENT PROFILE_PLIST_XML PROFILE_APPLE_SIGNIN_ENTITLEMENT BUILT_PROFILE
+unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_APPLE_SIGNIN_ENTITLEMENT BUILT_APPLICATION_IDENTIFIER BUILT_TEAM_IDENTIFIER PROFILE_PLIST_XML PROFILE_APPLE_SIGNIN_ENTITLEMENT PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_IDENTIFIER PROFILE_ROOT_TEAM_IDENTIFIER BUILT_PROFILE
 unset BUILT_BUILD_IDENTIFIER BUILT_SOURCE_SHA BUILT_TUYA_DEPENDENCY_LOCK_SHA256 BUILT_PROCEDURE_IDENTIFIER BUILT_BUNDLE_ID APP_INFO_PLIST
 
 say "Installing SDK-integrated Capture on the intended iPhone"
