@@ -163,9 +163,7 @@ class PrivateDeviceInputTests(unittest.TestCase):
                     after_create_hook=retarget,
                 )
 
-            original = moved_dir / "es80-intended-device.udid"
-            self.assertTrue(original.exists())
-            self.assertEqual(original.read_bytes(), b"")
+            self.assertFalse((moved_dir / "es80-intended-device.udid").exists())
             self.assertFalse((private_dir / "es80-intended-device.udid").exists())
 
     def test_write_failure_after_creation_removes_created_file(self):
