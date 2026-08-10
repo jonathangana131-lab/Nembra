@@ -7,19 +7,20 @@ import Foundation
 public enum TuyaApplicationEventCustody {
     public static let redactedAccountUIDMarker = "<redacted-account-uid>"
 
-    /// Produces event details only when a non-empty application update and an exact
-    /// verified account UID are both available. The returned `generation` field is
-    /// always Nembra-owned provenance; an application field that could impersonate it
-    /// is retained under a non-authoritative `application.generation` key instead.
+    /// Produces event details only when a non-empty application update, an exact verified
+    /// account UID, and a non-empty Nembra-owned connection generation are available.
+    /// An application field that could impersonate `generation` is retained under a
+    /// non-authoritative `application.generation` key instead.
     public static func admittedDetails(
         applicationUpdate: [String: String],
         verifiedAccountUID: String,
-        connectionGeneration: UInt64
+        connectionGeneration: String
     ) -> [String: String]? {
         guard !applicationUpdate.isEmpty else { return nil }
 
         let accountUID = verifiedAccountUID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !accountUID.isEmpty else { return nil }
+        let generation = connectionGeneration.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !accountUID.isEmpty, !generation.isEmpty else { return nil }
 
         var admitted: [String: String] = [:]
         admitted.reserveCapacity(applicationUpdate.count + 1)
@@ -39,7 +40,7 @@ public enum TuyaApplicationEventCustody {
 
         // Write trusted provenance last as a defense-in-depth guarantee. Application
         // evidence has already been namespaced away from this reserved field.
-        admitted["generation"] = String(connectionGeneration)
+        admitted["generation"] = generation
         return admitted
     }
 
