@@ -115,7 +115,7 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
 
         #expect(source.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
         #expect(source.contains("var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }"))
-        #expect(source.contains("var sdkDeviceMembershipVerified: Bool"))
+        #expect(source.contains("@Published private(set) var sdkDeviceMembershipVerified = false"))
         #expect(source.contains("accountIdentityLeaseIsAuthorized"))
         #expect(source.contains("OfficialTuyaFactory.acquirePackageCorrelationLease()"))
         #expect(source.contains("PassiveBluetoothPowerCycleObservationSession(minimumWindowDuration: 10)"))
