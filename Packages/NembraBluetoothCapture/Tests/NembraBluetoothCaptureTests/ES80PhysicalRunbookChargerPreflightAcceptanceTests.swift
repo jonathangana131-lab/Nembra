@@ -3,40 +3,37 @@ import Testing
 
 @Suite("ES80 physical runbook charger preflight")
 struct ES80PhysicalRunbookChargerPreflightAcceptanceTests {
-    @Test("field runbook mirrors the app's per-run disconnected-charger declaration")
-    func runbookPinsChargerDeclarationWithoutPromotingItToMeasuredTruth() throws {
-        let app = try repositoryFile("NembraApp/App/NembraApp.swift")
-        let runbook = try repositoryFile("docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md")
+    @Test("current secure-link procedure freezes charger state without claiming charger measurement")
+    func secureLinkPinsStationaryChargerStateWithoutRevivingRetiredAuthority() throws {
+        let retiredRunbook = try repositoryFile("docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md")
+        let secureLinkRunbook = try repositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
 
-        // The current product makes charger state a fresh-run operator declaration: connected is
-        // explicitly blocked, disconnected is the only state that can continue, and the UI states
-        // that Nembra cannot sense the charger directly. The field procedure must not be weaker.
-        #expect(app.contains("This capture requires the scooter to be unplugged."))
-        #expect(app.contains("Unplug charger to continue"))
-        #expect(app.contains("Nembra cannot sense the charger directly"))
-        #expect(app.contains("selectedChargerState = nil"))
-        #expect(app.contains("PassiveBluetoothStationaryCaptureChargerState.disconnected.rawValue"))
+        // The former passive runbook is intentionally retained only as a NO-GO tombstone.
+        // Current field authority belongs to the authenticated stationary secure-link procedure.
+        #expect(retiredRunbook.contains("Status: **RETIRED / NON-AUTHORITATIVE / PHYSICAL NO-GO.**"))
+        #expect(retiredRunbook.contains("`docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md`"))
+        #expect(retiredRunbook.contains("`ES80-AUTHENTICATED-STATIONARY-v1`"))
+        #expect(!retiredRunbook.contains("## Intended preflight once GO is authorized"))
 
-        let preflight = try section(
-            in: runbook,
-            from: "## Intended preflight once GO is authorized",
-            to: "## Experiment One — target correlation and passive fingerprint"
+        #expect(secureLinkRunbook.contains("PROCEDURE_ID: `ES80-AUTHENTICATED-STATIONARY-v1`"))
+        #expect(secureLinkRunbook.contains("repository explicitly records `GO`"))
+        #expect(secureLinkRunbook.contains("physical secure-link experiment is **NO-GO**"))
+
+        let supportedSession = try section(
+            in: secureLinkRunbook,
+            from: "### Supported read-only Tuya session",
+            to: "### Stop conditions"
         )
-        let stopConditions = try section(
-            in: runbook,
-            from: "## Stop / failure conditions once GO exists",
-            to: "## Current physical conclusion"
-        )
+        let supportedSessionLower = supportedSession.lowercased()
 
-        let preflightLower = preflight.lowercased()
-        #expect(preflightLower.contains("charger"))
-        #expect(preflightLower.contains("disconnected"))
-        #expect(preflightLower.contains("declar"))
-        #expect(preflightLower.contains("not") && (preflightLower.contains("measured") || preflightLower.contains("sense")))
-
-        let stopLower = stopConditions.lowercased()
-        #expect(stopLower.contains("charger"))
-        #expect(stopLower.contains("stop") || stopLower.contains("restart"))
+        // Charger truth is operational here, not telemetry: the operator must keep the physical
+        // state unchanged during this stationary read-only preflight. Nembra must not invent a
+        // charger sensor/declaration gate or weaken the sole-owner/no-command boundary.
+        #expect(supportedSessionLower.contains("do not change mode/light/brake/throttle/charger state during this preflight"))
+        #expect(supportedSessionLower.contains("nembra sends no scooter dp query/control command"))
+        #expect(supportedSessionLower.contains("opens no second corebluetooth connection"))
+        #expect(!supportedSessionLower.contains("charger state is measured"))
+        #expect(!supportedSessionLower.contains("nembra senses the charger"))
     }
 
     private func section(in text: String, from startMarker: String, to endMarker: String) throws -> String {
