@@ -86,6 +86,12 @@ Do not acquire the raw identifier through ordinary shell redirection. Even with 
 
 The accepted helper identity is fixed below. These helper bytes are operator-custody tooling only; they do not alter the frozen `a0f4…` app subject and do not authorize signing acceptance or Bluetooth activity.
 
+Accepted current helper provenance:
+- merged helper commit: `af75ffa6dc4409a21822295428e4eeb922ac3d16`;
+- helper blob: `50b12675a57fd2f570d833cfcdbfd7be59f52ca4`;
+- exact tested predecessor head carrying the same helper blob: `91dda8ac05e937e5615312a487f7d78926b74949`;
+- focused `Capture TODAY Field Candidate Preflight QA`: run `31349898562`, job `93338620824` — terminal success.
+
 ```bash
 umask 077
 HOME_PHYSICAL="$(cd -P -- "$HOME" && /bin/pwd -P)"
@@ -94,8 +100,8 @@ PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"
 UDID_FILE="$PRIVATE_DIR/es80-intended-device.udid"
 TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
 
-PRIVATE_INPUT_HELPER_COMMIT='05ce6d9a20487ab34aa31c5b6456910ed2ed438f'
-PRIVATE_INPUT_HELPER_BLOB='9a9f7f724ceaf895e52d6d443d326043f97645c8'
+PRIVATE_INPUT_HELPER_COMMIT='af75ffa6dc4409a21822295428e4eeb922ac3d16'
+PRIVATE_INPUT_HELPER_BLOB='50b12675a57fd2f570d833cfcdbfd7be59f52ca4'
 PRIVATE_INPUT_HELPER_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-private-input.XXXXXX)"
 PRIVATE_INPUT_HELPER="$PRIVATE_INPUT_HELPER_DIR/es80_today_private_device_input.py"
 
