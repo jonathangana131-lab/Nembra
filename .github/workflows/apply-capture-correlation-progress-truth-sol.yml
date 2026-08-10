@@ -1,0 +1,77 @@
+name: Apply Capture correlation progress truth sol
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-correlation-progress-truth-sol
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-correlation-progress-truth-sol
+          fetch-depth: 0
+      - name: Repair completed correlation chronology
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_parent='6398f7f9c96334971315771deb255c40f958b502'
+          workflow='.github/workflows/apply-capture-correlation-progress-truth-sol.yml'
+          entry='NembraApp/App/NembraCaptureEntrypoint.swift'
+          test "$(git rev-parse HEAD^)" = "$expected_parent"
+          test "$(git diff --name-only HEAD^ HEAD)" = "$workflow"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s = p.read_text()
+
+          old_text = '                    Text("\\(min(test.correlationCompletedWindowCount + 1, 4))/4")\n'
+          new_text = '                    Text("\\(correlationDisplayedWindowOrdinal)/4")\n'
+          if s.count(old_text) != 1:
+              raise SystemExit('visible correlation ordinal anchor changed')
+          s = s.replace(old_text, new_text, 1)
+
+          anchor = '''    private var currentStageIndex: Int {
+        switch test.phase {
+        case .idle, .failed, .baseline, .scanning, .powerOn, .correlated: return 0
+        case .selected, .authenticating: return 1
+        case .observing: return 2
+        case .accepted: return 3
+        }
+    }
+'''
+          replacement = anchor + '''
+    private var correlationDisplayedWindowOrdinal: Int {
+        test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)
+    }
+'''
+          if s.count(anchor) != 1:
+              raise SystemExit('stage index anchor changed')
+          s = s.replace(anchor, replacement, 1)
+          p.write_text(s)
+          PY
+
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationTruthSourceTests.swift').read_text()
+          assert 'Text("\\(correlationDisplayedWindowOrdinal)/4")' in app
+          assert 'test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)' in app
+          assert 'Text("\\(min(test.correlationCompletedWindowCount + 1, 4))/4")' not in app
+          assert 'correlationDisplayedWindowOrdinal' in test
+          assert 'test.phase == .correlated ? 4' in test
+          PY
+          git diff --check
+
+          git rm "$workflow"
+          git config user.name 'nembra-go-bot'
+          git config user.email 'nembra-go-bot@users.noreply.github.com'
+          git add "$entry" Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationTruthSourceTests.swift
+          git commit -m 'fix(capture): show completed correlation as four of four'
+          git push origin HEAD:repair/v14-capture-correlation-progress-truth-sol
