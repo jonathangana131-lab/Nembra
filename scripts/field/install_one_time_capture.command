@@ -13,6 +13,7 @@ command -v xcrun >/dev/null || die "xcrun is not available."
 command -v security >/dev/null || die "macOS security tool is not available."
 command -v pod >/dev/null || die "CocoaPods is required for the official Tuya SDK field build."
 [[ -x /usr/bin/python3 ]] || die "System Python 3 is required for private intended-device admission."
+[[ -x /usr/bin/plutil ]] || die "System plutil is required for exact built-app provenance verification."
 
 EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"
 [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9A-Fa-f]{40}$ ]] || die "Pass the exact software-accepted Capture source SHA as the first argument (40 hex characters)."
@@ -196,6 +197,16 @@ xcodebuild \
 [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Accepted-source inputs changed while the field build was compiling. Discard this candidate and restart."
 APP="$DERIVED/Build/Products/Debug-iphoneos/Nembra Capture.app"
 [[ -d "$APP" ]] || die "Build finished but the standalone Nembra Capture.app was not found at $APP"
+APP_INFO_PLIST="$APP/Info.plist"
+[[ -f "$APP_INFO_PLIST" ]] || die "Built Capture app is missing its Info.plist provenance subject. Discard this candidate."
+BUILT_BUILD_IDENTIFIER="$(/usr/bin/plutil -extract NembraCaptureBuildIdentifier raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"
+BUILT_SOURCE_SHA="$(/usr/bin/plutil -extract NembraCaptureSourceCommitSHA raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"
+BUILT_BUNDLE_ID="$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"
+[[ "$BUILT_BUILD_IDENTIFIER" == "$BUILD_LABEL" ]] || die "Built Capture app identifier does not match the exact requested field-build label. Discard this candidate."
+[[ "$BUILT_SOURCE_SHA" == "$SOURCE_SHA" ]] || die "Built Capture app source SHA does not match the exact requested source. Discard this candidate."
+[[ "$BUILT_BUNDLE_ID" == "$BUNDLE_ID" ]] || die "Built Capture app bundle identifier does not match the intended standalone field product. Discard this candidate."
+say "Built app provenance matched exact requested source and field product"
+unset BUILT_BUILD_IDENTIFIER BUILT_SOURCE_SHA BUILT_BUNDLE_ID APP_INFO_PLIST
 
 say "Installing SDK-integrated Capture on the intended iPhone"
 open -a Xcode "$ROOT/NembraCapture.xcworkspace" >/dev/null 2>&1 || true
@@ -238,6 +249,7 @@ say "SDK-INTEGRATED CAPTURE LAUNCHED"
 printf '%s\n' \
     "This launch used no Tuya secret in host argv, environment, Git, or the diagnostic export." \
     "The private intended-device UDID was used only for local correlation and was not placed in devicectl argv." \
+    "The exact built device app was read back before installation and matched the requested source SHA, field-build identifier, and standalone bundle identifier." \
     "Do NOT repeat the old 17-step ride capture." \
     "Keep the scooter stationary for this first preflight." \
     "If Capture says SDK compiled/configured, account logged in, exact scooter membership, or field-build provenance is not proven, STOP and do not start Bluetooth correlation." \
