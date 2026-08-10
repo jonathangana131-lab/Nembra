@@ -103,8 +103,8 @@ jobs:
           rm .github/workflows/materialize-capture-uid-redaction-collision-ba3.yml
           rm scripts/ci/materialize_capture_uid_redaction_collision.py
           git add -A
-          git diff --cached --check
-          git diff --cached --name-only | sort > /tmp/actual
+          git diff --cached --check "$base"
+          git diff --cached --name-only "$base" | sort > /tmp/actual
           cat > /tmp/expected <<'EOF'
           NembraApp/App/NembraCaptureEntrypoint.swift
           Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDKeyCollisionSourceTests.swift
