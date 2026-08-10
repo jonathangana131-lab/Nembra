@@ -32,6 +32,11 @@ struct TuyaCaptureForegroundIntegritySourceTests {
             from: "func appDidLoseForeground()",
             to: "var privateConfig: Bool"
         ))
+        let correlationRevocation = String(try section(
+            in: controller,
+            from: "private func revokeTargetCorrelationAuthorityForForegroundLoss()",
+            to: "private func releasePackageCorrelationLease()"
+        ))
 
         #expect(view.contains("@Environment(\\.scenePhase) private var scenePhase"))
         #expect(view.contains(".onChange(of: scenePhase)"))
@@ -59,6 +64,23 @@ struct TuyaCaptureForegroundIntegritySourceTests {
         #expect(resetForegroundFence < reopenAdmission)
         #expect(viewExit.contains("if foregroundIntegrityLossHandled { return }"))
 
+        // View exit revokes both authority and its operator-facing status synchronously.
+        let viewExitClearVerified = try requiredOffset(
+            containing: "sdkDeviceMembershipVerified = false",
+            in: viewExit
+        )
+        let viewExitStatusReset = try requiredOffset(
+            containing: "membershipStatus = \"Exact scooter membership must be verified again for this Secure Link session.\"",
+            in: viewExit
+        )
+        let viewExitMembershipRevoke = try requiredOffset(
+            containing: "membershipRequestID = UUID()",
+            in: viewExit
+        )
+        #expect(viewExitClearVerified < viewExitStatusReset)
+        #expect(viewExitStatusReset < viewExitMembershipRevoke)
+        #expect(!viewExit.contains("verified and leased"))
+
         let closeAdmission = try requiredOffset(
             containing: "acceptsViewScopedMembershipRequests = false",
             in: cleanup
@@ -75,6 +97,10 @@ struct TuyaCaptureForegroundIntegritySourceTests {
             containing: "membershipDeviceID = nil",
             in: cleanup
         )
+        let statusReset = try requiredOffset(
+            containing: "membershipStatus = \"Exact scooter membership must be verified again for this Secure Link session.\"",
+            in: cleanup
+        )
         let membershipRevoke = try requiredOffset(
             containing: "membershipRequestID = UUID()",
             in: cleanup
@@ -87,27 +113,54 @@ struct TuyaCaptureForegroundIntegritySourceTests {
             containing: "if processCorrelationLease != nil || correlationSession != nil",
             in: cleanup
         )
+        let correlatedAuthorityCheck = try requiredOffset(
+            containing: "if phase == .correlated || phase == .selected || correlationProvenance != nil || selectedID != nil || pendingCorrelatedTargetID != nil",
+            in: cleanup
+        )
         let tokenCheck = try requiredOffset(
             containing: "guard let token = currentConnectionToken else",
             in: cleanup
         )
 
         #expect(closeAdmission < clearVerified)
-        #expect(clearVerified < membershipRevoke)
-        #expect(clearAccountLease < membershipRevoke)
-        #expect(clearDeviceLease < membershipRevoke)
+        #expect(clearVerified < statusReset)
+        #expect(clearAccountLease < statusReset)
+        #expect(clearDeviceLease < statusReset)
+        #expect(statusReset < membershipRevoke)
         #expect(membershipRevoke < officialRevoke)
         #expect(officialRevoke < correlationCheck)
-        #expect(officialRevoke < tokenCheck)
+        #expect(correlationCheck < correlatedAuthorityCheck)
+        #expect(correlatedAuthorityCheck < tokenCheck)
         #expect(cleanup.contains("membershipBusy = false"))
         #expect(cleanup.contains("membershipProbe = nil"))
         #expect(cleanup.contains("watchdog?.cancel()"))
         #expect(cleanup.contains("foregroundIntegrityLossHandled = true"))
 
-        // Package target correlation is abandoned through the existing scanner-first owner path.
-        #expect(cleanup.contains("abandonPackageCorrelation()"))
+        // Both in-flight and already-completed/selected package correlation authority are retired.
+        #expect(cleanup.contains("revokeTargetCorrelationAuthorityForForegroundLoss()"))
         #expect(cleanup.contains("foreground_integrity_lost_during_target_correlation"))
+        #expect(cleanup.contains("foreground_integrity_lost_after_target_correlation"))
         #expect(!cleanup.contains("releasePackageCorrelationLease("))
+
+        // Correlation revocation must stop package transport first, then erase every target-authority
+        // projection that could otherwise survive a StateObject foreground interruption.
+        let stopPackage = try requiredOffset(containing: "abandonPackageCorrelation()", in: correlationRevocation)
+        let clearProvenance = try requiredOffset(containing: "correlationProvenance = nil", in: correlationRevocation)
+        let clearMethod = try requiredOffset(containing: "targetCorrelationMethod = nil", in: correlationRevocation)
+        let clearWindowCount = try requiredOffset(containing: "targetCorrelationWindowCount = nil", in: correlationRevocation)
+        let clearConfirmation = try requiredOffset(containing: "targetCorrelationOperatorConfirmed = false", in: correlationRevocation)
+        let clearCandidateMap = try requiredOffset(containing: "byID.removeAll()", in: correlationRevocation)
+        let clearCandidates = try requiredOffset(containing: "candidates.removeAll()", in: correlationRevocation)
+        let clearSelected = try requiredOffset(containing: "selectedID = nil", in: correlationRevocation)
+        let clearPending = try requiredOffset(containing: "pendingCorrelatedTargetID = nil", in: correlationRevocation)
+        #expect(stopPackage < clearProvenance)
+        #expect(clearProvenance < clearMethod)
+        #expect(clearMethod < clearWindowCount)
+        #expect(clearWindowCount < clearConfirmation)
+        #expect(clearConfirmation < clearCandidateMap)
+        #expect(clearCandidateMap < clearCandidates)
+        #expect(clearCandidates < clearSelected)
+        #expect(clearSelected < clearPending)
 
         // Any authenticated-generation terminal task must outlive StateObject teardown just like
         // the accepted view-exit retirement. Exact-token fencing still rejects stale generations.
