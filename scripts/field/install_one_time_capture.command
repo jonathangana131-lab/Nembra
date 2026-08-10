@@ -225,8 +225,8 @@ say "Building SDK-integrated Nembra Capture for the intended iPhone"
     DEVELOPMENT_TEAM="$TEAM_ID" \
     CODE_SIGN_STYLE=Automatic \
     PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
-    "NEMBRA_CAPTURE_BUILD_IDENTIFIER=$BUILD_LABEL" \
-    "NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$SOURCE_SHA" \
+    NEMBRA_CAPTURE_BUILD_IDENTIFIER="$BUILD_LABEL" \
+    NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$SOURCE_SHA" \
     "NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256" \
     "INFOPLIST_KEY_NembraCaptureProcedureIdentifier=$PROCEDURE_ID" \
     build || die "Private inputs changed while xcodebuild was running, vnode custody failed, or the signed build itself failed. No field artifact was admitted."
