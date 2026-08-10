@@ -49,6 +49,27 @@ struct TuyaCaptureForegroundTargetRevocationSourceTests {
         }
     }
 
+    @Test("view exit cannot retain an already-correlated or selected target")
+    func viewExitCannotCarryTargetAcrossLifetime() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let controller = String(try section(
+            in: source,
+            from: "private final class SecureLinkController",
+            to: "@MainActor\nprivate protocol OfficialTuyaDriver"
+        ))
+        let cleanup = String(try section(
+            in: controller,
+            from: "func abandonCorrelationForViewExit()",
+            to: "func appDidLoseForeground()"
+        ))
+
+        #expect(cleanup.contains("if phase == .correlated || phase == .selected"))
+        #expect(cleanup.contains("resetDiscoverySessionOnly()"))
+        #expect(cleanup.contains("target_correlation_abandoned_on_view_exit"))
+        #expect(cleanup.range(of: "resetDiscoverySessionOnly()")!.lowerBound < cleanup.range(of: "guard processCorrelationLease != nil || correlationSession != nil")!.lowerBound)
+        #expect(!cleanup.contains("releasePackageCorrelationLease()"))
+    }
+
     @Test("foreground reactivation cannot reopen membership after official driver handoff")
     func reactivationRequiresPackageCorrelationAuthority() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
