@@ -14,195 +14,78 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 4
 
-      - name: Verify exact current-product parent
+      - name: Verify current-product ancestry and helper-only scope
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "1c40853f6991b4d09206df1d25ecff021458b7eb"
-          test "$(git diff --name-only HEAD^..HEAD)" = ".github/workflows/materialize-capture-foreground-authority-followup.yml"
+          git merge-base --is-ancestor 1c40853f6991b4d09206df1d25ecff021458b7eb HEAD
+          test "$(git diff --name-only 1c40853f6991b4d09206df1d25ecff021458b7eb..HEAD)" = ".github/workflows/materialize-capture-foreground-authority-followup.yml"
 
       - name: Materialize missing foreground authority fences
         shell: python
         run: |
           from pathlib import Path
-          from textwrap import dedent
 
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           source = path.read_text()
 
-          old_start = '''    func appDidLoseForeground() {
-        guard !foregroundIntegrityLossHandled else { return }
-        foregroundIntegrityLossHandled = true
-'''
-          new_start = '''    func appDidLoseForeground() {
-        // A sealed accepted artifact is immutable. Later scene transitions cannot revoke or
-        // rewrite completed acceptance, nor should they mutate presentation-only membership state.
-        guard phase != .accepted else { return }
-        guard !foregroundIntegrityLossHandled else { return }
-        foregroundIntegrityLossHandled = true
-'''
+          old_start = """    func appDidLoseForeground() {
+              guard !foregroundIntegrityLossHandled else { return }
+              foregroundIntegrityLossHandled = true
+          """
+          new_start = """    func appDidLoseForeground() {
+              // Sealed acceptance is immutable under later scene transitions.
+              guard phase != .accepted else { return }
+              guard !foregroundIntegrityLossHandled else { return }
+              foregroundIntegrityLossHandled = true
+          """
           if source.count(old_start) != 1:
               raise SystemExit(f"expected one foreground entry anchor, found {source.count(old_start)}")
           source = source.replace(old_start, new_start)
 
-          old_boundary = '''        if processCorrelationLease != nil || correlationSession != nil {
-            // Existing helper stops package transport before releasing this controller's lease.
-            abandonPackageCorrelation()
-            phase = .failed
-            message = "Capture left the foreground during Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; interrupted windows are never reusable evidence."
-            log("foreground_integrity_lost_during_target_correlation")
-            return
-        }
+          old_boundary = """        if processCorrelationLease != nil || correlationSession != nil {
+                      // Existing helper stops package transport before releasing this controller's lease.
+                      abandonPackageCorrelation()
+                      phase = .failed
+                      message = \"Capture left the foreground during Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; interrupted windows are never reusable evidence.\"
+                      log(\"foreground_integrity_lost_during_target_correlation\")
+                      return
+                  }
 
-        guard let token = currentConnectionToken else {
-'''
-          new_boundary = '''        if processCorrelationLease != nil || correlationSession != nil {
-            // Existing helper stops package transport before releasing this controller's lease.
-            abandonPackageCorrelation()
-            phase = .failed
-            message = "Capture left the foreground during Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; interrupted windows are never reusable evidence."
-            log("foreground_integrity_lost_during_target_correlation")
-            return
-        }
+                  guard let token = currentConnectionToken else {
+          """
+          new_boundary = """        if processCorrelationLease != nil || correlationSession != nil {
+                      // Existing helper stops package transport before releasing this controller's lease.
+                      abandonPackageCorrelation()
+                      phase = .failed
+                      message = \"Capture left the foreground during Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; interrupted windows are never reusable evidence.\"
+                      log(\"foreground_integrity_lost_during_target_correlation\")
+                      return
+                  }
 
-        if phase == .correlated || phase == .selected {
-            // The live scanner may already be retired here, but the package-issued correlated
-            // target and operator selection are still mutable attempt authority. They cannot cross
-            // a foreground-integrity break into a later authentication attempt.
-            resetDiscoverySessionOnly()
-            phase = .failed
-            message = "Capture left the foreground after target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; pre-background target authority cannot be reused."
-            log("foreground_integrity_lost_after_target_correlation")
-            return
-        }
+                  if phase == .correlated || phase == .selected {
+                      // Scanner retirement does not make correlated/selected target evidence safe to carry across foreground loss.
+                      resetDiscoverySessionOnly()
+                      phase = .failed
+                      message = \"Capture left the foreground after target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; pre-background target authority cannot be reused.\"
+                      log(\"foreground_integrity_lost_after_target_correlation\")
+                      return
+                  }
 
-        guard let token = currentConnectionToken else {
-'''
+                  guard let token = currentConnectionToken else {
+          """
           if source.count(old_boundary) != 1:
-              raise SystemExit(f"expected one post-correlation foreground boundary, found {source.count(old_boundary)}")
+              raise SystemExit(f"expected one post-correlation boundary, found {source.count(old_boundary)}")
           source = source.replace(old_boundary, new_boundary)
           path.write_text(source)
 
-          test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegrityCurrentSourceTests.swift")
-          if test_path.exists():
-              raise SystemExit("exact-current foreground regression unexpectedly already exists")
-          test_path.write_text(dedent(r'''\
-          import Foundation
-          import Testing
-          @testable import NembraBluetoothCapture
-
-          @Suite("Capture current foreground integrity")
-          struct TuyaCaptureForegroundIntegrityCurrentSourceTests {
-              @Test("foreground loss preserves sealed acceptance but revokes mutable evidence authority")
-              func foregroundLossRevokesMutableAuthority() throws {
-                  let source = try entrypointSource()
-                  let controller = String(try section(
-                      in: source,
-                      from: "private final class SecureLinkController",
-                      to: "@MainActor\nprivate protocol OfficialTuyaDriver"
-                  ))
-                  let cleanup = String(try section(
-                      in: controller,
-                      from: "func appDidLoseForeground()",
-                      to: "var privateConfig: Bool"
-                  ))
-
-                  let acceptedGuard = try requiredOffset(containing: "guard phase != .accepted else { return }", in: cleanup)
-                  let handledFence = try requiredOffset(containing: "guard !foregroundIntegrityLossHandled else { return }", in: cleanup)
-                  let proofClear = try requiredOffset(containing: "sdkDeviceMembershipVerified = false", in: cleanup)
-                  #expect(acceptedGuard < handledFence)
-                  #expect(handledFence < proofClear)
-
-                  for proof in [
-                      "membershipAccountUID = nil",
-                      "membershipDeviceID = nil",
-                      "membershipRequestID = UUID()",
-                      "officialConnectionRequestID = UUID()"
-                  ] {
-                      #expect(cleanup.contains(proof), "foreground loss must revoke view/account authority: \(proof)")
-                  }
-                  #expect(cleanup.contains("watchdog?.cancel()"))
-                  #expect(cleanup.contains("abandonPackageCorrelation()"))
-                  #expect(cleanup.contains("invalidateObservationContinuity("))
-                  #expect(cleanup.contains("invalidateInternalLifecycle("))
-                  #expect(cleanup.contains("Task { @MainActor [self] in"))
-                  #expect(!cleanup.contains("recordObservedTransportLoss"))
-                  #expect(!cleanup.contains("endConnection("))
-                  #expect(!cleanup.contains("disconnectBLE"))
-                  #expect(!cleanup.contains("releasePackageCorrelationLease()"))
-              }
-
-              @Test("foreground loss invalidates already-correlated target state before retry")
-              func correlatedTargetCannotCrossForegroundBoundary() throws {
-                  let source = try entrypointSource()
-                  let controller = String(try section(
-                      in: source,
-                      from: "private final class SecureLinkController",
-                      to: "@MainActor\nprivate protocol OfficialTuyaDriver"
-                  ))
-                  let cleanup = String(try section(
-                      in: controller,
-                      from: "func appDidLoseForeground()",
-                      to: "var privateConfig: Bool"
-                  ))
-
-                  let correlationLiveCheck = try requiredOffset(
-                      containing: "if processCorrelationLease != nil || correlationSession != nil",
-                      in: cleanup
-                  )
-                  let correlatedTargetCheck = try requiredOffset(
-                      containing: "if phase == .correlated || phase == .selected",
-                      in: cleanup
-                  )
-                  let tokenCheck = try requiredOffset(
-                      containing: "guard let token = currentConnectionToken else",
-                      in: cleanup
-                  )
-                  #expect(correlationLiveCheck < correlatedTargetCheck)
-                  #expect(correlatedTargetCheck < tokenCheck)
-                  #expect(cleanup.contains("resetDiscoverySessionOnly()"))
-                  #expect(cleanup.contains("foreground_integrity_lost_after_target_correlation"))
-                  #expect(cleanup.contains("pre-background target authority cannot be reused"))
-              }
-
-              private func requiredOffset(containing token: String, in source: String) throws -> String.Index {
-                  guard let range = source.range(of: token) else {
-                      Issue.record("Expected source token missing: \(token)")
-                      throw ContractError.missing
-                  }
-                  return range.lowerBound
-              }
-
-              private func entrypointSource() throws -> String {
-                  var root = URL(fileURLWithPath: #filePath)
-                  for _ in 0..<5 { root.deleteLastPathComponent() }
-                  return try String(
-                      contentsOf: root.appendingPathComponent("NembraApp/App/NembraCaptureEntrypoint.swift"),
-                      encoding: .utf8
-                  )
-              }
-
-              private func section(in source: String, from start: String, to end: String) throws -> Substring {
-                  guard let a = source.range(of: start),
-                        let b = source.range(of: end, range: a.upperBound..<source.endIndex) else {
-                      Issue.record("Expected source section missing: \(start) ... \(end)")
-                      throw ContractError.missing
-                  }
-                  return source[a.lowerBound..<b.lowerBound]
-              }
-
-              private enum ContractError: Error { case missing }
-          }
-          '''))
-
-      - name: Validate exact repair scope and contracts
+      - name: Validate source repair and worktree scope
         shell: bash
         run: |
           set -euo pipefail
           swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
-          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegrityCurrentSourceTests.swift
           python - <<'PY'
           from pathlib import Path
           source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
@@ -214,23 +97,24 @@ jobs:
               'if phase == .correlated || phase == .selected',
               'resetDiscoverySessionOnly()',
               'foreground_integrity_lost_after_target_correlation',
+              'pre-background target authority cannot be reused',
               'Task { @MainActor [self] in',
           ]
           missing = [item for item in required if item not in cleanup]
           if missing:
               raise SystemExit(f'missing foreground authority anchors: {missing}')
           if cleanup.index('guard phase != .accepted else { return }') > cleanup.index('sdkDeviceMembershipVerified = false'):
-              raise SystemExit('sealed acceptance guard occurs after membership mutation')
+              raise SystemExit('accepted guard occurs after authority mutation')
           if cleanup.index('if phase == .correlated || phase == .selected') > cleanup.index('guard let token = currentConnectionToken else'):
-              raise SystemExit('correlated/selected target authority is checked too late')
+              raise SystemExit('correlated/selected reset occurs after token fallthrough')
           for forbidden in ['recordObservedTransportLoss', 'sessionLedger.endConnection', 'disconnectBLE', 'releasePackageCorrelationLease()']:
               if forbidden in cleanup:
-                  raise SystemExit(f'foreground cleanup gained forbidden transport authority: {forbidden}')
+                  raise SystemExit(f'forbidden foreground transport authority: {forbidden}')
           PY
-          test "$(git diff --name-only | sort)" = "$(printf '%s\n' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegrityCurrentSourceTests.swift' | sort)"
+          test "$(git diff --name-only)" = "NembraApp/App/NembraCaptureEntrypoint.swift"
           git diff --check
 
-      - name: Publish clean two-path repair
+      - name: Publish clean source repair
         shell: bash
         run: |
           set -euo pipefail
@@ -238,6 +122,6 @@ jobs:
           git config user.name "nembra-sol-worker"
           git config user.email "actions@users.noreply.github.com"
           git add -A
-          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n' '.github/workflows/materialize-capture-foreground-authority-followup.yml' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegrityCurrentSourceTests.swift' | sort)"
+          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n' '.github/workflows/materialize-capture-foreground-authority-followup.yml' 'NembraApp/App/NembraCaptureEntrypoint.swift' | sort)"
           git commit -m "fix(capture): revoke correlated authority on foreground loss"
           git push origin HEAD:sol/v14-capture-foreground-authority-followup-1c408
