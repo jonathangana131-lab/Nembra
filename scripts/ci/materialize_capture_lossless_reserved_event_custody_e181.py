@@ -4,17 +4,20 @@ APP = Path(__file__).resolve().parents[2] / "NembraApp/App/NembraCaptureEntrypoi
 SNAPSHOT_OLD = "        let custodySafeUpdate = redactedApplicationEventDetails(update, accountUID: leasedAccountUID)\n"
 SNAPSHOT_NEW = """        let custodySafeEventDetails = TuyaAuthenticatedApplicationEventCustody.eventDetails(\n            applicationUpdate: update,\n            trustedGeneration: String(token.diagnosticGeneration),\n            accountUID: leasedAccountUID\n        )\n"""
 LOG_OLD = """            var eventDetails = custodySafeUpdate\n            eventDetails[\"generation\"] = String(token.diagnosticGeneration)\n            log(\"tuya_application_update\", eventDetails)\n"""
-HELPER_OLD = '''\n    private func redactedApplicationEventDetails(\n        _ update: [String: String],\n        accountUID: String\n    ) -> [String: String] {\n        var redacted: [String: String] = [:]\n        redacted.reserveCapacity(update.count)\n        for (key, value) in update.sorted(by: { $0.key < $1.key }) {\n            let redactedKey = key.replacingOccurrences(of: accountUID, with: "<redacted-account-uid>", options: [.caseInsensitive, .literal])\n            let redactedValue = value.replacingOccurrences(of: accountUID, with: "<redacted-account-uid>", options: [.caseInsensitive, .literal])\n            var custodyKey = redactedKey\n            var collisionOrdinal = 2\n            while redacted[custodyKey] != nil {\n                custodyKey = "\\(redactedKey)#\\(collisionOrdinal)"\n                collisionOrdinal += 1\n            }\n            redacted[custodyKey] = redactedValue\n        }\n        return redacted\n    }\n'''
+LOG_NEW = '            log("tuya_application_update", custodySafeEventDetails)\n'
 
 def once(text, old, new, label):
-    if text.count(old) != 1: raise SystemExit(f"{label}: exact match count {text.count(old)}")
+    if text.count(old) != 1:
+        raise SystemExit(f"{label}: exact match count {text.count(old)}")
     return text.replace(old, new, 1)
 
 def apply():
     s = APP.read_text()
     s = once(s, SNAPSHOT_OLD, SNAPSHOT_NEW, "snapshot")
-    s = once(s, LOG_OLD, '            log("tuya_application_update", custodySafeEventDetails)\n', "log")
-    s = once(s, HELPER_OLD, "", "helper")
+    s = once(s, LOG_OLD, LOG_NEW, "log")
+    helper_start = s.index("\n    private func redactedApplicationEventDetails(")
+    helper_end = s.index("\n    private func startWatchdog", helper_start)
+    s = s[:helper_start] + s[helper_end:]
     APP.write_text(s)
 
 def verify():
@@ -33,11 +36,14 @@ def verify():
         "log(\"tuya_application_update\", custodySafeEventDetails)",
     ]
     p = [r.index(x) for x in ordered]
-    if p != sorted(p): raise SystemExit("custody ordering regressed")
+    if p != sorted(p):
+        raise SystemExit("custody ordering regressed")
     for x in ('redactedApplicationEventDetails(', 'eventDetails["generation"] =', 'update.merging(['):
-        if x in r: raise SystemExit(f"lossy path remains: {x}")
+        if x in r:
+            raise SystemExit(f"lossy path remains: {x}")
     for x in ('redactedApplicationDescription', 'NembraTuyaPrivateIdentity.appSecret', 'liveTransportDriver.isLocallyConnected'):
-        if x not in s: raise SystemExit(f"current dependency missing: {x}")
+        if x not in s:
+            raise SystemExit(f"current dependency missing: {x}")
 
 if __name__ == "__main__":
     import sys
