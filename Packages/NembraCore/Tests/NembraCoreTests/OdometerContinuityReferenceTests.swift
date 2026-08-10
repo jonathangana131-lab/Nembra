@@ -21,7 +21,7 @@ struct OdometerContinuityReferenceTests {
     @Test("reference rejects impossible mileage")
     func invalidMileageFailsClosed() throws {
         #expect(throws: OdometerContinuityReference.ValidationError.invalidMiles) {
-            _ = try OdometerContinuityReference.Segment(miles: -.infinity, note: "invalid")
+            _ = try OdometerContinuityReference.Segment(miles: -Double.infinity, note: "invalid")
         }
         #expect(throws: OdometerContinuityReference.ValidationError.invalidMiles) {
             _ = try OdometerContinuityReference.Segment(miles: -1, note: "invalid")
