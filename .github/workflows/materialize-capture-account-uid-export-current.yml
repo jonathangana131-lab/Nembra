@@ -28,32 +28,32 @@ jobs:
           source = path.read_text()
 
           old_guard = '''        guard sdkAccountLoggedIn,
-                    sdkDeviceMembershipVerified,
-                    accountIdentityLeaseIsAuthorized,
-                    let driver else {
+              sdkDeviceMembershipVerified,
+              accountIdentityLeaseIsAuthorized,
+              let driver else {
           '''
           new_guard = '''        guard sdkAccountLoggedIn,
-                    sdkDeviceMembershipVerified,
-                    accountIdentityLeaseIsAuthorized,
-                    let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
-                    !verifiedAccountUID.isEmpty,
-                    let driver else {
+              sdkDeviceMembershipVerified,
+              accountIdentityLeaseIsAuthorized,
+              let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !verifiedAccountUID.isEmpty,
+              let driver else {
           '''
           if source.count(old_guard) != 1:
               raise SystemExit(f"expected exactly one application-admission guard, found {source.count(old_guard)}")
           source = source.replace(old_guard, new_guard, 1)
 
           old_log = '''            log("tuya_application_update", update.merging([
-                        "generation": String(token.diagnosticGeneration)
-                    ]) { current, _ in current })
+                "generation": String(token.diagnosticGeneration)
+            ]) { current, _ in current })
           '''
           new_log = '''            let accountUIDRedactedUpdate = Self.redactVerifiedAccountUID(
-                        verifiedAccountUID,
-                        from: update
-                    )
-                    log("tuya_application_update", accountUIDRedactedUpdate.merging([
-                        "generation": String(token.diagnosticGeneration)
-                    ]) { current, _ in current })
+                verifiedAccountUID,
+                from: update
+            )
+            log("tuya_application_update", accountUIDRedactedUpdate.merging([
+                "generation": String(token.diagnosticGeneration)
+            ]) { current, _ in current })
           '''
           if source.count(old_log) != 1:
               raise SystemExit(f"expected exactly one raw application-event log, found {source.count(old_log)}")
@@ -62,37 +62,37 @@ jobs:
           anchor = '''    private func startWatchdog(token: TuyaReadOnlyConnectionToken) {
           '''
           helper = '''    private static func redactVerifiedAccountUID(
-                  _ verifiedAccountUID: String,
-                  from update: [String: String]
-              ) -> [String: String] {
-                  let marker = "<redacted-account-uid>"
-                  var sanitized: [String: String] = [:]
-                  sanitized.reserveCapacity(update.count)
+        _ verifiedAccountUID: String,
+        from update: [String: String]
+    ) -> [String: String] {
+        let marker = "<redacted-account-uid>"
+        var sanitized: [String: String] = [:]
+        sanitized.reserveCapacity(update.count)
 
-                  // Sort only to make the collision-preserving redaction deterministic. The raw
-                  // account UID remains process-local authority and is never emitted by this helper.
-                  for (sourceKey, sourceValue) in update.sorted(by: { $0.key < $1.key }) {
-                      let redactedKeyBase = sourceKey.replacingOccurrences(
-                          of: verifiedAccountUID,
-                          with: marker,
-                          options: [.caseInsensitive]
-                      )
-                      let redactedValue = sourceValue.replacingOccurrences(
-                          of: verifiedAccountUID,
-                          with: marker,
-                          options: [.caseInsensitive]
-                      )
+        // Sort only to make collision-preserving redaction deterministic. The raw account UID
+        // remains process-local authority and is never emitted by this helper.
+        for (sourceKey, sourceValue) in update.sorted(by: { $0.key < $1.key }) {
+            let redactedKeyBase = sourceKey.replacingOccurrences(
+                of: verifiedAccountUID,
+                with: marker,
+                options: [.caseInsensitive]
+            )
+            let redactedValue = sourceValue.replacingOccurrences(
+                of: verifiedAccountUID,
+                with: marker,
+                options: [.caseInsensitive]
+            )
 
-                      var redactedKey = redactedKeyBase
-                      var collisionIndex = 2
-                      while sanitized[redactedKey] != nil {
-                          redactedKey = "\(redactedKeyBase)#\(collisionIndex)"
-                          collisionIndex += 1
-                      }
-                      sanitized[redactedKey] = redactedValue
-                  }
-                  return sanitized
-              }
+            var redactedKey = redactedKeyBase
+            var collisionIndex = 2
+            while sanitized[redactedKey] != nil {
+                redactedKey = "\(redactedKeyBase)#\(collisionIndex)"
+                collisionIndex += 1
+            }
+            sanitized[redactedKey] = redactedValue
+        }
+        return sanitized
+    }
 
           '''
           if source.count(anchor) != 1:
@@ -102,11 +102,11 @@ jobs:
           source = source.replace(anchor, helper + anchor, 1)
 
           duplicate = '''        "refreshtoken",
-                  "sessionkey",
-                  "authkey",
+        "sessionkey",
+        "authkey",
           '''
           simplified = '''        "refreshtoken",
-                  "authkey",
+        "authkey",
           '''
           if source.count(duplicate) != 1:
               raise SystemExit(f"expected exactly one duplicated session-key classifier tail, found {source.count(duplicate)}")
