@@ -9,6 +9,23 @@ DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.t
 PROVENANCE_HELPER="$SCRIPT_DIR/capture_tuya_private_input_provenance.py"
 cd "$REPO_ROOT"
 
+# Snapshotting private Tuya inputs is a preparation/review operation. The field
+# installer uses --verify-existing-provenance so a build can only consume a
+# previously preserved fingerprint set and cannot silently approve its own
+# current private inputs.
+PROVENANCE_MODE="snapshot"
+case "${1:-}" in
+  "")
+    ;;
+  --verify-existing-provenance)
+    PROVENANCE_MODE="verify"
+    ;;
+  *)
+    echo "ERROR: unsupported Capture Tuya bootstrap argument: ${1}" >&2
+    exit 16
+    ;;
+esac
+
 if ! command -v pod >/dev/null 2>&1; then
   cat >&2 <<'EOF'
 ERROR: CocoaPods is not installed.
@@ -105,18 +122,33 @@ do
 done
 
 # Snapshot every ignored input that can materially change the private field
-# build. The helper writes only SHA-256 fingerprints + public reviewed versions;
-# it never serializes credentials, SDK bytes, or device identifiers.
-if ! /usr/bin/python3 "$PROVENANCE_HELPER" snapshot \
-  --lockfile "$REPO_ROOT/Podfile.lock" \
-  --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
-  --security-build "$TUYA_PRIVATE_SDK/Build" \
-  --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
-  --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
+# build only during explicit preparation. A physical field build must verify an
+# already-preserved record so the build invocation cannot mint its own review
+# authority from whatever private bytes happen to be present at that moment.
+PROVENANCE_ARGUMENTS=(
+  --lockfile "$REPO_ROOT/Podfile.lock"
+  --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec"
+  --security-build "$TUYA_PRIVATE_SDK/Build"
+  --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec"
+  --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig"
   --record "$DEPENDENCY_PROVENANCE"
-then
-  echo "ERROR: exact private Tuya build-input provenance could not be snapshotted." >&2
-  exit 12
+)
+if [[ "$PROVENANCE_MODE" == "verify" ]]; then
+  [[ -f "$DEPENDENCY_PROVENANCE" ]] || {
+    echo "ERROR: no preserved private Tuya provenance record exists. Prepare and review the private workspace before attempting a field build; the installer will not create its own admission record." >&2
+    exit 12
+  }
+  if ! /usr/bin/python3 "$PROVENANCE_HELPER" verify "${PROVENANCE_ARGUMENTS[@]}"
+  then
+    echo "ERROR: current private Tuya inputs do not match the preserved reviewed provenance record. Stop and review a new field-build candidate instead of refreshing admission during install." >&2
+    exit 12
+  fi
+else
+  if ! /usr/bin/python3 "$PROVENANCE_HELPER" snapshot "${PROVENANCE_ARGUMENTS[@]}"
+  then
+    echo "ERROR: exact private Tuya build-input provenance could not be snapshotted for review." >&2
+    exit 12
+  fi
 fi
 
 LOCK_SHA256="$(shasum -a 256 Podfile.lock | awk '{print $1}')"

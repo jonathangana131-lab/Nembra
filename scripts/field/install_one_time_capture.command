@@ -59,7 +59,7 @@ say "Private intended-device admission validated"
 # CocoaPods. Building the public .xcodeproj here would intentionally compile the
 # fail-closed fallback and cannot authorize the ES80 experiment.
 say "Validating official Tuya SDK and private app-identity provisioning"
-"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"
+"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh" --verify-existing-provenance
 [[ -d "$ROOT/NembraCapture.xcworkspace" ]] || die "NembraCapture.xcworkspace was not generated. Do not use NembraCapture.xcodeproj for the authenticated field build."
 [[ "$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')" == "$SOURCE_SHA" ]] || die "Repository HEAD changed during private workspace bootstrap. Restart from the exact accepted source."
 [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Private workspace bootstrap changed tracked or unignored accepted-source inputs. Review and re-accept before building."
