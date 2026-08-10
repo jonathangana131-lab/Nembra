@@ -431,6 +431,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Secure Link ended. Exact scooter membership must be verified again for a new Capture view."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -470,6 +471,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        if phase == .correlated || phase == .selected {
+    resetDiscoverySessionOnly()
+    phase = .failed
+    message = "Correlated target authority ended with Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
+    log("target_correlation_authority_revoked_on_view_exit")
+    return
+}
+
         guard processCorrelationLease != nil || correlationSession != nil else { return }
         // Existing helper stops package transport before releasing this controller's lease.
         abandonPackageCorrelation()
@@ -479,6 +488,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func appDidLoseForeground() {
+        guard phase != .accepted else { return }
         guard !foregroundIntegrityLossHandled else { return }
         foregroundIntegrityLossHandled = true
 
@@ -488,6 +498,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Capture left the foreground. Exact scooter membership must be verified again before retry."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -505,6 +516,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
             log("foreground_integrity_lost_during_target_correlation")
             return
         }
+
+        if phase == .correlated || phase == .selected {
+    resetDiscoverySessionOnly()
+    phase = .failed
+    message = "Capture left the foreground after target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; pre-background target authority is never reusable evidence."
+    log("foreground_integrity_lost_after_target_correlation")
+    return
+}
 
         guard let token = currentConnectionToken else {
             if phase == .authenticating {
@@ -1427,7 +1446,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             await refreshLedgerSnapshot()
             log("tuya_application_update", update.merging([
                 "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
