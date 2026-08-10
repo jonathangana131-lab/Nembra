@@ -320,19 +320,10 @@ struct DashboardSpeedInstrumentView: View {
         let speedShouldTick = !reduceMotion
             && model.isAnimationActive
             && isLivePresentation(speedAvailability)
-        let energyRailShouldTick: Bool
-        if !reduceMotion,
-           energyRailHasSynchronizedStoreProjection,
-           hasEnergyRailSourceCapability,
-           storePowerProjection.currentness == .live,
-           storePowerProjection.observation != nil,
-           let energyRailRuntime {
-            energyRailShouldTick = energyRailRuntime.displaySchedule(
-                atUptimeNanoseconds: scheduleNow
-            ).requiresContinuousFrames
-        } else {
-            energyRailShouldTick = false
-        }
+        let energyRailShouldTick = shouldRenderContinuousEnergyRailFrames(
+            storePowerProjection: storePowerProjection,
+            atUptimeNanoseconds: scheduleNow
+        )
 
         TimelineView(
             .animation(
@@ -402,6 +393,24 @@ struct DashboardSpeedInstrumentView: View {
             && vehicle.hasSimulatorPowerEvidenceSource
     }
 
+    private func shouldRenderContinuousEnergyRailFrames(
+        storePowerProjection: SimulatorPowerStoreFencedProjection,
+        atUptimeNanoseconds uptimeNanoseconds: UInt64
+    ) -> Bool {
+        guard !reduceMotion,
+              energyRailHasSynchronizedStoreProjection,
+              hasEnergyRailSourceCapability,
+              storePowerProjection.currentness == .live,
+              storePowerProjection.observation != nil,
+              let energyRailRuntime else {
+            return false
+        }
+
+        return energyRailRuntime.displaySchedule(
+            atUptimeNanoseconds: uptimeNanoseconds
+        ).requiresContinuousFrames
+    }
+
     /// Applies exactly one already-sealed Store projection to the package runtime.
     /// No view clock, aggregate watts, speed receipt, mode, or lifecycle callback can
     /// create positive propulsion authority here.
@@ -463,8 +472,8 @@ struct DashboardSpeedInstrumentView: View {
         for storeProjection: SimulatorPowerStoreFencedProjection
     ) {
         guard hasEnergyRailSourceCapability,
-              storeProjection.currentness == .live,
-              storeProjection.observation != nil,
+              storePowerProjection.currentness == .live,
+              storePowerProjection.observation != nil,
               let energyRailRuntime else {
             energyRailNextTransitionUptimeNanoseconds = nil
             return
