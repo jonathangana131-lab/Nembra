@@ -968,6 +968,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
         membershipAccountUID = nil
         membershipDeviceID = nil
         pendingCorrelatedTargetID = nil
+        if phase == .correlated || phase == .selected {
+            // Final-window sealing already retired package scanning. Account authority loss must
+            // revoke target reuse without deleting the completed physical-correlation receipts.
+            pendingCorrelatedTargetID = nil
+            selectedID = nil
+            targetCorrelationOperatorConfirmed = false
+            phase = .failed
+            message = "SDK account authority changed after Bluetooth target correlation. Restart from OFF1 after re-verifying exact scooter membership; completed correlation evidence remains available for diagnostics."
+            log("sdk_membership_invalidated_after_target_correlation")
+        }
         if phase == .baseline || phase == .powerOn || phase == .scanning || phase == .correlated {
             abandonPackageCorrelation()
         }
