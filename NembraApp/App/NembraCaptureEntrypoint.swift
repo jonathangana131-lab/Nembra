@@ -2175,6 +2175,10 @@ private struct SecureLinkView: View {
         }
     }
 
+    private var correlationDisplayedWindowOrdinal: Int {
+        test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)
+    }
+
     private var hero: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 10) {
@@ -2345,7 +2349,7 @@ private struct SecureLinkView: View {
                             .font(.title2.bold())
                     }
                     Spacer()
-                    Text("\(min(test.correlationCompletedWindowCount + 1, 4))/4")
+                    Text("\(correlationDisplayedWindowOrdinal)/4")
                         .font(.title3.monospacedDigit().bold())
                         .foregroundStyle(.secondary)
                 }
