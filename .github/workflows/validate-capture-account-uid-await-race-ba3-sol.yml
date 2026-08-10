@@ -1,0 +1,72 @@
+name: Validate Capture Account UID Await Race BA3 Sol
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-account-uid-await-race-ba3-sol
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Guard exact effective donor
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='ba3a1eeae36caca6dd84beaabd0f15f4f0b57925'
+          donor='bf49276e1419898aedfc7a4a376c401a4c032b13'
+          test "$(git rev-parse HEAD^)" = "$donor"
+          test "$(git merge-base HEAD "$base")" = "$base"
+          mapfile -t effective < <(git diff --name-only "$base" "$donor" | sort)
+          test "${#effective[@]}" = 2
+          test "${effective[0]}" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          test "${effective[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift'
+
+      - name: Run focused SwiftPM regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift --version
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaApplicationAccountUIDExportCustodySourceTests
+
+      - name: Recheck source ordering and diff hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          start = s.index('    private func receivedApplicationUpdate(')
+          end = s.index('    private func startWatchdog', start)
+          receiver = s[start:end]
+          assert receiver.index('let membershipAccountUID,') < receiver.index('let exportSafeUpdate = Self.redactedApplicationEventDetails(update, accountUID: membershipAccountUID)') < receiver.index('try await sessionLedger.recordApplicationUpdate') < receiver.index('log("tuya_application_update", eventDetails)')
+          assert 'var eventDetails = exportSafeUpdate' in receiver
+          assert 'return update' not in receiver[receiver.index('private static func redactedApplicationEventDetails('):]
+          PY
+          git diff --check ba3a1eeae36caca6dd84beaabd0f15f4f0b57925 HEAD
+
+      - name: Remove validation helper and preserve two-path donor
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='ba3a1eeae36caca6dd84beaabd0f15f4f0b57925'
+          rm .github/workflows/validate-capture-account-uid-await-race-ba3-sol.yml
+          git add -u .github/workflows/validate-capture-account-uid-await-race-ba3-sol.yml
+          git diff --cached --check
+          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' commit -m 'ci(capture): record account UID focused package validation'
+          mapfile -t changed < <(git diff --name-only "$base" HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = 2
+          test "${changed[0]}" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          test "${changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift'
+          git push origin HEAD:fix/v14-capture-account-uid-await-race-ba3-sol
