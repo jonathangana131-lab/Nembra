@@ -32,7 +32,11 @@ public struct SimulatorPowerObservation: Equatable, Sendable {
     public let receivedAtUptimeNanoseconds: UInt64
     public let continuityGeneration: UInt64
 
-    public init(
+    /// Construction is intentionally module-internal. External consumers may read
+    /// source-issued observations but cannot manufacture one and wrap it in a
+    /// caller-created `.live` availability value. `@testable` package tests still
+    /// exercise the fail-closed numeric/identity guards directly.
+    init(
         watts: Double,
         receiptSequenceNumber: UInt64,
         receivedAtUptimeNanoseconds: UInt64,
