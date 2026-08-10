@@ -94,6 +94,8 @@ The accepted private-input helper identity is fixed below:
 
 Those accepted bytes minimize secret acquisition and preserve custody across failure: an already-occupied final path is refused before the private identifier is requested; secure terminal input fails closed on echoed-fallback warning or EOF; descriptor-relative `O_EXCL|O_NOFOLLOW` remains the race authority after the precheck; fresh inode mode/ownership/link/size are proven before secret bytes are written; failed acquisition durably truncates and fsyncs only the exact still-open created inode and proves zero length before returning the original failure; cleanup never unlinks a mutable pathname after secret acquisition; terminal abort follows the same exact-inode scrub boundary; pathname retarget is rejected; and successful output is rebound to the same directory/file identity with exact byte readback. A failed acquisition may intentionally leave a mode-`0600`, zero-length spent subject at the chosen path. These helper bytes are operator-custody tooling only. They do not alter the frozen `a0f4…` app subject, accept signing, or authorize Bluetooth activity.
 
+Superseded private-input provenance is retained only for audit compatibility with the immediately prior accepted handoff: helper commit `af75ffa6dc4409a21822295428e4eeb922ac3d16`, helper blob `50b12675a57fd2f570d833cfcdbfd7be59f52ca4`, exact tested head `91dda8ac05e937e5615312a487f7d78926b74949`, exact focused QA run `31349898562`, and exact focused QA job `93338620824` were terminal success. **Do not materialize or invoke that superseded helper for the current handoff.**
+
 ```bash
 umask 077
 HOME_PHYSICAL="$(cd -P -- "$HOME" && /bin/pwd -P)"
