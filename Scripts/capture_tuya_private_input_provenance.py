@@ -88,8 +88,7 @@ def _read_stable_regular_file_sha256(path: Path) -> tuple[os.stat_result, str]:
         if (
             stat.S_ISLNK(current_path.st_mode)
             or not stat.S_ISREG(current_path.st_mode)
-            or current_path.st_dev != after.st_dev
-            or current_path.st_ino != after.st_ino
+            or _stat_identity(current_path) != _stat_identity(after)
         ):
             raise ProvenanceError(f"private build input pathname changed during fingerprinting: {path.name}")
         return after, digest.hexdigest()
