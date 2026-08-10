@@ -1401,6 +1401,25 @@ private final class SecureLinkController: NSObject, ObservableObject {
         log(kind, ["generation": String(token.diagnosticGeneration)])
     }
 
+    private func redactVerifiedAccountUID(from update: [String: String]) -> [String: String] {
+        guard let accountUID = membershipAccountUID, !accountUID.isEmpty else { return update }
+        let marker = "<redacted-account-uid>"
+        var sanitized: [String: String] = [:]
+        for key in update.keys.sorted() {
+            guard let value = update[key] else { continue }
+            let redactedKey = key.replacingOccurrences(of: accountUID, with: marker)
+            let redactedValue = value.replacingOccurrences(of: accountUID, with: marker)
+            var uniqueKey = redactedKey
+            var collisionIndex = 2
+            while sanitized[uniqueKey] != nil {
+                uniqueKey = "\(redactedKey)#\(collisionIndex)"
+                collisionIndex += 1
+            }
+            sanitized[uniqueKey] = redactedValue
+        }
+        return sanitized
+    }
+
     private func receivedApplicationUpdate(
         _ update: [String: String],
         token: TuyaReadOnlyConnectionToken
@@ -1445,9 +1464,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            let sanitizedUpdate = redactVerifiedAccountUID(from: update)
+            log("tuya_application_update", sanitizedUpdate.merging([
                 "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -2261,7 +2281,6 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "accounttoken",
         "accesstoken",
         "refreshtoken",
-        "sessionkey",
         "authkey",
         "seckey",
     ]
