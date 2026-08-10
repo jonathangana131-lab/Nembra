@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 import plistlib
 import sys
@@ -50,6 +51,34 @@ class ExportOptionsCoherenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             path = self.plist(Path(temp), ["development"])
             self.assertFalse(preflight._export_options_are_ready(path, self.TEAM))
+
+    def test_symlinked_ancestor_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            real_parent = root / "real"
+            real_parent.mkdir()
+            path = self.plist(real_parent, {"teamID": self.TEAM, "method": "development"})
+            alias_parent = root / "alias"
+            try:
+                alias_parent.symlink_to(real_parent, target_is_directory=True)
+            except (OSError, NotImplementedError) as error:
+                self.skipTest(str(error))
+
+            aliased_path = alias_parent / path.name
+            self.assertFalse(preflight._export_options_are_ready(aliased_path, self.TEAM))
+
+    def test_relative_path_fails_closed_even_when_file_exists(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.plist(root, {"teamID": self.TEAM, "method": "development"})
+            original_cwd = Path.cwd()
+            try:
+                os.chdir(root)
+                self.assertFalse(
+                    preflight._export_options_are_ready(Path("ExportOptions.plist"), self.TEAM)
+                )
+            finally:
+                os.chdir(original_cwd)
 
 
 if __name__ == "__main__":
