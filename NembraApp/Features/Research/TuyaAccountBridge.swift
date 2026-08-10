@@ -3,6 +3,7 @@ import CoreImage.CIFilterBuiltins
 import CoreTransferable
 import CryptoKit
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 
 /// Official Tuya Smart account-link preflight for the one-time Nembra Capture utility.
