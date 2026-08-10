@@ -1,0 +1,74 @@
+name: Temporary Capture whole accepted export freeze
+
+on:
+  push:
+    branches:
+      - work/v14-capture-whole-export-freeze-sol
+
+permissions:
+  contents: write
+
+jobs:
+  apply-freeze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: work/v14-capture-whole-export-freeze-sol
+
+      - name: Apply whole-envelope repair
+        run: python3 scripts/_temp_apply_capture_whole_export_freeze.py
+
+      - name: Verify source contract and diff hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          red = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaWholeAcceptedExportArtifactImmutabilitySourceTests.swift').read_text()
+          required = [
+              'private var sealedAcceptedExport: Export?',
+              'self.sealedAcceptedExport = self.makeExport(',
+              'phase: .accepted',
+              'events: acceptedEventPrefixAtCut',
+              'if phase == .accepted',
+              'guard let sealedAcceptedExport',
+              'envelope = sealedAcceptedExport',
+              'private func makeExport(phase: Phase, events: [Event]) -> Export',
+              'sealedAcceptedExport = nil',
+          ]
+          for token in required:
+              assert token in app, token
+              assert token in app or token in red
+          seal = app.index('try await sessionLedger.sealAcceptedObservation(for: token)')
+          freeze = app.index('self.sealedAcceptedExport = self.makeExport(', seal)
+          accepted = app.index('self.phase = .accepted', freeze)
+          assert seal < freeze < accepted
+          assert 'await ' not in app[seal + len('try await sessionLedger.sealAcceptedObservation(for: token)'):freeze]
+          prepare = app[app.index('func prepareExport()'):app.index('private func resetDiscoverySessionOnly')]
+          accepted_start = prepare.index('if phase == .accepted')
+          mutable_start = prepare.index('else', accepted_start)
+          accepted_body = prepare[accepted_start:mutable_start]
+          for forbidden in ['Date()', 'buildIdentity.', 'sdkAccountLoggedIn', 'sdkDeviceMembershipVerified', 'sdkLocalBLEOnline', 'ledgerSnapshot', 'candidates']:
+              assert forbidden not in accepted_body, forbidden
+          assert 'TuyaWholeAcceptedExportArtifactImmutabilitySourceTests' in red
+          PY
+          git diff --check
+
+      - name: Remove temporary patch transport
+        run: |
+          git rm .github/workflows/_temp_capture_whole_export_freeze.yml
+          git rm scripts/_temp_apply_capture_whole_export_freeze.py
+
+      - name: Commit product-only repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-v14-recovery'
+          git config user.email 'actions@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaWholeAcceptedExportArtifactImmutabilitySourceTests.swift
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m 'fix(capture): freeze complete accepted export envelope'
+          git push origin HEAD:work/v14-capture-whole-export-freeze-sol
