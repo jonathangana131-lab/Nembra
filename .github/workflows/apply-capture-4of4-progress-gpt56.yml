@@ -1,0 +1,62 @@
+name: Apply Capture 4-of-4 Progress Repair
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-4of4-progress-gpt56sol
+    paths:
+      - .github/workflows/apply-capture-4of4-progress-gpt56.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-4of4-progress-gpt56sol
+          fetch-depth: 0
+
+      - name: Apply current-candidate presentation repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "5e96004ec565a5a19df8312f64985862a0443cdc"
+          git show 6508c5d8e2902589164d6cef34b30c5326c86599:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationTruthSourceTests.swift \
+            > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationTruthSourceTests.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          text = path.read_text()
+          old = '                    Text("\\(min(test.correlationCompletedWindowCount + 1, 4))/4")\n'
+          new = '                    Text("\\(correlationDisplayedWindowOrdinal)/4")\n'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one visible correlation ordinal anchor, found {text.count(old)}')
+          text = text.replace(old, new, 1)
+          anchor = '    private var currentStageIndex: Int {\n'
+          property_text = '''    private var correlationDisplayedWindowOrdinal: Int {
+              test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)
+          }
+
+          '''
+          if text.count(anchor) != 1:
+              raise SystemExit('currentStageIndex insertion anchor missing or ambiguous')
+          text = text.replace(anchor, property_text + anchor, 1)
+          path.write_text(text)
+          PY
+          git diff --check
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaCorrelationProgressPresentationTruthSourceTests
+
+      - name: Commit product repair and remove constructor
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-swarm-bot"
+          git config user.email "nembra-swarm-bot@users.noreply.github.com"
+          git rm .github/workflows/apply-capture-4of4-progress-gpt56.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationTruthSourceTests.swift
+          git diff --cached --check
+          git commit -m "fix(capture): show completed correlation as four of four"
+          git push origin HEAD:fix/v14-capture-4of4-progress-gpt56sol
