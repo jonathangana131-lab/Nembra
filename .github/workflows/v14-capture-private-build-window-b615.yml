@@ -53,19 +53,24 @@ jobs:
           python3 scripts/ci/tests/test_capture_tuya_private_input_build_guard.py
           python3 scripts/ci/tests/test_capture_field_installer_build_window_guard_source.py
 
-      - name: Re-run private provenance and installer source suites
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
-          python3 scripts/ci/tests/test_capture_tuya_private_input_record_snapshot_coherence.py
-          python3 scripts/ci/tests/test_capture_tuya_private_input_record_final_snapshot_coherence.py
-          python3 scripts/ci/tests/test_capture_tuya_private_input_record_tree_cross_authority.py
-          python3 scripts/ci/tests/test_capture_field_installer_source.py
-          python3 scripts/ci/tests/test_capture_field_installer_private_device.py
-          python3 scripts/ci/tests/test_capture_field_installer_coredevice.py
-          python3 scripts/ci/tests/test_capture_field_installer_identity_custody.py
-          python3 scripts/ci/tests/test_capture_signed_field_artifact_source.py
+      - name: Existing private provenance suite
+        run: python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+      - name: Existing record snapshot suite
+        run: python3 scripts/ci/tests/test_capture_tuya_private_input_record_snapshot_coherence.py
+      - name: Existing final snapshot suite
+        run: python3 scripts/ci/tests/test_capture_tuya_private_input_record_final_snapshot_coherence.py
+      - name: Existing cross-authority suite
+        run: python3 scripts/ci/tests/test_capture_tuya_private_input_record_tree_cross_authority.py
+      - name: Existing field installer source suite
+        run: python3 scripts/ci/tests/test_capture_field_installer_source.py
+      - name: Existing private device suite
+        run: python3 scripts/ci/tests/test_capture_field_installer_private_device.py
+      - name: Existing CoreDevice suite
+        run: python3 scripts/ci/tests/test_capture_field_installer_coredevice.py
+      - name: Existing identity custody suite
+        run: python3 scripts/ci/tests/test_capture_field_installer_identity_custody.py
+      - name: Existing signed artifact source suite
+        run: python3 scripts/ci/tests/test_capture_signed_field_artifact_source.py
 
       - name: Prove exact effective product scope
         shell: bash
