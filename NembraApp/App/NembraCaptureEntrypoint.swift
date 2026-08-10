@@ -447,6 +447,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
         // Foreground loss already owns the terminal retirement for this view lifetime.
         // Avoid racing a second terminal task when backgrounding is followed by onDisappear.
         if foregroundIntegrityLossHandled { return }
+        // A normal navigation exit owns this view-lifetime terminal too. A later scene callback
+        // must not schedule a second/different package terminal while this one is still in flight.
+        foregroundIntegrityLossHandled = true
 
         if let token = currentConnectionToken {
             phase = .failed
@@ -474,12 +477,20 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
-        guard processCorrelationLease != nil || correlationSession != nil else { return }
-        // Existing helper stops package transport before releasing this controller's lease.
-        abandonPackageCorrelation()
-        phase = .failed
-        message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
-        log("target_correlation_abandoned_on_view_exit")
+        if processCorrelationLease != nil || correlationSession != nil {
+            resetDiscoverySessionOnly()
+            phase = .failed
+            message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
+            log("target_correlation_abandoned_on_view_exit")
+            return
+        }
+
+        if phase == .correlated || phase == .selected {
+            resetDiscoverySessionOnly()
+            phase = .failed
+            message = "Target correlation was retired because Capture left Secure Link. Restart from OFF1; a pre-exit correlated target is never reusable authority."
+            log("target_correlation_retired_on_view_exit")
+        }
     }
 
     func appDidLoseForeground() {
