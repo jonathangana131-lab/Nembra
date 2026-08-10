@@ -51,6 +51,32 @@ class ExportOptionsCoherenceTests(unittest.TestCase):
             path = self.plist(Path(temp), ["development"])
             self.assertFalse(preflight._export_options_are_ready(path, self.TEAM))
 
+    def test_relative_export_options_path_fails_closed(self):
+        self.assertFalse(
+            preflight._export_options_are_ready(Path("ExportOptions.plist"), self.TEAM)
+        )
+
+    def test_symlinked_export_options_parent_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            real_parent = root / "real"
+            real_parent.mkdir()
+            self.plist(real_parent, {"teamID": self.TEAM, "method": "development"})
+            alias = root / "alias"
+            try:
+                alias.symlink_to(real_parent, target_is_directory=True)
+            except (OSError, NotImplementedError) as error:
+                self.skipTest(f"symlink creation unavailable: {error}")
+            self.assertFalse(
+                preflight._export_options_are_ready(alias / "ExportOptions.plist", self.TEAM)
+            )
+
+    def test_empty_export_options_file_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "ExportOptions.plist"
+            path.touch()
+            self.assertFalse(preflight._export_options_are_ready(path, self.TEAM))
+
 
 if __name__ == "__main__":
     unittest.main()
