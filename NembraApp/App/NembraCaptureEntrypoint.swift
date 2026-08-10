@@ -1267,6 +1267,18 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     let acceptedEventPrefixAtCut = Array(self.events.dropFirst(self.captureAttemptEventStartIndex))
                     do {
                         try await sessionLedger.sealAcceptedObservation(for: token)
+                        self.sdkLocalBLEOnline = driver.isLocallyConnected(uuid: self.tuyaUUID)
+                        guard self.sdkLocalBLEOnline else {
+                            self.currentConnectionToken = nil
+                            self.localBLESettlementToken = nil
+                            self.driver = nil
+                            self.phase = .failed
+                            self.message = "Tuya local-BLE authority changed while canonical acceptance was sealing. Restart from OFF1; the sealed package chronology is diagnostic only."
+                            self.log("sdk_local_ble_offline_during_acceptance_seal", [
+                                "generation": String(token.diagnosticGeneration)
+                            ])
+                            return
+                        }
                         guard self.buildIdentity.isAuthoritativeFieldBuild,
                               self.accountIdentityLeaseIsAuthorized else {
                             self.currentConnectionToken = nil
