@@ -1281,6 +1281,30 @@ private final class SecureLinkController: NSObject, ObservableObject {
                             ])
                             return
                         }
+                        guard let driver = self.driver else {
+                            self.currentConnectionToken = nil
+                            self.localBLESettlementToken = nil
+                            self.sdkLocalBLEOnline = false
+                            self.phase = .failed
+                            self.message = "Tuya local-BLE authority became unavailable after canonical acceptance sealed. Restart from OFF1; no disconnect time is inferred."
+                            self.log("sdk_local_ble_authority_missing_after_acceptance_seal", [
+                                "generation": String(token.diagnosticGeneration)
+                            ])
+                            return
+                        }
+                        let postSealLocalBLEOnline = driver.isLocallyConnected(uuid: self.tuyaUUID)
+                        self.sdkLocalBLEOnline = postSealLocalBLEOnline
+                        guard postSealLocalBLEOnline else {
+                            self.currentConnectionToken = nil
+                            self.localBLESettlementToken = nil
+                            self.driver = nil
+                            self.phase = .failed
+                            self.message = "Tuya local-BLE authority was no longer current after canonical acceptance sealed. Restart from OFF1; no disconnect time is inferred."
+                            self.log("sdk_local_ble_not_current_after_acceptance_seal", [
+                                "generation": String(token.diagnosticGeneration)
+                            ])
+                            return
+                        }
                         self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut
                         self.currentConnectionToken = nil
                         self.sealedAcceptedExport = self.makeExport(
