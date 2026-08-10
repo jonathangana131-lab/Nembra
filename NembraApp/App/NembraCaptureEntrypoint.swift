@@ -1482,17 +1482,25 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
         var redacted: [String: String] = [:]
         redacted.reserveCapacity(update.count)
-        for (key, value) in update {
+        for key in update.keys.sorted() {
+            guard let value = update[key] else { continue }
             let redactedKey = key.replacingOccurrences(
                 of: accountUID,
                 with: "<redacted-account-uid>",
                 options: [.caseInsensitive, .literal]
             )
-            redacted[redactedKey] = value.replacingOccurrences(
+            let redactedValue = value.replacingOccurrences(
                 of: accountUID,
                 with: "<redacted-account-uid>",
                 options: [.caseInsensitive, .literal]
             )
+            var uniqueKey = redactedKey
+            var collisionIndex = 2
+            while redacted[uniqueKey] != nil {
+                uniqueKey = "\(redactedKey)#\(collisionIndex)"
+                collisionIndex += 1
+            }
+            redacted[uniqueKey] = redactedValue
         }
         return redacted
     }

@@ -17,6 +17,19 @@ struct TuyaApplicationAccountUIDExportCustodySourceTests {
         #expect(!receiver.contains("log(\"tuya_application_update\", update"))
     }
 
+    @Test("UID redaction preserves distinct SDK fields when sanitized keys collide")
+    func redactionCannotSilentlyCoalesceDistinctKeys() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let receiver = String(try section(in: source, from: "private func receivedApplicationUpdate(", to: "private func startWatchdog"))
+
+        #expect(receiver.contains("update.keys.sorted()"))
+        #expect(receiver.contains("var uniqueKey = redactedKey"))
+        #expect(receiver.contains("while redacted[uniqueKey] != nil"))
+        #expect(receiver.contains("uniqueKey = \"\\(redactedKey)#\\(collisionIndex)\""))
+        #expect(receiver.contains("redacted[uniqueKey] = redactedValue"))
+        #expect(!receiver.contains("redacted[redactedKey] = value.replacingOccurrences("))
+    }
+
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
         guard let a = source.range(of: start), let b = source.range(of: end, range: a.upperBound..<source.endIndex) else { throw Error.sectionMissing }
         return source[a.lowerBound..<b.lowerBound]
