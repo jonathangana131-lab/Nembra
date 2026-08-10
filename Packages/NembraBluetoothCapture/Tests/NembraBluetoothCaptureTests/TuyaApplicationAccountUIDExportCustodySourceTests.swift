@@ -13,7 +13,7 @@ struct TuyaApplicationAccountUIDExportCustodySourceTests {
         let privacyFreeze = try requiredOffset(containing: "let eventDetailsAtAdmission = redactedApplicationEventDetails(", in: receiver)
         let packageAwait = try requiredOffset(containing: "try await sessionLedger.recordApplicationUpdate", in: receiver)
         let leaseRecheck = try requiredOffset(containing: "currentLeasedAccountUID == leasedAccountUID", in: receiver)
-        let eventLog = try requiredOffset(containing: "log("tuya_application_update", eventDetails)", in: receiver)
+        let eventLog = try requiredOffset(containing: "log(\"tuya_application_update\", eventDetails)", in: receiver)
 
         #expect(leaseCapture < privacyFreeze)
         #expect(privacyFreeze < packageAwait)
@@ -45,7 +45,7 @@ struct TuyaApplicationAccountUIDExportCustodySourceTests {
         #expect(helper.contains("while redacted[redactedKey] != nil"))
         #expect(helper.contains("collisionIndex += 1"))
         #expect(!helper.contains("return update"))
-        #expect(!receiver.contains("log("tuya_application_update", update"))
+        #expect(!receiver.contains("log(\"tuya_application_update\", update"))
     }
 
     private func requiredOffset(containing token: String, in source: String) throws -> String.Index {
