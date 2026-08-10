@@ -15,6 +15,7 @@ from pathlib import Path
 import stat
 import sys
 from typing import Callable
+import warnings
 
 MAX_PRIVATE_IDENTIFIER_BYTES = 128
 READY_MARKER = "CREATED_PRIVATE_INTENDED_DEVICE_INPUT"
@@ -151,6 +152,23 @@ def _validated_secret(secret: str, output_path: Path) -> bytes:
     return encoded
 
 
+def _secure_secret_provider() -> str:
+    """Read the identifier only when getpass can disable terminal echo.
+
+    Python's getpass normally warns and falls back to ordinary input when terminal echo
+    control is unavailable. That fallback is unacceptable for the intended-device secret,
+    so promote GetPassWarning to an exception before getpass can consume fallback input.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", getpass.GetPassWarning)
+        try:
+            return getpass.getpass("Intended iPhone UDID: ")
+        except getpass.GetPassWarning as error:
+            raise PrivateInputError("secure-terminal-input-unavailable") from error
+        except EOFError as error:
+            raise PrivateInputError("secure-terminal-input-unavailable") from error
+
+
 def _write_all(descriptor: int, payload: bytes) -> None:
     offset = 0
     while offset < len(payload):
@@ -275,7 +293,7 @@ def main(argv: list[str] | None = None) -> int:
             args.private_directory,
             args.source_repo,
             args.filename,
-            secret_provider=lambda: getpass.getpass("Intended iPhone UDID: "),
+            secret_provider=_secure_secret_provider,
         )
     except PrivateInputError as error:
         print(f"NOT_READY: {error}", file=sys.stderr)
