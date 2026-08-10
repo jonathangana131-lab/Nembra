@@ -431,6 +431,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -479,6 +480,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func appDidLoseForeground() {
+        // Sealed accepted artifacts are immutable/shareable and no longer admit observation evidence.
+        guard phase != .accepted else { return }
         guard !foregroundIntegrityLossHandled else { return }
         foregroundIntegrityLossHandled = true
 
@@ -488,6 +491,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Exact scooter membership authority was revoked when Capture left the foreground; verify it again after returning to Capture."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -503,6 +507,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
             phase = .failed
             message = "Capture left the foreground during Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; interrupted windows are never reusable evidence."
             log("foreground_integrity_lost_during_target_correlation")
+            return
+        }
+
+        if phase == .correlated || phase == .selected {
+            // Correlation authority belongs to one uninterrupted foreground attempt. Once package
+            // scanning has sealed/released, explicitly discard the correlated/selected target too.
+            resetDiscoverySessionOnly()
+            phase = .failed
+            message = "Capture left the foreground after Bluetooth target correlation. The correlated target was invalidated; re-verify membership and restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
+            log("foreground_integrity_lost_after_target_correlation")
             return
         }
 
@@ -1427,7 +1441,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             await refreshLedgerSnapshot()
             log("tuya_application_update", update.merging([
                 "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
