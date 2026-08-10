@@ -54,11 +54,24 @@ jobs:
           fi
 
           # The official SDK account gate must remain present; metadata QR approval
-          # alone is not accepted as BLE authentication authority.
+          # alone is not accepted as BLE authentication authority. Check selector
+          # labels independently so normal multiline Swift formatting stays valid.
           grep -Fq 'ThingSmartUser.sharedInstance()' "$active"
-          grep -Fq 'sendVerifyCode(withUserName:' "$active"
-          grep -Eq 'login\(withEmail:|login\(withMobile:' "$active"
+          grep -Fq 'sendVerifyCode' "$active"
+          grep -Fq 'withUserName:' "$active"
+          grep -Fq 'withEmail:' "$active"
+          grep -Fq 'withMobile:' "$active"
           grep -Fq 'ThingSmartBLEManager.sharedInstance().connectBLE' "$active"
+
+          # The official SDK currently delivers structured dpsUpdate dictionaries,
+          # not byte-exact FD50 payloads. The app must advance canonical chronology
+          # through the structured-update API rather than serializing/synthesizing
+          # bytes to satisfy an old Data-taking ledger contract.
+          if grep -Fq 'recordApplicationPayload(' "$active"; then
+            echo 'ERROR: Capture must use recordApplicationUpdate(isNonEmpty:) for SDK dpsUpdate evidence'
+            exit 1
+          fi
+          grep -Fq 'recordApplicationUpdate(isNonEmpty:' "$active"
 
           # Keep password-based Tuya login out of the field utility. Verification-code
           # login is sufficient and avoids collecting/persisting the account password.
