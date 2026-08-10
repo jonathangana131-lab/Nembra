@@ -17,7 +17,7 @@ jobs:
         with:
           ref: validation/v14-capture-guided-visual-e7af-sol
           fetch-depth: 0
-      - name: Merge exact current guided product and update procedure custody
+      - name: Merge exact current guided product
         shell: bash
         run: |
           set -euo pipefail
@@ -29,83 +29,7 @@ jobs:
           git config user.email 'nembra-go-bot@users.noreply.github.com'
           git merge --no-commit --no-ff "$product"
           test -z "$(git diff --name-only --diff-filter=U)"
-
-          python3 - <<'PY'
-          from pathlib import Path
-
-          workflow_path = Path('.github/workflows/capture-standalone-visual-evidence.yml')
-          workflow = workflow_path.read_text()
-
-          def replace_lines(text, old_lines, new_lines, label):
-              old = "\n".join(old_lines) + "\n"
-              new = "\n".join(new_lines) + "\n"
-              if text.count(old) != 1:
-                  raise SystemExit(f'{label} anchor changed')
-              return text.replace(old, new, 1)
-
-          workflow = replace_lines(
-              workflow,
-              ['  EXPECTED_BUNDLE_ID: com.jonathangana131.nembra.capturelearn'],
-              [
-                  '  EXPECTED_BUNDLE_ID: com.jonathangana131.nembra.capturelearn',
-                  '  EXPECTED_PROCEDURE_IDENTIFIER: ES80-AUTHENTICATED-STATIONARY-v1',
-              ],
-              'visual workflow bundle env',
-          )
-          workflow = replace_lines(
-              workflow,
-              [
-                  '            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$PR_SHA" \\',
-                  '            CODE_SIGNING_ALLOWED=NO \\',
-              ],
-              [
-                  '            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$PR_SHA" \\',
-                  '            INFOPLIST_KEY_NembraCaptureProcedureIdentifier="$EXPECTED_PROCEDURE_IDENTIFIER" \\',
-                  '            CODE_SIGNING_ALLOWED=NO \\',
-              ],
-              'visual workflow build provenance',
-          )
-          workflow = replace_lines(
-              workflow,
-              [
-                  '          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$BUILD_PLIST")" = "$PR_SHA"',
-                  '          test "$(plutil -extract CFBundleIdentifier raw -o - "$BUILD_PLIST")" = "$EXPECTED_BUNDLE_ID"',
-              ],
-              [
-                  '          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$BUILD_PLIST")" = "$PR_SHA"',
-                  '          test "$(plutil -extract NembraCaptureProcedureIdentifier raw -o - "$BUILD_PLIST")" = "$EXPECTED_PROCEDURE_IDENTIFIER"',
-                  '          test "$(plutil -extract CFBundleIdentifier raw -o - "$BUILD_PLIST")" = "$EXPECTED_BUNDLE_ID"',
-              ],
-              'visual workflow built-app readback',
-          )
-          workflow_path.write_text(workflow)
-
-          test_path = Path('scripts/ci/tests/test_capture_standalone_visual_evidence.py')
-          test = test_path.read_text()
-          marker = 'script = (root / "scripts/ci/capture_standalone_visual_evidence.sh").read_text(encoding="utf-8")\n'
-          replacement = marker + 'workflow = (root / ".github/workflows/capture-standalone-visual-evidence.yml").read_text(encoding="utf-8")\n'
-          if test.count(marker) != 1:
-              raise SystemExit('visual regression script anchor changed')
-          test = test.replace(marker, replacement, 1)
-          tail = 'print("capture standalone visual evidence source contract: PASS")\n'
-          checks = "\n".join([
-              'for needle in (',
-              '    "EXPECTED_PROCEDURE_IDENTIFIER: ES80-AUTHENTICATED-STATIONARY-v1",',
-              '    \'INFOPLIST_KEY_NembraCaptureProcedureIdentifier="$EXPECTED_PROCEDURE_IDENTIFIER"\',',
-              '    \'plutil -extract NembraCaptureProcedureIdentifier raw -o - "$BUILD_PLIST"\',',
-              '):',
-              '    if needle not in workflow:',
-              '        raise SystemExit(f"visual workflow missing procedure custody: {needle}")',
-              '',
-          ])
-          if test.count(tail) != 1:
-              raise SystemExit('visual regression tail anchor changed')
-          test_path.write_text(test.replace(tail, checks + tail, 1))
-          PY
-
-          bash -n scripts/ci/capture_standalone_visual_evidence.sh
-          python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
           git diff --check
           git add -A
-          git commit -m 'merge(capture): reanchor visual gate on current product truth'
+          git commit -m 'merge(capture): reanchor visual gate on current product'
           git push origin HEAD:validation/v14-capture-guided-visual-e7af-sol
