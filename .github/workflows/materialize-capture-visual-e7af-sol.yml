@@ -33,7 +33,7 @@ jobs:
           git fetch origin 'refs/heads/qa/v14-capture-standalone-visual-current-sol:refs/remotes/origin/qa/v14-capture-standalone-visual-current-sol'
           test "$(git rev-parse refs/remotes/origin/qa/v14-capture-standalone-visual-current-sol)" = "$donor"
           git cat-file -e "$donor^{commit}"
-      - name: Import exactly three QA paths
+      - name: Import exactly three QA paths and repair brittle test quoting
         shell: bash
         run: |
           set -euo pipefail
@@ -42,24 +42,28 @@ jobs:
             .github/workflows/capture-standalone-visual-evidence.yml \
             scripts/ci/capture_standalone_visual_evidence.sh \
             scripts/ci/tests/test_capture_standalone_visual_evidence.py
-          changed="$(git diff --name-only --cached)"
-          test "$(printf '%s\n' "$changed" | wc -l | tr -d ' ')" = 3
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/ci/tests/test_capture_standalone_visual_evidence.py')
+          s = p.read_text()
+          old = "    'static let fieldProcedureIdentifier = \\\"$EXPECTED_PROCEDURE_IDENTIFIER\\\"',\n"
+          new = (
+              "    'IDENTITY_SOURCE=\"NembraApp/App/NembraCaptureBuildIdentity.swift\"',\n"
+              "    'EXPECTED_PROCEDURE_IDENTIFIER=\"ES80-AUTHENTICATED-STATIONARY-v1\"',\n"
+              "    'grep -Fq \"static let fieldProcedureIdentifier = \\\"$EXPECTED_PROCEDURE_IDENTIFIER\\\"\" \"$IDENTITY_SOURCE\"',\n"
+          )
+          if s.count(old) != 1:
+              raise SystemExit('visual source-test procedure anchor changed')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          changed="$(git diff --name-only --cached; git diff --name-only)"
+          test "$(printf '%s\n' "$changed" | sort -u | wc -l | tr -d ' ')" = 3
       - name: Validate harness shell syntax
         shell: bash
         run: bash -n scripts/ci/capture_standalone_visual_evidence.sh
       - name: Validate harness source contract
         shell: bash
-        run: |
-          set +e
-          output="$(python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py 2>&1)"
-          status=$?
-          set -e
-          if [ "$status" -ne 0 ]; then
-            message="$(printf '%s\n' "$output" | tail -n 1)"
-            echo "::error title=visual-donor-source-contract::$message"
-            exit "$status"
-          fi
-          printf '%s\n' "$output"
+        run: python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
       - name: Validate imported diff hygiene
         shell: bash
         run: git diff --check
@@ -69,5 +73,6 @@ jobs:
           set -euo pipefail
           git config user.name 'nembra-go-bot'
           git config user.email 'nembra-go-bot@users.noreply.github.com'
+          git add .github/workflows/capture-standalone-visual-evidence.yml scripts/ci/capture_standalone_visual_evidence.sh scripts/ci/tests/test_capture_standalone_visual_evidence.py
           git commit -m 'test(capture): reanchor exact iPhone 12 visual evidence'
           git push origin HEAD:validation/v14-capture-guided-visual-e7af-sol
