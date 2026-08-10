@@ -1,0 +1,90 @@
+name: Temporary V14 Capture Correlation Progress Repair
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-correlation-progress-truth-current-sol
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-correlation-progress-truth-current-sol
+          fetch-depth: 0
+
+      - name: Apply exact presentation repair and retire helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_ACTOR" == "github-actions[bot]" ]]; then
+            exit 0
+          fi
+
+          BASE_SHA='5e96004ec565a5a19df8312f64985862a0443cdc'
+          APP='NembraApp/App/NembraCaptureEntrypoint.swift'
+          TEST='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationTruthSourceTests.swift'
+          WORKFLOW='.github/workflows/tmp-v14-capture-correlation-progress-truth-current-sol.yml'
+
+          git merge-base --is-ancestor "$BASE_SHA" HEAD
+          test "$(git rev-parse "$BASE_SHA:$APP")" = "$(git rev-parse "HEAD:$APP")"
+          test -f "$TEST"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text()
+
+          stage_anchor = '    private let stageLabels = ["Target", "Secure link", "Observe", "Seal"]\n'
+          stage_replacement = '''    private let stageLabels = ["Target", "Secure link", "Observe", "Seal"]
+
+    private var correlationDisplayedWindowOrdinal: Int {
+        test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)
+    }
+'''
+          if source.count(stage_anchor) != 1:
+              raise SystemExit(f"expected one SecureLink stage anchor, found {source.count(stage_anchor)}")
+          source = source.replace(stage_anchor, stage_replacement, 1)
+
+          old_label = 'Text("\\(min(test.correlationCompletedWindowCount + 1, 4))/4")'
+          new_label = 'Text("\\(correlationDisplayedWindowOrdinal)/4")'
+          if source.count(old_label) != 1:
+              raise SystemExit(f"expected one stale correlation ordinal label, found {source.count(old_label)}")
+          source = source.replace(old_label, new_label, 1)
+
+          start = source.index("private struct SecureLinkView: View")
+          end = source.index("private struct SecureTransfer: Transferable", start)
+          surface = source[start:end]
+          required = [
+              "private var correlationDisplayedWindowOrdinal: Int",
+              "test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)",
+              'Text("\\(correlationDisplayedWindowOrdinal)/4")',
+          ]
+          for needle in required:
+              if needle not in surface:
+                  raise SystemExit(f"missing repaired correlation presentation contract: {needle}")
+          if old_label in surface:
+              raise SystemExit("stale completed-correlation 1/4 expression remains visible")
+
+          path.write_text(source)
+          PY
+
+          swiftc -parse "$TEST"
+          git diff --check
+          rm "$WORKFLOW"
+
+          changed="$(git status --short | awk '{print $2}' | sort)"
+          expected="$(printf '%s\n' "$WORKFLOW" "$APP" | sort)"
+          test "$changed" = "$expected"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(capture): present completed correlation as four of four'
+          git push origin HEAD:fix/v14-capture-correlation-progress-truth-current-sol
