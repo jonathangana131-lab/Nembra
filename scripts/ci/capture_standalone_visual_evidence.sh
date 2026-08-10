@@ -39,7 +39,7 @@ fi
 BUNDLE_ID="$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$INFO_PLIST")"
 BUILD_IDENTIFIER="$(/usr/bin/plutil -extract NembraCaptureBuildIdentifier raw -o - "$INFO_PLIST")"
 SOURCE_SHA="$(/usr/bin/plutil -extract NembraCaptureSourceCommitSHA raw -o - "$INFO_PLIST")"
-TUYA_DEPENDENCY_LOCK_SHA256="$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$INFO_PLIST")"
+TUYA_DEPENDENCY_LOCK_SHA256="$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$INFO_PLIST" 2>/dev/null || true)"
 if [[ "$BUNDLE_ID" != "$EXPECTED_BUNDLE_ID" ]]; then
   echo "Unexpected standalone Capture bundle identifier: $BUNDLE_ID" >&2
   exit 7
@@ -48,8 +48,11 @@ if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   echo "Standalone Capture source identity must be one lowercase 40-hex SHA." >&2
   exit 8
 fi
-if [[ ! "$TUYA_DEPENDENCY_LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
-  echo "Standalone Capture Tuya dependency provenance must be one lowercase 64-hex SHA-256." >&2
+# Public Simulator visual evidence intentionally has no reviewed private Podfile.lock fingerprint.
+# Keeping this field empty mechanically prevents NembraCaptureBuildIdentity from promoting the
+# screenshot subject into an authoritative field build merely because a shape-valid fixture exists.
+if [[ -n "$TUYA_DEPENDENCY_LOCK_SHA256" ]]; then
+  echo "Public standalone visual evidence must not carry Tuya dependency authority: $TUYA_DEPENDENCY_LOCK_SHA256" >&2
   exit 9
 fi
 EXPECTED_BUILD_IDENTIFIER="capture-v14-${SOURCE_SHA:0:12}"
@@ -133,8 +136,8 @@ while IFS= read -r variable_name; do
 done < <(compgen -v)
 
 # Deliberately launch the real standalone product with no SIMCTL_CHILD_* variables, no
-# NEMBRA_SIMULATION_* scenario, and no fake Tuya account/device authority. The screenshot is
-# presentation evidence only; a human reviewer must confirm the fail-closed UI state.
+# NEMBRA_SIMULATION_* scenario, no private dependency provenance, and no fake Tuya account/device
+# authority. The screenshot is presentation evidence only and must remain fail-closed.
 launch_output="$(xcrun simctl launch "$UDID" "$BUNDLE_ID" | tee "$ARTIFACTS_DIR/logs/launch.log")"
 pid="${launch_output##*: }"
 if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
@@ -165,7 +168,6 @@ fi
   "$ARTIFACTS_DIR/NembraCaptureStandaloneVisualEvidence.json" \
   "$BUILD_IDENTIFIER" \
   "$SOURCE_SHA" \
-  "$TUYA_DEPENDENCY_LOCK_SHA256" \
   "$EXPECTED_PROCEDURE_IDENTIFIER" \
   "$BUNDLE_ID" \
   "$RUNTIME_ID" \
@@ -179,7 +181,6 @@ import sys
     output_path,
     build_identifier,
     source_sha,
-    tuya_dependency_lock_sha256,
     procedure_identifier,
     bundle_id,
     runtime_id,
@@ -189,11 +190,13 @@ import sys
 ) = sys.argv[1:]
 
 record = {
-    "schemaVersion": 2,
+    "schemaVersion": 3,
     "authority": "standalone-capture-simulator-presentation-only",
     "buildIdentifier": build_identifier,
     "sourceCommitSHA": source_sha,
-    "tuyaDependencyLockSHA256": tuya_dependency_lock_sha256,
+    "tuyaDependencyLockSHA256": "",
+    "tuyaDependencyProvenanceClass": "deliberately-absent-public-ci",
+    "expectedFieldBuildAuthority": False,
     "procedureIdentifier": procedure_identifier,
     "procedureSourceRendezvousVerified": True,
     "bundleIdentifier": bundle_id,
@@ -201,7 +204,7 @@ record = {
     "baselineOS": "iOS 27",
     "simulatorRuntime": runtime_id,
     "simulatorDeviceType": device_type,
-    "launchContext": "real standalone bundle; inherited SIMCTL_CHILD/NEMBRA_SIMULATION authority rejected before launch",
+    "launchContext": "real standalone bundle; private dependency provenance absent; inherited SIMCTL_CHILD/NEMBRA_SIMULATION authority rejected before launch",
     "syntheticAuthorityEnvironmentRejected": True,
     "expectedReviewState": "public/unprovisioned root presentation; reviewer must verify fail-closed messaging visually",
     "visualAcceptanceRequiresHumanReview": True,
@@ -223,7 +226,7 @@ printf '%s\n' \
   "Build: $BUILD_IDENTIFIER" \
   "Source: $SOURCE_SHA" \
   "Procedure: $EXPECTED_PROCEDURE_IDENTIFIER" \
-  "Tuya dependency lock: $TUYA_DEPENDENCY_LOCK_SHA256" \
+  "Tuya dependency authority: deliberately absent in public CI" \
   "Baseline: $EXPECTED_DEVICE_NAME / iOS 27 Simulator" \
   "Screenshot: $SCREENSHOT" \
   "Visual review is still required; this artifact creates no physical/protocol authority."
