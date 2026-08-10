@@ -31,7 +31,7 @@ The current accepted external pre-signing helper is also non-authorizing softwar
 - helper authority on every report: `operator-pre-signing-readiness-not-field-authorization`
 - physical authorization on every report: `not-granted`
 
-The helper exists only to prevent known operator-input dead ends before the frozen producer is invoked. It now binds ExportOptions coherence to one exact descriptor-opened regular-file subject, rejecting relative paths, symlinked ancestors/final subjects, special files, and identity mutation while preserving the accepted TeamIdentifier/method checks. The frozen `a0f4…` producer independently revalidates all authoritative signing/private-input conditions.
+The helper exists only to prevent known operator-input dead ends before the frozen producer is invoked. It binds ExportOptions coherence to one exact descriptor-opened regular-file subject, rejecting relative paths, symlinked ancestors/final subjects, special files, and identity mutation while preserving the accepted TeamIdentifier/method checks. The frozen `a0f4…` producer independently revalidates all authoritative signing/private-input conditions.
 
 Superseded preflight provenance, retained only to make the handoff history auditable: commit `9b5bde849e6b8f6b76e2a15abb52d643e3616a7a`, blob `fcc2243c005c5f6df2d2f5bd8b8c948e785f07d8`, run `31340823325`. **Do not materialize or invoke that superseded helper for the current handoff.**
 
@@ -47,11 +47,11 @@ Have these available only on the private signing Mac:
 
 - Apple `TeamIdentifier` for the intended signing identity;
 - an existing valid Xcode export-options plist for that team/distribution method, at one absolute regular non-symlink path with no symlinked ancestor;
-- the intended iPhone's UDID, stored in one absolute mode-`0600` regular non-symlink file;
+- the intended iPhone's UDID, stored in one absolute mode-`0600` regular non-symlink file created by the accepted private-input helper;
 - Xcode 27 and the intended iPhone 12 / iOS 27;
 - signing/provisioning credentials needed by Xcode.
 
-Do not place the raw intended-device UDID in GitHub, PR comments, command arguments, screenshots, artifact names, or public durable notes.
+Do not place the raw intended-device UDID in GitHub, PR comments, command arguments, environment variables, screenshots, artifact names, filenames, or public durable notes.
 
 ## 1. Establish the exact frozen source
 
@@ -82,7 +82,7 @@ The producer itself will create another fresh detached worktree internally. The 
 
 Choose a private path outside the repository. The producer requires an absolute regular non-symlink mode-`0600` file and independently validates its contents/mode.
 
-Do not acquire the raw identifier through ordinary shell redirection. Even with `noclobber`, a checked parent directory pathname can be renamed and replaced before `> "$UDID_FILE"` re-resolves it. Use the accepted descriptor-bound private-input helper instead. It opens directory components with no-follow descriptors, creates the final file relative to the pinned directory descriptor, rebinds the pathname after creation, verifies directory/file identity and exact readback, and fails closed if the path was retargeted.
+Do not acquire the raw identifier through ordinary shell redirection. Even with `noclobber`, a checked parent directory pathname can be renamed and replaced before `> "$UDID_FILE"` re-resolves it. Use the accepted descriptor-bound private-input helper instead. It opens directory components with no-follow descriptors, refuses an occupied target before secret acquisition, creates a fresh file relative to the pinned directory descriptor, validates the fresh inode before any secret byte is written, rebinds the pathname after creation, verifies directory/file identity and exact readback, and fails closed if custody cannot be proven.
 
 The accepted helper identity is fixed below. These helper bytes are operator-custody tooling only; they do not alter the frozen `a0f4…` app subject and do not authorize signing acceptance or Bluetooth activity.
 
@@ -92,14 +92,15 @@ Accepted current helper provenance:
 - exact tested predecessor head carrying the same helper blob: `90d3578a1d39a1d019000583a712306b67786acf`;
 - focused `Capture TODAY Field Candidate Preflight QA`: run `31350094260`, job `93339137927` — terminal success.
 
-Failed private-input acquisition is nondestructive with respect to mutable pathnames: the accepted helper scrubs only the exact still-open created inode with `ftruncate` + `fsync` + zero-length `fstat` proof and never unlinks a pathname after secret bytes may exist. A failed attempt may leave a mode-0600 zero-length spent subject; preserve it and choose a fresh path for retry.
+Failed private-input acquisition is nondestructive with respect to mutable pathnames: the accepted helper scrubs only the exact still-open created inode with `ftruncate` + `fsync` + zero-length `fstat` proof and never unlinks a pathname after secret bytes may exist. A failed attempt may leave a mode-`0600` zero-length spent subject. Preserve it. A retry must use a new non-secret `UDID_FILENAME`; never delete or reuse the spent subject merely to make the helper pass.
 
 ```bash
 umask 077
 HOME_PHYSICAL="$(cd -P -- "$HOME" && /bin/pwd -P)"
 test -n "$HOME_PHYSICAL" && test "${HOME_PHYSICAL#/}" != "$HOME_PHYSICAL"
 PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"
-UDID_FILE="$PRIVATE_DIR/es80-intended-device.udid"
+UDID_FILENAME="es80-intended-device-$(/usr/bin/uuidgen).udid"
+UDID_FILE="$PRIVATE_DIR/$UDID_FILENAME"
 TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
 
 PRIVATE_INPUT_HELPER_COMMIT='b479d851a54437ef394a4901c69db2d829d280e4'
@@ -115,19 +116,22 @@ test "$(/usr/bin/git hash-object --no-filters -- "$PRIVATE_INPUT_HELPER")" = "$P
 
 /usr/bin/python3 -I "$PRIVATE_INPUT_HELPER" \
   --private-directory "$PRIVATE_DIR" \
-  --source-repo "$FIELD_SOURCE"
+  --source-repo "$FIELD_SOURCE" \
+  --filename "$UDID_FILENAME"
 
 test -f "$UDID_FILE" && test ! -L "$UDID_FILE"
 test "$(/usr/bin/stat -f '%Lp' "$UDID_FILE")" = '600'
 ```
 
-If the helper reports `NOT_READY`, stop before signing and preserve the exact blocker. Do not fall back to `printf >`, `tee`, `echo`, `noclobber`, or another pathname-based secret write. Keep the resulting file private; do not commit it and do not copy it into the retained candidate directory. If the chosen final path already exists, preserve it and choose a fresh filename/path rather than deleting or overwriting it just to satisfy the helper.
+If the helper reports `NOT_READY`, stop before signing and preserve the exact blocker. Do not fall back to `printf >`, `tee`, `echo`, `noclobber`, or another pathname-based secret write. Keep any resulting subject private; do not commit it and do not copy it into the retained candidate directory. If a failed attempt leaves a zero-length spent subject, preserve it and restart Section 2 so `/usr/bin/uuidgen` produces a fresh non-secret filename that is passed to both `UDID_FILE` and the helper's `--filename` argument.
 
 ## 3. Set the signing inputs without changing the source subject
 
 Set paths/values for the private Mac. `ARTIFACTS_DIR` must name a destination that does **not** already exist; the producer publishes it failure-atomically only after the archive/export/inspection sequence succeeds.
 
 The accepted preflight deliberately verifies the Xcode selected by `/usr/bin/xcode-select` inside a closed child environment. The frozen `a0f4…` producer predates that helper and does not scrub a caller-provided `DEVELOPER_DIR` before invoking `xcodebuild`. A shell-level `DEVELOPER_DIR` override could therefore make preflight validate one Xcode while the frozen producer later uses another. This handoff closes that operator split without changing the frozen product: clear `DEVELOPER_DIR` before preflight, keep it absent through production, and configure the private Mac's Xcode 27 selection through `xcode-select` instead of a per-shell override.
+
+Section 2 intentionally ends in `TOOL_REPO`. Therefore every frozen-source identity/cleanliness check below is explicitly scoped with `git -C "$FIELD_SOURCE"`; current working directory is never allowed to decide the build subject.
 
 ```bash
 unset DEVELOPER_DIR
@@ -144,15 +148,15 @@ ARTIFACTS_DIR="$CANDIDATE_PARENT/NembraFieldCandidate-a0f4-$(/bin/date -u '+%Y%m
 
 test ! -e "$ARTIFACTS_DIR"
 /usr/bin/plutil -lint "$NEMBRA_EXPORT_OPTIONS_PLIST"
-test "$(/usr/bin/git rev-parse --verify HEAD^{commit})" = "$SOURCE_SHA"
-test -z "$(/usr/bin/git status --porcelain=v1 --untracked-files=all)"
+test "$(/usr/bin/git -C "$FIELD_SOURCE" rev-parse --verify HEAD^{commit})" = "$SOURCE_SHA"
+test -z "$(/usr/bin/git -C "$FIELD_SOURCE" status --porcelain=v1 --untracked-files=all)"
 ```
 
 Keep `NEMBRA_ALLOW_PROVISIONING_UPDATES=0` unless the private signing setup actually requires Xcode-managed provisioning updates. If it must be `1`, make that an explicit operator choice; it does not change the frozen source SHA or grant field authorization. If Xcode 27 is not the system-selected Xcode, correct the private Mac's `xcode-select` selection before continuing; do not reintroduce `DEVELOPER_DIR` merely to make the preflight or producer pass.
 
 ## 3A. Run the accepted non-authorizing pre-signing preflight
 
-Do not run a moving `main` copy of the helper and do not copy the helper into the frozen source checkout. Materialize the exact accepted helper bytes from a separate local Nembra tooling repository that contains commit `74f4e88e4efb78bf69fe504f407ef42398e4b6ab`, then run those bytes against the exact frozen `FIELD_SOURCE`.
+Do not run a moving `main` copy of the helper and do not copy the helper into the frozen source checkout. Materialize the exact accepted helper bytes from the separate local Nembra tooling repository that contains commit `74f4e88e4efb78bf69fe504f407ef42398e4b6ab`, then run those bytes against the exact frozen `FIELD_SOURCE`.
 
 The helper deliberately reads the private signing values from the environment and the intended-device value only from its mode-`0600` file. Its JSON report omits the TeamIdentifier, raw UDID, private input paths, export-options contents, and dirty-checkout text. It fails closed unless the ExportOptions subject is one absolute, non-empty regular file reached without symlinked ancestors/final subjects, remains the same file while parsed, and satisfies the accepted TeamIdentifier/method coherence rules.
 
@@ -267,7 +271,8 @@ Stop and preserve the exact blocker if any of these occurs:
 
 - the outer checkout is not exact clean detached `a0f4a33451f61411d6e0541f2e70edea5438342d`;
 - `DEVELOPER_DIR` is set or reintroduced after Section 3; configure Xcode 27 through the private Mac's `xcode-select` selection instead of carrying a caller override into the frozen producer;
-- the descriptor-bound private-input helper cannot be materialized at exact commit/blob, refuses the parent/input, or cannot create and rebind one fresh exact mode-`0600` single-link file;
+- the descriptor-bound private-input helper cannot be materialized at exact commit/blob, refuses the parent/input, cannot create and rebind one fresh exact mode-`0600` single-link file, or reports a cleanup failure whose zero-length proof cannot be established;
+- a failed or occupied private-input attempt would require deleting/reusing a spent subject instead of generating and binding a fresh non-secret `UDID_FILENAME`;
 - the pinned external preflight cannot be materialized exactly, exits nonzero, or does not report `READY_TO_INVOKE_SIGNED_FIELD_PRODUCER` for the exact frozen source;
 - the ExportOptions plist path is not absolute, traverses a symlinked ancestor, names a symlink/non-regular/empty subject, changes identity while parsed, has a mismatched optional `teamID`, or has an invalid optional `method`;
 - the producer reports any source, signing, provisioning, intended-device, export, inspection, or evidence failure;
