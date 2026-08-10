@@ -112,12 +112,15 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         latestApplicationPayloadUptimeNanoseconds = nil
     }
 
+    /// Retires current authentication authority when the official SDK reports a terminal failure.
+    /// A failure may arrive after the initial success callback; it must still clear provenance and
+    /// application evidence rather than leave the generation looking authenticated in diagnostics.
     public func markAuthenticationFailed(for token: TuyaReadOnlyConnectionToken) throws {
         try requireCurrent(token)
         switch authenticationState {
-        case .waitingForAuthentication, .authenticating:
+        case .waitingForAuthentication, .authenticating, .authenticated:
             break
-        case .unavailable, .authenticated, .failed:
+        case .unavailable, .failed:
             throw MutationError.invalidAuthenticationTransition
         }
 
@@ -160,10 +163,14 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         latestObservedUptimeNanoseconds = now
     }
 
-    /// Advances only the non-secret liveness observation for the current connection.
-    /// No telemetry or application payload is manufactured by this call.
+    /// Advances only the non-secret liveness observation for the current authenticated connection.
+    /// No telemetry or application payload is manufactured by this call, and a pre-auth poll can
+    /// never lengthen the chronology later used by the physical stability gate.
     public func observeCurrentConnection(for token: TuyaReadOnlyConnectionToken) throws {
         try requireCurrent(token)
+        guard case .authenticated = authenticationState else {
+            throw MutationError.authenticationRequired
+        }
         latestObservedUptimeNanoseconds = try nextMonotonicObservation()
     }
 
