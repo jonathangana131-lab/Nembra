@@ -13,6 +13,9 @@ struct TuyaFieldProcedureRendezvousSourceTests {
 
         #expect(identity.contains("fieldProcedureIdentifier"))
         #expect(identity.contains(Self.procedure))
+        #expect(identity.contains("procedureIdentifierInfoKey = \"NembraCaptureProcedureIdentifier\""))
+        #expect(identity.contains("let procedureIdentifier: String"))
+        #expect(identity.contains("procedureIdentifier == Self.fieldProcedureIdentifier"))
         #expect(app.contains("let procedureIdentifier: String"))
         #expect(app.contains("procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier"))
         #expect(app.contains("LabeledContent(\"Procedure\""))
@@ -27,6 +30,13 @@ struct TuyaFieldProcedureRendezvousSourceTests {
         #expect(runbook.contains("PROCEDURE_ID: `\(Self.procedure)`"))
         #expect(installer.contains("PROCEDURE_ID=\"\(Self.procedure)\""))
         #expect(installer.contains("Field procedure: $PROCEDURE_ID"))
+        #expect(installer.contains("INFOPLIST_KEY_NembraCaptureProcedureIdentifier=$PROCEDURE_ID"))
+        #expect(installer.contains("plutil -extract NembraCaptureProcedureIdentifier"))
+        let readback = try #require(installer.range(of: "BUILT_PROCEDURE_IDENTIFIER=\"$(/usr/bin/plutil"))
+        let check = try #require(installer.range(of: "[[ \"$BUILT_PROCEDURE_IDENTIFIER\" == \"$PROCEDURE_ID\" ]]"))
+        let install = try #require(installer.range(of: "Installing SDK-integrated Capture on the intended iPhone"))
+        #expect(readback.lowerBound < check.lowerBound)
+        #expect(check.lowerBound < install.lowerBound)
     }
 
     @Test("procedure identity cannot be satisfied by stale acceptance prose alone")
