@@ -6,6 +6,7 @@ import getpass
 import os
 import stat
 import sys
+import warnings
 from pathlib import PurePosixPath
 
 _MAX_IDENTIFIER_BYTES = 512
@@ -40,8 +41,8 @@ def _file_flags() -> int:
 def _validate_identifier(value: str) -> bytes:
     if not value or value != value.strip():
         raise PrivateInputError("intended-device identifier must be nonempty with no surrounding whitespace")
-    if any(ord(character) < 0x20 or ord(character) == 0x7F for character in value):
-        raise PrivateInputError("intended-device identifier contains a control character")
+    if any(ord(character) < 0x21 or ord(character) == 0x7F for character in value):
+        raise PrivateInputError("intended-device identifier contains whitespace or a control character")
     encoded = value.encode("utf-8")
     if len(encoded) > _MAX_IDENTIFIER_BYTES:
         raise PrivateInputError("intended-device identifier is unexpectedly large")
@@ -113,6 +114,19 @@ def create_private_input(output_path: str, identifier: str) -> None:
         os.close(parent_fd)
 
 
+def _read_identifier_securely() -> str:
+    # `getpass.getpass()` normally disables terminal echo, but Python deliberately
+    # falls back to ordinary input when echo control is unavailable. That fallback
+    # emits GetPassWarning and may expose the raw device identifier on-screen.
+    # Convert the warning into an exception before fallback input can be consumed.
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", getpass.GetPassWarning)
+            return getpass.getpass("Intended iPhone UDID: ")
+    except getpass.GetPassWarning as error:
+        raise PrivateInputError("secure terminal input unavailable; refusing echoed fallback") from error
+
+
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Create a private intended-device input using descriptor-bound no-follow custody."
@@ -124,7 +138,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str]) -> int:
     args = _parse_args(argv)
     try:
-        identifier = getpass.getpass("Intended iPhone UDID: ")
+        identifier = _read_identifier_securely()
         create_private_input(args.output_path, identifier)
     except (PrivateInputError, OSError) as error:
         print(f"PRIVATE_INPUT_NOT_CREATED: {error}", file=sys.stderr)
