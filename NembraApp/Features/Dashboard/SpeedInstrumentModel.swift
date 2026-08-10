@@ -2,7 +2,6 @@ import Dispatch
 import Foundation
 import Observation
 import SwiftUI
-import enum NembraCore.PropulsionEnergyRailCurrentness
 import struct NembraCore.PropulsionEnergyRailSimulatorRuntime
 
 enum SpeedInstrumentDisplayOrigin: Equatable {
@@ -22,21 +21,10 @@ struct SpeedInstrumentDisplayFrame: Equatable {
 }
 
 extension SpeedEvidenceAvailability {
-    /// Strict production-default sanitizer. Simulator evidence is unavailable
-    /// unless an explicit Simulator profile opts in through the function below.
     var dashboardPresentationAvailability: SpeedEvidenceAvailability {
         dashboardPresentationAvailability(allowsSimulatorQA: false)
     }
 
-    /// Dashboard presentation accepts only absolute-measurement speed evidence
-    /// whose source is permitted for the active app profile.
-    ///
-    /// `SpeedEvidenceAvailability` and `SpeedTelemetrySample` are public/caller-
-    /// constructible, so neither the enum wrapper nor absolute provenance alone
-    /// proves that a buggy provider preserved the accepted source contract.
-    /// Synthetic `.simulatorQA` evidence is eligible only when the app explicitly
-    /// owns the Simulator QA profile. Physical/unverified profiles therefore
-    /// cannot borrow synthetic speed by wrapping it as `.live` or `.retained`.
     func dashboardPresentationAvailability(
         allowsSimulatorQA: Bool
     ) -> SpeedEvidenceAvailability {
@@ -56,11 +44,6 @@ extension SpeedEvidenceAvailability {
     }
 }
 
-/// Main-actor presentation state for the landscape speed instrument.
-///
-/// Accepted speed evidence enters through `SpeedTelemetrySample`. High-frequency
-/// render frames never flow back into `VehicleState`, ride history, distance,
-/// stats, or protocol diagnostics.
 @MainActor
 @Observable
 final class SpeedInstrumentModel {
@@ -80,8 +63,6 @@ final class SpeedInstrumentModel {
         animationEndTask?.cancel()
     }
 
-    /// Policy must be chosen by app bootstrap, not inferred from the vehicle
-    /// model. Production remains disabled until real AOVOPRO ES80 cadence is measured.
     func configureInterpolationPolicy(_ policy: SpeedInstrumentInterpolationPolicy) {
         guard measurementRevision == 0 else { return }
         interpolationPolicy = policy
@@ -91,9 +72,6 @@ final class SpeedInstrumentModel {
         clearPresentationContinuity()
     }
 
-    /// Source-owned speed currentness is the Dashboard's positive presentation
-    /// authority. Retained/unavailable immediately retire interpolation. A new
-    /// live absolute measurement can reopen motion without guessing a freshness timeout.
     func setSpeedEvidenceAvailability(
         _ availability: SpeedEvidenceAvailability,
         allowsSimulatorQA: Bool = false
@@ -106,10 +84,6 @@ final class SpeedInstrumentModel {
         }
     }
 
-    /// Internal test seam for the interpolation primitive. Production Dashboard
-    /// code admits samples only through `setSpeedEvidenceAvailability` so
-    /// currentness and source eligibility remain app-owned rather than recreated
-    /// from a raw stream.
     func accept(_ sample: SpeedTelemetrySample) {
         guard sample.isAuthoritativeMeasurement else { return }
 
@@ -120,7 +94,6 @@ final class SpeedInstrumentModel {
                 transitionDurationNanoseconds: transitionDuration
             )
         } catch {
-            // Stale/non-authoritative samples never move presentation state.
             return
         }
 
@@ -140,13 +113,6 @@ final class SpeedInstrumentModel {
         )
     }
 
-    /// Returns a render-only frame. The fallback is caller-owned accepted source
-    /// evidence and is never promoted into telemetry by this model.
-    ///
-    /// Reduce Motion changes presentation only: when an interpolation frame is
-    /// active, the display snaps to the latest authoritative measurement that
-    /// the interpolator already carries. No measurement, telemetry, or
-    /// interpolation state is mutated by this preference.
     func frame(
         atUptimeNanoseconds uptimeNanoseconds: UInt64,
         fallbackAcceptedKilometersPerHour: Double?,
@@ -175,17 +141,6 @@ final class SpeedInstrumentModel {
         )
     }
 
-    /// Synchronous visual truth boundary for the current field-specific source state.
-    ///
-    /// SwiftUI may render a newly observed availability value before `.onChange`
-    /// retires or retargets the local interpolator. Do not let callback scheduling
-    /// decide what numeric truth is visible during that render:
-    /// - unavailable, non-authoritative, or source-ineligible evidence renders no
-    ///   number immediately;
-    /// - retained renders exactly its accepted last-known sample;
-    /// - live may consume local interpolation only when that interpolation already
-    ///   targets the exact current accepted sample. Otherwise it snaps to current
-    ///   source truth until lifecycle cleanup/retargeting catches up.
     func presentationFrame(
         for availability: SpeedEvidenceAvailability,
         atUptimeNanoseconds uptimeNanoseconds: UInt64,
@@ -202,10 +157,6 @@ final class SpeedInstrumentModel {
             )
 
         case let .live(sample):
-            // `SpeedTelemetrySample` carries the complete accepted display-target
-            // identity used here: source, provenance, value, receipt clocks,
-            // optional measurement clock, and optional accuracy. Partial matching
-            // can collide with a distinct accepted sample and replay an old target.
             guard latestAcceptedSample == sample else {
                 return acceptedSourceFallbackFrame(
                     kilometersPerHour: sample.kilometersPerHour
@@ -220,8 +171,6 @@ final class SpeedInstrumentModel {
         }
     }
 
-    /// Duration is derived only when an injected policy enables interpolation.
-    /// The production policy is disabled until real hardware cadence is measured.
     private func transitionDurationNanoseconds(for sample: SpeedTelemetrySample) -> UInt64 {
         let policy = interpolationPolicy
         guard policy.isEnabled,
@@ -290,49 +239,16 @@ final class SpeedInstrumentModel {
     }
 }
 
-/// Pure app mapping from the source owner's currentness vocabulary to the package
-/// presentation vocabulary. It deliberately carries no numeric value or chronology;
-/// those remain on the immutable source observation itself.
-func dashboardEnergyRailSourceCurrentness(
-    _ availability: SimulatorPowerEvidenceAvailability
-) -> PropulsionEnergyRailCurrentness {
-    switch availability {
-    case .live:
-        return .live
-    case .retained:
-        return .retained
-    case .unavailable:
-        return .unavailable
-    }
-}
-
-/// Returns only an observation that the Simulator source owner already minted.
-/// SwiftUI cannot construct this type, so this helper cannot manufacture receipts.
-func dashboardEnergyRailSourceObservation(
-    _ availability: SimulatorPowerEvidenceAvailability
-) -> SimulatorPowerObservation? {
-    switch availability {
-    case let .live(observation), let .retained(observation):
-        return observation
-    case .unavailable:
-        return nil
-    }
-}
-
-/// A deliberately narrow high-frequency subtree for the landscape cockpit.
-///
-/// Only this view redraws on the animation timeline. Vehicle controls, ride
-/// detection, persistence, distance, and safety continue to consume accepted
-/// domain/source state rather than rendered speed or Energy Rail frames.
-/// Propulsion admission is now independent from speed and aggregate VehicleState:
-/// only `VehicleStore.simulatorPowerEvidenceAvailability` can introduce a receipt.
+/// Narrow high-frequency subtree for the landscape cockpit. Positive propulsion
+/// authority enters only through `VehicleStore.simulatorPowerEvidenceAvailability`.
+/// The package receives the exact source receipt tuple without any SwiftUI timestamp.
 @MainActor
 struct DashboardSpeedInstrumentView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model = SpeedInstrumentModel()
-    @State private var energyRailRuntime: PropulsionEnergyRailSimulatorRuntime? = try? PropulsionEnergyRailSimulatorRuntime.sourceOwned()
-    @State private var energyRailNextTransitionUptimeNanoseconds: UInt64? = nil
+    @State private var energyRailRuntime: PropulsionEnergyRailSimulatorRuntime?
+    @State private var energyRailNextTransitionUptimeNanoseconds: UInt64?
     @State private var energyRailPresentationRevision: UInt64 = 0
 
     let modePersonality: DashboardModePersonality
@@ -345,19 +261,18 @@ struct DashboardSpeedInstrumentView: View {
         )
         let sourceCapability = hasEnergyRailSourceCapability
         let sourceAvailability = energyRailSourceAvailability
-        let sourceCurrentness = dashboardEnergyRailSourceCurrentness(sourceAvailability)
         let scheduleNow = DispatchTime.now().uptimeNanoseconds
         let speedShouldTick = !reduceMotion
             && model.isAnimationActive
             && isLivePresentation(speedAvailability)
         let energyRailShouldTick: Bool
+
         if !reduceMotion,
            sourceCapability,
-           sourceCurrentness == .live,
+           case .live = sourceAvailability,
            let energyRailRuntime {
             energyRailShouldTick = energyRailRuntime.displaySchedule(
-                atUptimeNanoseconds: scheduleNow,
-                sourceCurrentness: sourceCurrentness
+                atUptimeNanoseconds: scheduleNow
             ).requiresContinuousFrames
         } else {
             energyRailShouldTick = false
@@ -378,8 +293,8 @@ struct DashboardSpeedInstrumentView: View {
             )
             let energyRailState = energyRailVisualState(
                 atUptimeNanoseconds: now,
+                sourceAvailability: sourceAvailability,
                 sourceCapability: sourceCapability,
-                sourceCurrentness: sourceCurrentness,
                 presentationRevision: energyRailPresentationRevision
             )
 
@@ -419,9 +334,8 @@ struct DashboardSpeedInstrumentView: View {
         }
         .onDisappear {
             model.stop()
-            // View lifetime is not source lifetime. Do not mark propulsion
-            // unavailable or mint a lifecycle receipt merely because SwiftUI
-            // removed this subtree.
+            // View lifetime is not source lifetime. Local render scheduling stops,
+            // but the Store remains the owner of the source receipt/currentness.
             energyRailNextTransitionUptimeNanoseconds = nil
         }
     }
@@ -438,57 +352,69 @@ struct DashboardSpeedInstrumentView: View {
             : .unavailable
     }
 
-    /// Copies one already-minted source receipt into the package chronology. The
-    /// source currentness is applied separately as a one-way projection constraint,
-    /// so retained/unavailable transitions never require a synthetic replacement
-    /// sample and equal-watt real receipts remain distinguishable by receipt identity.
+    /// Mechanically maps source currentness to the package's sealed lifecycle API.
+    /// No aggregate watts, speed receipt, mode, callback time, global lastUpdated,
+    /// view lifetime, or render clock can create a positive propulsion receipt here.
     private func synchronizeEnergyRailSource(
         _ availability: SimulatorPowerEvidenceAvailability
     ) {
         guard hasEnergyRailSourceCapability else {
             energyRailRuntime = nil
             energyRailNextTransitionUptimeNanoseconds = nil
+            energyRailPresentationRevision &+= 1
             return
         }
 
-        if energyRailRuntime == nil {
-            energyRailRuntime = try? PropulsionEnergyRailSimulatorRuntime.sourceOwned()
+        var runtime: PropulsionEnergyRailSimulatorRuntime
+        if let existing = energyRailRuntime {
+            runtime = existing
+        } else if let created = try? PropulsionEnergyRailSimulatorRuntime() {
+            runtime = created
+        } else {
+            energyRailRuntime = nil
+            energyRailNextTransitionUptimeNanoseconds = nil
+            return
         }
 
-        if let observation = dashboardEnergyRailSourceObservation(availability),
-           var runtime = energyRailRuntime {
-            _ = runtime.observeSourceOwned(
+        switch availability {
+        case let .live(observation):
+            _ = runtime.acceptLiveSource(
                 watts: observation.watts,
                 receiptSequenceNumber: observation.receiptSequenceNumber,
                 receivedAtUptimeNanoseconds: observation.receivedAtUptimeNanoseconds,
                 continuityGeneration: observation.continuityGeneration
             )
-            energyRailRuntime = runtime
+
+        case let .retained(observation):
+            _ = runtime.retainSource(
+                watts: observation.watts,
+                receiptSequenceNumber: observation.receiptSequenceNumber,
+                receivedAtUptimeNanoseconds: observation.receivedAtUptimeNanoseconds,
+                continuityGeneration: observation.continuityGeneration
+            )
+
+        case .unavailable:
+            runtime.markUnavailable()
         }
 
+        energyRailRuntime = runtime
+        energyRailPresentationRevision &+= 1
         refreshEnergyRailPresentationSchedule()
     }
 
+    /// The package owns all timer-driven display transitions. Reduce Motion disables
+    /// continuous spatial frames but not this one-shot semantic/freshness clock.
     private func refreshEnergyRailPresentationSchedule() {
-        guard !reduceMotion,
-              hasEnergyRailSourceCapability,
+        guard hasEnergyRailSourceCapability,
+              case .live = energyRailSourceAvailability,
               let energyRailRuntime else {
-            energyRailNextTransitionUptimeNanoseconds = nil
-            return
-        }
-
-        let sourceCurrentness = dashboardEnergyRailSourceCurrentness(
-            energyRailSourceAvailability
-        )
-        guard sourceCurrentness == .live else {
             energyRailNextTransitionUptimeNanoseconds = nil
             return
         }
 
         let now = DispatchTime.now().uptimeNanoseconds
         energyRailNextTransitionUptimeNanoseconds = energyRailRuntime.displaySchedule(
-            atUptimeNanoseconds: now,
-            sourceCurrentness: sourceCurrentness
+            atUptimeNanoseconds: now
         ).nextTransitionUptimeNanoseconds
     }
 
@@ -507,16 +433,18 @@ struct DashboardSpeedInstrumentView: View {
         }
         guard !Task.isCancelled else { return }
 
-        // Recompose only presentation at a package-owned deadline. The source
-        // observation and accepted receipt chronology are unchanged.
         energyRailPresentationRevision &+= 1
         refreshEnergyRailPresentationSchedule()
     }
 
+    /// Synchronous correlation gate for SwiftUI callback ordering. If Store
+    /// currentness changes before `.onChange` mutates the local runtime, an old LIVE
+    /// package projection is never allowed to flash as current. RETAINED/UNAVAILABLE
+    /// may temporarily fail closed to unavailable until the package catches up.
     private func energyRailVisualState(
         atUptimeNanoseconds uptimeNanoseconds: UInt64,
+        sourceAvailability: SimulatorPowerEvidenceAvailability,
         sourceCapability: Bool,
-        sourceCurrentness: PropulsionEnergyRailCurrentness,
         presentationRevision: UInt64
     ) -> NembraEnergyRailVisualState? {
         _ = presentationRevision
@@ -527,10 +455,39 @@ struct DashboardSpeedInstrumentView: View {
         }
 
         let projection = energyRailRuntime.projection(
-            atUptimeNanoseconds: uptimeNanoseconds,
-            sourceCurrentness: sourceCurrentness
+            atUptimeNanoseconds: uptimeNanoseconds
         )
+
+        switch sourceAvailability {
+        case .unavailable:
+            return .unavailable
+
+        case let .retained(observation):
+            guard projection.currentness == .retained,
+                  projectionMatchesSourceReceipt(projection.acceptedMeasurement, observation: observation) else {
+                return .unavailable
+            }
+
+        case let .live(observation):
+            guard projection.currentness == .live,
+                  projectionMatchesSourceReceipt(projection.acceptedMeasurement, observation: observation) else {
+                return .unavailable
+            }
+        }
+
         return NembraEnergyRailVisualState(projection: projection)
+    }
+
+    private func projectionMatchesSourceReceipt(
+        _ accepted: PropulsionGaugeCockpitAcceptedMeasurement?,
+        observation: SimulatorPowerObservation
+    ) -> Bool {
+        guard let accepted else { return false }
+        return accepted.authority == .simulator
+            && accepted.watts == observation.watts
+            && accepted.receiptSequenceNumber == observation.receiptSequenceNumber
+            && accepted.receivedAtUptimeNanoseconds == observation.receivedAtUptimeNanoseconds
+            && accepted.continuityGeneration == observation.continuityGeneration
     }
 
     private func isLivePresentation(_ availability: SpeedEvidenceAvailability) -> Bool {
@@ -568,8 +525,6 @@ struct DashboardSpeedInstrumentView: View {
             .animation(modeAnimation, value: modePersonality.speedScale)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Speed")
-            // VoiceOver consumes sanitized field-specific speed truth, never a
-            // 60 Hz render midpoint or Energy Rail display-clock state.
             .accessibilityValue(accessibilitySpeed(speedAvailability))
             .accessibilityIdentifier("dashboard.speed")
 
