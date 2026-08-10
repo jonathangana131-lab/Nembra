@@ -237,7 +237,15 @@ def _private_udid_file_is_ready(path: Path, repository_root: Path) -> bool:
     return True
 
 
-def _export_options_are_ready(path: Path) -> bool:
+def _export_options_are_ready(path: Path, expected_team: str) -> bool:
+    """Mirror the frozen producer's deterministic ExportOptions.plist admission.
+
+    The preflight is only an early operator check, but it must not report READY for an export-options
+    subject the frozen producer will deterministically reject. Keep the same narrow producer checks:
+    the plist root is a dictionary, optional teamID matches the requested signing TeamIdentifier,
+    and optional method is a non-empty string. Signing/provisioning authority remains with Xcode and
+    the retained-candidate inspection ladder.
+    """
     if _regular_nonsymlink(path) is None:
         return False
     try:
@@ -245,7 +253,17 @@ def _export_options_are_ready(path: Path) -> bool:
             payload = plistlib.load(handle)
     except (OSError, plistlib.InvalidFileException, ValueError):
         return False
-    return isinstance(payload, dict)
+    if not isinstance(payload, dict):
+        return False
+
+    team = payload.get("teamID")
+    if team is not None and team != expected_team:
+        return False
+
+    method = payload.get("method")
+    if method is not None and (not isinstance(method, str) or not method.strip()):
+        return False
+    return True
 
 
 def _git(
@@ -345,7 +363,10 @@ def evaluate_preflight(
     checks["expectedSourceSHAFormat"] = SHA_RE.fullmatch(expected) is not None
     checks["developmentTeamFormat"] = TEAM_RE.fullmatch(inputs.development_team) is not None
     checks["allowProvisioningUpdates"] = inputs.allow_provisioning_updates in {"0", "1"}
-    checks["exportOptionsPlist"] = _export_options_are_ready(inputs.export_options_plist)
+    checks["exportOptionsPlist"] = _export_options_are_ready(
+        inputs.export_options_plist,
+        inputs.development_team,
+    )
 
     try:
         source_repo = inputs.source_repo.resolve(strict=True)
