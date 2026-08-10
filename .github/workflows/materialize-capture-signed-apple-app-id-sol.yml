@@ -1,0 +1,104 @@
+name: Materialize Capture signed Apple App ID custody
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-signed-apple-app-id-a87-sol
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-signed-apple-app-id-a87-sol
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v14-capture-signed-apple-app-id-a87-sol
+          fetch-depth: 0
+
+      - name: Guard exact product parent and scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='a87b4f05023627e9f9f43a96c77077c837b1322a'
+          test "$(git merge-base HEAD "$parent")" = "$parent"
+          unexpected="$(git diff --name-only "$parent"...HEAD | grep -Ev '^(.github/workflows/materialize-capture-signed-apple-app-id-sol.yml|Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSignedAppleAppIdentityCustodySourceTests.swift)$' || true)"
+          test -z "$unexpected"
+          test "$(git rev-parse "$parent:scripts/field/install_one_time_capture.command")" = "$(git rev-parse HEAD:scripts/field/install_one_time_capture.command)"
+
+      - name: Materialize exact signed-app/profile identity rendezvous
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("scripts/field/install_one_time_capture.command")
+          text = path.read_text(encoding="utf-8")
+
+          old_signed = '''BUILT_APPLE_SIGNIN_ENTITLEMENT="$(printf '%s' "$SIGNED_ENTITLEMENTS_OUTPUT" | /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c '\nimport plistlib, sys\npayload = sys.stdin.buffer.read()\nstart = payload.find(b"<?xml")\nend = payload.rfind(b"</plist>")\nif start < 0 or end < start:\n    raise SystemExit(2)\ntry:\n    value = plistlib.loads(payload[start:end + len(b"</plist>")]).get("com.apple.developer.applesignin")\nexcept Exception:\n    raise SystemExit(2)\nif value == ["Default"]:\n    sys.stdout.write("Default")\n' || true)"\n[[ "$BUILT_APPLE_SIGNIN_ENTITLEMENT" == "Default" ]] || \\\n    die "Final signed Capture app does not carry the required Sign in with Apple entitlement. Enable the capability for this App ID/team and rebuild; do not install this candidate."'''
+          new_signed = '''BUILT_SIGNING_IDENTITY_FIELDS="$(printf '%s' "$SIGNED_ENTITLEMENTS_OUTPUT" | /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c '\nimport plistlib, sys\npayload = sys.stdin.buffer.read()\nstart = payload.find(b"<?xml")\nend = payload.rfind(b"</plist>")\nif start < 0 or end < start:\n    raise SystemExit(2)\ntry:\n    root = plistlib.loads(payload[start:end + len(b"</plist>")])\n    apple = root.get("com.apple.developer.applesignin")\n    application_identifier = root.get("application-identifier")\n    team_identifier = root.get("com.apple.developer.team-identifier")\nexcept Exception:\n    raise SystemExit(2)\nif apple == ["Default"] and isinstance(application_identifier, str) and isinstance(team_identifier, str):\n    sys.stdout.write("\\t".join(("Default", application_identifier, team_identifier)))\n' || true)"\nIFS=$'\\t' read -r BUILT_APPLE_SIGNIN_ENTITLEMENT BUILT_APPLICATION_IDENTIFIER BUILT_TEAM_IDENTIFIER <<< "$BUILT_SIGNING_IDENTITY_FIELDS"\nunset BUILT_SIGNING_IDENTITY_FIELDS\n[[ "$BUILT_APPLE_SIGNIN_ENTITLEMENT" == "Default" ]] || \\\n    die "Final signed Capture app does not carry the required Sign in with Apple entitlement. Enable the capability for this App ID/team and rebuild; do not install this candidate."\n[[ "$BUILT_APPLICATION_IDENTIFIER" == *".$BUNDLE_ID" ]] || \\\n    die "Final signed Capture app application-identifier does not end in the exact standalone bundle identifier. Discard this candidate."\n[[ "$BUILT_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \\\n    die "Final signed Capture app team identifier does not match the selected Apple Development team. Discard this candidate."'''
+          if text.count(old_signed) != 1:
+              raise SystemExit(f"signed-entitlement anchor count changed: {text.count(old_signed)}")
+          text = text.replace(old_signed, new_signed, 1)
+
+          old_profile = '''PROFILE_APPLE_SIGNIN_ENTITLEMENT="$(printf '%s' "$PROFILE_PLIST_XML" | /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c '\nimport plistlib, sys\ntry:\n    root = plistlib.loads(sys.stdin.buffer.read())\n    value = root.get("Entitlements", {}).get("com.apple.developer.applesignin")\nexcept Exception:\n    raise SystemExit(2)\nif value == ["Default"]:\n    sys.stdout.write("Default")\n' || true)"\n[[ "$PROFILE_APPLE_SIGNIN_ENTITLEMENT" == "Default" ]] || \\\n    die "Embedded provisioning profile does not authorize Sign in with Apple for the final Capture app. Enable the capability for this App ID/team and rebuild; do not install this candidate."\nsay "Final signed app and embedded provisioning profile both authorize Sign in with Apple"\nunset SIGNED_ENTITLEMENTS_OUTPUT BUILT_APPLE_SIGNIN_ENTITLEMENT PROFILE_PLIST_XML PROFILE_APPLE_SIGNIN_ENTITLEMENT BUILT_PROFILE'''
+          new_profile = '''PROFILE_SIGNING_IDENTITY_FIELDS="$(printf '%s' "$PROFILE_PLIST_XML" | /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c '\nimport plistlib, sys\ntry:\n    root = plistlib.loads(sys.stdin.buffer.read())\n    value = root.get("Entitlements", {}).get("com.apple.developer.applesignin")\n    entitlements = root.get("Entitlements", {})\n    application_identifier = entitlements.get("application-identifier")\n    team_identifier = entitlements.get("com.apple.developer.team-identifier")\n    root_team_identifiers = root.get("TeamIdentifier")\nexcept Exception:\n    raise SystemExit(2)\nif (\n    value == ["Default"]\n    and isinstance(application_identifier, str)\n    and isinstance(team_identifier, str)\n    and isinstance(root_team_identifiers, list)\n    and len(root_team_identifiers) == 1\n    and isinstance(root_team_identifiers[0], str)\n):\n    sys.stdout.write("\\t".join(("Default", application_identifier, team_identifier, root_team_identifiers[0])))\n' || true)"\nIFS=$'\\t' read -r PROFILE_APPLE_SIGNIN_ENTITLEMENT PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_IDENTIFIER PROFILE_ROOT_TEAM_IDENTIFIER <<< "$PROFILE_SIGNING_IDENTITY_FIELDS"\nunset PROFILE_SIGNING_IDENTITY_FIELDS\n[[ "$PROFILE_APPLE_SIGNIN_ENTITLEMENT" == "Default" ]] || \\\n    die "Embedded provisioning profile does not authorize Sign in with Apple for the final Capture app. Enable the capability for this App ID/team and rebuild; do not install this candidate."\n[[ "$PROFILE_APPLICATION_IDENTIFIER" == "$BUILT_APPLICATION_IDENTIFIER" ]] || \\\n    die "Embedded provisioning profile application-identifier does not exactly match the final signed Capture app. Discard this candidate."\n[[ "$PROFILE_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \\\n    die "Embedded provisioning profile entitlement team identifier does not match the selected Apple Development team. Discard this candidate."\n[[ "$PROFILE_ROOT_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \\\n    die "Embedded provisioning profile TeamIdentifier does not match the selected Apple Development team. Discard this candidate."\nsay "Final signed app and embedded provisioning profile both authorize Sign in with Apple and agree on exact App ID/team custody"\nunset SIGNED_ENTITLEMENTS_OUTPUT BUILT_APPLE_SIGNIN_ENTITLEMENT BUILT_APPLICATION_IDENTIFIER BUILT_TEAM_IDENTIFIER PROFILE_PLIST_XML PROFILE_APPLE_SIGNIN_ENTITLEMENT PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_IDENTIFIER PROFILE_ROOT_TEAM_IDENTIFIER BUILT_PROFILE'''
+          if text.count(old_profile) != 1:
+              raise SystemExit(f"profile-entitlement anchor count changed: {text.count(old_profile)}")
+          text = text.replace(old_profile, new_profile, 1)
+          path.write_text(text, encoding="utf-8")
+
+      - name: Verify source contracts and shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/field/install_one_time_capture.command
+          python3 scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
+          python3 - <<'PY'
+          from pathlib import Path
+          installer = Path("scripts/field/install_one_time_capture.command").read_text(encoding="utf-8")
+          required = [
+              'BUILT_APPLICATION_IDENTIFIER',
+              'BUILT_TEAM_IDENTIFIER',
+              'PROFILE_APPLICATION_IDENTIFIER',
+              'PROFILE_TEAM_IDENTIFIER',
+              'PROFILE_ROOT_TEAM_IDENTIFIER',
+              '[[ "$BUILT_APPLICATION_IDENTIFIER" == *".$BUNDLE_ID" ]]',
+              '[[ "$PROFILE_APPLICATION_IDENTIFIER" == "$BUILT_APPLICATION_IDENTIFIER" ]]',
+              '[[ "$BUILT_TEAM_IDENTIFIER" == "$TEAM_ID" ]]',
+              '[[ "$PROFILE_TEAM_IDENTIFIER" == "$TEAM_ID" ]]',
+              '[[ "$PROFILE_ROOT_TEAM_IDENTIFIER" == "$TEAM_ID" ]]',
+          ]
+          for needle in required:
+              if needle not in installer:
+                  raise SystemExit("missing signed App ID custody contract: " + needle)
+          custody = installer[installer.index("SIGNED_ENTITLEMENTS_OUTPUT="):installer.index('say "Installing SDK-integrated Capture on the intended iPhone"')]
+          if custody.count("/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c '") != 2:
+              raise SystemExit("identity custody must preserve exactly two closed-environment plist parsers")
+          for forbidden in ("connectBLE", "publishDps", "writeValue", "scanForPeripherals", "NEMBRA_SIMULATION_"):
+              if forbidden in custody:
+                  raise SystemExit("signing custody introduced forbidden authority: " + forbidden)
+          if 'EXPECTED_APPLICATION_IDENTIFIER="${TEAM_ID}.${BUNDLE_ID}"' in installer:
+              raise SystemExit("must not assume App ID prefix equals Team ID")
+          print("signed Apple App ID custody portable contract: PASS")
+          PY
+          git diff --check
+
+      - name: Publish clean donor and remove materializer
+        shell: bash
+        env:
+          BRANCH: fix/v14-capture-signed-apple-app-id-a87-sol
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/field/install_one_time_capture.command Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSignedAppleAppIdentityCustodySourceTests.swift
+          git commit -m "harden(capture): prove signed Apple App ID custody"
+          git rm .github/workflows/materialize-capture-signed-apple-app-id-sol.yml
+          git commit -m "chore(capture): retire App ID custody materializer"
+          git push origin "HEAD:$BRANCH"
