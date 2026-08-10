@@ -1,0 +1,52 @@
+name: Apply V14 Capture app lifecycle authority consumer
+
+on:
+  push:
+    branches: [repair/v14-capture-app-internal-lifecycle-consumer-sol]
+    paths:
+      - '.github/workflows/apply-v14-app-internal-lifecycle-consumer.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Assert exact convergence input
+        run: |
+          set -euo pipefail
+          test "$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)" = "80aaa6066793e4a0601d54319258d6422a2de890"
+          test "$(git hash-object Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift)" = "78d4aa2cf4d631321ff53ce17b78a788949b62e4"
+          python3 -m py_compile .ci-patches/apply-v14-app-internal-lifecycle-consumer.py
+
+      - name: Apply deterministic app consumer
+        run: |
+          set -euo pipefail
+          python3 .ci-patches/apply-v14-app-internal-lifecycle-consumer.py
+          git diff --check
+          ! grep -Fq 'try? await sessionLedger.markAuthenticationFailed(for: token)' NembraApp/App/NembraCaptureEntrypoint.swift
+          ! grep -Fq 'try? await sessionLedger.markSourceAuthorityInvalidated(for: token)' NembraApp/App/NembraCaptureEntrypoint.swift
+          ! grep -Fq 'try? await sessionLedger.markObservationContinuityInvalidated(for: token)' NembraApp/App/NembraCaptureEntrypoint.swift
+          ! grep -Fq 'try? await sessionLedger.endConnection(for: token)' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'private func invalidateInternalLifecycle(' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'sessionLedger.markInternalLifecycleFailure(for: token)' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'sdk_source_authority_lost_before_auth_failure' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'application_update_clock_regressed' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'accepted_prefix_seal_clock_regressed' NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Commit product and retire patch machinery
+        run: |
+          set -euo pipefail
+          rm .ci-patches/apply-v14-app-internal-lifecycle-consumer.py
+          rm .github/workflows/apply-v14-app-internal-lifecycle-consumer.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(capture): consume no-clock lifecycle terminal in app"
+          git push origin HEAD:repair/v14-capture-app-internal-lifecycle-consumer-sol
