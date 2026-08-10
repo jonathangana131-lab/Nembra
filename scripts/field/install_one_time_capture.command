@@ -151,7 +151,8 @@ printf '%s\n' \
     "This launch used no Tuya secret in host argv, environment, Git, or the diagnostic export." \
     "Do NOT repeat the old 17-step ride capture." \
     "Keep the scooter stationary for this first preflight." \
-    "If Capture says SDK compiled/configured, account logged in, or exact scooter membership is not proven, STOP and do not start BLE." \
-    "Only after all app gates are green: run the scooter-OFF baseline, power it ON, select the authoritative target, then Start secure read-only test." \
-    "PASS requires exact SDK scooter membership, Tuya local BLE online, a genuine same-generation dpsUpdate, canonical continuity of at least 45 seconds, and no command/pair/reset/unbind action." \
-    "If any gate fails, share the sanitized diagnostic JSON and stop. No outdoor ride is authorized by this installer."
+    "If Capture says SDK compiled/configured, account logged in, exact scooter membership, or field-build provenance is not proven, STOP and do not start Bluetooth correlation." \
+    "Only after every app authority gate is green: complete the package-owned OFF1 -> ON1 -> OFF2 -> ON2 correlation in order, wait for each fresh-manager scanner to report Live and satisfy the receipt-bounded window before sealing it, then explicitly confirm the single repeatable correlated target for this attempt before starting the secure read-only test." \
+    "A correlated target is current-session evidence only; it is not permanent scooter identity, and name/RSSI/FD50/Tuya-company/historical UUID hints never substitute for the four-window result." \
+    "PASS requires exact SDK scooter membership, same-account source authority, Tuya local BLE online, a genuine same-generation dpsUpdate, canonical continuity of at least 45 seconds, a sealed accepted prefix, and no command/pair/reset/unbind action." \
+    "If any gate fails, correlation is ambiguous, the app reports source/continuity/lifecycle failure, or the package cannot seal the accepted prefix, share the sanitized diagnostic JSON and stop. No outdoor ride is authorized by this installer."
