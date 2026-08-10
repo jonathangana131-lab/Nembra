@@ -1,0 +1,76 @@
+name: Materialize Capture Lossless Event Custody ba3a
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-lossless-event-custody-ba3a-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/v14-capture-lossless-event-custody-ba3a-sol
+          fetch-depth: 0
+
+      - name: Guard exact ba3a product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='ba3a1eeae36caca6dd84beaabd0f15f4f0b57925'
+          test "$(git merge-base "$parent" HEAD)" = "$parent"
+          git diff --quiet "$parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+          git diff --quiet "$parent" HEAD -- Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+          git diff --quiet "$parent" HEAD -- Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
+          test -f Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedApplicationEventCustody.swift
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedApplicationEventCustodyTests.swift
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedApplicationEventCustodyCollisionTests.swift
+
+      - name: Apply lossless event custody
+        run: python3 scripts/ci/materialize_capture_lossless_event_custody_ba3a.py apply
+
+      - name: Verify source and package contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/materialize_capture_lossless_event_custody_ba3a.py verify
+          python3 -m py_compile scripts/ci/materialize_capture_lossless_event_custody_ba3a.py
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedApplicationEventCustody.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedApplicationEventCustodyTests.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedApplicationEventCustodyCollisionTests.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
+          git diff --check
+
+      - name: Run Capture package tests
+        run: swift test --package-path Packages/NembraBluetoothCapture
+
+      - name: Publish clean product bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='ba3a1eeae36caca6dd84beaabd0f15f4f0b57925'
+          rm .github/workflows/capture-lossless-event-custody-ba3a-materialize.yml
+          rm scripts/ci/materialize_capture_lossless_event_custody_ba3a.py
+          git add -A
+          changed="$(git diff --cached "$parent" --name-only | sort)"
+          expected="$(printf '%s\n' \
+            'NembraApp/App/NembraCaptureEntrypoint.swift' \
+            'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedApplicationEventCustody.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedApplicationEventCustodyTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedApplicationEventCustodyCollisionTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift' | sort)"
+          test "$changed" = "$expected"
+          git diff --cached "$parent" --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): preserve application evidence through event custody'
+          git push origin HEAD:agent/v14-capture-lossless-event-custody-ba3a-sol
