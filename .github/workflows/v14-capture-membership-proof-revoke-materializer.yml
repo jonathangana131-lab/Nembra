@@ -1,0 +1,164 @@
+name: V14 Capture Membership Proof Revocation Materializer
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-membership-proof-revoke-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply exact-current revocation invariant
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_PARENT="52333deb09ea9a5964250097f83884d285f25d78"
+          [[ "$(git rev-parse HEAD^)" == "$EXPECTED_PARENT" ]] || { echo "branch moved before materialization"; exit 2; }
+          mapfile -t CUT_FILES < <(git diff --name-only "$EXPECTED_PARENT" HEAD)
+          [[ "${#CUT_FILES[@]}" -eq 1 && "${CUT_FILES[0]}" == ".github/workflows/v14-capture-membership-proof-revoke-materializer.yml" ]] || exit 2
+
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text()
+          old = '''        acceptsViewScopedMembershipRequests = false
+          membershipRequestID = UUID()
+          membershipBusy = false
+          '''
+          new = '''        acceptsViewScopedMembershipRequests = false
+          sdkDeviceMembershipVerified = false
+          membershipAccountUID = nil
+          membershipDeviceID = nil
+          membershipRequestID = UUID()
+          membershipBusy = false
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f"expected one cleanup anchor, found {text.count(old)}")
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+          cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipProofRevocationSourceTests.swift <<'SWIFT'
+          import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Secure Link view-exit membership proof revocation")
+          struct TuyaSecureLinkViewMembershipProofRevocationSourceTests {
+              @Test("view exit revokes the earned membership lease before async grants and transport inspection")
+              func exitRevokesMembershipProofBeforeReturningOrInspectingTransport() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let controller = String(try section(
+                      in: source,
+                      from: "private final class SecureLinkController",
+                      to: "@MainActor\nprivate protocol OfficialTuyaDriver"
+                  ))
+                  let cleanup = String(try section(
+                      in: controller,
+                      from: "func abandonCorrelationForViewExit()",
+                      to: "var privateConfig: Bool"
+                  ))
+
+                  let closeAdmission = try requiredOffset(containing: "acceptsViewScopedMembershipRequests = false", in: cleanup)
+                  let clearVerified = try requiredOffset(containing: "sdkDeviceMembershipVerified = false", in: cleanup)
+                  let clearAccountLease = try requiredOffset(containing: "membershipAccountUID = nil", in: cleanup)
+                  let clearDeviceLease = try requiredOffset(containing: "membershipDeviceID = nil", in: cleanup)
+                  let revokeMembershipRequest = try requiredOffset(containing: "membershipRequestID = UUID()", in: cleanup)
+                  let revokeOfficialRequest = try requiredOffset(containing: "officialConnectionRequestID = UUID()", in: cleanup)
+                  let activeTransportInspection = try requiredOffset(containing: "if let token = currentConnectionToken", in: cleanup)
+
+                  #expect(closeAdmission < clearVerified)
+                  #expect(clearVerified < revokeMembershipRequest)
+                  #expect(clearAccountLease < revokeMembershipRequest)
+                  #expect(clearDeviceLease < revokeMembershipRequest)
+                  #expect(revokeMembershipRequest < revokeOfficialRequest)
+                  #expect(revokeOfficialRequest < activeTransportInspection)
+              }
+
+              @Test("reappearance must re-earn membership instead of relying on retained view state")
+              func reappearanceStillStartsFreshMembershipVerification() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let view = String(try section(
+                      in: source,
+                      from: "private struct SecureLinkView: View",
+                      to: "private var hero: some View"
+                  ))
+                  let task = String(try section(in: view, from: ".task {", to: ".onDisappear {"))
+                  let open = try requiredOffset(containing: "test.activateMembershipRequestsForView()", in: task)
+                  let bootstrap = try requiredOffset(containing: "sdkAccount.bootstrap()", in: task)
+                  let verify = try requiredOffset(containing: "test.verifySDKMembership()", in: task)
+                  #expect(open < bootstrap)
+                  #expect(bootstrap < verify)
+              }
+
+              private func requiredOffset(containing token: String, in source: String) throws -> String.Index {
+                  guard let range = source.range(of: token) else {
+                      Issue.record("Expected source token missing: \(token)")
+                      throw SourceContractError.sectionMissing
+                  }
+                  return range.lowerBound
+              }
+
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let startRange = source.range(of: start),
+                        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+                      Issue.record("Expected source section missing: \(start) ... \(end)")
+                      throw SourceContractError.sectionMissing
+                  }
+                  return source[startRange.lowerBound..<endRange.lowerBound]
+              }
+
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  let repositoryRoot = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+              }
+
+              private enum SourceContractError: Error { case sectionMissing }
+          }
+          SWIFT
+
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipProofRevocationSourceTests.swift
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          start = source.index("func abandonCorrelationForViewExit()")
+          end = source.index("var privateConfig: Bool", start)
+          cleanup = source[start:end]
+          required = [
+              "acceptsViewScopedMembershipRequests = false",
+              "sdkDeviceMembershipVerified = false",
+              "membershipAccountUID = nil",
+              "membershipDeviceID = nil",
+              "membershipRequestID = UUID()",
+              "officialConnectionRequestID = UUID()",
+              "if let token = currentConnectionToken",
+              "Task { @MainActor [self] in",
+          ]
+          for token in required: assert token in cleanup, token
+          assert cleanup.index("acceptsViewScopedMembershipRequests = false") < cleanup.index("sdkDeviceMembershipVerified = false")
+          assert cleanup.index("sdkDeviceMembershipVerified = false") < cleanup.index("membershipRequestID = UUID()")
+          assert cleanup.index("membershipRequestID = UUID()") < cleanup.index("officialConnectionRequestID = UUID()")
+          assert cleanup.index("officialConnectionRequestID = UUID()") < cleanup.index("if let token = currentConnectionToken")
+          assert "disconnectBLE" not in cleanup
+          PY
+
+          git config user.name "Nembra V14 Materializer"
+          git config user.email "actions@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipProofRevocationSourceTests.swift
+          git commit -m "fix(capture): revoke view membership proof on exit"
+          git push origin HEAD:agent/v14-capture-membership-proof-revoke-sol
