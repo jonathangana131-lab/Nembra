@@ -1,0 +1,97 @@
+name: Capture current auth promotion materializer
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-auth-promotion-current-sol
+    paths:
+      - .github/workflows/capture-auth-promotion-current-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/v14-capture-auth-promotion-current-sol
+          fetch-depth: 0
+
+      - name: Bind exact current parent
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 38c69bcf6660f42468c954a9196f35d3bdff2680 HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Apply post-await promotion fence
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          s=p.read_text()
+          a=s.index("    private func authenticated(token: TuyaReadOnlyConnectionToken) async {")
+          b=s.index("    private func authenticationFailed(token: TuyaReadOnlyConnectionToken) async {",a)
+          block=s[a:b]
+          old=(
+              "                    try await sessionLedger.markAuthenticated(for: token, method: .smartLifeAppSDK)\n"
+              "                    await refreshLedgerSnapshot()\n"
+              "                    phase = .observing\n"
+          )
+          if block.count(old)!=1:
+              raise SystemExit(f"auth promotion source shape changed: {block.count(old)}")
+          new=(
+              "                    try await sessionLedger.markAuthenticated(for: token, method: .smartLifeAppSDK)\n"
+              "                    await refreshLedgerSnapshot()\n"
+              "                    guard currentConnectionToken == token, phase == .authenticating else {\n"
+              "                        log(\"retired_auth_promotion_ignored\", [\"generation\": String(token.diagnosticGeneration)])\n"
+              "                        return\n"
+              "                    }\n"
+              "                    guard sdkAccountLoggedIn,\n"
+              "                          sdkDeviceMembershipVerified,\n"
+              "                          accountIdentityLeaseIsAuthorized else {\n"
+              "                        await invalidateSourceAuthority(\n"
+              "                            token: token,\n"
+              "                            message: \"Tuya account/device source authority changed before authenticated observation could be promoted.\",\n"
+              "                            kind: \"sdk_source_authority_lost_before_observing_promotion\"\n"
+              "                        )\n"
+              "                        return\n"
+              "                    }\n"
+              "                    phase = .observing\n"
+          )
+          block=block.replace(old,new,1)
+          p.write_text(s[:a]+block+s[b:])
+          PY
+          git diff --check
+
+      - name: Verify exact source fence
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          a=s.index("    private func authenticated(token: TuyaReadOnlyConnectionToken) async {")
+          b=s.index("    private func authenticationFailed(token: TuyaReadOnlyConnectionToken) async {",a)
+          block=s[a:b]
+          mark=block.index("try await sessionLedger.markAuthenticated(for: token, method: .smartLifeAppSDK)")
+          refresh=block.index("await refreshLedgerSnapshot()",mark)
+          observing=block.index("phase = .observing",refresh)
+          watchdog=block.index("startWatchdog(token: token)",observing)
+          fence=block[refresh:observing]
+          for token in ("currentConnectionToken == token","phase == .authenticating","sdkAccountLoggedIn","sdkDeviceMembershipVerified","accountIdentityLeaseIsAuthorized","sdk_source_authority_lost_before_observing_promotion"):
+              assert token in fence, token
+          assert refresh < observing < watchdog
+          PY
+
+      - name: Commit repair and retire materializer
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-auth-promotion-current-materialize.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift .github/workflows/capture-auth-promotion-current-materialize.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(capture): fence auth promotion after actor suspension"
+          git push origin HEAD:agent/v14-capture-auth-promotion-current-sol
