@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "es80_today_field_candidate_preflight.py"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -103,6 +104,16 @@ class FieldCandidatePreflightTests(unittest.TestCase):
             intended_device_udid_file=udid,
             allow_provisioning_updates="0",
         )
+
+    def private_input_handoff_python(self) -> str:
+        handoff = HANDOFF_PATH.read_text(encoding="utf-8")
+        matches = re.findall(
+            r"/usr/bin/python3 -I - \"\$HOME_PHYSICAL\" <<'PY'\n(.*?)\nPY",
+            handoff,
+            flags=re.DOTALL,
+        )
+        self.assertEqual(len(matches), 1)
+        return matches[0]
 
     def test_ready_report_is_explicitly_non_authorizing_and_secret_minimizing(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -268,6 +279,7 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         root_open = 'root_fd = os.open("/", walk_flags)'
         walk_open = 'os.open(component, walk_flags, dir_fd=current_fd)'
         private_open = 'private_fd = os.open(".nembra-private", walk_flags, dir_fd=current_fd)'
+        existing_guard = "follow_symlinks=False,"
         secret_read = 'value = getpass.getpass("Intended iPhone UDID: ")'
         exclusive_create = 'os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC'
         descriptor_create = 'dir_fd=private_fd,'
@@ -278,27 +290,57 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertIn(root_open, handoff)
         self.assertIn(walk_open, handoff)
         self.assertIn(private_open, handoff)
+        self.assertIn(existing_guard, handoff)
         self.assertIn(secret_read, handoff)
         self.assertIn(exclusive_create, handoff)
         self.assertIn(descriptor_create, handoff)
         self.assertIn("os.fsync(file_fd)", handoff)
         self.assertIn('os.unlink("es80-intended-device.udid", dir_fd=private_fd)', handoff)
         self.assertLess(handoff.index(home_resolution), handoff.index(root_open))
-        self.assertLess(handoff.index(private_open), handoff.index(secret_read))
+        self.assertLess(handoff.index(private_open), handoff.index(existing_guard))
+        self.assertLess(handoff.index(existing_guard), handoff.index(secret_read))
         self.assertLess(handoff.index(secret_read), handoff.index(exclusive_create))
         self.assertNotIn("IFS= read -r -s INTENDED_UDID", handoff)
         self.assertNotIn(legacy_secret_write, handoff)
         self.assertNotIn("INTENDED_UDID=", handoff)
 
     def test_production_handoff_private_input_python_is_syntactically_valid(self):
-        handoff = HANDOFF_PATH.read_text(encoding="utf-8")
-        matches = re.findall(
-            r"/usr/bin/python3 -I - \"\$HOME_PHYSICAL\" <<'PY'\n(.*?)\nPY",
-            handoff,
-            flags=re.DOTALL,
+        compile(
+            self.private_input_handoff_python(),
+            "private-intended-device-handoff",
+            "exec",
         )
-        self.assertEqual(len(matches), 1)
-        compile(matches[0], "private-intended-device-handoff", "exec")
+
+    def test_production_handoff_private_input_python_executes_and_refuses_existing_before_prompt(self):
+        code = compile(
+            self.private_input_handoff_python(),
+            "private-intended-device-handoff",
+            "exec",
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary) / "physical-home"
+            home.mkdir()
+            argv = ["private-intended-device-handoff", str(home)]
+
+            with mock.patch.object(sys, "argv", argv), mock.patch(
+                "getpass.getpass",
+                return_value=self.PRIVATE_UDID,
+            ) as prompt:
+                exec(code, {})
+            prompt.assert_called_once_with("Intended iPhone UDID: ")
+
+            private_file = home / ".nembra-private" / "es80-intended-device.udid"
+            self.assertEqual(private_file.read_bytes(), self.PRIVATE_UDID.encode("utf-8"))
+            self.assertEqual(private_file.stat().st_mode & 0o777, 0o600)
+
+            with mock.patch.object(sys, "argv", argv), mock.patch(
+                "getpass.getpass",
+                return_value="SHOULD-NOT-BE-REQUESTED",
+            ) as prompt:
+                with self.assertRaises(SystemExit):
+                    exec(code, {})
+            prompt.assert_not_called()
+            self.assertEqual(private_file.read_bytes(), self.PRIVATE_UDID.encode("utf-8"))
 
     def test_non_xcode_27_selection_fails_closed(self):
         with tempfile.TemporaryDirectory() as temporary:
