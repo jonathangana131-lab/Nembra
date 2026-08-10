@@ -25,6 +25,24 @@ struct TuyaCaptureForegroundIntegrityCurrentSourceTests {
         #expect(view.contains("if sdkAccount.loggedIn { test.verifySDKMembership() }"))
         #expect(view.contains("test.appDidLoseForeground()"))
         #expect(controller.contains("func appDidLoseForeground()"))
+
+        let activation = String(try section(
+            in: controller,
+            from: "func activateMembershipRequestsForView()",
+            to: "func abandonCorrelationForViewExit()"
+        ))
+        for fence in [
+            "currentConnectionToken == nil",
+            "localBLESettlementToken == nil",
+            "driver == nil",
+            "processCorrelationLease == nil",
+            "correlationSession == nil"
+        ] {
+            #expect(activation.contains(fence), "foreground return must not reopen membership during retained authority: \(fence)")
+        }
+        let fence = try requiredOffset(containing: "guard currentConnectionToken == nil", in: activation)
+        let reopen = try requiredOffset(containing: "foregroundIntegrityLossHandled = false", in: activation)
+        #expect(fence < reopen)
     }
 
     @Test("foreground loss preserves sealed acceptance but revokes mutable evidence authority")
@@ -79,6 +97,14 @@ struct TuyaCaptureForegroundIntegrityCurrentSourceTests {
         #expect(cleanup.contains("phase == .correlated || phase == .selected"))
         #expect(cleanup.contains("resetDiscoverySessionOnly()"))
         #expect(cleanup.contains("foreground_integrity_lost_after_target_correlation"))
+    }
+
+    private func requiredOffset(containing token: String, in source: String) throws -> String.Index {
+        guard let range = source.range(of: token) else {
+            Issue.record("Expected source token missing: \(token)")
+            throw ContractError.missing
+        }
+        return range.lowerBound
     }
 
     private func entrypointSource() throws -> String {

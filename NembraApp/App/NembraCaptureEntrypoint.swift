@@ -417,6 +417,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
     deinit { watchdog?.cancel() }
 
     func activateMembershipRequestsForView() {
+        // A foreground-return callback must never reopen view authority while an exact authenticated
+        // generation is still terminally retiring. Pre-handoff interrupted discovery can reopen only
+        // after its scanner/target authority is fully gone; post-Tuya-handoff failures remain relaunch-only.
+        guard currentConnectionToken == nil,
+              localBLESettlementToken == nil,
+              driver == nil,
+              processCorrelationLease == nil,
+              correlationSession == nil else { return }
         foregroundIntegrityLossHandled = false
         acceptsViewScopedMembershipRequests = true
     }
