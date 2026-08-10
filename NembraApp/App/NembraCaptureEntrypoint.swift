@@ -289,6 +289,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     @Published private(set) var candidates: [Candidate] = []
     @Published private(set) var selectedID: UUID?
     @Published private(set) var pendingCorrelatedTargetID: UUID?
+    @Published private(set) var correlationProgress: PassiveBluetoothPowerCycleObservationProgress?
     @Published private(set) var sdkLocalBLEOnline = false
     @Published private(set) var sdkDeviceMembershipVerified = false
     @Published private(set) var membershipStatus = "Exact scooter membership has not been checked in the official SDK account yet."
@@ -312,6 +313,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private let buildIdentity = NembraCaptureBuildIdentity.current
     private var byID: [UUID: Candidate] = [:]
     private var correlationSession: PassiveBluetoothPowerCycleObservationSession?
+    private var correlationProgressTask: Task<Void, Never>?
     private var correlationProvenance: CorrelationProvenance?
     private var targetCorrelationMethod: String?
     private var targetCorrelationWindowCount: Int?
@@ -338,7 +340,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
         log("controller_created")
     }
 
-    deinit { watchdog?.cancel() }
+    deinit {
+        watchdog?.cancel()
+        correlationProgressTask?.cancel()
+    }
 
     var privateConfig: Bool { OfficialTuyaFactory.configured }
     var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }
@@ -348,7 +353,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var currentAccountUID: String? { OfficialTuyaFactory.currentAccountUID }
     var selected: Candidate? { selectedID.flatMap { byID[$0] } }
     var applicationUpdateCount: Int { ledgerSnapshot.applicationPayloadCount }
-    var correlationProgress: PassiveBluetoothPowerCycleObservationProgress? { correlationSession?.progress }
     var correlationWindowIsScanning: Bool { correlationProgress?.isScanning == true }
     var correlationObservedCandidateCount: Int { correlationProgress?.currentObservedCandidateCount ?? 0 }
     var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }
@@ -491,6 +495,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let label = correlationWindowLabel
         do {
             try session.startCurrentWindow()
+            startCorrelationProgressObservation(session: session)
             phase = progress.phase.operatorExpectedPowerOn ? .scanning : .baseline
             message = "\(label) requested with a fresh CoreBluetooth manager. Wait for scanner liveness, then keep this state for at least 10 receipt-bounded seconds before sealing it."
             log("target_correlation_window_started", [
@@ -503,6 +508,25 @@ private final class SecureLinkController: NSObject, ObservableObject {
             correlationSession = nil
             failLocally("The \(label) correlation window failed closed: \(error.localizedDescription). Restart from OFF1.", "target_correlation_window_start_failed")
         }
+    }
+
+    private func startCorrelationProgressObservation(session: PassiveBluetoothPowerCycleObservationSession) {
+        stopCorrelationProgressObservation()
+        correlationProgress = session.progress
+        correlationProgressTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard self?.correlationSession === session else { return }
+                if let progress = session.progress {
+                    self?.correlationProgress = progress
+                }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+    }
+
+    private func stopCorrelationProgressObservation() {
+        correlationProgressTask?.cancel()
+        correlationProgressTask = nil
     }
 
     func finishCorrelationWindow() {
@@ -520,6 +544,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let sealedLabel = correlationWindowLabel
         do {
             let final = try session.finishCurrentWindow()
+            stopCorrelationProgressObservation()
+            correlationProgress = session.progress
             if let final {
                 finishCorrelationSeries(final)
                 return
@@ -538,11 +564,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
             case .scanReadinessPending:
                 message = "\(sealedLabel) is still waiting for confirmed CoreBluetooth scan liveness. Do not advance the physical state yet."
             default:
+                stopCorrelationProgressObservation()
                 session.abandonCurrentWindow()
                 correlationSession = nil
                 failLocally("\(sealedLabel) failed closed (\(String(describing: error))). Restart the complete OFF1→ON1→OFF2→ON2 series.", "target_correlation_window_failed")
             }
         } catch {
+            stopCorrelationProgressObservation()
             session.abandonCurrentWindow()
             correlationSession = nil
             failLocally("\(sealedLabel) failed closed: \(error.localizedDescription). Restart the complete correlation series.", "target_correlation_window_failed")
@@ -1512,8 +1540,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func resetDiscoverySessionOnly() {
+        stopCorrelationProgressObservation()
         correlationSession?.abandonCurrentWindow()
         correlationSession = nil
+        correlationProgress = nil
         correlationProvenance = nil
         targetCorrelationMethod = nil
         targetCorrelationWindowCount = nil
@@ -1535,6 +1565,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func failLocally(_ text: String, _ kind: String) {
+        stopCorrelationProgressObservation()
+        correlationProgress = nil
         if phase == .baseline || phase == .powerOn || phase == .scanning || phase == .correlated {
             correlationSession?.abandonCurrentWindow()
             correlationSession = nil
