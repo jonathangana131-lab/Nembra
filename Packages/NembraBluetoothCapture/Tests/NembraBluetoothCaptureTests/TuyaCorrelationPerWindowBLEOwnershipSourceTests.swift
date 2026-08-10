@@ -1,40 +1,4 @@
-#!/usr/bin/env python3
-from pathlib import Path
-
-ENTRYPOINT = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
-TEST = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationPerWindowBLEOwnershipSourceTests.swift")
-
-source = ENTRYPOINT.read_text(encoding="utf-8")
-old = '''        guard let session = correlationSession,
-              let progress = session.progress else {
-            failLocally("Fresh Bluetooth correlation authority is unavailable. Restart from OFF1.", "target_correlation_authority_unavailable")
-            return
-        }
-
-        let label = correlationWindowLabel
-'''
-new = '''        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {
-            correlationSession?.abandonCurrentWindow()
-            correlationSession = nil
-            failLocally(
-                "Tuya regained local BLE ownership before the next correlation window. Restart from scooter OFF after that SDK session has cleared; package-owned scanning will not compete with Tuya BLE.",
-                "sdk_local_ble_ownership_changed_during_target_correlation"
-            )
-            return
-        }
-        guard let session = correlationSession,
-              let progress = session.progress else {
-            failLocally("Fresh Bluetooth correlation authority is unavailable. Restart from OFF1.", "target_correlation_authority_unavailable")
-            return
-        }
-
-        let label = correlationWindowLabel
-'''
-if source.count(old) != 1:
-    raise SystemExit("expected exact startCurrentCorrelationWindow insertion point once")
-ENTRYPOINT.write_text(source.replace(old, new, 1), encoding="utf-8")
-
-TEST.write_text(r'''import Foundation
+import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
@@ -129,10 +93,3 @@ struct TuyaCorrelationPerWindowBLEOwnershipSourceTests {
 
     private enum SourceContractError: Error { case sectionMissing }
 }
-''', encoding="utf-8")
-
-window = ENTRYPOINT.read_text(encoding="utf-8").split("private func startCurrentCorrelationWindow()", 1)[1].split("func finishCorrelationWindow()", 1)[0]
-assert window.index("OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID)") < window.index("try session.startCurrentWindow()")
-for forbidden in ("disconnectBLE", "publishDps", "queryDps", "writeValue", "sessionLedger.endConnection"):
-    assert forbidden not in window
-print("capture per-window BLE ownership materialized: PASS")
