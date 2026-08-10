@@ -18,9 +18,10 @@ public struct TuyaReadOnlyConnectionToken: Hashable, Sendable {
 ///
 /// The official Tuya adapter reports lifecycle events here rather than assembling preflight
 /// snapshots itself. The ledger samples monotonic uptime at the mutation boundary, resets
-/// authentication/payload evidence on every new connection, and rejects callbacks attributed to
-/// an older connection token. Payload bytes are inspected only for non-emptiness and are never
-/// retained by this type.
+/// authentication/payload evidence on every new connection, rejects callbacks attributed to
+/// an older connection token, and retires callback authority at terminal acceptance/failure
+/// horizons. Payload bytes are inspected only for non-emptiness and are never retained by this
+/// type.
 public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationSessionProvider {
     public enum MutationError: Error, Equatable, Sendable {
         case noActiveConnection
@@ -31,6 +32,7 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         case applicationPayloadCountExhausted
         case monotonicClockRegressed
         case connectionGenerationExhausted
+        case preflightNotReady
     }
 
     private let nowUptimeNanoseconds: @Sendable () -> UInt64
@@ -122,6 +124,7 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         latestObservedUptimeNanoseconds = now
         applicationPayloadCount = 0
         latestApplicationPayloadUptimeNanoseconds = nil
+        currentToken = nil
     }
 
     public func recordApplicationPayload(
@@ -153,7 +156,45 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     /// No telemetry or application payload is manufactured by this call.
     public func observeCurrentConnection(for token: TuyaReadOnlyConnectionToken) throws {
         try requireCurrent(token)
+        guard case .authenticated = authenticationState else {
+            throw MutationError.authenticationRequired
+        }
         latestObservedUptimeNanoseconds = try nextMonotonicObservation()
+    }
+
+    /// Seals a post-authentication attempt that remained connected but failed to produce the
+    /// required application evidence. This is deliberately distinct from `endConnection`: the
+    /// terminal fact is "authenticated observation failed", not "Bluetooth disconnected".
+    ///
+    /// The authenticated provenance/chronology already earned by this generation is retained for
+    /// diagnostics, while the token is retired so a delayed application callback cannot resurrect
+    /// the failed attempt.
+    public func markApplicationObservationTimedOut(
+        for token: TuyaReadOnlyConnectionToken
+    ) throws {
+        try requireCurrent(token)
+        guard case .authenticated = authenticationState else {
+            throw MutationError.authenticationRequired
+        }
+
+        let now = try nextMonotonicObservation()
+        authenticationState = .failed(reason: "Authenticated session produced no application payload before the observation deadline.")
+        latestObservedUptimeNanoseconds = now
+        currentToken = nil
+    }
+
+    /// Freezes an already-earned canonical ready verdict without manufacturing a later receipt or
+    /// extending its duration. Retiring the token makes the accepted prefix immutable: delayed
+    /// callbacks from this connection can no longer mutate payload count or liveness chronology.
+    public func sealAcceptedObservation(
+        for token: TuyaReadOnlyConnectionToken
+    ) throws {
+        try requireCurrent(token)
+        let snapshot = makeSnapshot()
+        guard TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .readyForStationaryMapping else {
+            throw MutationError.preflightNotReady
+        }
+        currentToken = nil
     }
 
     public func endConnection(for token: TuyaReadOnlyConnectionToken) throws {
@@ -170,6 +211,10 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     }
 
     public func currentPreflightSnapshot() async -> TuyaAuthenticatedReadOnlyPreflightSnapshot {
+        makeSnapshot()
+    }
+
+    private func makeSnapshot() -> TuyaAuthenticatedReadOnlyPreflightSnapshot {
         TuyaAuthenticatedReadOnlyPreflightSnapshot(
             authenticationState: authenticationState,
             authenticationMethod: authenticationMethod,
