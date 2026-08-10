@@ -178,8 +178,11 @@ insert_after(
     f'          grep -Fq \'PROCEDURE_ID="{P}"\' "$installer"\n',
 )
 
-# Fail closed before commit if any authority surface diverges.
-for path in (identity, entrypoint, runbook, installer, procedure_test):
+# Fail closed before commit if any authority surface diverges. The Entrypoint
+# intentionally references the one compiled BuildIdentity constant instead of
+# repeating the literal; requiring the literal there made a correct transform
+# fail its own verifier.
+for path in (identity, runbook, installer, procedure_test):
     if P not in Path(path).read_text():
         raise SystemExit(f"missing exact procedure rendezvous in {path}")
 
@@ -188,6 +191,8 @@ if "schemaVersion: 9" in app or "schemaVersion: 10" not in app:
     raise SystemExit("accepted export schema did not converge to 10")
 if "procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier" not in app:
     raise SystemExit("immutable accepted export does not carry the compiled procedure identifier")
+if "fieldProcedureIdentifier: String { NembraCaptureBuildIdentity.fieldProcedureIdentifier }" not in app:
+    raise SystemExit("user-visible field procedure source is not bound to the compiled identifier")
 
 dep = Path(dependency_test).read_text()
 if 'schemaVersion: 9' in dep or 'schemaVersion: 10' not in dep:
