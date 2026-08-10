@@ -1,0 +1,104 @@
+name: V14 Capture Current Quiescent Cut One Shot
+
+on:
+  push:
+    branches:
+      - integration/v14-capture-quiescent-application-evidence-sol
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: integration/v14-capture-quiescent-application-evidence-sol
+          fetch-depth: 0
+
+      - name: Apply quiescent accepted-application cut
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s = path.read_text()
+
+          exact = [
+              (
+                  '    private var events: [Event] = []\n    private var sealedAcceptedEventPrefix: [Event]?\n',
+                  '    private var events: [Event] = []\n    private var applicationUpdateAdmissionsInFlight = 0\n    private var acceptanceCutIsClosed = false\n    private var sealedAcceptedEventPrefix: [Event]?\n',
+                  'admission state'
+              ),
+              (
+                  '        do {\n            try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)\n',
+                  '        applicationUpdateAdmissionsInFlight += 1\n        defer { applicationUpdateAdmissionsInFlight -= 1 }\n\n        do {\n            try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)\n',
+                  'in-flight custody'
+              ),
+              (
+                  '                    do {\n                        try await sessionLedger.sealAcceptedObservation(for: token)\n                        self.sealedAcceptedEventPrefix = self.events\n',
+                  '                    guard self.applicationUpdateAdmissionsInFlight == 0 else {\n                        break\n                    }\n                    self.acceptanceCutIsClosed = true\n                    let acceptedEventPrefixAtCut = self.events\n                    do {\n                        try await sessionLedger.sealAcceptedObservation(for: token)\n                        self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut\n',
+                  'quiescent pre-await cut'
+              ),
+              (
+                  '                if (self.canonicalObservedAgeSeconds ?? 0) > 60,\n                   self.applicationUpdateCount == 0 {\n',
+                  '                if self.applicationUpdateAdmissionsInFlight == 0,\n                   (self.canonicalObservedAgeSeconds ?? 0) > 60,\n                   self.applicationUpdateCount == 0 {\n',
+                  'timeout quiescence'
+              ),
+              (
+                  '    private func resetDiscoverySessionOnly() {\n        sealedAcceptedEventPrefix = nil\n',
+                  '    private func resetDiscoverySessionOnly() {\n        acceptanceCutIsClosed = false\n        sealedAcceptedEventPrefix = nil\n',
+                  'fresh-life cut reset'
+              ),
+          ]
+
+          receive_start = s.index('    private func receivedApplicationUpdate')
+          receive_end = s.index('    private func startWatchdog', receive_start)
+          receive = s[receive_start:receive_end]
+          old = '        guard sdkAccountLoggedIn,\n'
+          new = '        guard !acceptanceCutIsClosed else {\n            log("application_update_after_acceptance_cut_ignored", [\n                "generation": String(token.diagnosticGeneration)\n            ])\n            return\n        }\n        guard sdkAccountLoggedIn,\n'
+          if receive.count(old) != 1:
+              raise SystemExit(f'post-cut guard: expected one scoped anchor, found {receive.count(old)}')
+          receive = receive.replace(old, new, 1)
+          s = s[:receive_start] + receive + s[receive_end:]
+
+          for old, new, label in exact:
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one exact anchor, found {count}')
+              s = s.replace(old, new, 1)
+
+          required = [
+              'private var applicationUpdateAdmissionsInFlight = 0',
+              'private var acceptanceCutIsClosed = false',
+              'guard !acceptanceCutIsClosed else',
+              'applicationUpdateAdmissionsInFlight += 1',
+              'defer { applicationUpdateAdmissionsInFlight -= 1 }',
+              'guard self.applicationUpdateAdmissionsInFlight == 0 else',
+              'self.acceptanceCutIsClosed = true',
+              'let acceptedEventPrefixAtCut = self.events',
+              'self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut',
+              'if self.applicationUpdateAdmissionsInFlight == 0,',
+              'acceptanceCutIsClosed = false',
+          ]
+          missing = [needle for needle in required if needle not in s]
+          if missing:
+              raise SystemExit(f'missing repaired invariants: {missing}')
+          if 'self.sealedAcceptedEventPrefix = self.events' in s:
+              raise SystemExit('post-await live-log snapshot still present')
+          path.write_text(s)
+          PY
+          git diff --check
+
+      - name: Retire helper and checkpoint product repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/v14-capture-current-quiescent-cut-one-shot.yml
+          git config user.name 'nembra-v14-bot'
+          git config user.email 'nembra-v14-bot@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift .github/workflows/v14-capture-current-quiescent-cut-one-shot.yml
+          git commit -m 'fix(capture): compose quiescent application evidence cut'
+          git push origin HEAD:integration/v14-capture-quiescent-application-evidence-sol
