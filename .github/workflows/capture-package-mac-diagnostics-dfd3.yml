@@ -17,18 +17,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 6
+          fetch-depth: 8
       - name: Verify diagnostic ancestry
         shell: bash
         run: |
           set -euo pipefail
           base='dfd3b72e54395e19efa11627499fec6355bedcd0'
           git merge-base --is-ancestor "$base" HEAD
-          mapfile -t changed < <(git diff --name-only "$base" HEAD)
-          printf '%s\n' "${changed[@]}"
-          test "${#changed[@]}" -eq 2
-          printf '%s\n' "${changed[@]}" | grep -Fxq '.github/workflows/capture-package-mac-diagnostics-dfd3.yml'
-          printf '%s\n' "${changed[@]}" | grep -Fxq 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCrossControllerBLEOwnershipLeaseSourceTests.swift'
+          changed="$(git diff --name-only "$base" HEAD)"
+          printf '%s\n' "$changed"
+          test "$(printf '%s\n' "$changed" | sed '/^$/d' | wc -l | tr -d ' ')" = '2'
+          printf '%s\n' "$changed" | grep -Fxq '.github/workflows/capture-package-mac-diagnostics-dfd3.yml'
+          printf '%s\n' "$changed" | grep -Fxq 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCrossControllerBLEOwnershipLeaseSourceTests.swift'
       - name: Run exact Capture package
         shell: bash
         run: |
