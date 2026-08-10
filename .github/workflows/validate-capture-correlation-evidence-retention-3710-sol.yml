@@ -1,0 +1,56 @@
+name: Validate Capture Correlation Evidence Retention 3710 Sol
+
+on:
+  push:
+    branches:
+      - review/v14-capture-correlation-evidence-retention-3710-sol
+
+permissions:
+  contents: write
+
+jobs:
+  portable-acceptance:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind review to exact candidate product bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate='3710aea325ed5b796c781b9d6a1f5285cb862f42'
+          test "$(git merge-base HEAD "$candidate")" = "$candidate"
+          git diff --quiet "$candidate" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+          git diff --quiet "$candidate" HEAD -- Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundCorrelationEvidenceRetentionSourceTests.swift
+          git diff --check "$candidate" HEAD
+
+      - name: Parse app and focused source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors --filter TuyaCaptureForegroundCorrelationEvidenceRetentionSourceTests
+
+      - name: Run full Bluetooth Capture package
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+
+      - name: Restore review branch to candidate product tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate='3710aea325ed5b796c781b9d6a1f5285cb862f42'
+          workflow='.github/workflows/validate-capture-correlation-evidence-retention-3710-sol.yml'
+          rm "$workflow"
+          git add -u "$workflow"
+          git diff --cached --check
+          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' commit -m 'ci(capture): record portable correlation-retention review'
+          test -z "$(git diff --name-only "$candidate" HEAD)"
+          git push origin HEAD:review/v14-capture-correlation-evidence-retention-3710-sol
