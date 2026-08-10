@@ -1,0 +1,224 @@
+name: Materialize Current Capture Lifecycle Authority Closure
+
+on:
+  push:
+    branches: [agent/capture-lifecycle-authority-current-523]
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/capture-lifecycle-authority-current-523
+          fetch-depth: 0
+      - name: Close view and foreground authority on exact current product
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='52333deb09ea9a5964250097f83884d285f25d78'
+          test "$(git rev-parse HEAD^)" = "$parent"
+          test "$(git diff --name-only "$parent"...HEAD)" = '.github/workflows/materialize-capture-lifecycle-authority-current-523.yml'
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s=p.read_text(encoding='utf-8')
+          if 'func appDidLoseForeground()' in s or '@Environment(\\.scenePhase)' in s:
+              raise SystemExit('foreground authority already exists; re-review live product')
+
+          # Idempotence fence for active -> inactive -> background transitions.
+          anchor='    private var membershipRequestID = UUID()\n    private var officialConnectionRequestID = UUID()\n'
+          repl='    private var membershipRequestID = UUID()\n    private var officialConnectionRequestID = UUID()\n    private var foregroundIntegrityLossHandled = false\n'
+          if s.count(anchor)!=1: raise SystemExit('request-generation property anchor drifted')
+          s=s.replace(anchor,repl,1)
+
+          old='''    func activateMembershipRequestsForView() {\n        acceptsViewScopedMembershipRequests = true\n    }\n\n    func abandonCorrelationForViewExit() {\n        // Close the screen-lifetime admission boundary before revoking every already-issued grant.\n        // A later SwiftUI/account callback must not mint a replacement membership probe off-screen.\n        acceptsViewScopedMembershipRequests = false\n        membershipRequestID = UUID()\n        membershipBusy = false\n#if canImport(ThingSmartHomeKit)\n        membershipProbe = nil\n#endif\n        officialConnectionRequestID = UUID()\n'''
+          new='''    func activateMembershipRequestsForView() {\n        foregroundIntegrityLossHandled = false\n        acceptsViewScopedMembershipRequests = true\n    }\n\n    func abandonCorrelationForViewExit() {\n        // Close the screen-lifetime boundary and revoke the membership proof earned by that view\n        // before touching async request generations or any transport/session state.\n        foregroundIntegrityLossHandled = true\n        acceptsViewScopedMembershipRequests = false\n        sdkDeviceMembershipVerified = false\n        membershipAccountUID = nil\n        membershipDeviceID = nil\n        membershipStatus = "Secure Link left the active view. Exact scooter membership must be verified again."\n        membershipRequestID = UUID()\n        membershipBusy = false\n#if canImport(ThingSmartHomeKit)\n        membershipProbe = nil\n#endif\n        officialConnectionRequestID = UUID()\n'''
+          if s.count(old)!=1: raise SystemExit('current strong-retention view-exit anchor drifted')
+          s=s.replace(old,new,1)
+
+          marker='    var privateConfig: Bool { OfficialTuyaFactory.configured }\n'
+          if s.count(marker)!=1: raise SystemExit('controller foreground insertion anchor drifted')
+          method='''    func appDidLoseForeground() {\n        // SwiftUI may report inactive and then background for one transition. The first loss owns\n        // the terminal verdict so a second callback cannot downgrade observation-continuity truth.\n        guard !foregroundIntegrityLossHandled else { return }\n        foregroundIntegrityLossHandled = true\n\n        // Foreground is part of Capture evidence authority. Revoke both fresh-probe admission and\n        // any membership proof already earned by this active view before inspecting transport.\n        acceptsViewScopedMembershipRequests = false\n        sdkDeviceMembershipVerified = false\n        membershipAccountUID = nil\n        membershipDeviceID = nil\n        membershipStatus = "Capture left the foreground. Exact scooter membership must be verified again after returning active."\n        membershipRequestID = UUID()\n        membershipBusy = false\n#if canImport(ThingSmartHomeKit)\n        membershipProbe = nil\n#endif\n        officialConnectionRequestID = UUID()\n        watchdog?.cancel()\n        watchdog = nil\n\n        if processCorrelationLease != nil || correlationSession != nil {\n            // Package scanner retirement precedes owner-token lease release.\n            abandonPackageCorrelation()\n            phase = .failed\n            message = "Capture left the foreground during Bluetooth target correlation. Restart from OFF1; interrupted windows are never reusable evidence."\n            log("foreground_integrity_lost_during_target_correlation")\n            return\n        }\n\n        guard let token = currentConnectionToken else {\n            if phase == .authenticating {\n                // Driver handoff without a package token is app-local authority only. The rotated\n                // request ID forces pending ledger work to retire before SDK connect.\n                localBLESettlementToken = nil\n                sdkLocalBLEOnline = false\n                driver = nil\n                phase = .failed\n                message = "Capture left the foreground during authentication. Relaunch before another authenticated attempt; no BLE disconnect is claimed."\n                log("foreground_integrity_lost_before_observation")\n            }\n            return\n        }\n\n        let wasObserving = phase == .observing\n        phase = .failed\n        message = wasObserving\n            ? "Capture left the foreground during authenticated observation. Restart from OFF1; background time is not accepted evidence and no BLE disconnect is claimed."\n            : "Capture left the foreground before authenticated observation. Relaunch before another authenticated attempt; no BLE disconnect is claimed."\n        log(\n            wasObserving ? "foreground_integrity_lost_during_observation" : "foreground_integrity_lost_before_observation",\n            ["generation": String(token.diagnosticGeneration)]\n        )\n\n        // Strong finite retention matches view-exit retirement: exact package terminal work must\n        // finish even if SwiftUI destroys this StateObject after scene loss/navigation churn.\n        Task { @MainActor [self] in\n            guard self.currentConnectionToken == token else { return }\n            if wasObserving {\n                await self.invalidateObservationContinuity(\n                    token: token,\n                    message: "App foreground integrity was lost during authenticated observation. Restart from OFF1; background time is not accepted evidence and no BLE disconnect is claimed.",\n                    kind: "foreground_integrity_lost_during_observation"\n                )\n            } else {\n                await self.invalidateInternalLifecycle(\n                    token: token,\n                    message: "App foreground integrity was lost before authenticated observation. Relaunch before another authenticated attempt; no BLE disconnect is claimed.",\n                    kind: "foreground_integrity_lost_before_observation"\n                )\n            }\n        }\n    }\n\n'''
+          s=s.replace(marker,method+marker,1)
+
+          env='    @Environment(\\.dynamicTypeSize) private var dynamicTypeSize\n'
+          if s.count(env)!=1: raise SystemExit('scenePhase environment anchor drifted')
+          s=s.replace(env,env+'    @Environment(\\.scenePhase) private var scenePhase\n',1)
+
+          old_task='''        .task {\n            test.activateMembershipRequestsForView()\n            sdkAccount.bootstrap()\n            if sdkAccount.loggedIn { test.verifySDKMembership() }\n            while !Task.isCancelled {\n                test.consumeCorrelationAsyncInvalidation()\n                try? await Task.sleep(nanoseconds: 250_000_000)\n            }\n        }\n'''
+          new_task='''        .task {\n            test.activateMembershipRequestsForView()\n            if scenePhase == .active {\n                sdkAccount.bootstrap()\n                if sdkAccount.loggedIn { test.verifySDKMembership() }\n            } else {\n                test.appDidLoseForeground()\n            }\n            while !Task.isCancelled {\n                test.consumeCorrelationAsyncInvalidation()\n                try? await Task.sleep(nanoseconds: 250_000_000)\n            }\n        }\n'''
+          if s.count(old_task)!=1: raise SystemExit('Secure Link task anchor drifted')
+          s=s.replace(old_task,new_task,1)
+
+          lifecycle='''        .onDisappear {\n            test.abandonCorrelationForViewExit()\n        }\n        .onChange(of: sdkAccount.loggedIn) { _, loggedIn in\n'''
+          replacement='''        .onDisappear {\n            test.abandonCorrelationForViewExit()\n        }\n        .onChange(of: scenePhase) { _, newPhase in\n            if newPhase == .active {\n                // Reopen only membership admission for this still-visible view. No capture stage,\n                // correlation, or authentication automatically restarts on foreground return.\n                test.activateMembershipRequestsForView()\n                if sdkAccount.loggedIn { test.verifySDKMembership() }\n            } else {\n                test.appDidLoseForeground()\n            }\n        }\n        .onChange(of: sdkAccount.loggedIn) { _, loggedIn in\n'''
+          if s.count(lifecycle)!=1: raise SystemExit('Secure Link lifecycle anchor drifted')
+          s=s.replace(lifecycle,replacement,1)
+          p.write_text(s,encoding='utf-8')
+          PY
+
+          cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegritySourceTests.swift <<'SWIFT'
+          import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Capture foreground integrity source contract")
+          struct TuyaCaptureForegroundIntegritySourceTests {
+              @Test("inactive and background share one idempotent authority-loss verdict")
+              func sceneActivityOwnsEvidenceAdmission() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let controller = String(try section(in: source, from: "private final class SecureLinkController", to: "@MainActor\nprivate protocol OfficialTuyaDriver"))
+                  let cleanup = String(try section(in: controller, from: "func appDidLoseForeground()", to: "var privateConfig: Bool"))
+                  let view = String(try section(in: source, from: "private struct SecureLinkView: View", to: "private var hero: some View"))
+
+                  #expect(controller.contains("private var foregroundIntegrityLossHandled = false"))
+                  #expect(cleanup.contains("guard !foregroundIntegrityLossHandled else { return }"))
+                  #expect(cleanup.contains("foregroundIntegrityLossHandled = true"))
+                  #expect(view.contains("@Environment(\\.scenePhase) private var scenePhase"))
+                  #expect(view.contains(".onChange(of: scenePhase)"))
+                  #expect(view.contains("if newPhase == .active"))
+                  #expect(view.contains("test.appDidLoseForeground()"))
+              }
+
+              @Test("foreground loss revokes membership proof and grants before transport inspection")
+              func foregroundLossClosesAuthorityFirst() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let controller = String(try section(in: source, from: "private final class SecureLinkController", to: "@MainActor\nprivate protocol OfficialTuyaDriver"))
+                  let cleanup = String(try section(in: controller, from: "func appDidLoseForeground()", to: "var privateConfig: Bool"))
+                  let close = try requiredOffset(containing: "acceptsViewScopedMembershipRequests = false", in: cleanup)
+                  let clearVerified = try requiredOffset(containing: "sdkDeviceMembershipVerified = false", in: cleanup)
+                  let membershipRevoke = try requiredOffset(containing: "membershipRequestID = UUID()", in: cleanup)
+                  let officialRevoke = try requiredOffset(containing: "officialConnectionRequestID = UUID()", in: cleanup)
+                  let transport = try requiredOffset(containing: "if processCorrelationLease != nil || correlationSession != nil", in: cleanup)
+                  #expect(close < clearVerified)
+                  #expect(clearVerified < membershipRevoke)
+                  #expect(membershipRevoke < officialRevoke)
+                  #expect(officialRevoke < transport)
+                  #expect(cleanup.contains("membershipAccountUID = nil"))
+                  #expect(cleanup.contains("membershipDeviceID = nil"))
+                  #expect(cleanup.contains("watchdog?.cancel()"))
+              }
+
+              @Test("observation continuity is invalidated without manufacturing disconnect")
+              func foregroundLossUsesTruthSpecificTerminal() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let controller = String(try section(in: source, from: "private final class SecureLinkController", to: "@MainActor\nprivate protocol OfficialTuyaDriver"))
+                  let cleanup = String(try section(in: controller, from: "func appDidLoseForeground()", to: "var privateConfig: Bool"))
+                  #expect(cleanup.contains("abandonPackageCorrelation()"))
+                  #expect(cleanup.contains("let wasObserving = phase == .observing"))
+                  #expect(cleanup.contains("invalidateObservationContinuity("))
+                  #expect(cleanup.contains("invalidateInternalLifecycle("))
+                  #expect(cleanup.contains("Task { @MainActor [self] in"))
+                  for forbidden in ["releasePackageCorrelationLease()", "recordObservedTransportLoss", "endConnection", "disconnectBLE"] {
+                      #expect(!cleanup.contains(forbidden))
+                  }
+              }
+
+              @Test("initial task checks current scene before account bootstrap")
+              func initialTaskFailsClosedIfAlreadyInactive() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let view = String(try section(in: source, from: "private struct SecureLinkView: View", to: "private var hero: some View"))
+                  let task = String(try section(in: view, from: ".task {", to: ".onDisappear {"))
+                  let open = try requiredOffset(containing: "test.activateMembershipRequestsForView()", in: task)
+                  let active = try requiredOffset(containing: "if scenePhase == .active", in: task)
+                  let bootstrap = try requiredOffset(containing: "sdkAccount.bootstrap()", in: task)
+                  let failClosed = try requiredOffset(containing: "test.appDidLoseForeground()", in: task)
+                  #expect(open < active)
+                  #expect(active < bootstrap)
+                  #expect(bootstrap < failClosed)
+              }
+
+              private func requiredOffset(containing token: String, in source: String) throws -> String.Index {
+                  guard let range = source.range(of: token) else { Issue.record("Expected source token missing: \(token)"); throw SourceContractError.sectionMissing }
+                  return range.lowerBound
+              }
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let a=source.range(of:start), let b=source.range(of:end,range:a.upperBound..<source.endIndex) else { Issue.record("Expected source section missing: \(start) ... \(end)"); throw SourceContractError.sectionMissing }
+                  return source[a.lowerBound..<b.lowerBound]
+              }
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  let root=URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+                  return try String(contentsOf:root.appendingPathComponent(relativePath),encoding:.utf8)
+              }
+              private enum SourceContractError: Error { case sectionMissing }
+          }
+          SWIFT
+
+          cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipProofRevocationSourceTests.swift <<'SWIFT'
+          import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Secure Link view-exit membership proof revocation")
+          struct TuyaSecureLinkViewMembershipProofRevocationSourceTests {
+              @Test("view exit revokes earned membership proof before grants and transport")
+              func exitRevokesMembershipProofBeforeTransport() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let controller = String(try section(in: source, from: "private final class SecureLinkController", to: "@MainActor\nprivate protocol OfficialTuyaDriver"))
+                  let cleanup = String(try section(in: controller, from: "func abandonCorrelationForViewExit()", to: "func appDidLoseForeground()"))
+                  let close = try requiredOffset(containing:"acceptsViewScopedMembershipRequests = false",in:cleanup)
+                  let verified = try requiredOffset(containing:"sdkDeviceMembershipVerified = false",in:cleanup)
+                  let account = try requiredOffset(containing:"membershipAccountUID = nil",in:cleanup)
+                  let device = try requiredOffset(containing:"membershipDeviceID = nil",in:cleanup)
+                  let request = try requiredOffset(containing:"membershipRequestID = UUID()",in:cleanup)
+                  let official = try requiredOffset(containing:"officialConnectionRequestID = UUID()",in:cleanup)
+                  let token = try requiredOffset(containing:"if let token = currentConnectionToken",in:cleanup)
+                  #expect(close < verified)
+                  #expect(verified < request)
+                  #expect(account < request)
+                  #expect(device < request)
+                  #expect(request < official)
+                  #expect(official < token)
+                  #expect(cleanup.contains("Task { @MainActor [self] in"))
+              }
+
+              @Test("reappearance reopens admission and re-runs membership verification")
+              func reappearanceReearnsMembership() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let view = String(try section(in: source, from: "private struct SecureLinkView: View", to: "private var hero: some View"))
+                  let task = String(try section(in:view,from:".task {",to:".onDisappear {"))
+                  let open=try requiredOffset(containing:"test.activateMembershipRequestsForView()",in:task)
+                  let bootstrap=try requiredOffset(containing:"sdkAccount.bootstrap()",in:task)
+                  let verify=try requiredOffset(containing:"test.verifySDKMembership()",in:task)
+                  #expect(open < bootstrap)
+                  #expect(bootstrap < verify)
+              }
+
+              private func requiredOffset(containing token:String,in source:String)throws->String.Index { guard let r=source.range(of:token) else { Issue.record("Expected source token missing: \(token)"); throw SourceContractError.sectionMissing }; return r.lowerBound }
+              private func section(in source:String,from start:String,to end:String)throws->Substring { guard let a=source.range(of:start),let b=source.range(of:end,range:a.upperBound..<source.endIndex) else { Issue.record("Expected source section missing: \(start) ... \(end)"); throw SourceContractError.sectionMissing }; return source[a.lowerBound..<b.lowerBound] }
+              private func readRepositoryFile(_ relativePath:String)throws->String { let root=URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent(); return try String(contentsOf:root.appendingPathComponent(relativePath),encoding:.utf8) }
+              private enum SourceContractError: Error { case sectionMissing }
+          }
+          SWIFT
+
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          exit=s[s.index('func abandonCorrelationForViewExit()'):s.index('func appDidLoseForeground()')]
+          fg=s[s.index('func appDidLoseForeground()'):s.index('var privateConfig: Bool',s.index('func appDidLoseForeground()'))]
+          for block,name in ((exit,'exit'),(fg,'foreground')):
+              for q in ('sdkDeviceMembershipVerified = false','membershipAccountUID = nil','membershipDeviceID = nil','membershipRequestID = UUID()','officialConnectionRequestID = UUID()'):
+                  if q not in block: raise SystemExit(f'{name} missing {q}')
+          if 'Task { @MainActor [self] in' not in exit: raise SystemExit('strong view-exit terminal lifetime regressed')
+          if 'Task { @MainActor [self] in' not in fg: raise SystemExit('foreground terminal lacks strong finite lifetime')
+          if not (fg.index('acceptsViewScopedMembershipRequests = false') < fg.index('sdkDeviceMembershipVerified = false') < fg.index('membershipRequestID = UUID()') < fg.index('officialConnectionRequestID = UUID()') < fg.index('if processCorrelationLease')):
+              raise SystemExit('foreground authority revocation ordering violated')
+          for q in ('releasePackageCorrelationLease()','recordObservedTransportLoss','endConnection','disconnectBLE'):
+              if q in fg: raise SystemExit(f'foreground loss manufactured transport semantics: {q}')
+          if '@Environment(\\.scenePhase) private var scenePhase' not in s: raise SystemExit('scenePhase missing')
+          print('current lifecycle authority closure: PASS')
+          PY
+
+          git diff --check
+          rm .github/workflows/materialize-capture-lifecycle-authority-current-523.yml
+          git config user.name nembra-v14-bot
+          git config user.email nembra-v14-bot@users.noreply.github.com
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegritySourceTests.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipProofRevocationSourceTests.swift .github/workflows/materialize-capture-lifecycle-authority-current-523.yml
+          git diff --cached --check
+          git commit -m 'fix(capture): close view and foreground authority'
+          git push origin HEAD:agent/capture-lifecycle-authority-current-523
