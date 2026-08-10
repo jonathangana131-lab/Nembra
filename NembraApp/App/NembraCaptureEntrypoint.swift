@@ -629,7 +629,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     private var accountIdentityLeaseSnapshot: TuyaSDKAccountIdentityLeaseGate.Snapshot {
         .init(
-            sdkIsLoggedIn: sdkAccountLoggedIn,
+            isLoggedIn: sdkAccountLoggedIn,
             currentAccountUID: currentAccountUID,
             membershipAccountUID: membershipAccountUID,
             expectedDeviceID: deviceID,
@@ -1439,14 +1439,24 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        guard let admittedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !admittedAccountUID.isEmpty else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "The account-bound membership identity disappeared before application evidence could enter event custody.",
+                kind: "sdk_membership_uid_unavailable_before_application_custody"
+            )
+            return
+        }
+        var eventDetails = redactedApplicationEventDetails(update, accountUID: admittedAccountUID)
+        eventDetails["generation"] = String(token.diagnosticGeneration)
+
         applicationUpdateAdmissionsInFlight += 1
         defer { applicationUpdateAdmissionsInFlight -= 1 }
 
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            var eventDetails = redactedApplicationEventDetails(update)
-            eventDetails["generation"] = String(token.diagnosticGeneration)
             log("tuya_application_update", eventDetails)
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
@@ -1474,25 +1484,34 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
     }
 
-    private func redactedApplicationEventDetails(_ update: [String: String]) -> [String: String] {
-        guard let accountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !accountUID.isEmpty else {
-            return update
-        }
+    private func redactedApplicationEventDetails(
+        _ update: [String: String],
+        accountUID rawAccountUID: String
+    ) -> [String: String] {
+        let accountUID = rawAccountUID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !accountUID.isEmpty else { return [:] }
 
         var redacted: [String: String] = [:]
         redacted.reserveCapacity(update.count)
         for (key, value) in update {
-            let redactedKey = key.replacingOccurrences(
+            var redactedKey = key.replacingOccurrences(
                 of: accountUID,
                 with: "<redacted-account-uid>",
                 options: [.caseInsensitive, .literal]
             )
-            redacted[redactedKey] = value.replacingOccurrences(
+            let redactedValue = value.replacingOccurrences(
                 of: accountUID,
                 with: "<redacted-account-uid>",
                 options: [.caseInsensitive, .literal]
             )
+            if redacted[redactedKey] != nil {
+                var suffix = 2
+                while redacted["\(redactedKey)#\(suffix)"] != nil {
+                    suffix += 1
+                }
+                redactedKey = "\(redactedKey)#\(suffix)"
+            }
+            redacted[redactedKey] = redactedValue
         }
         return redacted
     }
