@@ -12,11 +12,11 @@ struct TuyaSingleOfficialDriverHandoffSourceTests {
             from: "private enum OfficialTuyaFactory",
             to: "#if canImport(ThingSmartHomeKit)\n@MainActor\nprivate final class OfficialTuyaMembershipProbe"
         ))
-        let make = String(try section(
-            in: factory,
-            from: "static func make() -> OfficialTuyaDriver?",
-            to: "}\n}\n\n#if canImport(ThingSmartHomeKit)"
-        ))
+        guard let makeStart = factory.range(of: "static func make() -> OfficialTuyaDriver?") else {
+            Issue.record("OfficialTuyaFactory.make() is missing from the process-global Tuya handoff authority.")
+            throw SourceContractError.sectionMissing
+        }
+        let make = String(factory[makeStart.lowerBound...])
 
         guard let retirementGuard = make.range(of: "guard !packageCorrelationRetiredForProcess,"),
               let packageOwnerGuard = make.range(of: "activePackageCorrelationOwner == nil,"),
@@ -26,6 +26,7 @@ struct TuyaSingleOfficialDriverHandoffSourceTests {
             throw SourceContractError.sectionMissing
         }
 
+        #expect(factory.components(separatedBy: "packageCorrelationRetiredForProcess = true").count - 1 == 1)
         #expect(retirementGuard.lowerBound < packageOwnerGuard.lowerBound)
         #expect(packageOwnerGuard.lowerBound < retirement.lowerBound)
         #expect(retirement.lowerBound < driver.lowerBound)
@@ -40,6 +41,8 @@ struct TuyaSingleOfficialDriverHandoffSourceTests {
             to: "#if canImport(ThingSmartHomeKit)\n@MainActor\nprivate final class OfficialTuyaMembershipProbe"
         ))
 
+        #expect(factory.contains("private static var packageCorrelationRetiredForProcess = false"))
+        #expect(factory.contains("static var packageCorrelationMayStart: Bool"))
         for forbidden in ["disconnectBLE", "publishDps", "queryDps", "writeValue", "sessionLedger.endConnection"] {
             #expect(!factory.contains(forbidden))
         }
