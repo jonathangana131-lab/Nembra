@@ -33,7 +33,7 @@ private struct CaptureP0Root: View {
                         .foregroundStyle(.green)
                     Text("Prove the secure scooter link first.")
                         .font(.largeTitle.bold())
-                    Text("The next physical run is stationary. It proves supported Tuya authentication, exact scooter account membership, at least 45 seconds of observed local BLE continuity, and genuine application updates through Tuya's own SDK. The old 17-step ride sequence stays disabled until this passes.")
+                    Text("The next physical run is stationary. It proves supported Tuya authentication, exact scooter account membership, at least 45 seconds of observed local BLE continuity, genuine application updates through Tuya's own SDK, and exact stamped build provenance. The old 17-step ride sequence stays disabled until this passes.")
                         .foregroundStyle(.secondary)
 
                     VStack(alignment: .leading, spacing: 8) {
@@ -181,6 +181,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let schemaVersion: Int
         let purpose: String
         let exportedAt: Date
+        let buildIdentifier: String?
+        let buildCommitSHA: String?
+        let buildIdentityValid: Bool
         let tuyaDeviceID: String
         let tuyaUUID: String
         let productID: String
@@ -211,7 +214,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private static let maximumObservationPollGapNanoseconds: UInt64 = 5_000_000_000
 
     @Published private(set) var phase: Phase = .idle
-    @Published private(set) var message = "Authorize the SDK account and exact scooter before Bluetooth discovery."
+    @Published private(set) var message = "Authorize the SDK account, exact field build, and exact scooter before Bluetooth discovery."
     @Published private(set) var candidates: [Candidate] = []
     @Published private(set) var selectedID: UUID?
     @Published private(set) var sdkLocalBLEOnline = false
@@ -233,6 +236,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     let deviceName: String
     let productID: String
     let tuyaUUID: String
+    let fieldBuildIdentity: CaptureFieldBuildIdentity?
 
     private var central: CBCentralManager!
     private var byID: [UUID: Candidate] = [:]
@@ -252,9 +256,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
         deviceName = device.name
         productID = device.productID
         tuyaUUID = device.uuid
+        fieldBuildIdentity = CaptureFieldBuildIdentity.from(infoDictionary: Bundle.main.infoDictionary ?? [:])
         super.init()
         central = CBCentralManager(delegate: self, queue: .main)
-        log("controller_created")
+        log("controller_created", [
+            "buildIdentity": fieldBuildIdentity?.buildIdentifier ?? "unstamped",
+            "buildCommitSHA": fieldBuildIdentity?.commitSHA ?? "unstamped"
+        ])
     }
 
     deinit { watchdog?.cancel() }
@@ -262,6 +270,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var sdkCompiled: Bool { OfficialTuyaFactory.compiled }
     var privateConfig: Bool { OfficialTuyaFactory.configured }
     var sdkAccountLoggedIn: Bool { OfficialTuyaFactory.accountLoggedIn }
+    var fieldBuildStamped: Bool { fieldBuildIdentity != nil }
+    var fieldBuildDisplay: String {
+        guard let fieldBuildIdentity else { return "Not stamped" }
+        return "\(fieldBuildIdentity.buildIdentifier) · \(fieldBuildIdentity.shortCommitSHA)"
+    }
     var selected: Candidate? { selectedID.flatMap { byID[$0] } }
     var applicationUpdateCount: Int { ledgerSnapshot.applicationPayloadCount }
 
@@ -291,6 +304,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     var authoritativePreflightReady: Bool {
+        guard fieldBuildStamped else { return false }
         guard sdkDeviceMembershipVerified else { return false }
         guard phase == .observing || phase == .accepted else { return false }
         if case .readyForStationaryMapping = preflightVerdict { return true }
@@ -300,6 +314,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var passed: Bool { authoritativePreflightReady }
 
     func startBaseline() {
+        guard fieldBuildStamped else {
+            fail("This Capture app is not stamped with an exact full Git commit SHA. Rebuild through the accepted field-build path before any scooter scan.", "field_build_identity_unstamped")
+            return
+        }
         guard central.state == .poweredOn else {
             fail("Bluetooth is not ready.", "bluetooth_unavailable")
             return
@@ -322,23 +340,26 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func beginBaselineScan() {
-        guard central.state == .poweredOn,
+        guard fieldBuildStamped,
+              central.state == .poweredOn,
               sdkAccountLoggedIn,
               sdkDeviceMembershipVerified else {
-            fail("SDK account/device authority changed before discovery began.", "sdk_authority_changed_before_scan")
+            fail("Field build or SDK account/device authority changed before discovery began.", "field_or_sdk_authority_changed_before_scan")
             return
         }
         resetDiscoverySessionOnly()
         phase = .baseline
-        message = "Keep the scooter OFF for a few seconds. Exact SDK device membership is already verified."
-        log("baseline_started_after_membership")
+        message = "Keep the scooter OFF for a few seconds. Exact build provenance and SDK device membership are verified."
+        log("baseline_started_after_membership", [
+            "buildCommitSHA": fieldBuildIdentity?.commitSHA ?? "missing"
+        ])
         central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
     }
 
     func saveBaseline() {
         guard phase == .baseline else { return }
-        guard sdkAccountLoggedIn, sdkDeviceMembershipVerified else {
-            fail("SDK account/device authority changed during the OFF baseline.", "sdk_authority_changed_during_baseline")
+        guard fieldBuildStamped, sdkAccountLoggedIn, sdkDeviceMembershipVerified else {
+            fail("Field build or SDK account/device authority changed during the OFF baseline.", "field_or_sdk_authority_changed_during_baseline")
             return
         }
         central.stopScan()
@@ -353,8 +374,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
             fail("Bluetooth is not ready.", "bluetooth_unavailable")
             return
         }
-        guard sdkAccountLoggedIn, sdkDeviceMembershipVerified else {
-            fail("SDK account/device authority changed before the power-on scan.", "sdk_authority_changed_before_power_on_scan")
+        guard fieldBuildStamped, sdkAccountLoggedIn, sdkDeviceMembershipVerified else {
+            fail("Field build or SDK account/device authority changed before the power-on scan.", "field_or_sdk_authority_changed_before_power_on_scan")
             return
         }
         phase = .scanning
@@ -407,6 +428,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func verifySDKMembership(completion: ((Bool) -> Void)? = nil) {
+        guard fieldBuildStamped else {
+            sdkDeviceMembershipVerified = false
+            membershipStatus = "Exact field build identity is missing; SDK membership cannot authorize a physical run."
+            completion?(false)
+            return
+        }
         guard sdkCompiled, privateConfig else {
             sdkDeviceMembershipVerified = false
             membershipStatus = "Official Tuya SmartLife SDK/security configuration is not provisioned."
@@ -469,6 +496,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func authenticate() {
+        guard fieldBuildStamped else {
+            fail("Exact field build provenance is required before BLE authentication.", "field_build_identity_unstamped")
+            return
+        }
         guard let candidate = selected, candidate.likely else {
             fail("The exact prior physical scooter identity is required.", "candidate_not_authoritative")
             return
@@ -489,9 +520,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
         verifySDKMembership { [weak self] stillAuthorized in
             guard let self else { return }
             guard stillAuthorized,
+                  self.fieldBuildStamped,
                   self.sdkAccountLoggedIn,
                   self.selectedID == candidate.id else {
-                self.fail("Exact scooter/account authority could not be re-verified immediately before BLE authentication.", "sdk_device_membership_recheck_failed")
+                self.fail("Exact build/scooter/account authority could not be re-verified immediately before BLE authentication.", "field_or_sdk_authority_recheck_failed")
                 return
             }
             self.beginOfficialConnection(candidate: candidate)
@@ -500,10 +532,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     private func beginOfficialConnection(candidate: Candidate) {
         guard phase == .selected || phase == .failed else { return }
-        guard candidate.likely,
+        guard fieldBuildStamped,
+              candidate.likely,
               sdkDeviceMembershipVerified,
               sdkAccountLoggedIn else {
-            fail("Tuya account/device authority changed before connection start.", "sdk_authority_changed")
+            fail("Field build or Tuya account/device authority changed before connection start.", "field_or_sdk_authority_changed")
             return
         }
         guard let newDriver = OfficialTuyaFactory.make() else {
@@ -528,6 +561,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 await self.refreshLedgerSnapshot()
                 self.log("official_connect_requested", [
                     "generation": String(token.diagnosticGeneration),
+                    "buildCommitSHA": self.fieldBuildIdentity?.commitSHA ?? "missing",
                     "coreBluetoothID": candidate.id.uuidString,
                     "tuyaDeviceID": self.deviceID,
                     "tuyaUUID": self.tuyaUUID,
@@ -562,6 +596,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private func authenticated(token: TuyaReadOnlyConnectionToken) async {
         guard phase == .authenticating,
               currentConnectionToken == token,
+              fieldBuildStamped,
               sdkAccountLoggedIn,
               sdkDeviceMembershipVerified,
               let driver else { return }
@@ -616,8 +651,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
             ])
             return
         }
-        guard sdkAccountLoggedIn, sdkDeviceMembershipVerified, let driver else {
-            fail("SDK account/device authority changed before application evidence arrived.", "sdk_authority_changed_during_observation")
+        guard fieldBuildStamped, sdkAccountLoggedIn, sdkDeviceMembershipVerified, let driver else {
+            fail("Field build or SDK account/device authority changed before application evidence arrived.", "field_or_sdk_authority_changed_during_observation")
             return
         }
         guard driver.isLocallyConnected(uuid: tuyaUUID) else {
@@ -638,7 +673,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
             if passed {
                 phase = .accepted
-                message = "Secure scooter link passed. Exact SDK membership, same-generation application data, and the canonical stability window are proven."
+                message = "Secure scooter link passed. Exact build provenance, SDK membership, same-generation application data, and the canonical stability window are proven."
             } else {
                 message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Keep it stationary until the canonical 45-second gate passes."
             }
@@ -672,8 +707,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 }
                 previousPollUptime = now
 
-                guard self.sdkAccountLoggedIn, self.sdkDeviceMembershipVerified else {
-                    self.fail("SDK account/device authority changed during the authenticated observation.", "sdk_authority_lost_during_observation")
+                guard self.fieldBuildStamped, self.sdkAccountLoggedIn, self.sdkDeviceMembershipVerified else {
+                    self.fail("Field build or SDK account/device authority changed during the authenticated observation.", "field_or_sdk_authority_lost_during_observation")
                     return
                 }
 
@@ -697,9 +732,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
                 if self.passed {
                     self.phase = .accepted
-                    self.message = "Secure scooter link passed. Exact membership, genuine same-generation application data, and at least 45 seconds of observed local BLE continuity are proven."
+                    self.message = "Secure scooter link passed. Exact stamped source, exact membership, genuine same-generation application data, and at least 45 seconds of observed local BLE continuity are proven."
                     self.log("acceptance_passed", [
                         "generation": String(token.diagnosticGeneration),
+                        "buildCommitSHA": self.fieldBuildIdentity?.commitSHA ?? "missing",
                         "applicationUpdates": String(self.applicationUpdateCount)
                     ])
                     return
@@ -722,9 +758,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     func prepareExport() {
         let envelope = Export(
-            schemaVersion: 5,
+            schemaVersion: 6,
             purpose: "Sanitized Tuya authenticated read-only preflight",
             exportedAt: Date(),
+            buildIdentifier: fieldBuildIdentity?.buildIdentifier,
+            buildCommitSHA: fieldBuildIdentity?.commitSHA,
+            buildIdentityValid: fieldBuildStamped,
             tuyaDeviceID: deviceID,
             tuyaUUID: tuyaUUID,
             productID: productID,
@@ -755,8 +794,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
             encoder.dateEncodingStrategy = .iso8601
             exportData = try encoder.encode(envelope)
-            exportName = "Nembra-Secure-Link-\(deviceID.prefix(8))-Diagnostics.json"
-            message = "Sanitized diagnostics ready. Exact membership and canonical session chronology are included. SDK values are string projections, never raw FD50 bytes; account credentials and Tuya secrets are excluded."
+            exportName = "Nembra-Secure-Link-\(fieldBuildIdentity?.shortCommitSHA ?? "unstamped")-\(deviceID.prefix(8))-Diagnostics.json"
+            message = fieldBuildStamped
+                ? "Sanitized diagnostics ready. Exact build SHA, exact membership and canonical session chronology are embedded. SDK values are string projections, never raw FD50 bytes; account credentials and Tuya secrets are excluded."
+                : "Diagnostic export is unstamped and cannot authorize a physical result. Rebuild through the accepted field-build path."
         } catch {
             message = "Diagnostic export failed: \(error.localizedDescription)"
         }
@@ -1326,10 +1367,10 @@ private struct SecureLinkView: View {
         .navigationTitle("Secure Link")
         .task {
             sdkAccount.bootstrap()
-            if sdkAccount.loggedIn { test.verifySDKMembership() }
+            if sdkAccount.loggedIn && test.fieldBuildStamped { test.verifySDKMembership() }
         }
         .onChange(of: sdkAccount.loggedIn) { _, loggedIn in
-            if loggedIn { test.verifySDKMembership() }
+            if loggedIn && test.fieldBuildStamped { test.verifySDKMembership() }
             else { test.invalidateSDKMembership() }
         }
     }
@@ -1359,8 +1400,12 @@ private struct SecureLinkView: View {
 
     private var authorityCard: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Label("Official Tuya authority", systemImage: "checkmark.shield")
+            Label("Field + Tuya authority", systemImage: "checkmark.shield")
                 .font(.headline)
+            LabeledContent("Exact field build", value: test.fieldBuildStamped ? "Stamped" : "Not stamped")
+            Text(test.fieldBuildDisplay)
+                .font(.caption.monospaced())
+                .foregroundStyle(test.fieldBuildStamped ? .green : .secondary)
             LabeledContent("SDK compiled in", value: test.sdkCompiled ? "Yes" : "No")
             LabeledContent("Private app config", value: test.privateConfig ? "Yes" : "No")
             LabeledContent("SDK account logged in", value: test.sdkAccountLoggedIn ? "Yes" : "No")
@@ -1369,7 +1414,7 @@ private struct SecureLinkView: View {
                 .font(.footnote)
                 .foregroundStyle(test.sdkDeviceMembershipVerified ? .green : .secondary)
 
-            if test.sdkAccountLoggedIn && !test.sdkDeviceMembershipVerified {
+            if test.fieldBuildStamped && test.sdkAccountLoggedIn && !test.sdkDeviceMembershipVerified {
                 Button(test.membershipBusy ? "Checking scooter membership…" : "Verify scooter in SDK account") {
                     test.verifySDKMembership()
                 }
@@ -1377,8 +1422,8 @@ private struct SecureLinkView: View {
                 .disabled(test.membershipBusy)
             }
 
-            if !test.sdkCompiled || !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified {
-                Text("NO PHYSICAL BLE TEST YET: SDK/security configuration, current SDK login, and exact scooter membership must all be proven before even the OFF baseline scan can start.")
+            if !test.fieldBuildStamped || !test.sdkCompiled || !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified {
+                Text("NO PHYSICAL BLE TEST YET: exact build SHA, SDK/security configuration, current SDK login, and exact scooter membership must all be proven before even the OFF baseline scan can start.")
                     .font(.footnote.bold())
                     .foregroundStyle(.orange)
             }
@@ -1395,7 +1440,8 @@ private struct SecureLinkView: View {
                 Button("Start scooter-OFF baseline") { test.startBaseline() }
                     .buttonStyle(.borderedProminent)
                     .disabled(
-                        !test.sdkCompiled
+                        !test.fieldBuildStamped
+                            || !test.sdkCompiled
                             || !test.privateConfig
                             || !test.sdkAccountLoggedIn
                             || !test.sdkDeviceMembershipVerified
@@ -1457,7 +1503,8 @@ private struct SecureLinkView: View {
             Button("Start secure read-only test") { test.authenticate() }
                 .buttonStyle(.borderedProminent)
                 .disabled(
-                    !candidate.likely
+                    !test.fieldBuildStamped
+                        || !candidate.likely
                         || !test.sdkCompiled
                         || !test.privateConfig
                         || !test.sdkAccountLoggedIn
@@ -1474,14 +1521,14 @@ private struct SecureLinkView: View {
             Label("Acceptance", systemImage: test.passed ? "checkmark.seal.fill" : "hourglass")
                 .font(.headline)
                 .foregroundStyle(test.passed ? .green : .white)
-            Text("Pass only when exact SDK membership is current, the exact prior physical UUID is selected, Tuya's SDK exclusively owns the authenticated BLE session, the canonical same-generation ledger admits at least one genuine non-empty dpsUpdate, and observed liveness reaches 45 seconds without a long polling gap.")
+            Text("Pass only when exact stamped source provenance is present, exact SDK membership is current, the exact prior physical UUID is selected, Tuya's SDK exclusively owns the authenticated BLE session, the canonical same-generation ledger admits at least one genuine non-empty dpsUpdate, and observed liveness reaches 45 seconds without a long polling gap.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             Text(test.preflightVerdictText)
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
             if test.passed {
-                Text("Secure scooter link established\nReceiving scooter application data")
+                Text("Secure scooter link established\nExact build provenance embedded")
                     .font(.title3.bold())
                     .foregroundStyle(.green)
             }
@@ -1499,7 +1546,7 @@ private struct SecureLinkView: View {
                 }
                 .buttonStyle(.borderedProminent)
             }
-            Text("Export includes physical target ID, exact SDK membership state, canonical connection generation/chronology, local-BLE status, failures, and opaque application-update string projections. It explicitly records zero DP queries/commands and rawFD50BytesCaptured=false.")
+            Text("Export embeds the human field-build label and full Git SHA plus physical target ID, exact SDK membership state, canonical connection generation/chronology, local-BLE status, failures, and opaque application-update string projections. It explicitly records zero DP queries/commands and rawFD50BytesCaptured=false.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
