@@ -418,8 +418,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     func activateMembershipRequestsForView() {
         // A fast inactive -> active transition must not reset the duplicate-retirement fence
-        // while the exact authenticated generation from foreground loss is still terminalizing.
-        guard currentConnectionToken == nil else { return }
+        // while an authenticated generation is terminalizing. Once the official Tuya driver has
+        // been handed out, package correlation is permanently retired for this process and the
+        // foreground-loss recovery contract is relaunch rather than silently reopening authority.
+        guard currentConnectionToken == nil,
+              OfficialTuyaFactory.packageCorrelationMayStart else { return }
         foregroundIntegrityLossHandled = false
         acceptsViewScopedMembershipRequests = true
     }
@@ -431,6 +434,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Exact scooter membership must be verified again after Capture leaves Secure Link authority."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -479,6 +483,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func appDidLoseForeground() {
+        // A sealed accepted artifact is immutable and already closed to new evidence. Backgrounding
+        // after acceptance must not downgrade or rebuild that frozen result.
+        guard phase != .accepted else { return }
         guard !foregroundIntegrityLossHandled else { return }
         foregroundIntegrityLossHandled = true
 
@@ -488,6 +495,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Exact scooter membership must be verified again after Capture leaves Secure Link authority."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -498,11 +506,23 @@ private final class SecureLinkController: NSObject, ObservableObject {
         watchdog = nil
 
         if processCorrelationLease != nil || correlationSession != nil {
-            // Existing helper stops package transport before releasing this controller's lease.
-            abandonPackageCorrelation()
+            // The full discovery reset preserves scanner-first lease retirement and also erases
+            // every actionable target-selection bit earned by the interrupted correlation.
+            resetDiscoverySessionOnly()
             phase = .failed
             message = "Capture left the foreground during Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; interrupted windows are never reusable evidence."
             log("foreground_integrity_lost_during_target_correlation")
+            return
+        }
+
+        if phase == .correlated || phase == .selected {
+            // Final-window sealing already retires the package scanner/lease. These phases can
+            // therefore hold actionable target authority with no live transport object to inspect.
+            // Foreground loss must invalidate that authority explicitly before a retry.
+            resetDiscoverySessionOnly()
+            phase = .failed
+            message = "Capture left the foreground after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the prior correlated/selected target cannot cross a foreground-integrity break."
+            log("foreground_integrity_lost_after_target_correlation")
             return
         }
 
