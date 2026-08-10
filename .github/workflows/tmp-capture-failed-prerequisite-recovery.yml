@@ -16,24 +16,25 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: product/v14-capture-premium-secure-link-current-sol
-          fetch-depth: 2
+          fetch-depth: 4
 
       - name: Guard exact reviewed helper parent
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "73dc29d83f0c537d2f9fbbecc4c5416addac077a"
+          test "$(git rev-parse HEAD^)" = "91e7b31eb8686eb57c2e7f3af752cf7363708294"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/tmp-capture-failed-prerequisite-recovery.yml"
-          test "$(git rev-parse HEAD^^)" = "9a25002e58d351d9db952caa7cc5f4961c03a4fb"
+          test "$(git rev-parse HEAD^^)" = "73dc29d83f0c537d2f9fbbecc4c5416addac077a"
+          test "$(git rev-parse HEAD^^^)" = "9a25002e58d351d9db952caa7cc5f4961c03a4fb"
 
-      - name: Restore actionable failed prerequisites
+      - name: Restore actionable failed prerequisites without reopening retained generations
         shell: python
         run: |
           from pathlib import Path
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           text = path.read_text()
           old = "        case .failed:\n            failurePanel"
-          new = "        case .failed:\n            if test.privateConfig && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn) {\n                VStack(spacing: 16) {\n                    failureRecoveryContextPanel\n                    sdkAuthorizationPanel\n                }\n            } else if test.sdkAccountLoggedIn && (!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized) {\n                VStack(spacing: 16) {\n                    failureRecoveryContextPanel\n                    preflightPanel\n                }\n            } else {\n                failurePanel\n            }"
+          new = "        case .failed:\n            if test.failedAttemptCanRestartFromOFF1 && test.privateConfig && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn) {\n                VStack(spacing: 16) {\n                    failureRecoveryContextPanel\n                    sdkAuthorizationPanel\n                }\n            } else if test.failedAttemptCanRestartFromOFF1 && test.sdkAccountLoggedIn && (!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized) {\n                VStack(spacing: 16) {\n                    failureRecoveryContextPanel\n                    preflightPanel\n                }\n            } else {\n                failurePanel\n            }"
           if text.count(old) != 1:
               raise SystemExit(f"failed-state routing anchor count: {text.count(old)}")
           text = text.replace(old, new, 1)
@@ -53,17 +54,27 @@ jobs:
 
           @Suite("Capture failed-prerequisite product recovery")
           struct TuyaFailedPrerequisiteRecoverySourceTests {
-              @Test("failed state exposes the control that can restore missing account or membership authority")
-              func failedStateRoutesToRestorablePrerequisite() throws {
+              @Test("recoverable failed state exposes the control that can restore missing account or membership authority")
+              func failedStateRoutesToRestorablePrerequisiteOnlyAfterGenerationRetirement() throws {
                   let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
                   let surface = try section(in: app, from: "private var primarySurface: some View", to: "private var preflightPanel: some View")
                   let body = String(surface)
                   #expect(body.contains("case .failed:"))
-                  #expect(body.contains("!sdkAccount.loggedIn || !test.sdkAccountLoggedIn"))
+                  #expect(body.contains("test.failedAttemptCanRestartFromOFF1 && test.privateConfig && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn)"))
                   #expect(body.contains("sdkAuthorizationPanel"))
-                  #expect(body.contains("!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized"))
+                  #expect(body.contains("test.failedAttemptCanRestartFromOFF1 && test.sdkAccountLoggedIn && (!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized)"))
                   #expect(body.contains("preflightPanel"))
                   #expect(body.contains("failureRecoveryContextPanel"))
+                  #expect(body.contains("failurePanel"))
+              }
+
+              @Test("retained generation remains relaunch-only even if field prerequisites are also missing")
+              func retainedGenerationCannotEnterInAppPrerequisiteRecovery() throws {
+                  let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let controller = try section(in: app, from: "var failedAttemptCanRestartFromOFF1: Bool", to: "var secureSessionEstablished: Bool")
+                  let surface = try section(in: app, from: "private var primarySurface: some View", to: "private var preflightPanel: some View")
+                  #expect(controller.contains("phase == .failed && currentConnectionToken == nil"))
+                  #expect(surface.contains("test.failedAttemptCanRestartFromOFF1 &&"))
               }
 
               @Test("recovery context preserves the exact blocker and failed-attempt boundary")
@@ -101,13 +112,14 @@ jobs:
         run: |
           set -euo pipefail
           entrypoint='NembraApp/App/NembraCaptureEntrypoint.swift'
+          test "$(grep -Fc 'test.failedAttemptCanRestartFromOFF1 &&' "$entrypoint")" -ge 2
           grep -Fq '!sdkAccount.loggedIn || !test.sdkAccountLoggedIn' "$entrypoint"
           grep -Fq '!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized' "$entrypoint"
           grep -Fq 'failureRecoveryContextPanel' "$entrypoint"
           grep -Fq 'sdkAuthorizationPanel' "$entrypoint"
           grep -Fq 'preflightPanel' "$entrypoint"
-          grep -Fq 'failedAttemptCanRestartFromOFF1' "$entrypoint"
-          grep -Fq 'currentConnectionToken == nil' "$entrypoint"
+          grep -Fq 'var failedAttemptCanRestartFromOFF1: Bool' "$entrypoint"
+          grep -Fq 'phase == .failed && currentConnectionToken == nil' "$entrypoint"
           grep -Fq 'self.sdkLocalBLEOnline = driver.isLocallyConnected(uuid: self.tuyaUUID)' "$entrypoint"
           grep -Fq 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier' "$entrypoint"
           grep -Fq 'schemaVersion: 10' "$entrypoint"
