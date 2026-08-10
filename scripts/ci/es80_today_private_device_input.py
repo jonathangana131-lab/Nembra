@@ -155,12 +155,13 @@ def _validated_secret(secret: str, output_path: Path) -> bytes:
 def _secure_secret_prompt() -> str:
     # Python's getpass may otherwise warn and fall back to potentially echoed stdin when terminal
     # echo suppression is unavailable. Convert that warning into a hard failure at the warning
-    # point so fallback input is never consumed for an intended-device identifier.
+    # point so fallback input is never consumed for an intended-device identifier. EOF is likewise
+    # a terminal-input failure, not a recoverable empty identifier.
     with warnings.catch_warnings():
         warnings.simplefilter("error", getpass.GetPassWarning)
         try:
             return getpass.getpass("Intended iPhone UDID: ")
-        except getpass.GetPassWarning as error:
+        except (getpass.GetPassWarning, EOFError) as error:
             raise PrivateInputError("secure-terminal-input-unavailable") from error
 
 
@@ -171,6 +172,21 @@ def _write_all(descriptor: int, payload: bytes) -> None:
         if written <= 0:
             raise PrivateInputError("private-intended-device-write-failed")
         offset += written
+
+
+def _refuse_existing_target_before_secret(directory_descriptor: int, filename: str) -> None:
+    """Reject an occupied final name before acquiring the private intended-device value.
+
+    This minimizes sensitive input only. The later O_EXCL create remains the race authority because
+    a target may appear after this precheck and before final creation.
+    """
+    try:
+        os.stat(filename, dir_fd=directory_descriptor, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    except OSError as error:
+        raise PrivateInputError("private-intended-device-path-precheck-failed") from error
+    raise PrivateInputError("private-intended-device-path-already-exists")
 
 
 def _validate_fresh_output(metadata: os.stat_result) -> None:
@@ -246,6 +262,8 @@ def create_private_input(
     try:
         if _directory_contains_repository(private_directory, repository_root):
             raise PrivateInputError("private-directory-traverses-source-repository")
+
+        _refuse_existing_target_before_secret(directory_descriptor, filename)
 
         secret = secret_provider()
         payload = _validated_secret(secret, output_path)
