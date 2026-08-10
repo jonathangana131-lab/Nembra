@@ -443,10 +443,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
         guard currentConnectionToken == nil else {
-            failLocally(
-                "A prior authenticated generation has not been terminally retired. Relaunch Capture before starting another attempt.",
-                "active_generation_blocks_discovery_reset"
-            )
+            if let token = currentConnectionToken {
+                Task { @MainActor [weak self] in
+                    await self?.invalidateInternalLifecycle(
+                        token: token,
+                        message: "A prior authenticated generation unexpectedly still owned session authority when OFF1 restart was requested. It was retired before discovery reset.",
+                        kind: "active_generation_blocks_discovery_reset"
+                    )
+                }
+            }
             return
         }
 
