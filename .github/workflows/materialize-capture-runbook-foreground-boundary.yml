@@ -14,14 +14,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 4
 
-      - name: Verify exact current-product parent
+      - name: Verify exact current-product ancestry and helper-only scope
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "6b778f2104af34dbe5b80da31ddb3ca422f9667c"
-          test "$(git diff --name-only HEAD^..HEAD)" = ".github/workflows/materialize-capture-runbook-foreground-boundary.yml"
+          git merge-base --is-ancestor 6b778f2104af34dbe5b80da31ddb3ca422f9667c HEAD
+          test "$(git diff --name-only 6b778f2104af34dbe5b80da31ddb3ca422f9667c..HEAD)" = ".github/workflows/materialize-capture-runbook-foreground-boundary.yml"
 
       - name: Materialize foreground-integrity operator contract
         shell: python
@@ -44,7 +44,7 @@ jobs:
           source = source.replace(old_stop, new_stop)
           path.write_text(source)
 
-      - name: Validate procedure coherence and scope
+      - name: Validate procedure coherence and worktree scope
         shell: bash
         run: |
           set -euo pipefail
@@ -67,7 +67,7 @@ jobs:
           if 'repeat the completed 17-step ride capture' not in source:
               raise SystemExit('historical no-repeat boundary changed unexpectedly')
           PY
-          test "$(git diff --name-only | sort)" = "$(printf '%s\n' '.github/workflows/materialize-capture-runbook-foreground-boundary.yml' 'docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md' | sort)"
+          test "$(git diff --name-only)" = "docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md"
           git diff --check
 
       - name: Publish clean runbook-only repair
