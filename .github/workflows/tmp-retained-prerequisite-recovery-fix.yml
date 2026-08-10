@@ -110,3 +110,5 @@ jobs:
           git diff --cached --check
           git commit -m 'fix(capture): gate prerequisite recovery by retired generation'
           git push origin HEAD:red/v14-capture-retained-prerequisite-recovery-sol
+
+# synchronize trigger
