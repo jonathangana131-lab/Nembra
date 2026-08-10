@@ -54,14 +54,15 @@ jobs:
             INFOPLIST_KEY_NembraCaptureProcedureIdentifier="$procedure" \
             build
 
-          mapfile -t plists < <(find "$derived/Build/Products" -type f -path '*.app/Info.plist' -print | sort)
-          if [[ "${#plists[@]}" -ne 1 ]]; then
-            printf '::error title=Capture product discovery::expected one app Info.plist, found %s\n' "${#plists[@]}"
+          plist_candidates="$(find "$derived/Build/Products" -type f -path '*.app/Info.plist' -print | sort)"
+          plist_count="$(printf '%s\n' "$plist_candidates" | sed '/^$/d' | wc -l | tr -d '[:space:]')"
+          if [[ "$plist_count" != "1" ]]; then
+            printf '::error title=Capture product discovery::expected one app Info.plist, found %s\n' "$plist_count"
             find "$derived/Build/Products" -maxdepth 4 -print | sort
             exit 1
           fi
 
-          plist="${plists[0]}"
+          plist="$(printf '%s\n' "$plist_candidates" | sed -n '1p')"
           printf 'Resolved Capture product plist: %s\n' "$plist"
 
           read_key() {
