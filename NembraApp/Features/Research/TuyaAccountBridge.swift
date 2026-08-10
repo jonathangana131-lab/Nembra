@@ -208,6 +208,17 @@ final class TuyaAccountBridge: ObservableObject {
             statusMessage = "Choose the scooter first."
             return
         }
+        guard let session else {
+            redactedExportData = nil
+            statusMessage = "The linked Tuya account session is unavailable. Link the account again before exporting metadata."
+            return
+        }
+        let accountUID = session.uid.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !accountUID.isEmpty else {
+            redactedExportData = nil
+            statusMessage = "The linked Tuya account identity is unavailable. Link the account again before exporting metadata."
+            return
+        }
 
         var envelope: [String: Any] = [
             "schemaVersion": 1,
@@ -240,8 +251,14 @@ final class TuyaAccountBridge: ObservableObject {
             envelope["deviceDetailRedacted"] = Self.redactSecrets(selectedDeviceMetadata)
         }
 
+        guard let custodySafeEnvelope = Self.redactAccountUID(envelope, accountUID: accountUID) as? [String: Any] else {
+            redactedExportData = nil
+            statusMessage = "Could not establish account-identity-safe metadata export custody."
+            return
+        }
+
         do {
-            redactedExportData = try JSONSerialization.data(withJSONObject: envelope, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+            redactedExportData = try JSONSerialization.data(withJSONObject: custodySafeEnvelope, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
             redactedExportFilename = "Nembra-Tuya-\(Self.safeFilename(device.name))-Metadata.json"
             statusMessage = "Redacted Tuya metadata is ready to share. Account tokens and local_key are not retained in device UI state or exported."
         } catch {
@@ -363,7 +380,7 @@ final class TuyaAccountBridge: ObservableObject {
             let expire = Self.int64(result["expire_time"]) ?? 0
             let rawEndpoint = result["endpoint"] as? String ?? ""
             let endpoint = rawEndpoint.hasPrefix("http") ? rawEndpoint : "https://\(rawEndpoint)"
-            guard !access.isEmpty, !refresh.isEmpty, !endpoint.isEmpty else {
+            guard !access.isEmpty, !refresh.isEmpty, !uid.isEmpty, !endpoint.isEmpty else {
                 throw BridgeError.malformed("Tuya approval succeeded but the account session was incomplete.")
             }
             guard !Task.isCancelled,
@@ -463,6 +480,12 @@ final class TuyaAccountBridge: ObservableObject {
     }
 
     private func loadSelectedDeviceDetails(_ device: LinkedDevice, generation: UInt64) async throws {
+        guard let session else { throw BridgeError.notLinked }
+        let accountUID = session.uid.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !accountUID.isEmpty else {
+            throw BridgeError.malformed("Tuya account identity is unavailable for metadata custody.")
+        }
+
         async let detailResponse = signedGET(path: "/v1.0/m/life/ha/devices/detail", params: ["devIds": device.id])
         async let specResponse = signedGET(path: "/v1.1/m/life/\(device.id)/specifications")
         async let strategyResponse = signedGET(path: "/v1.0/m/life/devices/\(device.id)/status")
@@ -473,9 +496,18 @@ final class TuyaAccountBridge: ObservableObject {
               selectedDeviceID == device.id else { return }
         let detailArray = detail["result"] as? [[String: Any]] ?? []
         let rawDetail = detailArray.first ?? [:]
-        selectedDeviceMetadata = Self.redactSecrets(rawDetail) as? [String: Any] ?? [:]
-        selectedDeviceSpecifications = Self.redactSecrets(specs["result"] as? [String: Any] ?? [:]) as? [String: Any] ?? [:]
-        selectedDeviceLocalStrategy = Self.redactSecrets(strategy["result"] as? [String: Any] ?? [:]) as? [String: Any] ?? [:]
+        selectedDeviceMetadata = Self.redactAccountUID(
+            Self.redactSecrets(rawDetail),
+            accountUID: accountUID
+        ) as? [String: Any] ?? [:]
+        selectedDeviceSpecifications = Self.redactAccountUID(
+            Self.redactSecrets(specs["result"] as? [String: Any] ?? [:]),
+            accountUID: accountUID
+        ) as? [String: Any] ?? [:]
+        selectedDeviceLocalStrategy = Self.redactAccountUID(
+            Self.redactSecrets(strategy["result"] as? [String: Any] ?? [:]),
+            accountUID: accountUID
+        ) as? [String: Any] ?? [:]
 
         var statusMap: [String: Any] = [:]
         if let statuses = rawDetail["status"] as? [[String: Any]] {
@@ -488,7 +520,10 @@ final class TuyaAccountBridge: ObservableObject {
         guard !Task.isCancelled,
               generation == operationGeneration,
               selectedDeviceID == device.id else { return }
-        selectedDeviceStatus = Self.redactSecrets(statusMap) as? [String: Any] ?? [:]
+        selectedDeviceStatus = Self.redactAccountUID(
+            Self.redactSecrets(statusMap),
+            accountUID: accountUID
+        ) as? [String: Any] ?? [:]
         prepareRedactedExport()
     }
 
@@ -651,6 +686,41 @@ final class TuyaAccountBridge: ObservableObject {
             return output
         }
         if let array = object as? [Any] { return array.map(redactSecrets) }
+        return object
+    }
+
+    private static func redactAccountUID(_ object: Any, accountUID: String) -> Any {
+        let marker = "<redacted-account-uid>"
+        if let dictionary = object as? [String: Any] {
+            var output: [String: Any] = [:]
+            output.reserveCapacity(dictionary.count)
+            for (key, value) in dictionary.sorted(by: { $0.key < $1.key }) {
+                let redactedKey = key.replacingOccurrences(
+                    of: accountUID,
+                    with: marker,
+                    options: [.caseInsensitive, .literal]
+                )
+                let redactedValue = redactAccountUID(value, accountUID: accountUID)
+                var custodyKey = redactedKey
+                var collisionOrdinal = 2
+                while output[custodyKey] != nil {
+                    custodyKey = "\(redactedKey)#\(collisionOrdinal)"
+                    collisionOrdinal += 1
+                }
+                output[custodyKey] = redactedValue
+            }
+            return output
+        }
+        if let array = object as? [Any] {
+            return array.map { redactAccountUID($0, accountUID: accountUID) }
+        }
+        if let string = object as? String {
+            return string.replacingOccurrences(
+                of: accountUID,
+                with: marker,
+                options: [.caseInsensitive, .literal]
+            )
+        }
         return object
     }
 

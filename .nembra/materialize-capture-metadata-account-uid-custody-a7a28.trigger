@@ -1,2 +1,0 @@
-exact-product-parent=a7a28ca6e744d4bad8be08fd3553a2af8c609b15
-expected-metadata-source-blob=f9aea64e472ef0e75b4998edfeb564668d0254cf
