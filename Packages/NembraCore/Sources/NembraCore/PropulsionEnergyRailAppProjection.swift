@@ -52,6 +52,55 @@ public struct PropulsionEnergyRailAppProjection: Equatable, Sendable {
         self.scaleOrigin = scaleOrigin
         self.allowsLiveMotion = allowsLiveMotion
     }
+
+#if SWIFT_PACKAGE
+    /// Package-sealed retained projection for an exact source-owned Simulator
+    /// observation that was already legitimate before this runtime/view existed.
+    /// No render clock is advanced and no live rail geometry is reconstructed.
+    package static func retainedSimulatorSource(
+        identity: PropulsionGaugeIdentity,
+        watts: Double,
+        receiptSequenceNumber: UInt64,
+        receivedAtUptimeNanoseconds: UInt64,
+        continuityGeneration: UInt64
+    ) -> Self? {
+        guard let cockpit = PropulsionGaugeCockpitSnapshot.retainedSimulatorSource(
+            identity: identity,
+            watts: watts,
+            receiptSequenceNumber: receiptSequenceNumber,
+            receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
+            continuityGeneration: continuityGeneration
+        ),
+        case let .retained(accepted) = cockpit.measurement else {
+            return nil
+        }
+
+        let accessibility = cockpit.energyRailAccessibilityPresentation
+        guard accessibility.identity == identity,
+              accessibility.currentness == .retained,
+              accessibility.acceptedWatts == accepted.watts,
+              let revision = accessibility.acceptedRevision,
+              revision.authority == accepted.authority,
+              revision.continuityGeneration == accepted.continuityGeneration,
+              revision.receiptSequenceNumber == accepted.receiptSequenceNumber,
+              revision.receivedAtUptimeNanoseconds == accepted.receivedAtUptimeNanoseconds else {
+            return nil
+        }
+
+        return Self(
+            identity: identity,
+            currentness: .retained,
+            acceptedMeasurement: accepted,
+            accessibilityPresentation: accessibility,
+            displayWatts: accepted.watts,
+            railFraction: nil,
+            acceptedTargetFraction: nil,
+            acceptedPeakMarkerFraction: nil,
+            scaleOrigin: nil,
+            allowsLiveMotion: false
+        )
+    }
+#endif
 }
 
 public extension PropulsionGaugeDisplayModel {
