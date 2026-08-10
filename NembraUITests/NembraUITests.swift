@@ -94,11 +94,40 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(speed.waitForExistence(timeout: 3))
         XCTAssertFalse((speed.value as? String ?? "").isEmpty)
 
+        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
+        XCTAssertTrue(
+            energyRail.waitForExistence(timeout: 3),
+            "Explicit Simulator QA must mount the package-backed Energy Rail in the real landscape Cockpit."
+        )
+        XCTAssertTrue(
+            (energyRail.value as? String ?? "").localizedCaseInsensitiveContains("watts"),
+            "Energy Rail accessibility must expose accepted semantic watts, never a 60 Hz render-only midpoint."
+        )
+
         XCTAssertTrue(app.staticTexts["Controls available when stopped"].waitForExistence(timeout: 2))
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
 
         keepScreenshot(named: "Dashboard Riding Landscape")
+    }
+
+    @MainActor
+    func testProductionProfileNeverMountsSimulatorEnergyRail() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        XCUIDevice.shared.orientation = .landscapeRight
+
+        let app = XCUIApplication()
+        app.launch()
+
+        let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
+        XCTAssertTrue(
+            cockpit.waitForExistence(timeout: 4),
+            "Production launch must still render the real landscape Cockpit."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["dashboard.energy-rail"].exists,
+            "Physical/unverified profiles must never borrow the Simulator-only propulsion runtime or its power UI."
+        )
     }
 
     @MainActor
