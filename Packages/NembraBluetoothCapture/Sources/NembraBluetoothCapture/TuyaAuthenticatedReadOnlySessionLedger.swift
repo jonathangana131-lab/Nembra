@@ -47,6 +47,8 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         "Authenticated observation continuity was invalidated by a long observation gap."
     private static let sourceAuthorityFailureReason =
         "Tuya SDK source authority was invalidated."
+    private static let internalLifecycleFailureReason =
+        "Session authority was retired after an internal lifecycle or chronology failure."
 
     private let ledgerID: UUID
     private let nowUptimeNanoseconds: @Sendable () -> UInt64
@@ -145,6 +147,33 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
 
         _ = try nextMonotonicObservation()
         authenticationState = .failed(reason: "Tuya SDK session failed.")
+        currentToken = nil
+    }
+
+    /// Fail-closed terminal for an exact current generation when an internal lifecycle mutation
+    /// cannot complete because chronology or another ledger invariant is no longer trustworthy.
+    ///
+    /// Unlike the ordinary lifecycle terminals, this method deliberately does not sample the
+    /// monotonic clock. It exists so a clock/invariant failure cannot strand private callback
+    /// authority merely because terminal cleanup would otherwise need the same failing clock.
+    /// No liveness timestamp is advanced and already-earned authenticated chronology remains only
+    /// diagnostic. This terminal is not evidence of Tuya account/membership source-authority loss.
+    public func markInternalLifecycleFailure(for token: TuyaReadOnlyConnectionToken) throws {
+        try requireCurrent(token)
+
+        switch authenticationState {
+        case .waitingForAuthentication, .authenticating:
+            authenticationMethod = nil
+            authenticatedAtUptimeNanoseconds = nil
+            applicationPayloadCount = 0
+            latestApplicationPayloadUptimeNanoseconds = nil
+        case .authenticated:
+            break
+        case .unavailable, .failed:
+            throw MutationError.invalidAuthenticationTransition
+        }
+
+        authenticationState = .failed(reason: Self.internalLifecycleFailureReason)
         currentToken = nil
     }
 
