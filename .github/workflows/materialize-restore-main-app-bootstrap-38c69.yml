@@ -1,0 +1,101 @@
+name: Probe Restore Main Nembra Bootstrap 38C69
+
+on:
+  push:
+    branches:
+      - sol/v14-restore-main-app-bootstrap-38c69
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard exact product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=38c69bcf6660f42468c954a9196f35d3bdff2680
+          git merge-base --is-ancestor "$BASE" HEAD
+          mapfile -t paths < <(git diff --name-only "$BASE"...HEAD)
+          test "${#paths[@]}" -eq 1
+          test "${paths[0]}" = ".github/workflows/materialize-restore-main-app-bootstrap-38c69.yml"
+
+      - name: Restore consumer app root and retire obvious takeover-only regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          NORMAL_MAIN=969428349de610282fca3cc3a9b82cab636d3f5a
+          git cat-file -e "$NORMAL_MAIN:NembraApp/App/NembraApp.swift"
+          git show "$NORMAL_MAIN:NembraApp/App/NembraApp.swift" > NembraApp/App/NembraApp.swift
+
+          rm Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureFieldRuntimeRendezvousTests.swift
+          rm Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureLockedSurfaceVisualAcceptanceTests.swift
+
+          cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/NembraCaptureAppBootstrapSeparationSourceTests.swift <<'SWIFT'
+          import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Nembra product and Capture target bootstrap separation")
+          struct NembraCaptureAppBootstrapSeparationSourceTests {
+              @Test("main Nembra target boots the consumer product instead of the retired direct-BLE field takeover")
+              func mainAppUsesConsumerBootstrap() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraApp.swift")
+
+                  #expect(source.contains("@State private var runtime = AppBootstrap.makeRuntime()"))
+                  #expect(source.contains("AppRootView()"))
+                  #expect(source.contains(".environment(runtime.vehicleStore)"))
+                  #expect(source.contains(".environment(runtime.rideStore)"))
+                  #expect(source.contains("await runtime.start()"))
+
+                  #expect(!source.contains("TuyaSecureLinkPreflightView"))
+                  #expect(!source.contains("TuyaSecureLinkPreflightController"))
+                  #expect(!source.contains("CBCentralManager"))
+                  #expect(!source.contains("central.connect("))
+                  #expect(!source.contains("6815A5F5-4D1E-E004-BAE8-6DF924123907"))
+                  #expect(!source.contains("currentTuyaOdometerMiles"))
+                  #expect(!source.contains("userTrackedLifetimeMiles"))
+              }
+
+              @Test("authenticated stationary research remains owned by the standalone Capture target")
+              func standaloneCaptureKeepsCurrentProcedureAuthority() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  #expect(source.contains("ES80-AUTHENTICATED-STATIONARY-v1"))
+                  #expect(source.contains("SecureLinkController"))
+                  #expect(source.contains("scenePhase"))
+              }
+
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  var root = URL(fileURLWithPath: #filePath)
+                  for _ in 0..<5 { root.deleteLastPathComponent() }
+                  return try String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)
+              }
+          }
+          SWIFT
+
+      - name: Enumerate stale source-contract dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture
+          git diff --check
+
+      - name: Publish probe only if the full package suite accepts the restored boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=38c69bcf6660f42468c954a9196f35d3bdff2680
+          WORKFLOW=.github/workflows/materialize-restore-main-app-bootstrap-38c69.yml
+          rm "$WORKFLOW"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(app): restore Nembra product root after Capture takeover"
+          git diff --check "$BASE"...HEAD
+          git push origin "HEAD:${GITHUB_REF_NAME}"
