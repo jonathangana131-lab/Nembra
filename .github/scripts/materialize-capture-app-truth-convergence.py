@@ -62,7 +62,7 @@ if source.count(old_log) != 1:
     raise SystemExit("untrusted-first application event merge seam did not match exactly once")
 source = source.replace(old_log, new_log, 1)
 
-watchdog_marker = "    private func startWatchdog(for token: TuyaReadOnlyConnectionToken) {"
+watchdog_marker = "    private func startWatchdog(token: TuyaReadOnlyConnectionToken) {"
 helper = """    private static func redactingVerifiedAccountUID(
         _ verifiedAccountUID: String,
         from update: [String: String]
@@ -151,12 +151,13 @@ uid_test.write_text(uid_source.replace(old_expect, new_expect, 1), encoding="utf
 
 final = app.read_text(encoding="utf-8")
 assert final.count('membershipStatus = "Exact scooter membership must be verified again after Capture leaves the foreground or Secure Link."') == 2
-assert ') { current, _ in current })' not in final[final.index('private func receivedApplicationUpdate('):final.index('private func startWatchdog')]
-assert 'custodySafeUpdate.merging([' in final
-assert ') { _, trusted in trusted })' in final
-assert '<redacted-account-uid>' in final
-assert 'rawKey.replacingOccurrences' in final
-assert 'rawValue.replacingOccurrences' in final
+receiver = final[final.index('private func receivedApplicationUpdate('):final.index('private func startWatchdog')]
+assert ') { current, _ in current })' not in receiver
+assert 'custodySafeUpdate.merging([' in receiver
+assert ') { _, trusted in trusted })' in receiver
+assert '<redacted-account-uid>' in receiver
+assert 'rawKey.replacingOccurrences' in receiver
+assert 'rawValue.replacingOccurrences' in receiver
 fragments = final[final.index('private static let secretKeyFragments'):final.index('private static func redactApplicationSecrets')]
 assert fragments.count('"sessionkey"') == 1
 assert '"uid"' not in fragments
