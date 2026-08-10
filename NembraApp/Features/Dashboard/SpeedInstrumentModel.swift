@@ -586,11 +586,26 @@ struct DashboardSpeedInstrumentView: View {
             return .unavailable
         }
 
-        return NembraEnergyRailVisualState(
+        // SwiftUI can render a newer aggregate source value before the matching
+        // `.onChange` retargets the package runtime. Fence that callback-order
+        // window synchronously so an older accepted projection cannot be shown as
+        // if it described the current source. This comparison grants no authority:
+        // package semantic watts remain accepted truth and the aggregate value can
+        // only veto a mismatched frame.
+        guard let sourcePower = vehicle.state.powerWatts,
+              sourcePower >= 0 else {
+            return .unavailable
+        }
+
+        let state = NembraEnergyRailVisualState(
             projection: energyRailRuntime.projection(
                 atUptimeNanoseconds: uptimeNanoseconds
             )
         )
+        guard state.semanticWatts == Double(sourcePower) else {
+            return .unavailable
+        }
+        return state
     }
 
     private func displayedValue(kilometersPerHour: Double?) -> Double? {
