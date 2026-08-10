@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import os
 from pathlib import Path
 import shutil
@@ -179,6 +181,72 @@ class PrivateDeviceInputTests(unittest.TestCase):
                 target.exists(),
                 "failed private-input acquisition retained a partial secret-bearing file",
             )
+
+    def test_file_fsync_failure_removes_secret_bearing_output(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+            real_fsync = os.fsync
+            fsync_calls = 0
+
+            def fail_first_fsync(descriptor: int) -> None:
+                nonlocal fsync_calls
+                fsync_calls += 1
+                if fsync_calls == 1:
+                    raise OSError("simulated private-input fsync failure")
+                real_fsync(descriptor)
+
+            with mock.patch.object(module.os, "fsync", side_effect=fail_first_fsync):
+                with self.assertRaisesRegex(OSError, "simulated private-input fsync failure"):
+                    module.create_private_input(
+                        private_dir,
+                        repo,
+                        target.name,
+                        secret_provider=lambda: self.SECRET,
+                    )
+
+            self.assertGreaterEqual(fsync_calls, 2)
+            self.assertFalse(
+                target.exists(),
+                "failed private-input fsync retained a secret-bearing file",
+            )
+
+    def test_cli_refuses_echoed_getpass_fallback_before_consuming_secret(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, private_dir = self.make_layout(root)
+            target = private_dir / "es80-intended-device.udid"
+            fallback_consumed = False
+
+            def simulated_echo_fallback(_prompt: str) -> str:
+                nonlocal fallback_consumed
+                module.warnings.warn(
+                    "simulated terminal cannot disable echo",
+                    module.getpass.GetPassWarning,
+                )
+                fallback_consumed = True
+                return self.SECRET
+
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with mock.patch.object(module.getpass, "getpass", side_effect=simulated_echo_fallback):
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    status = module.main(
+                        [
+                            "--private-directory",
+                            str(private_dir),
+                            "--source-repo",
+                            str(repo),
+                        ]
+                    )
+
+            combined = stdout.getvalue() + stderr.getvalue()
+            self.assertEqual(status, 2)
+            self.assertFalse(fallback_consumed)
+            self.assertFalse(target.exists())
+            self.assertIn("secure-terminal-input-unavailable", stderr.getvalue())
+            self.assertNotIn(self.SECRET, combined)
 
 
 if __name__ == "__main__":
