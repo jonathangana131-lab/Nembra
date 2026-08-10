@@ -92,8 +92,8 @@ struct SimulatorPowerEvidenceTests {
         #expect(third.receivedAtUptimeNanoseconds > second.receivedAtUptimeNanoseconds)
     }
 
-    @Test("ride mode mutation cannot mint a propulsion receipt")
-    func rideModeMutationDoesNotAdvancePowerReceipt() async throws {
+    @Test("unrelated commands cannot mint a propulsion receipt")
+    func unrelatedCommandsDoNotAdvancePowerReceipt() async throws {
         let service = SimulatedScooterService(
             initialState: SimulatedScooterService.state(for: .connectedStopped),
             commandLatencyNanoseconds: 0
@@ -105,12 +105,62 @@ struct SimulatorPowerEvidenceTests {
         }
 
         try await service.setRideMode(.drive)
+        try await service.setHeadlight(true)
+        try await service.setCruise(true)
 
         guard case let .live(after) = await service.simulatorPowerEvidenceSnapshot() else {
-            Issue.record("Mode mutation must not remove existing live source evidence")
+            Issue.record("Unrelated commands must not remove existing live source evidence")
             return
         }
         #expect(after == before)
+    }
+
+    @Test("late subscriber replays retained receipt without rewriting identity")
+    func lateSubscriberGetsExactRetainedReceipt() async throws {
+        let service = SimulatedScooterService(
+            initialState: SimulatedScooterService.state(for: .riding),
+            commandLatencyNanoseconds: 0
+        )
+
+        guard case let .live(initial) = await service.simulatorPowerEvidenceSnapshot() else {
+            Issue.record("Expected initial live Simulator power")
+            return
+        }
+        await service.disconnect()
+
+        let stream = await service.simulatorPowerEvidenceUpdates()
+        var iterator = stream.makeAsyncIterator()
+        #expect(await iterator.next() == .retained(initial))
+    }
+
+    @Test("receipt construction rejects invalid value and identity domains")
+    func receiptConstructionFailsClosed() {
+        func constructionError(
+            watts: Double = 1,
+            receiptSequenceNumber: UInt64 = 1,
+            continuityGeneration: UInt64 = 1
+        ) -> SimulatorPowerObservationError? {
+            do {
+                _ = try SimulatorPowerObservation(
+                    watts: watts,
+                    receiptSequenceNumber: receiptSequenceNumber,
+                    receivedAtUptimeNanoseconds: 1,
+                    continuityGeneration: continuityGeneration
+                )
+                return nil
+            } catch let error as SimulatorPowerObservationError {
+                return error
+            } catch {
+                return nil
+            }
+        }
+
+        #expect(constructionError(watts: -1) == .invalidWatts)
+        #expect(constructionError(watts: .nan) == .invalidWatts)
+        #expect(constructionError(watts: .infinity) == .invalidWatts)
+        #expect(constructionError(receiptSequenceNumber: 0) == .invalidReceiptSequence)
+        #expect(constructionError(continuityGeneration: 0) == .invalidContinuityGeneration)
+        #expect(constructionError(watts: 0) == nil)
     }
 
     @Test("non-Simulator profile cannot expose synthetic power authority")
