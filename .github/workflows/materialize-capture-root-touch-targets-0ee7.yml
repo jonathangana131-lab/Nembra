@@ -1,0 +1,102 @@
+name: Materialize Capture root touch targets 0ee7
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-root-touch-targets-0ee7-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 4
+
+      - name: Guard exact product lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='0ee7aab76b4880c9871404b23755f27e539b5351'
+          git merge-base --is-ancestor "$expected" HEAD^
+          mapfile -t changed < <(git diff --name-only "$expected"..HEAD^)
+          if [[ "${#changed[@]}" -ne 1 || "${changed[0]}" != 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureRootCriticalTouchTargetsSourceTests.swift' ]]; then
+            printf 'Unexpected pre-materialization scope:\n%s\n' "${changed[*]}" >&2
+            exit 78
+          fi
+
+      - name: Enlarge critical root setup controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text()
+
+          replacements = [
+              (
+                  'Button("Reset account link") { tuya.resetLink() }\n                                        .buttonStyle(.bordered)',
+                  'Button("Reset account link") { tuya.resetLink() }\n                                        .buttonStyle(.bordered)\n                                        .controlSize(.large)',
+              ),
+              (
+                  'Button("Refresh") { tuya.refreshDevices() }\n                                                .buttonStyle(.bordered)',
+                  'Button("Refresh") { tuya.refreshDevices() }\n                                                .buttonStyle(.bordered)\n                                                .controlSize(.large)',
+              ),
+              (
+                  '                                                .buttonStyle(.bordered)\n\n                                                if tuya.selectedDeviceID == device.id,',
+                  '                                                .buttonStyle(.bordered)\n                                                .controlSize(.large)\n\n                                                if tuya.selectedDeviceID == device.id,',
+              ),
+              (
+                  'NavigationLink("Continue to Capture") { SecureLinkView(device: device) }\n                                                        .buttonStyle(.borderedProminent)',
+                  'NavigationLink("Continue to Capture") { SecureLinkView(device: device) }\n                                                        .buttonStyle(.borderedProminent)\n                                                        .controlSize(.large)',
+              ),
+          ]
+          for old, new in replacements:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'root touch-target seam drifted: {old[:70]!r}; observed {count}')
+              source = source.replace(old, new, 1)
+          path.write_text(source)
+          PY
+          git diff --check
+
+      - name: Verify focused source and Swift syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureRootCriticalTouchTargetsSourceTests.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          root = s[s.index('private struct CaptureP0Root: View'):s.index('@MainActor\nprivate final class TuyaAccountBridge')]
+          tokens = [
+              'Button("Reset account link")',
+              'Button("Refresh")',
+              'Button(tuya.selectedDeviceID == device.id ? "Refresh metadata" : "Use this scooter")',
+              'NavigationLink("Continue to Capture")',
+          ]
+          for token in tokens:
+              start = root.index(token)
+              window = root[start:start + 260]
+              assert '.controlSize(.large)' in window, token
+          PY
+
+      - name: Publish clean app-visible repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-root-touch-targets-0ee7.yml
+          git config user.name 'nembra-sol'
+          git config user.email 'nembra-sol@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureRootCriticalTouchTargetsSourceTests.swift \
+                  .github/workflows/materialize-capture-root-touch-targets-0ee7.yml
+          git diff --cached --check
+          git commit -m 'fix(capture): enlarge root setup touch targets'
+          git push origin HEAD:fix/v14-capture-root-touch-targets-0ee7-sol
