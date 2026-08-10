@@ -21,14 +21,38 @@ struct TuyaFieldInstallerIntendedDeviceAuthoritySourceTests {
     func arbitraryConnectedIPhoneCannotBecomeTheFieldDevice() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
 
-        #expect(installer.contains("Verifying the intended iPhone is physically connected"))
+        #expect(installer.contains("Verifying the intended iPhone 12 / iOS 27 baseline"))
         #expect(installer.contains("MATCH_COUNT=0"))
         #expect(installer.contains("ROW_NORMALIZED"))
         #expect(installer.contains("INTENDED_NORMALIZED"))
         #expect(installer.contains("$MATCH_COUNT\" == \"1"))
         #expect(installer.contains("No arbitrary-device fallback is permitted"))
-        #expect(installer.contains("devicectl device install app --device \"$DEVICE_UDID\""))
+    }
+
+    @Test("private intended device must also be the exact V14 hardware and OS baseline")
+    func intendedDeviceMustBeIPhone12OnIOS27() throws {
+        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
+
+        #expect(installer.contains("DEVICE_OS_VERSION"))
+        #expect(installer.contains("$DEVICE_OS_VERSION\" == 27.*"))
+        #expect(installer.contains("iPhone13,2"))
+        #expect(installer.contains("not the V14 iPhone 12 hardware baseline"))
+        #expect(installer.contains("Intended baseline proven: iPhone 12 / iOS $DEVICE_OS_VERSION"))
+    }
+
+    @Test("devicectl uses a non-private CoreDevice selector correlated to the private UDID")
+    func rawPrivateUDIDCannotEnterDevicectlArgv() throws {
+        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
+
+        #expect(installer.contains("devicectl list devices --hide-headers"))
+        #expect(installer.contains(".coredevice.local"))
+        #expect(installer.contains("COREDEVICE_ID"))
+        #expect(installer.contains("devicectl device install app --device \"$COREDEVICE_ID\""))
         #expect(installer.contains("devicectl device process launch"))
+        #expect(installer.contains("--device \"$COREDEVICE_ID\""))
+        #expect(!installer.contains("devicectl device install app --device \"$DEVICE_UDID\""))
+        #expect(!installer.contains("--device \"$DEVICE_UDID\""))
+        #expect(installer.contains("not placed in devicectl argv"))
     }
 
     @Test("private workspace and build cannot silently change the accepted source")
@@ -50,7 +74,8 @@ struct TuyaFieldInstallerIntendedDeviceAuthoritySourceTests {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
 
         #expect(installer.contains("<redacted-device>"))
-        #expect(installer.contains("unset DEVICE_UDID"))
+        #expect(installer.contains("<redacted-device-selector>"))
+        #expect(installer.contains("unset DEVICE_UDID COREDEVICE_ID"))
         #expect(installer.contains("process launch"))
         #expect(installer.contains(">$INSTALL_LOG 2>&1"))
         #expect(!installer.contains("cat \"$INSTALL_LOG\""))
