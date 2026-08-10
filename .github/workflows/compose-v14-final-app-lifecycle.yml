@@ -1,0 +1,88 @@
+name: Compose V14 final Capture app lifecycle closure
+
+on:
+  push:
+    branches: [integration/v14-capture-final-app-lifecycle-closure-sol]
+    paths:
+      - '.github/workflows/compose-v14-final-app-lifecycle.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Assert exact current convergence inputs
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "00da4f47196b1fbe0f097077a2fc1b378fc25f5d" || true
+          test "$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)" = "ee71c1027da7f77a611e9d01b49bcc4ab171bff7"
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationRestartLifecycleSourceTests.swift
+          test ! -e Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAlreadyTerminalObservationContinuitySourceTests.swift
+
+      - name: Transplant reviewed current-spine deltas only
+        run: |
+          set -euo pipefail
+          git fetch origin repair/v14-capture-continuity-mirror-live-sol integration/v14-capture-off1-generation-custody-sol
+
+          # Continuity mirror: reviewed two-path delta from convergence@675326ad.
+          git diff 675326ad788235a3035156750e95387645087cda..74dc360343ae56041739941a77ee1fc34f8351b5 -- \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAlreadyTerminalObservationContinuitySourceTests.swift \
+            | git apply --3way
+
+          # OFF1 custody: one-function reviewed delta from the same convergence ancestry.
+          git diff 675326ad788235a3035156750e95387645087cda..0b920ddc1cf640de3818ce2400aaf75f55258e9c -- \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            | git apply --3way
+
+          git diff --check
+
+      - name: Assert composed lifecycle truth
+        run: |
+          set -euo pipefail
+          app=NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'mirrorAlreadyTerminalObservationContinuity' "$app"
+          grep -Fq 'accepted_prefix_seal_continuity_invalidated' "$app"
+          grep -Fq 'accepted_prefix_seal_lifecycle_rejected' "$app"
+          grep -Fq 'active_generation_blocks_discovery_reset' "$app"
+          grep -Fq 'await self.invalidateInternalLifecycle(' "$app"
+          ! grep -Fq '@preconcurrency import CoreBluetooth' "$app"
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAlreadyTerminalObservationContinuitySourceTests.swift
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationRestartLifecycleSourceTests.swift
+
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          marker='private func beginCorrelationSeries()'
+          a=s.index(marker)
+          b=s.index('func startNextCorrelationWindow()', a)
+          f=s[a:b]
+          g=f.index('guard currentConnectionToken == nil else')
+          r=f.index('return', g)
+          branch=f[g:r+len('return')]
+          assert 'invalidateInternalLifecycle' in branch
+          assert 'failLocally' not in branch
+          h=s.index('private func mirrorAlreadyTerminalObservationContinuity')
+          j=s.index('private func invalidateObservationContinuity', h)
+          helper=s[h:j]
+          assert 'sessionLedger.' not in helper
+          assert 'currentConnectionToken = nil' in helper
+          assert 'localBLESettlementToken = nil' in helper
+          PY
+
+      - name: Commit product and retire composition workflow
+        run: |
+          set -euo pipefail
+          rm .github/workflows/compose-v14-final-app-lifecycle.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(capture): converge terminal mirror and OFF1 custody"
+          git push origin HEAD:integration/v14-capture-final-app-lifecycle-closure-sol
