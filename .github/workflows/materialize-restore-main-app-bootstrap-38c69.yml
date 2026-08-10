@@ -47,13 +47,11 @@ jobs:
               @Test("main Nembra target boots the consumer product instead of the retired direct-BLE field takeover")
               func mainAppUsesConsumerBootstrap() throws {
                   let source = try readRepositoryFile("NembraApp/App/NembraApp.swift")
-
                   #expect(source.contains("@State private var runtime = AppBootstrap.makeRuntime()"))
                   #expect(source.contains("AppRootView()"))
                   #expect(source.contains(".environment(runtime.vehicleStore)"))
                   #expect(source.contains(".environment(runtime.rideStore)"))
                   #expect(source.contains("await runtime.start()"))
-
                   #expect(!source.contains("TuyaSecureLinkPreflightView"))
                   #expect(!source.contains("TuyaSecureLinkPreflightController"))
                   #expect(!source.contains("CBCentralManager"))
@@ -78,6 +76,15 @@ jobs:
               }
           }
           SWIFT
+
+      - name: Inventory tests coupled to the main-app source file
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests
+          while IFS= read -r file; do
+            echo "::notice file=$file::This source contract reads or names NembraApp.swift; inspect whether it belongs to the retired main-target Capture takeover."
+          done < <(grep -RIlE 'NembraApp\.swift|appendingPathComponent\("NembraApp"\)' "$ROOT" | sort)
 
       - name: Enumerate stale source-contract dependencies
         shell: bash
