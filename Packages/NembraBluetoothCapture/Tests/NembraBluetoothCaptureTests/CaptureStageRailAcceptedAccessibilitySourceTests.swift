@@ -1,0 +1,76 @@
+import Foundation
+import Testing
+@testable import NembraBluetoothCapture
+
+@Suite("Capture accepted stage-rail accessibility truth")
+struct CaptureStageRailAcceptedAccessibilitySourceTests {
+    @Test("Accessibility-size accepted rail explicitly announces completion")
+    func accessibilitySizeAcceptedRailIsComplete() throws {
+        let stageRail = try stageRailSource()
+        let accessibilityBranch = String(try section(
+            in: stageRail,
+            from: "if dynamicTypeSize.isAccessibilitySize",
+            to: "} else {"
+        ))
+
+        #expect(accessibilityBranch.contains("test.phase == .accepted"))
+        #expect(accessibilityBranch.contains("All 4 Capture steps complete, Seal"))
+        #expect(accessibilityBranch.contains(".accessibilityLabel("))
+    }
+
+    @Test("Standard accepted rail marks Seal complete instead of current")
+    func standardAcceptedSealIsComplete() throws {
+        let stageRail = try stageRailSource()
+        let standardBranch = String(try section(
+            in: stageRail,
+            from: "} else {",
+            to: "    }\n\n    @ViewBuilder\n    private var primarySurface"
+        ))
+
+        #expect(standardBranch.contains("index < currentStageIndex || test.phase == .accepted"))
+        guard let accessibilityLine = standardBranch
+            .split(separator: "\n")
+            .map(String.init)
+            .first(where: { $0.contains(".accessibilityLabel(\"Step") }) else {
+            Issue.record("Standard stage accessibility label is missing")
+            throw SourceContractError.sectionMissing
+        }
+
+        #expect(accessibilityLine.contains("test.phase == .accepted"))
+        #expect(accessibilityLine.contains("complete"))
+        #expect(accessibilityLine.contains("current"))
+        #expect(accessibilityLine.contains("upcoming"))
+    }
+
+    private func stageRailSource() throws -> String {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        return String(try section(
+            in: source,
+            from: "private var stageRail: some View",
+            to: "private var primarySurface: some View"
+        ))
+    }
+
+    private func section(in source: String, from start: String, to end: String) throws -> Substring {
+        guard let startRange = source.range(of: start),
+              let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+            Issue.record("Expected source section missing: \(start) ... \(end)")
+            throw SourceContractError.sectionMissing
+        }
+        return source[startRange.lowerBound..<endRange.lowerBound]
+    }
+
+    private func readRepositoryFile(_ relativePath: String) throws -> String {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+    }
+
+    private enum SourceContractError: Error {
+        case sectionMissing
+    }
+}
