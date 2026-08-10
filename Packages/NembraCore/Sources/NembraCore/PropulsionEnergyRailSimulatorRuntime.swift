@@ -1,12 +1,42 @@
 import Foundation
 
+/// Display-clock scheduling metadata for Simulator-only Energy Rail product QA.
+///
+/// This is presentation state, not telemetry. It may tell SwiftUI when render-only
+/// interpolation needs continuous frames or when a future presentation transition
+/// needs one wake-up. It never creates an accepted propulsion observation, refreshes
+/// measurement currentness, changes receipt chronology, or carries physical authority.
+public struct PropulsionEnergyRailDisplaySchedule: Equatable, Sendable {
+    /// True only while the canonical package model is actually between accepted
+    /// display targets. Settled live geometry does not require a 60 Hz clock.
+    public let requiresContinuousFrames: Bool
+
+    /// Earliest monotonic uptime at which presentation can change without a new
+    /// source observation: interpolation settlement, accepted-peak expiry, or
+    /// freshness demotion. `nil` means no timer-driven presentation transition remains.
+    public let nextTransitionUptimeNanoseconds: UInt64?
+
+    fileprivate init(
+        requiresContinuousFrames: Bool,
+        nextTransitionUptimeNanoseconds: UInt64?
+    ) {
+        self.requiresContinuousFrames = requiresContinuousFrames
+        self.nextTransitionUptimeNanoseconds = nextTransitionUptimeNanoseconds
+    }
+
+    fileprivate static let inactive = Self(
+        requiresContinuousFrames: false,
+        nextTransitionUptimeNanoseconds: nil
+    )
+}
+
 /// Simulator-only source/runtime owner for Energy Rail product QA.
 ///
 /// This runtime never derives measurement authority from aggregate vehicle state,
 /// SwiftUI lifecycle, a display clock, or a speed receipt. Every live/retained value
 /// must carry the exact source-owned Simulator power receipt tuple that crossed the
-/// app-session custody boundary. Render interpolation remains package-owned and can
-/// never mint or refresh that tuple.
+/// app-session custody boundary. Render interpolation and scheduling remain
+/// presentation-only and can never mint or refresh that tuple.
 public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
     /// Synthetic visual ceiling chosen only because `SimulatedScooterService`
     /// currently caps generated QA power at 620 W. This is not a rated motor,
@@ -36,6 +66,13 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
     private var scale: PropulsionGaugeScale
     private var disposition: SourceDisposition = .unavailable
     private var newestAcceptedSourceObservation: SourceObservation?
+
+    // Presentation-only mirrors used solely to avoid running a display clock after
+    // the canonical package projection has settled. They are updated only after an
+    // immutable source receipt has been accepted; they never feed back into evidence.
+    private var presentationTransitionEndUptimeNanoseconds: UInt64?
+    private var presentationPeakWatts: Double?
+    private var presentationPeakUptimeNanoseconds: UInt64?
 
     public var identity: PropulsionGaugeIdentity { session.identity }
 
@@ -91,7 +128,10 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
             return false
         }
 
-        switch compare(incoming, to: newestAcceptedSourceObservation) {
+        let priorObservation = newestAcceptedSourceObservation
+        let priorDisposition = disposition
+
+        switch compare(incoming, to: priorObservation) {
         case .stale:
             // A delayed older source receipt cannot hide or replace newer accepted
             // presentation. Ignore it without mutating current state.
@@ -115,6 +155,19 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
             break
         }
 
+        let sharesPresentationContinuity: Bool
+        if case .live = priorDisposition,
+           let priorObservation,
+           incoming.continuityGeneration == priorObservation.continuityGeneration,
+           incoming.receivedAtUptimeNanoseconds > priorObservation.receivedAtUptimeNanoseconds {
+            let gap = incoming.receivedAtUptimeNanoseconds
+                - priorObservation.receivedAtUptimeNanoseconds
+            sharesPresentationContinuity = gap <= freshnessPolicy.staleAfterNanoseconds
+        } else {
+            sharesPresentationContinuity = false
+            resetPresentationSchedule()
+        }
+
         do {
             let sample = try PropulsionPowerSample.simulator(
                 identity: session.identity,
@@ -131,6 +184,11 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
 
         newestAcceptedSourceObservation = incoming
         disposition = .live(incoming)
+        updatePresentationScheduleAfterAcceptedSample(
+            watts: incoming.watts,
+            receivedAtUptimeNanoseconds: incoming.receivedAtUptimeNanoseconds,
+            sharesContinuity: sharesPresentationContinuity
+        )
         return true
     }
 
@@ -170,6 +228,7 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
                     continuityGeneration: incoming.continuityGeneration
                 )
                 disposition = .retained(incoming)
+                resetPresentationSchedule()
                 return true
             case .retained:
                 return true
@@ -207,6 +266,7 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
             continuityGeneration: incoming.continuityGeneration
         )
         disposition = .retained(incoming)
+        resetPresentationSchedule()
         return true
     }
 
@@ -221,6 +281,7 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
             )
         }
         disposition = .unavailable
+        resetPresentationSchedule()
     }
 
     /// Canonical sealed app projection at the display clock.
@@ -253,6 +314,70 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
                 scale: scale
             )
         }
+    }
+
+    /// Presentation-only scheduler for the localized app display clock.
+    ///
+    /// It reports only transitions already implied by accepted package state:
+    /// continuous frames while interpolation is active, then one-shot wakes for
+    /// interpolation settlement, peak expiry, and natural freshness demotion.
+    /// Explicit source-retained and unavailable states are immediately quiescent.
+    public func displaySchedule(
+        atUptimeNanoseconds now: UInt64
+    ) -> PropulsionEnergyRailDisplaySchedule {
+        guard case .live = disposition else {
+            return .inactive
+        }
+
+        let frame = session.frame(
+            atUptimeNanoseconds: now,
+            scale: scale
+        )
+        guard frame.availability == .live else {
+            return .inactive
+        }
+
+        let requiresContinuousFrames = frame.origin == .visuallyInterpolated
+        var nextTransition: UInt64?
+
+        if requiresContinuousFrames,
+           let transitionEnd = presentationTransitionEndUptimeNanoseconds {
+            nextTransition = earlierFutureTransition(
+                nextTransition,
+                transitionEnd,
+                after: now
+            )
+        }
+
+        if frame.acceptedPeakNormalized != nil,
+           let peakUptime = presentationPeakUptimeNanoseconds,
+           let peakExpiry = exclusiveDeadline(
+               after: peakUptime,
+               interval: animationPolicy.acceptedPeakHoldNanoseconds
+           ) {
+            nextTransition = earlierFutureTransition(
+                nextTransition,
+                peakExpiry,
+                after: now
+            )
+        }
+
+        if let acceptedUptime = frame.latestAcceptedUptimeNanoseconds,
+           let freshnessExpiry = exclusiveDeadline(
+               after: acceptedUptime,
+               interval: freshnessPolicy.staleAfterNanoseconds
+           ) {
+            nextTransition = earlierFutureTransition(
+                nextTransition,
+                freshnessExpiry,
+                after: now
+            )
+        }
+
+        return PropulsionEnergyRailDisplaySchedule(
+            requiresContinuousFrames: requiresContinuousFrames,
+            nextTransitionUptimeNanoseconds: nextTransition
+        )
     }
 
     private enum SourceComparison {
@@ -299,6 +424,7 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
         guard watts.isFinite,
               watts >= 0,
               receiptSequenceNumber > 0,
+              receivedAtUptimeNanoseconds > 0,
               continuityGeneration > 0 else {
             return nil
         }
@@ -308,5 +434,84 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
             receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
             continuityGeneration: continuityGeneration
         )
+    }
+
+    private mutating func updatePresentationScheduleAfterAcceptedSample(
+        watts: Double,
+        receivedAtUptimeNanoseconds uptime: UInt64,
+        sharesContinuity: Bool
+    ) {
+        if presentationPeakWatts == nil
+            || !sharesContinuity
+            || peakExpiredBeforeObservation(atUptimeNanoseconds: uptime) {
+            presentationPeakWatts = watts
+            presentationPeakUptimeNanoseconds = uptime
+        } else if let presentationPeakWatts,
+                  watts >= presentationPeakWatts {
+            self.presentationPeakWatts = watts
+            presentationPeakUptimeNanoseconds = uptime
+        }
+
+        let frame = session.frame(
+            atUptimeNanoseconds: uptime,
+            scale: scale
+        )
+        guard frame.origin == .visuallyInterpolated,
+              let displayWatts = frame.displayWatts,
+              let acceptedWatts = frame.latestAcceptedWatts,
+              displayWatts.isFinite,
+              acceptedWatts.isFinite,
+              displayWatts != acceptedWatts else {
+            presentationTransitionEndUptimeNanoseconds = nil
+            return
+        }
+
+        let duration = acceptedWatts >= displayWatts
+            ? animationPolicy.riseSettlingDurationNanoseconds
+            : animationPolicy.fallSettlingDurationNanoseconds
+        presentationTransitionEndUptimeNanoseconds = deadline(
+            after: uptime,
+            interval: duration
+        )
+    }
+
+    private func peakExpiredBeforeObservation(atUptimeNanoseconds uptime: UInt64) -> Bool {
+        guard let peakUptime = presentationPeakUptimeNanoseconds,
+              uptime >= peakUptime else {
+            return true
+        }
+        return uptime - peakUptime > animationPolicy.acceptedPeakHoldNanoseconds
+    }
+
+    private mutating func resetPresentationSchedule() {
+        presentationTransitionEndUptimeNanoseconds = nil
+        presentationPeakWatts = nil
+        presentationPeakUptimeNanoseconds = nil
+    }
+
+    private func deadline(after start: UInt64, interval: UInt64) -> UInt64? {
+        let (value, overflow) = start.addingReportingOverflow(interval)
+        return overflow ? nil : value
+    }
+
+    /// Currentness/peak transitions are defined by `age > interval`, so wake one
+    /// nanosecond after the inclusive boundary. If arithmetic cannot represent a
+    /// future deadline, there is no reachable UInt64 uptime at which to schedule it.
+    private func exclusiveDeadline(after start: UInt64, interval: UInt64) -> UInt64? {
+        guard let inclusive = deadline(after: start, interval: interval) else {
+            return nil
+        }
+        let (exclusive, overflow) = inclusive.addingReportingOverflow(1)
+        return overflow ? nil : exclusive
+    }
+
+    private func earlierFutureTransition(
+        _ current: UInt64?,
+        _ candidate: UInt64,
+        after now: UInt64
+    ) -> UInt64? {
+        guard candidate > now else { return current }
+        guard let current else { return candidate }
+        return min(current, candidate)
     }
 }
