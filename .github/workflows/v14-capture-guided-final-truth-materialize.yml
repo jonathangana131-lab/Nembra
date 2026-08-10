@@ -1,0 +1,182 @@
+name: V14 Capture Guided Final Truth Materialize
+
+on:
+  push:
+    branches:
+      - materialize/v14-capture-guided-final-truth-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: materialize/v14-capture-guided-final-truth-sol
+          fetch-depth: 0
+
+      - name: Guard exact clean product parent
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "55693adbc91a47d43dcb27e0ba67fe4902921250"
+
+      - name: Apply guided truth repairs
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text()
+
+          def replace_once(old: str, new: str) -> None:
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"guard failed: expected one match, found {count}: {old[:120]!r}")
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              '    private let stageLabels = ["Target", "Secure link", "Observe", "Seal"]\n',
+              '    private let stageLabels = ["Target", "Secure link", "Observe", "Seal"]\n\n'
+              '    private var correlationDisplayedWindowOrdinal: Int {\n'
+              '        test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)\n'
+              '    }\n',
+          )
+
+          replace_once(
+              '        case .failed:\n            failurePanel\n',
+              '        case .failed:\n'
+              '            if !test.fieldBuildIsAuthoritative || !test.privateConfig {\n'
+              '                VStack(spacing: 16) {\n'
+              '                    failureRecoveryContextPanel\n'
+              '                    preflightPanel\n'
+              '                }\n'
+              '            } else if !sdkAccount.loggedIn || !test.sdkAccountLoggedIn {\n'
+              '                VStack(spacing: 16) {\n'
+              '                    failureRecoveryContextPanel\n'
+              '                    sdkAuthorizationPanel\n'
+              '                }\n'
+              '            } else if !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized {\n'
+              '                VStack(spacing: 16) {\n'
+              '                    failureRecoveryContextPanel\n'
+              '                    preflightPanel\n'
+              '                }\n'
+              '            } else {\n'
+              '                failurePanel\n'
+              '            }\n',
+          )
+
+          replace_once(
+              '                    Text("\\(min(test.correlationCompletedWindowCount + 1, 4))/4")\n',
+              '                    Text("\\(correlationDisplayedWindowOrdinal)/4")\n',
+          )
+
+          replace_once(
+              '        case .failed:\n            return "No evidence was promoted past the blocker. Fix the condition and restart from scooter OFF."\n',
+              '        case .failed:\n'
+              '            return test.canRestartFromFreshOFF1\n'
+              '                ? "No evidence was promoted past the blocker. Fix the condition and restart from scooter OFF."\n'
+              '                : "No evidence was promoted past the blocker. Relaunch Capture before another attempt."\n',
+          )
+
+          marker = '    private var failurePanel: some View {\n'
+          if text.count(marker) != 1:
+              raise SystemExit('failurePanel marker is not unique')
+          recovery = '''    private var failureRecoveryContextPanel: some View {
+              panel {
+                  VStack(alignment: .leading, spacing: 10) {
+                      Label("Capture paused", systemImage: "exclamationmark.circle")
+                          .font(.title2.bold())
+                          .foregroundStyle(.orange)
+                      Text(test.message)
+                          .foregroundStyle(.secondary)
+                          .fixedSize(horizontal: false, vertical: true)
+                      Text("Restore the missing prerequisite below. This does not reuse the failed attempt as evidence.")
+                          .font(.footnote)
+                          .foregroundStyle(.secondary)
+                  }
+              }
+          }
+
+'''
+          text = text.replace(marker, recovery + marker, 1)
+
+          start = text.index('    private var failurePanel: some View {')
+          end = text.index('    private var completionPanel: some View {', start)
+          failure = text[start:end]
+          old_action = '                    Button {\n                        test.startBaseline()\n                    } label {'
+          if old_action not in failure:
+              raise SystemExit('failure restart action not found')
+          failure = failure.replace(
+              old_action,
+              '                    Button {\n                        test.retry()\n                    } label {',
+              1,
+          )
+          text = text[:start] + failure + text[end:]
+
+          controller_marker = '    func consumeCorrelationAsyncInvalidation() {\n'
+          if text.count(controller_marker) != 1:
+              raise SystemExit('controller retry insertion point not unique')
+          retry = '''    func retry() {
+              guard phase == .failed, canRestartFromFreshOFF1 else {
+                  message = "This failed attempt still retains session authority. Relaunch Capture before another OFF1 attempt."
+                  log("in_process_retry_rejected")
+                  return
+              }
+              startBaseline()
+          }
+
+'''
+          text = text.replace(controller_marker, retry + controller_marker, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Absorb exact adversarial regressions
+        run: |
+          set -euo pipefail
+          git show 6508c5d8e2902589164d6cef34b30c5326c86599:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationTruthSourceTests.swift > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationTruthSourceTests.swift
+          git show da0b9a47ecd39e06fc6ca0e5cb675bd30d89291e:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteRecoveryCurrentSourceTests.swift > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFailedPrerequisiteRecoveryCurrentSourceTests.swift
+
+      - name: Verify exact truth contracts
+        run: |
+          set -euo pipefail
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          required = [
+              'test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)',
+              'Text("\\(correlationDisplayedWindowOrdinal)/4")',
+              '!sdkAccount.loggedIn || !test.sdkAccountLoggedIn',
+              'sdkAuthorizationPanel',
+              '!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized',
+              'failureRecoveryContextPanel',
+              'func retry()',
+              'guard phase == .failed, canRestartFromFreshOFF1 else',
+              'test.retry()',
+              '? "No evidence was promoted past the blocker. Fix the condition and restart from scooter OFF."',
+              ': "No evidence was promoted past the blocker. Relaunch Capture before another attempt."',
+              'func signOut()',
+              'Use a different Tuya account',
+          ]
+          missing = [item for item in required if item not in app]
+          if missing:
+              raise SystemExit(f'missing product truth contracts: {missing}')
+          if 'Text("\\(min(test.correlationCompletedWindowCount + 1, 4))/4")' in app:
+              raise SystemExit('false completed correlation ordinal remains')
+          PY
+
+      - name: Commit clean product repair
+        run: |
+          set -euo pipefail
+          rm .github/workflows/v14-capture-guided-final-truth-materialize.yml
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(capture): close guided recovery and correlation truth"
+          git push origin HEAD:materialize/v14-capture-guided-final-truth-sol
