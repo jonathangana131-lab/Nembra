@@ -10,14 +10,14 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 ATTESTATION = REPOSITORY_ROOT / "docs" / "ES80_TODAY_FINAL_GO_OPERATOR_ATTESTATION.md"
 HARDENER = REPOSITORY_ROOT / "scripts" / "ci" / "es80_today_final_go_hardened.py"
 
-ACCEPTED_HEAD = "4506bf3b0a523ca03fc09e968f34d4359e34bf91"
-ACCEPTED_RUNS = ("31312717529", "31312717536")
-ACCEPTED_JOBS = ("93242924865", "93242924588")
+ACCEPTED_HEAD = "a07fe5c47bbcb9bc9b87e5849ea861d4bbd3e858"
+ACCEPTED_RUNS = ("31353976499",)
+ACCEPTED_JOBS = ("93350004580",)
 BUNDLE = {
     "scripts/ci/es80_today_final_go_hardened.py": "1b9560bad5a8a1ceb2934f91621be231f20a8a17",
     "scripts/ci/_es80_today_final_go_foundation_impl.py": "11a571b4439829f2c3bfe94b46e0598600238d89",
     "scripts/ci/es80_today_trusted_capture_xcode_subject.py": "94d19c0c0456860ead9a2003511c66c21d41c31a",
-    "scripts/ci/es80_today_final_go_publication.py": "1593f00e5950935ed8c1b0514ae11f69be3a6f50",
+    "scripts/ci/es80_today_final_go_publication.py": "0c551454dd8e1b686602b44635367be237249e21",
     "scripts/ci/es80_today_crosscheck_receipt_custody.py": "3bea883a17c9a34e8d9dd5b258824d29257886f2",
     "scripts/ci/es80_today_trusted_signed_candidate_reinspection.py": "179cb50cb1f32595722cd2a53df47111a2ca6a45",
 }
@@ -27,13 +27,15 @@ class FinalGoExecutableBundleCustodyTests(unittest.TestCase):
     def handoff(self) -> str:
         return ATTESTATION.read_text(encoding="utf-8")
 
-    def test_handoff_pins_exact_hosted_green_tooling_head(self):
+    def test_handoff_pins_exact_hardened_validation_tooling_head(self):
         handoff = self.handoff()
         self.assertIn(f"FINAL_GO_TOOLING_HEAD='{ACCEPTED_HEAD}'", handoff)
-        self.assertIn("exact hosted-green #1730 head", handoff)
+        self.assertIn("exact hardened-validation #1974 head", handoff)
         for subject in (*ACCEPTED_RUNS, *ACCEPTED_JOBS):
             with self.subTest(subject=subject):
                 self.assertIn(subject, handoff)
+        self.assertIn("failed only when the then-current executable-bundle regression", handoff)
+        self.assertIn("failed predecessor-pin run is never promoted to acceptance evidence", handoff)
 
     def test_handoff_checks_exact_tree_and_raw_checkout_bytes_for_every_authority_module(self):
         handoff = self.handoff()

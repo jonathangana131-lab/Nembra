@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import importlib.util
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -21,7 +22,59 @@ class FinalGoPublicationTests(unittest.TestCase):
             output = root / "FinalGO.json"
             digest = publication.publish_record_no_replace(output, self.RAW)
             self.assertEqual(output.read_bytes(), self.RAW)
+            self.assertEqual(output.stat().st_nlink, 1)
             self.assertEqual(digest, publication._sha(self.RAW))
+            self.assertEqual(list(root.glob(".FinalGO.json.*.staging")), [])
+
+    def test_unexpected_hardlink_alias_before_cleanup_retracts_go_destination(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "FinalGO.json"
+            alias = root / "surviving-alias"
+
+            def publish_with_extra_alias(staging: Path, destination: Path):
+                publication._publish_file_no_replace(staging, destination)
+                os.link(staging, alias)
+
+            with self.assertRaisesRegex(
+                publication.FinalGoPublicationError,
+                "unexpected hard-link alias before staging cleanup",
+            ):
+                publication.publish_record_no_replace(
+                    output,
+                    self.RAW,
+                    publisher=publish_with_extra_alias,
+                )
+
+            self.assertFalse(output.exists() or output.is_symlink())
+            self.assertEqual(alias.read_bytes(), self.RAW)
+            self.assertEqual(list(root.glob(".FinalGO.json.*.staging")), [])
+
+    def test_hardlink_alias_created_during_cleanup_window_retracts_go_destination(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "FinalGO.json"
+            alias = root / "cleanup-window-alias"
+            real_unlink = Path.unlink
+            alias_created = False
+
+            def alias_then_unlink(path: Path, *args, **kwargs):
+                nonlocal alias_created
+                if not alias_created and path.name.endswith(".staging"):
+                    os.link(path, alias)
+                    alias_created = True
+                return real_unlink(path, *args, **kwargs)
+
+            with mock.patch.object(Path, "unlink", new=alias_then_unlink):
+                with self.assertRaisesRegex(
+                    publication.FinalGoPublicationError,
+                    "retains an unexpected hard-link alias",
+                ):
+                    publication.publish_record_no_replace(output, self.RAW)
+
+            self.assertTrue(alias_created)
+            self.assertFalse(output.exists() or output.is_symlink())
+            self.assertEqual(alias.read_bytes(), self.RAW)
             self.assertEqual(list(root.glob(".FinalGO.json.*.staging")), [])
 
     def test_directory_fsync_failure_after_rename_retracts_go_destination(self):

@@ -112,15 +112,14 @@ If the private file is missing, points at the wrong intended device, cannot sati
 
 The hardened composer is itself authority-bearing: its output can contain `decision = GO`. Therefore `--tooling-repo` being pinned for the independent cross-check is not enough by itself. Do **not** run a moving `main`, an arbitrary local checkout, a copied script, or locally modified sibling modules as the process that mints Final GO.
 
-The accepted executable bundle for the current TODAY procedure is the exact hosted-green #1730 head:
+The accepted executable module bytes for the current TODAY procedure are frozen at exact hardened-validation #1974 head `a07fe5c47bbcb9bc9b87e5849ea861d4bbd3e858`. That immutable head passed `Capture TODAY Final GO Hardening QA` run `31353976499`, job `93350004580` — terminal success — including the complete failure-atomic publication adversarial suite, hardened composition suite, closed Git-custody suite, and authority-boundary pins. The parallel `Capture TODAY Final GO QA` run on that validation head was **not** accepted: it failed only when the then-current executable-bundle regression correctly detected that the operator handoff still pinned the predecessor publication blob. This pin rotation must itself earn terminal exact-head Final GO QA before merge; the failed predecessor-pin run is never promoted to acceptance evidence.
 
-- exact tooling head: `4506bf3b0a523ca03fc09e968f34d4359e34bf91`;
-- Final GO authority QA: run `31312717529`, job `93242924865` — terminal success;
-- Final GO hardening QA: run `31312717536`, job `93242924588` — terminal success;
+- exact tooling head: `a07fe5c47bbcb9bc9b87e5849ea861d4bbd3e858`;
+- hardened module validation QA: run `31353976499`, job `93350004580` — terminal success;
 - `scripts/ci/es80_today_final_go_hardened.py` blob: `1b9560bad5a8a1ceb2934f91621be231f20a8a17`;
 - `scripts/ci/_es80_today_final_go_foundation_impl.py` blob: `11a571b4439829f2c3bfe94b46e0598600238d89`;
 - `scripts/ci/es80_today_trusted_capture_xcode_subject.py` blob: `94d19c0c0456860ead9a2003511c66c21d41c31a`;
-- `scripts/ci/es80_today_final_go_publication.py` blob: `1593f00e5950935ed8c1b0514ae11f69be3a6f50`;
+- `scripts/ci/es80_today_final_go_publication.py` blob: `0c551454dd8e1b686602b44635367be237249e21`;
 - `scripts/ci/es80_today_crosscheck_receipt_custody.py` blob: `3bea883a17c9a34e8d9dd5b258824d29257886f2`;
 - `scripts/ci/es80_today_trusted_signed_candidate_reinspection.py` blob: `179cb50cb1f32595722cd2a53df47111a2ca6a45`.
 
@@ -131,7 +130,7 @@ Create a dedicated detached tooling worktree and verify both the exact commit an
 ```bash
 set -euo pipefail
 
-FINAL_GO_TOOLING_HEAD='4506bf3b0a523ca03fc09e968f34d4359e34bf91'
+FINAL_GO_TOOLING_HEAD='a07fe5c47bbcb9bc9b87e5849ea861d4bbd3e858'
 TOOLING_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
 FINAL_GO_TOOLING_PARENT="$(/usr/bin/mktemp -d /tmp/nembra-es80-final-go-tooling.XXXXXX)"
 FINAL_GO_TOOLING_SOURCE="$FINAL_GO_TOOLING_PARENT/source"
@@ -151,7 +150,7 @@ verify_final_go_blob() {
 verify_final_go_blob scripts/ci/es80_today_final_go_hardened.py 1b9560bad5a8a1ceb2934f91621be231f20a8a17
 verify_final_go_blob scripts/ci/_es80_today_final_go_foundation_impl.py 11a571b4439829f2c3bfe94b46e0598600238d89
 verify_final_go_blob scripts/ci/es80_today_trusted_capture_xcode_subject.py 94d19c0c0456860ead9a2003511c66c21d41c31a
-verify_final_go_blob scripts/ci/es80_today_final_go_publication.py 1593f00e5950935ed8c1b0514ae11f69be3a6f50
+verify_final_go_blob scripts/ci/es80_today_final_go_publication.py 0c551454dd8e1b686602b44635367be237249e21
 verify_final_go_blob scripts/ci/es80_today_crosscheck_receipt_custody.py 3bea883a17c9a34e8d9dd5b258824d29257886f2
 verify_final_go_blob scripts/ci/es80_today_trusted_signed_candidate_reinspection.py 179cb50cb1f32595722cd2a53df47111a2ca6a45
 ```
@@ -214,7 +213,7 @@ Stop and remain NO-GO if:
 - explicit operator action is not required;
 - application write/command authority exists or is uncertain;
 - the trusted Xcode run/artifact is not the exact accepted current-authority subject;
-- the Final GO executable bundle is not exact clean `4506bf3b0a523ca03fc09e968f34d4359e34bf91` with all six raw checkout blobs matching the accepted Git objects;
+- the Final GO executable bundle is not exact clean `a07fe5c47bbcb9bc9b87e5849ea861d4bbd3e858` with all six raw checkout blobs matching the accepted Git objects;
 - the private intended-device UDID file is missing, wrong, exposed, or fails fresh signed-candidate reinspection;
 - any retained/cross-check/signing/install evidence is missing or ambiguous.
 
