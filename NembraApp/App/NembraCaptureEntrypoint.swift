@@ -2367,7 +2367,7 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
     func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {
         guard let dps, !dps.isEmpty else { return }
         var sanitized: [String: String] = [:]
-        for (key, value) in dps {
+        for (key, value) in Self.sortedApplicationEntries(dps) {
             let keyString = String(describing: key)
             let normalizedKey = keyString.lowercased().filter { $0.isLetter || $0.isNumber }
             let baseCustodyKey = Self.redactKnownSecretValues(in: keyString)
@@ -2384,6 +2384,30 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
             }
         }
         onApplicationUpdate?(sanitized)
+    }
+
+    // Sort original SDK keys before secret redaction can collapse spellings onto
+    // one custody key. Collision suffix ownership must not depend on Dictionary
+    // hash iteration order. Tuya DP/application keys are scalar AnyHashable values;
+    // reflected type/value are deterministic tie-breakers for heterogeneous scalars.
+    private static func sortedApplicationEntries(
+        _ dictionary: [AnyHashable: Any]
+    ) -> [(key: AnyHashable, value: Any)] {
+        dictionary.sorted { left, right in
+            let leftDescription = String(describing: left.key)
+            let rightDescription = String(describing: right.key)
+            if leftDescription != rightDescription {
+                return leftDescription < rightDescription
+            }
+
+            let leftType = String(reflecting: type(of: left.key.base))
+            let rightType = String(reflecting: type(of: right.key.base))
+            if leftType != rightType {
+                return leftType < rightType
+            }
+
+            return String(reflecting: left.key.base) < String(reflecting: right.key.base)
+        }
     }
 
     private static let secretKeyFragments = [
@@ -2427,7 +2451,7 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
     private static func redactApplicationSecrets(_ object: Any) -> Any {
         if let dictionary = object as? [AnyHashable: Any] {
             var sanitized: [String: Any] = [:]
-            for (key, value) in dictionary {
+            for (key, value) in sortedApplicationEntries(dictionary) {
                 let keyString = String(describing: key)
                 let normalizedKey = keyString.lowercased().filter { $0.isLetter || $0.isNumber }
                 let baseCustodyKey = redactKnownSecretValues(in: keyString)
