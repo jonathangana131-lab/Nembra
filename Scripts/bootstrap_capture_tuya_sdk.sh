@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TUYA_PRIVATE_SDK="$REPO_ROOT/LocalSecrets/TuyaSDK"
+TUYA_PRIVATE_IDENTITY="$REPO_ROOT/LocalSecrets/TuyaRuntime"
 cd "$REPO_ROOT"
 
 if ! command -v pod >/dev/null 2>&1; then
@@ -49,28 +50,43 @@ EOF
   exit 5
 fi
 
-printf 'Resolving the official Tuya SmartLife iOS SDK for Nembra Capture...\n'
+if [[ ! -f "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" ||
+      ! -f "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift" ]]; then
+  cat >&2 <<EOF
+ERROR: Tuya's private app identity is not provisioned for the field workspace.
+
+Run:
+  Scripts/provision_capture_tuya_identity.sh
+
+That script reads AppKey/AppSecret with terminal echo disabled and writes them
+only beneath ignored LocalSecrets/TuyaRuntime as a local Swift pod. The values
+must not be passed through xcodebuild/devicectl arguments or committed to Git.
+EOF
+  exit 6
+fi
+
+printf 'Resolving the official Tuya SmartLife iOS SDK and private field identity for Nembra Capture...\n'
 # Tuya's integration guide uses `pod update` after the app-specific Cryption
 # package is present. Explicit Podfile version constraints keep the public SDK
-# line bounded while the private security package remains local.
+# line bounded while both private packages remain local.
 pod update
 
 if [[ ! -d NembraCapture.xcworkspace ]]; then
   echo "ERROR: CocoaPods did not create NembraCapture.xcworkspace." >&2
-  exit 6
+  exit 7
 fi
 
 cat <<'EOF'
 
 Tuya SDK dependencies are integrated locally, including the app-specific
-ThingSmartCryption package.
+ThingSmartCryption package and local-only app identity pod.
 
 NEXT BUILD RULE:
   Open NembraCapture.xcworkspace, not NembraCapture.xcodeproj.
 
-This bootstrap still does NOT authorize the physical experiment. The app must
-initialize Tuya with the matching privately provisioned AppKey/AppSecret,
-authorize the user's own SDK session, connect only to the already-bound device,
-receive at least one genuine application payload, and survive the authenticated
-45-second gate before stationary mapping can unlock.
+This bootstrap still does NOT authorize the physical experiment. The exact app
+must consume the private identity pod, authorize the user's own SDK session,
+prove exact scooter membership, receive a genuine structured application
+update, and survive the canonical authenticated 45-second gate before
+stationary mapping can unlock.
 EOF
