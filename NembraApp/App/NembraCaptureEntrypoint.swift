@@ -2215,7 +2215,19 @@ private struct SecureLinkView: View {
         case .accepted:
             completionPanel
         case .failed:
-            failurePanel
+            if test.failedAttemptCanRestartFromOFF1 && test.privateConfig && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn) {
+                VStack(spacing: 16) {
+                    failureRecoveryContextPanel
+                    sdkAuthorizationPanel
+                }
+            } else if test.failedAttemptCanRestartFromOFF1 && test.sdkAccountLoggedIn && (!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized) {
+                VStack(spacing: 16) {
+                    failureRecoveryContextPanel
+                    preflightPanel
+                }
+            } else {
+                failurePanel
+            }
         case .baseline, .scanning, .powerOn, .correlated:
             correlationPanel
         case .selected, .authenticating, .observing:
@@ -2404,6 +2416,22 @@ private struct SecureLinkView: View {
                         requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)
                     }
                 }
+            }
+        }
+    }
+
+    private var failureRecoveryContextPanel: some View {
+        panel {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Capture paused", systemImage: "exclamationmark.circle")
+                    .font(.title2.bold())
+                    .foregroundStyle(.orange)
+                Text(test.message)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Restore the missing prerequisite below. Capture does not reuse the failed attempt as evidence.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
     }
