@@ -10,6 +10,10 @@
 		A10000000000000000000004 /* NembraCaptureEntrypoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* NembraCaptureEntrypoint.swift */; };
 		A10000000000000000000005 /* TuyaAccountBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000005 /* TuyaAccountBridge.swift */; };
 		A10000000000000000000006 /* NembraBluetoothCapture in Frameworks */ = {isa = PBXBuildFile; productRef = 600100000000000000000001 /* NembraBluetoothCapture */; };
+		A10000000000000000000007 /* NembraCaptureP0Root.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* NembraCaptureP0Root.swift */; };
+		A10000000000000000000008 /* NembraCaptureSecureLinkController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* NembraCaptureSecureLinkController.swift */; };
+		A10000000000000000000009 /* NembraCaptureTuyaSDK.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* NembraCaptureTuyaSDK.swift */; };
+		A1000000000000000000000A /* NembraCaptureSecureLinkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000A /* NembraCaptureSecureLinkView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -17,6 +21,10 @@
 		B10000000000000000000003 /* Nembra Capture.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Nembra Capture.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B10000000000000000000004 /* NembraCaptureEntrypoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NembraCaptureEntrypoint.swift; path = NembraApp/App/NembraCaptureEntrypoint.swift; sourceTree = SOURCE_ROOT; };
 		B10000000000000000000005 /* TuyaAccountBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TuyaAccountBridge.swift; path = NembraApp/Features/Research/TuyaAccountBridge.swift; sourceTree = SOURCE_ROOT; };
+		B10000000000000000000007 /* NembraCaptureP0Root.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NembraCaptureP0Root.swift; path = NembraApp/App/NembraCaptureP0Root.swift; sourceTree = SOURCE_ROOT; };
+		B10000000000000000000008 /* NembraCaptureSecureLinkController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NembraCaptureSecureLinkController.swift; path = NembraApp/App/NembraCaptureSecureLinkController.swift; sourceTree = SOURCE_ROOT; };
+		B10000000000000000000009 /* NembraCaptureTuyaSDK.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NembraCaptureTuyaSDK.swift; path = NembraApp/App/NembraCaptureTuyaSDK.swift; sourceTree = SOURCE_ROOT; };
+		B1000000000000000000000A /* NembraCaptureSecureLinkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NembraCaptureSecureLinkView.swift; path = NembraApp/App/NembraCaptureSecureLinkView.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -43,6 +51,10 @@
 			isa = PBXGroup;
 			children = (
 				B10000000000000000000004 /* NembraCaptureEntrypoint.swift */,
+				B10000000000000000000007 /* NembraCaptureP0Root.swift */,
+				B10000000000000000000008 /* NembraCaptureSecureLinkController.swift */,
+				B10000000000000000000009 /* NembraCaptureTuyaSDK.swift */,
+				B1000000000000000000000A /* NembraCaptureSecureLinkView.swift */,
 				B10000000000000000000005 /* TuyaAccountBridge.swift */,
 				B10000000000000000000002 /* ES80CaptureShellView.swift */,
 			);
@@ -126,6 +138,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000004 /* NembraCaptureEntrypoint.swift in Sources */,
+				A10000000000000000000007 /* NembraCaptureP0Root.swift in Sources */,
+				A10000000000000000000008 /* NembraCaptureSecureLinkController.swift in Sources */,
+				A10000000000000000000009 /* NembraCaptureTuyaSDK.swift in Sources */,
+				A1000000000000000000000A /* NembraCaptureSecureLinkView.swift in Sources */,
 				A10000000000000000000005 /* TuyaAccountBridge.swift in Sources */,
 				A10000000000000000000002 /* ES80CaptureShellView.swift in Sources */,
 			);
