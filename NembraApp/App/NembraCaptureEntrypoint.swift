@@ -118,7 +118,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     static let knownPeripheral = UUID(uuidString: "6815A5F5-4D1E-E004-BAE8-6DF924123907")!
     static let fd50 = CBUUID(string: "FD50")
     @Published private(set) var phase: Phase = .idle
-    @Published private(set) var message = "Start with the scooter OFF. This test only identifies it and proves Tuya's supported secure session."
+    @Published private(set) var message = "Complete the official Tuya gate first. The scooter can stay untouched until every software prerequisite is ready."
     @Published private(set) var candidates: [Candidate] = []
     @Published private(set) var selectedID: UUID?
     @Published private(set) var applicationUpdateCount = 0
@@ -299,16 +299,98 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
 #endif
 
 @MainActor
+private final class TuyaSDKAccountLoginController: ObservableObject {
+    enum Phase: Equatable { case unavailable, ready, sendingCode, codeSent, authorizing, authorized, failed }
+    @Published var email = ""
+    @Published var countryCode = ""
+    @Published var verificationCode = ""
+    @Published private(set) var phase: Phase = .unavailable
+    @Published private(set) var message = "Official Tuya SDK account authorization is not ready."
+
+    init() { refresh() }
+
+    var canSendCode: Bool {
+        normalizedEmail != nil && normalizedCountryCode != nil && phase != .sendingCode && phase != .authorizing
+    }
+    var canAuthorize: Bool { canSendCode && !verificationCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    func refresh() {
+#if canImport(ThingSmartHomeKit)
+        guard startSDKIfConfigured() else { phase = .unavailable; message = "Private Tuya AppKey/AppSecret are not provisioned for this local build."; return }
+        if ThingSmartUser.sharedInstance()?.isLogin == true { phase = .authorized; message = "Official Tuya SDK account session is authorized." }
+        else { phase = .ready; message = "Authorize the same Tuya account with a one-time email code. Nembra does not need your password." }
+#else
+        phase = .unavailable; message = "Official Tuya SmartLife SDK is not compiled into this build."
+#endif
+    }
+
+    func sendCode() {
+#if canImport(ThingSmartHomeKit)
+        guard startSDKIfConfigured(), let account = normalizedEmail, let country = normalizedCountryCode, let user = ThingSmartUser.sharedInstance() else { phase = .failed; message = "Email, country code, and official Tuya SDK configuration are required."; return }
+        phase = .sendingCode; message = "Requesting a one-time Tuya login code…"
+        user.sendVerifyCode(withUserName: account, countryCode: country, type: 2) { [weak self] in
+            Task { @MainActor in self?.phase = .codeSent; self?.message = "Tuya sent the login code. Enter it below to authorize this SDK session." }
+        } failure: { [weak self] error in
+            Task { @MainActor in self?.phase = .failed; self?.message = "Tuya could not send the login code: \(self?.safeError(error, account: account) ?? "unknown SDK error")" }
+        }
+#else
+        phase = .unavailable; message = "Official Tuya SmartLife SDK is not compiled into this build."
+#endif
+    }
+
+    func authorize() {
+#if canImport(ThingSmartHomeKit)
+        guard startSDKIfConfigured(), let account = normalizedEmail, let country = normalizedCountryCode, let user = ThingSmartUser.sharedInstance() else { phase = .failed; message = "Email, country code, and official Tuya SDK configuration are required."; return }
+        let code = verificationCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !code.isEmpty else { phase = .failed; message = "Enter the one-time verification code from Tuya."; return }
+        phase = .authorizing; message = "Authorizing the official Tuya SDK account session…"
+        user.login(withEmail: account, countryCode: country, code: code) { [weak self] in
+            Task { @MainActor in guard let self else { return }; self.email = ""; self.countryCode = ""; self.verificationCode = ""; self.phase = .authorized; self.message = "Official Tuya SDK account session authorized. Scooter discovery is now unlocked." }
+        } failure: { [weak self] error in
+            Task { @MainActor in guard let self else { return }; self.verificationCode = ""; self.phase = .failed; self.message = "Tuya account authorization failed: \(self.safeError(error, account: account))" }
+        }
+#else
+        phase = .unavailable; message = "Official Tuya SmartLife SDK is not compiled into this build."
+#endif
+    }
+
+    private var normalizedEmail: String? {
+        let value = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard value.contains("@"), value.contains("."), !value.contains(" ") else { return nil }; return value
+    }
+    private var normalizedCountryCode: String? {
+        let raw = countryCode.trimmingCharacters(in: .whitespacesAndNewlines); let digits = raw.hasPrefix("+") ? String(raw.dropFirst()) : raw
+        guard !digits.isEmpty, digits.count <= 4, digits.allSatisfy({ $0.isNumber }) else { return nil }; return digits
+    }
+#if canImport(ThingSmartHomeKit)
+    private func startSDKIfConfigured() -> Bool {
+        let environment = ProcessInfo.processInfo.environment
+        guard let key = environment["NEMBRA_TUYA_APP_KEY"], !key.isEmpty, let secret = environment["NEMBRA_TUYA_APP_SECRET"], !secret.isEmpty else { return false }
+        ThingSmartSDK.sharedInstance()?.start(withAppKey: key, secretKey: secret); return true
+    }
+#endif
+    private func safeError(_ error: Error?, account: String) -> String {
+        guard let error else { return "unknown Tuya SDK error" }
+        return error.localizedDescription.replacingOccurrences(of: account, with: "<account>")
+    }
+}
+
+@MainActor
 private struct SecureLinkView: View {
     @StateObject private var test: SecureLinkController
-    init(device: TuyaAccountBridge.LinkedDevice) { _test = StateObject(wrappedValue: SecureLinkController(device: device)) }
+    @StateObject private var sdkLogin: TuyaSDKAccountLoginController
+    init(device: TuyaAccountBridge.LinkedDevice) {
+        _test = StateObject(wrappedValue: SecureLinkController(device: device))
+        _sdkLogin = StateObject(wrappedValue: TuyaSDKAccountLoginController())
+    }
+    private var sdkGateReady: Bool { test.sdkCompiled && test.privateConfig && test.sdkAccountAuthorized }
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.5)) { _ in
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("SMALLEST INDOOR TEST").font(.caption.monospaced().bold()).foregroundStyle(.green)
                     Text("Authenticate. Wait. Capture.").font(.largeTitle.bold())
-                    Text("Keep the scooter stationary. Do not run the old 17-step sequence.").foregroundStyle(.secondary)
+                    Text(sdkGateReady ? "Keep the scooter stationary. Do not run the old 17-step sequence." : "Finish the official Tuya software gate first. You do not need to touch the scooter yet.").foregroundStyle(.secondary)
                     VStack(alignment: .leading, spacing: 8) {
                         HStack { Text(test.passed ? "Secure scooter link established" : test.phase == .failed ? "Secure-link test stopped" : "Authentication preflight").font(.headline); Spacer(); Text("\(test.applicationUpdateCount)").monospacedDigit() }
                         Text(test.message).font(.footnote).foregroundStyle(.secondary)
@@ -316,15 +398,29 @@ private struct SecureLinkView: View {
                         LabeledContent("Tuya local BLE", value: test.sdkLocalBLEOnline ? "Online" : "Not proven")
                         LabeledContent("Application updates", value: String(test.applicationUpdateCount))
                     }.card()
-                    VStack(alignment: .leading, spacing: 7) {
+                    VStack(alignment: .leading, spacing: 9) {
                         Label("Official Tuya gate", systemImage: "checkmark.shield").font(.headline)
                         LabeledContent("SDK compiled in", value: test.sdkCompiled ? "Yes" : "No")
                         LabeledContent("Private app config", value: test.privateConfig ? "Yes" : "No")
                         LabeledContent("SDK account authorized", value: test.sdkAccountAuthorized ? "Yes" : "No")
-                        if !test.sdkCompiled || !test.privateConfig || !test.sdkAccountAuthorized { Text("NO PHYSICAL TEST YET: Tuya's official SDK/security component, matching private app credentials, and an authorized SDK account session must all be ready. Metadata QR approval alone is not BLE authentication.").font(.footnote.bold()).foregroundStyle(.orange) }
+                        if test.sdkCompiled && test.privateConfig && !test.sdkAccountAuthorized {
+                            Divider().overlay(.white.opacity(0.12))
+                            Text("Authorize the same Tuya account").font(.subheadline.bold())
+                            Text(sdkLogin.message).font(.footnote).foregroundStyle(.secondary)
+                            TextField("Tuya account email", text: $sdkLogin.email).textContentType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.emailAddress).padding(11).background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12)).accessibilityLabel("Tuya account email")
+                            TextField("Country code · example 1", text: $sdkLogin.countryCode).keyboardType(.numberPad).padding(11).background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12)).accessibilityLabel("Tuya account country code")
+                            Button(sdkLogin.phase == .sendingCode ? "Sending code…" : "Send one-time login code") { sdkLogin.sendCode() }.buttonStyle(.bordered).disabled(!sdkLogin.canSendCode)
+                            if sdkLogin.phase == .codeSent || sdkLogin.phase == .failed || sdkLogin.phase == .authorizing {
+                                SecureField("One-time verification code", text: $sdkLogin.verificationCode).textContentType(.oneTimeCode).keyboardType(.numberPad).padding(11).background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+                                Button(sdkLogin.phase == .authorizing ? "Authorizing…" : "Authorize SDK session") { sdkLogin.authorize() }.buttonStyle(.borderedProminent).disabled(!sdkLogin.canAuthorize)
+                            }
+                            Text("Nembra never asks for your Tuya password. The one-time code is cleared after authorization and is never added to the diagnostic export.").font(.caption).foregroundStyle(.secondary)
+                        }
+                        if !sdkGateReady { Text("NO PHYSICAL TEST YET: Tuya's official SDK/security component, matching private app credentials, and an authorized SDK account session must all be ready. Metadata QR approval alone is not BLE authentication.").font(.footnote.bold()).foregroundStyle(.orange) }
                     }.card()
                     VStack(alignment: .leading, spacing: 10) {
                         Label("Find the known scooter", systemImage: "scope").font(.headline)
+                        if !sdkGateReady { Text("Locked until the official Tuya SDK account session is authorized. Leave the scooter alone for now.").font(.footnote).foregroundStyle(.secondary) }
                         switch test.phase { case .idle, .failed: Button("Start scooter-OFF baseline") { test.startBaseline() }.buttonStyle(.borderedProminent); case .baseline: Button("Save OFF baseline") { test.saveBaseline() }.buttonStyle(.borderedProminent); case .powerOn: Text("Turn scooter ON, keep it still.").foregroundStyle(.secondary); Button("Scan after power-on") { test.scanAfterPowerOn() }.buttonStyle(.borderedProminent); case .scanning: Button("Stop scan / use best evidence") { test.stopScan() }.buttonStyle(.bordered); default: EmptyView() }
                         ForEach(test.candidates.prefix(8)) { candidate in
                             Button { test.choose(candidate) } label: {
@@ -335,12 +431,12 @@ private struct SecureLinkView: View {
                                 }
                             }.buttonStyle(.plain)
                         }
-                    }.card()
+                    }.card().disabled(!sdkGateReady)
                     if let candidate = test.selected {
                         VStack(alignment: .leading, spacing: 8) {
                             Label("Authentication gate", systemImage: "key.horizontal").font(.headline)
                             Text(candidate.evidence.joined(separator: " · ")).font(.footnote).foregroundStyle(.secondary)
-                            Button("Start secure read-only test") { test.authenticate() }.buttonStyle(.borderedProminent).disabled(!candidate.likely || !test.sdkCompiled || !test.privateConfig || !test.sdkAccountAuthorized || [.authenticating, .observing, .accepted].contains(test.phase))
+                            Button("Start secure read-only test") { test.authenticate() }.buttonStyle(.borderedProminent).disabled(!candidate.likely || !sdkGateReady || [.authenticating, .observing, .accepted].contains(test.phase))
                         }.card()
                     }
                     VStack(alignment: .leading, spacing: 7) {
@@ -351,7 +447,7 @@ private struct SecureLinkView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Button("Prepare sanitized diagnostic JSON") { test.prepareExport() }.buttonStyle(.bordered)
                         if let data = test.exportData { ShareLink(item: SecureTransfer(data: data, name: test.exportName), preview: SharePreview(test.exportName)) { Label("Share diagnostic JSON", systemImage: "square.and.arrow.up") }.buttonStyle(.borderedProminent) }
-                        Text("Export includes candidate evidence, continuity, SDK-local status, failures and opaque application-update values. It excludes passwords, account tokens, local_key and AppSecret.").font(.footnote).foregroundStyle(.secondary)
+                        Text("Export includes candidate evidence, continuity, SDK-local status, failures and opaque application-update values. It excludes passwords, account tokens, local_key, AppSecret, account email, and one-time login code.").font(.footnote).foregroundStyle(.secondary)
                     }.card()
                 }.frame(maxWidth: 760).padding(18).frame(maxWidth: .infinity)
             }.background(Color.black.ignoresSafeArea())
