@@ -1,0 +1,43 @@
+name: Validate Capture whole-record provenance snapshot fence
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-provenance-record-snapshot-9695-sol
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify scope and run provenance regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='9695af19c21c93b3eb4bc867613a6df0c9a3b3d4'
+          workflow='.github/workflows/capture-provenance-record-snapshot-9695-validate.yml'
+          source='Scripts/capture_tuya_private_input_provenance.py'
+          regression='scripts/ci/tests/test_capture_tuya_private_input_record_snapshot_coherence.py'
+          test "$(git merge-base "$base" HEAD)" = "$base"
+          actual="$(git diff --name-only "$base" HEAD | sort)"
+          expected="$(printf '%s\n%s\n%s\n' "$workflow" "$source" "$regression" | sort)"
+          test "$actual" = "$expected"
+          python3 -m py_compile "$source" "$regression"
+          python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          python3 "$regression"
+          git diff --check "$base" HEAD
+      - name: Retire validator after green proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/capture-provenance-record-snapshot-9695-validate.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'chore(ci): retire green provenance snapshot validator'
+          git push origin HEAD:fix/v14-capture-provenance-record-snapshot-9695-sol
