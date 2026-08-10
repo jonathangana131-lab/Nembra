@@ -403,6 +403,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var membershipRequestID = UUID()
     private var acceptsViewScopedMembershipRequests = false
     private var officialConnectionRequestID = UUID()
+    private var foregroundIntegrityLost = false
 
     init(device: TuyaAccountBridge.LinkedDevice) {
         deviceID = device.id
@@ -416,6 +417,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     deinit { watchdog?.cancel() }
 
     func activateMembershipRequestsForView() {
+        guard !foregroundIntegrityLost else { return }
         acceptsViewScopedMembershipRequests = true
     }
 
@@ -426,6 +428,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Secure Link ended. Exact scooter membership must be verified again for a new Capture session."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -467,6 +470,79 @@ private final class SecureLinkController: NSObject, ObservableObject {
         phase = .failed
         message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
         log("target_correlation_abandoned_on_view_exit")
+    }
+
+    func appDidLoseForeground() {
+        // A single inactive/background transition invalidates this Secure Link controller for
+        // physical-evidence purposes. Scene phase may advance inactive -> background, so admit
+        // the terminal transition exactly once and never reopen it inside this controller.
+        guard !foregroundIntegrityLost else { return }
+        foregroundIntegrityLost = true
+
+        // Close every view/account admission before rotating issued async generations. A later
+        // SwiftUI/account callback must not mint new membership work while the app is inactive.
+        acceptsViewScopedMembershipRequests = false
+        sdkDeviceMembershipVerified = false
+        membershipAccountUID = nil
+        membershipDeviceID = nil
+        membershipStatus = "Capture left the foreground. Exact scooter membership must be verified again after relaunch."
+        membershipRequestID = UUID()
+        membershipBusy = false
+#if canImport(ThingSmartHomeKit)
+        membershipProbe = nil
+#endif
+        officialConnectionRequestID = UUID()
+        watchdog?.cancel()
+        watchdog = nil
+
+        if processCorrelationLease != nil || correlationSession != nil {
+            abandonPackageCorrelation()
+            phase = .failed
+            message = "Capture left the foreground during Bluetooth target correlation. Relaunch before a fresh stationary OFF1 attempt; interrupted windows are never reusable evidence."
+            log("foreground_integrity_lost_during_target_correlation")
+            return
+        }
+
+        guard let token = currentConnectionToken else {
+            localBLESettlementToken = nil
+            sdkLocalBLEOnline = false
+            driver = nil
+            if phase != .failed && phase != .accepted {
+                phase = .failed
+                message = "Capture left the foreground before authenticated observation completed. Relaunch before another stationary authenticated attempt; no BLE disconnect is claimed."
+                log("foreground_integrity_lost_before_observation")
+            }
+            return
+        }
+
+        let wasObserving = phase == .observing
+        phase = .failed
+        message = wasObserving
+            ? "Capture left the foreground during authenticated observation. Relaunch before another stationary attempt; background time is not accepted evidence and no BLE disconnect is claimed."
+            : "Capture left the foreground before authenticated observation. Relaunch before another stationary authenticated attempt; no BLE disconnect is claimed."
+        log(
+            wasObserving ? "foreground_integrity_lost_during_observation" : "foreground_integrity_lost_before_observation",
+            ["generation": String(token.diagnosticGeneration)]
+        )
+
+        // Strongly retain the controller only for this finite exact-generation retirement. This
+        // mirrors the accepted view-exit lifetime rule: deallocation must not skip the terminal.
+        Task { @MainActor [self] in
+            guard self.currentConnectionToken == token else { return }
+            if wasObserving {
+                await self.invalidateObservationContinuity(
+                    token: token,
+                    message: "App foreground integrity was lost during authenticated observation. Relaunch before another stationary attempt; background time is not accepted evidence and no BLE disconnect is claimed.",
+                    kind: "foreground_integrity_lost_during_observation"
+                )
+            } else {
+                await self.invalidateInternalLifecycle(
+                    token: token,
+                    message: "App foreground integrity was lost before authenticated observation. Relaunch before another stationary authenticated attempt; no BLE disconnect is claimed.",
+                    kind: "foreground_integrity_lost_before_observation"
+                )
+            }
+        }
     }
 
     var privateConfig: Bool { OfficialTuyaFactory.configured }
@@ -2484,6 +2560,7 @@ private struct SecureLinkView: View {
     @StateObject private var sdkAccount = OfficialTuyaAccountAuthorizer()
     @State private var showEngineeringDetails = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.scenePhase) private var scenePhase
 
     private let stageLabels = ["Target", "Secure link", "Observe", "Seal"]
 
@@ -2537,6 +2614,11 @@ private struct SecureLinkView: View {
         }
         .onDisappear {
             test.abandonCorrelationForViewExit()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase != .active {
+                test.appDidLoseForeground()
+            }
         }
         .onChange(of: sdkAccount.loggedIn) { _, loggedIn in
             if loggedIn { test.verifySDKMembership() }
