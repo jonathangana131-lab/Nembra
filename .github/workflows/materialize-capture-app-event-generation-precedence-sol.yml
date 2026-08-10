@@ -1,0 +1,100 @@
+name: Materialize Capture Application Event Generation Precedence Sol
+
+on:
+  push:
+    branches:
+      - "fix/v14-capture-app-event-generation-precedence-sol"
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 4
+
+      - name: Verify exact product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="870f20abe144fa7b6f9ac60bf4c0fe0a1792fb81"
+          test "$(git rev-parse HEAD^)" = "$expected"
+
+      - name: Materialize trusted metadata precedence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text()
+          old = '''            log("tuya_application_update", update.merging([
+                  "generation": String(token.diagnosticGeneration)
+              ]) { current, _ in current })
+          '''
+          new = '''            log("tuya_application_update", update.merging([
+                  "generation": String(token.diagnosticGeneration)
+              ]) { _, trusted in trusted })
+          '''
+          if source.count(old) != 1:
+              raise SystemExit(f"expected one untrusted-precedence application-event merge, found {source.count(old)}")
+          path.write_text(source.replace(old, new))
+          PY
+
+          red_head="a8eb9b93eea7e5de1a9c80468cadf378989b5edd"
+          git fetch --no-tags --depth=1 origin "$red_head"
+          test_path="Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift"
+          test ! -e "$test_path"
+          git show "$red_head:$test_path" > "$test_path"
+
+      - name: Validate narrow source invariant
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          start = source.index("private func receivedApplicationUpdate(")
+          end = source.index("private func startWatchdog", start)
+          body = source[start:end]
+          required = '''log("tuya_application_update", update.merging([
+                "generation": String(token.diagnosticGeneration)
+            ]) { _, trusted in trusted })'''
+          if required not in body:
+              raise SystemExit("trusted Nembra generation does not win application-event key collisions")
+          forbidden = ''']) { current, _ in current })'''
+          if forbidden in body:
+              raise SystemExit("untrusted SDK payload still wins reserved provenance collisions")
+          if body.count('"generation": String(token.diagnosticGeneration)') < 1:
+              raise SystemExit("Nembra-owned token generation metadata missing")
+          if 'log("tuya_application_update"' not in body:
+              raise SystemExit("accepted application event name unexpectedly changed")
+          PY
+          git diff --check
+
+      - name: Commit clean repair checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-app-event-generation-precedence-sol.yml
+          git add -A
+          git diff --cached --check
+          product="870f20abe144fa7b6f9ac60bf4c0fe0a1792fb81"
+          mapfile -t changed < <(git diff --cached --name-only "$product" | sort)
+          expected=(
+            "NembraApp/App/NembraCaptureEntrypoint.swift"
+            "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift"
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          test "${changed[*]}" = "${expected_sorted[*]}" || {
+            printf 'Unexpected effective paths:\n'; printf '  %s\n' "${changed[@]}"; exit 1;
+          }
+          git config user.name "Nembra V14 Sol"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "fix(capture): preserve trusted application event generation"
+          git push origin HEAD:fix/v14-capture-app-event-generation-precedence-sol
