@@ -1,0 +1,71 @@
+name: Materialize V14 Private Record Custody On 2450
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-private-record-custody-on-2450
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prove exact stacked tree-custody subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "a7a585685c58acb8842694a58a5f1f2c255e9c2b"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/materialize-v14-private-record-custody-on-2450.yml"
+          git fetch origin 805cbd56e7cd26e229bfafef071de0b431b37f88 fffd6b3ab753d0502ddfa39ad4925eaa2461aef8
+          test "$(git hash-object Scripts/capture_tuya_private_input_provenance.py)" = "$(git rev-parse 805cbd56e7cd26e229bfafef071de0b431b37f88:Scripts/capture_tuya_private_input_provenance.py)"
+          test "$(git hash-object scripts/ci/tests/test_capture_tuya_private_input_provenance.py)" = "$(git rev-parse 805cbd56e7cd26e229bfafef071de0b431b37f88:scripts/ci/tests/test_capture_tuya_private_input_provenance.py)"
+
+      - name: Apply record-only custody delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --binary 805cbd56e7cd26e229bfafef071de0b431b37f88..fffd6b3ab753d0502ddfa39ad4925eaa2461aef8 -- \
+            Scripts/capture_tuya_private_input_provenance.py \
+            scripts/ci/tests/test_capture_tuya_private_input_provenance.py | git apply --index
+
+          /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          git diff --cached --check
+          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n' 'Scripts/capture_tuya_private_input_provenance.py' 'scripts/ci/tests/test_capture_tuya_private_input_provenance.py' | sort)"
+
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+          s = Path('Scripts/capture_tuya_private_input_provenance.py').read_text(encoding='utf-8')
+          assert 'def _open_bound_directory' in s
+          assert 'src_dir_fd=parent_descriptor' in s
+          assert 'dst_dir_fd=parent_descriptor' in s
+          assert 'os.fsync(parent_descriptor)' in s
+          assert 'private provenance record changed while it was read' in s
+          assert 'tempfile.NamedTemporaryFile' not in s
+          assert 'os.open(path, flags)' in s
+          assert 'observed_directory_members' in s
+          t = Path('scripts/ci/tests/test_capture_tuya_private_input_provenance.py').read_text(encoding='utf-8')
+          assert 'test_record_read_rejects_same_size_mutation_during_read' in t
+          assert 'test_record_write_rejects_parent_path_replacement_during_admission' in t
+          assert 'test_tree_rejects_file_replacement_after_individual_fingerprint' in t
+          assert 'test_tree_rejects_entry_added_after_directory_enumeration' in t
+          PY
+
+      - name: Commit clean stacked checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-v14-private-record-custody-on-2450.yml
+          git add -A
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "fix(capture): bind provenance record IO to stable custody"
+          git push origin HEAD:sol/v14-capture-private-record-custody-on-2450
