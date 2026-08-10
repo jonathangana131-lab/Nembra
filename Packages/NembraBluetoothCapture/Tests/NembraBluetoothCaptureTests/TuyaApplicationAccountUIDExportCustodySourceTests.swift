@@ -38,6 +38,44 @@ struct TuyaApplicationAccountUIDExportCustodySourceTests {
         #expect(!driver.contains("\"uid\"\n"))
     }
 
+    @Test("missing earned account UID fails closed before application evidence admission")
+    func missingAccountUIDCannotFallBackToRawApplicationEvidence() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let helper = String(try section(
+            in: source,
+            from: "private func applicationUpdateForEventCustody(",
+            to: "private func receivedApplicationUpdate("
+        ))
+        let updateAdmission = String(try section(
+            in: source,
+            from: "private func receivedApplicationUpdate(",
+            to: "private func startWatchdog"
+        ))
+
+        #expect(helper.contains("-> [String: String]?"))
+        #expect(helper.contains("else { return nil }"))
+        #expect(!helper.contains("else { return update }"))
+
+        let custodyGuard = try requiredOffset(
+            containing: "guard let custodySafeUpdate = applicationUpdateForEventCustody(update)",
+            in: updateAdmission
+        )
+        let ledgerAdmission = try requiredOffset(
+            containing: "sessionLedger.recordApplicationUpdate",
+            in: updateAdmission
+        )
+        #expect(custodyGuard < ledgerAdmission)
+        #expect(updateAdmission.contains("application_account_uid_custody_unavailable"))
+    }
+
+    private func requiredOffset(containing token: String, in source: String) throws -> String.Index {
+        guard let range = source.range(of: token) else {
+            Issue.record("Expected source token missing: \(token)")
+            throw SourceContractError.sectionMissing
+        }
+        return range.lowerBound
+    }
+
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
         guard let startRange = source.range(of: start),
               let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {

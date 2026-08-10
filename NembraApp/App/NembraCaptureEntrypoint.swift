@@ -1383,9 +1383,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
         log(kind, ["generation": String(token.diagnosticGeneration)])
     }
 
-    private func applicationUpdateForEventCustody(_ update: [String: String]) -> [String: String] {
+    private func applicationUpdateForEventCustody(_ update: [String: String]) -> [String: String]? {
         guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !verifiedAccountUID.isEmpty else { return update }
+              !verifiedAccountUID.isEmpty else { return nil }
 
         var redacted: [String: String] = [:]
         for (key, value) in update {
@@ -1451,13 +1451,21 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        guard let custodySafeUpdate = applicationUpdateForEventCustody(update) else {
+    await invalidateSourceAuthority(
+        token: token,
+        message: "Verified account UID custody became unavailable before application evidence admission.",
+        kind: "application_account_uid_custody_unavailable"
+    )
+    return
+}
+
         applicationUpdateAdmissionsInFlight += 1
         defer { applicationUpdateAdmissionsInFlight -= 1 }
 
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            let custodySafeUpdate = applicationUpdateForEventCustody(update)
             log("tuya_application_update", custodySafeUpdate.merging([
                 "generation": String(token.diagnosticGeneration)
             ]) { _, trusted in trusted })
