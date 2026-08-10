@@ -1,21 +1,21 @@
 name: Materialize Capture View Exit Membership Race B59
 
 on:
-  push:
-    branches:
-      - fix/v14-capture-view-exit-membership-race-b59-sol
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
 
 jobs:
   materialize:
+    if: github.event.pull_request.head.ref == 'fix/v14-capture-view-exit-membership-race-b59-sol'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: fix/v14-capture-view-exit-membership-race-b59-sol
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: true
 
@@ -38,19 +38,16 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           source = path.read_text(encoding='utf-8')
           start_token = '    func abandonCorrelationForViewExit() {'
           end_token = '\n\n    var privateConfig: Bool'
           if source.count(start_token) != 1:
-              raise SystemExit(f'expected one view-exit cleanup, found {source.count(start_token)}')
+              raise SystemExit('expected exactly one view-exit cleanup')
           start = source.index(start_token)
           end = source.index(end_token, start)
           replacement = '''    func abandonCorrelationForViewExit() {
-        // Revoke both pending membership-result start paths before checking whether a package
-        // scanner/lease exists. A stale success must not start OFF1 or official Tuya BLE after
-        // Secure Link has left the screen.
+        // Revoke pending membership-result starts before any scanner/lease early return.
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -72,7 +69,6 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           app = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
           test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift').read_text(encoding='utf-8')
           start = app.index('func abandonCorrelationForViewExit()')
@@ -87,19 +83,10 @@ jobs:
           assert 'releasePackageCorrelationLease()' not in cleanup
           for forbidden in ('connectBLE(', 'publishDps', 'queryDps', 'writeValue', 'disconnectBLE'):
               assert forbidden not in cleanup, forbidden
-
-          # Pin the two stale callback consequences this generation rotation fences.
-          assert 'guard self.membershipRequestID == requestID else { return }' in app
-          assert 'beginCorrelationSeries()' in app
-          assert 'beginOfficialConnection(candidate: candidate)' in app
-
-          for needle in (
-              'membershipRequestID = UUID()',
-              'membershipBusy = false',
-              'membershipProbe = nil',
-              'beginCorrelationSeries()',
-              'beginOfficialConnection()',
-          ):
+          assert 'guard let self, self.membershipRequestID == requestID else { return }' in app
+          assert 'self.beginCorrelationSeries()' in app
+          assert 'self.beginOfficialConnection(candidate: candidate)' in app
+          for needle in ('membershipRequestID = UUID()', 'membershipBusy = false', 'membershipProbe = nil', 'beginCorrelationSeries()', 'beginOfficialConnection()'):
               assert needle in test, needle
           print('hidden membership start authority retirement: PASS')
           PY
@@ -118,7 +105,6 @@ jobs:
           git diff --cached --check
           git commit -m 'fix(capture): revoke hidden membership starts on exit'
           mapfile -t final_changed < <(git diff --name-only "$parent" HEAD | sort)
-          printf '%s\n' "${final_changed[@]}"
           test "${#final_changed[@]}" = 2
           test "${final_changed[0]}" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
           test "${final_changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift'
