@@ -474,6 +474,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        if phase == .correlated || phase == .selected {
+            // Final-window sealing can retire the scanner before this view exits. Do not
+            // let that already-earned target selection cross a Secure Link view lifetime.
+            resetDiscoverySessionOnly()
+            phase = .failed
+            message = "Capture left Secure Link after Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; the prior target cannot cross a view lifetime."
+            log("target_correlation_abandoned_on_view_exit")
+            return
+        }
+
         guard processCorrelationLease != nil || correlationSession != nil else { return }
         // Existing helper stops package transport before releasing this controller's lease.
         abandonPackageCorrelation()
@@ -1426,6 +1436,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
         guard sdkAccountLoggedIn,
               sdkDeviceMembershipVerified,
               accountIdentityLeaseIsAuthorized,
+              let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !verifiedAccountUID.isEmpty,
               let driver else {
             await invalidateSourceAuthority(
                 token: token,
@@ -1445,9 +1457,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            let eventDetails = redactVerifiedAccountUID(
+                from: update,
+                verifiedAccountUID: verifiedAccountUID
+            )
+            log("tuya_application_update", eventDetails.merging([
                 "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -1472,6 +1488,25 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 kind: "application_update_lifecycle_rejected"
             )
         }
+    }
+
+    private func redactVerifiedAccountUID(
+        from update: [String: String],
+        verifiedAccountUID: String
+    ) -> [String: String] {
+        var redacted: [String: String] = [:]
+        for (key, value) in update {
+            let redactedKey = key.replacingOccurrences(of: verifiedAccountUID, with: "<redacted-account-uid>")
+            let redactedValue = value.replacingOccurrences(of: verifiedAccountUID, with: "<redacted-account-uid>")
+            var uniqueKey = redactedKey
+            var suffix = 2
+            while redacted[uniqueKey] != nil {
+                uniqueKey = "\(redactedKey)#\(suffix)"
+                suffix += 1
+            }
+            redacted[uniqueKey] = redactedValue
+        }
+        return redacted
     }
 
     private func startWatchdog(token: TuyaReadOnlyConnectionToken) {
@@ -2261,7 +2296,6 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "accounttoken",
         "accesstoken",
         "refreshtoken",
-        "sessionkey",
         "authkey",
         "seckey",
     ]
