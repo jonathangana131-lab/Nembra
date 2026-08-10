@@ -38,6 +38,16 @@ struct TuyaCaptureForegroundIntegritySourceTests {
         #expect(view.contains("test.appDidLoseForeground()"))
         #expect(view.contains("test.appDidRegainForeground()"))
 
+        // Initial view construction is also a foreground boundary. A task that unconditionally
+        // opens membership authority before scenePhase is known would recreate the hidden-start race.
+        let initialTask = String(try section(in: view, from: ".task {", to: ".onDisappear {"))
+        let activeGuard = try requiredOffset(containing: "if scenePhase == .active", in: initialTask)
+        let admissionOpen = try requiredOffset(containing: "test.activateMembershipRequestsForView()", in: initialTask)
+        #expect(activeGuard < admissionOpen)
+        #expect(initialTask.contains("else {"))
+        #expect(initialTask.contains("test.appDidLoseForeground()"))
+        #expect(initialTask.contains("if scenePhase == .active, sdkAccount.loggedIn { test.verifySDKMembership() }"))
+
         // Foreground loss first closes all screen-scoped account/membership admission and proof.
         let admissionClose = try requiredOffset(containing: "acceptsViewScopedMembershipRequests = false", in: loss)
         let membershipRevoke = try requiredOffset(containing: "membershipRequestID = UUID()", in: loss)

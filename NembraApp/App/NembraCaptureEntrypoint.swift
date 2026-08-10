@@ -2624,9 +2624,15 @@ private struct SecureLinkView: View {
         .navigationTitle("Capture")
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            test.activateMembershipRequestsForView()
+            // SwiftUI may instantiate this view while the scene is already inactive/backgrounded.
+            // Never open membership authority until the scene itself is active.
+            if scenePhase == .active {
+                test.activateMembershipRequestsForView()
+            } else {
+                test.appDidLoseForeground()
+            }
             sdkAccount.bootstrap()
-            if sdkAccount.loggedIn { test.verifySDKMembership() }
+            if scenePhase == .active, sdkAccount.loggedIn { test.verifySDKMembership() }
             while !Task.isCancelled {
                 test.consumeCorrelationAsyncInvalidation()
                 try? await Task.sleep(nanoseconds: 250_000_000)
