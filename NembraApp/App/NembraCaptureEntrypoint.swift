@@ -173,6 +173,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let tuyaUUID: String
         let productID: String
         let selectedPeripheralID: String?
+        let targetCorrelationProvenance: CorrelationProvenance?
         let phase: Phase
         let privateConfigPresent: Bool
         let sdkAccountLoggedIn: Bool
@@ -197,6 +198,86 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let at: Date
         let kind: String
         let details: [String: String]
+    }
+
+    /// Sanitized, replayable projection of the exact package-issued four-window
+    /// target-correlation result. This preserves why a full UUID was correlated;
+    /// it does not promote that UUID into permanent scooter identity.
+    struct CorrelationProvenance: Codable, Equatable {
+        struct Window: Codable, Equatable {
+            let phase: String
+            let operatorExpectedPowerOn: Bool
+            let windowSequence: UInt64
+            let startedAtUptimeNanoseconds: UInt64
+            let endedAtUptimeNanoseconds: UInt64
+            let observedCandidateCount: Int
+        }
+
+        struct Snapshot: Codable, Equatable {
+            struct Candidate: Codable, Equatable {
+                let peripheralID: String
+                let isConnectable: Bool?
+            }
+
+            let observationSeriesID: String
+            let windowSequence: UInt64
+            let candidates: [Candidate]
+        }
+
+        let method: String
+        let windows: [Window]
+        let observationSnapshots: [Snapshot]
+        let disposition: String
+        let repeatableCandidateIDs: [String]
+
+        init(result: PassiveBluetoothPowerCycleObservationResult) {
+            method = "package-owned-fresh-manager-off1-on1-off2-on2"
+            windows = result.windows.map { receipt in
+                Window(
+                    phase: Self.phaseLabel(receipt.phase),
+                    operatorExpectedPowerOn: receipt.phase.operatorExpectedPowerOn,
+                    windowSequence: receipt.windowSequence.rawValue,
+                    startedAtUptimeNanoseconds: receipt.startedAtUptimeNanoseconds,
+                    endedAtUptimeNanoseconds: receipt.endedAtUptimeNanoseconds,
+                    observedCandidateCount: receipt.observedCandidateCount
+                )
+            }
+            observationSnapshots = result.observationSnapshots.map { snapshot in
+                Snapshot(
+                    observationSeriesID: snapshot.observationSeriesIdentity.rawValue.uuidString,
+                    windowSequence: snapshot.windowSequence.rawValue,
+                    candidates: snapshot.candidates.map { candidate in
+                        Snapshot.Candidate(
+                            peripheralID: candidate.id.uuidString,
+                            isConnectable: candidate.isConnectable
+                        )
+                    }
+                )
+            }
+            disposition = Self.dispositionLabel(result.correlation.disposition)
+            repeatableCandidateIDs = result.correlation.repeatableCandidateIdentifiers.map(\.uuidString)
+        }
+
+        private static func phaseLabel(_ phase: PassiveBluetoothPowerCycleObservationPhase) -> String {
+            switch phase {
+            case .firstPoweredOff: return "OFF1"
+            case .firstPoweredOn: return "ON1"
+            case .secondPoweredOff: return "OFF2"
+            case .secondPoweredOn: return "ON2"
+            }
+        }
+
+        private static func dispositionLabel(
+            _ disposition: PassiveBluetoothPowerCycleTargetCorrelationReport.Disposition
+        ) -> String {
+            switch disposition {
+            case .invalidObservationAuthority: return "invalidObservationAuthority"
+            case .invalidObservationWindowOrder: return "invalidObservationWindowOrder"
+            case .noRepeatableCandidate: return "noRepeatableCandidate"
+            case .ambiguousRepeatableCandidates: return "ambiguousRepeatableCandidates"
+            case .singleRepeatableCandidate: return "singleRepeatableCandidate"
+            }
+        }
     }
 
     static let historicalCapturePeripheral = UUID(uuidString: "6815A5F5-4D1E-E004-BAE8-6DF924123907")!
@@ -232,6 +313,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var byID: [UUID: Candidate] = [:]
     private var baseline = Set<UUID>()
     private var correlationSession: PassiveBluetoothPowerCycleObservationSession?
+    private var correlationProvenance: CorrelationProvenance?
     private var driver: OfficialTuyaDriver?
     private var events: [Event] = []
     private var watchdog: Task<Void, Never>?
@@ -459,6 +541,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func finishCorrelationSeries(_ result: PassiveBluetoothPowerCycleObservationResult) {
+        // Preserve the package-issued receipts + exact catalogs before releasing the live scanner.
+        // The artifact can therefore audit/replay correlation without trusting a detached UUID.
+        correlationProvenance = CorrelationProvenance(result: result)
         switch result.correlation.disposition {
         case let .singleRepeatableCandidate(id):
             let historicalCaptureID = id == Self.historicalCapturePeripheral
@@ -1084,7 +1169,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     func prepareExport() {
         let envelope = Export(
-            schemaVersion: 7,
+            schemaVersion: 8,
             purpose: "Sanitized Tuya authenticated read-only stationary preflight",
             exportedAt: Date(),
             buildIdentifier: buildIdentity.buildIdentifier,
@@ -1093,6 +1178,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             tuyaUUID: tuyaUUID,
             productID: productID,
             selectedPeripheralID: selectedID?.uuidString,
+            targetCorrelationProvenance: correlationProvenance,
             phase: phase,
             privateConfigPresent: privateConfig,
             sdkAccountLoggedIn: sdkAccountLoggedIn,
@@ -1128,6 +1214,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private func resetDiscoverySessionOnly() {
         correlationSession?.abandonCurrentWindow()
         correlationSession = nil
+        correlationProvenance = nil
         central.stopScan()
         watchdog?.cancel()
         watchdog = nil
