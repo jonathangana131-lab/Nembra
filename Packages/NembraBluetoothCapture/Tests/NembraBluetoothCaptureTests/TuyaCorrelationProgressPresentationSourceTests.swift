@@ -73,6 +73,16 @@ struct TuyaCorrelationProgressPresentationSourceTests {
         #expect(stop.contains("correlationProgressTask = nil"))
     }
 
+    @Test("published presentation state removes blanket periodic invalidation of the whole secure-link screen")
+    func secureLinkScreenDoesNotDependOnTimelinePolling() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let view = try section(in: app, from: "private struct SecureLinkView", to: "#Preview")
+
+        #expect(app.contains("@Published private(set) var correlationProgress"))
+        #expect(app.contains("@Published private(set) var ledgerSnapshot"))
+        #expect(!view.contains("TimelineView(.periodic"))
+    }
+
     @Test("primary seal affordance remains gated by published package scan liveness")
     func sealActionUsesPublishedLiveness() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
