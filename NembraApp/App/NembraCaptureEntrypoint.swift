@@ -359,6 +359,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var correlationObservedCandidateCount: Int { correlationProgress?.currentObservedCandidateCount ?? 0 }
     var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }
 
+    var failedAttemptCanRestartFromOFF1: Bool {
+        phase == .failed && currentConnectionToken == nil
+    }
+
+    var acceptedArtifactCanPrepareExport: Bool {
+        phase == .accepted && sealedAcceptedExport != nil
+    }
+
     func consumeCorrelationAsyncInvalidation() {
         guard (phase == .baseline || phase == .scanning),
               correlationProgress?.isSeriesInvalidated == true else { return }
@@ -2406,18 +2414,27 @@ private struct SecureLinkView: View {
                 Text(test.message)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Nothing was promoted after the blocker. Fix the condition above, then restart from a fresh OFF1 attempt.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                Button {
-                    test.startBaseline()
-                } label: {
-                    Label("Restart from scooter OFF", systemImage: "arrow.counterclockwise")
-                        .frame(maxWidth: .infinity)
+                if test.failedAttemptCanRestartFromOFF1 {
+                    Text("Nothing was promoted after the blocker. Fix the condition above, then restart from a fresh OFF1 attempt.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Button {
+                        test.startBaseline()
+                    } label: {
+                        Label("Restart from scooter OFF", systemImage: "arrow.counterclockwise")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(!authorityReady || test.membershipBusy)
+                } else {
+                    Label("Relaunch Capture", systemImage: "arrow.clockwise.circle")
+                        .font(.headline)
+                        .foregroundStyle(.orange)
+                    Text("The package-owned session generation was not proven retired. Close and relaunch Capture before another attempt; do not begin a new OFF1 series in this process.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(!authorityReady || test.membershipBusy)
             }
         }
     }
@@ -2425,25 +2442,25 @@ private struct SecureLinkView: View {
     private var completionPanel: some View {
         panel {
             VStack(alignment: .leading, spacing: 18) {
-                HStack(alignment: .top, spacing: 14) {
-                    Image(systemName: "checkmark.seal.fill")
-                        .font(.system(size: 38, weight: .semibold))
-                        .foregroundStyle(.green)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("CAPTURE COMPLETE")
-                            .font(.caption2.bold())
-                            .tracking(1.3)
-                            .foregroundStyle(.green)
-                        Text("Ready for analysis")
-                            .font(.title.bold())
-                    }
-                }
-
-                Text("The accepted artifact is sealed. Later callbacks, account changes, or diagnostics cannot rewrite what this capture proved.")
-                    .foregroundStyle(.secondary)
-
                 if let data = test.exportData {
+                    HStack(alignment: .top, spacing: 14) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.system(size: 38, weight: .semibold))
+                            .foregroundStyle(.green)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("CAPTURE COMPLETE")
+                                .font(.caption2.bold())
+                                .tracking(1.3)
+                                .foregroundStyle(.green)
+                            Text("Ready for analysis")
+                                .font(.title.bold())
+                        }
+                    }
+
+                    Text("The accepted artifact is sealed and its share bytes are ready. Later callbacks, account changes, or diagnostics cannot rewrite what this capture proved.")
+                        .foregroundStyle(.secondary)
+
                     ShareLink(item: SecureTransfer(data: data, name: test.exportName), preview: SharePreview(test.exportName)) {
                         Label("Share Capture", systemImage: "square.and.arrow.up")
                             .frame(maxWidth: .infinity)
@@ -2452,12 +2469,43 @@ private struct SecureLinkView: View {
                     .controlSize(.large)
                     .accessibilityHint("Shares the immutable accepted Capture artifact for analysis.")
                 } else {
-                    HStack(spacing: 10) {
-                        ProgressView()
-                        Text("Preparing sealed capture…")
-                            .foregroundStyle(.secondary)
+                    HStack(alignment: .top, spacing: 14) {
+                        Image(systemName: "seal.fill")
+                            .font(.system(size: 38, weight: .semibold))
+                            .foregroundStyle(.cyan)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("CAPTURE SEALED")
+                                .font(.caption2.bold())
+                                .tracking(1.3)
+                                .foregroundStyle(.cyan)
+                            Text("Share artifact not ready")
+                                .font(.title.bold())
+                        }
                     }
-                    .task { test.prepareExport() }
+
+                    Text("The accepted evidence is already frozen. Share preparation cannot change those accepted bytes or mint new physical evidence.")
+                        .foregroundStyle(.secondary)
+                    Text(test.message)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if test.acceptedArtifactCanPrepareExport {
+                        Button {
+                            test.prepareExport()
+                        } label: {
+                            Label("Retry sealed export", systemImage: "arrow.clockwise")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .accessibilityHint("Retries encoding the already-frozen accepted artifact without collecting or rebuilding evidence.")
+                    } else {
+                        Text("The frozen accepted envelope is unavailable. Follow the blocker above; do not reconstruct accepted evidence from mutable state.")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.orange)
+                    }
                 }
 
                 Button(showEngineeringDetails ? "Hide details" : "View details") {
@@ -2469,7 +2517,6 @@ private struct SecureLinkView: View {
         }
         .accessibilityElement(children: .contain)
     }
-
     private var sdkAuthorizationPanel: some View {
         panel {
             VStack(alignment: .leading, spacing: 16) {
@@ -2636,7 +2683,7 @@ private struct SecureLinkView: View {
 
     private var phaseTitle: String {
         switch test.phase {
-        case .accepted: return "Capture complete"
+        case .accepted: return test.exportData == nil ? "Capture sealed" : "Capture complete"
         case .failed: return "Capture paused"
         case .baseline, .scanning, .powerOn: return "Find this scooter"
         case .correlated: return "Scooter signal found"
@@ -2649,9 +2696,13 @@ private struct SecureLinkView: View {
     private var phaseSubtitle: String {
         switch test.phase {
         case .accepted:
-            return "Your read-only evidence is sealed and ready to share for analysis."
+            return test.exportData == nil
+                ? "Accepted evidence is sealed; the share artifact is not ready yet."
+                : "The sealed share artifact is ready for analysis."
         case .failed:
-            return "No evidence was promoted past the blocker. Fix the condition and restart from scooter OFF."
+            return test.failedAttemptCanRestartFromOFF1
+                ? "No evidence was promoted past the blocker. Fix the condition and restart from scooter OFF."
+                : "This attempt cannot safely restart in-process. Relaunch Capture before another attempt."
         case .baseline, .scanning, .powerOn, .correlated:
             return "A fresh four-window power pattern identifies the nearby Bluetooth target for this attempt only."
         case .selected, .authenticating:
