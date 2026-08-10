@@ -1,5 +1,7 @@
 # Nembra Capture P0 — secure-link gate
 
+PROCEDURE_ID: `ES80-AUTHENTICATED-STATIONARY-v1`
+
 This is the continuation after physical capture `C7D09A22`. **Do not repeat the completed 17-step ride capture.**
 
 ## What is already proven
