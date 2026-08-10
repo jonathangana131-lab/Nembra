@@ -20,13 +20,13 @@ jobs:
           ref: recovery/v14-capture-current-head-contract-sol-2
           fetch-depth: 0
 
-      - name: Prove exact predecessor and materializer-only staging
+      - name: Prove exact accepted recovery parent and workflow-only staging
         shell: bash
         run: |
           set -euo pipefail
           expected='f0fb83da5f57f9e92d29cf6ab444dc856e74c3a4'
-          test "$(git rev-parse HEAD^)" = "$expected"
-          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/materialize-capture-connectable-symbol-sol.yml'
+          test "$(git merge-base HEAD "$expected")" = "$expected"
+          test "$(git diff --name-only "$expected" HEAD)" = '.github/workflows/materialize-capture-connectable-symbol-sol.yml'
 
       - name: Apply exact CoreBluetooth symbol correction
         shell: bash
@@ -38,10 +38,9 @@ jobs:
           text = path.read_text()
           old = 'CBAdvertisementDataIsConnectableKey'
           new = 'CBAdvertisementDataIsConnectable'
-          if text.count(old) != 2:
-              raise SystemExit(f'expected exactly two stale connectable symbols, found {text.count(old)}')
-          if new in text:
-              raise SystemExit('correct connectable symbol already present; refusing ambiguous replacement')
+          count = text.count(old)
+          if count != 2:
+              raise SystemExit(f'expected exactly two stale connectable symbols, found {count}')
           path.write_text(text.replace(old, new))
           PY
           grep -Fq 'advertisementData[CBAdvertisementDataIsConnectable] as? NSNumber' NembraApp/Features/Research/ES80CaptureShellView.swift
