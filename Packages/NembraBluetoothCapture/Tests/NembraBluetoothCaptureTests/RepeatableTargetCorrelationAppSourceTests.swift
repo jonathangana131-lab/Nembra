@@ -32,19 +32,20 @@ struct RepeatableTargetCorrelationAppSourceTests {
     func consumesRepeatedCorrelation() throws {
         let source = try appSource
         #expect(source.contains("PeripheralPowerCycleCorrelation.resolveRepeated("))
-        #expect(source.contains("off1:"))
-        #expect(source.contains("on1:"))
-        #expect(source.contains("off2:"))
-        #expect(source.contains("on2:"))
+        #expect(source.contains("off1: off1"))
+        #expect(source.contains("on1: on1"))
+        #expect(source.contains("off2: off2"))
+        #expect(source.contains("on2: on2"))
         #expect(source.contains("case let .correlated("))
     }
 
     @Test("correlated UUID is capture-local and still requires explicit user confirmation")
     func correlationDoesNotBecomeDurableIdentity() throws {
         let source = try appSource
-        #expect(source.contains("correlated"))
-        #expect(source.contains("confirmTarget"))
-        #expect(source.contains(".confirmation"))
+        #expect(source.contains("func confirmTarget("))
+        #expect(source.contains("guard phase == .correlated, candidate.correlated"))
+        #expect(source.contains("phase = .selected"))
+        #expect(source.contains("repeatable-capture-local-corebluetooth-correlation"))
         #expect(!source.contains("verified AOVOPRO ES80 identity"))
     }
 }
