@@ -15,13 +15,22 @@ struct TuyaNavigationBLELeaseRetirementSourceTests {
         let view = String(try section(
             in: source,
             from: "private struct SecureLinkView: View",
-            to: "private extension SecureLinkView"
+            to: "private var hero: some View"
         ))
 
-        #expect(controller.contains("func abandonCorrelationForViewExit()"))
-        #expect(controller.contains("guard processCorrelationLease != nil || correlationSession != nil else { return }"))
-        #expect(controller.contains("abandonPackageCorrelation()"))
-        #expect(controller.contains("target_correlation_abandoned_on_view_exit"))
+        let cleanup = String(try section(
+            in: controller,
+            from: "func abandonCorrelationForViewExit()",
+            to: "var privateConfig: Bool"
+        ))
+        #expect(cleanup.contains("membershipRequestID = UUID()"))
+        #expect(cleanup.contains("membershipBusy = false"))
+        #expect(cleanup.contains("membershipProbe = nil"))
+        #expect(cleanup.contains("guard processCorrelationLease != nil || correlationSession != nil else { return }"))
+        #expect(cleanup.contains("abandonPackageCorrelation()"))
+        #expect(cleanup.contains("target_correlation_abandoned_on_view_exit"))
+        #expect(!cleanup.contains("releasePackageCorrelationLease"))
+        #expect(cleanup.range(of: "membershipRequestID = UUID()")!.lowerBound < cleanup.range(of: "guard processCorrelationLease")!.lowerBound)
         #expect(view.contains(".onDisappear"))
         #expect(view.contains("test.abandonCorrelationForViewExit()"))
     }
