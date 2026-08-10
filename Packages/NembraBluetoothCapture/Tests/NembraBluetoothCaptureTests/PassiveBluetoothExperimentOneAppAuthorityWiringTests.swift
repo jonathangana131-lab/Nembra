@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Experiment One app authority wiring")
 struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
-    private static func appSource() throws -> String {
+    private static func fieldEntrypointSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let repositoryRoot = testFile
             .deletingLastPathComponent()
@@ -16,55 +16,64 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
             contentsOf: repositoryRoot
                 .appendingPathComponent("NembraApp")
                 .appendingPathComponent("App")
-                .appendingPathComponent("NembraApp.swift"),
+                .appendingPathComponent("NembraCaptureEntrypoint.swift"),
             encoding: .utf8
         )
     }
 
-    @Test("field launch and fresh restart use only exact-running-build research authorization")
-    func appUsesResearchAuthorizedFactoryForBothProductionConstructionSites() throws {
-        let source = try Self.appSource()
-        let researchFactory = "makeResearchAuthorizedES80ForCurrentApplication()"
+    @Test("authenticated stationary field path binds current build and account/device authority before BLE ownership")
+    func authenticatedFieldPathUsesCurrentAuthorityModel() throws {
+        let source = try Self.fieldEntrypointSource()
 
-        #expect(source.components(separatedBy: researchFactory).count - 1 == 2)
+        #expect(source.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
+        #expect(source.contains("var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }"))
+        #expect(source.contains("var privateConfig: Bool { OfficialTuyaFactory.configured }"))
+        #expect(source.contains("var sdkAccountLoggedIn: Bool { OfficialTuyaFactory.accountLoggedIn }"))
+        #expect(source.contains("var currentAccountUID: String? { OfficialTuyaFactory.currentAccountUID }"))
+        #expect(source.contains("sdkDeviceMembershipVerified"))
+        #expect(source.contains("accountIdentityLeaseIsAuthorized"))
+
+        let lease = try #require(source.range(of: "OfficialTuyaFactory.acquirePackageCorrelationLease()"))
+        let correlation = try #require(
+            source.range(of: "PassiveBluetoothPowerCycleObservationSession(minimumWindowDuration: 10)")
+        )
+        let officialSDKOwnership = try #require(source.range(of: "OfficialTuyaFactory.make()"))
+
+        #expect(lease.lowerBound < correlation.lowerBound)
+        #expect(correlation.lowerBound < officialSDKOwnership.lowerBound)
+        #expect(!source.contains("makeResearchAuthorizedES80ForCurrentApplication()"))
         #expect(!source.contains("PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()"))
         #expect(!source.contains("verifiedAdmission:"))
-        #expect(!source.contains("PassiveBluetoothCaptureFieldAuthorizationVerifier"))
         #expect(!source.contains("UserDefaults"))
-        #expect(source.contains("onFreshExperimentRequested: makeFreshExperimentCoordinator"))
-        #expect(source.contains("selectedChargerState = nil"))
-        #expect(source.contains("disconnectedDeclarationAccepted = false"))
     }
 
-    @Test("locked build identity measurement stays off MainActor and exposes a truthful pending state")
-    func buildIdentityHashingRemainsOffMainActor() throws {
-        let source = try Self.appSource()
-        let viewStart = try #require(
-            source.range(of: "private struct ES80ExperimentOneFieldNoGoView: View")?.lowerBound
+    @Test("process BLE ownership and failed-attempt restart remain fail closed")
+    func processOwnershipAndRestartRemainFailClosed() throws {
+        let source = try Self.fieldEntrypointSource()
+
+        #expect(source.contains("OfficialTuyaFactory.packageCorrelationMayStart"))
+        #expect(source.contains("OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID)"))
+        #expect(source.contains("OfficialTuyaFactory.releasePackageCorrelationLease(processCorrelationLease)"))
+        #expect(source.contains("private var processCorrelationLease: UUID?"))
+        #expect(source.contains("private var currentConnectionToken: TuyaReadOnlyConnectionToken?"))
+        #expect(source.contains("private var localBLESettlementToken: TuyaReadOnlyConnectionToken?"))
+
+        let restartStart = try #require(source.range(of: "var failedAttemptCanRestartFromOFF1: Bool {"))
+        let restartEnd = try #require(
+            source.range(
+                of: "var canRestartFromFreshOFF1: Bool",
+                range: restartStart.upperBound..<source.endIndex
+            )
         )
-        let view = source[viewStart...]
+        let restart = source[restartStart.lowerBound..<restartEnd.lowerBound]
 
-        let bodyStart = try #require(view.range(of: "    var body: some View {")?.lowerBound)
-        let preBody = view[..<bodyStart]
-        #expect(!preBody.contains("PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()"))
+        #expect(restart.contains("phase == .failed"))
+        #expect(restart.contains("currentConnectionToken == nil"))
+        #expect(restart.contains("localBLESettlementToken == nil"))
+        #expect(restart.contains("driver == nil"))
+        #expect(restart.contains("OfficialTuyaFactory.packageCorrelationMayStart"))
 
-        #expect(view.contains("@State private var runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity?"))
-        #expect(view.contains("@State private var runtimeBuildIdentityCheckFinished = false"))
-        #expect(view.contains("Capture build identity checking"))
-        #expect(view.contains("Text(\"Checking…\")"))
-        #expect(view.contains(".task { await loadRuntimeBuildIdentity() }"))
-
-        let loaderStart = try #require(view.range(of: "    private func loadRuntimeBuildIdentity() async {")?.lowerBound)
-        let loader = view[loaderStart...]
-        let detached = try #require(loader.range(of: "Task.detached(priority: .utility)"))
-        let reader = try #require(
-            loader.range(of: "PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()")
-        )
-        let cancellation = try #require(loader.range(of: "guard !Task.isCancelled else { return }"))
-        let publish = try #require(loader.range(of: "runtimeBuildIdentity = identity"))
-
-        #expect(detached.lowerBound < reader.lowerBound)
-        #expect(reader.lowerBound < cancellation.lowerBound)
-        #expect(cancellation.lowerBound < publish.lowerBound)
+        #expect(source.contains("func abandonCorrelationForViewExit()"))
+        #expect(source.contains("private func releasePackageCorrelationLease()"))
     }
 }
