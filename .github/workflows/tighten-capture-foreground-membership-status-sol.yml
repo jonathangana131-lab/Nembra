@@ -1,0 +1,51 @@
+name: Tighten Capture Foreground Membership Status Sol
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-current-truth-closure-1c408-sol
+
+permissions:
+  contents: write
+
+jobs:
+  tighten:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Verify donor and tighten one status string
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='1c40853f6991b4d09206df1d25ecff021458b7eb'
+          expected='8ff67f8217b78f3aae2f64510e5d73004b254265'
+          test "$(git rev-parse HEAD^)" = "$expected"
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+          old = 'membershipStatus = "Capture left the foreground. Exact scooter membership must be verified again before a fresh OFF1 attempt."'
+          new = 'membershipStatus = "Capture left the foreground. Exact scooter membership must be verified again before Capture can continue."'
+          if source.count(old) != 1:
+              raise SystemExit(f'expected one foreground membership status copy, found {source.count(old)}')
+          source = source.replace(old, new, 1)
+          path.write_text(source, encoding='utf-8')
+          PY
+          grep -F 'membershipStatus = "Capture left the foreground. Exact scooter membership must be verified again before Capture can continue."' NembraApp/App/NembraCaptureEntrypoint.swift
+          git diff --check
+          rm .github/workflows/tighten-capture-foreground-membership-status-sol.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git add -u .github/workflows/tighten-capture-foreground-membership-status-sol.yml
+          git diff --cached --check
+          git -c user.name='nembra-sol' -c user.email='nembra-sol@users.noreply.github.com' commit -m 'fix(capture): keep foreground membership recovery copy neutral'
+          mapfile -t changed < <(git diff --name-only "$parent" HEAD | sort)
+          test "${#changed[@]}" = 4
+          test "${changed[0]}" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          test "${changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift'
+          test "${changed[2]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundPostCorrelationRevocationSourceTests.swift'
+          test "${changed[3]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift'
+          git push origin HEAD:fix/v14-capture-current-truth-closure-1c408-sol
