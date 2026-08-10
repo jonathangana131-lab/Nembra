@@ -413,6 +413,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     deinit { watchdog?.cancel() }
 
+    func abandonCorrelationForViewExit() {
+        guard processCorrelationLease != nil || correlationSession != nil else { return }
+        abandonPackageCorrelation()
+        phase = .failed
+        message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
+        log("target_correlation_abandoned_on_view_exit")
+    }
+
     var privateConfig: Bool { OfficialTuyaFactory.configured }
     var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }
     var fieldBuildIdentifier: String { buildIdentity.buildIdentifier }
@@ -2401,6 +2409,9 @@ private struct SecureLinkView: View {
                 test.consumeCorrelationAsyncInvalidation()
                 try? await Task.sleep(nanoseconds: 250_000_000)
             }
+        }
+        .onDisappear {
+            test.abandonCorrelationForViewExit()
         }
         .onChange(of: sdkAccount.loggedIn) { _, loggedIn in
             if loggedIn { test.verifySDKMembership() }
