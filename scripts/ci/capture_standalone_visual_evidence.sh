@@ -4,6 +4,8 @@ set -euo pipefail
 APP_PATH="${APP_PATH:-/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app}"
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-${RUNNER_TEMP:-/tmp}/NembraCaptureStandaloneVisualEvidence}"
 EXPECTED_BUNDLE_ID="com.jonathangana131.nembra.capturelearn"
+EVIDENCE_PROFILE="${EVIDENCE_PROFILE:-provenance-stamped}"
+EXPECTED_SOURCE_SHA="${EXPECTED_SOURCE_SHA:-}"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "Standalone Capture visual evidence requires macOS/CoreSimulator." >&2
@@ -31,7 +33,7 @@ fi
 BUNDLE_ID="$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$INFO_PLIST")"
 BUILD_IDENTIFIER="$(/usr/bin/plutil -extract NembraCaptureBuildIdentifier raw -o - "$INFO_PLIST")"
 SOURCE_SHA="$(/usr/bin/plutil -extract NembraCaptureSourceCommitSHA raw -o - "$INFO_PLIST")"
-TUYA_DEPENDENCY_LOCK_SHA256="$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$INFO_PLIST")"
+TUYA_DEPENDENCY_LOCK_SHA256="$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$INFO_PLIST" 2>/dev/null || true)"
 if [[ "$BUNDLE_ID" != "$EXPECTED_BUNDLE_ID" ]]; then
   echo "Unexpected standalone Capture bundle identifier: $BUNDLE_ID" >&2
   exit 7
@@ -40,15 +42,40 @@ if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   echo "Standalone Capture source identity must be one lowercase 40-hex SHA." >&2
   exit 8
 fi
-if [[ ! "$TUYA_DEPENDENCY_LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
-  echo "Standalone Capture Tuya dependency provenance must be one lowercase 64-hex SHA-256." >&2
-  exit 9
+if [[ -n "$EXPECTED_SOURCE_SHA" ]]; then
+  if [[ ! "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ || "$SOURCE_SHA" != "$EXPECTED_SOURCE_SHA" ]]; then
+    echo "Standalone Capture source identity does not match the exact requested visual-review head." >&2
+    exit 19
+  fi
 fi
 EXPECTED_BUILD_IDENTIFIER="capture-v14-${SOURCE_SHA:0:12}"
 if [[ "$BUILD_IDENTIFIER" != "$EXPECTED_BUILD_IDENTIFIER" ]]; then
   echo "Standalone Capture build identifier does not rendezvous with its embedded source SHA." >&2
   exit 10
 fi
+
+case "$EVIDENCE_PROFILE" in
+  provenance-stamped)
+    if [[ ! "$TUYA_DEPENDENCY_LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+      echo "Provenance-stamped visual evidence requires one lowercase 64-hex Tuya dependency fingerprint." >&2
+      exit 9
+    fi
+    DEPENDENCY_PROVENANCE_CLASS="embedded-64hex-provenance"
+    EXPECTED_FIELD_BUILD_AUTHORITY="true"
+    ;;
+  public-unprovisioned)
+    if [[ -n "$TUYA_DEPENDENCY_LOCK_SHA256" ]]; then
+      echo "Public-unprovisioned visual evidence must not carry a Tuya dependency fingerprint that could make the field-build gate look authoritative." >&2
+      exit 20
+    fi
+    DEPENDENCY_PROVENANCE_CLASS="deliberately-absent-public-ci"
+    EXPECTED_FIELD_BUILD_AUTHORITY="false"
+    ;;
+  *)
+    echo "Unknown standalone visual evidence profile: $EVIDENCE_PROFILE" >&2
+    exit 21
+    ;;
+esac
 
 if [[ -e "$ARTIFACTS_DIR" || -L "$ARTIFACTS_DIR" ]]; then
   echo "Refusing to mix or overwrite prior standalone Capture visual evidence: $ARTIFACTS_DIR" >&2
@@ -146,9 +173,12 @@ fi
 
 /usr/bin/python3 - \
   "$ARTIFACTS_DIR/NembraCaptureStandaloneVisualEvidence.json" \
+  "$EVIDENCE_PROFILE" \
   "$BUILD_IDENTIFIER" \
   "$SOURCE_SHA" \
   "$TUYA_DEPENDENCY_LOCK_SHA256" \
+  "$DEPENDENCY_PROVENANCE_CLASS" \
+  "$EXPECTED_FIELD_BUILD_AUTHORITY" \
   "$BUNDLE_ID" \
   "$RUNTIME_ID" \
   "$DEVICE_TYPE" \
@@ -159,9 +189,12 @@ import sys
 
 (
     output_path,
+    evidence_profile,
     build_identifier,
     source_sha,
     tuya_dependency_lock_sha256,
+    dependency_provenance_class,
+    expected_field_build_authority,
     bundle_id,
     runtime_id,
     device_type,
@@ -169,18 +202,26 @@ import sys
     info_plist_sha256,
 ) = sys.argv[1:]
 
+public_unprovisioned = evidence_profile == "public-unprovisioned"
 record = {
-    "schemaVersion": 1,
+    "schemaVersion": 2,
     "authority": "standalone-capture-simulator-presentation-only",
+    "evidenceProfile": evidence_profile,
     "buildIdentifier": build_identifier,
     "sourceCommitSHA": source_sha,
-    "tuyaDependencyLockSHA256": tuya_dependency_lock_sha256,
+    "tuyaDependencyLockSHA256": tuya_dependency_lock_sha256 or None,
+    "tuyaDependencyProvenanceClass": dependency_provenance_class,
+    "expectedFieldBuildAuthority": expected_field_build_authority == "true",
     "bundleIdentifier": bundle_id,
     "simulatorRuntime": runtime_id,
     "simulatorDeviceType": device_type,
     "launchContext": "real standalone bundle; inherited SIMCTL_CHILD/NEMBRA_SIMULATION authority rejected before launch",
     "syntheticAuthorityEnvironmentRejected": True,
-    "expectedReviewState": "public/unprovisioned root presentation; reviewer must verify fail-closed messaging visually",
+    "expectedReviewState": (
+        "public/unprovisioned root presentation; exact source identity is present but field-build authority must visibly fail closed"
+        if public_unprovisioned
+        else "provenance-stamped standalone presentation; reviewer must verify the visible state matches the provided build authority"
+    ),
     "visualAcceptanceRequiresHumanReview": True,
     "physicalAuthorityCreated": False,
     "protocolAuthorityCreated": False,
@@ -197,8 +238,9 @@ PY
 
 printf '%s\n' \
   "Standalone Nembra Capture visual evidence captured." \
+  "Profile: $EVIDENCE_PROFILE" \
   "Build: $BUILD_IDENTIFIER" \
   "Source: $SOURCE_SHA" \
-  "Tuya dependency lock: $TUYA_DEPENDENCY_LOCK_SHA256" \
+  "Tuya dependency provenance: $DEPENDENCY_PROVENANCE_CLASS" \
   "Screenshot: $SCREENSHOT" \
   "Visual review is still required; this artifact creates no physical/protocol authority."
