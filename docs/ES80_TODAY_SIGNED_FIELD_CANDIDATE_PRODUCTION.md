@@ -23,14 +23,14 @@ The Simulator artifact above is software evidence only. It is **not** the signed
 
 The current accepted external pre-signing helper is also non-authorizing software tooling:
 
-- helper commit: `9b5bde849e6b8f6b76e2a15abb52d643e3616a7a`
+- helper commit: `4a6dbdd9e6a987804d48544dd61f424dfc743340`
 - helper path: `scripts/ci/es80_today_field_candidate_preflight.py`
-- helper blob: `fcc2243c005c5f6df2d2f5bd8b8c948e785f07d8`
-- exact focused QA run: `31340823325` — terminal success
+- helper blob: `f8ab407df9b18f61418e8807dd8f4646442e88de`
+- exact focused QA run: `31349190917` — terminal success
 - helper authority on every report: `operator-pre-signing-readiness-not-field-authorization`
 - physical authorization on every report: `not-granted`
 
-The helper exists only to prevent known operator-input dead ends before the frozen producer is invoked. The frozen `a0f4…` producer independently revalidates all authoritative signing/private-input conditions.
+The helper exists only to prevent known operator-input dead ends before the frozen producer is invoked. It reaches the export-options plist through one absolute no-follow directory chain, parses one stable opened regular-file subject, and mirrors the frozen producer's deterministic optional `teamID` / `method` admission before reporting READY. The frozen `a0f4…` producer independently revalidates all authoritative signing/private-input conditions.
 
 ## Why an exact detached source checkout is mandatory
 
@@ -43,7 +43,7 @@ Therefore the operator must first establish and verify a clean detached checkout
 Have these available only on the private signing Mac:
 
 - Apple `TeamIdentifier` for the intended signing identity;
-- an existing valid Xcode export-options plist for that team/distribution method;
+- an existing valid Xcode export-options plist for that team/distribution method, at one absolute regular non-symlink path with no symlinked ancestor;
 - the intended iPhone's UDID, stored in one absolute mode-`0600` regular non-symlink file;
 - Xcode 27 and the intended iPhone 12 / iOS 27;
 - signing/provisioning credentials needed by Xcode.
@@ -141,13 +141,13 @@ Keep `NEMBRA_ALLOW_PROVISIONING_UPDATES=0` unless the private signing setup actu
 
 ## 3A. Run the accepted non-authorizing pre-signing preflight
 
-Do not run a moving `main` copy of the helper and do not copy the helper into the frozen source checkout. Materialize the exact accepted helper bytes from a separate local Nembra tooling repository that contains commit `9b5bde849e6b8f6b76e2a15abb52d643e3616a7a`, then run those bytes against the exact frozen `FIELD_SOURCE`.
+Do not run a moving `main` copy of the helper and do not copy the helper into the frozen source checkout. Materialize the exact accepted helper bytes from a separate local Nembra tooling repository that contains commit `4a6dbdd9e6a987804d48544dd61f424dfc743340`, then run those bytes against the exact frozen `FIELD_SOURCE`.
 
-The helper deliberately reads the private signing values from the environment and the intended-device value only from its mode-`0600` file. Its JSON report omits the TeamIdentifier, raw UDID, private input paths, export-options contents, and dirty-checkout text.
+The helper deliberately reads the private signing values from the environment and the intended-device value only from its mode-`0600` file. Its JSON report omits the TeamIdentifier, raw UDID, private input paths, export-options contents, and dirty-checkout text. It also fails closed unless the export-options plist is reached through one absolute non-symlink ancestor chain, remains one stable opened regular-file subject while parsed, and its optional `teamID` / `method` fields are coherent with the frozen producer's deterministic admission.
 
 ```bash
-PREFLIGHT_COMMIT='9b5bde849e6b8f6b76e2a15abb52d643e3616a7a'
-PREFLIGHT_BLOB='fcc2243c005c5f6df2d2f5bd8b8c948e785f07d8'
+PREFLIGHT_COMMIT='4a6dbdd9e6a987804d48544dd61f424dfc743340'
+PREFLIGHT_BLOB='f8ab407df9b18f61418e8807dd8f4646442e88de'
 PREFLIGHT_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-preflight.XXXXXX)"
 PREFLIGHT="$PREFLIGHT_DIR/es80_today_field_candidate_preflight.py"
 PREFLIGHT_REPORT="$PREFLIGHT_DIR/preflight.json"
@@ -258,6 +258,7 @@ Stop and preserve the exact blocker if any of these occurs:
 - `DEVELOPER_DIR` is set or reintroduced after Section 3; configure Xcode 27 through the private Mac's `xcode-select` selection instead of carrying a caller override into the frozen producer;
 - the descriptor-bound private-input helper cannot be materialized at exact commit/blob, refuses the parent/input, or cannot create and rebind one fresh exact mode-`0600` single-link file;
 - the pinned external preflight cannot be materialized exactly, exits nonzero, or does not report `READY_TO_INVOKE_SIGNED_FIELD_PRODUCER` for the exact frozen source;
+- the export-options plist path is not absolute, traverses a symlinked ancestor, names a symlink/non-regular/empty subject, changes identity while parsed, is not a dictionary plist, carries a `teamID` that conflicts with the requested signing TeamIdentifier, or carries a present `method` that is not a non-empty string;
 - the producer reports any source, signing, provisioning, intended-device, export, inspection, or evidence failure;
 - more than one IPA is exported or the retained `NembraField.ipa` is missing;
 - the resulting evidence names a different source SHA, recipe, or build subject;
