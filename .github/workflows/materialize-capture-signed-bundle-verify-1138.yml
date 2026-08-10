@@ -1,0 +1,169 @@
+name: Materialize Capture Signed Bundle Verification 1138
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-signed-bundle-verify-1138-r1
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Guard exact current product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='1138e0e953b0e2855d849e02d02e40b643a876ac'
+          test "$(git rev-parse HEAD^)" = "$expected"
+          test "$(git diff --name-only "$expected"..HEAD)" = '.github/workflows/materialize-capture-signed-bundle-verify-1138.yml'
+
+      - name: Require strict recursive signature verification before authority readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          installer_path = Path('scripts/field/install_one_time_capture.command')
+          source = installer_path.read_text()
+          anchor = '''say "Built app provenance matched exact requested source, reviewed Tuya dependency lock, canonical stationary procedure, and field product"
+
+          # Apple-backed Smart Life account entry is now part of field preflight. A source entitlement file
+          '''
+          replacement = '''say "Built app provenance matched exact requested source, reviewed Tuya dependency lock, canonical stationary procedure, and field product"
+
+          # Entitlement/profile readback proves identity values, but it does not prove the app bundle's
+          # recursive signature/seal is valid. Fail closed on the exact signed bytes before those values
+          # are allowed to participate in field authority or before any device installation is attempted.
+          if ! /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/codesign --verify --deep --strict "$APP" >/dev/null 2>&1; then
+              die "Final signed Capture app failed recursive strict code-signature verification. Discard this candidate."
+          fi
+          say "Final signed Capture app passed recursive strict code-signature verification"
+
+          # Apple-backed Smart Life account entry is now part of field preflight. A source entitlement file
+          '''
+          if source.count(anchor) != 1:
+              raise SystemExit('signed-bundle verification insertion anchor drifted')
+          source = source.replace(anchor, replacement)
+          installer_path.write_text(source)
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerSignedBundleVerificationSourceTests.swift')
+          if test_path.exists():
+              raise SystemExit('signed-bundle verification source test unexpectedly already exists')
+          test_path.write_text(textwrap.dedent(r'''
+              import Foundation
+              import Testing
+              @testable import NembraBluetoothCapture
+
+              @Suite("Capture field installer signed-bundle verification")
+              struct TuyaFieldInstallerSignedBundleVerificationSourceTests {
+                  @Test("strict recursive signature validation precedes entitlement authority and install")
+                  func signedBundleSealMustValidateBeforeAuthorityReadbackOrDeviceInstall() throws {
+                      let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
+
+                      let verify = try requiredOffset(
+                          containing: "/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/codesign --verify --deep --strict \"$APP\"",
+                          in: installer
+                      )
+                      let entitlementReadback = try requiredOffset(
+                          containing: "/usr/bin/codesign -d --entitlements :- --xml \"$APP\"",
+                          in: installer
+                      )
+                      let install = try requiredOffset(
+                          containing: "xcrun devicectl device install app --device \"$COREDEVICE_ID\" \"$APP\"",
+                          in: installer
+                      )
+
+                      #expect(verify < entitlementReadback)
+                      #expect(entitlementReadback < install)
+                      #expect(installer.contains("failed recursive strict code-signature verification"))
+                      #expect(installer.contains("passed recursive strict code-signature verification"))
+                  }
+
+                  @Test("verification is validation-only and closed-environment")
+                  func verifierCannotResignOrInheritCallerToolingEnvironment() throws {
+                      let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
+                      let verifyLine = try requiredLine(
+                          containing: "/usr/bin/codesign --verify --deep --strict \"$APP\"",
+                          in: installer
+                      )
+
+                      #expect(verifyLine.contains("/usr/bin/env -i PATH=/usr/bin:/bin"))
+                      #expect(verifyLine.contains("--verify"))
+                      #expect(verifyLine.contains("--deep"))
+                      #expect(verifyLine.contains("--strict"))
+                      #expect(!verifyLine.contains("--sign"))
+                      #expect(!verifyLine.contains("--force"))
+                  }
+
+                  private func requiredOffset(containing token: String, in source: String) throws -> String.Index {
+                      guard let range = source.range(of: token) else {
+                          Issue.record("Expected source token missing: \(token)")
+                          throw SourceContractError.tokenMissing
+                      }
+                      return range.lowerBound
+                  }
+
+                  private func requiredLine(containing token: String, in source: String) throws -> String {
+                      guard let line = source.split(separator: "\n", omittingEmptySubsequences: false)
+                          .map(String.init)
+                          .first(where: { $0.contains(token) }) else {
+                          Issue.record("Expected source line missing: \(token)")
+                          throw SourceContractError.tokenMissing
+                      }
+                      return line
+                  }
+
+                  private func readRepositoryFile(_ relativePath: String) throws -> String {
+                      let repositoryRoot = URL(fileURLWithPath: #filePath)
+                          .deletingLastPathComponent()
+                          .deletingLastPathComponent()
+                          .deletingLastPathComponent()
+                          .deletingLastPathComponent()
+                          .deletingLastPathComponent()
+                      return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+                  }
+
+                  private enum SourceContractError: Error { case tokenMissing }
+              }
+          ''').lstrip())
+          PY
+
+      - name: Validate repaired source
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/field/install_one_time_capture.command
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('scripts/field/install_one_time_capture.command').read_text()
+          verify = s.index('/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/codesign --verify --deep --strict "$APP"')
+          entitlements = s.index('/usr/bin/codesign -d --entitlements :- --xml "$APP"')
+          install = s.index('xcrun devicectl device install app --device "$COREDEVICE_ID" "$APP"')
+          assert verify < entitlements < install
+          line = next(x for x in s.splitlines() if '/usr/bin/codesign --verify --deep --strict "$APP"' in x)
+          assert '/usr/bin/env -i PATH=/usr/bin:/bin' in line
+          assert '--sign' not in line and '--force' not in line
+          PY
+          git diff --check
+
+      - name: Commit durable exact-parent checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-signed-bundle-verify-1138.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/field/install_one_time_capture.command \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerSignedBundleVerificationSourceTests.swift \
+            .github/workflows/materialize-capture-signed-bundle-verify-1138.yml
+          git commit -m 'fix(capture): verify signed field bundle before install'
+          git push origin HEAD:sol/v14-capture-signed-bundle-verify-1138-r1
