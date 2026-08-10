@@ -27,6 +27,19 @@ struct TuyaSecureLinkProductRecoveryTruthSourceTests {
         #expect(surfaceBody.contains("test.failedAttemptCanRestartFromOFF1"))
         #expect(surfaceBody.contains("Restart from scooter OFF"))
         #expect(surfaceBody.contains("Relaunch Capture"))
+
+        let subtitle = try section(
+            in: surfaceBody,
+            from: "private var phaseSubtitle: String",
+            to: "private var heroSymbol: String"
+        )
+        let subtitleBody = String(subtitle)
+        #expect(subtitleBody.contains("case .failed:"))
+        #expect(subtitleBody.contains("test.failedAttemptCanRestartFromOFF1"))
+        #expect(subtitleBody.contains("test.canRestartFromFreshOFF1"))
+        #expect(subtitleBody.contains("restart from scooter OFF"))
+        #expect(subtitleBody.contains("Relaunch Capture before another attempt"))
+        #expect(!subtitleBody.contains("return \"No evidence was promoted past the blocker. Fix the condition and restart from scooter OFF.\""))
     }
 
     @Test("analysis readiness is earned by a shareable sealed artifact, not accepted phase alone")
