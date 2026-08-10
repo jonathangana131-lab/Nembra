@@ -26,60 +26,63 @@ jobs:
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           text = path.read_text()
 
-          old = '''                        try await sessionLedger.sealAcceptedObservation(for: token)
-                        let acceptedEventPrefix = self.events
-                        self.sealedAcceptedEventPrefix = acceptedEventPrefix
-                        self.currentConnectionToken = nil
-                        await self.refreshLedgerSnapshot()
-                        self.sealedAcceptedExport = self.makeExport(
-                            exportedAt: Date(),
-                            phase: .accepted,
-                            events: acceptedEventPrefix
-                        )
-                        self.exportData = nil
-                        self.phase = .accepted
-                        self.message = "Secure scooter link established. Canonical readiness was sealed before UI acceptance; delayed callbacks cannot mutate the accepted prefix."
-                        self.log("acceptance_sealed", [
-                            "generation": String(token.diagnosticGeneration),
-                            "applicationUpdates": String(self.applicationUpdateCount),
-                            "buildIdentifier": self.buildIdentity.buildIdentifier,
-                            "sourceCommitSHA": self.buildIdentity.sourceCommitSHA
-                        ])
-'''
-          new = '''                        try await sessionLedger.sealAcceptedObservation(for: token)
-                        guard self.buildIdentity.isAuthoritativeFieldBuild,
-                              self.accountIdentityLeaseIsAuthorized else {
-                            self.currentConnectionToken = nil
-                            self.localBLESettlementToken = nil
-                            self.sdkLocalBLEOnline = false
-                            self.driver = nil
-                            self.phase = .failed
-                            self.message = "Source authority changed while canonical acceptance was sealing. Restart from OFF1; the sealed package chronology is diagnostic only."
-                            self.log("source_authority_changed_during_acceptance_seal", [
-                                "generation": String(token.diagnosticGeneration)
-                            ])
-                            return
-                        }
-                        let acceptedEventPrefix = self.events
-                        self.sealedAcceptedEventPrefix = acceptedEventPrefix
-                        self.currentConnectionToken = nil
-                        self.sealedAcceptedExport = self.makeExport(
-                            exportedAt: Date(),
-                            phase: .accepted,
-                            events: acceptedEventPrefix
-                        )
-                        self.exportData = nil
-                        self.phase = .accepted
-                        self.message = "Secure scooter link established. Canonical readiness and the complete accepted artifact were frozen before UI acceptance; delayed callbacks cannot mutate accepted evidence."
-                        self.log("acceptance_sealed", [
-                            "generation": String(token.diagnosticGeneration),
-                            "applicationUpdates": String(self.applicationUpdateCount),
-                            "buildIdentifier": self.buildIdentity.buildIdentifier,
-                            "sourceCommitSHA": self.buildIdentity.sourceCommitSHA
-                        ])
-                        await self.refreshLedgerSnapshot()
-'''
-
+          old_lines = [
+              "                        try await sessionLedger.sealAcceptedObservation(for: token)",
+              "                        let acceptedEventPrefix = self.events",
+              "                        self.sealedAcceptedEventPrefix = acceptedEventPrefix",
+              "                        self.currentConnectionToken = nil",
+              "                        await self.refreshLedgerSnapshot()",
+              "                        self.sealedAcceptedExport = self.makeExport(",
+              "                            exportedAt: Date(),",
+              "                            phase: .accepted,",
+              "                            events: acceptedEventPrefix",
+              "                        )",
+              "                        self.exportData = nil",
+              "                        self.phase = .accepted",
+              "                        self.message = \"Secure scooter link established. Canonical readiness was sealed before UI acceptance; delayed callbacks cannot mutate the accepted prefix.\"",
+              "                        self.log(\"acceptance_sealed\", [",
+              "                            \"generation\": String(token.diagnosticGeneration),",
+              "                            \"applicationUpdates\": String(self.applicationUpdateCount),",
+              "                            \"buildIdentifier\": self.buildIdentity.buildIdentifier,",
+              "                            \"sourceCommitSHA\": self.buildIdentity.sourceCommitSHA",
+              "                        ])",
+          ]
+          new_lines = [
+              "                        try await sessionLedger.sealAcceptedObservation(for: token)",
+              "                        guard self.buildIdentity.isAuthoritativeFieldBuild,",
+              "                              self.accountIdentityLeaseIsAuthorized else {",
+              "                            self.currentConnectionToken = nil",
+              "                            self.localBLESettlementToken = nil",
+              "                            self.sdkLocalBLEOnline = false",
+              "                            self.driver = nil",
+              "                            self.phase = .failed",
+              "                            self.message = \"Source authority changed while canonical acceptance was sealing. Restart from OFF1; the sealed package chronology is diagnostic only.\"",
+              "                            self.log(\"source_authority_changed_during_acceptance_seal\", [",
+              "                                \"generation\": String(token.diagnosticGeneration)",
+              "                            ])",
+              "                            return",
+              "                        }",
+              "                        let acceptedEventPrefix = self.events",
+              "                        self.sealedAcceptedEventPrefix = acceptedEventPrefix",
+              "                        self.currentConnectionToken = nil",
+              "                        self.sealedAcceptedExport = self.makeExport(",
+              "                            exportedAt: Date(),",
+              "                            phase: .accepted,",
+              "                            events: acceptedEventPrefix",
+              "                        )",
+              "                        self.exportData = nil",
+              "                        self.phase = .accepted",
+              "                        self.message = \"Secure scooter link established. Canonical readiness and the complete accepted artifact were frozen before UI acceptance; delayed callbacks cannot mutate accepted evidence.\"",
+              "                        self.log(\"acceptance_sealed\", [",
+              "                            \"generation\": String(token.diagnosticGeneration),",
+              "                            \"applicationUpdates\": String(self.applicationUpdateCount),",
+              "                            \"buildIdentifier\": self.buildIdentity.buildIdentifier,",
+              "                            \"sourceCommitSHA\": self.buildIdentity.sourceCommitSHA",
+              "                        ])",
+              "                        await self.refreshLedgerSnapshot()",
+          ]
+          old = "\n".join(old_lines) + "\n"
+          new = "\n".join(new_lines) + "\n"
           count = text.count(old)
           if count != 1:
               raise SystemExit(f"guard failed: expected exact accepted sequence once, found {count}")
@@ -90,9 +93,10 @@ jobs:
         run: |
           from pathlib import Path
           source = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
-          start = source.index("try await sessionLedger.sealAcceptedObservation(for: token)")
+          marker = "try await sessionLedger.sealAcceptedObservation(for: token)"
+          start = source.index(marker)
           freeze = source.index("self.sealedAcceptedExport = self.makeExport(", start)
-          between = source[start + len("try await sessionLedger.sealAcceptedObservation(for: token)"):freeze]
+          between = source[start + len(marker):freeze]
           if "await " in between:
               raise SystemExit("accepted artifact still has a suspension between package seal and full envelope freeze")
           required = [
@@ -104,7 +108,8 @@ jobs:
               "phase: .accepted",
               "events: acceptedEventPrefix",
           ]
-          missing = [item for item in required if item not in source[start:freeze + 500]]
+          window = source[start:freeze + 500]
+          missing = [item for item in required if item not in window]
           if missing:
               raise SystemExit(f"missing no-suspend accepted artifact contract: {missing}")
 
