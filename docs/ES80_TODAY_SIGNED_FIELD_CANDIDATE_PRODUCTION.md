@@ -86,6 +86,8 @@ Do not acquire the raw identifier through ordinary shell redirection. Even with 
 
 The accepted helper identity is fixed below. These helper bytes are operator-custody tooling only; they do not alter the frozen `a0f4…` app subject and do not authorize signing acceptance or Bluetooth activity.
 
+The pinned private-input helper is merged source `c8c706e3d67d2aeab37341035468437dc2af0491`, blob `38eb695792fb759428a98686081b883e39c3b118`. Those exact helper bytes were re-exercised unchanged in the composed exact-head Capture preflight run `31349522672`, job `93337607527` — terminal success. They refuse an occupied target before secret acquisition, require secure no-echo terminal input, retain `O_EXCL` as the post-precheck race authority, clean only the exact created inode on write/fsync/terminal-abort failure, and preserve descriptor-rebind/readback custody.
+
 ```bash
 umask 077
 HOME_PHYSICAL="$(cd -P -- "$HOME" && /bin/pwd -P)"
@@ -94,8 +96,8 @@ PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"
 UDID_FILE="$PRIVATE_DIR/es80-intended-device.udid"
 TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
 
-PRIVATE_INPUT_HELPER_COMMIT='05ce6d9a20487ab34aa31c5b6456910ed2ed438f'
-PRIVATE_INPUT_HELPER_BLOB='9a9f7f724ceaf895e52d6d443d326043f97645c8'
+PRIVATE_INPUT_HELPER_COMMIT='c8c706e3d67d2aeab37341035468437dc2af0491'
+PRIVATE_INPUT_HELPER_BLOB='38eb695792fb759428a98686081b883e39c3b118'
 PRIVATE_INPUT_HELPER_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-private-input.XXXXXX)"
 PRIVATE_INPUT_HELPER="$PRIVATE_INPUT_HELPER_DIR/es80_today_private_device_input.py"
 
@@ -113,7 +115,7 @@ test -f "$UDID_FILE" && test ! -L "$UDID_FILE"
 test "$(/usr/bin/stat -f '%Lp' "$UDID_FILE")" = '600'
 ```
 
-If the helper reports `NOT_READY`, stop before signing and preserve the exact blocker. Do not fall back to `printf >`, `tee`, `echo`, `noclobber`, or another pathname-based secret write. Keep the resulting file private; do not commit it and do not copy it into the retained candidate directory. If the chosen final path already exists, preserve it and choose a fresh filename/path rather than deleting or overwriting it just to satisfy the helper.
+If the helper reports `NOT_READY`, cannot establish secure terminal input, or is interrupted, stop before signing and preserve the exact non-secret blocker/abort. Do not fall back to `printf >`, `tee`, `echo`, `noclobber`, or another pathname-based secret write. Keep the resulting file private; do not commit it and do not copy it into the retained candidate directory. If the chosen final path already exists, preserve it and choose a fresh filename/path rather than deleting or overwriting it just to satisfy the helper.
 
 ## 3. Set the signing inputs without changing the source subject
 
@@ -259,7 +261,7 @@ Stop and preserve the exact blocker if any of these occurs:
 
 - the outer checkout is not exact clean detached `a0f4a33451f61411d6e0541f2e70edea5438342d`;
 - `DEVELOPER_DIR` is set or reintroduced after Section 3; configure Xcode 27 through the private Mac's `xcode-select` selection instead of carrying a caller override into the frozen producer;
-- the descriptor-bound private-input helper cannot be materialized at exact commit/blob, refuses the parent/input, or cannot create and rebind one fresh exact mode-`0600` single-link file;
+- the descriptor-bound private-input helper cannot be materialized at exact commit/blob, cannot establish secure no-echo terminal input, refuses the parent/input, is interrupted, or cannot create and rebind one fresh exact mode-`0600` single-link file;
 - the pinned external preflight cannot be materialized exactly, exits nonzero, or does not report `READY_TO_INVOKE_SIGNED_FIELD_PRODUCER` for the exact frozen source;
 - the ExportOptions plist path is not absolute, traverses a symlinked ancestor, names a symlink/non-regular/empty subject, changes identity while parsed, has a mismatched optional `teamID`, or has an invalid optional `method`;
 - the producer reports any source, signing, provisioning, intended-device, export, inspection, or evidence failure;
