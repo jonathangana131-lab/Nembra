@@ -10,6 +10,7 @@ on:
       - scripts/ci/tests/test_es80_export_options_coherence.py
       - scripts/ci/es80_today_private_device_input.py
       - scripts/ci/tests/test_es80_today_private_device_input.py
+      - scripts/ci/tests/test_es80_today_private_helper_retry_handoff.py
       - docs/ES80_TODAY_SIGNED_FIELD_CANDIDATE_PRODUCTION.md
       - docs/ES80_TODAY_PRIVATE_DEVICE_INPUT_CUSTODY.md
       - .github/workflows/capture-today-field-candidate-preflight-qa.yml
@@ -47,7 +48,8 @@ jobs:
             scripts/ci/tests/test_es80_today_field_candidate_developer_dir_handoff.py \
             scripts/ci/tests/test_es80_export_options_coherence.py \
             scripts/ci/es80_today_private_device_input.py \
-            scripts/ci/tests/test_es80_today_private_device_input.py
+            scripts/ci/tests/test_es80_today_private_device_input.py \
+            scripts/ci/tests/test_es80_today_private_helper_retry_handoff.py
 
       - name: Run focused preflight and handoff regressions
         run: |
@@ -56,3 +58,4 @@ jobs:
           python3 scripts/ci/tests/test_es80_today_field_candidate_developer_dir_handoff.py -v
           python3 scripts/ci/tests/test_es80_export_options_coherence.py -v
           python3 scripts/ci/tests/test_es80_today_private_device_input.py -v
+          python3 scripts/ci/tests/test_es80_today_private_helper_retry_handoff.py -v
