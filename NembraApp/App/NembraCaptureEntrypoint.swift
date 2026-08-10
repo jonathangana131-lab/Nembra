@@ -1,3 +1,4 @@
+@preconcurrency import CoreBluetooth
 import CoreTransferable
 import Foundation
 import NembraBluetoothCapture
@@ -11,6 +12,7 @@ import ThingSmartHomeKit
 import NembraTuyaPrivateConfig
 #endif
 
+let CBAdvertisementDataIsConnectableKey = CBAdvertisementDataIsConnectable
 
 @main @MainActor
 struct NembraCaptureApp: App {
@@ -282,6 +284,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     static let historicalCapturePeripheral = UUID(uuidString: "6815A5F5-4D1E-E004-BAE8-6DF924123907")!
+    static let fd50 = CBUUID(string: "FD50")
     private static let maximumObservationPollGapNanoseconds = TuyaAuthenticatedReadOnlySessionLedger.maximumContinuousObservationGapNanoseconds
 
     @Published private(set) var phase: Phase = .idle
@@ -310,7 +313,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
     let tuyaUUID: String
 
     private let buildIdentity = NembraCaptureBuildIdentity.current
+    private var central: CBCentralManager!
     private var byID: [UUID: Candidate] = [:]
+    private var baseline = Set<UUID>()
     private var correlationSession: PassiveBluetoothPowerCycleObservationSession?
     private var correlationProvenance: CorrelationProvenance?
     private var targetCorrelationMethod: String?
@@ -335,6 +340,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         productID = device.productID
         tuyaUUID = device.uuid
         super.init()
+        central = CBCentralManager(delegate: self, queue: .main)
         log("controller_created")
     }
 
@@ -443,10 +449,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
         guard currentConnectionToken == nil else {
-            failLocally(
-                "A prior authenticated generation has not been terminally retired. Relaunch Capture before starting another attempt.",
-                "active_generation_blocks_discovery_reset"
-            )
+            let token = currentConnectionToken!
+            Task { @MainActor in
+                await self.invalidateInternalLifecycle(
+                    token: token,
+                    message: "A prior authenticated generation unexpectedly still owned session authority when OFF1 was requested. It was terminally retired; restart from OFF1.",
+                    kind: "active_generation_blocks_discovery_reset"
+                )
+            }
             return
         }
 
@@ -658,6 +668,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
 #if canImport(ThingSmartHomeKit)
         membershipProbe = nil
 #endif
+        central.stopScan()
         if [.baseline, .powerOn, .scanning, .correlated, .selected].contains(phase) {
             phase = .failed
             message = "SDK account authority changed. Discovery stopped before any authenticated BLE attempt."
@@ -804,6 +815,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
+        central.stopScan()
         driver = newDriver
         watchdog?.cancel()
         watchdog = nil
@@ -1000,16 +1012,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
             log("stale_connect_failure_ignored", ["generation": String(token.diagnosticGeneration)])
             return
         }
-        guard sdkAccountLoggedIn,
-              sdkDeviceMembershipVerified,
-              accountIdentityLeaseIsAuthorized else {
-            await invalidateSourceAuthority(
-                token: token,
-                message: "Tuya account/device source authority changed before the SDK failure callback was classified.",
-                kind: "sdk_source_authority_lost_before_auth_failure"
-            )
-            return
-        }
         await authenticationAcquisitionFailed(
             token: token,
             message: "Tuya SmartLife SDK did not establish the supported BLE session.",
@@ -1106,9 +1108,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 kind: "application_receipt_clock_regressed"
             )
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.observationContinuityInvalidated {
-            await invalidateObservationContinuity(
+            await mirrorAlreadyTerminalObservationContinuity(
                 token: token,
-                message: "Application receipt arrived after authenticated observation continuity was already invalid.",
+                message: "Application receipt crossed the package-owned continuous-observation horizon. The package already retired this generation; no disconnect is claimed.",
                 kind: "application_observation_continuity_invalidated"
             )
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
@@ -1184,9 +1186,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     )
                     return
                 } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.observationContinuityInvalidated {
-                    await self.invalidateObservationContinuity(
+                    await self.mirrorAlreadyTerminalObservationContinuity(
                         token: token,
-                        message: "Authenticated-session liveness exceeded the accepted continuous-observation horizon.",
+                        message: "Authenticated-session liveness crossed the package-owned continuous-observation horizon. The package already retired this generation; no disconnect is claimed.",
                         kind: "session_liveness_continuity_invalidated"
                     )
                     return
@@ -1241,11 +1243,17 @@ private final class SecureLinkController: NSObject, ObservableObject {
                             message: "Canonical acceptance sealing encountered a monotonic-clock regression.",
                             kind: "accepted_prefix_seal_clock_regressed"
                         )
-                    } catch {
-                        await self.invalidateObservationContinuity(
+                    } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.observationContinuityInvalidated {
+                        await self.mirrorAlreadyTerminalObservationContinuity(
                             token: token,
-                            message: "Canonical readiness could not be sealed: \(error.localizedDescription)",
-                            kind: "accepted_prefix_seal_failed"
+                            message: "Canonical acceptance crossed the package-owned continuous-observation horizon. The package already retired this generation; no disconnect is claimed.",
+                            kind: "accepted_prefix_seal_continuity_invalidated"
+                        )
+                    } catch {
+                        await self.invalidateInternalLifecycle(
+                            token: token,
+                            message: "Canonical readiness sealing violated the current internal session lifecycle: \(error.localizedDescription)",
+                            kind: "accepted_prefix_seal_lifecycle_rejected"
                         )
                     }
                     return
@@ -1349,6 +1357,27 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 return
             }
         }
+        currentConnectionToken = nil
+        localBLESettlementToken = nil
+        sdkLocalBLEOnline = false
+        driver = nil
+        await refreshLedgerSnapshot()
+        phase = .failed
+        self.message = message
+        log(kind, ["generation": String(token.diagnosticGeneration)])
+    }
+
+    /// Mirrors a terminal continuity verdict already committed by the package mutation that threw
+    /// `observationContinuityInvalidated`. The package clears its current token before throwing,
+    /// so a second ledger terminal here would fabricate a retirement failure.
+    private func mirrorAlreadyTerminalObservationContinuity(
+        token: TuyaReadOnlyConnectionToken,
+        message: String,
+        kind: String
+    ) async {
+        guard currentConnectionToken == token else { return }
+        watchdog?.cancel()
+        watchdog = nil
         currentConnectionToken = nil
         localBLESettlementToken = nil
         sdkLocalBLEOnline = false
@@ -1484,12 +1513,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
         targetCorrelationMethod = nil
         targetCorrelationWindowCount = nil
         targetCorrelationOperatorConfirmed = false
+        central.stopScan()
         watchdog?.cancel()
         watchdog = nil
         driver = nil
         localBLESettlementToken = nil
         byID.removeAll()
         candidates.removeAll()
+        baseline.removeAll()
         selectedID = nil
         pendingCorrelatedTargetID = nil
         sdkLocalBLEOnline = false
@@ -1508,6 +1539,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         pendingCorrelatedTargetID = nil
         watchdog?.cancel()
         watchdog = nil
+        central.stopScan()
         phase = .failed
         message = text
         log(kind, ["message": text])
@@ -1517,6 +1549,79 @@ private final class SecureLinkController: NSObject, ObservableObject {
         events.append(Event(at: Date(), kind: kind, details: details))
     }
 
+    private static func hasTuyaCompanyID(_ data: Data?) -> Bool {
+        guard let data, data.count >= 2 else { return false }
+        return (UInt16(data[data.startIndex]) | UInt16(data[data.index(after: data.startIndex)]) << 8) == 0x07D0
+    }
+
+    private func updateCandidate(_ peripheral: CBPeripheral, advertisement: [String: Any], rssi number: NSNumber) {
+        let id = peripheral.identifier
+        if phase == .baseline { baseline.insert(id) }
+        let old = byID[id]
+        let name = (advertisement[CBAdvertisementDataLocalNameKey] as? String) ?? peripheral.name ?? old?.name
+        let rssi = number.intValue == 127 ? old?.rssi : number.intValue
+        let serviceUUIDs = ((advertisement[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID]) ?? [])
+            + ((advertisement[CBAdvertisementDataOverflowServiceUUIDsKey] as? [CBUUID]) ?? [])
+            + ((advertisement[CBAdvertisementDataSolicitedServiceUUIDsKey] as? [CBUUID]) ?? [])
+        let serviceData = advertisement[CBAdvertisementDataServiceDataKey] as? [CBUUID: Data]
+        let fd50 = serviceUUIDs.contains(Self.fd50)
+            || serviceData?.keys.contains(Self.fd50) == true
+            || old?.fd50 == true
+        let tuyaCompany = Self.hasTuyaCompanyID(advertisement[CBAdvertisementDataManufacturerDataKey] as? Data)
+            || old?.tuyaCompany == true
+        let historicalCaptureID = id == Self.historicalCapturePeripheral
+        let newAfterPowerOn = (phase == .scanning && !baseline.contains(id)) || old?.newAfterPowerOn == true
+        let expectedName = name?.localizedCaseInsensitiveContains("demo") == true
+            || name?.localizedCaseInsensitiveContains("tuya") == true
+            || old?.expectedName == true
+
+        var score = 0
+        var evidence: [String] = []
+        if historicalCaptureID { evidence.append("matches C7D09A22 capture-local UUID descriptive") }
+        if fd50 { score += 500; evidence.append("FD50 descriptive") }
+        if tuyaCompany { score += 350; evidence.append("Tuya company 0x07D0 descriptive") }
+        if newAfterPowerOn { score += 180; evidence.append("appeared after power-on descriptive") }
+        if expectedName { score += 100; evidence.append("name hint descriptive") }
+        if let rssi {
+            if rssi >= -50 { score += 80; evidence.append("very close RSSI descriptive") }
+            else if rssi >= -65 { score += 50; evidence.append("nearby RSSI descriptive") }
+            else if rssi >= -80 { score += 20 }
+        }
+
+        byID[id] = Candidate(
+            id: id,
+            name: name,
+            rssi: rssi,
+            advertisements: (old?.advertisements ?? 0) + 1,
+            newAfterPowerOn: newAfterPowerOn,
+            fd50: fd50,
+            tuyaCompany: tuyaCompany,
+            historicalCaptureID: historicalCaptureID,
+            freshlyCorrelated: false,
+            expectedName: expectedName,
+            score: score,
+            evidence: evidence
+        )
+        candidates = byID.values.sorted {
+            $0.score == $1.score ? (($0.rssi ?? -999) > ($1.rssi ?? -999)) : $0.score > $1.score
+        }
+    }
+}
+
+extension SecureLinkController: @preconcurrency CBCentralManagerDelegate {
+    func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        log("central_state", ["raw": String(central.state.rawValue)])
+    }
+
+    func centralManager(
+        _ central: CBCentralManager,
+        didDiscover peripheral: CBPeripheral,
+        advertisementData: [String: Any],
+        rssi RSSI: NSNumber
+    ) {
+        guard phase == .baseline || phase == .scanning else { return }
+        updateCandidate(peripheral, advertisement: advertisementData, rssi: RSSI)
+    }
 }
 
 @MainActor
