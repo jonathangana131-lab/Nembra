@@ -70,6 +70,7 @@ private struct CaptureP0Root: View {
                                     Button("Create approval QR") { tuya.requestApproval() }
                                         .buttonStyle(.borderedProminent)
                                         .controlSize(.large)
+                                        .disabled(tuya.phase == .requestingApproval)
                                 }
 
                                 if let data = tuya.qrPNGData,
