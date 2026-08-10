@@ -24,7 +24,7 @@ private struct CaptureP0Root: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("P0 · TUYA AUTHENTICATION").font(.caption.monospaced().bold()).foregroundStyle(.green)
                     Text("Prove the secure scooter link first.").font(.largeTitle.bold())
-                    Text("The next physical run is stationary. It proves supported Tuya authentication, >45 s continuity, and real application updates through Tuya's own SDK. The old 17-step ride sequence stays disabled until this passes.").foregroundStyle(.secondary)
+                    Text("The next physical run is stationary. It proves supported Tuya authentication, at least 45 s continuity, and real application updates through Tuya's own SDK. The old 17-step ride sequence stays disabled until this passes.").foregroundStyle(.secondary)
                     VStack(alignment: .leading, spacing: 8) {
                         Label("Read-only control boundary", systemImage: "shield.checkered").font(.headline)
                         Text("Account linking is used for ownership/device identity. Nembra does not turn local_key into a BLE login key, synthesize Tuya authentication frames, or open a second CoreBluetooth connection after the official SDK takes ownership.").foregroundStyle(.secondary)
@@ -161,7 +161,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         (phase == .observing || phase == .accepted) &&
         sdkLocalBLEOnline &&
         applicationUpdateCount > 0 &&
-        (secureSessionAgeSeconds ?? 0) > 45
+        (secureSessionAgeSeconds ?? 0) >= 45
     }
 
     func startBaseline() {
@@ -220,7 +220,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
         applicationUpdateCount += 1; log("tuya_application_update", update)
-        message = passed ? "Secure scooter link passed. Tuya delivered real application data and remained locally connected beyond 45 seconds." : "Receiving scooter application data · \(applicationUpdateCount) update(s). Keep it stationary until the 45-second gate passes."
+        message = passed ? "Secure scooter link passed. Tuya delivered real application data and remained locally connected for at least 45 seconds." : "Receiving scooter application data · \(applicationUpdateCount) update(s). Keep it stationary until the 45-second gate passes."
         if passed { phase = .accepted }
     }
 
@@ -230,7 +230,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 guard let self, self.secureSessionEstablished, let driver = self.driver else { return }
                 self.sdkLocalBLEOnline = driver.isLocallyConnected(uuid: self.tuyaUUID)
                 if !self.sdkLocalBLEOnline, (self.secureSessionAgeSeconds ?? 0) > 2 { self.fail("Tuya's local BLE session dropped before acceptance. Export diagnostics; do not repeat the outdoor ride capture.", "sdk_local_ble_dropped"); return }
-                if self.passed { self.phase = .accepted; self.message = "Secure scooter link passed. Tuya delivered real application data and remained connected beyond 45 seconds."; self.log("acceptance_passed", ["applicationUpdates": String(self.applicationUpdateCount)]); return }
+                if self.passed { self.phase = .accepted; self.message = "Secure scooter link passed. Tuya delivered real application data and remained connected for at least 45 seconds."; self.log("acceptance_passed", ["applicationUpdates": String(self.applicationUpdateCount)]); return }
                 if (self.secureSessionAgeSeconds ?? 0) > 60 && self.applicationUpdateCount == 0 { self.fail("The secure session survived, but Tuya delivered no application update within 60 seconds.", "no_application_updates"); return }
                 try? await Task.sleep(for: .seconds(1))
             }
@@ -480,7 +480,7 @@ private struct SecureLinkView: View {
                     }
                     VStack(alignment: .leading, spacing: 7) {
                         Label("Acceptance", systemImage: test.passed ? "checkmark.seal.fill" : "hourglass").font(.headline).foregroundStyle(test.passed ? .green : .white)
-                        Text("Pass only when Tuya's official SDK reports the scooter locally connected, the secure session survives >45 seconds, and at least one genuine device application update is received. Nembra still assigns no DP meaning here.").font(.footnote).foregroundStyle(.secondary)
+                        Text("Pass only when Tuya's official SDK reports the scooter locally connected, the secure session survives at least 45 seconds, and at least one genuine device application update is received. Nembra still assigns no DP meaning here.").font(.footnote).foregroundStyle(.secondary)
                         if test.passed { Text("Secure scooter link established\nReceiving scooter data").font(.title3.bold()).foregroundStyle(.green) }
                     }.card()
                     VStack(alignment: .leading, spacing: 8) {
