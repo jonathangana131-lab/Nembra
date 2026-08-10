@@ -132,6 +132,27 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
                 self.current()
         self.assertTrue(mutated)
 
+    def test_file_fingerprint_rejects_same_inode_mutation_after_final_descriptor_stat(self) -> None:
+        target = self.security_podspec
+        size = target.stat().st_size
+        inode = target.stat().st_ino
+        original_lstat = Path.lstat
+        mutated = False
+
+        def mutate_then_lstat(path: Path) -> os.stat_result:
+            nonlocal mutated
+            if path == target and not mutated:
+                mutated = True
+                target.write_bytes(b"Q" * size)
+            return original_lstat(path)
+
+        with mock.patch.object(Path, "lstat", autospec=True, side_effect=mutate_then_lstat):
+            with self.assertRaises(provenance.ProvenanceError):
+                provenance._file_fingerprint(target)
+
+        self.assertTrue(mutated)
+        self.assertEqual(target.stat().st_ino, inode)
+
     def test_tree_rejects_file_replacement_after_individual_fingerprint(self) -> None:
         target = self.security_build / "ThingSmartCryption.bin"
         replacement = self.root / "replacement.bin"
