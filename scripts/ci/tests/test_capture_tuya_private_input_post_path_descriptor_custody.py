@@ -1,39 +1,4 @@
-from pathlib import Path
-
-helper = Path("Scripts/capture_tuya_private_input_provenance.py")
-source = helper.read_text(encoding="utf-8")
-old = '''        try:
-            current_path = path.lstat()
-        except OSError as error:
-            raise ProvenanceError(f"private build input pathname changed during fingerprinting: {path.name}") from error
-        if (
-            stat.S_ISLNK(current_path.st_mode)
-            or not stat.S_ISREG(current_path.st_mode)
-            or _stat_identity(current_path) != _stat_identity(after)
-        ):
-            raise ProvenanceError(f"private build input pathname changed during fingerprinting: {path.name}")
-        return after, digest.hexdigest()
-'''
-new = '''        try:
-            current_path = path.lstat()
-            final_descriptor = os.fstat(descriptor)
-        except OSError as error:
-            raise ProvenanceError(f"private build input pathname changed during fingerprinting: {path.name}") from error
-        if (
-            stat.S_ISLNK(current_path.st_mode)
-            or not stat.S_ISREG(current_path.st_mode)
-            or _stat_identity(current_path) != _stat_identity(after)
-            or _stat_identity(final_descriptor) != _stat_identity(after)
-        ):
-            raise ProvenanceError(f"private build input changed during final fingerprint custody: {path.name}")
-        return final_descriptor, digest.hexdigest()
-'''
-if source.count(old) != 1:
-    raise SystemExit(f"post-path descriptor seam drifted: {source.count(old)}")
-helper.write_text(source.replace(old, new, 1), encoding="utf-8")
-
-test = Path("scripts/ci/tests/test_capture_tuya_private_input_post_path_descriptor_custody.py")
-test.write_text('''#!/usr/bin/env python3
+#!/usr/bin/env python3
 from __future__ import annotations
 import importlib.util
 import os
@@ -72,4 +37,3 @@ class PostPathDescriptorCustodyTests(unittest.TestCase):
             self.assertEqual(target.stat().st_size, 4)
 if __name__ == "__main__":
     unittest.main()
-''', encoding="utf-8")
