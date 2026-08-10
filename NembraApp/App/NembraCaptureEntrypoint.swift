@@ -197,7 +197,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     static let knownPeripheral = UUID(uuidString: "6815A5F5-4D1E-E004-BAE8-6DF924123907")!
     static let fd50 = CBUUID(string: "FD50")
-    private static let maximumObservationPollGapNanoseconds: UInt64 = 5_000_000_000
+    private static let maximumObservationPollGapNanoseconds = TuyaAuthenticatedReadOnlySessionLedger.maximumContinuousObservationGapNanoseconds
 
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var message = "Log in the official SDK account and verify the exact scooter before Bluetooth discovery."
@@ -305,6 +305,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
               sdkAccountLoggedIn,
               sdkDeviceMembershipVerified else {
             failLocally("SDK account/device authority changed before discovery began.", "sdk_authority_changed_before_scan")
+            return
+        }
+        guard currentConnectionToken == nil else {
+            failLocally(
+                "A prior authenticated generation has not been terminally retired. Relaunch Capture before starting another attempt.",
+                "active_generation_blocks_discovery_reset"
+            )
             return
         }
         resetDiscoverySessionOnly()
@@ -707,7 +714,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
                             "applicationUpdates": String(self.applicationUpdateCount)
                         ])
                     } catch {
-                        self.failLocally("Canonical readiness could not be sealed: \(error.localizedDescription)", "accepted_prefix_seal_failed")
+                        await self.invalidateObservedAuthority(
+                            token: token,
+                            message: "Canonical readiness could not be sealed: \(error.localizedDescription)",
+                            kind: "accepted_prefix_seal_failed"
+                        )
                     }
                     return
 
@@ -817,12 +828,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
         selectedID = nil
         sdkLocalBLEOnline = false
         exportData = nil
-        if let token = currentConnectionToken {
-            currentConnectionToken = nil
-            Task { [sessionLedger] in
-                try? await sessionLedger.endConnection(for: token)
-            }
-        }
+        // Active authenticated generations must be terminally retired by their
+        // owning outcome path before a new discovery attempt. Generic reset never
+        // manufactures a transport-disconnect terminal.
+        assert(currentConnectionToken == nil)
     }
 
     private func failLocally(_ text: String, _ kind: String) {
