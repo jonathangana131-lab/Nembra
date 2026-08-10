@@ -1,0 +1,60 @@
+name: Materialize Capture SDK Account Recovery e7af
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-sdk-account-recovery-e7af-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: fix/v14-capture-sdk-account-recovery-e7af-sol
+
+      - name: Guard exact construction parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "e7af19bf1d9b21c2b184c2a8c403d0d86dbc06c7"
+
+      - name: Materialize reviewed account recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/materialize_capture_sdk_account_recovery_e7af.py
+          git diff --check
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkAccountRecoverySourceTests.swift
+
+      - name: Verify preserved product truth
+        shell: bash
+        run: |
+          set -euo pipefail
+          app='NembraApp/App/NembraCaptureEntrypoint.swift'
+          grep -Fq 'private var correlationDisplayedWindowOrdinal: Int' "$app"
+          grep -Fq 'test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)' "$app"
+          grep -Fq 'failureRecoveryContextPanel' "$app"
+          grep -Fq 'func retry()' "$app"
+          grep -Fq 'guard phase == .failed, canRestartFromFreshOFF1 else' "$app"
+          grep -Fq 'func signOut()' "$app"
+          grep -Fq 'Use a different Tuya account' "$app"
+          grep -Fq 'test.membershipStatus' "$app"
+
+      - name: Publish validated construction checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f scripts/ci/materialize_capture_sdk_account_recovery_e7af.py .github/workflows/v14-materialize-capture-sdk-account-recovery-e7af.yml
+          git config user.name "nembra-v14-bot"
+          git config user.email "nembra-v14-bot@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(capture): add wrong-account recovery to current product"
+          git push origin HEAD:fix/v14-capture-sdk-account-recovery-e7af-sol
