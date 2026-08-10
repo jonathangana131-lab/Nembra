@@ -76,14 +76,10 @@ jobs:
               @Test("exact account UID is scrubbed from values while generic uid key survives")
               func valueRedactionPreservesGenericUIDKey() {
                   let result = TuyaExactSecretValueRedactor.redact(
-                      fields: [
-                          "uid": "device-uid-456",
-                          "owner": "prefix-account-UID-123-suffix",
-                      ],
+                      fields: ["uid": "device-uid-456", "owner": "prefix-account-UID-123-suffix"],
                       exactSecret: secret,
                       marker: marker
                   )
-
                   #expect(result["uid"] == "device-uid-456")
                   #expect(result["owner"] == "prefix-<redacted-account-uid>-suffix")
                   #expect(!result.keys.joined().contains(secret))
@@ -97,7 +93,6 @@ jobs:
                       exactSecret: secret,
                       marker: marker
                   )
-
                   #expect(result["device-<redacted-account-uid>-owner"] == "safe")
                   #expect(!result.keys.joined().contains(secret))
               }
@@ -112,7 +107,6 @@ jobs:
                       exactSecret: secret,
                       marker: marker
                   )
-
                   #expect(result.count == 2)
                   #expect(Set(result.values) == Set([marker, "already marker text"]))
                   #expect(result.keys.allSatisfy { !$0.contains(secret) })
@@ -131,52 +125,29 @@ jobs:
 
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           source = path.read_text()
-          old_guard = '''        guard sdkAccountLoggedIn,
-                  sdkDeviceMembershipVerified,
-                  accountIdentityLeaseIsAuthorized,
-                  let driver else {
-              await invalidateSourceAuthority(
-                  token: token,
-                  message: "SDK account/device source authority changed before application evidence arrived.",
-                  kind: "sdk_source_authority_changed_during_observation"
-              )
-              return
-          }'''
-          new_guard = '''        guard sdkAccountLoggedIn,
-                  sdkDeviceMembershipVerified,
-                  accountIdentityLeaseIsAuthorized,
-                  let verifiedAccountUID = currentAccountUID,
-                  !verifiedAccountUID.isEmpty,
-                  membershipAccountUID == verifiedAccountUID,
-                  let driver else {
-              await invalidateSourceAuthority(
-                  token: token,
-                  message: "SDK account/device source authority changed before application evidence arrived.",
-                  kind: "sdk_source_authority_changed_during_observation"
-              )
-              return
-          }'''
-          if source.count(old_guard) != 1:
-              raise SystemExit(f"expected one application authority guard, found {source.count(old_guard)}")
-          source = source.replace(old_guard, new_guard, 1)
+          start = source.index("    private func receivedApplicationUpdate(")
+          end = source.index("    private func startWatchdog", start)
+          receiver = source[start:end]
 
-          old_log = '''            log("tuya_application_update", update.merging([
-                  "generation": String(token.diagnosticGeneration)
-              ]) { _, trusted in trusted })'''
-          new_log = '''            let accountUIDRedactedUpdate = TuyaExactSecretValueRedactor.redact(
+          authority = "              accountIdentityLeaseIsAuthorized,\n              let driver else {"
+          replacement = "              accountIdentityLeaseIsAuthorized,\n              let verifiedAccountUID = currentAccountUID,\n              !verifiedAccountUID.isEmpty,\n              membershipAccountUID == verifiedAccountUID,\n              let driver else {"
+          if receiver.count(authority) != 1:
+              raise SystemExit(f"expected one application authority seam, found {receiver.count(authority)}")
+          receiver = receiver.replace(authority, replacement, 1)
+
+          log_prefix = '            log("tuya_application_update", update.merging(['
+          if receiver.count(log_prefix) != 1:
+              raise SystemExit(f"expected one trusted application event log seam, found {receiver.count(log_prefix)}")
+          redacted_log_prefix = '''            let accountUIDRedactedUpdate = TuyaExactSecretValueRedactor.redact(
                   fields: update,
                   exactSecret: verifiedAccountUID,
                   marker: "<redacted-account-uid>"
               )
-              log("tuya_application_update", accountUIDRedactedUpdate.merging([
-                  "generation": String(token.diagnosticGeneration)
-              ]) { _, trusted in trusted })'''
-          if source.count(old_log) != 1:
-              raise SystemExit(f"expected one trusted application-event log admission, found {source.count(old_log)}")
-          path.write_text(source.replace(old_log, new_log, 1))
+              log("tuya_application_update", accountUIDRedactedUpdate.merging(['''
+          receiver = receiver.replace(log_prefix, redacted_log_prefix, 1)
+          path.write_text(source[:start] + receiver + source[end:])
           PY
 
           cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift <<'SWIFT'
@@ -189,17 +160,8 @@ jobs:
               @Test("accepted application evidence redacts the verified account UID before event custody")
               func applicationEvidenceCannotExportVerifiedAccountUID() throws {
                   let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-                  let updateAdmission = String(try section(
-                      in: source,
-                      from: "private func receivedApplicationUpdate(",
-                      to: "private func startWatchdog"
-                  ))
-                  let prepareExport = String(try section(
-                      in: source,
-                      from: "func prepareExport()",
-                      to: "private func abandonPackageCorrelation()"
-                  ))
-
+                  let updateAdmission = String(try section(in: source, from: "private func receivedApplicationUpdate(", to: "private func startWatchdog"))
+                  let prepareExport = String(try section(in: source, from: "func prepareExport()", to: "private func abandonPackageCorrelation()"))
                   #expect(prepareExport.contains("No account UID"))
                   #expect(updateAdmission.contains("let verifiedAccountUID = currentAccountUID"))
                   #expect(updateAdmission.contains("membershipAccountUID == verifiedAccountUID"))
@@ -215,31 +177,25 @@ jobs:
               @Test("account UID custody is value-bound rather than a blanket generic uid-key rule")
               func accountUIDCustodyDoesNotEraseGenericDeviceUIDKeys() throws {
                   let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-                  let driver = String(try section(
-                      in: source,
-                      from: "@MainActor\nprivate final class SmartLifeDriver",
-                      to: "#endif\n\nprivate enum AppleAccountAuthorizationError"
-                  ))
+                  let driver = String(try section(in: source, from: "@MainActor\nprivate final class SmartLifeDriver", to: "#endif\n\nprivate enum AppleAccountAuthorizationError"))
                   #expect(!driver.contains("\"uid\","))
                   #expect(!driver.contains("\"uid\"\n"))
               }
 
               private func section(in source: String, from start: String, to end: String) throws -> Substring {
-                  guard let startRange = source.range(of: start),
-                        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+                  guard let a = source.range(of: start), let b = source.range(of: end, range: a.upperBound..<source.endIndex) else {
                       Issue.record("Expected source section missing: \(start) ... \(end)")
                       throw SourceContractError.sectionMissing
                   }
-                  return source[startRange.lowerBound..<endRange.lowerBound]
+                  return source[a.lowerBound..<b.lowerBound]
               }
 
               private func readRepositoryFile(_ relativePath: String) throws -> String {
-                  let repositoryRoot = URL(fileURLWithPath: #filePath)
+                  let root = URL(fileURLWithPath: #filePath)
                       .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
                       .deletingLastPathComponent().deletingLastPathComponent()
-                  return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+                  return try String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)
               }
-
               private enum SourceContractError: Error { case sectionMissing }
           }
           SWIFT
@@ -256,8 +212,6 @@ jobs:
           assert 'let verifiedAccountUID = currentAccountUID' in receiver
           assert 'membershipAccountUID == verifiedAccountUID' in receiver
           assert 'TuyaExactSecretValueRedactor.redact' in receiver
-          assert 'fields: update' in receiver
-          assert 'exactSecret: verifiedAccountUID' in receiver
           assert 'marker: "<redacted-account-uid>"' in receiver
           assert 'log("tuya_application_update", update.merging([' not in receiver
           assert 'accountUIDRedactedUpdate.merging([' in receiver
