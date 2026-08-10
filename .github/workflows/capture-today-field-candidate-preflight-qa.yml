@@ -10,10 +10,12 @@ on:
       - scripts/ci/tests/test_es80_today_field_source_scope.py
       - scripts/ci/tests/test_es80_today_private_helper_handoff_pin.py
       - scripts/ci/tests/test_es80_export_options_coherence.py
+      - scripts/ci/tests/test_es80_private_field_runbook_production_entry.py
       - scripts/ci/es80_today_private_device_input.py
       - scripts/ci/tests/test_es80_today_private_device_input.py
       - docs/ES80_TODAY_SIGNED_FIELD_CANDIDATE_PRODUCTION.md
       - docs/ES80_TODAY_PRIVATE_DEVICE_INPUT_CUSTODY.md
+      - docs/ES80_TODAY_PRIVATE_FIELD_RUNBOOK.md
       - .github/workflows/capture-today-field-candidate-preflight-qa.yml
 
 permissions:
@@ -50,6 +52,7 @@ jobs:
             scripts/ci/tests/test_es80_today_field_source_scope.py \
             scripts/ci/tests/test_es80_today_private_helper_handoff_pin.py \
             scripts/ci/tests/test_es80_export_options_coherence.py \
+            scripts/ci/tests/test_es80_private_field_runbook_production_entry.py \
             scripts/ci/es80_today_private_device_input.py \
             scripts/ci/tests/test_es80_today_private_device_input.py
 
@@ -61,4 +64,5 @@ jobs:
           python3 scripts/ci/tests/test_es80_today_field_source_scope.py -v
           python3 scripts/ci/tests/test_es80_today_private_helper_handoff_pin.py -v
           python3 scripts/ci/tests/test_es80_export_options_coherence.py -v
+          python3 scripts/ci/tests/test_es80_private_field_runbook_production_entry.py -v
           python3 scripts/ci/tests/test_es80_today_private_device_input.py -v
