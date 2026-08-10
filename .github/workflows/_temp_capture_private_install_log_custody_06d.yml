@@ -1,0 +1,68 @@
+name: Temporary Capture live-head private install-log custody
+
+on:
+  push:
+    branches:
+      - work/v14-capture-private-install-log-custody-06d-sol
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: work/v14-capture-private-install-log-custody-06d-sol
+
+      - name: Apply live-head custody repair
+        run: python3 scripts/_temp_harden_capture_install_log_custody_06d.py
+
+      - name: Validate shell and source contract shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/field/install_one_time_capture.command
+          python3 - <<'PY'
+          from pathlib import Path
+          installer = Path('scripts/field/install_one_time_capture.command').read_text()
+          required = [
+              'iPhone13,2', '$DEVICE_OS_VERSION" == 27.*',
+              'devicectl device install app --device "$COREDEVICE_ID"',
+              'BUILT_BUILD_IDENTIFIER', 'BUILT_SOURCE_SHA', 'BUILT_BUNDLE_ID',
+              'mktemp "${TMPDIR:-/tmp}/nembra-authenticated-capture-install.XXXXXX"',
+              'trap \'rm -f -- "$INSTALL_LOG"\' EXIT', 'chmod 600 "$INSTALL_LOG"',
+              "printf '%s\\0%s' \"$DEVICE_UDID\" \"$COREDEVICE_ID\" | /usr/bin/python3 -I -c",
+              'payload = sys.stdin.buffer.read()', 'secret.replace("-", "")', 'flags=re.IGNORECASE',
+              'rm -f -- "$INSTALL_LOG"', 'trap - EXIT', 'OFF1 -> ON1 -> OFF2 -> ON2'
+          ]
+          for token in required:
+              assert token in installer, token
+          forbidden = [
+              'nembra-authenticated-capture-install.log',
+              'devicectl device install app --device "$DEVICE_UDID"',
+              'INSTALL_DIAGNOSTIC="${INSTALL_DIAGNOSTIC//$DEVICE_UDID/<redacted-device>}"',
+              'INSTALL_DIAGNOSTIC="${INSTALL_DIAGNOSTIC//$COREDEVICE_ID/<redacted-device-selector>}"'
+          ]
+          for token in forbidden:
+              assert token not in installer, token
+          PY
+          git diff --check
+
+      - name: Remove temporary patch transport
+        run: |
+          git rm .github/workflows/_temp_capture_private_install_log_custody_06d.yml
+          git rm scripts/_temp_harden_capture_install_log_custody_06d.py
+
+      - name: Commit product-only repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-v14-recovery'
+          git config user.email 'actions@users.noreply.github.com'
+          git add scripts/field/install_one_time_capture.command Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerPrivateInstallLogCustodySourceTests.swift
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m 'fix(capture): harden private install-log custody'
+          git push origin HEAD:work/v14-capture-private-install-log-custody-06d-sol
