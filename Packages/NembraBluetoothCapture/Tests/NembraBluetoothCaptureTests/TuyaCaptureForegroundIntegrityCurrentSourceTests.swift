@@ -16,6 +16,8 @@ struct TuyaCaptureForegroundIntegrityCurrentSourceTests {
         #expect(view.contains(".onChange(of: scenePhase)"))
         #expect(view.contains("if newPhase != .active"))
         #expect(view.contains("test.appDidLoseForeground()"))
+        #expect(view.contains("if scenePhase != .active {"))
+        #expect(view.contains("if scenePhase == .active, sdkAccount.loggedIn"))
 
         let closeAdmission = try offset("acceptsViewScopedMembershipRequests = false", in: cleanup)
         let revokeProof = try offset("sdkDeviceMembershipVerified = false", in: cleanup)
@@ -28,6 +30,7 @@ struct TuyaCaptureForegroundIntegrityCurrentSourceTests {
         #expect(revokeOfficialRequest < inspectCorrelation)
         #expect(cleanup.contains("membershipAccountUID = nil"))
         #expect(cleanup.contains("membershipDeviceID = nil"))
+        #expect(cleanup.contains("membershipStatus = \"Exact scooter membership authority was revoked when Capture left the foreground; it must be freshly verified before use.\""))
         #expect(cleanup.contains("guard hadViewAuthority else { return }"))
 
         #expect(cleanup.contains("foregroundIntegrityRequiresRelaunch = true"))
@@ -41,9 +44,10 @@ struct TuyaCaptureForegroundIntegrityCurrentSourceTests {
         #expect(!cleanup.contains("endConnection("))
         #expect(!cleanup.contains("disconnectBLE("))
 
-        #expect(exit.contains("if foregroundRetirementToken == token"))
+        let joined = try offset("if foregroundRetirementToken == token", in: exit)
+        let viewExitTerminal = try offset("Task { @MainActor [self] in", in: exit)
         #expect(exit.contains("view_exit_joined_foreground_retirement"))
-        #expect(exit.range(of: "if foregroundRetirementToken == token")!.lowerBound < exit.range(of: "Task { @MainActor [self] in")!.lowerBound)
+        #expect(joined < viewExitTerminal)
     }
 
     @Test("only a foreground-integrity failure blocks scene reactivation membership admission")
