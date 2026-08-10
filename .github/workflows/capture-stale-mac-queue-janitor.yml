@@ -1,0 +1,120 @@
+name: Capture stale Mac queue janitor
+
+on:
+  push:
+    branches:
+      - ops/v14-capture-stale-mac-queue-janitor-sol
+    paths:
+      - .github/workflows/capture-stale-mac-queue-janitor.yml
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+jobs:
+  cancel-stale-capture-mac-runs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Protect live Capture subjects and cancel stale Mac queue entries
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const owner = context.repo.owner
+            const repo = context.repo.repo
+            const PRODUCT_PR = 2250
+            const VISUAL_PR = 2500
+            const XCODE_WORKFLOW = 328913079
+            const FIELD_WORKFLOW = 330836993
+            const VISUAL_WORKFLOW = 330935072
+
+            const product = (await github.rest.pulls.get({ owner, repo, pull_number: PRODUCT_PR })).data
+            if (product.state !== 'open') {
+              core.setFailed(`Product PR #${PRODUCT_PR} is not open; refusing queue cleanup.`)
+              return
+            }
+            const productHead = product.head.sha
+            const productBranch = product.head.ref
+
+            const visual = (await github.rest.pulls.get({ owner, repo, pull_number: VISUAL_PR })).data
+            if (visual.state !== 'open' || visual.base.sha !== productHead) {
+              core.setFailed(
+                `Visual PR #${VISUAL_PR} is not an exact-current open subject: state=${visual.state} base=${visual.base.sha} product=${productHead}`
+              )
+              return
+            }
+            const visualHead = visual.head.sha
+            const visualBranch = visual.head.ref
+
+            core.info(`Protected product: #${PRODUCT_PR} ${productBranch}@${productHead}`)
+            core.info(`Protected visual: #${VISUAL_PR} ${visualBranch}@${visualHead}`)
+
+            const cancelable = new Set(['queued', 'in_progress', 'waiting', 'requested', 'pending'])
+            const cancelled = []
+            const protectedRuns = []
+
+            async function runsFor(workflowId) {
+              return await github.paginate(github.rest.actions.listWorkflowRuns, {
+                owner,
+                repo,
+                workflow_id: workflowId,
+                per_page: 100,
+              })
+            }
+
+            async function cancel(run, reason) {
+              if (!cancelable.has(run.status)) return
+              await github.rest.actions.cancelWorkflowRun({ owner, repo, run_id: run.id })
+              cancelled.push(`${run.name} #${run.id} ${run.head_sha}: ${reason}`)
+              core.notice(`Cancelled stale Capture Mac run ${run.id} (${run.name}) at ${run.head_sha}: ${reason}`)
+            }
+
+            for (const run of await runsFor(XCODE_WORKFLOW)) {
+              const belongsToProduct =
+                run.head_branch === productBranch ||
+                (run.pull_requests || []).some(pr => pr.number === PRODUCT_PR)
+              if (!belongsToProduct || !cancelable.has(run.status)) continue
+              if (run.head_sha === productHead) {
+                protectedRuns.push(`Xcode ${run.id}@${run.head_sha}`)
+                continue
+              }
+              await cancel(run, `stale product head; live=${productHead}`)
+            }
+
+            for (const run of await runsFor(FIELD_WORKFLOW)) {
+              const belongsToProduct =
+                run.head_branch === productBranch ||
+                (run.pull_requests || []).some(pr => pr.number === PRODUCT_PR)
+              if (!belongsToProduct || !cancelable.has(run.status)) continue
+              if (run.head_sha === productHead) {
+                protectedRuns.push(`Field provenance ${run.id}@${run.head_sha}`)
+                continue
+              }
+              await cancel(run, `stale product head; live=${productHead}`)
+            }
+
+            for (const run of await runsFor(VISUAL_WORKFLOW)) {
+              const isCaptureVisual =
+                typeof run.head_branch === 'string' &&
+                run.head_branch.startsWith('qa/v14-capture-visual-')
+              if (!isCaptureVisual || !cancelable.has(run.status)) continue
+              if (run.head_sha === visualHead && run.head_branch === visualBranch) {
+                protectedRuns.push(`Visual ${run.id}@${run.head_sha}`)
+                continue
+              }
+              await cancel(run, `superseded visual subject; live=${visualBranch}@${visualHead}`)
+            }
+
+            core.summary
+              .addHeading('Capture stale Mac queue cleanup')
+              .addRaw(`Protected product: #${PRODUCT_PR} ${productHead}\n`)
+              .addRaw(`Protected visual: #${VISUAL_PR} ${visualHead}\n`)
+              .addRaw(`Protected queued/running runs: ${protectedRuns.length}\n`)
+              .addRaw(`Cancelled stale runs: ${cancelled.length}\n`)
+              .addList(cancelled.length ? cancelled : ['No stale Capture Mac runs found'])
+            await core.summary.write()
+
+            core.info(`Protected runs: ${protectedRuns.join(', ') || 'none'}`)
+            core.info(`Cancelled stale runs: ${cancelled.length}`)
