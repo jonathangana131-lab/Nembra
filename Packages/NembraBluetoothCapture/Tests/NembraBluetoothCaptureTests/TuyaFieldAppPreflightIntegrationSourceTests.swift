@@ -56,6 +56,22 @@ struct TuyaFieldAppPreflightIntegrationSourceTests {
         #expect(!source.contains("central.connect("))
     }
 
+    @Test("private workspace consumes generated Tuya app identity instead of requiring launch environment")
+    func privateIdentityPodIsActuallyConsumedByFieldApp() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let podfile = try readRepositoryFile("Podfile")
+        let provisioner = try readRepositoryFile("Scripts/provision_capture_tuya_identity.sh")
+
+        #expect(podfile.contains("pod 'NembraTuyaPrivateConfig'"))
+        #expect(provisioner.contains("NembraTuyaPrivateIdentity"))
+        #expect(
+            source.contains("canImport(NembraTuyaPrivateConfig)") || source.contains("import NembraTuyaPrivateConfig"),
+            "Generating and linking a local private identity pod is not enough. The signed field app must explicitly consume that module so a normal installed iPhone launch can initialize ThingSmartSDK without Xcode launch-only environment variables."
+        )
+        #expect(source.contains("NembraTuyaPrivateIdentity.appKey"))
+        #expect(source.contains("NembraTuyaPrivateIdentity.appSecret"))
+    }
+
     private func readRepositoryFile(_ relativePath: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
