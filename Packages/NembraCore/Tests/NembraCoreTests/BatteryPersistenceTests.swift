@@ -40,6 +40,27 @@ struct BatteryPersistenceTests {
         #expect(decoded.authority == .estimated)
     }
 
+    @Test("restoring a retained snapshot preserves original observation truth")
+    func restorePreservesObservationTruth() throws {
+        let observedAt = Date(timeIntervalSince1970: 1_700_000_100)
+        let retainedAt = observedAt.addingTimeInterval(900)
+        let snapshot = try #require(RetainedBatterySnapshot(
+            percent: 58,
+            authority: .estimated,
+            observedAt: observedAt,
+            retainedAt: retainedAt
+        ))
+
+        let restored = try #require(snapshot.authoritativeObservation)
+
+        #expect(restored.percent == 58)
+        #expect(restored.authority == .estimated)
+        #expect(restored.observedAt == observedAt)
+        #expect(restored.observedAt != retainedAt)
+        #expect(restored.physicalMeasurement == nil)
+        #expect(restored.rangeEligible(currentness: .retained) == nil)
+    }
+
     @Test("invalid percentage and chronology fail closed")
     func invalidInputsFailClosed() {
         let observedAt = Date(timeIntervalSince1970: 1_700_000_000)
