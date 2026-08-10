@@ -515,9 +515,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
         correlationProgress = session.progress
         correlationProgressTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                guard let self, self.correlationSession === session else { return }
+                guard self?.correlationSession === session else { return }
                 if let progress = session.progress {
-                    self.correlationProgress = progress
+                    self?.correlationProgress = progress
                 }
                 try? await Task.sleep(for: .milliseconds(100))
             }
