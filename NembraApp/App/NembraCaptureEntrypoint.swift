@@ -1455,7 +1455,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
 
         guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
-      !verifiedAccountUID.isEmpty else {
+    !verifiedAccountUID.isEmpty else {
     await invalidateSourceAuthority(
         token: token,
         message: "The verified Tuya account UID lease became unavailable before application evidence custody.",
