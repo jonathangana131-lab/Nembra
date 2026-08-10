@@ -237,14 +237,15 @@ def _private_udid_file_is_ready(path: Path, repository_root: Path) -> bool:
     return True
 
 
-def _export_options_are_ready(path: Path) -> bool:
-    """Read one exact absolute ExportOptions plist without following path aliases.
+def _export_options_are_ready(path: Path, expected_team: str) -> bool:
+    """Read one exact ExportOptions subject and mirror deterministic producer admission.
 
     This is a non-authorizing operator readiness check, not signing evidence. The frozen producer
-    will reopen and validate the export-options input itself. Still, returning READY after a final
-    lstat followed by a pathname reopen can inspect different bytes when an ancestor is a symlink or
-    the path is retargeted. Walk the absolute path with directory descriptors and O_NOFOLLOW, then
-    parse the exact opened regular-file descriptor and require its identity to remain stable.
+    will reopen and validate the export-options input itself. Returning READY after a final lstat
+    followed by a pathname reopen can inspect different bytes when an ancestor is a symlink or the
+    path is retargeted. Walk the absolute path with directory descriptors and O_NOFOLLOW, parse the
+    exact opened regular-file descriptor, require stable identity, and reject the deterministic
+    teamID/method shapes that the frozen producer itself rejects before export.
     """
     if (
         not hasattr(os, "O_NOFOLLOW")
@@ -306,7 +307,17 @@ def _export_options_are_ready(path: Path) -> bool:
     finally:
         os.close(descriptor)
 
-    return isinstance(payload, dict)
+    if not isinstance(payload, dict):
+        return False
+
+    team = payload.get("teamID")
+    if team is not None and team != expected_team:
+        return False
+
+    method = payload.get("method")
+    if method is not None and (not isinstance(method, str) or not method.strip()):
+        return False
+    return True
 
 
 def _git(
@@ -406,7 +417,10 @@ def evaluate_preflight(
     checks["expectedSourceSHAFormat"] = SHA_RE.fullmatch(expected) is not None
     checks["developmentTeamFormat"] = TEAM_RE.fullmatch(inputs.development_team) is not None
     checks["allowProvisioningUpdates"] = inputs.allow_provisioning_updates in {"0", "1"}
-    checks["exportOptionsPlist"] = _export_options_are_ready(inputs.export_options_plist)
+    checks["exportOptionsPlist"] = _export_options_are_ready(
+        inputs.export_options_plist,
+        inputs.development_team,
+    )
 
     try:
         source_repo = inputs.source_repo.resolve(strict=True)
