@@ -50,6 +50,10 @@ jobs:
         working-directory: Packages/NembraCore
         run: swift test
 
+      - name: Validate Capture package
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test
+
       - name: Build, test, and capture Simulator states
         run: scripts/ci/xcode27_simulator_capture.sh
 
