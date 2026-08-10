@@ -1,0 +1,315 @@
+name: Capture Mac acceptance queue discipline materializer
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-mac-queue-discipline-sol
+    paths:
+      - .github/workflows/capture-mac-queue-discipline-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/v14-capture-mac-queue-discipline-sol
+          fetch-depth: 0
+
+      - name: Bind exact current product
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='b615375e12e43abc55e111deb5dc36f3790c7506'
+          git merge-base --is-ancestor "$base" HEAD
+          test -z "$(git diff --name-only "$base" HEAD -- \
+            ':!scripts/ci/tests/test_capture_mac_acceptance_queue_discipline.py' \
+            ':!.github/workflows/capture-mac-queue-discipline-materialize.yml')"
+
+      - name: Prevent stale Xcode exact-head Mac admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/xcode27-pr-command.yml')
+          source = path.read_text()
+          old_permissions = 'permissions:\n  contents: read\n  pull-requests: read\n'
+          new_permissions = 'permissions:\n  actions: write\n  contents: read\n  pull-requests: read\n'
+          if source.count(old_permissions) != 1:
+              raise SystemExit('Xcode workflow permission shape changed')
+          source = source.replace(old_permissions, new_permissions, 1)
+
+          start = source.index('  resolve:\n')
+          end = source.index('\n  authority-tooling-qa:', start)
+          resolve_lines = [
+              '  resolve:',
+              '    name: Resolve trusted same-repo PR head',
+              '    if: >-',
+              "      (github.event_name == 'issue_comment' &&",
+              '       github.event.issue.pull_request &&',
+              "       github.event.comment.body == '/xcode27' &&",
+              "       (github.event.comment.author_association == 'OWNER' ||",
+              "        github.event.comment.author_association == 'MEMBER' ||",
+              "        github.event.comment.author_association == 'COLLABORATOR')) ||",
+              "      (github.event_name == 'pull_request' &&",
+              '       github.event.pull_request.draft == false &&',
+              '       github.event.pull_request.head.repo.full_name == github.repository)',
+              '    runs-on: ubuntu-latest',
+              '    outputs:',
+              '      head_sha: ${{ steps.pr.outputs.head_sha }}',
+              '      pr_number: ${{ steps.pr.outputs.pr_number }}',
+              '      same_repo: ${{ steps.pr.outputs.same_repo }}',
+              '      current_head: ${{ steps.pr.outputs.current_head }}',
+              '',
+              '    steps:',
+              '      - name: Resolve immutable PR head and retire stale same-PR runs',
+              '        id: pr',
+              '        uses: actions/github-script@v9',
+              '        with:',
+              '          script: |',
+              '            let candidate',
+              "            if (context.eventName === 'pull_request') {",
+              '              candidate = context.payload.pull_request',
+              '            } else {',
+              '              const response = await github.rest.pulls.get({',
+              '                owner: context.repo.owner,',
+              '                repo: context.repo.repo,',
+              '                pull_number: context.issue.number,',
+              '              })',
+              '              candidate = response.data',
+              '            }',
+              '',
+              '            const live = (await github.rest.pulls.get({',
+              '              owner: context.repo.owner,',
+              '              repo: context.repo.repo,',
+              '              pull_number: candidate.number,',
+              '            })).data',
+              '            const repository = `${context.repo.owner}/${context.repo.repo}`',
+              '            const sameRepo = candidate.head.repo.full_name === repository',
+              '            const currentHead = candidate.head.sha === live.head.sha',
+              "            core.setOutput('head_sha', candidate.head.sha)",
+              "            core.setOutput('pr_number', String(candidate.number))",
+              "            core.setOutput('same_repo', String(sameRepo))",
+              "            core.setOutput('current_head', String(currentHead))",
+              '',
+              "            const cancelable = new Set(['queued', 'in_progress', 'waiting', 'requested', 'pending'])",
+              '            const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {',
+              '              owner: context.repo.owner,',
+              '              repo: context.repo.repo,',
+              "              workflow_id: 'xcode27-pr-command.yml',",
+              '              per_page: 100,',
+              '            })',
+              '            for (const run of runs) {',
+              '              if (run.id === context.runId || !cancelable.has(run.status)) continue',
+              '              const belongsToPR =',
+              '                run.head_branch === live.head.ref ||',
+              '                (run.pull_requests || []).some(pr => pr.number === candidate.number)',
+              '              if (!belongsToPR || run.head_sha === live.head.sha) continue',
+              '              core.notice(`Cancelling stale Xcode acceptance run ${run.id} at ${run.head_sha}; live=${live.head.sha}`)',
+              '              await github.rest.actions.cancelWorkflowRun({',
+              '                owner: context.repo.owner,',
+              '                repo: context.repo.repo,',
+              '                run_id: run.id,',
+              '              })',
+              '            }',
+          ]
+          source = source[:start] + '\n'.join(resolve_lines) + '\n' + source[end:]
+
+          old_if = "    if: needs.resolve.outputs.same_repo == 'true'\n"
+          new_if = "    if: needs.resolve.outputs.same_repo == 'true' && needs.resolve.outputs.current_head == 'true'\n"
+          if source.count(old_if) != 2:
+              raise SystemExit(f'Expected two same-repo job fences, found {source.count(old_if)}')
+          source = source.replace(old_if, new_if)
+          path.write_text(source)
+          PY
+          git diff --check
+
+      - name: Prevent stale field-provenance Mac admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/capture-field-build-provenance.yml')
+          source = path.read_text()
+          old_permissions = 'permissions:\n  contents: read\n'
+          new_permissions = 'permissions:\n  actions: write\n  contents: read\n  pull-requests: read\n'
+          if source.count(old_permissions) != 1:
+              raise SystemExit('Field provenance workflow permission shape changed')
+          source = source.replace(old_permissions, new_permissions, 1)
+
+          jobs = source.index('jobs:\n') + len('jobs:\n')
+          provenance = source.index('  provenance:\n', jobs)
+          resolve_lines = [
+              '  resolve:',
+              '    name: Resolve exact provenance subject and retire stale same-PR runs',
+              '    runs-on: ubuntu-latest',
+              '    outputs:',
+              '      subject_sha: ${{ steps.subject.outputs.subject_sha }}',
+              '      pr_number: ${{ steps.subject.outputs.pr_number }}',
+              '      same_repo: ${{ steps.subject.outputs.same_repo }}',
+              '      current_head: ${{ steps.subject.outputs.current_head }}',
+              '      queue_scope: ${{ steps.subject.outputs.queue_scope }}',
+              '    steps:',
+              '      - name: Resolve immutable subject',
+              '        id: subject',
+              '        uses: actions/github-script@v9',
+              '        with:',
+              '          script: |',
+              "            if (context.eventName !== 'pull_request') {",
+              "              core.setOutput('subject_sha', context.sha)",
+              "              core.setOutput('pr_number', '0')",
+              "              core.setOutput('same_repo', 'true')",
+              "              core.setOutput('current_head', 'true')",
+              "              core.setOutput('queue_scope', `${context.eventName}-${context.ref.replace(/[^A-Za-z0-9_.-]/g, '-')}`)",
+              '              return',
+              '            }',
+              '',
+              '            const candidate = context.payload.pull_request',
+              '            const live = (await github.rest.pulls.get({',
+              '              owner: context.repo.owner,',
+              '              repo: context.repo.repo,',
+              '              pull_number: candidate.number,',
+              '            })).data',
+              '            const repository = `${context.repo.owner}/${context.repo.repo}`',
+              '            const sameRepo = candidate.head.repo.full_name === repository',
+              '            const currentHead = candidate.head.sha === live.head.sha',
+              "            core.setOutput('subject_sha', candidate.head.sha)",
+              "            core.setOutput('pr_number', String(candidate.number))",
+              "            core.setOutput('same_repo', String(sameRepo))",
+              "            core.setOutput('current_head', String(currentHead))",
+              "            core.setOutput('queue_scope', `pr-${candidate.number}`)",
+              '',
+              "            const cancelable = new Set(['queued', 'in_progress', 'waiting', 'requested', 'pending'])",
+              '            const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {',
+              '              owner: context.repo.owner,',
+              '              repo: context.repo.repo,',
+              "              workflow_id: 'capture-field-build-provenance.yml',",
+              '              per_page: 100,',
+              '            })',
+              '            for (const run of runs) {',
+              '              if (run.id === context.runId || !cancelable.has(run.status)) continue',
+              '              const belongsToPR =',
+              '                run.head_branch === live.head.ref ||',
+              '                (run.pull_requests || []).some(pr => pr.number === candidate.number)',
+              '              if (!belongsToPR || run.head_sha === live.head.sha) continue',
+              '              core.notice(`Cancelling stale field-provenance run ${run.id} at ${run.head_sha}; live=${live.head.sha}`)',
+              '              await github.rest.actions.cancelWorkflowRun({',
+              '                owner: context.repo.owner,',
+              '                repo: context.repo.repo,',
+              '                run_id: run.id,',
+              '              })',
+              '            }',
+              '',
+          ]
+          source = source[:provenance] + '\n'.join(resolve_lines) + source[provenance:]
+
+          old_header = '''  provenance:
+              name: Stamp and verify Capture provenance
+              runs-on: xcode-27
+              timeout-minutes: 20
+              steps:
+          '''
+          old_header = '\n'.join(line[14:] if line.startswith('              ') else line for line in old_header.splitlines()) + '\n'
+          new_header = '''  provenance:
+              name: Stamp and verify Capture provenance
+              needs: resolve
+              if: needs.resolve.outputs.same_repo == 'true' && needs.resolve.outputs.current_head == 'true'
+              concurrency:
+                group: nembra-capture-field-provenance-${{ needs.resolve.outputs.queue_scope }}
+                cancel-in-progress: true
+              runs-on: xcode-27
+              timeout-minutes: 20
+              steps:
+          '''
+          new_header = '\n'.join(line[14:] if line.startswith('              ') else line for line in new_header.splitlines()) + '\n'
+          if source.count(old_header) != 1:
+              raise SystemExit(f'Field provenance job header changed: {source.count(old_header)}')
+          source = source.replace(old_header, new_header, 1)
+
+          first_step = '    steps:\n      - uses: actions/checkout@v4\n'
+          if source.count(first_step) != 1:
+              raise SystemExit('Field provenance first step changed')
+          stale_step = '''    steps:
+              - name: Reject stale PR head before scarce Mac provenance work
+                if: needs.resolve.outputs.pr_number != '0'
+                uses: actions/github-script@v9
+                env:
+                  EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.subject_sha }}
+                  PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+                with:
+                  script: |
+                    const live = (await github.rest.pulls.get({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      pull_number: Number(process.env.PR_NUMBER),
+                    })).data
+                    if (live.head.sha !== process.env.EXPECTED_HEAD_SHA) {
+                      core.setFailed(`PR head moved before scarce Mac provenance work: expected=${process.env.EXPECTED_HEAD_SHA} live=${live.head.sha}`)
+                    }
+
+              - uses: actions/checkout@v4
+          '''
+          stale_step = '\n'.join(line[14:] if line.startswith('              ') else line for line in stale_step.splitlines()) + '\n'
+          source = source.replace(first_step, stale_step, 1)
+
+          old_ref = '          ref: ${{ github.event.pull_request.head.sha || github.sha }}\n'
+          new_ref = '          ref: ${{ needs.resolve.outputs.subject_sha }}\n'
+          if source.count(old_ref) != 1:
+              raise SystemExit('Field provenance checkout ref changed')
+          source = source.replace(old_ref, new_ref, 1)
+
+          old_expected = '          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}\n'
+          new_expected = '          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.subject_sha }}\n'
+          if source.count(old_expected) != 1:
+              raise SystemExit('Field provenance expected-head env changed')
+          source = source.replace(old_expected, new_expected, 1)
+          path.write_text(source)
+          PY
+          git diff --check
+
+      - name: Run queue discipline source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/tests/test_capture_mac_acceptance_queue_discipline.py
+          python3 scripts/ci/tests/test_capture_mac_acceptance_queue_discipline.py
+          python3 - <<'PY'
+          from pathlib import Path
+          x = Path('.github/workflows/xcode27-pr-command.yml').read_text()
+          f = Path('.github/workflows/capture-field-build-provenance.yml').read_text()
+          assert x.count('actions: write') == 1
+          assert f.count('actions: write') == 1
+          assert "workflow_id: 'xcode27-pr-command.yml'" in x
+          assert "workflow_id: 'capture-field-build-provenance.yml'" in f
+          assert "needs.resolve.outputs.current_head == 'true'" in x
+          assert "needs.resolve.outputs.current_head == 'true'" in f
+          PY
+
+      - name: Collapse to CI-only product repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='b615375e12e43abc55e111deb5dc36f3790c7506'
+          rm .github/workflows/capture-mac-queue-discipline-materialize.yml
+          git add -A
+          git diff --cached --check "$base"
+          git diff --cached --name-only "$base" | sort > /tmp/actual
+          cat > /tmp/expected <<'EOF'
+          .github/workflows/capture-field-build-provenance.yml
+          .github/workflows/xcode27-pr-command.yml
+          scripts/ci/tests/test_capture_mac_acceptance_queue_discipline.py
+          EOF
+          sort -o /tmp/expected /tmp/expected
+          diff -u /tmp/expected /tmp/actual
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): retire stale Mac acceptance runs before admission'
+          git push origin HEAD:agent/v14-capture-mac-queue-discipline-sol
