@@ -23,7 +23,8 @@ struct TuyaFieldAppPreflightIntegrationSourceTests {
         #expect(!source.contains("knownID || (fd50 && tuyaCompany)"))
         #expect(!source.contains("fd50 && tuyaCompany ?"))
         #expect(!source.contains("score >= 600"))
-        #expect(source.contains("Historical capture UUID match (descriptive only)"))
+        #expect(source.contains("matches C7D09A22 capture-local UUID descriptive"))
+        #expect(source.contains("Do not fall back to the historical capture UUID"))
     }
 
     @Test("official Tuya connect failure uses documented no-error handler")
