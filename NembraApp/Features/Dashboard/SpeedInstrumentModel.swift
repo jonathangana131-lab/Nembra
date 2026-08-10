@@ -304,6 +304,8 @@ struct DashboardSpeedInstrumentView: View {
     @State private var model = SpeedInstrumentModel()
     @State private var energyRailRuntime: PropulsionEnergyRailSimulatorRuntime? = nil
     @State private var energyRailRequiresFreshPowerAfterReconnect = false
+    @State private var energyRailHighFrequencyActive = false
+    @State private var energyRailHighFrequencyEndTask: Task<Void, Never>? = nil
 
     let modePersonality: DashboardModePersonality
 
@@ -316,16 +318,21 @@ struct DashboardSpeedInstrumentView: View {
         let speedShouldTick = !reduceMotion
             && model.isAnimationActive
             && isLivePresentation(speedAvailability)
-        let energyRailShouldTick = allowsSimulatorQA
+        let energyRailSemanticClockShouldTick = allowsSimulatorQA
             && vehicle.profile.capabilities.supportsPowerWatts
             && vehicle.state.connection == .connected
             && !energyRailRequiresFreshPowerAfterReconnect
             && energyRailRuntime != nil
+        let energyRailShouldTickAt60Hz = !reduceMotion
+            && energyRailSemanticClockShouldTick
+            && energyRailHighFrequencyActive
+        let shouldTickAt60Hz = speedShouldTick || energyRailShouldTickAt60Hz
+        let shouldTick = speedShouldTick || energyRailSemanticClockShouldTick
 
         TimelineView(
             .animation(
-                minimumInterval: reduceMotion ? 1.0 : 1.0 / 60.0,
-                paused: !(speedShouldTick || energyRailShouldTick)
+                minimumInterval: shouldTickAt60Hz ? 1.0 / 60.0 : 1.0,
+                paused: !shouldTick
             )
         ) { _ in
             let now = DispatchTime.now().uptimeNanoseconds
@@ -368,6 +375,7 @@ struct DashboardSpeedInstrumentView: View {
         }
         .onDisappear {
             model.stop()
+            stopEnergyRailHighFrequencyWindow()
             retireEnergyRailSource()
         }
     }
@@ -458,6 +466,7 @@ struct DashboardSpeedInstrumentView: View {
         guard ensureEnergyRailRuntimeIfEligible() else { return }
 
         guard connection == .connected else {
+            stopEnergyRailHighFrequencyWindow()
             retireEnergyRailSource()
             energyRailRequiresFreshPowerAfterReconnect = true
             return
@@ -465,6 +474,7 @@ struct DashboardSpeedInstrumentView: View {
 
         // Reconnect is transport state only. Retire any prior generation and wait
         // for a later source power mutation rather than replaying cached watts.
+        stopEnergyRailHighFrequencyWindow()
         retireEnergyRailSource()
         energyRailRequiresFreshPowerAfterReconnect = true
     }
@@ -473,6 +483,7 @@ struct DashboardSpeedInstrumentView: View {
         guard ensureEnergyRailRuntimeIfEligible() else { return }
 
         guard vehicle.state.connection == .connected else {
+            stopEnergyRailHighFrequencyWindow()
             retireEnergyRailSource()
             energyRailRequiresFreshPowerAfterReconnect = true
             return
@@ -487,6 +498,7 @@ struct DashboardSpeedInstrumentView: View {
     private func ensureEnergyRailRuntimeIfEligible() -> Bool {
         guard vehicle.profile == .simulatorQA,
               vehicle.profile.capabilities.supportsPowerWatts else {
+            stopEnergyRailHighFrequencyWindow()
             energyRailRuntime = nil
             energyRailRequiresFreshPowerAfterReconnect = false
             return false
@@ -513,9 +525,42 @@ struct DashboardSpeedInstrumentView: View {
         )
         energyRailRuntime = runtime
 
-        if !admitted {
+        if admitted {
+            startEnergyRailHighFrequencyWindow()
+        } else {
+            stopEnergyRailHighFrequencyWindow()
             energyRailRequiresFreshPowerAfterReconnect = true
         }
+    }
+
+    /// Keep 60 Hz work only around an accepted power retarget. The package's
+    /// Simulator rise/fall settling windows are at most 220 ms, so 300 ms leaves
+    /// headroom for the complete spatial/numeric transition. After that the same
+    /// localized Timeline drops to 1 Hz solely to project freshness/peak semantics;
+    /// no measurement or evidence is minted by either clock.
+    private func startEnergyRailHighFrequencyWindow() {
+        energyRailHighFrequencyEndTask?.cancel()
+        energyRailHighFrequencyEndTask = nil
+        energyRailHighFrequencyActive = !reduceMotion
+
+        guard energyRailHighFrequencyActive else { return }
+
+        energyRailHighFrequencyEndTask = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: 300_000_000)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            energyRailHighFrequencyActive = false
+            energyRailHighFrequencyEndTask = nil
+        }
+    }
+
+    private func stopEnergyRailHighFrequencyWindow() {
+        energyRailHighFrequencyEndTask?.cancel()
+        energyRailHighFrequencyEndTask = nil
+        energyRailHighFrequencyActive = false
     }
 
     private func retireEnergyRailSource() {
