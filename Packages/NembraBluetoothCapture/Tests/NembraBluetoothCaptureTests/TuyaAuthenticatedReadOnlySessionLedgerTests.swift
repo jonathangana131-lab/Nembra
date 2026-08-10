@@ -267,7 +267,7 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
         #expect(failed.latestObservedUptimeNanoseconds == beforeGap.latestObservedUptimeNanoseconds)
     }
 
-    @Test("late SDK failure revokes authority without erasing earned chronology")
+    @Test("late SDK failure revokes authority without manufacturing terminal liveness")
     func lateSDKFailurePreservesDiagnosticHistory() async throws {
         let clock = TestUptimeClock(100)
         let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
@@ -278,16 +278,18 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
         try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
         clock.advance(to: 300)
         try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
+        let beforeFailure = await ledger.currentPreflightSnapshot()
         clock.advance(to: 400)
         try await ledger.markAuthenticationFailed(for: token)
 
         let failed = await ledger.currentPreflightSnapshot()
         #expect(failed.authenticationState == .failed(reason: "Tuya SDK session failed."))
-        #expect(failed.authenticationMethod == .smartLifeAppSDK)
-        #expect(failed.authenticatedAtUptimeNanoseconds == 200)
-        #expect(failed.applicationPayloadCount == 1)
-        #expect(failed.latestApplicationPayloadUptimeNanoseconds == 300)
-        #expect(failed.latestObservedUptimeNanoseconds == 400)
+        #expect(failed.authenticationMethod == beforeFailure.authenticationMethod)
+        #expect(failed.authenticatedAtUptimeNanoseconds == beforeFailure.authenticatedAtUptimeNanoseconds)
+        #expect(failed.applicationPayloadCount == beforeFailure.applicationPayloadCount)
+        #expect(failed.latestApplicationPayloadUptimeNanoseconds == beforeFailure.latestApplicationPayloadUptimeNanoseconds)
+        #expect(failed.latestObservedUptimeNanoseconds == beforeFailure.latestObservedUptimeNanoseconds)
+        #expect(failed.latestObservedUptimeNanoseconds == 300)
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: failed) == .blocked(reason: "Tuya SDK session failed."))
 
         clock.advance(to: 500)
