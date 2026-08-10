@@ -1,3 +1,5 @@
+import Combine
+import Dispatch
 import Foundation
 
 #if canImport(ThingSmartHomeKit)
