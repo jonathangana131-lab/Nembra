@@ -34,6 +34,106 @@ public extension SimulatorPowerEvidenceProvider {
     }
 }
 
+/// App-session currentness for one exact source-issued Simulator power receipt.
+/// This is deliberately distinct from source currentness: transport is allowed to
+/// demote a legitimate LIVE receipt to RETAINED immediately, but the app layer can
+/// never create a receipt or promote retained evidence back to live.
+enum SimulatorPowerStoreCurrentness: Equatable, Sendable {
+    case unavailable
+    case retained
+    case live
+}
+
+struct SimulatorPowerStoreProjection: Equatable, Sendable {
+    let currentness: SimulatorPowerStoreCurrentness
+    let observation: SimulatorPowerObservation?
+
+    static let unavailable = SimulatorPowerStoreProjection(
+        currentness: .unavailable,
+        observation: nil
+    )
+
+    fileprivate static func retained(
+        _ observation: SimulatorPowerObservation
+    ) -> SimulatorPowerStoreProjection {
+        SimulatorPowerStoreProjection(
+            currentness: .retained,
+            observation: observation
+        )
+    }
+
+    fileprivate static func live(
+        _ observation: SimulatorPowerObservation
+    ) -> SimulatorPowerStoreProjection {
+        SimulatorPowerStoreProjection(
+            currentness: .live,
+            observation: observation
+        )
+    }
+
+    private init(
+        currentness: SimulatorPowerStoreCurrentness,
+        observation: SimulatorPowerObservation?
+    ) {
+        self.currentness = currentness
+        self.observation = observation
+    }
+}
+
+/// Consumer-side custody for sealed Simulator propulsion evidence.
+///
+/// Positive authority can enter only through a source-file-sealed availability.
+/// Aggregate connection is a one-way negative veto: it may synchronously demote
+/// LIVE -> RETAINED while preserving the exact immutable source receipt, but can
+/// never promote RETAINED -> LIVE. Source/provider loss fails completely closed.
+struct SimulatorPowerEvidenceConsumerAuthority: Sendable {
+    private(set) var projection: SimulatorPowerStoreProjection = .unavailable
+
+    mutating func applySource(
+        _ sourceAvailability: SimulatorPowerEvidenceAvailability,
+        connectionIsConnected: Bool
+    ) {
+        switch sourceAvailability.currentness {
+        case .unavailable:
+            guard sourceAvailability.observation == nil else {
+                projection = .unavailable
+                return
+            }
+            projection = .unavailable
+
+        case .retained:
+            guard let observation = sourceAvailability.observation else {
+                projection = .unavailable
+                return
+            }
+            projection = .retained(observation)
+
+        case .live:
+            guard let observation = sourceAvailability.observation else {
+                projection = .unavailable
+                return
+            }
+            projection = connectionIsConnected
+                ? .live(observation)
+                : .retained(observation)
+        }
+    }
+
+    /// Must be called before publishing aggregate non-connected state. This keeps
+    /// last-known presentation available without ever exposing OFFLINE + LIVE.
+    mutating func transportBecameUnavailable() {
+        guard projection.currentness == .live,
+              let observation = projection.observation else {
+            return
+        }
+        projection = .retained(observation)
+    }
+
+    mutating func sourceBecameUnavailable() {
+        projection = .unavailable
+    }
+}
+
 /// Optional source-owned projection for consumers that require field-specific
 /// current speed truth rather than cached `VehicleState` values.
 ///
