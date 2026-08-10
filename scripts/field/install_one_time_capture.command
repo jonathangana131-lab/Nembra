@@ -14,7 +14,10 @@ command -v security >/dev/null || die "macOS security tool is not available."
 command -v pod >/dev/null || die "CocoaPods is required for the official Tuya SDK field build."
 
 CURRENT_BRANCH="$(git branch --show-current)"
-[[ "$CURRENT_BRANCH" == "capture/one-time-ble-dump-gpt56" ]] || die "Switch to capture/one-time-ble-dump-gpt56 first. Current branch: ${CURRENT_BRANCH:-detached}"
+case "$CURRENT_BRANCH" in
+    capture/one-time-ble-dump-gpt56|integration/v14-capture-final-stationary-convergence-sol) ;;
+    *) die "Switch to the current accepted Capture field lineage first. Current branch: ${CURRENT_BRANCH:-detached}" ;;
+esac
 [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Working tree has local changes. Commit/stash them first."
 
 # The physical authentication candidate is the standalone Capture product with
@@ -92,7 +95,7 @@ DERIVED="${TMPDIR:-/tmp}/NembraAuthenticatedCaptureDerived"
 rm -rf "$DERIVED"
 BUNDLE_ID="com.jonathangana131.nembra.capturelearn"
 SOURCE_SHA="$(git rev-parse HEAD)"
-BUILD_LABEL="Authenticated stationary capture ${SOURCE_SHA:0:12}"
+BUILD_LABEL="capture-v14-${SOURCE_SHA:0:12}"
 
 say "Building SDK-integrated Nembra Capture for iPhone"
 xcodebuild \
