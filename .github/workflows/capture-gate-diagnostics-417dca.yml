@@ -1,0 +1,67 @@
+name: Capture Gate Diagnostics 417dca
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-gate-diagnostics-417dca
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract:
+    name: Diagnose Capture source contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Extract exact field provenance source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/capture-field-build-provenance.yml')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          marker = '- name: Verify source contract'
+          start = next(i for i, line in enumerate(lines) if line.strip() == marker)
+          run_index = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == 'run: |')
+          run_indent = len(lines[run_index]) - len(lines[run_index].lstrip())
+          body = []
+          for line in lines[run_index + 1:]:
+              if line.strip():
+                  indent = len(line) - len(line.lstrip())
+                  if indent <= run_indent:
+                      break
+              body.append(line)
+          nonempty = [line for line in body if line.strip()]
+          if not nonempty:
+              raise SystemExit('Verify source contract body was empty')
+          body_indent = min(len(line) - len(line.lstrip()) for line in nonempty)
+          script = '\n'.join(line[body_indent:] if line.strip() else '' for line in body) + '\n'
+          Path('/tmp/nembra-capture-source-contract.sh').write_text(script, encoding='utf-8')
+          PY
+          bash -n /tmp/nembra-capture-source-contract.sh
+
+      - name: Run exact source contract with failure trace
+        shell: bash
+        run: |
+          set +e
+          bash -x /tmp/nembra-capture-source-contract.sh > /tmp/nembra-contract-trace.log 2>&1
+          rc=$?
+          set -e
+          if [[ "$rc" -ne 0 ]]; then
+            printf '%s\n' '--- exact source-contract tail ---'
+            tail -n 40 /tmp/nembra-contract-trace.log
+            last_trace="$(grep '^+' /tmp/nembra-contract-trace.log | tail -n 1 || true)"
+            [[ -n "$last_trace" ]] || last_trace="$(tail -n 1 /tmp/nembra-contract-trace.log || true)"
+            last_trace="${last_trace//'%'/'%25'}"
+            last_trace="${last_trace//$'\r'/'%0D'}"
+            last_trace="${last_trace//$'\n'/'%0A'}"
+            printf '::error file=.github/workflows/capture-field-build-provenance.yml,title=Exact Capture source-contract failure::%s\n' "$last_trace"
+            exit "$rc"
+          fi
+          printf '%s\n' 'Exact Capture source contract passed on the parent product bytes.'
