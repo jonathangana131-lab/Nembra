@@ -1,0 +1,116 @@
+name: Materialize V14 Capture Event Custody
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-event-custody-current-8069
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require exact current product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "8069c0ffec496cacbe263016d8a7f4ca15ddc64e"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/materialize-v14-capture-event-custody.yml"
+
+      - name: Materialize current event-custody closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin a8eb9b93eea7e5de1a9c80468cadf378989b5edd 8010d108a043fbe2ff03fa3bb0d1518aa7047c08
+
+          mkdir -p Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests
+          git show a8eb9b93eea7e5de1a9c80468cadf378989b5edd:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
+          git show 8010d108a043fbe2ff03fa3bb0d1518aa7047c08:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text()
+
+          def patch_section(source: str, start: str, end: str, old: str, new: str) -> str:
+              a = source.index(start)
+              b = source.index(end, a)
+              section = source[a:b]
+              if section.count(old) != 1:
+                  raise SystemExit(f'exact replacement count != 1 in {start}: {section.count(old)}')
+              section = section.replace(old, new, 1)
+              return source[:a] + section + source[b:]
+
+          authority_old = '''        guard sdkAccountLoggedIn,\n              sdkDeviceMembershipVerified,\n              accountIdentityLeaseIsAuthorized,\n              let driver else {\n'''
+          authority_new = '''        guard sdkAccountLoggedIn,\n              sdkDeviceMembershipVerified,\n              accountIdentityLeaseIsAuthorized,\n              let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),\n              !verifiedAccountUID.isEmpty,\n              let driver else {\n'''
+          source = patch_section(source, '    private func receivedApplicationUpdate(', '    private func startWatchdog', authority_old, authority_new)
+
+          log_old = '''            log("tuya_application_update", update.merging([\n                "generation": String(token.diagnosticGeneration)\n            ]) { current, _ in current })\n'''
+          log_new = '''            let exportSafeUpdate = redactVerifiedAccountUID(\n                in: update,\n                verifiedAccountUID: verifiedAccountUID\n            )\n            log("tuya_application_update", exportSafeUpdate.merging([\n                "generation": String(token.diagnosticGeneration)\n            ]) { _, trusted in trusted })\n'''
+          source = patch_section(source, '    private func receivedApplicationUpdate(', '    private func startWatchdog', log_old, log_new)
+
+          helper = '''\n    private func redactVerifiedAccountUID(\n        in update: [String: String],\n        verifiedAccountUID: String\n    ) -> [String: String] {\n        let marker = "<redacted-account-uid>"\n        var sanitized: [String: String] = [:]\n        for (key, value) in update {\n            let safeKey = key.replacingOccurrences(\n                of: verifiedAccountUID,\n                with: marker,\n                options: [.caseInsensitive]\n            )\n            let safeValue = value.replacingOccurrences(\n                of: verifiedAccountUID,\n                with: marker,\n                options: [.caseInsensitive]\n            )\n            if sanitized[safeKey] == nil {\n                sanitized[safeKey] = safeValue\n            } else {\n                // Redaction can collapse malformed UID-bearing keys. Keep the collision private\n                // instead of restoring either raw value to export custody.\n                sanitized[safeKey] = marker\n            }\n        }\n        return sanitized\n    }\n\n'''
+          anchor = '    private func startWatchdog'
+          if source.count(anchor) != 1:
+              raise SystemExit('startWatchdog anchor not unique')
+          source = source.replace(anchor, helper + anchor, 1)
+
+          duplicate = '''        "refreshtoken",\n        "sessionkey",\n        "authkey",\n'''
+          simplified = '''        "refreshtoken",\n        "authkey",\n'''
+          if source.count(duplicate) != 1:
+              raise SystemExit(f'duplicate sessionkey simplification count != 1: {source.count(duplicate)}')
+          source = source.replace(duplicate, simplified, 1)
+          path.write_text(source)
+
+          uid_test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift')
+          test_source = uid_test.read_text()
+          needle = '''        #expect(source.contains("<redacted-account-uid>"))\n        #expect(!updateAdmission.contains("log(\\"tuya_application_update\\", update.merging(["))\n'''
+          replacement = '''        #expect(source.contains("<redacted-account-uid>"))\n        #expect(updateAdmission.contains("let verifiedAccountUID = membershipAccountUID?.trimmingCharacters"))\n        #expect(updateAdmission.contains("redactVerifiedAccountUID("))\n        #expect(updateAdmission.contains("verifiedAccountUID: verifiedAccountUID"))\n        #expect(!updateAdmission.contains("log(\\"tuya_application_update\\", update.merging(["))\n'''
+          if test_source.count(needle) != 1:
+              raise SystemExit('UID test strengthening anchor missing')
+          uid_test.write_text(test_source.replace(needle, replacement, 1))
+          PY
+
+      - name: Verify source contracts and diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          receiver = s[s.index('    private func receivedApplicationUpdate('):s.index('    private func startWatchdog')]
+          assert 'let verifiedAccountUID = membershipAccountUID?.trimmingCharacters' in receiver
+          assert '!verifiedAccountUID.isEmpty' in receiver
+          assert 'let exportSafeUpdate = redactVerifiedAccountUID(' in receiver
+          assert ']) { _, trusted in trusted })' in receiver
+          assert ']) { current, _ in current })' not in receiver
+          assert '<redacted-account-uid>' in s
+          assert receiver.index('let verifiedAccountUID = membershipAccountUID?.trimmingCharacters') < receiver.index('try await sessionLedger.recordApplicationUpdate')
+          driver = s[s.index('@MainActor\nprivate final class SmartLifeDriver'):s.index('#endif\n\nprivate enum AppleAccountAuthorizationError')]
+          assert driver.count('        "sessionkey",') == 1
+          assert '        "uid",' not in driver
+          PY
+          git diff --check
+          test "$(git diff --name-only | sort)" = "$(printf '%s\n' \
+            'NembraApp/App/NembraCaptureEntrypoint.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift' | sort)"
+
+      - name: Commit closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-v14-capture-event-custody.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "fix(capture): close application event custody"
+          git push origin HEAD:sol/v14-capture-event-custody-current-8069
