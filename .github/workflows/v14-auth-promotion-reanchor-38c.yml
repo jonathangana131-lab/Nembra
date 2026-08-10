@@ -23,13 +23,13 @@ jobs:
           set -euo pipefail
           CURRENT='38c69bcf6660f42468c954a9196f35d3bdff2680'
           OLD_BASE='a7a28ca6e744d4bad8be08fd3553a2af8c609b15'
-          DONOR='a83776c1bd586043a3e5b438d71cfeeaac63fd40'
           APP='NembraApp/App/NembraCaptureEntrypoint.swift'
           TEST='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticationPromotionReentrancySourceTests.swift'
-          test "$(git rev-parse HEAD^)" = "$CURRENT"
+          test "$(git rev-parse HEAD~2)" = "$CURRENT"
           git diff --quiet "$OLD_BASE" "$CURRENT" -- "$APP"
-          git show "$DONOR:$APP" > "$APP"
-          git show "$DONOR:$TEST" > "$TEST"
+          git fetch --no-tags origin repair/v14-capture-auth-promotion-a7a-sol:refs/remotes/origin/auth-donor
+          git show "origin/auth-donor:$APP" > "$APP"
+          git show "origin/auth-donor:$TEST" > "$TEST"
           swiftc -parse "$APP"
           swiftc -parse "$TEST"
           git add "$APP" "$TEST"
