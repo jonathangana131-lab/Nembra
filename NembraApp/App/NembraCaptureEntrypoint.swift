@@ -431,6 +431,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Exact scooter membership must be verified again after Capture leaves the foreground or Secure Link."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -488,6 +489,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Exact scooter membership must be verified again after Capture leaves the foreground or Secure Link."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -1418,16 +1420,26 @@ private final class SecureLinkController: NSObject, ObservableObject {
             await recordObservedTransportLoss(token: token)
             return
         }
+        guard let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !verifiedAccountUID.isEmpty else {
+            await invalidateSourceAuthority(
+                token: token,
+                message: "Verified Tuya account UID authority was unavailable before application evidence could enter custody.",
+                kind: "sdk_account_uid_authority_missing_during_observation"
+            )
+            return
+        }
+        let custodySafeUpdate = Self.redactingVerifiedAccountUID(verifiedAccountUID, from: update)
 
         applicationUpdateAdmissionsInFlight += 1
         defer { applicationUpdateAdmissionsInFlight -= 1 }
 
         do {
-            try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
+            try await sessionLedger.recordApplicationUpdate(isNonEmpty: !custodySafeUpdate.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            log("tuya_application_update", custodySafeUpdate.merging([
                 "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -1452,6 +1464,37 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 kind: "application_update_lifecycle_rejected"
             )
         }
+    }
+
+    private static func redactingVerifiedAccountUID(
+        _ verifiedAccountUID: String,
+        from update: [String: String]
+    ) -> [String: String] {
+        let marker = "<redacted-account-uid>"
+        var sanitized: [String: String] = [:]
+        sanitized.reserveCapacity(update.count)
+
+        for (rawKey, rawValue) in update {
+            let key = rawKey.replacingOccurrences(
+                of: verifiedAccountUID,
+                with: marker,
+                options: [.literal]
+            )
+            let value = rawValue.replacingOccurrences(
+                of: verifiedAccountUID,
+                with: marker,
+                options: [.literal]
+            )
+
+            var retainedKey = key
+            var collisionIndex = 2
+            while sanitized[retainedKey] != nil {
+                retainedKey = "\(key)#\(collisionIndex)"
+                collisionIndex += 1
+            }
+            sanitized[retainedKey] = value
+        }
+        return sanitized
     }
 
     private func startWatchdog(token: TuyaReadOnlyConnectionToken) {
@@ -2241,7 +2284,6 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         "accounttoken",
         "accesstoken",
         "refreshtoken",
-        "sessionkey",
         "authkey",
         "seckey",
     ]
