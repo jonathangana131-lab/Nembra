@@ -1,0 +1,65 @@
+name: Temporary reanchor Capture guided UI
+
+on:
+  push:
+    branches:
+      - work/v14-capture-guided-ui-8b9-sol
+
+permissions:
+  contents: write
+
+jobs:
+  reanchor-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: work/v14-capture-guided-ui-8b9-sol
+          fetch-depth: 0
+      - name: Fetch reviewed UI donor
+        run: git fetch --no-tags origin 3090b08e4bc273548c8c3de604d255e098d49539
+      - name: Transplant presentation tail only
+        run: |
+          python3 -m py_compile scripts/_temp_reanchor_capture_guided_ui.py
+          python3 scripts/_temp_reanchor_capture_guided_ui.py
+      - name: Verify truth prefix is byte-identical and presentation contract is guided
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess
+          from pathlib import Path
+          marker='private struct SecureLinkView: View {'
+          path='NembraApp/App/NembraCaptureEntrypoint.swift'
+          now=Path(path).read_text()
+          parent=subprocess.check_output(['git','show','8b9c1cabeeffdec7cb12f9a74f53320c11e7eae0:'+path], text=True)
+          assert now.split(marker,1)[0] == parent.split(marker,1)[0], 'truth/controller prefix changed'
+          tail=now.split(marker,1)[1]
+          required=[
+              'Text("NEMBRA CAPTURE")',
+              'stageLabels = ["Target", "Secure link", "Observe", "Seal"]',
+              'private var primarySurface: some View',
+              'LabeledContent("Procedure", value: test.fieldProcedureIdentifier)',
+              'ShareLink(item: SecureTransfer',
+              'if dynamicTypeSize.isAccessibilitySize',
+              'Restart from scooter OFF',
+              'No commands are sent.',
+              'not raw FD50 bytes',
+          ]
+          for token in required:
+              assert token in tail, token
+          for token in ['private var statusCard: some View','private var authorityCard: some View','private var discoveryCard: some View','private var acceptanceCard: some View','private var exportCard: some View']:
+              assert token not in tail, token
+          PY
+          git diff --check
+      - name: Commit product-only guided UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name nembra-v14-recovery
+          git config user.email actions@users.noreply.github.com
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m 'feat(capture): reanchor guided Secure Link UI'
+          git push origin HEAD:work/v14-capture-guided-ui-8b9-sol
