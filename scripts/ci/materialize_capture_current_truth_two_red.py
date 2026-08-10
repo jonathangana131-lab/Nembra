@@ -149,6 +149,7 @@ def apply() -> None:
     source = ENTRYPOINT.read_text(encoding="utf-8")
     if source.count(STATUS_OLD) != 1 or STATUS_NEW in source:
         raise SystemExit("membership-status revocation anchor changed or already repaired")
+
     receiver_start = source.index("private func receivedApplicationUpdate(")
     receiver_end = source.index("private func startWatchdog", receiver_start)
     receiver = source[receiver_start:receiver_end]
@@ -156,10 +157,13 @@ def apply() -> None:
         raise SystemExit("application-event precedence anchor changed or already repaired")
 
     source = source.replace(STATUS_OLD, STATUS_NEW, 1)
-    before = source[:receiver_start]
-    receiver = source[receiver_start:receiver_end].replace(MERGE_OLD, MERGE_NEW, 1)
-    after = source[receiver_end:]
-    ENTRYPOINT.write_text(before + receiver + after, encoding="utf-8")
+    receiver_start = source.index("private func receivedApplicationUpdate(")
+    receiver_end = source.index("private func startWatchdog", receiver_start)
+    receiver = source[receiver_start:receiver_end]
+    if receiver.count(MERGE_OLD) != 1:
+        raise SystemExit("application-event precedence anchor moved during status repair")
+    source = source[:receiver_start] + receiver.replace(MERGE_OLD, MERGE_NEW, 1) + source[receiver_end:]
+    ENTRYPOINT.write_text(source, encoding="utf-8")
 
     for path, content in ((STATUS_TEST, STATUS_TEST_CONTENT), (PRECEDENCE_TEST, PRECEDENCE_TEST_CONTENT)):
         if path.exists():
