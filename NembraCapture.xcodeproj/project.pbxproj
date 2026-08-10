@@ -181,6 +181,7 @@
 				INFOPLIST_KEY_NembraCaptureBuildIdentifier = "$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)";
 				INFOPLIST_KEY_NembraCaptureSourceCommitSHA = "$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)";
 				INFOPLIST_KEY_NembraCaptureTuyaDependencyLockSHA256 = "$(NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256)";
+				INFOPLIST_KEY_NembraCaptureProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Nembra Capture uses Bluetooth to learn this scooter's advertised and GATT data during a guided calibration.";
 				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Nembra Capture uses Bluetooth to learn this scooter's advertised and GATT data during a guided calibration.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Nembra Capture can use iPhone location speed as a reference while learning which Bluetooth values represent scooter speed.";
@@ -209,6 +210,7 @@
 				INFOPLIST_KEY_NembraCaptureBuildIdentifier = "$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)";
 				INFOPLIST_KEY_NembraCaptureSourceCommitSHA = "$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)";
 				INFOPLIST_KEY_NembraCaptureTuyaDependencyLockSHA256 = "$(NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256)";
+				INFOPLIST_KEY_NembraCaptureProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Nembra Capture uses Bluetooth to learn this scooter's advertised and GATT data during a guided calibration.";
 				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Nembra Capture uses Bluetooth to learn this scooter's advertised and GATT data during a guided calibration.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Nembra Capture can use iPhone location speed as a reference while learning which Bluetooth values represent scooter speed.";
