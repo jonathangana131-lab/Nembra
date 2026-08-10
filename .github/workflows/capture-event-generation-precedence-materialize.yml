@@ -1,0 +1,131 @@
+name: Materialize Capture Event Generation Precedence
+
+on:
+  push:
+    branches:
+      - agent/capture-event-generation-precedence-6b77
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/capture-event-generation-precedence-6b77
+          fetch-depth: 0
+
+      - name: Guard exact reviewed parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='6b778f2104af34dbe5b80da31ddb3ca422f9667c'
+          test "$(git rev-parse HEAD^)" = "$expected"
+          test "$(git diff --name-only "$expected" HEAD)" = '.github/workflows/capture-event-generation-precedence-materialize.yml'
+
+      - name: Materialize trusted provenance precedence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = source_path.read_text(encoding='utf-8')
+          old = '''            log("tuya_application_update", update.merging([
+              "generation": String(token.diagnosticGeneration)
+          ]) { current, _ in current })'''
+          new = '''            log("tuya_application_update", update.merging([
+              "generation": String(token.diagnosticGeneration)
+          ]) { _, trusted in trusted })'''
+          if source.count(old) != 1:
+              raise SystemExit(f'expected exactly one reviewed application-event merge, found {source.count(old)}')
+          source = source.replace(old, new, 1)
+          source_path.write_text(source, encoding='utf-8')
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift')
+          if test_path.exists():
+              raise SystemExit('metadata precedence regression already exists; refuse duplicate repair')
+          test_path.write_text('''import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Tuya application event metadata precedence")
+          struct TuyaApplicationEventMetadataPrecedenceSourceTests {
+              @Test("SDK application keys cannot overwrite Nembra generation provenance")
+              func trustedGenerationWinsReservedKeyCollision() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let receiver = String(try section(
+                      in: source,
+                      from: "private func receivedApplicationUpdate(",
+                      to: "private func startWatchdog"
+                  ))
+
+                  #expect(receiver.contains("log(\\\"tuya_application_update\\\""))
+                  #expect(receiver.contains("\\\"generation\\\": String(token.diagnosticGeneration)"))
+
+                  // `update` is SDK application evidence. It must not win a collision with the
+                  // Nembra-owned provenance key that is sealed beside that evidence.
+                  #expect(!receiver.contains(") { current, _ in current })"))
+                  #expect(
+                      receiver.contains(") { _, trusted in trusted })")
+                          || receiver.contains("{ trusted, _ in trusted }")
+                  )
+              }
+
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let startRange = source.range(of: start),
+                        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+                      Issue.record("Expected source section missing: \\(start) ... \\(end)")
+                      throw SourceContractError.sectionMissing
+                  }
+                  return source[startRange.lowerBound..<endRange.lowerBound]
+              }
+
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  let repositoryRoot = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+              }
+
+              private enum SourceContractError: Error {
+                  case sectionMissing
+              }
+          }
+          ''', encoding='utf-8')
+
+          Path('.github/workflows/capture-event-generation-precedence-materialize.yml').unlink()
+          PY
+
+      - name: Verify clean effective scope and invariant
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='6b778f2104af34dbe5b80da31ddb3ca422f9667c'
+          git diff --check
+          changed="$(git diff --name-only "$expected" | sort)"
+          wanted="$(printf '%s\n' \
+            'NembraApp/App/NembraCaptureEntrypoint.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift' | sort)"
+          test "$changed" = "$wanted"
+          grep -Fq ']) { _, trusted in trusted })' NembraApp/App/NembraCaptureEntrypoint.swift
+          ! grep -Fq ']) { current, _ in current })' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'trustedGenerationWinsReservedKeyCollision' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
+
+      - name: Commit clean repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(capture): reserve event generation provenance'
+          git push origin HEAD:agent/capture-event-generation-precedence-6b77
