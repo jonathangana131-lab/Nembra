@@ -21,7 +21,7 @@ jobs:
       - name: Guard exact parent
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "5e96004ec565a5a19df8312f64985862a0443cdc"
+          test "$(git rev-parse HEAD^)" = "f0bdb63d716368c341b903cfd741c51924042c75"
 
       - name: Apply correlation and recovery truth repair
         shell: python
