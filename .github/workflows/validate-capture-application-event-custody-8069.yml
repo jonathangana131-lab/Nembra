@@ -1,0 +1,75 @@
+name: Validate Capture application event custody
+
+on:
+  push:
+    branches:
+      - sol/v14-capture-application-event-custody-8069
+
+permissions:
+  contents: write
+
+jobs:
+  focused-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact product source plus validation helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "d3cea6f24026a51d01b0e957ac570f53a2488448"
+          test "$(git diff --name-only HEAD^..HEAD)" = ".github/workflows/validate-capture-application-event-custody-8069.yml"
+
+      - name: Focused package acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift --version
+          swift test \
+            --package-path Packages/NembraBluetoothCapture \
+            --filter TuyaApplicationEventCustodyTests \
+            -Xswiftc -warnings-as-errors
+
+      - name: App integration source parse and custody audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          start = source.index('private func receivedApplicationUpdate(')
+          end = source.index('private func startWatchdog', start)
+          admission = source[start:end]
+          required = [
+              'let verifiedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines)',
+              'TuyaApplicationEventCustody.admittedDetails(',
+              'verifiedAccountUID: verifiedAccountUID',
+              'connectionGeneration: String(token.diagnosticGeneration)',
+              'log("tuya_application_update", eventDetails)',
+          ]
+          missing = [item for item in required if item not in admission]
+          if missing:
+              raise SystemExit(f'missing app custody anchors: {missing}')
+          if 'update.merging([' in admission or '{ current, _ in current }' in admission:
+              raise SystemExit('untrusted-first event metadata merge survived')
+          helper = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaApplicationEventCustody.swift').read_text()
+          for item in ['<redacted-account-uid>', 'application.generation', 'admitted["generation"] = generation']:
+              if item not in helper:
+                  raise SystemExit(f'missing package custody invariant: {item}')
+          PY
+          git diff --check
+
+      - name: Remove validation helper after successful acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/validate-capture-application-event-custody-8069.yml
+          git config user.name "nembra-sol-worker"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "ci(capture): retire application event custody validator"
+          git push origin HEAD:sol/v14-capture-application-event-custody-8069
