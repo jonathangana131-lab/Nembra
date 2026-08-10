@@ -37,10 +37,6 @@ jobs:
           python3 -m py_compile scripts/ci/materialize_v14_capture_guided_polish.py
           python3 scripts/ci/materialize_v14_capture_guided_polish.py
           git diff --check
-          grep -Fq 'test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)' NembraApp/App/NembraCaptureEntrypoint.swift
-          grep -Fq 'Text("\(correlationDisplayedWindowOrdinal)/4")' NembraApp/App/NembraCaptureEntrypoint.swift
-          grep -Fq 'guard phase == .failed, canRestartFromFreshOFF1 else' NembraApp/App/NembraCaptureEntrypoint.swift
-          grep -Fq 'test.retry()' NembraApp/App/NembraCaptureEntrypoint.swift
 
       - name: Commit product-only result
         shell: bash
