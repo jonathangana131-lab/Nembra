@@ -550,7 +550,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
         guard OfficialTuyaFactory.packageCorrelationMayStart else {
             failLocally(
-                "Tuya BLE ownership was already attempted in this app process. Relaunch Capture with the scooter OFF before a fresh OFF1→ON1→OFF2→ON2 series. Package-owned correlation cannot restart in-process after Tuya BLE ownership.",
+                "Package Bluetooth correlation is already active elsewhere in Capture, or Tuya BLE ownership was already attempted in this app process. Finish the active attempt or relaunch with the scooter OFF before a fresh OFF1→ON1→OFF2→ON2 series.",
                 "process_tuya_ble_ownership_blocks_scan"
             )
             return
@@ -1793,7 +1793,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func failLocally(_ text: String, _ kind: String) {
-        if phase == .baseline || phase == .powerOn || phase == .scanning || phase == .correlated {
+        // A process lease is acquired before the first window advances presentation `phase`.
+        // Session construction/start failures must therefore release by lease ownership too.
+        if processCorrelationLease != nil || phase == .baseline || phase == .powerOn || phase == .scanning || phase == .correlated {
             abandonPackageCorrelation()
         }
         pendingCorrelatedTargetID = nil

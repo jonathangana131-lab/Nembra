@@ -75,6 +75,18 @@ struct TuyaCrossControllerBLEOwnershipLeaseSourceTests {
         #expect(release.contains("self.processCorrelationLease = nil"))
     }
 
+    @Test("pre-window failure cannot strand an acquired process lease")
+    func preWindowFailureReleasesLease() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let failure = try section(
+            in: source,
+            from: "private func failLocally(_ text: String, _ kind: String)",
+            to: "private func log(_ kind: String"
+        )
+        #expect(failure.contains("if processCorrelationLease != nil || phase == .baseline"))
+        #expect(failure.contains("abandonPackageCorrelation()"))
+    }
+
     @Test("scanner is retired before process lease release and successful series also releases")
     func scannerRetiresBeforeLeaseRelease() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
