@@ -419,7 +419,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
     func activateMembershipRequestsForView() {
         // A fast inactive -> active transition must not reset the duplicate-retirement fence
         // while the exact authenticated generation from foreground loss is still terminalizing.
-        guard currentConnectionToken == nil else { return }
+        // `make()` retires package correlation before the async package token exists, so token-nil
+        // alone is insufficient: foreground return may reopen admission only pre-handoff.
+        guard OfficialTuyaFactory.packageCorrelationMayStart,
+              currentConnectionToken == nil else { return }
         foregroundIntegrityLossHandled = false
         acceptsViewScopedMembershipRequests = true
     }
