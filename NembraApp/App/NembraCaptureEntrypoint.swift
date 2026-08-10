@@ -322,6 +322,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var applicationUpdateAdmissionsInFlight = 0
     private var acceptanceCutIsClosed = false
     private var sealedAcceptedEventPrefix: [Event]?
+    private var sealedAcceptedExport: Export?
     private var watchdog: Task<Void, Never>?
     private let sessionLedger = TuyaAuthenticatedReadOnlySessionLedger()
     private var currentConnectionToken: TuyaReadOnlyConnectionToken?
@@ -438,6 +439,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         // explicit custody boundary before fresh membership/correlation evidence can begin.
         captureAttemptEventStartIndex = events.count
         sealedAcceptedEventPrefix = nil
+        sealedAcceptedExport = nil
 
         // Every physical attempt receives a fresh complete current-account membership verdict
         // before the package-owned four-window Bluetooth correlation series may start.
@@ -1266,6 +1268,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     let acceptedEventPrefixAtCut = Array(self.events.dropFirst(self.captureAttemptEventStartIndex))
                     do {
                         try await sessionLedger.sealAcceptedObservation(for: token)
+                        self.sealedAcceptedExport = self.makeExport(
+                            phase: .accepted,
+                            events: acceptedEventPrefixAtCut
+                        )
                         self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut
                         self.currentConnectionToken = nil
                         await self.refreshLedgerSnapshot()
@@ -1503,19 +1509,32 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func prepareExport() {
-        let sealedAcceptedEventPrefix: [Event]
+        let envelope: Export
         if phase == .accepted {
-            guard let acceptedEventPrefix = self.sealedAcceptedEventPrefix else {
+            guard let sealedAcceptedExport else {
                 exportData = nil
-                message = "Accepted diagnostics cannot be exported because the immutable accepted event prefix is unavailable. Restart from OFF1 rather than exporting mutable post-seal diagnostics."
+                message = "Accepted diagnostics cannot be exported because the immutable accepted artifact is unavailable. Restart from OFF1 rather than exporting mutable post-seal diagnostics."
                 return
             }
-            sealedAcceptedEventPrefix = acceptedEventPrefix
+            envelope = sealedAcceptedExport
         } else {
-            sealedAcceptedEventPrefix = events
+            envelope = makeExport(phase: phase, events: events)
         }
 
-        let envelope = Export(
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+            encoder.dateEncodingStrategy = .iso8601
+            exportData = try encoder.encode(envelope)
+            exportName = "Nembra-Secure-Link-\(deviceID.prefix(8))-Diagnostics.json"
+            message = "Sanitized diagnostics ready with exact compiled build provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."
+        } catch {
+            message = "Diagnostic export failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func makeExport(phase: Phase, events: [Event]) -> Export {
+        Export(
             schemaVersion: 8,
             purpose: "Sanitized Tuya authenticated read-only stationary preflight",
             exportedAt: Date(),
@@ -1546,24 +1565,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
             dpQueriesSent: false,
             dpCommandsSent: false,
             candidates: candidates,
-            events: sealedAcceptedEventPrefix
+            events: events
         )
-
-        do {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-            encoder.dateEncodingStrategy = .iso8601
-            exportData = try encoder.encode(envelope)
-            exportName = "Nembra-Secure-Link-\(deviceID.prefix(8))-Diagnostics.json"
-            message = "Sanitized diagnostics ready with exact compiled build provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."
-        } catch {
-            message = "Diagnostic export failed: \(error.localizedDescription)"
-        }
     }
 
     private func resetDiscoverySessionOnly() {
         acceptanceCutIsClosed = false
         sealedAcceptedEventPrefix = nil
+        sealedAcceptedExport = nil
         correlationSession?.abandonCurrentWindow()
         correlationSession = nil
         correlationProvenance = nil
