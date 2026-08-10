@@ -431,8 +431,17 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var canRestartFromFreshOFF1: Bool { failedAttemptCanRestartFromOFF1 }
 
     func consumeCorrelationAsyncInvalidation() {
-        guard (phase == .baseline || phase == .scanning),
-              correlationProgress?.isSeriesInvalidated == true else { return }
+        guard phase == .baseline || phase == .scanning else { return }
+        if OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) {
+            correlationSession?.abandonCurrentWindow()
+            correlationSession = nil
+            failLocally(
+                "Tuya regained local-BLE ownership while package correlation was active. This correlation window is invalid; power the scooter OFF, let Tuya local BLE clear, and restart from OFF1.",
+                "sdk_local_ble_reacquired_during_target_correlation"
+            )
+            return
+        }
+        guard correlationProgress?.isSeriesInvalidated == true else { return }
         correlationSession = nil
         failLocally(
             "Bluetooth correlation ended before this window could be sealed because package-owned scanner/Bluetooth authority became unavailable. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series.",
@@ -582,6 +591,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
             failLocally("SDK account/device authority changed before the next correlation window.", "sdk_authority_changed_during_target_correlation")
             return
         }
+        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {
+            correlationSession?.abandonCurrentWindow()
+            correlationSession = nil
+            failLocally(
+                "Tuya local-BLE ownership is active before this correlation window. The package scanner will not start; power the scooter OFF, let Tuya local BLE clear, and restart from OFF1.",
+                "sdk_local_ble_ownership_blocks_correlation_window"
+            )
+            return
+        }
         guard let session = correlationSession,
               let progress = session.progress else {
             failLocally("Fresh Bluetooth correlation authority is unavailable. Restart from OFF1.", "target_correlation_authority_unavailable")
@@ -614,6 +632,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
             session.abandonCurrentWindow()
             correlationSession = nil
             failLocally("SDK account/device authority changed during Bluetooth correlation. Restart from OFF1 after re-verifying membership.", "sdk_authority_changed_during_target_correlation")
+            return
+        }
+
+        guard !OfficialTuyaFactory.isLocallyConnected(uuid: tuyaUUID) else {
+            session.abandonCurrentWindow()
+            correlationSession = nil
+            failLocally(
+                "Tuya local-BLE ownership appeared before this correlation window could be sealed. The window is invalid; power the scooter OFF, let Tuya local BLE clear, and restart from OFF1.",
+                "sdk_local_ble_ownership_invalidates_correlation_window"
+            )
             return
         }
 
@@ -2313,6 +2341,10 @@ private struct SecureLinkView: View {
         .task {
             sdkAccount.bootstrap()
             if sdkAccount.loggedIn { test.verifySDKMembership() }
+            while !Task.isCancelled {
+                test.consumeCorrelationAsyncInvalidation()
+                try? await Task.sleep(nanoseconds: 250_000_000)
+            }
         }
         .onChange(of: sdkAccount.loggedIn) { _, loggedIn in
             if loggedIn { test.verifySDKMembership() }
