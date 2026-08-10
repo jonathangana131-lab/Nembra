@@ -52,7 +52,6 @@ jobs:
           expected="$(printf '%s\n' \
             '.github/workflows/materialize-capture-event-custody-postawait-ba3a.yml' \
             'NembraApp/App/NembraCaptureEntrypoint.swift' \
-            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift' \
             'scripts/ci/materialize_capture_event_custody_postawait_ba3a.py' | sort)"
           test "$changed" = "$expected"
           git config user.name github-actions[bot]
