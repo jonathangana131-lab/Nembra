@@ -36,81 +36,79 @@ jobs:
 
           app_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           source = app_path.read_text(encoding='utf-8')
-          old = '''                        Button("Use a different Tuya account") {
-                            sdkAccount.signOut()
-                        }
-                        .buttonStyle(.plain)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.cyan)
-                        .disabled(test.membershipBusy || sdkAccount.busy)
-                        .accessibilityHint("Signs out of the official Tuya SDK account so you can log in with the account that owns this scooter.")'''
-          new = '''                        Button("Use a different Tuya account") {
-                            sdkAccount.signOut()
-                        }
-                        .buttonStyle(.plain)
-                        .frame(minHeight: 44, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.cyan)
-                        .disabled(test.membershipBusy || sdkAccount.busy)
-                        .accessibilityHint("Signs out of the official Tuya SDK account so you can log in with the account that owns this scooter.")'''
-          if source.count(old) != 1:
-              raise SystemExit(f'expected one account-switch button anchor, found {source.count(old)}')
-          app_path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          button_token = 'Button("Use a different Tuya account")'
+          style_token = '.buttonStyle(.plain)'
+          font_token = '.font(.subheadline.weight(.semibold))'
+          button = source.find(button_token)
+          if button < 0:
+              raise SystemExit('account-switch button not found')
+          style = source.find(style_token, button)
+          font = source.find(font_token, style)
+          if style < 0 or font < 0 or font - button > 600:
+              raise SystemExit('account-switch modifier seam not found')
+          seam = source[style:font]
+          if '.frame(minHeight: 44' in seam or '.contentShape(Rectangle())' in seam:
+              raise SystemExit('touch target already repaired; refresh live product')
+          line_end = source.find('\n', style)
+          if line_end < 0 or line_end > font:
+              raise SystemExit('button style line boundary not found')
+          insertion = '\n                        .frame(minHeight: 44, alignment: .leading)\n                        .contentShape(Rectangle())'
+          source = source[:line_end] + insertion + source[line_end:]
+          app_path.write_text(source, encoding='utf-8')
 
           test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureAccountSwitchTouchTargetSourceTests.swift')
           if test_path.exists():
               raise SystemExit('touch-target regression already exists; refresh live product')
           test_path.write_text(r'''import Foundation
-          import Testing
-          @testable import NembraBluetoothCapture
+import Testing
+@testable import NembraBluetoothCapture
 
-          @Suite("Capture Tuya account-switch touch target")
-          struct CaptureAccountSwitchTouchTargetSourceTests {
-              @Test("quiet account-switch action retains a full 44-point rectangular hit target")
-              func accountSwitchTargetIsAccessibleWithoutChangingHierarchy() throws {
-                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-                  let preflight = String(try section(
-                      in: source,
-                      from: "private var preflightPanel: some View",
-                      to: "private var correlationDisplayedWindowOrdinal"
-                  ))
-                  let buttonStart = try #require(preflight.range(of: "Button(\"Use a different Tuya account\")"))
-                  let hint = try #require(preflight.range(
-                      of: ".accessibilityHint(\"Signs out of the official Tuya SDK account",
-                      range: buttonStart.lowerBound..<preflight.endIndex
-                  ))
-                  let button = String(preflight[buttonStart.lowerBound..<hint.upperBound])
+@Suite("Capture Tuya account-switch touch target")
+struct CaptureAccountSwitchTouchTargetSourceTests {
+    @Test("quiet account-switch action retains a full 44-point rectangular hit target")
+    func accountSwitchTargetIsAccessibleWithoutChangingHierarchy() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let preflight = String(try section(
+            in: source,
+            from: "private var preflightPanel: some View",
+            to: "private var correlationDisplayedWindowOrdinal"
+        ))
+        let buttonStart = try #require(preflight.range(of: "Button(\"Use a different Tuya account\")"))
+        let hint = try #require(preflight.range(
+            of: ".accessibilityHint(\"Signs out of the official Tuya SDK account",
+            range: buttonStart.lowerBound..<preflight.endIndex
+        ))
+        let button = String(preflight[buttonStart.lowerBound..<hint.upperBound])
 
-                  #expect(button.contains("sdkAccount.signOut()"))
-                  #expect(button.contains(".buttonStyle(.plain)"))
-                  #expect(button.contains(".frame(minHeight: 44, alignment: .leading)"))
-                  #expect(button.contains(".contentShape(Rectangle())"))
-                  #expect(button.contains(".disabled(test.membershipBusy || sdkAccount.busy)"))
-              }
+        #expect(button.contains("sdkAccount.signOut()"))
+        #expect(button.contains(".buttonStyle(.plain)"))
+        #expect(button.contains(".frame(minHeight: 44, alignment: .leading)"))
+        #expect(button.contains(".contentShape(Rectangle())"))
+        #expect(button.contains(".disabled(test.membershipBusy || sdkAccount.busy)"))
+    }
 
-              private func section(in source: String, from start: String, to end: String) throws -> Substring {
-                  guard let a = source.range(of: start),
-                        let b = source.range(of: end, range: a.upperBound..<source.endIndex) else {
-                      Issue.record("Expected source section missing: \(start) ... \(end)")
-                      throw SourceContractError.sectionMissing
-                  }
-                  return source[a.lowerBound..<b.lowerBound]
-              }
+    private func section(in source: String, from start: String, to end: String) throws -> Substring {
+        guard let a = source.range(of: start),
+              let b = source.range(of: end, range: a.upperBound..<source.endIndex) else {
+            Issue.record("Expected source section missing: \(start) ... \(end)")
+            throw SourceContractError.sectionMissing
+        }
+        return source[a.lowerBound..<b.lowerBound]
+    }
 
-              private func readRepositoryFile(_ relativePath: String) throws -> String {
-                  let root = URL(fileURLWithPath: #filePath)
-                      .deletingLastPathComponent()
-                      .deletingLastPathComponent()
-                      .deletingLastPathComponent()
-                      .deletingLastPathComponent()
-                      .deletingLastPathComponent()
-                  return try String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)
-              }
+    private func readRepositoryFile(_ relativePath: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)
+    }
 
-              private enum SourceContractError: Error { case sectionMissing }
-          }
-          ''', encoding='utf-8')
+    private enum SourceContractError: Error { case sectionMissing }
+}
+''', encoding='utf-8')
           PY
 
       - name: Validate focused source contract
