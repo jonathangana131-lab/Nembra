@@ -1,22 +1,4 @@
-#!/usr/bin/env python3
-from pathlib import Path
-
-bridge_path = Path("NembraApp/Features/Research/TuyaAccountBridge.swift")
-test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaMetadataStatusSecretRedactionSourceTests.swift")
-text = bridge_path.read_text(encoding="utf-8")
-
-replacements = [
-    ('            "status": selectedDeviceStatus ?? [:],\n', '            "status": Self.redactSecrets(selectedDeviceStatus ?? [:]),\n'),
-    ('        selectedDeviceStatus = statusMap\n', '        selectedDeviceStatus = Self.redactSecrets(statusMap) as? [String: Any] ?? [:]\n'),
-]
-for old, new in replacements:
-    count = text.count(old)
-    if count != 1:
-        raise SystemExit(f"expected one source match, found {count}: {old!r}")
-    text = text.replace(old, new, 1)
-bridge_path.write_text(text, encoding="utf-8")
-
-test_path.write_text(r'''import Foundation
+import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
@@ -57,7 +39,3 @@ struct TuyaMetadataStatusSecretRedactionSourceTests {
 
     private enum SourceContractError: Error { case sectionMissing }
 }
-''', encoding="utf-8")
-
-assert '"status": Self.redactSecrets(selectedDeviceStatus ?? [:])' in text
-assert 'selectedDeviceStatus = Self.redactSecrets(statusMap) as? [String: Any] ?? [:]' in text

@@ -223,7 +223,7 @@ final class TuyaAccountBridge: ObservableObject {
                 "assetID": device.assetID,
                 "online": device.online
             ],
-            "status": selectedDeviceStatus ?? [:],
+            "status": Self.redactSecrets(selectedDeviceStatus ?? [:]),
             "specifications": selectedDeviceSpecifications ?? [:],
             "localStrategy": selectedDeviceLocalStrategy ?? [:],
             "safety": [
@@ -488,7 +488,7 @@ final class TuyaAccountBridge: ObservableObject {
         guard !Task.isCancelled,
               generation == operationGeneration,
               selectedDeviceID == device.id else { return }
-        selectedDeviceStatus = statusMap
+        selectedDeviceStatus = Self.redactSecrets(statusMap) as? [String: Any] ?? [:]
         prepareRedactedExport()
     }
 
