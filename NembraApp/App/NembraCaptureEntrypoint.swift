@@ -621,7 +621,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
         guard currentConnectionToken == nil else {
             pendingCorrelatedTargetID = nil
-            failLocally("An authenticated generation already owns session authority. Relaunch Capture before confirming another target.", "active_generation_blocks_target_confirmation")
+            if let token = currentConnectionToken {
+                Task { @MainActor [weak self] in
+                    await self?.invalidateInternalLifecycle(
+                        token: token,
+                        message: "An impossible active session generation existed during target confirmation. It was retired fail-closed; restart from OFF1.",
+                        kind: "active_generation_blocks_target_confirmation"
+                    )
+                }
+            }
             return
         }
 
