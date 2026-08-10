@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TUYA_PRIVATE_SDK="$REPO_ROOT/LocalSecrets/TuyaSDK"
 TUYA_PRIVATE_IDENTITY="$REPO_ROOT/LocalSecrets/TuyaRuntime"
+DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
 cd "$REPO_ROOT"
 
 if ! command -v pod >/dev/null 2>&1; then
@@ -66,23 +67,60 @@ EOF
 fi
 
 printf 'Resolving the official Tuya SmartLife iOS SDK and private field identity for Nembra Capture...\n'
-# Tuya's integration guide uses `pod update` after the app-specific Cryption
-# package is present. Explicit Podfile version constraints keep the public SDK
-# line bounded while both private packages remain local.
-pod update
+# `pod install` preserves an existing Podfile.lock instead of silently upgrading
+# resolved transitive SDK inputs. `--repo-update` refreshes specs only; the two
+# public Tuya products themselves are exact-pinned in Podfile at 7.8.0.
+pod install --repo-update
 
 if [[ ! -d NembraCapture.xcworkspace ]]; then
   echo "ERROR: CocoaPods did not create NembraCapture.xcworkspace." >&2
   exit 7
 fi
 
-cat <<'EOF'
+if [[ ! -f Podfile.lock ]]; then
+  echo "ERROR: CocoaPods did not create Podfile.lock; exact field dependency provenance is unavailable." >&2
+  exit 8
+fi
+
+for expected in \
+  "  - ThingSmartHomeKit (7.8.0)" \
+  "  - ThingSmartBusinessExtensionKit (7.8.0)"
+do
+  if ! grep -Fq -- "$expected" Podfile.lock; then
+    echo "ERROR: resolved Tuya SDK does not match the exact reviewed 7.8.0 field dependency: $expected" >&2
+    exit 9
+  fi
+done
+
+LOCK_SHA256="$(shasum -a 256 Podfile.lock | awk '{print $1}')"
+[[ "$LOCK_SHA256" =~ ^[0-9a-fA-F]{64}$ ]] || {
+  echo "ERROR: could not compute the Podfile.lock SHA-256 provenance fingerprint." >&2
+  exit 10
+}
+
+umask 077
+cat > "$DEPENDENCY_PROVENANCE" <<EOF
+schema=nembra-capture-tuya-dependencies-v1
+podfile_lock_sha256=$LOCK_SHA256
+thing_smart_home_kit=7.8.0
+thing_smart_business_extension_kit=7.8.0
+EOF
+chmod 600 "$DEPENDENCY_PROVENANCE"
+
+cat <<EOF
 
 Tuya SDK dependencies are integrated locally, including the app-specific
 ThingSmartCryption package and local-only app identity pod.
 
+Resolved dependency provenance:
+  Podfile.lock SHA-256: $LOCK_SHA256
+  Local record: $DEPENDENCY_PROVENANCE
+
 NEXT BUILD RULE:
   Open NembraCapture.xcworkspace, not NembraCapture.xcodeproj.
+  Preserve this Podfile.lock with the private field workspace. Do not run
+  'pod update' before an accepted physical capture; an SDK change is a new
+  reviewed field-build input and must earn a new exact-head acceptance.
 
 This bootstrap still does NOT authorize the physical experiment. The exact app
 must consume the private identity pod, authorize the user's own SDK session,
