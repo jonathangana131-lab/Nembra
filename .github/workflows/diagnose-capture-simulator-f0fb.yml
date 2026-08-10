@@ -1,0 +1,79 @@
+name: Diagnose Capture stamped Simulator f0fb
+
+on:
+  push:
+    branches:
+      - diagnostic/v14-capture-simulator-f0fb-sol
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: f0fb83da5f57f9e92d29cf6ab444dc856e74c3a4
+      - name: Reproduce stamped Simulator build with surfaced diagnostics
+        shell: bash
+        run: |
+          set -uo pipefail
+          sha='f0fb83da5f57f9e92d29cf6ab444dc856e74c3a4'
+          dependency_sha='abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'
+          procedure='ES80-AUTHENTICATED-STATIONARY-v1'
+          label="capture-v14-${sha:0:12}"
+          log="$RUNNER_TEMP/nembra-capture-sim-build.log"
+          rm -rf /tmp/NembraCaptureProvenanceDerived
+          set +e
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/NembraCaptureProvenanceDerived \
+            CODE_SIGNING_ALLOWED=NO \
+            NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
+            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" \
+            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$dependency_sha" \
+            INFOPLIST_KEY_NembraCaptureProcedureIdentifier="$procedure" \
+            build >"$log" 2>&1
+          status=$?
+          set -e
+          if [[ $status -ne 0 ]]; then
+            python3 - "$log" "$status" <<'PY'
+          import pathlib, re, sys
+          path = pathlib.Path(sys.argv[1])
+          status = sys.argv[2]
+          lines = path.read_text(errors='replace').splitlines()
+          interesting = []
+          patterns = [r'\berror:', r'BUILD FAILED', r'Command .* failed', r'Undefined symbols', r'No such module', r'could not build', r'failed with exit code']
+          for line in lines:
+              if any(re.search(p, line, re.I) for p in patterns):
+                  interesting.append(line.strip())
+          seen = set()
+          emitted = 0
+          for line in interesting:
+              if not line or line in seen:
+                  continue
+              seen.add(line)
+              safe = line.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::error title=Stamped Simulator build::{safe[:3000]}')
+              emitted += 1
+              if emitted >= 20:
+                  break
+          if emitted == 0:
+              tail = '\n'.join(lines[-60:])
+              safe = tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::error title=Stamped Simulator build tail::{safe[:3000]}')
+          raise SystemExit(int(status))
+          PY
+          fi
+          plist='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
+          test -f "$plist"
+          test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
+          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$sha"
+          test "$(plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist")" = "$dependency_sha"
+          test "$(plutil -extract NembraCaptureProcedureIdentifier raw -o - "$plist")" = "$procedure"
