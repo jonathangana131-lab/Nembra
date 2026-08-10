@@ -55,9 +55,16 @@ struct TuyaSessionTerminalRetirementSourceTests {
         }
 
         let branch = String(app[observedOnline.lowerBound..<keepWaiting.lowerBound])
+        guard let regression = branch.range(of: "catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed"),
+              let regressionKind = branch.range(of: "kind: \"session_auth_promotion_clock_regressed\"", range: regression.upperBound..<branch.endIndex) else {
+            Issue.record("Could not isolate authentication-promotion clock-regression terminal.")
+            return
+        }
+        let terminal = String(branch[regression.lowerBound..<regressionKind.lowerBound])
+
         #expect(branch.contains("sessionLedger.markAuthenticated(for: token"))
-        #expect(branch.contains("invalidateInternalLifecycle"))
-        #expect(!branch.contains("invalidateSourceAuthority"))
+        #expect(terminal.contains("invalidateInternalLifecycle"))
+        #expect(!terminal.contains("invalidateSourceAuthority"))
     }
 
     @Test("watchdog monotonic regression cannot silently drop app ownership")
