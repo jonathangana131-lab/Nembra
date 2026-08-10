@@ -23,22 +23,27 @@ final class TuyaSecureLinkPreflightModel: ObservableObject {
     @Published private(set) var phase: Phase = .checking
     @Published private(set) var authenticatedDurationSeconds: Double = 0
     @Published private(set) var decodedDPEventCount = 0
+    @Published private(set) var rawCharacteristicPayloadCount = 0
+    @Published private(set) var rawObserverStatus = "NOT STARTED"
     @Published private(set) var diagnosticData: Data?
     @Published private(set) var diagnosticFilename = "Nembra-Tuya-Authenticated-Preflight.json"
 
     private let bridge = NembraTuyaSDKBridge()
+    private let rawObserver = TuyaFD50RawObserver()
     private var credential: TuyaCaptureCredential?
     private var connectionGeneration: UInt64 = 0
     private var authenticatedAtUptimeNanoseconds: UInt64?
-    private var latestObservedUptimeNanoseconds: UInt64?
     private var observationTask: Task<Void, Never>?
-    private var events: [DecodedDPEvent] = []
-
-    deinit {
-        observationTask?.cancel()
-    }
+    private var decodedEvents: [DecodedDPEvent] = []
+    private var rawEvents: [TuyaFD50RawObserver.Event] = []
 
     init() {
+        rawObserver.onStateChange = { [weak self] state in
+            self?.consumeRawObserverState(state)
+        }
+        rawObserver.onPayload = { [weak self] event in
+            self?.consumeRawPayload(event)
+        }
         refreshReadiness()
     }
 
@@ -51,8 +56,8 @@ final class TuyaSecureLinkPreflightModel: ObservableObject {
         case .blocked: return "Authenticated transport blocked"
         case .ready: return "Ready for stationary authentication"
         case .connecting: return "Authenticating with Tuya"
-        case .observing: return "Secure channel observing"
-        case .secureChannelProven: return "Secure channel proven"
+        case .observing: return "Secure channel + raw FD50 observing"
+        case .secureChannelProven: return "Authenticated raw channel proven"
         case .failed: return "Authenticated preflight failed"
         }
     }
@@ -66,11 +71,11 @@ final class TuyaSecureLinkPreflightModel: ObservableObject {
         case .ready:
             return "Scooter identity and official Tuya session are ready. Keep the scooter stationary and powered on, then start the read-only test."
         case .connecting:
-            return "Nembra is asking Tuya's documented existing-device BLE API to establish the bound session. No DP control command is available in this build."
+            return "Nembra is asking Tuya's supported existing-device BLE API to establish the bound session. Nembra itself has no application write or DP-control path in this test."
         case .observing:
-            return "Authenticated transport is alive. Nembra is waiting for genuine SDK-decoded device reports and the 45-second stability window."
+            return "Tuya owns authentication. In parallel, Nembra is passively subscribed to the exact FD50 notify characteristic already proven by physical capture C7D09A22. Acceptance needs raw notify bytes and 45 seconds of continuously live Tuya BLE state."
         case .secureChannelProven:
-            return "The official Tuya session survived the stability window and delivered application data. This proves authenticated transport, but it does not claim raw FD50 bytes or any ES80 DP meaning yet."
+            return "The Tuya-authenticated BLE session stayed locally connected for the full stability window and Nembra captured genuine raw FD50 notify bytes. DP meanings remain unknown until the next stationary correlation experiment."
         }
     }
 
@@ -79,19 +84,40 @@ final class TuyaSecureLinkPreflightModel: ObservableObject {
         return false
     }
 
+    var canStop: Bool {
+        switch phase {
+        case .connecting, .observing: return true
+        default: return false
+        }
+    }
+
+    var canRecheck: Bool {
+        switch phase {
+        case .blocked, .failed: return true
+        default: return false
+        }
+    }
+
     var minimumWindowSeconds: Double { 45 }
 
     func refreshReadiness() {
         observationTask?.cancel()
         observationTask = nil
+        if let credential {
+            bridge.disconnectUUID(credential.uuid)
+        }
+        rawObserver.stop()
+
         authenticatedDurationSeconds = 0
         decodedDPEventCount = 0
-        events = []
+        rawCharacteristicPayloadCount = 0
+        rawObserverStatus = "NOT STARTED"
+        decodedEvents = []
+        rawEvents = []
         diagnosticData = nil
         authenticatedAtUptimeNanoseconds = nil
-        latestObservedUptimeNanoseconds = nil
 
-        guard let stored = TuyaCaptureCredentialStore.load() else {
+        guard let stored = TuyaCaptureCredentialVault.load() else {
             credential = nil
             phase = .blocked("No saved bound-scooter credential is available. Complete the one-time Tuya device selection first; do not repeat the outdoor ride capture.")
             return
@@ -99,7 +125,7 @@ final class TuyaSecureLinkPreflightModel: ObservableObject {
         credential = stored
 
         guard bridge.sdkAvailable else {
-            phase = .blocked("The official Tuya SmartLife SDK is not linked into this standalone field build yet. Raw FD50 writes remain locked; Nembra will not guess the authentication handshake.")
+            phase = .blocked("The official Tuya SmartLife SDK is not linked into this standalone field build yet. Raw FD50 authentication writes remain locked; Nembra will not guess the secure handshake.")
             return
         }
 
@@ -112,7 +138,7 @@ final class TuyaSecureLinkPreflightModel: ObservableObject {
 
         bridge.configure(withAppKey: appKey, appSecret: appSecret)
         guard bridge.sdkUserLoggedIn else {
-            phase = .blocked("The Tuya SDK is configured, but its own official account session is not authorized yet. The existing Tuya Smart binding is preserved; no re-pair, reset, or unbind is allowed.")
+            phase = .blocked("The Tuya SDK is configured, but its own supported account session is not authorized yet. The existing Tuya Smart binding is preserved; no re-pair, reset, or unbind is allowed.")
             return
         }
 
@@ -130,10 +156,12 @@ final class TuyaSecureLinkPreflightModel: ObservableObject {
         phase = .connecting
         authenticatedDurationSeconds = 0
         decodedDPEventCount = 0
-        events = []
+        rawCharacteristicPayloadCount = 0
+        rawObserverStatus = "WAITING FOR TUYA AUTH"
+        decodedEvents = []
+        rawEvents = []
         diagnosticData = nil
         authenticatedAtUptimeNanoseconds = nil
-        latestObservedUptimeNanoseconds = nil
 
         bridge.connectDeviceID(
             credential.deviceID,
@@ -147,46 +175,84 @@ final class TuyaSecureLinkPreflightModel: ObservableObject {
     }
 
     func stop() {
+        guard canStop else { return }
         observationTask?.cancel()
         observationTask = nil
+        rawObserver.stop()
         if let credential {
             bridge.disconnectUUID(credential.uuid)
         }
         prepareDiagnostic(result: "stopped")
-        refreshReadiness()
+        phase = .blocked("The stationary test was stopped safely. No control command was sent. Re-check readiness when you want to retry.")
     }
 
     private func consumeBridgeUpdate(authenticated: Bool, dps: [AnyHashable: Any]?, error: Error?) {
         if let error {
-            observationTask?.cancel()
-            observationTask = nil
-            phase = .failed(error.localizedDescription)
-            prepareDiagnostic(result: "rejected")
+            failExperiment(error.localizedDescription, result: "rejected")
             return
         }
         guard authenticated else { return }
+        guard let credential, bridge.isLocallyConnectedUUID(credential.uuid) else {
+            failExperiment("Tuya did not report a live local BLE session for the bound scooter.", result: "not-locally-connected")
+            return
+        }
 
         let now = DispatchTime.now().uptimeNanoseconds
         if authenticatedAtUptimeNanoseconds == nil {
             authenticatedAtUptimeNanoseconds = now
-            latestObservedUptimeNanoseconds = now
             phase = .observing
+            rawObserverStatus = "ATTACHING TO VERIFIED FD50"
+            rawObserver.start()
             beginObservationClock()
-        } else {
-            latestObservedUptimeNanoseconds = now
         }
 
         if let dps, !dps.isEmpty {
-            let normalized = Self.normalizedJSONObject(dps)
-            events.append(
+            decodedEvents.append(
                 DecodedDPEvent(
                     observedAt: ISO8601DateFormatter().string(from: Date()),
-                    values: normalized
+                    values: Self.normalizedJSONObject(dps)
                 )
             )
             decodedDPEventCount += 1
         }
         evaluateGate(now: now)
+    }
+
+    private func consumeRawObserverState(_ state: TuyaFD50RawObserver.State) {
+        switch state {
+        case .idle:
+            rawObserverStatus = "NOT STARTED"
+        case .waitingForBluetooth:
+            rawObserverStatus = "WAITING FOR BLUETOOTH"
+        case .retrievingVerifiedPeripheral:
+            rawObserverStatus = "MATCHING C7D09A22 TARGET"
+        case .connecting:
+            rawObserverStatus = "ATTACHING READ-ONLY"
+        case .discovering:
+            rawObserverStatus = "VERIFYING FD50"
+        case .subscribing:
+            rawObserverStatus = "SUBSCRIBING TO NOTIFY"
+        case .observing:
+            rawObserverStatus = "RAW NOTIFY ACTIVE"
+        case .failed(let reason):
+            rawObserverStatus = "FAILED"
+            if case .observing = phase {
+                failExperiment(reason, result: "raw-observer-failed")
+            }
+        case .stopped:
+            rawObserverStatus = "STOPPED"
+        }
+    }
+
+    private func consumeRawPayload(_ event: TuyaFD50RawObserver.Event) {
+        guard case .observing = phase else { return }
+        guard let credential, bridge.isLocallyConnectedUUID(credential.uuid) else {
+            failExperiment("A raw FD50 notification arrived after Tuya's local BLE authority was lost, so it was rejected from the artifact.", result: "authority-lost-before-raw-receipt")
+            return
+        }
+        rawEvents.append(event)
+        rawCharacteristicPayloadCount += 1
+        evaluateGate(now: event.receivedAtUptimeNanoseconds)
     }
 
     private func beginObservationClock() {
@@ -195,19 +261,29 @@ final class TuyaSecureLinkPreflightModel: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 250_000_000)
                 guard !Task.isCancelled else { return }
-                let now = DispatchTime.now().uptimeNanoseconds
                 await MainActor.run {
                     guard let self else { return }
-                    self.latestObservedUptimeNanoseconds = now
-                    self.evaluateGate(now: now)
+                    guard case .observing = self.phase else { return }
+                    guard let credential = self.credential,
+                          self.bridge.isLocallyConnectedUUID(credential.uuid) else {
+                        self.failExperiment(
+                            "Tuya's own local BLE status dropped before the 45-second stability window completed.",
+                            result: "disconnected-before-stability-window"
+                        )
+                        return
+                    }
+                    self.evaluateGate(now: DispatchTime.now().uptimeNanoseconds)
                 }
             }
         }
     }
 
     private func evaluateGate(now: UInt64) {
-        guard let authenticatedAtUptimeNanoseconds else { return }
-        let elapsed = now >= authenticatedAtUptimeNanoseconds ? now - authenticatedAtUptimeNanoseconds : 0
+        guard case .observing = phase,
+              let authenticatedAtUptimeNanoseconds,
+              now >= authenticatedAtUptimeNanoseconds else { return }
+
+        let elapsed = now - authenticatedAtUptimeNanoseconds
         authenticatedDurationSeconds = Double(elapsed) / 1_000_000_000
 
         let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
@@ -215,44 +291,84 @@ final class TuyaSecureLinkPreflightModel: ObservableObject {
             connectionStartedAtUptimeNanoseconds: authenticatedAtUptimeNanoseconds,
             authenticatedAtUptimeNanoseconds: authenticatedAtUptimeNanoseconds,
             latestObservedUptimeNanoseconds: now,
-            applicationPayloadCount: decodedDPEventCount,
+            applicationPayloadCount: rawCharacteristicPayloadCount,
             connectionGeneration: connectionGeneration
         )
 
-        if case .readyForStationaryMapping = TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) {
+        guard case .readyForStationaryMapping = TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) else {
+            return
+        }
+
+        observationTask?.cancel()
+        observationTask = nil
+        phase = .secureChannelProven
+        prepareDiagnostic(result: "accepted-raw-fd50")
+        rawObserver.stop()
+        if let credential {
+            bridge.disconnectUUID(credential.uuid)
+        }
+    }
+
+    private func failExperiment(_ reason: String, result: String) {
+        guard case .secureChannelProven = phase else {
             observationTask?.cancel()
             observationTask = nil
-            phase = .secureChannelProven
-            prepareDiagnostic(result: "accepted-sdk-decoded")
+            prepareDiagnostic(result: result)
+            phase = .failed(reason)
+            rawObserver.stop()
+            if let credential {
+                bridge.disconnectUUID(credential.uuid)
+            }
+            return
         }
     }
 
     private func prepareDiagnostic(result: String) {
-        let encodedEvents: [[String: Any]] = events.map {
+        let encodedDecodedEvents: [[String: Any]] = decodedEvents.map {
             ["observedAt": $0.observedAt, "dps": $0.values]
         }
+        let iso = ISO8601DateFormatter()
+        let encodedRawEvents: [[String: Any]] = rawEvents.map { event in
+            [
+                "observedAt": iso.string(from: event.receivedAtWallClock),
+                "receiptUptimeNanoseconds": String(event.receivedAtUptimeNanoseconds),
+                "characteristicUUID": event.characteristicUUID,
+                "payloadHex": Self.hex(event.payload),
+                "payloadBase64": event.payload.base64EncodedString(),
+                "byteCount": event.payload.count
+            ]
+        }
+
         let envelope: [String: Any] = [
-            "schemaVersion": 1,
-            "purpose": "Tuya authenticated stationary preflight",
+            "schemaVersion": 2,
+            "purpose": "Tuya authenticated stationary raw FD50 preflight",
+            "physicalReferenceCaptureID": "C7D09A22-96DA-4E46-9BEF-E36F670ADB0E",
+            "verifiedCoreBluetoothPeripheral": TuyaFD50RawObserver.verifiedPeripheralIdentifier.uuidString,
             "transportFamily": "tuya-fd50",
+            "serviceUUID": TuyaFD50RawObserver.serviceUUID.uuidString,
+            "notifyCharacteristicUUID": TuyaFD50RawObserver.notifyCharacteristicUUID.uuidString,
             "authMethod": "tuya-smartlife-sdk",
             "authenticationResult": result,
             "secureConnectionDurationSeconds": authenticatedDurationSeconds,
+            "rawCharacteristicPayloadCount": rawCharacteristicPayloadCount,
             "sdkDecodedDPEventCount": decodedDPEventCount,
-            "rawCharacteristicPayloadCount": 0,
-            "decodedEvents": encodedEvents,
+            "rawNotifications": encodedRawEvents,
+            "sdkDecodedEvents": encodedDecodedEvents,
             "safety": [
-                "readOnly": true,
-                "controlDPsSent": false,
+                "nembraApplicationWritesSent": false,
+                "nembraControlDPsSent": false,
                 "pairingOrActivationAttempted": false,
                 "resetOrUnbindAttempted": false,
                 "credentialsExported": false,
-                "rawCharacteristicBytesClaimed": false
+                "rawObserverUsesVerifiedPeripheralOnly": true
             ],
-            "truthBoundary": "SDK-decoded DP callbacks prove application data only. This artifact does not claim raw FD50 notification bytes or accepted ES80 DP semantics."
+            "truthBoundary": "Raw notification bytes are preserved exactly as received from FD50 characteristic 00000002 while Tuya's SDK reports the same bound device locally connected. No DP meaning, decryption, telemetry field, command acknowledgement, or physical control semantics are asserted by this artifact."
         ]
-        diagnosticData = try? JSONSerialization.data(withJSONObject: envelope, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-        diagnosticFilename = "Nembra-Tuya-Authenticated-Preflight-\(result).json"
+        diagnosticData = try? JSONSerialization.data(
+            withJSONObject: envelope,
+            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        )
+        diagnosticFilename = "Nembra-Tuya-Authenticated-Raw-FD50-\(result).json"
     }
 
     private static func bundleSecret(named key: String) -> String? {
@@ -276,6 +392,10 @@ final class TuyaSecureLinkPreflightModel: ObservableObject {
         if let array = value as? [Any] { return array.map(jsonSafe) }
         return String(describing: value)
     }
+
+    private static func hex(_ data: Data) -> String {
+        data.map { String(format: "%02X", $0) }.joined(separator: " ")
+    }
 }
 
 struct TuyaSecureLinkPreflightView: View {
@@ -289,9 +409,9 @@ struct TuyaSecureLinkPreflightView: View {
                         .font(.caption.monospaced().weight(.bold))
                         .tracking(1.4)
                         .foregroundStyle(.green)
-                    Text("Prove the Tuya secure channel")
+                    Text("Prove + capture the Tuya secure channel")
                         .font(.system(size: 32, weight: .bold, design: .rounded))
-                    Text("No riding. No control DPs. The goal is only to survive the old ~30-second rejection and observe genuine application data through Tuya's supported stack.")
+                    Text("No riding. Tuya handles authentication; Nembra only listens to the exact raw FD50 notify path already identified on your scooter.")
                         .foregroundStyle(.secondary)
                 }
 
@@ -306,15 +426,16 @@ struct TuyaSecureLinkPreflightView: View {
                     metric("Official SDK", model.sdkAvailable ? "PRESENT" : "MISSING")
                     metric("SDK account", model.sdkUserLoggedIn ? "AUTHORIZED" : "NOT AUTHORIZED")
                     metric("Secure duration", String(format: "%.1f / %.0f s", model.authenticatedDurationSeconds, model.minimumWindowSeconds))
-                    metric("SDK device reports", "\(model.decodedDPEventCount)")
-                    metric("Raw FD50 bytes", "NOT CLAIMED")
+                    metric("Raw FD50 observer", model.rawObserverStatus)
+                    metric("Raw notify payloads", "\(model.rawCharacteristicPayloadCount)")
+                    metric("SDK decoded reports", "\(model.decodedDPEventCount)")
                 }
                 .authenticatedCard()
 
                 VStack(alignment: .leading, spacing: 10) {
-                    Label("READ-ONLY BOUNDARY", systemImage: "lock.shield.fill")
+                    Label("READ-ONLY NEMBRA BOUNDARY", systemImage: "lock.shield.fill")
                         .font(.headline)
-                    Text("This path exposes no generic BLE write, DP publish, pairing, activation, reset, unbind, firmware, speed-limit, lock, mode, light, motor, brake, or cruise command API.")
+                    Text("Nembra exposes no generic BLE write, DP publish, pairing, activation, reset, unbind, firmware, speed-limit, lock, mode, light, motor, brake, or cruise command API. CoreBluetooth only enables notifications on the proven FD50 notify characteristic.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -332,14 +453,25 @@ struct TuyaSecureLinkPreflightView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(.white)
                     .foregroundStyle(.black)
-                } else {
+                } else if model.canStop {
+                    Button(role: .cancel) {
+                        model.stop()
+                    } label: {
+                        Label("Stop test", systemImage: "stop.circle.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                } else if model.canRecheck {
                     Button("Re-check readiness") { model.refreshReadiness() }
                         .buttonStyle(.bordered)
                 }
 
                 if let data = model.diagnosticData {
-                    ShareLink(item: TuyaAuthenticatedDiagnosticExport(data: data, filename: model.diagnosticFilename), preview: SharePreview("Nembra authenticated preflight")) {
-                        Label("Share preflight diagnostic", systemImage: "square.and.arrow.up")
+                    ShareLink(
+                        item: TuyaAuthenticatedDiagnosticExport(data: data, filename: model.diagnosticFilename),
+                        preview: SharePreview("Nembra authenticated FD50 preflight")
+                    ) {
+                        Label("Share raw preflight diagnostic", systemImage: "square.and.arrow.up")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
@@ -375,10 +507,8 @@ struct TuyaAuthenticatedDiagnosticExport: Transferable {
     let filename: String
 
     static var transferRepresentation: some TransferRepresentation {
-        DataRepresentation(exportedContentType: .json) { export in
-            export.data
-        }
-        .suggestedFileName { export in export.filename }
+        DataRepresentation(exportedContentType: .json) { export in export.data }
+            .suggestedFileName { $0.filename }
     }
 }
 
