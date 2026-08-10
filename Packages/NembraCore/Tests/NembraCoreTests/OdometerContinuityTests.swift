@@ -75,7 +75,7 @@ final class OdometerContinuityTests: XCTestCase {
 
     func testInvalidDistancesAreRejected() {
         XCTAssertThrowsError(
-            try OdometerContinuitySegment(distanceKilometers: -.infinity, source: .userRecorded)
+            try OdometerContinuitySegment(distanceKilometers: -Double.infinity, source: .userRecorded)
         )
         XCTAssertThrowsError(
             try OdometerContinuityReading(kilometers: -1, source: .deviceVerified)
