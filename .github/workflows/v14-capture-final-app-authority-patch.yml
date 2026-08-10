@@ -1,0 +1,269 @@
+name: V14 Capture final app authority patch
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-final-app-authority-sol
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'chore: stage Capture final app authority patch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: agent/v14-capture-final-app-authority-sol
+
+      - name: Apply deterministic final app-authority repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text()
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              '        case idle, baseline, powerOn, scanning, selected, authenticating, observing, accepted, failed\n',
+              '        case idle, baseline, powerOn, scanning, correlated, selected, authenticating, observing, accepted, failed\n',
+              'phase correlated state'
+          )
+
+          replace_once(
+              '    var currentAccountUID: String? { OfficialTuyaFactory.currentAccountUID }\n    var selected: Candidate? { selectedID.flatMap { byID[$0] } }\n',
+              '    var currentAccountUID: String? { OfficialTuyaFactory.currentAccountUID }\n    var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }\n    var selected: Candidate? { selectedID.flatMap { byID[$0] } }\n',
+              'field build presentation authority'
+          )
+
+          replace_once(
+              '''            byID = [id: candidate]\n            candidates = [candidate]\n            selectedID = id\n            correlationSession = nil\n            phase = .selected\n            message = "Fresh repeated power-cycle correlation found one full CoreBluetooth target. This is current-session correlation evidence, not permanent scooter identity. Discovery is retired before Tuya's SDK takes BLE ownership."\n            log("candidate_selected", [\n                "id": id.uuidString,\n                "authority": "fresh-repeated-off-on-full-corebluetooth-id",\n                "historicalCaptureUUIDMatch": String(historicalCaptureID),\n                "windows": String(result.windows.count)\n            ])\n''',
+              '''            byID = [id: candidate]\n            candidates = [candidate]\n            selectedID = nil\n            correlationSession = nil\n            phase = .correlated\n            message = "Fresh repeated power-cycle correlation found one full CoreBluetooth target. Confirm this correlated target explicitly before Tuya's SDK may take BLE ownership. This is current-session correlation evidence, not permanent scooter identity."\n            log("candidate_correlated", [\n                "id": id.uuidString,\n                "authority": "fresh-repeated-off-on-full-corebluetooth-id-pending-operator-confirmation",\n                "historicalCaptureUUIDMatch": String(historicalCaptureID),\n                "windows": String(result.windows.count)\n            ])\n''',
+              'correlation pending confirmation'
+          )
+
+          replace_once(
+              '    func invalidateSDKMembership() {\n',
+              '''    func confirmCorrelatedTarget() {\n        guard phase == .correlated,\n              selectedID == nil,\n              candidates.count == 1,\n              let candidate = candidates.first,\n              candidate.likely,\n              byID[candidate.id] == candidate else { return }\n\n        selectedID = candidate.id\n        phase = .selected\n        message = "Correlated Bluetooth target confirmed for this capture attempt. This explicit confirmation does not promote the UUID to permanent ES80 identity; Tuya same-account membership remains separate authentication authority."\n        log("candidate_selected", [\n            "id": candidate.id.uuidString,\n            "authority": "explicit-operator-confirmation-of-fresh-repeated-correlation",\n            "correlation": "off1-on1-off2-on2-full-corebluetooth-id",\n            "historicalCaptureUUIDMatch": String(candidate.historicalCaptureID)\n        ])\n    }\n\n    func invalidateSDKMembership() {\n''',
+              'explicit target confirmation action'
+          )
+
+          replace_once(
+              '        if [.baseline, .powerOn, .scanning, .selected].contains(phase) {\n',
+              '        if [.baseline, .powerOn, .scanning, .correlated, .selected].contains(phase) {\n',
+              'membership invalidates correlated pending state'
+          )
+
+          replace_once(
+              '''                } catch {\n                    await invalidateSourceAuthority(\n                        token: token,\n                        message: "Authenticated-session chronology rejected the SDK success callback: \\(error.localizedDescription)",\n                        kind: "session_auth_callback_rejected"\n                    )\n                }\n''',
+              '''                } catch {\n                    await invalidateChronologyIntegrity(\n                        token: token,\n                        message: "Authenticated-session chronology rejected the SDK success callback: \\(error.localizedDescription)",\n                        kind: "session_auth_callback_rejected"\n                    )\n                }\n''',
+              'authentication chronology terminal'
+          )
+
+          replace_once(
+              '''            case .invalidClock:\n                await authenticationAcquisitionFailed(\n                    token: token,\n                    message: "Local-BLE settlement failed closed because the monotonic clock regressed.",\n                    kind: "sdk_local_ble_settlement_clock_invalid"\n                )\n                return\n''',
+              '''            case .invalidClock:\n                await invalidateChronologyIntegrity(\n                    token: token,\n                    message: "Local-BLE settlement failed closed because the monotonic clock regressed.",\n                    kind: "sdk_local_ble_settlement_clock_invalid"\n                )\n                return\n''',
+              'settlement invalid clock terminal'
+          )
+
+          replace_once(
+              '''        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {\n            log("retired_application_update_ignored", ["generation": String(token.diagnosticGeneration)])\n        } catch {\n            await invalidateObservationContinuity(\n                token: token,\n                message: "Application chronology failed closed: \\(error.localizedDescription)",\n                kind: "application_update_rejected"\n            )\n        }\n''',
+              '''        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {\n            log("retired_application_update_ignored", ["generation": String(token.diagnosticGeneration)])\n        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {\n            await invalidateChronologyIntegrity(\n                token: token,\n                message: "Application chronology failed closed because the monotonic clock regressed.",\n                kind: "application_update_clock_regressed"\n            )\n        } catch {\n            await invalidateObservationContinuity(\n                token: token,\n                message: "Application chronology failed closed: \\(error.localizedDescription)",\n                kind: "application_update_rejected"\n            )\n        }\n''',
+              'application monotonic regression terminal'
+          )
+
+          replace_once(
+              '''                guard now >= previousPollUptime else {\n                    do {\n                        try await sessionLedger.markObservationContinuityInvalidated(for: token)\n                    } catch {}\n                    self.currentConnectionToken = nil\n                    await self.refreshLedgerSnapshot()\n                    self.failLocally("Authenticated observation continuity was interrupted by a monotonic-clock regression.", "observation_clock_regressed")\n                    return\n                }\n''',
+              '''                guard now >= previousPollUptime else {\n                    await self.invalidateChronologyIntegrity(\n                        token: token,\n                        message: "Authenticated observation chronology failed closed because the monotonic clock regressed.",\n                        kind: "observation_clock_regressed"\n                    )\n                    return\n                }\n''',
+              'watchdog clock regression terminal'
+          )
+
+          replace_once(
+              '''                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {\n                    self.log("sealed_watchdog_generation_retired", ["generation": String(token.diagnosticGeneration)])\n                    return\n                } catch {\n                    await self.invalidateObservationContinuity(\n                        token: token,\n                        message: "Authenticated-session liveness chronology failed closed: \\(error.localizedDescription)",\n                        kind: "session_liveness_rejected"\n                    )\n                    return\n                }\n''',
+              '''                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {\n                    self.log("sealed_watchdog_generation_retired", ["generation": String(token.diagnosticGeneration)])\n                    return\n                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {\n                    await self.invalidateChronologyIntegrity(\n                        token: token,\n                        message: "Authenticated-session liveness chronology failed closed because the monotonic clock regressed.",\n                        kind: "session_liveness_clock_regressed"\n                    )\n                    return\n                } catch {\n                    await self.invalidateObservationContinuity(\n                        token: token,\n                        message: "Authenticated-session liveness chronology failed closed: \\(error.localizedDescription)",\n                        kind: "session_liveness_rejected"\n                    )\n                    return\n                }\n''',
+              'liveness monotonic regression terminal'
+          )
+
+          replace_once(
+              '    private func invalidateObservationContinuity(\n',
+              '''    private func invalidateChronologyIntegrity(\n        token: TuyaReadOnlyConnectionToken,\n        message: String,\n        kind: String\n    ) async {\n        guard currentConnectionToken == token else { return }\n        watchdog?.cancel()\n        watchdog = nil\n\n        do {\n            try await sessionLedger.markChronologyIntegrityInvalidated(for: token)\n        } catch {\n            // Do not claim the generation retired if the no-clock terminal itself cannot prove it.\n            localBLESettlementToken = nil\n            sdkLocalBLEOnline = false\n            driver = nil\n            await refreshLedgerSnapshot()\n            phase = .failed\n            self.message = "\\(message) Capture could not prove terminal ledger retirement; relaunch before any new attempt."\n            log("\\(kind)_terminal_unproven", [\n                "generation": String(token.diagnosticGeneration),\n                "terminalError": String(describing: error)\n            ])\n            return\n        }\n\n        currentConnectionToken = nil\n        localBLESettlementToken = nil\n        sdkLocalBLEOnline = false\n        driver = nil\n        await refreshLedgerSnapshot()\n        phase = .failed\n        self.message = message\n        log(kind, ["generation": String(token.diagnosticGeneration)])\n    }\n\n    private func invalidateObservationContinuity(\n''',
+              'chronology integrity app helper'
+          )
+
+          replace_once(
+              '            LabeledContent("Field build", value: test.accountIdentityLeaseIsAuthorized && test.sdkDeviceMembershipVerified ? "Authority checked" : "Not ready")\n',
+              '            LabeledContent("Field build", value: test.fieldBuildIsAuthoritative ? "Authoritative" : "Not authoritative")\n',
+              'field build UI row'
+          )
+
+          replace_once(
+              '            if !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized {\n',
+              '            if !test.fieldBuildIsAuthoritative || !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized {\n',
+              'field build NO-GO banner'
+          )
+
+          replace_once(
+              '                    .disabled(!test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized || test.membershipBusy)\n',
+              '                    .disabled(!test.fieldBuildIsAuthoritative || !test.privateConfig || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized || test.membershipBusy)\n',
+              'field build OFF1 affordance'
+          )
+
+          replace_once(
+              '''            default:\n                EmptyView()\n            }\n\n            ForEach(test.candidates.prefix(8)) { candidate in\n''',
+              '''            case .correlated:\n                Text("One repeatable full CoreBluetooth target is correlated for this capture attempt. Confirm it explicitly before authentication; this does not establish permanent scooter identity.")\n                    .font(.footnote)\n                    .foregroundStyle(.secondary)\n                Button("Confirm correlated Bluetooth target") { test.confirmCorrelatedTarget() }\n                    .buttonStyle(.borderedProminent)\n                    .disabled(!test.fieldBuildIsAuthoritative || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized)\n\n            default:\n                EmptyView()\n            }\n\n            ForEach(test.candidates.prefix(8)) { candidate in\n''',
+              'explicit confirmation UI'
+          )
+
+          replace_once(
+              '''                    !candidate.likely\n                        || !test.privateConfig\n''',
+              '''                    !candidate.likely\n                        || !test.fieldBuildIsAuthoritative\n                        || !test.privateConfig\n''',
+              'auth affordance build authority'
+          )
+
+          path.write_text(source)
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFinalAppAuthoritySourceTests.swift')
+          test_path.write_text(r'''import Foundation
+import Testing
+@testable import NembraBluetoothCapture
+
+@Suite("Capture final app authority convergence")
+struct TuyaFinalAppAuthoritySourceTests {
+    @Test("fresh correlation requires explicit operator confirmation")
+    func explicitCorrelationConfirmationOwnsSelection() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let finish = try section(in: app, from: "private func finishCorrelationSeries", to: "func confirmCorrelatedTarget")
+        #expect(finish.contains("singleRepeatableCandidate"))
+        #expect(finish.contains("phase = .correlated"))
+        #expect(!finish.contains("selectedID = id"))
+        #expect(!finish.contains("candidate_selected"))
+
+        let confirmation = try section(in: app, from: "func confirmCorrelatedTarget", to: "func invalidateSDKMembership")
+        #expect(confirmation.contains("selectedID = candidate.id"))
+        #expect(confirmation.contains("phase = .selected"))
+        #expect(confirmation.contains("candidate_selected"))
+        #expect(confirmation.contains("explicit-operator-confirmation-of-fresh-repeated-correlation"))
+
+        let discovery = try section(in: app, from: "private var discoveryCard: some View", to: "private func authenticationCard")
+        #expect(discovery.contains("Confirm correlated Bluetooth target"))
+        #expect(discovery.contains("confirmCorrelatedTarget"))
+    }
+
+    @Test("compiled build provenance owns field-build presentation and physical affordances")
+    func fieldBuildAuthorityIsAppVisible() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        #expect(app.contains("var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }"))
+
+        let authority = try section(in: app, from: "private var authorityCard: some View", to: "private var discoveryCard: some View")
+        #expect(authority.contains("LabeledContent(\"Field build\", value: test.fieldBuildIsAuthoritative"))
+        #expect(authority.contains("!test.fieldBuildIsAuthoritative"))
+
+        let discovery = try section(in: app, from: "private var discoveryCard: some View", to: "private func authenticationCard")
+        #expect(discovery.contains("Button(\"Start OFF1 correlation\")"))
+        #expect(discovery.contains("!test.fieldBuildIsAuthoritative"))
+    }
+
+    @Test("clock failures use the no-clock chronology terminal instead of source or disconnect authority")
+    func chronologyFailuresUseDedicatedTerminal() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        #expect(app.contains("private func invalidateChronologyIntegrity"))
+        #expect(app.contains("sessionLedger.markChronologyIntegrityInvalidated(for: token)"))
+
+        let auth = try section(in: app, from: "private func authenticated(token:", to: "private func authenticationFailed")
+        #expect(auth.contains("sdk_local_ble_settlement_clock_invalid"))
+        #expect(auth.contains("invalidateChronologyIntegrity"))
+        #expect(!auth.contains("kind: \"session_auth_callback_rejected\"\n                    )\n                }\n                return\n\n            case .keepWaiting"))
+
+        let watchdog = try section(in: app, from: "private func startWatchdog", to: "private func recordObservedTransportLoss")
+        #expect(watchdog.contains("observation_clock_regressed"))
+        #expect(watchdog.contains("session_liveness_clock_regressed"))
+        #expect(watchdog.contains("invalidateChronologyIntegrity"))
+    }
+
+    @Test("unproven terminal retirement stays fail-closed")
+    func failedChronologyRetirementCannotClearLocalGenerationAuthority() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let helper = try section(in: app, from: "private func invalidateChronologyIntegrity", to: "private func invalidateObservationContinuity")
+        let catchSection = try section(in: String(helper), from: "} catch {", to: "        currentConnectionToken = nil")
+        #expect(!catchSection.contains("currentConnectionToken = nil"))
+        #expect(catchSection.contains("relaunch before any new attempt"))
+        #expect(catchSection.contains("terminal_unproven"))
+    }
+
+    private func section(in source: String, from start: String, to end: String) throws -> Substring {
+        guard let startRange = source.range(of: start),
+              let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+            Issue.record("Expected source section missing: \(start) ... \(end)")
+            throw SourceContractError.sectionMissing
+        }
+        return source[startRange.lowerBound..<endRange.lowerBound]
+    }
+
+    private func readRepositoryFile(_ relativePath: String) throws -> String {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+    }
+
+    private enum SourceContractError: Error {
+        case sectionMissing
+    }
+}
+''')
+          PY
+
+      - name: Deterministic source assertions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          required = [
+              'case idle, baseline, powerOn, scanning, correlated, selected',
+              'func confirmCorrelatedTarget()',
+              'phase = .correlated',
+              'explicit-operator-confirmation-of-fresh-repeated-correlation',
+              'var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }',
+              'LabeledContent("Field build", value: test.fieldBuildIsAuthoritative',
+              'private func invalidateChronologyIntegrity(',
+              'sessionLedger.markChronologyIntegrityInvalidated(for: token)',
+              'sdk_local_ble_settlement_clock_invalid',
+              'session_liveness_clock_regressed',
+          ]
+          for needle in required:
+              if needle not in s:
+                  raise SystemExit(f'missing required repaired source: {needle}')
+          finish = s[s.index('private func finishCorrelationSeries'):s.index('func confirmCorrelatedTarget')]
+          if 'selectedID = id' in finish or 'candidate_selected' in finish:
+              raise SystemExit('correlation still auto-promotes target authority')
+          print('Capture final app authority deterministic assertions PASS')
+          PY
+
+      - name: Commit repair and retire helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/v14-capture-final-app-authority-patch.yml
+          git config user.name 'nembra-sol-worker'
+          git config user.email 'actions@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFinalAppAuthoritySourceTests.swift \
+                  .github/workflows/v14-capture-final-app-authority-patch.yml
+          git commit -m 'Capture: close final app authority blockers'
+          git push origin HEAD:agent/v14-capture-final-app-authority-sol
