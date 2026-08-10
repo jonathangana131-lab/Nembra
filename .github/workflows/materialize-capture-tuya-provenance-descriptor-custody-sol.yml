@@ -1,0 +1,271 @@
+name: Materialize Capture Tuya Provenance Descriptor Custody Sol
+
+on:
+  push:
+    branches:
+      - "fix/v14-capture-tuya-provenance-descriptor-custody-sol"
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="a5cb12ed97241ba274d23f311d67cf84623ceb29"
+          test "$(git rev-parse HEAD^)" = "$expected" || {
+            echo "Expected parent $expected, got $(git rev-parse HEAD^)" >&2
+            exit 1
+          }
+
+      - name: Materialize descriptor-bound private provenance reads
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          helper_path = Path("Scripts/capture_tuya_private_input_provenance.py")
+          source = helper_path.read_text(encoding="utf-8")
+          start = source.index("def _require_regular_file(path: Path) -> os.stat_result:\n")
+          end = source.index("def _assert_internal_symlink(path: Path, root: Path) -> str:\n", start)
+          replacement = '''def _stable_file_identity(metadata: os.stat_result) -> tuple[int, int, int, int, int, int, int, int, int]:
+              """Return metadata whose change means one fingerprint read was not stable."""
+              return (
+                  metadata.st_dev,
+                  metadata.st_ino,
+                  metadata.st_mode,
+                  metadata.st_uid,
+                  metadata.st_gid,
+                  metadata.st_nlink,
+                  metadata.st_size,
+                  metadata.st_mtime_ns,
+                  metadata.st_ctime_ns,
+              )
+
+
+          def _open_regular_file_descriptor(path: Path) -> int:
+              """Open the final provenance subject without following a swapped final symlink."""
+              if not hasattr(os, "O_NOFOLLOW"):
+                  raise ProvenanceError("platform cannot enforce no-follow private provenance reads")
+              flags = os.O_RDONLY | os.O_NOFOLLOW
+              flags |= getattr(os, "O_CLOEXEC", 0)
+              flags |= getattr(os, "O_NONBLOCK", 0)
+              try:
+                  descriptor = os.open(path, flags)
+              except OSError as error:
+                  raise ProvenanceError(
+                      f"required private build input is unavailable or unsafe: {path.name}"
+                  ) from error
+              try:
+                  metadata = os.fstat(descriptor)
+                  if not stat.S_ISREG(metadata.st_mode):
+                      raise ProvenanceError(
+                          f"required private build input is not a regular file: {path.name}"
+                      )
+              except Exception:
+                  os.close(descriptor)
+                  raise
+              return descriptor
+
+
+          def _read_stable_regular_file(path: Path) -> tuple[os.stat_result, bytes]:
+              """Read one exact regular-file subject through one descriptor and detect mutation."""
+              descriptor = _open_regular_file_descriptor(path)
+              try:
+                  before = os.fstat(descriptor)
+                  chunks: list[bytes] = []
+                  total = 0
+                  while True:
+                      try:
+                          chunk = os.read(descriptor, 1024 * 1024)
+                      except OSError as error:
+                          raise ProvenanceError(
+                              f"private build input could not be read: {path.name}"
+                          ) from error
+                      if not chunk:
+                          break
+                      chunks.append(chunk)
+                      total += len(chunk)
+                  after = os.fstat(descriptor)
+                  if total != before.st_size or _stable_file_identity(after) != _stable_file_identity(before):
+                      raise ProvenanceError(
+                          f"private build input changed while being fingerprinted: {path.name}"
+                      )
+                  return before, b"".join(chunks)
+              finally:
+                  os.close(descriptor)
+
+
+          def _require_regular_file(path: Path) -> os.stat_result:
+              descriptor = _open_regular_file_descriptor(path)
+              try:
+                  return os.fstat(descriptor)
+              finally:
+                  os.close(descriptor)
+
+
+          def _file_fingerprint(path: Path) -> str:
+              metadata, raw = _read_stable_regular_file(path)
+              digest = hashlib.sha256()
+              _feed(digest, b"nembra-private-file-v1")
+              _feed(digest, stat.S_IMODE(metadata.st_mode).to_bytes(4, "big"))
+              _feed(digest, metadata.st_size.to_bytes(8, "big"))
+              _feed(digest, hashlib.sha256(raw).digest())
+              return digest.hexdigest()
+
+
+          def _content_sha256(path: Path) -> str:
+              _, raw = _read_stable_regular_file(path)
+              return hashlib.sha256(raw).hexdigest()
+
+
+          '''
+          source = source[:start] + replacement + source[end:]
+
+          old_lock = '''        "podfile_lock_sha256": hashlib.sha256(lockfile.read_bytes()).hexdigest()
+              if _require_regular_file(lockfile)
+              else "",
+          '''
+          new_lock = '''        "podfile_lock_sha256": _content_sha256(lockfile),
+          '''
+          if source.count(old_lock) != 1:
+              raise SystemExit(f"expected one pathname-based lockfile read, found {source.count(old_lock)}")
+          source = source.replace(old_lock, new_lock, 1)
+          helper_path.write_text(source, encoding="utf-8")
+
+          test_path = Path("scripts/ci/tests/test_capture_tuya_private_input_provenance.py")
+          tests = test_path.read_text(encoding="utf-8")
+          old_import = "import unittest\nfrom pathlib import Path\n"
+          new_import = "import unittest\nfrom pathlib import Path\nfrom unittest import mock\n"
+          if tests.count(old_import) != 1:
+              raise SystemExit("test import anchor changed")
+          tests = tests.replace(old_import, new_import, 1)
+
+          insertion = r'''
+              def test_file_fingerprint_rejects_final_symlink_swap_at_descriptor_open(self) -> None:
+                  outside = self.root / "outside-podspec"
+                  outside.write_text("outside-secret-subject", encoding="utf-8")
+                  displaced = self.root / "original-podspec"
+                  original_open = provenance.os.open
+                  swapped = False
+
+                  def swapping_open(path, flags, *args, **kwargs):
+                      nonlocal swapped
+                      if not swapped and Path(path) == self.security_podspec:
+                          swapped = True
+                          self.security_podspec.rename(displaced)
+                          self.security_podspec.symlink_to(outside)
+                      return original_open(path, flags, *args, **kwargs)
+
+                  with mock.patch.object(provenance.os, "open", side_effect=swapping_open):
+                      with self.assertRaises(provenance.ProvenanceError):
+                          provenance._file_fingerprint(self.security_podspec)
+                  self.assertTrue(swapped)
+
+              def test_lockfile_fingerprint_rejects_final_symlink_swap_at_descriptor_open(self) -> None:
+                  outside = self.root / "outside-lock"
+                  outside.write_text("attacker-resolution", encoding="utf-8")
+                  displaced = self.root / "original-lock"
+                  original_open = provenance.os.open
+                  swapped = False
+
+                  def swapping_open(path, flags, *args, **kwargs):
+                      nonlocal swapped
+                      if not swapped and Path(path) == self.lockfile:
+                          swapped = True
+                          self.lockfile.rename(displaced)
+                          self.lockfile.symlink_to(outside)
+                      return original_open(path, flags, *args, **kwargs)
+
+                  with mock.patch.object(provenance.os, "open", side_effect=swapping_open):
+                      with self.assertRaises(provenance.ProvenanceError):
+                          self.current()
+                  self.assertTrue(swapped)
+
+              def test_fingerprint_rejects_in_place_mutation_during_descriptor_read(self) -> None:
+                  payload = b"A" * (2 * 1024 * 1024)
+                  self.security_podspec.write_bytes(payload)
+                  original_read = provenance.os.read
+                  mutated = False
+
+                  def mutating_read(descriptor, size):
+                      nonlocal mutated
+                      chunk = original_read(descriptor, size)
+                      if chunk and not mutated:
+                          mutated = True
+                          self.security_podspec.write_bytes(b"B" + payload[1:])
+                      return chunk
+
+                  with mock.patch.object(provenance.os, "read", side_effect=mutating_read):
+                      with self.assertRaises(provenance.ProvenanceError):
+                          provenance._file_fingerprint(self.security_podspec)
+                  self.assertTrue(mutated)
+          '''
+          anchor = "\n\nif __name__ == \"__main__\":\n"
+          if tests.count(anchor) != 1:
+              raise SystemExit("test insertion anchor changed")
+          tests = tests.replace(anchor, insertion + anchor, 1)
+          test_path.write_text(tests, encoding="utf-8")
+          PY
+
+      - name: Validate focused private provenance hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
+          python3 -m py_compile scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("Scripts/capture_tuya_private_input_provenance.py").read_text(encoding="utf-8")
+          required = (
+              "def _read_stable_regular_file(path: Path)",
+              "descriptor = _open_regular_file_descriptor(path)",
+              "os.O_RDONLY | os.O_NOFOLLOW",
+              "chunk = os.read(descriptor, 1024 * 1024)",
+              "_stable_file_identity(after) != _stable_file_identity(before)",
+              '"podfile_lock_sha256": _content_sha256(lockfile)',
+          )
+          missing = [token for token in required if token not in source]
+          if missing:
+              raise SystemExit(f"missing descriptor-custody invariants: {missing}")
+          if "lockfile.read_bytes()" in source:
+              raise SystemExit("pathname lockfile read remains")
+          if 'with path.open("rb") as handle:' in source:
+              raise SystemExit("pathname private-file content read remains")
+          print("Private Tuya provenance descriptor-custody invariants: PASS")
+          PY
+          git diff --check
+
+      - name: Commit durable side-lane checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          product="a5cb12ed97241ba274d23f311d67cf84623ceb29"
+          rm .github/workflows/materialize-capture-tuya-provenance-descriptor-custody-sol.yml
+          git add -A
+          git diff --cached --check
+          mapfile -t changed < <(git diff --cached --name-only "$product" | sort)
+          expected=(
+            "Scripts/capture_tuya_private_input_provenance.py"
+            "scripts/ci/tests/test_capture_tuya_private_input_provenance.py"
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          test "${changed[*]}" = "${expected_sorted[*]}" || {
+            printf 'Unexpected effective paths:\n' >&2
+            printf '  %s\n' "${changed[@]}" >&2
+            exit 1
+          }
+          git config user.name "Nembra V14 Sol"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "fix(capture): bind private provenance reads to descriptors"
+          git push origin HEAD:fix/v14-capture-tuya-provenance-descriptor-custody-sol
