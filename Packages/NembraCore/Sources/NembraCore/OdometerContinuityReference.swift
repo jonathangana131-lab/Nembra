@@ -11,18 +11,33 @@ public struct OdometerContinuityReference: Codable, Equatable, Sendable {
     }
 
     public struct Segment: Codable, Equatable, Sendable, Identifiable {
+        public enum EvidenceSource: String, Codable, Equatable, Sendable {
+            case userRecordedHistory
+            case tuyaAppDisplayReference
+        }
+
         public let id: UUID
         public let miles: Double
         public let note: String
+        public let evidenceSource: EvidenceSource?
 
-        public init(id: UUID = UUID(), miles: Double, note: String) throws {
+        public init(
+            id: UUID = UUID(),
+            miles: Double,
+            note: String,
+            evidenceSource: EvidenceSource = .userRecordedHistory
+        ) throws {
             guard miles.isFinite, miles >= 0 else {
                 throw ValidationError.invalidMiles
             }
             self.id = id
             self.miles = miles
             self.note = note
+            self.evidenceSource = evidenceSource
         }
+
+        public var isBluetoothTelemetry: Bool { false }
+        public var authorizesDeviceReportedOdometer: Bool { false }
     }
 
     public enum ValidationError: Error, Equatable, Sendable {
@@ -56,30 +71,29 @@ public struct OdometerContinuityReference: Codable, Equatable, Sendable {
         totalMiles * 1.609_344
     }
 
-    /// User continuity history is never device telemetry.
-    ///
-    /// This remains false even when a later authenticated scooter odometer happens to equal
-    /// the reference total. Equality may support a separately recorded comparison, but it
-    /// cannot retroactively relabel this history as Bluetooth-derived truth.
     public var authorizesDeviceReportedOdometer: Bool { false }
-
-    /// Explicit projection fence for callers that work with `VehicleState`.
-    ///
-    /// The numerical kilometer conversion above is for presentation/comparison only and must
-    /// not be copied into `VehicleState.odometerKilometers` as physical device evidence.
     public var mayProjectIntoVehicleStateOdometer: Bool { false }
 }
 
 public extension OdometerContinuityReference {
-    /// Current physical field reference supplied by the scooter owner after two
-    /// odometer resets. This constant is reference history only; it must never be
-    /// projected into `VehicleState.odometerKilometers` or labeled device-reported.
     static func physicalCaptureC7D09A22Reference(recordedAt: Date) throws -> Self {
         try Self(
             segments: [
-                Segment(miles: 665.3, note: "Pre-reset segment 1"),
-                Segment(miles: 429.5, note: "Pre-reset segment 2"),
-                Segment(miles: 1_070.0, note: "Current Tuya display at reference time")
+                Segment(
+                    miles: 665.3,
+                    note: "Pre-reset segment 1",
+                    evidenceSource: .userRecordedHistory
+                ),
+                Segment(
+                    miles: 429.5,
+                    note: "Pre-reset segment 2",
+                    evidenceSource: .userRecordedHistory
+                ),
+                Segment(
+                    miles: 1_070.0,
+                    note: "Current Tuya display at reference time",
+                    evidenceSource: .tuyaAppDisplayReference
+                )
             ],
             recordedAt: recordedAt
         )
