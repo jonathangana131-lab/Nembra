@@ -1,0 +1,190 @@
+name: Materialize Capture authority contract sol 4c
+
+on:
+  push:
+    branches: [recovery/v14-capture-authority-contract-sol-4]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: recovery/v14-capture-authority-contract-sol-4
+          fetch-depth: 0
+
+      - name: Prove clean product base
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='8c2e4baefb36d304662e84c9dcf78ef04e48437e'
+          test "$(git merge-base HEAD "$base")" = "$base"
+          if git diff --name-only "$base" HEAD | grep -v '^\.github/workflows/materialize-capture-authority-contract-sol-4' | grep -q .; then
+            echo 'Unexpected product byte already present on recovery branch.' >&2
+            git diff --name-only "$base" HEAD >&2
+            exit 1
+          fi
+
+      - name: Restore accepted main-app Capture entry and apply authority repairs
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout a0f4a33451f61411d6e0541f2e70edea5438342d -- NembraApp/App/NembraApp.swift
+          test "$(git hash-object NembraApp/App/NembraApp.swift)" = 'f3d9e77f5e8ac114672888f71a7f3ffa42588d75'
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          entry = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s = entry.read_text()
+          replacements = [
+              ('            membershipDeviceID: membershipDeviceID\n', '            membershipDeviceID: membershipDeviceID ?? ""\n', 'membership snapshot boundary'),
+              ('        guard currentConnectionToken == nil,\n              OfficialTuyaFactory.packageCorrelationMayStart else { return }\n', '        guard currentConnectionToken == nil else { return }\n        guard OfficialTuyaFactory.packageCorrelationMayStart else { return }\n', 'foreground guard'),
+              ('        guard !packageCorrelationRetiredForProcess,\n              activePackageCorrelationOwner == nil,\n              bootstrap(),\n              accountLoggedIn,\n              currentAccountUID != nil else { return nil }\n', '        guard !packageCorrelationRetiredForProcess else { return nil }\n        guard activePackageCorrelationOwner == nil,\n              bootstrap(),\n              accountLoggedIn,\n              currentAccountUID != nil else { return nil }\n', 'factory guard'),
+              ('                sanitized[custodyKey] = Self.redactedApplicationDescription(value)\n', '                sanitized[custodyKey] = Self.redactKnownSecretValues(\n                    in: String(describing: Self.redactApplicationSecrets(value))\n                )\n', 'application secret projection'),
+          ]
+          for old, new, label in replacements:
+              if s.count(old) != 1:
+                  raise SystemExit(f'{label}: expected 1 anchor, got {s.count(old)}')
+              s = s.replace(old, new, 1)
+
+          helper = '    private static func redactedApplicationDescription(_ object: Any) -> String {\n        redactKnownSecretValues(in: String(describing: redactApplicationSecrets(object)))\n    }\n\n'
+          if s.count(helper) != 1:
+              raise SystemExit('secret helper anchor changed')
+          s = s.replace(helper, '', 1)
+
+          old_promotion = '''                    // Both ledger actor hops above can interleave foreground/view/account retirement.\n                    // Never repaint an already-retired generation as authenticated observation.\n                    guard currentConnectionToken == token else {\n                        log("stale_auth_promotion_resume_ignored", [\n                            "generation": String(token.diagnosticGeneration)\n                        ])\n                        return\n                    }\n                    guard phase == .authenticating else {\n                        log("auth_promotion_resume_phase_changed_ignored", [\n                            "generation": String(token.diagnosticGeneration)\n                        ])\n                        return\n                    }\n                    guard sdkAccountLoggedIn,\n                          sdkDeviceMembershipVerified,\n                          accountIdentityLeaseIsAuthorized else {\n                        await invalidateSourceAuthority(\n                            token: token,\n                            message: "Tuya account/device source authority changed while authentication promotion was suspended.",\n                            kind: "sdk_source_authority_lost_during_auth_promotion"\n                        )\n                        return\n                    }\n\n                    guard let promotionDriver = self.driver else {\n                        await invalidateSourceAuthority(\n                            token: token,\n                            message: "Official Tuya driver authority disappeared while authentication promotion was suspended.",\n                            kind: "sdk_driver_authority_lost_during_auth_promotion"\n                        )\n                        return\n                    }\n                    let promotionLocalBLEOnline = promotionDriver.isLocallyConnected(uuid: tuyaUUID)\n                    sdkLocalBLEOnline = promotionLocalBLEOnline\n                    guard promotionLocalBLEOnline else {\n                        await recordObservedTransportLoss(token: token)\n                        return\n                    }\n\n'''
+          new_promotion = '''                    // Actor hops can interleave view/account retirement. Re-check non-ledger source\n                    // authority through a dedicated post-promotion fence before publishing observation.\n                    guard await authenticationPromotionSourceAuthorityIsCurrent(token: token) else { return }\n\n'''
+          if s.count(old_promotion) != 1:
+              raise SystemExit('authentication promotion fence anchor changed')
+          s = s.replace(old_promotion, new_promotion, 1)
+          if s.count('                        kind: "session_auth_promotion_rejected"\n') != 1:
+              raise SystemExit('auth callback rejection kind anchor changed')
+          s = s.replace('                        kind: "session_auth_promotion_rejected"\n', '                        kind: "session_auth_callback_rejected"\n', 1)
+
+          anchor = '    private func authenticated(token: TuyaReadOnlyConnectionToken) async {\n'
+          if s.count(anchor) != 1:
+              raise SystemExit('authenticated helper insertion anchor changed')
+          auth_helper = '''    private func authenticationPromotionSourceAuthorityIsCurrent(\n        token: TuyaReadOnlyConnectionToken\n    ) async -> Bool {\n        guard currentConnectionToken == token else {\n            log("stale_auth_promotion_resume_ignored", ["generation": String(token.diagnosticGeneration)])\n            return false\n        }\n        guard phase == .authenticating else {\n            log("auth_promotion_resume_phase_changed_ignored", ["generation": String(token.diagnosticGeneration)])\n            return false\n        }\n        guard sdkAccountLoggedIn, sdkDeviceMembershipVerified, accountIdentityLeaseIsAuthorized else {\n            await invalidateSourceAuthority(token: token, message: "Tuya account/device source authority changed while authentication promotion was suspended.", kind: "sdk_source_authority_lost_during_auth_promotion")\n            return false\n        }\n        guard let promotionDriver = driver else {\n            await invalidateSourceAuthority(token: token, message: "Official Tuya driver authority disappeared while authentication promotion was suspended.", kind: "sdk_driver_authority_lost_during_auth_promotion")\n            return false\n        }\n        let online = promotionDriver.isLocallyConnected(uuid: tuyaUUID)\n        sdkLocalBLEOnline = online\n        guard online else {\n            await recordObservedTransportLoss(token: token)\n            return false\n        }\n        return true\n    }\n\n'''
+          s = s.replace(anchor, auth_helper + anchor, 1)
+          entry.write_text(s)
+
+          # Current branded installer wording; ordering/custody remains unchanged.
+          ptest = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift')
+          p = ptest.read_text()
+          old = 'verify_private_tuya_inputs\\n\\nsay \\"Building SDK-integrated Capture'
+          new = 'verify_private_tuya_inputs\\n\\nsay \\"Building SDK-integrated Nembra Capture'
+          if p.count(old) != 1:
+              raise SystemExit(f'private provenance marker expected once, got {p.count(old)}')
+          ptest.write_text(p.replace(old, new, 1))
+
+          # Current export architecture freezes correlation provenance in makeExport / sealedAcceptedExport.
+          ctest = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelatedTargetExportProvenanceSourceTests.swift')
+          c = ctest.read_text()
+          old_block = '''        let prepare = try section(in: app, from: "func prepareExport()", to: "private func resetDiscoverySessionOnly")\n        #expect(prepare.contains("targetCorrelationMethod:"))\n        #expect(prepare.contains("targetCorrelationWindowCount:"))\n        #expect(prepare.contains("targetCorrelationOperatorConfirmed:"))\n\n        let reset = try section(in: app, from: "private func resetDiscoverySessionOnly", to: "private func failLocally")\n'''
+          new_block = '''        let makeExport = try section(in: app, from: "private func makeExport", to: "func prepareExport()")\n        #expect(makeExport.contains("targetCorrelationMethod: targetCorrelationMethod"))\n        #expect(makeExport.contains("targetCorrelationWindowCount: targetCorrelationWindowCount"))\n        #expect(makeExport.contains("targetCorrelationOperatorConfirmed: targetCorrelationOperatorConfirmed"))\n\n        let prepare = try section(in: app, from: "func prepareExport()", to: "private func resetDiscoverySessionOnly")\n        #expect(prepare.contains("sealedAcceptedExport"))\n        #expect(prepare.contains("envelope = sealedAcceptedExport"))\n\n        let resetStart = try #require(app.range(of: "private func resetDiscoverySessionOnly"))\n        let resetTail = app[resetStart.lowerBound...]\n        let resetEnd = try #require(resetTail.range(of: "private func failLocally"))\n        let reset = resetTail[..<resetEnd.lowerBound]\n'''
+          if c.count(old_block) != 1:
+              raise SystemExit('correlation export test anchor changed')
+          ctest.write_text(c.replace(old_block, new_block, 1))
+
+          # Membership lifecycle behavior is present; make the source contract robust to SwiftUI modifier formatting.
+          mtest = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipAdmissionSourceTests.swift')
+          m = mtest.read_text()
+          old_block = '''        let view = String(try section(in: source, from: "private struct SecureLinkView: View", to: "private var hero: some View"))\n        let task = String(try section(in: view, from: ".task {", to: ".onDisappear {"))\n        let disappear = String(try section(in: view, from: ".onDisappear {", to: ".onChange(of: sdkAccount.loggedIn)"))\n        let accountChange = String(try section(in: view, from: ".onChange(of: sdkAccount.loggedIn)", to: "    }\\n\\n    private var hero"))\n\n        let open = try requiredOffset(containing: "test.activateMembershipRequestsForView()", in: task)\n        let bootstrap = try requiredOffset(containing: "sdkAccount.bootstrap()", in: task)\n        #expect(open < bootstrap)\n        #expect(disappear.contains("test.abandonCorrelationForViewExit()"))\n        #expect(accountChange.contains("test.verifySDKMembership()"))\n'''
+          new_block = '''        let view = String(try section(in: source, from: "private struct SecureLinkView: View", to: "private var hero: some View"))\n        let open = try requiredOffset(containing: "test.activateMembershipRequestsForView()", in: view)\n        let bootstrap = try requiredOffset(containing: "sdkAccount.bootstrap()", in: view)\n        #expect(open < bootstrap)\n        #expect(view.contains(".onDisappear {"))\n        #expect(view.contains("test.abandonCorrelationForViewExit()"))\n        #expect(view.contains(".onChange(of: sdkAccount.loggedIn)"))\n        #expect(view.contains("if loggedIn { test.verifySDKMembership() }"))\n        #expect(view.contains("else { test.invalidateSDKMembership() }"))\n'''
+          if m.count(old_block) != 1:
+              raise SystemExit('membership view test anchor changed')
+          mtest.write_text(m.replace(old_block, new_block, 1))
+
+          # Markdown emphasis is not authority. Assert the semantic retirement phrase.
+          ltest = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLegacyTodayExecutableAuthorityRetirementSourceTests.swift')
+          l = ltest.read_text()
+          old = '#expect(directive.contains("must not be used to bypass, downgrade, or substitute"))'
+          new = '#expect(directive.contains("used to bypass, downgrade, or substitute for the current authenticated stationary gates"))'
+          if l.count(old) != 1:
+              raise SystemExit('legacy TODAY semantic assertion anchor changed')
+          ltest.write_text(l.replace(old, new, 1))
+
+          # Installer now proves more provenance and quotes the private log path.
+          itest = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift')
+          i = itest.read_text()
+          old1 = '#expect(readback.contains("Built app provenance matched exact requested source and field product"))'
+          new1 = '#expect(readback.contains("Built app provenance matched exact requested source, reviewed Tuya dependency lock, canonical stationary procedure, and field product"))'
+          old2 = '#expect(installer.contains(">$INSTALL_LOG 2>&1"))'
+          new2 = '#expect(installer.contains(">\\\"$INSTALL_LOG\\\" 2>&1"))'
+          if i.count(old1) != 1 or i.count(old2) != 1:
+              raise SystemExit('installer current-contract test anchors changed')
+          itest.write_text(i.replace(old1, new1, 1).replace(old2, new2, 1))
+
+          # Retired passive runbook cannot stand in for the current authenticated stationary authority.
+          physical = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80PhysicalNoGoConsistencyTests.swift')
+          physical.write_text('''import Foundation\nimport Testing\n@testable import NembraBluetoothCapture\n\n@Suite("ES80 physical NO-GO consistency")\nstruct ES80PhysicalNoGoConsistencyTests {\n    private var repositoryRoot: URL {\n        var root = URL(fileURLWithPath: #filePath)\n        for _ in 0..<5 { root.deleteLastPathComponent() }\n        return root\n    }\n\n    private func repositoryFile(_ path: String) throws -> String {\n        try String(contentsOf: repositoryRoot.appendingPathComponent(path), encoding: .utf8)\n    }\n\n    @Test("retired passive runbook cannot authorize current physical work")\n    func retiredPassiveRunbookPointsToCurrentAuthority() throws {\n        let retired = try repositoryFile("docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md")\n        #expect(retired.contains("RETIRED / NON-AUTHORITATIVE / PHYSICAL NO-GO"))\n        #expect(retired.contains("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md"))\n        #expect(retired.contains("ES80-AUTHENTICATED-STATIONARY-v1"))\n    }\n\n    @Test("current authenticated stationary runbook remains explicit physical NO-GO")\n    func currentRunbookRemainsNoGo() throws {\n        let current = try repositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")\n        #expect(current.contains("PROCEDURE_ID: `ES80-AUTHENTICATED-STATIONARY-v1`"))\n        #expect(current.contains("physical secure-link experiment is **NO-GO**"))\n        #expect(current.contains("only after repository status explicitly flips to GO"))\n        #expect(current.contains("Do not repeat the completed 17-step ride capture."))\n    }\n\n    @Test("current correlation timing remains package-owned")\n    func currentCorrelationUsesPackageTimingAuthority() throws {\n        let current = try repositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")\n        #expect(PassiveBluetoothExperimentOneCapturePolicy.minimumPowerCycleWindowDurationNanoseconds == 10_000_000_000)\n        #expect(current.contains("OFF1 → ON1 → OFF2 → ON2"))\n        #expect(current.contains("elapsed UI time is not evidence"))\n    }\n\n    @Test("current authenticated observation requires genuine same-generation evidence")\n    func currentRunbookPinsAuthenticatedObservationContract() throws {\n        let current = try repositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")\n        #expect(current.contains("at least 45 seconds of canonical authenticated observation"))\n        #expect(current.contains("at least one genuine non-empty same-generation `ThingSmartDeviceDelegate.dpsUpdate`"))\n        #expect(current.contains("Nembra sends no scooter DP query/control command and opens no second CoreBluetooth connection"))\n        #expect(current.contains("rawFD50BytesCaptured=false"))\n        #expect(current.contains("dpQueriesSent=false"))\n        #expect(current.contains("dpCommandsSent=false"))\n    }\n\n    @Test("retired passive package gate remains no-go")\n    func retiredPassiveGateStaysNoGo() {\n        #expect(PassiveBluetoothExperimentOneFieldExecutionGate.status == .noGo(.finalComposedBuildNotAuthorized))\n        #expect(!PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure)\n    }\n}\n''')
+
+          project = Path('NembraCapture.xcodeproj/project.pbxproj')
+          q = project.read_text()
+          old = '\t\t\t\tGENERATE_INFOPLIST_FILE = YES;\n'
+          new = '\t\t\t\tGENERATE_INFOPLIST_FILE = NO;\n\t\t\t\tINFOPLIST_FILE = NembraCapture-Info.plist;\n'
+          if q.count(old) != 2:
+              raise SystemExit(f'expected two generated-plist settings, got {q.count(old)}')
+          project.write_text(q.replace(old, new))
+
+          plist = Path('NembraCapture-Info.plist')
+          if plist.exists():
+              raise SystemExit('explicit Capture plist already exists')
+          plist.write_text('''<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n<key>CFBundleDevelopmentRegion</key><string>$(DEVELOPMENT_LANGUAGE)</string>\n<key>CFBundleDisplayName</key><string>Nembra Capture</string>\n<key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>\n<key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>\n<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>\n<key>CFBundleName</key><string>$(PRODUCT_NAME)</string>\n<key>CFBundlePackageType</key><string>APPL</string>\n<key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>\n<key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>\n<key>LSRequiresIPhoneOS</key><true/>\n<key>NembraCaptureBuildIdentifier</key><string>$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)</string>\n<key>NembraCaptureSourceCommitSHA</key><string>$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)</string>\n<key>NembraCaptureTuyaDependencyLockSHA256</key><string>$(NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256)</string>\n<key>NembraCaptureProcedureIdentifier</key><string>$(INFOPLIST_KEY_NembraCaptureProcedureIdentifier)</string>\n<key>NSBluetoothAlwaysUsageDescription</key><string>Nembra Capture uses Bluetooth to learn this scooter's advertised and GATT data during a guided calibration.</string>\n<key>NSBluetoothPeripheralUsageDescription</key><string>Nembra Capture uses Bluetooth to learn this scooter's advertised and GATT data during a guided calibration.</string>\n<key>NSLocationWhenInUseUsageDescription</key><string>Nembra Capture can use iPhone location speed as a reference while learning which Bluetooth values represent scooter speed.</string>\n<key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>\n<key>UILaunchScreen</key><dict/>\n<key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>\n</dict></plist>\n''')
+          PY
+
+          plutil -lint NembraCapture-Info.plist
+          git diff --check
+
+      - name: Validate full Capture package
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/capture-package-sol4c.log"
+          set +e
+          swift test --package-path Packages/NembraBluetoothCapture >"$log" 2>&1
+          status=$?
+          set -e
+          if [[ $status -ne 0 ]]; then
+            python3 - "$log" "$status" <<'PY'
+          import pathlib,re,sys
+          lines=pathlib.Path(sys.argv[1]).read_text(errors='replace').splitlines(); status=int(sys.argv[2])
+          pats=[r'\berror:',r'Expectation failed',r'Issue recorded',r'^✘ ',r'^Test Case .* failed',r'^Test Suite .* failed']
+          chunks=[]
+          for j,line in enumerate(lines):
+              if any(re.search(p,line) for p in pats): chunks.append(' | '.join(x.strip() for x in lines[max(0,j-2):min(len(lines),j+4)] if x.strip()))
+          chunks.append('TERMINAL: '+' | '.join(x.strip() for x in lines[-100:] if x.strip()))
+          seen=set()
+          for c in chunks:
+              if not c or c in seen: continue
+              seen.add(c); safe=c.replace('%','%25').replace('\r','%0D').replace('\n','%0A'); print(f'::error title=Capture package sol4c::{safe[:5000]}')
+              if len(seen)>=30: break
+          raise SystemExit(status)
+          PY
+          fi
+
+      - name: Build and verify stamped standalone Capture app
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha='8c2e4baefb36d304662e84c9dcf78ef04e48437e'; dep='abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'; procedure='ES80-AUTHENTICATED-STATIONARY-v1'; label="capture-v14-${sha:0:12}"
+          rm -rf /tmp/NembraCaptureSol4cDerived
+          xcodebuild -project NembraCapture.xcodeproj -scheme 'Nembra Capture' -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/NembraCaptureSol4cDerived CODE_SIGNING_ALLOWED=NO NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$dep" INFOPLIST_KEY_NembraCaptureProcedureIdentifier="$procedure" build
+          plist='/tmp/NembraCaptureSol4cDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
+          test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
+          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$sha"
+          test "$(plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist")" = "$dep"
+          test "$(plutil -extract NembraCaptureProcedureIdentifier raw -o - "$plist")" = "$procedure"
+
+      - name: Publish proven product bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-authority-contract-sol-4.yml .github/workflows/materialize-capture-authority-contract-sol-4b.yml .github/workflows/materialize-capture-authority-contract-sol-4c.yml
+          git config user.name 'nembra-go-worker'; git config user.email 'nembra-go-worker@users.noreply.github.com'
+          git add -A; git diff --cached --check; git commit -m 'fix(capture): restore app and current authority contracts'; git push origin HEAD:recovery/v14-capture-authority-contract-sol-4
