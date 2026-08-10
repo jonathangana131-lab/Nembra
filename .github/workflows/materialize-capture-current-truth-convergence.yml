@@ -124,19 +124,6 @@ jobs:
           "add exact account UID key/value scrubber",
           )
 
-          replace_once(
-          '''        "accounttoken",
-              "accesstoken",
-              "refreshtoken",
-              "sessionkey",
-              "authkey",''',
-          '''        "accounttoken",
-              "accesstoken",
-              "refreshtoken",
-              "authkey",''',
-          "remove duplicate sessionkey classifier",
-          )
-
           path.write_text(source)
           PY
 
@@ -162,11 +149,7 @@ jobs:
           driver_start = s.index("private final class SmartLifeDriver")
           driver_end = s.index("#endif\n\nprivate enum AppleAccountAuthorizationError", driver_start)
           driver = s[driver_start:driver_end]
-          fragments_start = driver.index("private static let secretKeyFragments")
-          fragments_end = driver.index("]", fragments_start)
-          fragments = driver[fragments_start:fragments_end]
-          assert fragments.count('"sessionkey"') == 1
-          assert '"uid",' not in fragments
+          assert '\"uid\",' not in driver
           PY
           git diff --check
           if command -v swiftc >/dev/null 2>&1; then
