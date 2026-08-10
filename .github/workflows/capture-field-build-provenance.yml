@@ -92,12 +92,12 @@ jobs:
             exit 1
           fi
           grep -Fq 'BUILD_LABEL="capture-v14-${SOURCE_SHA:0:12}"' "$installer"
-          grep -Fq 'NEMBRA_CAPTURE_BUILD_IDENTIFIER="$BUILD_LABEL"' "$installer"
-          grep -Fq 'NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$SOURCE_SHA"' "$installer"
+          grep -Fq '"NEMBRA_CAPTURE_BUILD_IDENTIFIER=$BUILD_LABEL"' "$installer"
+          grep -Fq '"NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$SOURCE_SHA"' "$installer"
           grep -Fq 'TUYA_DEPENDENCY_LOCK_SHA256="$(shasum -a 256 "$ROOT/Podfile.lock"' "$installer"
-          grep -Fq 'NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256' "$installer"
+          grep -Fq '"NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256"' "$installer"
           grep -Fq "PROCEDURE_ID=\"$procedure\"" "$installer"
-          grep -Fq 'INFOPLIST_KEY_NembraCaptureProcedureIdentifier=$PROCEDURE_ID' "$installer"
+          grep -Fq '"INFOPLIST_KEY_NembraCaptureProcedureIdentifier=$PROCEDURE_ID"' "$installer"
           if grep -Fq 'Switch to capture/one-time-ble-dump-gpt56 first' "$installer"; then
             echo 'ERROR: field-build authority must bind the accepted source SHA, not a branch name.' >&2
             exit 1
