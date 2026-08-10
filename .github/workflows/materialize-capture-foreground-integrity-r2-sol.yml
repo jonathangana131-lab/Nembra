@@ -1,20 +1,26 @@
-name: Materialize Capture Foreground Integrity R2
+name: Materialize Capture Foreground Integrity Recovery
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - recovery/v14-capture-foreground-integrity-8e4-sol2
 
 permissions:
   contents: write
 
+concurrency:
+  group: capture-foreground-integrity-8e4-sol2
+  cancel-in-progress: true
+
 jobs:
   materialize:
-    if: github.event.pull_request.head.ref == 'fix/v14-capture-foreground-integrity-r2-sol'
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: recovery/v14-capture-foreground-integrity-8e4-sol2
           fetch-depth: 0
           persist-credentials: true
 
@@ -171,6 +177,8 @@ jobs:
           assert 'test.appDidLoseForeground()' in s
           print('Capture foreground-integrity source contract: PASS')
           PY
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegritySourceTests.swift
           git diff --check
 
       - name: Collapse helper into clean two-path product repair
@@ -191,4 +199,4 @@ jobs:
           test "${changed[0]}" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
           test "${changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureForegroundIntegritySourceTests.swift'
           git diff --check "$parent" HEAD
-          git push origin HEAD:${GITHUB_HEAD_REF}
+          git push origin HEAD:recovery/v14-capture-foreground-integrity-8e4-sol2
