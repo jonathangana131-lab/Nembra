@@ -550,11 +550,21 @@ struct DashboardSpeedInstrumentView: View {
             return .unavailable
         }
 
-        return NembraEnergyRailVisualState(
+        guard let sourcePower = vehicle.state.powerWatts,
+              sourcePower >= 0,
+              energyRailRuntime.identity.modeKey == vehicle.state.rideMode?.rawValue else {
+            return .unavailable
+        }
+
+        let state = NembraEnergyRailVisualState(
             projection: energyRailRuntime.projection(
                 atUptimeNanoseconds: uptimeNanoseconds
             )
         )
+        guard state.semanticWatts == Double(sourcePower) else {
+            return .unavailable
+        }
+        return state
     }
 
     private func displayedValue(kilometersPerHour: Double?) -> Double? {
