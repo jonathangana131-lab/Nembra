@@ -45,7 +45,7 @@ private struct CaptureP0Root: View {
                                 .foregroundStyle(.cyan)
                             Text("Prepare the scooter link")
                                 .font(.largeTitle.bold())
-                            Text("One guided setup proves the account and scooter Nembra will use before passive target correlation begins.")
+                            Text("One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins.")
                                 .font(.body)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
