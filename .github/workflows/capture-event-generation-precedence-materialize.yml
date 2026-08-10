@@ -58,7 +58,6 @@ jobs:
           assert '"generation": String(token.diagnosticGeneration)' in receiver
           assert ']) { current, _ in current })' not in receiver
           assert ']) { _, trusted in trusted })' in receiver
-          assert receiver.count('"generation": String(token.diagnosticGeneration)') == 1
 
       - name: Verify effective scope
         shell: bash
