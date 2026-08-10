@@ -1,0 +1,262 @@
+name: V14 Capture Authority Convergence Materializer V2
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-authority-convergence-sol2
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          ref: agent/v14-capture-authority-convergence-sol2
+
+      - name: Assert exact current flagship parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = '1c40853f6991b4d09206df1d25ecff021458b7eb'
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/v14-capture-authority-convergence-materializer-v2.yml'
+
+      - name: Materialize production authority repairs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s = p.read_text()
+
+          revocation = (
+              '        sdkDeviceMembershipVerified = false\n'
+              '        membershipAccountUID = nil\n'
+              '        membershipDeviceID = nil\n'
+              '        membershipRequestID = UUID()'
+          )
+          revocation_fixed = (
+              '        sdkDeviceMembershipVerified = false\n'
+              '        membershipAccountUID = nil\n'
+              '        membershipDeviceID = nil\n'
+              '        membershipStatus = "Exact scooter membership must be verified again for this Secure Link session."\n'
+              '        membershipRequestID = UUID()'
+          )
+          count = s.count(revocation)
+          if count != 2:
+              raise SystemExit(f'expected 2 membership-revocation sites, found {count}')
+          s = s.replace(revocation, revocation_fixed)
+
+          admission = (
+              '        applicationUpdateAdmissionsInFlight += 1\n'
+              '        defer { applicationUpdateAdmissionsInFlight -= 1 }'
+          )
+          if s.count(admission) != 1:
+              raise SystemExit(f'expected 1 application-admission seam, found {s.count(admission)}')
+          uid_custody = '''        guard let verifiedAccountUID = membershipAccountUID, !verifiedAccountUID.isEmpty else {
+              await invalidateSourceAuthority(
+                  token: token,
+                  message: "Verified Tuya account identity was unavailable before application evidence could enter custody.",
+                  kind: "sdk_account_uid_authority_missing_during_observation"
+              )
+              return
+          }
+
+          var redactedUpdate: [String: String] = [:]
+          redactedUpdate.reserveCapacity(update.count)
+          for (key, value) in update {
+              let redactedKey = key.replacingOccurrences(
+                  of: verifiedAccountUID,
+                  with: "<redacted-account-uid>"
+              )
+              let redactedValue = value.replacingOccurrences(
+                  of: verifiedAccountUID,
+                  with: "<redacted-account-uid>"
+              )
+              guard redactedUpdate[redactedKey] == nil else {
+                  await invalidateInternalLifecycle(
+                      token: token,
+                      message: "Application evidence became ambiguous after account-identity redaction. The exact generation was retired fail-closed.",
+                      kind: "application_account_uid_redaction_collision"
+                  )
+                  return
+              }
+              redactedUpdate[redactedKey] = redactedValue
+          }
+
+          '''
+          s = s.replace(admission, uid_custody + admission)
+
+          raw_log = 'log("tuya_application_update", update.merging(['
+          if s.count(raw_log) != 1:
+              raise SystemExit(f'expected 1 raw application-event log, found {s.count(raw_log)}')
+          s = s.replace(raw_log, 'log("tuya_application_update", redactedUpdate.merging([', 1)
+
+          stale_precedence = ']) { current, _ in current })'
+          if s.count(stale_precedence) != 1:
+              raise SystemExit(f'expected 1 stale merge-precedence closure, found {s.count(stale_precedence)}')
+          s = s.replace(stale_precedence, ']) { _, trusted in trusted })', 1)
+
+          duplicate_session = (
+              '        "refreshtoken",\n'
+              '        "sessionkey",\n'
+              '        "authkey",'
+          )
+          if s.count(duplicate_session) != 1:
+              raise SystemExit('expected duplicate sessionkey classifier sequence exactly once')
+          s = s.replace(
+              duplicate_session,
+              '        "refreshtoken",\n        "authkey",',
+              1,
+          )
+
+          p.write_text(s)
+          PY
+
+      - name: Recover adversarial contracts from exact donor PR heads
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin \
+            refs/pull/2414/head:refs/remotes/origin/red-2414 \
+            refs/pull/2415/head:refs/remotes/origin/red-2415 \
+            refs/pull/2419/head:refs/remotes/origin/red-2419
+          git show origin/red-2414:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift
+          git show origin/red-2415:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift
+          git show origin/red-2419:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift
+
+      - name: Add foreground-status regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaForegroundMembershipStatusRevocationSourceTests.swift <<'SWIFT'
+          import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Secure Link foreground membership status revocation")
+          struct TuyaForegroundMembershipStatusRevocationSourceTests {
+              @Test("foreground loss revokes operator-facing membership truth with the proof")
+              func foregroundLossRevokesMembershipStatusWithProof() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let controller = String(try section(
+                      in: source,
+                      from: "private final class SecureLinkController",
+                      to: "@MainActor\nprivate protocol OfficialTuyaDriver"
+                  ))
+                  let cleanup = String(try section(
+                      in: controller,
+                      from: "func appDidLoseForeground()",
+                      to: "var privateConfig: Bool"
+                  ))
+
+                  let clearVerified = try requiredOffset(containing: "sdkDeviceMembershipVerified = false", in: cleanup)
+                  let clearAccount = try requiredOffset(containing: "membershipAccountUID = nil", in: cleanup)
+                  let clearDevice = try requiredOffset(containing: "membershipDeviceID = nil", in: cleanup)
+                  let resetStatus = try requiredOffset(containing: "membershipStatus =", in: cleanup)
+                  let revokeRequest = try requiredOffset(containing: "membershipRequestID = UUID()", in: cleanup)
+
+                  #expect(clearVerified < resetStatus)
+                  #expect(clearAccount < resetStatus)
+                  #expect(clearDevice < resetStatus)
+                  #expect(resetStatus < revokeRequest)
+                  #expect(cleanup.lowercased().contains("verif"))
+                  #expect(!cleanup.contains("membershipStatus = \"Exact scooter membership verified and leased to this current SDK account.\""))
+              }
+
+              private func requiredOffset(containing token: String, in source: String) throws -> String.Index {
+                  guard let range = source.range(of: token) else {
+                      Issue.record("Expected source token missing: \(token)")
+                      throw SourceContractError.sectionMissing
+                  }
+                  return range.lowerBound
+              }
+
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let startRange = source.range(of: start),
+                        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+                      Issue.record("Expected source section missing: \(start) ... \(end)")
+                      throw SourceContractError.sectionMissing
+                  }
+                  return source[startRange.lowerBound..<endRange.lowerBound]
+              }
+
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  let repositoryRoot = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+              }
+
+              private enum SourceContractError: Error {
+                  case sectionMissing
+              }
+          }
+          SWIFT
+
+      - name: Prove effective source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          controller = s.split('private final class SecureLinkController', 1)[1].split('@MainActor\nprivate protocol OfficialTuyaDriver', 1)[0]
+          exit_block = controller.split('func abandonCorrelationForViewExit()', 1)[1].split('func appDidLoseForeground()', 1)[0]
+          fg_block = controller.split('func appDidLoseForeground()', 1)[1].split('var privateConfig: Bool', 1)[0]
+          for name, block in [('view-exit', exit_block), ('foreground', fg_block)]:
+              a = block.index('sdkDeviceMembershipVerified = false')
+              b = block.index('membershipStatus =')
+              c = block.index('membershipRequestID = UUID()')
+              assert a < b < c, name
+              assert 'Exact scooter membership verified and leased to this current SDK account.' not in block, name
+
+          receiver = controller.split('private func receivedApplicationUpdate(', 1)[1].split('private func startWatchdog', 1)[0]
+          assert '<redacted-account-uid>' in receiver
+          assert 'log("tuya_application_update", update.merging([' not in receiver
+          assert 'log("tuya_application_update", redactedUpdate.merging([' in receiver
+          assert ']) { _, trusted in trusted })' in receiver
+          assert ']) { current, _ in current })' not in receiver
+          assert 'application_account_uid_redaction_collision' in receiver
+
+          driver = s.split('@MainActor\nprivate final class SmartLifeDriver', 1)[1].split('#endif\n\nprivate enum AppleAccountAuthorizationError', 1)[0]
+          assert driver.count('"sessionkey",') == 1
+          assert '"uid",' not in driver
+
+          tests = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests')
+          for name in [
+              'TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift',
+              'TuyaApplicationEventMetadataPrecedenceSourceTests.swift',
+              'TuyaApplicationAccountUIDExportCustodySourceTests.swift',
+              'TuyaForegroundMembershipStatusRevocationSourceTests.swift',
+          ]:
+              assert (tests / name).is_file(), name
+          PY
+          git diff --check
+          changed="$(git diff --name-only HEAD)"
+          test "$(printf '%s\n' "$changed" | wc -l | tr -d ' ')" = 5
+          printf '%s\n' "$changed" | grep -Fx 'NembraApp/App/NembraCaptureEntrypoint.swift'
+
+      - name: Commit durable convergence and retire materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/v14-capture-authority-convergence-materializer-v2.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipStatusRevocationSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationEventMetadataPrecedenceSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationAccountUIDExportCustodySourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaForegroundMembershipStatusRevocationSourceTests.swift
+          git commit -m 'fix(capture): converge current authority custody'
+          git push origin HEAD:agent/v14-capture-authority-convergence-sol2
