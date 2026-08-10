@@ -87,10 +87,15 @@ Do not acquire the raw identifier through ordinary shell redirection. Even with 
 The accepted helper identity is fixed below. These helper bytes are operator-custody tooling only; they do not alter the frozen `a0f4…` app subject and do not authorize signing acceptance or Bluetooth activity.
 
 Accepted current helper provenance:
-- merged helper commit: `af75ffa6dc4409a21822295428e4eeb922ac3d16`;
-- helper blob: `50b12675a57fd2f570d833cfcdbfd7be59f52ca4`;
-- exact tested predecessor head carrying the same helper blob: `91dda8ac05e937e5615312a487f7d78926b74949`;
-- focused `Capture TODAY Field Candidate Preflight QA`: run `31349898562`, job `93338620824` — terminal success.
+- durable materialization commit: `b479d851a54437ef394a4901c69db2d829d280e4`;
+- exact focused-QA head carrying the same helper/test bytes: `90d3578a1d39a1d019000583a712306b67786acf`;
+- helper blob: `62b719e8d9afb34da6d35d696e80edf926442696`;
+- exact regression blob: `e87c15948f7a6c934b600e4fc3bb525653847f5d`;
+- focused `Capture TODAY Field Candidate Preflight QA`: run `31350148402`, job `93339277106` — terminal success.
+
+That lineage keeps the pre-prompt occupied-target guard, exclusive descriptor-relative creation, secure-terminal/EOF fail-closed handling, and terminal-abort cleanup, while making failed-acquisition cleanup pathname-nondestructive: after private bytes may exist, only the exact still-open created inode is scrubbed and no mutable pathname is unlinked. If durable scrub cannot be proven, the helper returns the secret-free cleanup blocker and does not delete a replacement path. A failed acquisition may therefore leave a mode-`0600` zero-length spent subject; preserve it and choose a fresh filename/path.
+
+Superseded private-input helper provenance, retained only for audit history: commit `af75ffa6dc4409a21822295428e4eeb922ac3d16`, blob `50b12675a57fd2f570d833cfcdbfd7be59f52ca4`, exact predecessor `91dda8ac05e937e5615312a487f7d78926b74949`, run `31349898562`, job `93338620824`. **Do not materialize or invoke that superseded helper for the current handoff.**
 
 ```bash
 umask 077
@@ -100,8 +105,8 @@ PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"
 UDID_FILE="$PRIVATE_DIR/es80-intended-device.udid"
 TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
 
-PRIVATE_INPUT_HELPER_COMMIT='af75ffa6dc4409a21822295428e4eeb922ac3d16'
-PRIVATE_INPUT_HELPER_BLOB='50b12675a57fd2f570d833cfcdbfd7be59f52ca4'
+PRIVATE_INPUT_HELPER_COMMIT='b479d851a54437ef394a4901c69db2d829d280e4'
+PRIVATE_INPUT_HELPER_BLOB='62b719e8d9afb34da6d35d696e80edf926442696'
 PRIVATE_INPUT_HELPER_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-private-input.XXXXXX)"
 PRIVATE_INPUT_HELPER="$PRIVATE_INPUT_HELPER_DIR/es80_today_private_device_input.py"
 
@@ -119,7 +124,7 @@ test -f "$UDID_FILE" && test ! -L "$UDID_FILE"
 test "$(/usr/bin/stat -f '%Lp' "$UDID_FILE")" = '600'
 ```
 
-If the helper reports `NOT_READY`, stop before signing and preserve the exact blocker. Do not fall back to `printf >`, `tee`, `echo`, `noclobber`, or another pathname-based secret write. Keep the resulting file private; do not commit it and do not copy it into the retained candidate directory. If the chosen final path already exists, preserve it and choose a fresh filename/path rather than deleting or overwriting it just to satisfy the helper.
+If the helper reports `NOT_READY`, stop before signing and preserve the exact blocker. Do not fall back to `printf >`, `tee`, `echo`, `noclobber`, or another pathname-based secret write. Keep the resulting file private; do not commit it and do not copy it into the retained candidate directory. If the chosen final path already exists—including a zero-length spent subject from an earlier failed acquisition—preserve it and choose a fresh filename/path rather than deleting or overwriting it just to satisfy the helper.
 
 ## 3. Set the signing inputs without changing the source subject
 
