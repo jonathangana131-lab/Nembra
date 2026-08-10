@@ -386,7 +386,7 @@ private struct NembraNavigationView: View {
     private func selectRecent(_ destination: NembraRecentDestination) {
         selectedItem = destination.mapItem
         selectedAddress = destination.address
-        remember(destination.mapItem)
+        promoteRecent(destination)
         cameraPosition = .region(
             MKCoordinateRegion(
                 center: CLLocationCoordinate2D(latitude: destination.latitude, longitude: destination.longitude),
@@ -396,7 +396,10 @@ private struct NembraNavigationView: View {
     }
 
     private func remember(_ item: MKMapItem) {
-        let recent = NembraRecentDestination(item: item)
+        promoteRecent(NembraRecentDestination(item: item))
+    }
+
+    private func promoteRecent(_ recent: NembraRecentDestination) {
         var updated = recentDestinations.filter { $0.id != recent.id }
         updated.insert(recent, at: 0)
         updated = Array(updated.prefix(6))
