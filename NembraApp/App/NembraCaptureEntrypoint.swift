@@ -1464,14 +1464,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
             )
             return
         }
-        let custodySafeUpdate = redactedApplicationEventDetails(update, accountUID: leasedAccountUID)
+        let custodySafeEventDetails = TuyaAuthenticatedApplicationEventCustody.eventDetails(
+            applicationUpdate: update,
+            trustedGeneration: String(token.diagnosticGeneration),
+            accountUID: leasedAccountUID
+        )
 
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            var eventDetails = custodySafeUpdate
-            eventDetails["generation"] = String(token.diagnosticGeneration)
-            log("tuya_application_update", eventDetails)
+            log("tuya_application_update", custodySafeEventDetails)
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -1496,37 +1498,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 kind: "application_update_lifecycle_rejected"
             )
         }
-    }
-
-    private func redactedApplicationEventDetails(
-        _ update: [String: String],
-        accountUID: String
-    ) -> [String: String] {
-        var redacted: [String: String] = [:]
-        redacted.reserveCapacity(update.count)
-        for (key, value) in update.sorted(by: { $0.key < $1.key }) {
-            let redactedKey = key.replacingOccurrences(
-                of: accountUID,
-                with: "<redacted-account-uid>",
-                options: [.caseInsensitive, .literal]
-            )
-            let redactedValue = value.replacingOccurrences(
-                of: accountUID,
-                with: "<redacted-account-uid>",
-                options: [.caseInsensitive, .literal]
-            )
-
-            // Redacting malformed keys can collapse two distinct SDK entries onto one key.
-            // Preserve every admitted opaque value under a deterministic redaction-safe suffix.
-            var custodyKey = redactedKey
-            var collisionOrdinal = 2
-            while redacted[custodyKey] != nil {
-                custodyKey = "\(redactedKey)#\(collisionOrdinal)"
-                collisionOrdinal += 1
-            }
-            redacted[custodyKey] = redactedValue
-        }
-        return redacted
     }
 
     private func startWatchdog(token: TuyaReadOnlyConnectionToken) {

@@ -4,16 +4,22 @@ import Testing
 
 @Suite("Tuya application account UID export custody")
 struct TuyaApplicationAccountUIDExportCustodySourceTests {
-    @Test("accepted event scrubs the exact leased account UID from untrusted keys and values")
-    func acceptedEventScrubsExactLeasedAccountUID() throws {
+    @Test("accepted event delegates the snapshotted leased account UID to package custody before suspension")
+    func acceptedEventDelegatesExactLeasedAccountUIDCustody() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let receiver = String(try section(in: source, from: "private func receivedApplicationUpdate(", to: "private func startWatchdog"))
-        #expect(receiver.contains("redactedApplicationEventDetails(update)"))
-        #expect(receiver.contains("membershipAccountUID?.trimmingCharacters"))
-        #expect(receiver.contains("let redactedKey = key.replacingOccurrences("))
-        #expect(receiver.contains("value.replacingOccurrences("))
-        #expect(receiver.contains("<redacted-account-uid>"))
-        #expect(receiver.contains("options: [.caseInsensitive, .literal]"))
+
+        let lease = try #require(receiver.range(of: "let leasedAccountUID = membershipAccountUID?.trimmingCharacters"))
+        let custody = try #require(receiver.range(of: "TuyaAuthenticatedApplicationEventCustody.eventDetails("))
+        let accountUID = try #require(receiver.range(of: "accountUID: leasedAccountUID"))
+        let firstAwait = try #require(receiver.range(of: "try await sessionLedger.recordApplicationUpdate"))
+        let log = try #require(receiver.range(of: "log(\"tuya_application_update\", custodySafeEventDetails)"))
+
+        #expect(lease.lowerBound < custody.lowerBound)
+        #expect(custody.lowerBound < accountUID.lowerBound)
+        #expect(accountUID.lowerBound < firstAwait.lowerBound)
+        #expect(firstAwait.lowerBound < log.lowerBound)
+        #expect(!receiver.contains("redactedApplicationEventDetails("))
         #expect(!receiver.contains("log(\"tuya_application_update\", update"))
     }
 

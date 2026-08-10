@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Tuya application event admission custody")
 struct TuyaApplicationEventCustodyAdmissionRaceSourceTests {
-    @Test("leased account UID is snapshotted before the first suspension")
+    @Test("leased account UID is snapshotted and custody is built before the first suspension")
     func accountUIDCustodyIsAdmissionBound() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let receiver = String(try section(
@@ -14,56 +14,44 @@ struct TuyaApplicationEventCustodyAdmissionRaceSourceTests {
         ))
 
         let lease = try #require(receiver.range(of: "let leasedAccountUID = membershipAccountUID?.trimmingCharacters"))
-        let custody = try #require(receiver.range(of: "let custodySafeUpdate = redactedApplicationEventDetails(update, accountUID: leasedAccountUID)"))
+        let custody = try #require(receiver.range(of: "let custodySafeEventDetails = TuyaAuthenticatedApplicationEventCustody.eventDetails("))
+        let accountSnapshot = try #require(receiver.range(of: "accountUID: leasedAccountUID"))
         let firstLedgerAwait = try #require(receiver.range(of: "try await sessionLedger.recordApplicationUpdate"))
         #expect(lease.lowerBound < custody.lowerBound)
-        #expect(custody.lowerBound < firstLedgerAwait.lowerBound)
+        #expect(custody.lowerBound < accountSnapshot.lowerBound)
+        #expect(accountSnapshot.lowerBound < firstLedgerAwait.lowerBound)
     }
 
-    @Test("redactor cannot fail open by rereading mutable membership state")
-    func redactorUsesOnlyAdmissionSnapshot() throws {
-        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let helper = String(try section(
-            in: source,
-            from: "private func redactedApplicationEventDetails(",
-            to: "private func startWatchdog"
-        ))
-
-        #expect(helper.contains("accountUID: String"))
-        #expect(!helper.contains("membershipAccountUID"))
-        #expect(!helper.contains("return update"))
-    }
-
-    @Test("redaction-key collisions retain every admitted opaque entry")
-    func redactionCollisionDoesNotDropEvidence() throws {
-        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let helper = String(try section(
-            in: source,
-            from: "private func redactedApplicationEventDetails(",
-            to: "private func startWatchdog"
-        ))
-
-        #expect(helper.contains("update.sorted"))
-        #expect(helper.contains("collisionOrdinal"))
-        #expect(helper.contains("while redacted[custodyKey] != nil"))
-        #expect(helper.contains("redacted[custodyKey] = redactedValue"))
-        #expect(!helper.contains("redacted[redactedKey] = value.replacingOccurrences"))
-    }
-
-    @Test("trusted generation stamp remains after sanitized custody creation")
-    func generationStillUsesNembraTokenAuthority() throws {
+    @Test("post-suspension event path cannot reread mutable membership identity")
+    func eventCustodyUsesOnlyAdmissionSnapshot() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let receiver = String(try section(
             in: source,
             from: "private func receivedApplicationUpdate(",
-            to: "private func redactedApplicationEventDetails("
+            to: "private func startWatchdog"
         ))
 
-        let details = try #require(receiver.range(of: "var eventDetails = custodySafeUpdate"))
-        let stamp = try #require(receiver.range(of: "eventDetails[\"generation\"] = String(token.diagnosticGeneration)"))
-        let log = try #require(receiver.range(of: "log(\"tuya_application_update\", eventDetails)"))
-        #expect(details.lowerBound < stamp.lowerBound)
-        #expect(stamp.lowerBound < log.lowerBound)
+        let firstLedgerAwait = try #require(receiver.range(of: "try await sessionLedger.recordApplicationUpdate"))
+        let postSuspension = receiver[firstLedgerAwait.lowerBound...]
+        #expect(!postSuspension.contains("membershipAccountUID"))
+        #expect(postSuspension.contains("log(\"tuya_application_update\", custodySafeEventDetails)"))
+    }
+
+    @Test("trusted generation enters custody before application data becomes immutable event evidence")
+    func generationUsesConnectionTokenAuthority() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let receiver = String(try section(
+            in: source,
+            from: "private func receivedApplicationUpdate(",
+            to: "private func startWatchdog"
+        ))
+
+        let custody = try #require(receiver.range(of: "TuyaAuthenticatedApplicationEventCustody.eventDetails("))
+        let generation = try #require(receiver.range(of: "trustedGeneration: String(token.diagnosticGeneration)"))
+        let log = try #require(receiver.range(of: "log(\"tuya_application_update\", custodySafeEventDetails)"))
+        #expect(custody.lowerBound < generation.lowerBound)
+        #expect(generation.lowerBound < log.lowerBound)
+        #expect(!receiver.contains("eventDetails[\"generation\"] ="))
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
