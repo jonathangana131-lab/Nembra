@@ -7,6 +7,7 @@ on:
       - scripts/ci/es80_today_field_candidate_preflight.py
       - scripts/ci/tests/test_es80_today_field_candidate_preflight.py
       - scripts/ci/tests/test_es80_export_options_coherence.py
+      - scripts/ci/tests/test_es80_export_options_custody.py
       - scripts/ci/es80_today_private_device_input.py
       - scripts/ci/tests/test_es80_today_private_device_input.py
       - docs/ES80_TODAY_SIGNED_FIELD_CANDIDATE_PRODUCTION.md
@@ -44,6 +45,7 @@ jobs:
             scripts/ci/es80_today_field_candidate_preflight.py \
             scripts/ci/tests/test_es80_today_field_candidate_preflight.py \
             scripts/ci/tests/test_es80_export_options_coherence.py \
+            scripts/ci/tests/test_es80_export_options_custody.py \
             scripts/ci/es80_today_private_device_input.py \
             scripts/ci/tests/test_es80_today_private_device_input.py
 
@@ -52,4 +54,5 @@ jobs:
           set -euo pipefail
           python3 scripts/ci/tests/test_es80_today_field_candidate_preflight.py -v
           python3 scripts/ci/tests/test_es80_export_options_coherence.py -v
+          python3 scripts/ci/tests/test_es80_export_options_custody.py -v
           python3 scripts/ci/tests/test_es80_today_private_device_input.py -v
