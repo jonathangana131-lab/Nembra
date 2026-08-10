@@ -43,10 +43,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          parent='52333deb09ea9a5964250097f83884d285f25d78'
           rm .github/workflows/capture-view-membership-proof-revocation-materialize.yml
           rm scripts/ci/materialize_capture_view_membership_proof_revocation.py
           git add -A
-          changed="$(git diff --cached --name-only | sort)"
+          changed="$(git diff --cached "$parent" --name-only | sort)"
           expected="$(printf '%s\n' \
             'NembraApp/App/NembraCaptureEntrypoint.swift' \
             'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSecureLinkViewMembershipProofRevocationSourceTests.swift' | sort)"
