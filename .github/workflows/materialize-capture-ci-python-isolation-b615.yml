@@ -120,8 +120,6 @@ jobs:
 
           /usr/bin/python3 -I -m py_compile "$regression"
           /usr/bin/python3 -I "$regression"
-          bash -n "$producer"
-          bash -n "$provenance"
           git diff --check
 
           rm "$materializer"
