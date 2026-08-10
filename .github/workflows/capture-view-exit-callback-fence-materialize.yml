@@ -50,11 +50,11 @@ jobs:
           fi
           git diff --check
           parent='0693b471ed9ebc7756a78f1b9ed54fdf4d7f604c'
-          changed="$(git diff --name-only "$parent" HEAD | grep -v -E '^(\.github/workflows/capture-view-exit-callback-fence-materialize.yml|scripts/ci/materialize_capture_view_exit_callback_fence.py)$' | sort)"
+          changed="$(git diff --name-only "$parent" | grep -v -E '^(\.github/workflows/capture-view-exit-callback-fence-materialize.yml|scripts/ci/materialize_capture_view_exit_callback_fence.py)$' | sort)"
           expected="$(printf '%s\n' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaNavigationBLELeaseRetirementSourceTests.swift' | sort)"
           test "$changed" = "$expected"
-          git diff --quiet "$parent" HEAD -- scripts/field/install_one_time_capture.command
-          git diff --quiet "$parent" HEAD -- NembraApp/Features/Research/TuyaAccountBridge.swift
+          git diff --quiet "$parent" -- scripts/field/install_one_time_capture.command
+          git diff --quiet "$parent" -- NembraApp/Features/Research/TuyaAccountBridge.swift
           grep -Fq 'private static var activePackageCorrelationOwner: UUID?' NembraApp/App/NembraCaptureEntrypoint.swift
           grep -Fq 'guard activePackageCorrelationOwner == nil,' NembraApp/App/NembraCaptureEntrypoint.swift
           test "$(grep -Fc 'if dynamicTypeSize.isAccessibilitySize' NembraApp/App/NembraCaptureEntrypoint.swift)" -ge 3
