@@ -109,12 +109,20 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(!source.contains("ProcessInfo"))
     }
 
-    @Test("current app consumes only the exact-running-build private research factory")
-    func appUsesPrivateResearchFactoryWithoutExternalAuthorizationInputs() throws {
-        let source = try repositorySourceFile("NembraApp/App/NembraApp.swift")
-        let researchFactory = "makeResearchAuthorizedES80ForCurrentApplication()"
+    @Test("authenticated field app does not route through retired package admission factories")
+    func currentFieldAppUsesStandaloneAuthenticatedAuthority() throws {
+        let source = try repositorySourceFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let project = try repositorySourceFile("NembraCapture.xcodeproj/project.pbxproj")
 
-        #expect(source.components(separatedBy: researchFactory).count - 1 == 2)
+        #expect(project.contains("NembraCaptureEntrypoint.swift in Sources"))
+        #expect(!project.contains("NembraApp.swift in Sources"))
+        #expect(source.contains("@main @MainActor\nstruct NembraCaptureApp: App"))
+        #expect(source.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
+        #expect(source.contains("guard buildIdentity.isAuthoritativeFieldBuild else"))
+        #expect(source.contains("OfficialTuyaFactory.acquirePackageCorrelationLease()"))
+        #expect(source.contains("PassiveBluetoothPowerCycleObservationSession(minimumWindowDuration: 10)"))
+
+        #expect(!source.contains("makeResearchAuthorizedES80ForCurrentApplication()"))
         #expect(!source.contains("PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()"))
         #expect(!source.contains("verifiedAdmission:"))
         #expect(!source.contains("PassiveBluetoothCaptureVerifiedFieldAuthorization"))
