@@ -2,9 +2,9 @@ import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
-@Suite("Capture app chronology-integrity terminal")
+@Suite("Capture app internal-lifecycle terminal")
 struct TuyaAppChronologyIntegrityTerminalSourceTests {
-    @Test("local-BLE invalid clock uses the dedicated chronology-integrity terminal")
+    @Test("local-BLE invalid clock uses the dedicated internal-lifecycle terminal")
     func localBLEInvalidClockDoesNotMasqueradeAsAuthenticationFailure() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let authenticated = try section(
@@ -18,7 +18,7 @@ struct TuyaAppChronologyIntegrityTerminalSourceTests {
             to: "return"
         )
 
-        #expect(invalidClock.contains("invalidateChronologyIntegrity"))
+        #expect(invalidClock.contains("invalidateInternalLifecycle"))
         #expect(!invalidClock.contains("authenticationAcquisitionFailed"))
         #expect(!invalidClock.contains("markAuthenticationFailed"))
         #expect(!invalidClock.contains("invalidateSourceAuthority"))
@@ -37,10 +37,10 @@ struct TuyaAppChronologyIntegrityTerminalSourceTests {
         #expect(begin.contains("sessionLedger.beginConnection()"))
         #expect(begin.contains("sessionLedger.markAuthenticationStarted(for: token)"))
         #expect(begin.contains("MutationError.monotonicClockRegressed"))
-        #expect(begin.contains("markChronologyIntegrityInvalidated(for: token)"))
+        #expect(begin.contains("markInternalLifecycleFailure(for: token)"))
     }
 
-    @Test("authentication promotion clock regression uses only chronology integrity")
+    @Test("authentication promotion clock regression uses only internal lifecycle")
     func authenticationPromotionRegressionUsesNoClockTerminal() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let authenticated = try section(
@@ -56,7 +56,7 @@ struct TuyaAppChronologyIntegrityTerminalSourceTests {
 
         #expect(observedOnline.contains("sessionLedger.markAuthenticated(for: token"))
         #expect(observedOnline.contains("MutationError.monotonicClockRegressed"))
-        #expect(observedOnline.contains("invalidateChronologyIntegrity"))
+        #expect(observedOnline.contains("invalidateInternalLifecycle"))
         #expect(!observedOnline.contains("invalidateSourceAuthority"))
         #expect(!observedOnline.contains("authenticationAcquisitionFailed"))
         #expect(!observedOnline.contains("markAuthenticationFailed"))
@@ -75,10 +75,10 @@ struct TuyaAppChronologyIntegrityTerminalSourceTests {
 
         #expect(application.contains("sessionLedger.recordApplicationUpdate"))
         #expect(application.contains("MutationError.monotonicClockRegressed"))
-        #expect(application.contains("invalidateChronologyIntegrity"))
+        #expect(application.contains("invalidateInternalLifecycle"))
     }
 
-    @Test("watchdog monotonic regression retires through chronology integrity, not observation continuity")
+    @Test("watchdog monotonic regression retires through internal lifecycle, not observation continuity")
     func watchdogClockRegressionUsesClockIndependentTerminal() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let watchdog = try section(
@@ -92,7 +92,7 @@ struct TuyaAppChronologyIntegrityTerminalSourceTests {
             to: "return"
         )
 
-        #expect(regression.contains("invalidateChronologyIntegrity"))
+        #expect(regression.contains("invalidateInternalLifecycle"))
         #expect(!regression.contains("markObservationContinuityInvalidated"))
         #expect(!regression.contains("endConnection"))
         #expect(!regression.contains("invalidateSourceAuthority"))
@@ -111,7 +111,7 @@ struct TuyaAppChronologyIntegrityTerminalSourceTests {
         #expect(watchdog.contains("sessionLedger.sealAcceptedObservation(for: token)"))
         #expect(watchdog.contains("sessionLedger.markApplicationObservationTimedOut(for: token)"))
         #expect(watchdog.components(separatedBy: "MutationError.monotonicClockRegressed").count - 1 >= 3)
-        #expect(watchdog.components(separatedBy: "invalidateChronologyIntegrity").count - 1 >= 4)
+        #expect(watchdog.components(separatedBy: "invalidateInternalLifecycle").count - 1 >= 4)
     }
 
     @Test("every app terminal that samples the clock falls back to the no-clock terminal")
@@ -122,30 +122,30 @@ struct TuyaAppChronologyIntegrityTerminalSourceTests {
             try section(in: app, from: "private func authenticationAcquisitionFailed", to: "private func receivedApplicationUpdate"),
             try section(in: app, from: "private func recordObservedTransportLoss", to: "private func invalidateSourceAuthority"),
             try section(in: app, from: "private func invalidateSourceAuthority", to: "private func invalidateObservationContinuity"),
-            try section(in: app, from: "private func invalidateObservationContinuity", to: "private func invalidateChronologyIntegrity")
+            try section(in: app, from: "private func invalidateObservationContinuity", to: "private func invalidateInternalLifecycle")
         ]
 
         for terminal in terminalSections {
             #expect(terminal.contains("MutationError.monotonicClockRegressed"))
-            #expect(terminal.contains("markChronologyIntegrityInvalidated(for: token)"))
+            #expect(terminal.contains("markInternalLifecycleFailure(for: token)"))
         }
     }
 
     @Test("app owns one dedicated helper that consumes the package no-clock terminal")
-    func appConsumesChronologyIntegrityTerminalExactlyAtAuthorityBoundary() throws {
+    func appConsumesInternalLifecycleTerminalExactlyAtAuthorityBoundary() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
-        #expect(app.contains("private func invalidateChronologyIntegrity"))
-        #expect(app.contains("sessionLedger.markChronologyIntegrityInvalidated(for: token)"))
+        #expect(app.contains("private func invalidateInternalLifecycle"))
+        #expect(app.contains("sessionLedger.markInternalLifecycleFailure(for: token)"))
 
         let helper = try section(
             in: app,
-            from: "private func invalidateChronologyIntegrity",
+            from: "private func invalidateInternalLifecycle",
             to: "private func refreshLedgerSnapshot"
         )
 
         #expect(helper.contains("currentConnectionToken == token"))
-        #expect(helper.contains("markChronologyIntegrityInvalidated"))
+        #expect(helper.contains("markInternalLifecycleFailure"))
         #expect(helper.contains("currentConnectionToken = nil"))
         #expect(helper.contains("localBLESettlementToken = nil"))
         #expect(helper.contains("sdkLocalBLEOnline = false"))
