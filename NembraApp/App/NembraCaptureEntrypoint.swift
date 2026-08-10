@@ -528,7 +528,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         membershipProbe = nil
 #endif
         central.stopScan()
-        if [.baseline, .powerOn, .scanning, .selected].contains(phase) {
+        if [.baseline, .powerOn, .scanning, .correlated, .selected].contains(phase) {
             phase = .failed
             message = "SDK account authority changed. Discovery stopped before any authenticated BLE attempt."
         }
