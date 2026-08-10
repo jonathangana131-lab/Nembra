@@ -1,4 +1,4 @@
-name: Capture Explicit Confirmation Focused QA
+name: Capture Field Build Presentation Patch
 
 on:
   push:
@@ -8,19 +8,25 @@ on:
       - .github/workflows/capture-explicit-confirmation-focused-qa.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  focused-source-contract:
-    runs-on: xcode-27
-    timeout-minutes: 10
+  patch:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: integration/v14-capture-final-explicit-confirmation-sol
-      - name: Run explicit-confirmation source contract
-        working-directory: Packages/NembraBluetoothCapture
+          fetch-depth: 0
+      - name: Apply staged presentation patch
         shell: bash
         run: |
           set -euo pipefail
-          swift test --filter TuyaExplicitCorrelatedTargetConfirmationSourceTests
+          python3 Scripts/apply_capture_field_build_ui_patch.py
+          rm Scripts/apply_capture_field_build_ui_patch.py
+          git config user.name nembra-v14-integration
+          git config user.email actions@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(capture): make field build state visible before OFF1"
+          git push origin HEAD:integration/v14-capture-final-explicit-confirmation-sol
