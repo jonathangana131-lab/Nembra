@@ -87,6 +87,15 @@ for SYSTEM_PATH_COMPONENT in /usr/bin /bin /usr/sbin /sbin; do
   fi
 done
 
+run_git() {
+  /usr/bin/env -i \
+    PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+    GIT_CONFIG_NOSYSTEM=1 \
+    GIT_CONFIG_GLOBAL=/dev/null \
+    GIT_NO_REPLACE_OBJECTS=1 \
+    /usr/bin/git "$@"
+}
+
 # Produce one exact signed iOS Nembra Capture field-build CANDIDATE.
 # This script cannot authorize physical ES80 Experiment One.
 
@@ -97,6 +106,15 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "Signed iOS field-candidate production requires macOS." >&2
   exit 2
 fi
+
+DEVELOPER_DIR="$(/usr/bin/xcode-select -p)"
+if [[ -z "$DEVELOPER_DIR" ]] || ! validate_root_custodied_path "$DEVELOPER_DIR" directory; then
+  echo "Signed field-candidate production requires the system-selected Xcode Developer directory to be root-custodied and non-writable by group/world." >&2
+  exit 2
+fi
+
+SELECTED_XCODE_ROOT="$DEVELOPER_DIR"
+unset DEVELOPER_DIR
 
 : "${NEMBRA_DEVELOPMENT_TEAM:?Set NEMBRA_DEVELOPMENT_TEAM to the Apple signing TeamIdentifier.}"
 : "${NEMBRA_EXPORT_OPTIONS_PLIST:?Set NEMBRA_EXPORT_OPTIONS_PLIST to an existing Xcode export-options plist.}"
@@ -130,9 +148,15 @@ esac
 # arrays under nounset; pass provisioning updates through one explicit wrapper instead.
 run_xcodebuild() {
   if [[ "$ALLOW_PROVISIONING_UPDATES" == "1" ]]; then
-    xcodebuild -allowProvisioningUpdates "$@"
+    /usr/bin/env -i \
+      PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+      DEVELOPER_DIR="$SELECTED_XCODE_ROOT" \
+      /usr/bin/xcodebuild -allowProvisioningUpdates "$@"
   else
-    xcodebuild "$@"
+    /usr/bin/env -i \
+      PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+      DEVELOPER_DIR="$SELECTED_XCODE_ROOT" \
+      /usr/bin/xcodebuild "$@"
   fi
 }
 
@@ -146,10 +170,21 @@ run_archive_xcodebuild() {
   fi
 }
 
+XCODE_VERSION_OUTPUT="$(run_xcodebuild -version)"
+XCODE_VERSION_LINE="$(printf '%s\n' "$XCODE_VERSION_OUTPUT" | /usr/bin/sed -n '1p')"
+case "$XCODE_VERSION_LINE" in
+  "Xcode 27"|"Xcode 27."*) ;;
+  *)
+    echo "Signed field-candidate production requires Xcode 27; selected toolchain reported: $XCODE_VERSION_LINE" >&2
+    exit 6
+    ;;
+esac
+
+# Keep git status as supporting evidence; exact raw SOURCE_SHA blob audits provide independent byte authority.
 # A dirty invocation checkout is never accepted. The real build below is additionally produced from
 # a fresh detached worktree at SOURCE_SHA, preventing ignored/local/concurrent source mutation from
 # silently becoming bytes stamped as this exact commit.
-REPOSITORY_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
+REPOSITORY_STATUS="$(run_git status --porcelain=v1 --untracked-files=all)"
 if [[ -n "$REPOSITORY_STATUS" ]]; then
   echo "Signed field-candidate production refuses tracked changes or non-ignored untracked files." >&2
   printf '%s\
@@ -157,7 +192,7 @@ if [[ -n "$REPOSITORY_STATUS" ]]; then
   exit 7
 fi
 
-SOURCE_SHA="$(git rev-parse --verify HEAD^{commit})"
+SOURCE_SHA="$(run_git rev-parse --verify HEAD^{commit})"
 if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   echo "Could not derive one exact lowercase 40-hex Git HEAD." >&2
   exit 8
@@ -213,7 +248,7 @@ if [[ -e "$FINAL_STAGING_DIR" || -L "$FINAL_STAGING_DIR" ]]; then
 fi
 if [[ "$ARTIFACTS_DIR" == "$ROOT"/* ]]; then
   RELATIVE_ARTIFACTS_DIR="${ARTIFACTS_DIR#"$ROOT"/}"
-  if ! git check-ignore -q -- "$RELATIVE_ARTIFACTS_DIR"; then
+  if ! run_git check-ignore -q -- "$RELATIVE_ARTIFACTS_DIR"; then
     echo "ARTIFACTS_DIR inside the repository must already be ignored by Git: $RELATIVE_ARTIFACTS_DIR" >&2
     exit 13
   fi
@@ -222,24 +257,24 @@ fi
 umask 077
 rm -rf "$WORK_ROOT"
 mkdir -p "$WORK_ROOT" "$LOG_DIR" "$INSPECTION_TOOL_ROOT" "$ARTIFACTS_PARENT"
-if ! git show "$SOURCE_SHA:$PRIVATE_RUNNER_RELATIVE_PATH" > "$PRIVATE_RUNNER_SNAPSHOT" \
-  || ! git show "$SOURCE_SHA:$INSPECTOR_RELATIVE_PATH" > "$INSPECTOR_SNAPSHOT"
+if ! run_git show "$SOURCE_SHA:$PRIVATE_RUNNER_RELATIVE_PATH" > "$PRIVATE_RUNNER_SNAPSHOT" \
+  || ! run_git show "$SOURCE_SHA:$INSPECTOR_RELATIVE_PATH" > "$INSPECTOR_SNAPSHOT"
 then
   echo "Could not materialize exact signed-field inspection tooling from SOURCE_SHA." >&2
   exit 14
 fi
-PRIVATE_RUNNER_BLOB_SHA="$(git rev-parse "$SOURCE_SHA:$PRIVATE_RUNNER_RELATIVE_PATH")"
-INSPECTOR_BLOB_SHA="$(git rev-parse "$SOURCE_SHA:$INSPECTOR_RELATIVE_PATH")"
-PRIVATE_RUNNER_BLOB_BYTES="$(git -C "$ROOT" cat-file -s "$PRIVATE_RUNNER_BLOB_SHA")"
-INSPECTOR_BLOB_BYTES="$(git -C "$ROOT" cat-file -s "$INSPECTOR_BLOB_SHA")"
+PRIVATE_RUNNER_BLOB_SHA="$(run_git rev-parse "$SOURCE_SHA:$PRIVATE_RUNNER_RELATIVE_PATH")"
+INSPECTOR_BLOB_SHA="$(run_git rev-parse "$SOURCE_SHA:$INSPECTOR_RELATIVE_PATH")"
+PRIVATE_RUNNER_BLOB_BYTES="$(run_git -C "$ROOT" cat-file -s "$PRIVATE_RUNNER_BLOB_SHA")"
+INSPECTOR_BLOB_BYTES="$(run_git -C "$ROOT" cat-file -s "$INSPECTOR_BLOB_SHA")"
 if [[ ! "$PRIVATE_RUNNER_BLOB_BYTES" =~ ^[1-9][0-9]*$ \
    || ! "$INSPECTOR_BLOB_BYTES" =~ ^[1-9][0-9]*$ ]]
 then
   echo "Accepted signed-field tool Git objects do not have valid positive byte sizes." >&2
   exit 14
 fi
-if [[ "$(git hash-object "$PRIVATE_RUNNER_SNAPSHOT")" != "$PRIVATE_RUNNER_BLOB_SHA" \
-   || "$(git hash-object "$INSPECTOR_SNAPSHOT")" != "$INSPECTOR_BLOB_SHA" ]]
+if [[ "$(run_git hash-object "$PRIVATE_RUNNER_SNAPSHOT")" != "$PRIVATE_RUNNER_BLOB_SHA" \
+   || "$(run_git hash-object "$INSPECTOR_SNAPSHOT")" != "$INSPECTOR_BLOB_SHA" ]]
 then
   echo "Exact signed-field inspection tooling snapshot does not match SOURCE_SHA Git objects." >&2
   exit 14
@@ -366,11 +401,119 @@ if [[ ! "$EXPORT_OPTIONS_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
   exit 14
 fi
 
-git worktree add --detach "$SOURCE_ROOT" "$SOURCE_SHA"
+run_git worktree add --detach "$SOURCE_ROOT" "$SOURCE_SHA"
+
+SOURCE_TREE_MANIFEST="$WORK_ROOT/source-tree.ls-tree"
+verify_source_tree_blob_custody() {
+  run_git -C "$ROOT" ls-tree -r -z "$SOURCE_SHA" > "$SOURCE_TREE_MANIFEST"
+  "$PYTHON3" -I - "$SOURCE_ROOT" "$SOURCE_TREE_MANIFEST" <<'PYSOURCETREE'
+import hashlib
+import os
+import stat
+import sys
+from pathlib import Path
+
+source_root = os.fsencode(sys.argv[1])
+manifest_path = Path(sys.argv[2])
+raw_manifest = manifest_path.read_bytes()
+
+def stable_identity(metadata):
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_uid,
+        metadata.st_gid,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+def git_blob_digest(payload_size, chunks, object_id):
+    if len(object_id) == 40:
+        digest = hashlib.sha1()
+    elif len(object_id) == 64:
+        digest = hashlib.sha256()
+    else:
+        raise SystemExit("unsupported SOURCE_SHA blob object ID width")
+    digest.update(b"blob " + str(payload_size).encode("ascii") + b"\0")
+    for chunk in chunks:
+        digest.update(chunk)
+    return digest.hexdigest()
+
+for entry in raw_manifest.split(b"\0"):
+    if not entry:
+        continue
+    try:
+        metadata, relative = entry.split(b"\t", 1)
+        mode, object_type, object_id = metadata.split(b" ", 2)
+    except ValueError as error:
+        raise SystemExit("malformed SOURCE_SHA ls-tree entry") from error
+    if object_type != b"blob":
+        raise SystemExit("signed field source tree contains unsupported non-blob entry")
+    if not relative or relative.startswith(b"/"):
+        raise SystemExit("signed field source tree contains invalid tracked path")
+    components = relative.split(b"/")
+    if any(component in (b"", b".", b"..") for component in components):
+        raise SystemExit("signed field source tree contains unsafe tracked path")
+    filesystem_path = os.path.join(source_root, *components)
+
+    if mode == b"120000":
+        before = os.lstat(filesystem_path)
+        if not stat.S_ISLNK(before.st_mode):
+            raise SystemExit("SOURCE_SHA symlink is not a symlink in detached checkout")
+        target = os.readlink(filesystem_path)
+        if isinstance(target, str):
+            target = os.fsencode(target)
+        after = os.lstat(filesystem_path)
+        if stable_identity(after) != stable_identity(before):
+            raise SystemExit("SOURCE_SHA symlink changed during raw blob audit")
+        actual = git_blob_digest(len(target), (target,), object_id)
+    elif mode in (b"100644", b"100755"):
+        flags = os.O_RDONLY
+        if hasattr(os, "O_CLOEXEC"):
+            flags |= os.O_CLOEXEC
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        descriptor = os.open(filesystem_path, flags)
+        try:
+            before = os.fstat(descriptor)
+            if not stat.S_ISREG(before.st_mode):
+                raise SystemExit("SOURCE_SHA tracked file is not a regular file")
+            expected_executable = mode == b"100755"
+            if bool(before.st_mode & 0o111) != expected_executable:
+                raise SystemExit("SOURCE_SHA tracked executable mode differs from Git tree")
+            if len(object_id) == 40:
+                digest = hashlib.sha1()
+            elif len(object_id) == 64:
+                digest = hashlib.sha256()
+            else:
+                raise SystemExit("unsupported SOURCE_SHA blob object ID width")
+            digest.update(b"blob " + str(before.st_size).encode("ascii") + b"\0")
+            total = 0
+            while True:
+                chunk = os.read(descriptor, 1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                digest.update(chunk)
+            after = os.fstat(descriptor)
+            if total != before.st_size or stable_identity(after) != stable_identity(before):
+                raise SystemExit("SOURCE_SHA tracked file changed during raw blob audit")
+            actual = digest.hexdigest()
+        finally:
+            os.close(descriptor)
+    else:
+        raise SystemExit("signed field source tree contains unsupported Git file mode")
+
+    if actual.encode("ascii") != object_id:
+        raise SystemExit("detached checkout bytes do not match exact SOURCE_SHA Git blob")
+PYSOURCETREE
+}
 
 cleanup() {
   cd "$ROOT" >/dev/null 2>&1 || true
-  git worktree remove --force "$SOURCE_ROOT" >/dev/null 2>&1 || true
+  run_git worktree remove --force "$SOURCE_ROOT" >/dev/null 2>&1 || true
   rm -rf "$WORK_ROOT"
   if [[ "${FINAL_STAGING_OWNED:-0}" == "1" && -n "${FINAL_STAGING_DIR:-}" && -e "$FINAL_STAGING_DIR" ]]; then
     rm -rf "$FINAL_STAGING_DIR"
@@ -379,12 +522,13 @@ cleanup() {
 trap cleanup EXIT
 
 cd "$SOURCE_ROOT"
-IMMUTABLE_HEAD="$(git rev-parse --verify HEAD^{commit})"
-IMMUTABLE_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
+IMMUTABLE_HEAD="$(run_git rev-parse --verify HEAD^{commit})"
+IMMUTABLE_STATUS="$(run_git status --porcelain=v1 --untracked-files=all)"
 if [[ "$IMMUTABLE_HEAD" != "$SOURCE_SHA" || -n "$IMMUTABLE_STATUS" ]]; then
   echo "Detached source worktree is not an exact clean checkout of SOURCE_SHA." >&2
   exit 15
 fi
+verify_source_tree_blob_custody
 mkdir -p "$EXPORT_DIR"
 
 set -o pipefail
@@ -416,6 +560,8 @@ then
   exit 17
 fi
 
+verify_source_tree_blob_custody
+
 POST_EXPORT_OPTIONS_SHA256="$("$PYTHON3" -I - "$EXPORT_OPTIONS_SNAPSHOT" <<'PY'
 import hashlib
 import sys
@@ -428,8 +574,8 @@ if [[ "$POST_EXPORT_OPTIONS_SHA256" != "$EXPORT_OPTIONS_SHA256" ]]; then
   exit 18
 fi
 
-POST_BUILD_SOURCE_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
-POST_BUILD_HEAD="$(git rev-parse --verify HEAD^{commit})"
+POST_BUILD_SOURCE_STATUS="$(run_git status --porcelain=v1 --untracked-files=all)"
+POST_BUILD_HEAD="$(run_git rev-parse --verify HEAD^{commit})"
 if [[ "$POST_BUILD_HEAD" != "$SOURCE_SHA" || -n "$POST_BUILD_SOURCE_STATUS" ]]; then
   echo "Archive/export changed immutable source state; refusing exact-HEAD candidate evidence." >&2
   printf '%s\
@@ -650,7 +796,7 @@ cp -R "$INSPECTION_DIR" "$FINAL_STAGING_DIR/inspection"
   echo "procedure_version=V14"
   echo "signing_inspection_authority=signed-field-artifact-inspection-not-field-authorization"
   echo "physical_authorization=not-granted"
-  xcodebuild -version
+  run_xcodebuild -version
 } > "$FINAL_STAGING_DIR/field-candidate-environment.txt"
 
 # Re-prove that final staging preserved exact inspector evidence bytes and exact export policy bytes.

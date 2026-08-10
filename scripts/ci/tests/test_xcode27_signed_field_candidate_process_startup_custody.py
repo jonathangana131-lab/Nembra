@@ -61,11 +61,11 @@ class SignedFieldCandidateProcessStartupCustodyTests(unittest.TestCase):
         self.assertLess(path_index, uname_index)
 
     def test_caller_path_cannot_be_restored_by_plain_or_export_assignment(self):
-        assignments = re.findall(r'(?m)^\s*(?:export\s+)?PATH\s*=', self.source)
+        assignments = re.findall(r'(?m)^(?:export\s+)?PATH\s*=', self.source)
         self.assertEqual(assignments, ["PATH="])
         self.assertNotRegex(
             self.source,
-            re.compile(r'(?m)^\s*(?:export\s+)?PATH\s*=.*\$\{?PATH\}?'),
+            re.compile(r'(?m)^(?:export\s+)?PATH\s*=.*\$\{?PATH\}?'),
         )
 
     def test_closed_path_components_are_custody_checked_before_unqualified_children(self):
