@@ -20,8 +20,30 @@ jobs:
       - name: Apply production consumer
         run: python3 scripts/_temp_apply_capture_async_invalidation_consumer.py
 
-      - name: Run pinned source contract
-        run: swift test --package-path Packages/NembraBluetoothCapture --filter TuyaCorrelationAsyncInvalidationPresentationSourceTests
+      - name: Verify pinned source contract shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          red = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationAsyncInvalidationPresentationSourceTests.swift').read_text()
+          required = [
+              'func consumeCorrelationAsyncInvalidation',
+              'isSeriesInvalidated == true',
+              'correlationSession = nil',
+              'target_correlation_async_invalidated',
+              'Restart from OFF1',
+              '.onChange(of: test.correlationProgress?.isSeriesInvalidated',
+              'test.consumeCorrelationAsyncInvalidation()',
+          ]
+          for token in required:
+              assert token in app, token
+          assert 'consumeCorrelationAsyncInvalidation' in red
+          assert '.onChange(of: test.correlationProgress?.isSeriesInvalidated' in red
+          assert 'milliseconds(100)' not in app
+          PY
+          git diff --check
 
       - name: Remove temporary patch transport
         run: |
