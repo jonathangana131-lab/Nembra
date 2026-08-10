@@ -1,0 +1,66 @@
+name: Materialize Capture failed-stage a11y 8f18
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-failed-stage-a11y-8f18-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard exact product ancestry and owned paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=8f18cbaf51f122b487ec7f3baf4d0e9dbc3301c5
+          test "$(git merge-base "$expected" HEAD)" = "$expected"
+          unexpected="$(git diff --name-only "$expected"...HEAD | grep -Ev '^(Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureFailedStageRailAccessibilitySourceTests.swift|scripts/ci/materialize_capture_failed_stage_a11y_8f18.py|\.github/workflows/materialize-capture-failed-stage-a11y-8f18.yml)$' || true)"
+          test -z "$unexpected" || { echo "Unexpected changed paths:"; echo "$unexpected"; exit 1; }
+
+      - name: Materialize terminal failed-stage semantics
+        shell: bash
+        run: python3 scripts/ci/materialize_capture_failed_stage_a11y_8f18.py
+
+      - name: Verify source contract and Swift syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          start = source.index("    @ViewBuilder\n    private var stageRail: some View")
+          end = source.index("    @ViewBuilder\n    private var primarySurface: some View", start)
+          rail = source[start:end]
+          assert rail.index("test.phase == .failed") < rail.index("dynamicTypeSize.isAccessibilitySize")
+          assert "CAPTURE STOPPED" in rail
+          assert "No Capture step is current" in rail
+          assert "Start again from a fresh OFF1" in rail
+          assert ".accessibilityLabel(\"Capture stopped. No Capture step is current." in rail
+          assert "test.phase == .accepted" in rail
+          assert 'case .failed: return "Capture stopped"' in source
+          assert 'case .failed: return "Capture paused"' not in source
+          PY
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureFailedStageRailAccessibilitySourceTests.swift
+          git diff --check
+
+      - name: Commit repair and retire construction helpers
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/materialize-capture-failed-stage-a11y-8f18.yml
+          rm scripts/ci/materialize_capture_failed_stage_a11y_8f18.py
+          git config user.name "nembra-sol-worker"
+          git config user.email "nembra-sol-worker@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureFailedStageRailAccessibilitySourceTests.swift .github/workflows/materialize-capture-failed-stage-a11y-8f18.yml scripts/ci/materialize_capture_failed_stage_a11y_8f18.py
+          git diff --cached --check
+          git commit -m "fix(capture): make failed stage semantics terminal"
+          git push origin HEAD:fix/v14-capture-failed-stage-a11y-8f18-sol
