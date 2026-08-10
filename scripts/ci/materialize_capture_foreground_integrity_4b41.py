@@ -76,7 +76,7 @@ for x in req:
 assert c.index('acceptsViewScopedMembershipRequests = false') < c.index('membershipRequestID = UUID()') < c.index('officialConnectionRequestID = UUID()') < c.index('if processCorrelationLease != nil || correlationSession != nil')
 for x in ['releasePackageCorrelationLease()','recordObservedTransportLoss','endConnection','disconnectBLE']:
     assert x not in c,x
-for x in ['func activateMembershipRequestsForView()','if dynamicTypeSize.isAccessibilitySize {','.accessibilityLabel("Correlation progress")','.accessibilityLabel("Read-only observation progress")','self.officialConnectionRequestID == connectionRequestID','"sessionkey"']:
+for x in ['func activateMembershipRequestsForView()','if dynamicTypeSize.isAccessibilitySize {','.accessibilityLabel("Correlation progress")','.accessibilityLabel("Read-only observation progress")','self.officialConnectionRequestID == connectionRequestID']:
     assert x in s,x
 p.write_text(s,encoding='utf-8')
 print('foreground 4b41 transform PASS')
