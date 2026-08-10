@@ -1,0 +1,93 @@
+name: Capture visual 0ee7 reanchor finalizer
+
+on:
+  push:
+    branches:
+      - qa/v14-capture-visual-0ee7-sol
+    paths:
+      - .github/workflows/capture-visual-0ee7-reanchor-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: qa/v14-capture-visual-0ee7-sol
+          fetch-depth: 0
+
+      - name: Materialize exact-current manual visual subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='0ee7aab76b4880c9871404b23755f27e539b5351'
+          donor='f1ad408e267f77b465b6808d8f2e4a5df9306cf3'
+          git merge-base --is-ancestor "$base" HEAD
+          git fetch --no-tags origin qa/v14-capture-visual-b615-sol
+          git diff --quiet b615375e12e43abc55e111deb5dc36f3790c7506 "$base" -- \
+            .github/workflows/capture-standalone-visual-evidence.yml \
+            scripts/ci/capture_standalone_visual_evidence.sh \
+            scripts/ci/tests/test_capture_standalone_visual_evidence.py
+
+          git show "$donor:.github/workflows/capture-standalone-visual-evidence.yml" > .github/workflows/capture-standalone-visual-evidence.yml
+          git show "$donor:scripts/ci/capture_standalone_visual_evidence.sh" > scripts/ci/capture_standalone_visual_evidence.sh
+          git show "$donor:scripts/ci/tests/test_capture_standalone_visual_evidence.py" > scripts/ci/tests/test_capture_standalone_visual_evidence.py
+
+          python3 - <<'PY'
+          from pathlib import Path
+          workflow = Path('.github/workflows/capture-standalone-visual-evidence.yml')
+          s = workflow.read_text()
+          start = s.index('on:\n')
+          permissions = s.index('\npermissions:\n', start)
+          workflow.write_text(s[:start] + 'on:\n  workflow_dispatch:\n' + s[permissions:])
+
+          test = Path('scripts/ci/tests/test_capture_standalone_visual_evidence.py')
+          t = test.read_text()
+          marker = 'for needle in [\n    \'NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=""\','
+          if marker not in t:
+              raise SystemExit('visual workflow test insertion marker changed')
+          guard = (
+              'if "pull_request:" in workflow:\n'
+              '    raise SystemExit("exact-current visual evidence must remain manual-only while xcode-27 capacity is unavailable")\n'
+              'if "workflow_dispatch:" not in workflow:\n'
+              '    raise SystemExit("exact-current visual evidence must retain an explicit manual dispatch gate")\n\n'
+          )
+          test.write_text(t.replace(marker, guard + marker, 1))
+          PY
+
+          bash -n scripts/ci/capture_standalone_visual_evidence.sh
+          python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          git diff --check
+
+          rm -f \
+            .github/workflows/capture-visual-0ee7-reanchor-materialize.yml \
+            .github/workflows/capture-visual-0ee7-reanchor-v2.yml
+          git add -A
+          python3 - <<'PY'
+          import subprocess
+          expected = {
+              '.github/workflows/capture-standalone-visual-evidence.yml',
+              'scripts/ci/capture_standalone_visual_evidence.sh',
+              'scripts/ci/tests/test_capture_standalone_visual_evidence.py',
+          }
+          actual = set(subprocess.check_output([
+              'git','diff','--cached','--name-only','0ee7aab76b4880c9871404b23755f27e539b5351'
+          ], text=True).splitlines())
+          unexpected = actual - expected
+          missing = expected - actual
+          if unexpected:
+              print(f'::error::unexpected visual reanchor paths: {sorted(unexpected)}')
+              raise SystemExit(1)
+          if missing:
+              print(f'::error::missing visual reanchor paths: {sorted(missing)}')
+              raise SystemExit(1)
+          PY
+          git diff --cached --check "$base"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'qa(capture): reanchor exact-current manual visual evidence'
+          git push origin HEAD:qa/v14-capture-visual-0ee7-sol
