@@ -91,6 +91,7 @@ private struct CaptureP0Root: View {
                                 if tuya.phase == .failed {
                                     Button("Reset account link") { tuya.resetLink() }
                                         .buttonStyle(.bordered)
+                                        .controlSize(.large)
                                 }
                             }
                         }
@@ -110,6 +111,7 @@ private struct CaptureP0Root: View {
                                         if tuya.devices.isEmpty {
                                             Button("Refresh") { tuya.refreshDevices() }
                                                 .buttonStyle(.bordered)
+                                                .controlSize(.large)
                                         }
                                     }
 
@@ -139,6 +141,7 @@ private struct CaptureP0Root: View {
                                                     tuya.selectDevice(device)
                                                 }
                                                 .buttonStyle(.bordered)
+                                                .controlSize(.large)
 
                                                 if tuya.selectedDeviceID == device.id,
                                                    tuya.phase == .ready,
@@ -146,6 +149,7 @@ private struct CaptureP0Root: View {
                                                    !device.uuid.isEmpty {
                                                     NavigationLink("Continue to Capture") { SecureLinkView(device: device) }
                                                         .buttonStyle(.borderedProminent)
+                                                        .controlSize(.large)
                                                 }
                                             }
                                         }
