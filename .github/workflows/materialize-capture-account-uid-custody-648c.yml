@@ -35,57 +35,49 @@ jobs:
 
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           source = path.read_text()
-
           helper_marker = "    private func receivedApplicationUpdate(\n"
           if source.count(helper_marker) != 1:
               raise SystemExit(f"expected one application receiver marker, found {source.count(helper_marker)}")
 
-          helper = r'''    private func exportSafeApplicationUpdate(
-              _ update: [String: String]
-          ) -> [String: String]? {
-              guard accountIdentityLeaseIsAuthorized,
-                    let verifiedAccountUID = membershipAccountUID,
-                    !verifiedAccountUID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                  return nil
-              }
-
-              let redactionMarker = "<redacted-account-uid>"
-              var sanitized: [String: String] = [:]
-              for (key, value) in update {
-                  let redactedKey = key.replacingOccurrences(of: verifiedAccountUID, with: redactionMarker)
-                  let redactedValue = value.replacingOccurrences(of: verifiedAccountUID, with: redactionMarker)
-                  guard sanitized[redactedKey] == nil else { return nil }
-                  sanitized[redactedKey] = redactedValue
-              }
-              return sanitized
-          }
-
-'''
+          helper = (
+              "    private func exportSafeApplicationUpdate(\n"
+              "        _ update: [String: String]\n"
+              "    ) -> [String: String]? {\n"
+              "        guard accountIdentityLeaseIsAuthorized,\n"
+              "              let verifiedAccountUID = membershipAccountUID,\n"
+              "              !verifiedAccountUID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {\n"
+              "            return nil\n"
+              "        }\n\n"
+              "        let redactionMarker = \"<redacted-account-uid>\"\n"
+              "        var sanitized: [String: String] = [:]\n"
+              "        for (key, value) in update {\n"
+              "            let redactedKey = key.replacingOccurrences(of: verifiedAccountUID, with: redactionMarker)\n"
+              "            let redactedValue = value.replacingOccurrences(of: verifiedAccountUID, with: redactionMarker)\n"
+              "            guard sanitized[redactedKey] == nil else { return nil }\n"
+              "            sanitized[redactedKey] = redactedValue\n"
+              "        }\n"
+              "        return sanitized\n"
+              "    }\n\n"
+          )
           source = source.replace(helper_marker, helper + helper_marker, 1)
 
-          admission_marker = '''        applicationUpdateAdmissionsInFlight += 1
-          defer { applicationUpdateAdmissionsInFlight -= 1 }
-'''
+          admission_marker = "        applicationUpdateAdmissionsInFlight += 1\n        defer { applicationUpdateAdmissionsInFlight -= 1 }\n"
           if source.count(admission_marker) != 1:
               raise SystemExit(f"expected one application admission marker, found {source.count(admission_marker)}")
-          admission = '''        guard let exportSafeUpdate = exportSafeApplicationUpdate(update) else {
-              await invalidateSourceAuthority(
-                  token: token,
-                  message: "Authenticated application evidence could not be sanitized against the verified account UID without ambiguity.",
-                  kind: "application_account_uid_redaction_failed"
-              )
-              return
-          }
-
-'''
+          admission = (
+              "        guard let exportSafeUpdate = exportSafeApplicationUpdate(update) else {\n"
+              "            await invalidateSourceAuthority(\n"
+              "                token: token,\n"
+              "                message: \"Authenticated application evidence could not be sanitized against the verified account UID without ambiguity.\",\n"
+              "                kind: \"application_account_uid_redaction_failed\"\n"
+              "            )\n"
+              "            return\n"
+              "        }\n\n"
+          )
           source = source.replace(admission_marker, admission + admission_marker, 1)
 
-          old_log = '''            log("tuya_application_update", update.merging([
-              "generation": String(token.diagnosticGeneration)
-          ]) { _, trusted in trusted })'''
-          new_log = '''            log("tuya_application_update", exportSafeUpdate.merging([
-              "generation": String(token.diagnosticGeneration)
-          ]) { _, trusted in trusted })'''
+          old_log = "            log(\"tuya_application_update\", update.merging([\n                \"generation\": String(token.diagnosticGeneration)\n            ]) { _, trusted in trusted })"
+          new_log = "            log(\"tuya_application_update\", exportSafeUpdate.merging([\n                \"generation\": String(token.diagnosticGeneration)\n            ]) { _, trusted in trusted })"
           if source.count(old_log) != 1:
               raise SystemExit(f"expected one trusted-precedence application log, found {source.count(old_log)}")
           source = source.replace(old_log, new_log, 1)
@@ -118,7 +110,6 @@ jobs:
           assert 'log("tuya_application_update", update.merging([' not in receiver
           assert ']) { _, trusted in trusted })' in receiver
           assert 'No account UID' in source
-
           driver = source.split('@MainActor\nprivate final class SmartLifeDriver', 1)[1].split('#endif\n\nprivate enum AppleAccountAuthorizationError', 1)[0]
           assert '"uid",' not in driver
           assert '"uid"\n' not in driver
