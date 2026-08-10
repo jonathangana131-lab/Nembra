@@ -260,8 +260,11 @@ def _export_options_are_ready(path: Path) -> bool:
         return False
 
     close_on_exec = os.O_CLOEXEC if hasattr(os, "O_CLOEXEC") else 0
+    nonblocking = os.O_NONBLOCK if hasattr(os, "O_NONBLOCK") else 0
     directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | close_on_exec
-    file_flags = os.O_RDONLY | os.O_NOFOLLOW | close_on_exec
+    # O_NONBLOCK is inert for regular files and prevents a special-file candidate (for example a
+    # FIFO) from hanging the readiness check before fstat can reject it as non-regular.
+    file_flags = os.O_RDONLY | os.O_NOFOLLOW | close_on_exec | nonblocking
 
     try:
         parent_descriptor = os.open(os.sep, directory_flags)
