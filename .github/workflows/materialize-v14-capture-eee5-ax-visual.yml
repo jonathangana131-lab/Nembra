@@ -1,0 +1,272 @@
+name: Materialize current Capture AX + visual convergence
+
+on:
+  push:
+    branches:
+      - recovery/v14-capture-eee5-ax-visual-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard exact product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='eee5a96fae1d30796ba5707f0a7f30f4f4d62530'
+          git merge-base --is-ancestor "$parent" HEAD
+          git diff --quiet "$parent" HEAD -- NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Apply Accessibility XXXL reflow
+        run: python3 scripts/ci/apply_v14_capture_ax_reflow.py
+
+      - name: Import reviewed current-truth visual harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          donor='898a02043ef62e1835f007d5889ac6ccdec3fd3d'
+          git fetch origin validation/v14-capture-guided-visual-e618-sol
+          test "$(git rev-parse FETCH_HEAD)" = "$donor"
+          git show "$donor":scripts/ci/capture_standalone_visual_evidence.sh > scripts/ci/capture_standalone_visual_evidence.sh
+          chmod +x scripts/ci/capture_standalone_visual_evidence.sh
+
+          git show 927a9d62b6fbb0f5579ab8617455c695b8b67513:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureAccessibilityXXXLSourceTests.swift \
+            > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureAccessibilityXXXLSourceTests.swift
+
+          cat > scripts/ci/tests/test_capture_standalone_visual_evidence.py <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path(__file__).resolve().parents[3]
+          script = (root / "scripts/ci/capture_standalone_visual_evidence.sh").read_text(encoding="utf-8")
+          workflow = (root / ".github/workflows/capture-final-exact-visual-acceptance.yml").read_text(encoding="utf-8")
+
+          for needle in (
+              'EXPECTED_BUNDLE_ID="com.jonathangana131.nembra.capturelearn"',
+              'EXPECTED_PROCEDURE_IDENTIFIER="ES80-AUTHENTICATED-STATIONARY-v1"',
+              'requiredFieldProcedureIdentifier',
+              'static var fieldProcedureIdentifier: String',
+              'current.procedureIdentifier',
+              'plutil -extract NembraCaptureProcedureIdentifier',
+              'EXPECTED_DEVICE_TYPE="com.apple.CoreSimulator.SimDeviceType.iPhone-12"',
+              'startswith("com.apple.CoreSimulator.SimRuntime.iOS-27")',
+              'if x.get("name") == "iPhone 12"',
+              'no newer-device fallback may satisfy the V14 baseline',
+              'Public visual evidence must not carry private Tuya dependency authority',
+              'SIMCTL_CHILD_*|NEMBRA_SIMULATION_*)',
+              'standalone-unprovisioned-dark-iphone12.png',
+              'standalone-unprovisioned-dark-iphone12-ax5.png',
+              '"procedureBuiltAppRendezvousVerified":True',
+              '"expectedFieldBuildAuthority":False',
+              '"visualAcceptanceRequiresHumanReview":True',
+              '"physicalAuthorityCreated":False',
+              '"protocolAuthorityCreated":False',
+          ):
+              if needle not in script:
+                  raise SystemExit(f"visual harness missing current authority contract: {needle}")
+
+          active = [line.strip() for line in script.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+          if len([line for line in active if "xcrun simctl launch" in line]) != 1:
+              raise SystemExit("visual harness must launch the standalone app exactly once")
+          if len([line for line in active if 'xcrun simctl io "$UDID" screenshot' in line]) != 2:
+              raise SystemExit("visual harness must capture standard + Accessibility XXXL states")
+          for forbidden in ("connectBLE", "writeValue", "publishDps", "publishDpsWithSuccess", "local_key"):
+              if re.search(rf"\b{re.escape(forbidden)}\b", "\n".join(active)):
+                  raise SystemExit(f"visual harness must not contain scooter/protocol action: {forbidden}")
+
+          for needle in (
+              'runs-on: xcode-27',
+              'NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER="$procedure"',
+              'plutil -extract NembraCaptureProcedureIdentifier raw -o - "$plist"',
+              'NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=""',
+              'static let requiredFieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"',
+              'static var fieldProcedureIdentifier: String',
+              'current.procedureIdentifier',
+              'INFOPLIST_KEY_NembraCaptureProcedureIdentifier = "$(NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER)";',
+              'baselineDevice"] == "iPhone 12"',
+              'baselineOS"] == "iOS 27"',
+              'procedureBuiltAppRendezvousVerified"] is True',
+          ):
+              if needle not in workflow:
+                  raise SystemExit(f"visual workflow missing current authority contract: {needle}")
+
+          print("current Capture standalone visual evidence source contract: PASS")
+          PY
+
+          cat > .github/workflows/capture-final-exact-visual-acceptance.yml <<'YAML'
+          name: Capture Final Exact Visual Acceptance
+
+          on:
+            push:
+              branches:
+                - product/v14-capture-guided-truth-current-sol
+                - recovery/v14-capture-eee5-ax-visual-sol
+            pull_request:
+              paths:
+                - NembraApp/App/NembraCaptureBuildIdentity.swift
+                - NembraApp/App/NembraCaptureEntrypoint.swift
+                - NembraCapture.xcodeproj/project.pbxproj
+                - scripts/ci/capture_standalone_visual_evidence.sh
+                - scripts/ci/tests/test_capture_standalone_visual_evidence.py
+                - .github/workflows/capture-final-exact-visual-acceptance.yml
+            workflow_dispatch:
+
+          permissions:
+            contents: read
+
+          jobs:
+            standalone-visual:
+              name: Exact iPhone 12 guided Capture evidence
+              runs-on: xcode-27
+              timeout-minutes: 25
+              steps:
+                - uses: actions/checkout@v4
+                  with:
+                    ref: ${{ github.event.pull_request.head.sha || github.sha }}
+                    persist-credentials: false
+                    fetch-depth: 1
+
+                - name: Verify exact checked-out subject
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    SOURCE_SHA="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+                    [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+                    if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+                      test "$SOURCE_SHA" = "${{ github.event.pull_request.head.sha }}"
+                    fi
+                    test -z "$(git status --porcelain=v1 --untracked-files=all)"
+                    printf 'NEMBRA_VISUAL_SOURCE_SHA=%s\n' "$SOURCE_SHA" >> "$GITHUB_ENV"
+
+                - name: Validate visual and product truth contracts
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    bash -n scripts/ci/capture_standalone_visual_evidence.sh
+                    /usr/bin/python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+                    grep -Fq 'static let requiredFieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"' NembraApp/App/NembraCaptureBuildIdentity.swift
+                    grep -Fq 'static var fieldProcedureIdentifier: String' NembraApp/App/NembraCaptureBuildIdentity.swift
+                    grep -Fq 'current.procedureIdentifier' NembraApp/App/NembraCaptureBuildIdentity.swift
+                    grep -Fq 'procedureIdentifier == Self.requiredFieldProcedureIdentifier' NembraApp/App/NembraCaptureBuildIdentity.swift
+                    project='NembraCapture.xcodeproj/project.pbxproj'
+                    mapping='INFOPLIST_KEY_NembraCaptureProcedureIdentifier = "$(NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER)";'
+                    test "$(grep -Fc "$mapping" "$project")" = 2
+                    grep -Fq 'test.phase == .correlated ? 4 : min(test.correlationCompletedWindowCount + 1, 4)' NembraApp/App/NembraCaptureEntrypoint.swift
+                    grep -Fq 'accessibilityLabel("Correlation progress")' NembraApp/App/NembraCaptureEntrypoint.swift
+                    grep -Fq 'accessibilityLabel("Read-only observation progress")' NembraApp/App/NembraCaptureEntrypoint.swift
+                    grep -Fq 'OfficialTuyaFactory.packageCorrelationMayStart' NembraApp/App/NembraCaptureEntrypoint.swift
+                    grep -Fq 'packageCorrelationRetiredForProcess = true' NembraApp/App/NembraCaptureEntrypoint.swift
+
+                - name: Build exact stamped public-unprovisioned Capture app
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    label="capture-v14-${NEMBRA_VISUAL_SOURCE_SHA:0:12}"
+                    procedure='ES80-AUTHENTICATED-STATIONARY-v1'
+                    rm -rf /tmp/NembraCaptureProvenanceDerived
+                    xcodebuild \
+                      -project NembraCapture.xcodeproj \
+                      -scheme 'Nembra Capture' \
+                      -configuration Debug \
+                      -sdk iphonesimulator \
+                      -destination 'generic/platform=iOS Simulator' \
+                      -derivedDataPath /tmp/NembraCaptureProvenanceDerived \
+                      CODE_SIGNING_ALLOWED=NO \
+                      NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
+                      NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$NEMBRA_VISUAL_SOURCE_SHA" \
+                      NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="" \
+                      NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER="$procedure" \
+                      build
+                    plist='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
+                    test -f "$plist"
+                    test "$(/usr/bin/plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
+                    test "$(/usr/bin/plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$NEMBRA_VISUAL_SOURCE_SHA"
+                    test "$(/usr/bin/plutil -extract NembraCaptureProcedureIdentifier raw -o - "$plist")" = "$procedure"
+                    test -z "$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist" 2>/dev/null || true)"
+
+                - name: Capture real fail-closed standard and Accessibility XXXL presentation
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    APP_PATH='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app' \
+                    ARTIFACTS_DIR="$RUNNER_TEMP/NembraCaptureStandaloneVisualEvidence" \
+                      scripts/ci/capture_standalone_visual_evidence.sh
+                    manifest="$RUNNER_TEMP/NembraCaptureStandaloneVisualEvidence/NembraCaptureStandaloneVisualEvidence.json"
+                    test -s "$manifest"
+                    /usr/bin/python3 - "$manifest" "$NEMBRA_VISUAL_SOURCE_SHA" <<'PY'
+                    import json, sys
+                    path, expected_sha = sys.argv[1:]
+                    with open(path, encoding="utf-8") as handle:
+                        record = json.load(handle)
+                    assert record["sourceCommitSHA"] == expected_sha
+                    assert record["baselineDevice"] == "iPhone 12"
+                    assert record["baselineOS"] == "iOS 27"
+                    assert record["procedureIdentifier"] == "ES80-AUTHENTICATED-STATIONARY-v1"
+                    assert record["procedureBuiltAppRendezvousVerified"] is True
+                    assert record["tuyaDependencyLockSHA256"] == ""
+                    assert record["expectedFieldBuildAuthority"] is False
+                    assert record["syntheticAuthorityEnvironmentRejected"] is True
+                    assert record["visualAcceptanceRequiresHumanReview"] is True
+                    assert record["physicalAuthorityCreated"] is False
+                    assert record["protocolAuthorityCreated"] is False
+                    assert {shot["state"] for shot in record["screenshots"]} == {"unprovisioned-dark-standard", "unprovisioned-dark-accessibility-xxxl"}
+                    PY
+
+                - name: Upload standalone Capture visual evidence
+                  if: always()
+                  uses: actions/upload-artifact@v4
+                  with:
+                    name: nembra-capture-final-visual-${{ github.sha }}-${{ github.run_attempt }}
+                    path: ${{ runner.temp }}/NembraCaptureStandaloneVisualEvidence
+                    if-no-files-found: ignore
+                    retention-days: 14
+          YAML
+
+      - name: Validate current truth + presentation-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -frontend -parse NembraApp/App/NembraCaptureEntrypoint.swift
+          swiftc -frontend -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureAccessibilityXXXLSourceTests.swift
+          bash -n scripts/ci/capture_standalone_visual_evidence.sh
+          python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text(encoding='utf-8')
+          for required in (
+              'dynamicTypeSize.isAccessibilitySize',
+              'accessibilityLabel("Correlation progress")',
+              'accessibilityLabel("Read-only observation progress")',
+              'OfficialTuyaFactory.packageCorrelationMayStart',
+              'packageCorrelationRetiredForProcess = true',
+              'test.canRestartFromFreshOFF1',
+              'OFF → ON → OFF → ON signal pattern',
+          ):
+              assert required in app, required
+          for forbidden in ('NEMBRA_SIMULATION_', 'SIMCTL_CHILD_'):
+              start = app.index('private struct SecureLinkView: View')
+              end = app.index('private struct SecureTransfer: Transferable', start)
+              assert forbidden not in app[start:end]
+          PY
+          git diff --check
+
+      - name: Publish clean convergence child
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm scripts/ci/apply_v14_capture_ax_reflow.py
+          rm .github/workflows/materialize-v14-capture-eee5-ax-visual.yml
+          git add -A
+          git diff --cached --check
+          git config user.name 'nembra-v14-agent'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(capture): converge AX reflow with exact visual gate'
+          git push origin HEAD:recovery/v14-capture-eee5-ax-visual-sol
