@@ -1,0 +1,198 @@
+name: Capture correlation progress current r2
+
+on:
+  push:
+    branches:
+      - recovery/v14-capture-correlation-progress-current-r2-sol
+
+permissions:
+  contents: write
+
+jobs:
+  apply-repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Publish package scanner progress into SwiftUI
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s = path.read_text()
+
+          def block(*lines):
+              return '\n'.join(lines) + '\n'
+
+          def swap(label, old, new):
+              global s
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: anchor count={count}, expected 1')
+              s = s.replace(old, new, 1)
+
+          swap('published-progress', block(
+              '    @Published private(set) var selectedID: UUID?',
+              '    @Published private(set) var pendingCorrelatedTargetID: UUID?',
+              '    @Published private(set) var sdkLocalBLEOnline = false',
+          ), block(
+              '    @Published private(set) var selectedID: UUID?',
+              '    @Published private(set) var pendingCorrelatedTargetID: UUID?',
+              '    @Published private(set) var correlationProgress: PassiveBluetoothPowerCycleObservationProgress?',
+              '    @Published private(set) var sdkLocalBLEOnline = false',
+          ))
+
+          swap('progress-task', block(
+              '    private var byID: [UUID: Candidate] = [:]',
+              '    private var correlationSession: PassiveBluetoothPowerCycleObservationSession?',
+              '    private var correlationProvenance: CorrelationProvenance?',
+          ), block(
+              '    private var byID: [UUID: Candidate] = [:]',
+              '    private var correlationSession: PassiveBluetoothPowerCycleObservationSession?',
+              '    private var correlationProgressTask: Task<Void, Never>?',
+              '    private var correlationProvenance: CorrelationProvenance?',
+          ))
+
+          swap('deinit', '    deinit { watchdog?.cancel() }\n', block(
+              '    deinit {',
+              '        watchdog?.cancel()',
+              '        correlationProgressTask?.cancel()',
+              '    }',
+          ))
+
+          swap('computed-progress', '    var correlationProgress: PassiveBluetoothPowerCycleObservationProgress? { correlationSession?.progress }\n', '')
+
+          swap('start-observer', block(
+              '        do {',
+              '            try session.startCurrentWindow()',
+              '            phase = progress.phase.operatorExpectedPowerOn ? .scanning : .baseline',
+          ), block(
+              '        do {',
+              '            try session.startCurrentWindow()',
+              '            startCorrelationProgressObservation(session: session)',
+              '            phase = progress.phase.operatorExpectedPowerOn ? .scanning : .baseline',
+          ))
+
+          finish_anchor = '    func finishCorrelationWindow() {\n'
+          observer = block(
+              '    private func startCorrelationProgressObservation(session: PassiveBluetoothPowerCycleObservationSession) {',
+              '        stopCorrelationProgressObservation()',
+              '        correlationProgress = session.progress',
+              '        correlationProgressTask = Task { @MainActor [weak self] in',
+              '            while !Task.isCancelled {',
+              '                guard self?.correlationSession === session else { return }',
+              '                if let progress = session.progress {',
+              '                    self?.correlationProgress = progress',
+              '                }',
+              '                try? await Task.sleep(for: .milliseconds(100))',
+              '            }',
+              '        }',
+              '    }',
+              '',
+              '    private func stopCorrelationProgressObservation() {',
+              '        correlationProgressTask?.cancel()',
+              '        correlationProgressTask = nil',
+              '    }',
+              '',
+          )
+          if s.count(finish_anchor) != 1:
+              raise SystemExit('finish anchor missing')
+          s = s.replace(finish_anchor, observer + finish_anchor, 1)
+
+          swap('finish-window', block(
+              '        do {',
+              '            let final = try session.finishCurrentWindow()',
+              '            if let final {',
+          ), block(
+              '        do {',
+              '            let final = try session.finishCurrentWindow()',
+              '            stopCorrelationProgressObservation()',
+              '            correlationProgress = session.progress',
+              '            if let final {',
+          ))
+
+          swap('terminal-window-error', block(
+              '            default:',
+              '                session.abandonCurrentWindow()',
+              '                correlationSession = nil',
+          ), block(
+              '            default:',
+              '                stopCorrelationProgressObservation()',
+              '                session.abandonCurrentWindow()',
+              '                correlationSession = nil',
+          ))
+
+          swap('generic-window-error', block(
+              '        } catch {',
+              '            session.abandonCurrentWindow()',
+              '            correlationSession = nil',
+              '            failLocally("\\(sealedLabel) failed closed: \\(error.localizedDescription). Restart the complete correlation series.", "target_correlation_window_failed")',
+          ), block(
+              '        } catch {',
+              '            stopCorrelationProgressObservation()',
+              '            session.abandonCurrentWindow()',
+              '            correlationSession = nil',
+              '            failLocally("\\(sealedLabel) failed closed: \\(error.localizedDescription). Restart the complete correlation series.", "target_correlation_window_failed")',
+          ))
+
+          swap('reset-progress', block(
+              '    private func resetDiscoverySessionOnly() {',
+              '        correlationSession?.abandonCurrentWindow()',
+              '        correlationSession = nil',
+              '        correlationProvenance = nil',
+          ), block(
+              '    private func resetDiscoverySessionOnly() {',
+              '        stopCorrelationProgressObservation()',
+              '        correlationSession?.abandonCurrentWindow()',
+              '        correlationSession = nil',
+              '        correlationProgress = nil',
+              '        correlationProvenance = nil',
+          ))
+
+          swap('fail-progress', block(
+              '    private func failLocally(_ text: String, _ kind: String) {',
+              '        if phase == .baseline || phase == .powerOn || phase == .scanning || phase == .correlated {',
+          ), block(
+              '    private func failLocally(_ text: String, _ kind: String) {',
+              '        stopCorrelationProgressObservation()',
+              '        correlationProgress = nil',
+              '        if phase == .baseline || phase == .powerOn || phase == .scanning || phase == .correlated {',
+          ))
+
+          required = [
+              '@Published private(set) var correlationProgress: PassiveBluetoothPowerCycleObservationProgress?',
+              'private var correlationProgressTask: Task<Void, Never>?',
+              'startCorrelationProgressObservation(session: session)',
+              'guard self?.correlationSession === session else { return }',
+              'self?.correlationProgress = progress',
+              'correlationProgressTask?.cancel()',
+          ]
+          for token in required:
+              if token not in s:
+                  raise SystemExit(f'missing required token: {token}')
+          if 'var correlationProgress: PassiveBluetoothPowerCycleObservationProgress? { correlationSession?.progress }' in s:
+              raise SystemExit('unobservable computed progress remains')
+          if 'guard let self, self.correlationSession === session' in s:
+              raise SystemExit('strong self retention remains')
+
+          path.write_text(s)
+          PY
+
+          git diff --check
+          grep -F '@Published private(set) var correlationProgress' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -F 'guard self?.correlationSession === session else { return }' NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Commit product repair and self-retire tooling
+        shell: bash
+        run: |
+          git config user.name 'nembra-v14-integration'
+          git config user.email 'actions@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProgressPresentationSourceTests.swift
+          git rm .github/workflows/capture-correlation-progress-current-r2.yml
+          git commit -m 'fix(capture): publish observable scanner readiness'
+          git push origin HEAD:recovery/v14-capture-correlation-progress-current-r2-sol
