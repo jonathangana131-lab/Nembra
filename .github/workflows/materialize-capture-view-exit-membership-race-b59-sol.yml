@@ -1,21 +1,22 @@
 name: Materialize Capture View Exit Membership Race B59
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - fix/v14-capture-view-exit-membership-race-b59-sol
 
 permissions:
   contents: write
 
 jobs:
   materialize:
-    if: github.event.pull_request.head.ref == 'fix/v14-capture-view-exit-membership-race-b59-sol'
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: fix/v14-capture-view-exit-membership-race-b59-sol
           fetch-depth: 0
           persist-credentials: true
 
