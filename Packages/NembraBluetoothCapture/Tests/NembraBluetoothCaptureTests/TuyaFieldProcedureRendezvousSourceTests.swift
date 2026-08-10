@@ -11,10 +11,12 @@ struct TuyaFieldProcedureRendezvousSourceTests {
         let identity = try readRepositoryFile("NembraApp/App/NembraCaptureBuildIdentity.swift")
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
-        #expect(identity.contains("fieldProcedureIdentifier"))
+        #expect(identity.contains("fieldProcedureIdentifierInfoKey = \"NembraCaptureProcedureIdentifier\""))
+        #expect(identity.contains("compiledProcedureIdentifier"))
+        #expect(identity.contains("compiledProcedureIdentifier == Self.fieldProcedureIdentifier"))
         #expect(identity.contains(Self.procedure))
         #expect(app.contains("let procedureIdentifier: String"))
-        #expect(app.contains("procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier"))
+        #expect(app.contains("procedureIdentifier: buildIdentity.compiledProcedureIdentifier"))
         #expect(app.contains("LabeledContent(\"Procedure\""))
         #expect(app.contains("schemaVersion: 10"))
     }
@@ -23,9 +25,14 @@ struct TuyaFieldProcedureRendezvousSourceTests {
     func fieldSurfacesShareCanonicalProcedure() throws {
         let runbook = try readRepositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
+        let project = try readRepositoryFile("NembraCapture.xcodeproj/project.pbxproj")
 
         #expect(runbook.contains("PROCEDURE_ID: `\(Self.procedure)`"))
         #expect(installer.contains("PROCEDURE_ID=\"\(Self.procedure)\""))
+        #expect(installer.contains("NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER=$PROCEDURE_ID"))
+        #expect(installer.contains("plutil -extract NembraCaptureProcedureIdentifier"))
+        #expect(installer.contains("BUILT_PROCEDURE_IDENTIFIER\" == \"$PROCEDURE_ID"))
+        #expect(project.contains("INFOPLIST_KEY_NembraCaptureProcedureIdentifier = \"$(NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER)\";"))
         #expect(installer.contains("Field procedure: $PROCEDURE_ID"))
     }
 

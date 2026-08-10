@@ -142,6 +142,14 @@ jobs:
           grep -Fq 'static let buildIdentifierInfoKey = "NembraCaptureBuildIdentifier"' "$identity"
           grep -Fq 'static let sourceCommitSHAInfoKey = "NembraCaptureSourceCommitSHA"' "$identity"
           grep -Fq 'static let tuyaDependencyLockSHA256InfoKey = "NembraCaptureTuyaDependencyLockSHA256"' "$identity"
+          grep -Fq 'static let fieldProcedureIdentifierInfoKey = "NembraCaptureProcedureIdentifier"' "$identity"
+          grep -Fq 'static let fieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"' "$identity"
+          grep -Fq 'compiledProcedureIdentifier == Self.fieldProcedureIdentifier' "$identity"
+          grep -Fq 'INFOPLIST_KEY_NembraCaptureProcedureIdentifier = "$(NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER)";' "$project"
+          grep -Fq 'NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER=$PROCEDURE_ID' "$installer"
+          grep -Fq 'plutil -extract NembraCaptureProcedureIdentifier raw -o - "$APP_INFO_PLIST"' "$installer"
+          grep -Fq '[[ "$BUILT_PROCEDURE_IDENTIFIER" == "$PROCEDURE_ID" ]]' "$installer"
+          grep -Fq 'procedureIdentifier: buildIdentity.compiledProcedureIdentifier' "$entrypoint"
           grep -Fq 'sourceCommitSHA.count == 40' "$identity"
           grep -Fq 'tuyaDependencyLockSHA256.count == 64' "$identity"
           grep -Fq 'let expectedIdentifier = "capture-v14-\(sourceCommitSHA.prefix(12))"' "$identity"
@@ -169,6 +177,7 @@ jobs:
             NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
             NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" \
             NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$dependency_sha" \
+            NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER="ES80-AUTHENTICATED-STATIONARY-v1" \
             build
 
           plist='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
@@ -176,3 +185,4 @@ jobs:
           test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
           test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$sha"
           test "$(plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist")" = "$dependency_sha"
+          test "$(plutil -extract NembraCaptureProcedureIdentifier raw -o - "$plist")" = "ES80-AUTHENTICATED-STATIONARY-v1"

@@ -4,11 +4,13 @@ struct NembraCaptureBuildIdentity: Codable, Equatable, Sendable {
     static let buildIdentifierInfoKey = "NembraCaptureBuildIdentifier"
     static let sourceCommitSHAInfoKey = "NembraCaptureSourceCommitSHA"
     static let tuyaDependencyLockSHA256InfoKey = "NembraCaptureTuyaDependencyLockSHA256"
+    static let fieldProcedureIdentifierInfoKey = "NembraCaptureProcedureIdentifier"
     static let fieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"
 
     let buildIdentifier: String
     let sourceCommitSHA: String
     let tuyaDependencyLockSHA256: String
+    let compiledProcedureIdentifier: String
 
     static var current: Self {
         from(infoDictionary: Bundle.main.infoDictionary ?? [:])
@@ -18,7 +20,8 @@ struct NembraCaptureBuildIdentity: Codable, Equatable, Sendable {
         Self(
             buildIdentifier: (infoDictionary[buildIdentifierInfoKey] as? String) ?? "",
             sourceCommitSHA: ((infoDictionary[sourceCommitSHAInfoKey] as? String) ?? "").lowercased(),
-            tuyaDependencyLockSHA256: ((infoDictionary[tuyaDependencyLockSHA256InfoKey] as? String) ?? "").lowercased()
+            tuyaDependencyLockSHA256: ((infoDictionary[tuyaDependencyLockSHA256InfoKey] as? String) ?? "").lowercased(),
+            compiledProcedureIdentifier: (infoDictionary[fieldProcedureIdentifierInfoKey] as? String) ?? ""
         )
     }
 
@@ -34,6 +37,7 @@ struct NembraCaptureBuildIdentity: Codable, Equatable, Sendable {
 
         let expectedIdentifier = "capture-v14-\(sourceCommitSHA.prefix(12))"
         return buildIdentifier == expectedIdentifier
+            && compiledProcedureIdentifier == Self.fieldProcedureIdentifier
     }
 
     var blocker: String? {
