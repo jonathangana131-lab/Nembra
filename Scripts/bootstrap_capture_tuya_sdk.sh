@@ -6,6 +6,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TUYA_PRIVATE_SDK="$REPO_ROOT/LocalSecrets/TuyaSDK"
 TUYA_PRIVATE_IDENTITY="$REPO_ROOT/LocalSecrets/TuyaRuntime"
 DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
+PROVENANCE_HELPER="$SCRIPT_DIR/capture_tuya_private_input_provenance.py"
 cd "$REPO_ROOT"
 
 if ! command -v pod >/dev/null 2>&1; then
@@ -19,14 +20,24 @@ EOF
   exit 2
 fi
 
+[[ -x /usr/bin/python3 ]] || {
+  echo "ERROR: System Python 3 is required for private Tuya input provenance." >&2
+  exit 3
+}
+
 if [[ ! -f Podfile ]]; then
   echo "ERROR: Podfile is missing at $REPO_ROOT/Podfile" >&2
-  exit 3
+  exit 4
 fi
 
 if [[ ! -d NembraCapture.xcodeproj ]]; then
   echo "ERROR: NembraCapture.xcodeproj is missing." >&2
-  exit 4
+  exit 5
+fi
+
+if [[ ! -f "$PROVENANCE_HELPER" ]]; then
+  echo "ERROR: private Tuya input provenance helper is missing from the accepted source." >&2
+  exit 6
 fi
 
 # Tuya's SmartLife iOS SDK requires the app-specific security package generated
@@ -48,10 +59,11 @@ ThingSmartCryption.podspec plus Build directory in:
 LocalSecrets/ is git-ignored. Do not commit, paste, upload, or export this SDK,
 AppKey/AppSecret, account tokens, device keys, or session material.
 EOF
-  exit 5
+  exit 7
 fi
 
 if [[ ! -f "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" ||
+      ! -d "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" ||
       ! -f "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift" ]]; then
   cat >&2 <<EOF
 ERROR: Tuya's private app identity is not provisioned for the field workspace.
@@ -63,7 +75,7 @@ That script reads AppKey/AppSecret with terminal echo disabled and writes them
 only beneath ignored LocalSecrets/TuyaRuntime as a local Swift pod. The values
 must not be passed through xcodebuild/devicectl arguments or committed to Git.
 EOF
-  exit 6
+  exit 8
 fi
 
 printf 'Resolving the official Tuya SmartLife iOS SDK and private field identity for Nembra Capture...\n'
@@ -74,12 +86,12 @@ pod install --repo-update
 
 if [[ ! -d NembraCapture.xcworkspace ]]; then
   echo "ERROR: CocoaPods did not create NembraCapture.xcworkspace." >&2
-  exit 7
+  exit 9
 fi
 
 if [[ ! -f Podfile.lock ]]; then
   echo "ERROR: CocoaPods did not create Podfile.lock; exact field dependency provenance is unavailable." >&2
-  exit 8
+  exit 10
 fi
 
 for expected in \
@@ -88,24 +100,38 @@ for expected in \
 do
   if ! grep -Fq -- "$expected" Podfile.lock; then
     echo "ERROR: resolved Tuya SDK does not match the exact reviewed 7.8.0 field dependency: $expected" >&2
-    exit 9
+    exit 11
   fi
 done
+
+# Snapshot every ignored input that can materially change the private field
+# build. The helper writes only SHA-256 fingerprints + public reviewed versions;
+# it never serializes credentials, SDK bytes, or device identifiers.
+if ! /usr/bin/python3 "$PROVENANCE_HELPER" snapshot \
+  --lockfile "$REPO_ROOT/Podfile.lock" \
+  --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
+  --security-build "$TUYA_PRIVATE_SDK/Build" \
+  --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
+  --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
+  --record "$DEPENDENCY_PROVENANCE"
+then
+  echo "ERROR: exact private Tuya build-input provenance could not be snapshotted." >&2
+  exit 12
+fi
 
 LOCK_SHA256="$(shasum -a 256 Podfile.lock | awk '{print $1}')"
 [[ "$LOCK_SHA256" =~ ^[0-9a-fA-F]{64}$ ]] || {
   echo "ERROR: could not compute the Podfile.lock SHA-256 provenance fingerprint." >&2
-  exit 10
+  exit 13
 }
-
-umask 077
-cat > "$DEPENDENCY_PROVENANCE" <<EOF
-schema=nembra-capture-tuya-dependencies-v1
-podfile_lock_sha256=$LOCK_SHA256
-thing_smart_home_kit=7.8.0
-thing_smart_business_extension_kit=7.8.0
-EOF
-chmod 600 "$DEPENDENCY_PROVENANCE"
+[[ -f "$DEPENDENCY_PROVENANCE" ]] || {
+  echo "ERROR: private Tuya dependency provenance record was not created." >&2
+  exit 14
+}
+[[ "$(stat -f '%Lp' "$DEPENDENCY_PROVENANCE" 2>/dev/null || true)" == "600" ]] || {
+  echo "ERROR: private Tuya dependency provenance record is not mode 0600." >&2
+  exit 15
+}
 
 cat <<EOF
 
@@ -114,13 +140,14 @@ ThingSmartCryption package and local-only app identity pod.
 
 Resolved dependency provenance:
   Podfile.lock SHA-256: $LOCK_SHA256
-  Local record: $DEPENDENCY_PROVENANCE
+  Local private-input fingerprint record: $DEPENDENCY_PROVENANCE
 
 NEXT BUILD RULE:
   Open NembraCapture.xcworkspace, not NembraCapture.xcodeproj.
-  Preserve this Podfile.lock with the private field workspace. Do not run
-  'pod update' before an accepted physical capture; an SDK change is a new
-  reviewed field-build input and must earn a new exact-head acceptance.
+  Preserve this exact private-input fingerprint record with the field workspace.
+  Do not run 'pod update', replace ThingSmartCryption, or regenerate the private
+  identity before an accepted physical capture; any input change is a new
+  reviewed field-build candidate and must earn a new exact-head acceptance.
 
 This bootstrap still does NOT authorize the physical experiment. The exact app
 must consume the private identity pod, authorize the user's own SDK session,
