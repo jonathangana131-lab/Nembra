@@ -2108,8 +2108,13 @@ private final class OfficialTuyaAccountAuthorizer: ObservableObject {
         }
         let appleUserIdentifier = credential.user
         let appleEmail = credential.email
+        let appleNickname = credential.fullName?.nickname
         var extraInfo: [String: Any] = ["userIdentifier": appleUserIdentifier]
         if let appleEmail, !appleEmail.isEmpty { extraInfo["email"] = appleEmail }
+        if let appleNickname, !appleNickname.isEmpty {
+            extraInfo["nickname"] = appleNickname
+            extraInfo["snsNickname"] = appleNickname
+        }
         busy = true
         codeSent = false
         verificationCode = ""
@@ -2123,14 +2128,7 @@ private final class OfficialTuyaAccountAuthorizer: ObservableObject {
                 Task { @MainActor in self?.finishLoginSuccess() }
             },
             failure: { [weak self] error in
-                Task { @MainActor in
-                    self?.finishAppleLoginFailure(
-                        error,
-                        submittedIdentityToken: identityToken,
-                        appleUserIdentifier: appleUserIdentifier,
-                        appleEmail: appleEmail
-                    )
-                }
+                Task { @MainActor in self?.finishAppleLoginFailure(error) }
             }
         )
 #else
@@ -2245,35 +2243,11 @@ private final class OfficialTuyaAccountAuthorizer: ObservableObject {
         status = "Tuya SDK login failed: \(Self.redactedError(error, submittedIdentity: submittedIdentity))"
     }
 
-    private func finishAppleLoginFailure(
-        _ error: Error?,
-        submittedIdentityToken: String,
-        appleUserIdentifier: String,
-        appleEmail: String?
-    ) {
+    private func finishAppleLoginFailure(_ error: Error?) {
         busy = false
         loggedIn = OfficialTuyaFactory.accountLoggedIn
-        status = "Tuya rejected the Apple-account login: \(Self.redactedAppleOAuthError(error, submittedIdentityToken: submittedIdentityToken, appleUserIdentifier: appleUserIdentifier, appleEmail: appleEmail)). Exact scooter membership remains locked."
-    }
-
-    private static func redactedAppleOAuthError(
-        _ error: Error?,
-        submittedIdentityToken: String,
-        appleUserIdentifier: String,
-        appleEmail: String?
-    ) -> String {
-        var scrubbed = error?.localizedDescription ?? "unknown error"
-        let sensitiveValues = [submittedIdentityToken, appleUserIdentifier, appleEmail ?? ""]
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        for value in sensitiveValues {
-            scrubbed = scrubbed.replacingOccurrences(
-                of: value,
-                with: "<redacted-apple-oauth>",
-                options: [.caseInsensitive, .literal]
-            )
-        }
-        return scrubbed
+        let code = (error as NSError?)?.code ?? -1
+        status = "Tuya rejected the Apple-account login (code \(code)). Exact scooter membership remains locked."
     }
 
     private static func redactedError(_ error: Error?, submittedIdentity: String) -> String {
