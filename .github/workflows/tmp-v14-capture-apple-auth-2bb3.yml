@@ -33,6 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           git fetch origin recovery/v14-capture-apple-auth-current-sol --depth=30
+          git fetch origin recovery/v14-capture-apple-auth-502c-sol --depth=30
           git show 2555105ffc67e9d671afeb580ab71f31102f33fb:scripts/ci/apply_capture_apple_account_auth_current_recovery.py > /tmp/apply_capture_apple_auth.py
           test "$(git hash-object /tmp/apply_capture_apple_auth.py)" = "0c973b59c3fbe8a697992cf0dcdb5f54e7091c7b"
           python3 /tmp/apply_capture_apple_auth.py
@@ -62,7 +63,6 @@ jobs:
           p.write_text(s, encoding="utf-8")
           PY
 
-          # Carry forward the canonical Apple-backed stationary procedure and its stronger source contract.
           git show 7503591f5523e552b10208be464eadd9071450c0:docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md > docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md
           git show 7503591f5523e552b10208be464eadd9071450c0:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAppleAccountLoginSourceTests.swift > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAppleAccountLoginSourceTests.swift
 
