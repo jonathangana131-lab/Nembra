@@ -295,8 +295,8 @@ final class SpeedInstrumentModel {
 /// ride detection, persistence, distance, and safety continue to consume the
 /// accepted domain/source state rather than the rendered interpolation frame.
 /// The Energy Rail shares this localized display clock, but its package runtime is
-/// mutated only by explicit Simulator source-state changes below. Render ticks can
-/// project presentation frames; they can never mint propulsion observations.
+/// mutated only by explicit Simulator power-source lifecycle changes below. Render
+/// ticks and unrelated ride-mode mutations can never mint propulsion observations.
 @MainActor
 struct DashboardSpeedInstrumentView: View {
     @Environment(VehicleStore.self) private var vehicle
@@ -365,9 +365,6 @@ struct DashboardSpeedInstrumentView: View {
         }
         .onChange(of: vehicle.state.powerWatts) { oldPower, newPower in
             handleEnergyRailPowerChange(from: oldPower, to: newPower)
-        }
-        .onChange(of: vehicle.state.rideMode) { _, _ in
-            handleEnergyRailModeChange()
         }
         .onDisappear {
             model.stop()
@@ -486,15 +483,6 @@ struct DashboardSpeedInstrumentView: View {
         admitCurrentEnergyRailSourceState()
     }
 
-    private func handleEnergyRailModeChange() {
-        guard ensureEnergyRailRuntimeIfEligible(),
-              vehicle.state.connection == .connected,
-              !energyRailRequiresFreshPowerAfterReconnect else {
-            return
-        }
-        admitCurrentEnergyRailSourceState()
-    }
-
     @discardableResult
     private func ensureEnergyRailRuntimeIfEligible() -> Bool {
         guard vehicle.profile == .simulatorQA,
@@ -517,7 +505,10 @@ struct DashboardSpeedInstrumentView: View {
         let admitted = runtime.observe(
             connected: vehicle.state.connection == .connected,
             watts: watts,
-            modeKey: vehicle.state.rideMode?.rawValue,
+            // Synthetic ride-mode changes are not propulsion measurements. The
+            // Simulator power source stays mode-neutral until a dedicated source
+            // exposes mode-bound propulsion evidence explicitly.
+            modeKey: nil,
             receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
         )
         energyRailRuntime = runtime
@@ -532,7 +523,7 @@ struct DashboardSpeedInstrumentView: View {
         _ = runtime.observe(
             connected: false,
             watts: nil,
-            modeKey: vehicle.state.rideMode?.rawValue,
+            modeKey: nil,
             receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
         )
         energyRailRuntime = runtime
