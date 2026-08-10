@@ -17,6 +17,7 @@ struct SimulatorPowerEvidenceTests {
         }
         #expect(observation.watts == 356)
         #expect(observation.receiptSequenceNumber == 1)
+        #expect(observation.receivedAtUptimeNanoseconds > 0)
         #expect(observation.continuityGeneration > 0)
     }
 
@@ -55,6 +56,7 @@ struct SimulatorPowerEvidenceTests {
         }
         #expect(refreshed.watts == 356)
         #expect(refreshed.receiptSequenceNumber > initial.receiptSequenceNumber)
+        #expect(refreshed.receivedAtUptimeNanoseconds > initial.receivedAtUptimeNanoseconds)
         #expect(refreshed.continuityGeneration > initial.continuityGeneration)
     }
 
@@ -88,6 +90,7 @@ struct SimulatorPowerEvidenceTests {
         #expect(third.watts == 0)
         #expect(second.receiptSequenceNumber == initial.receiptSequenceNumber + 1)
         #expect(third.receiptSequenceNumber == second.receiptSequenceNumber + 1)
+        #expect(initial.receivedAtUptimeNanoseconds > 0)
         #expect(second.receivedAtUptimeNanoseconds > initial.receivedAtUptimeNanoseconds)
         #expect(third.receivedAtUptimeNanoseconds > second.receivedAtUptimeNanoseconds)
     }
@@ -133,34 +136,32 @@ struct SimulatorPowerEvidenceTests {
         #expect(await iterator.next() == .retained(initial))
     }
 
-    @Test("receipt construction rejects invalid value and identity domains")
-    func receiptConstructionFailsClosed() {
-        func constructionError(
-            watts: Double = 1,
-            receiptSequenceNumber: UInt64 = 1,
-            continuityGeneration: UInt64 = 1
-        ) -> SimulatorPowerObservationError? {
-            do {
-                _ = try SimulatorPowerObservation(
-                    watts: watts,
-                    receiptSequenceNumber: receiptSequenceNumber,
-                    receivedAtUptimeNanoseconds: 1,
-                    continuityGeneration: continuityGeneration
-                )
-                return nil
-            } catch let error as SimulatorPowerObservationError {
-                return error
-            } catch {
-                return nil
-            }
+    @Test("invalid ride inputs cannot mint a propulsion receipt")
+    func invalidRideInputsCannotAdvanceSourceReceipt() async throws {
+        var initialState = SimulatedScooterService.state(for: .connectedStopped)
+        initialState.isLocked = false
+        let service = SimulatedScooterService(
+            initialState: initialState,
+            commandLatencyNanoseconds: 0
+        )
+
+        guard case let .live(initial) = await service.simulatorPowerEvidenceSnapshot() else {
+            Issue.record("Expected initial live Simulator power")
+            return
         }
 
-        #expect(constructionError(watts: -1) == .invalidWatts)
-        #expect(constructionError(watts: .nan) == .invalidWatts)
-        #expect(constructionError(watts: .infinity) == .invalidWatts)
-        #expect(constructionError(receiptSequenceNumber: 0) == .invalidReceiptSequence)
-        #expect(constructionError(continuityGeneration: 0) == .invalidContinuityGeneration)
-        #expect(constructionError(watts: 0) == nil)
+        let invalidInputs: [(Double, Double)] = [
+            (-1, 0),
+            (.nan, 0),
+            (.infinity, 0),
+            (0, -1),
+            (0, .nan),
+            (0, .infinity)
+        ]
+        for (speed, elapsed) in invalidInputs {
+            await service.simulateRide(speedKilometersPerHour: speed, elapsedSeconds: elapsed)
+            #expect(await service.simulatorPowerEvidenceSnapshot() == .live(initial))
+        }
     }
 
     @Test("non-Simulator profile cannot expose synthetic power authority")

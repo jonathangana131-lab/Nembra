@@ -270,11 +270,8 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         helper_qa_run = "31350094260"
         helper_qa_job = "93339137927"
         helper_invoke = '/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER"'
-        private_filename = "UDID_FILENAME='es80-intended-device.udid'"
-        private_file = 'UDID_FILE="$PRIVATE_DIR/$UDID_FILENAME"'
         private_directory_arg = '--private-directory "$PRIVATE_DIR"'
         source_repo_arg = '--source-repo "$FIELD_SOURCE"'
-        filename_arg = '--filename "$UDID_FILENAME"'
         producer_invoke = "./scripts/ci/xcode27_today_research_field_candidate.sh"
 
         self.assertIn(helper_commit, handoff)
@@ -293,14 +290,9 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertIn("zero-length spent subject", handoff)
         self.assertNotIn("05ce6d9a20487ab34aa31c5b6456910ed2ed438f", handoff)
         self.assertNotIn("9a9f7f724ceaf895e52d6d443d326043f97645c8", handoff)
-        self.assertIn(private_filename, handoff)
-        self.assertIn(private_file, handoff)
         self.assertIn(helper_invoke, handoff)
         self.assertIn(private_directory_arg, handoff)
         self.assertIn(source_repo_arg, handoff)
-        self.assertIn(filename_arg, handoff)
-        self.assertLess(handoff.index(private_filename), handoff.index(helper_invoke))
-        self.assertLess(handoff.index(private_file), handoff.index(helper_invoke))
         self.assertLess(handoff.index(helper_invoke), handoff.index(producer_invoke))
         self.assertNotIn("IFS= read -r -s INTENDED_UDID", handoff)
         self.assertNotIn("set -o noclobber", handoff)

@@ -43,14 +43,66 @@ final class VehicleStore {
 
     let profile: VehicleProfile
     let speedInstrumentInterpolationPolicy: SpeedInstrumentInterpolationPolicy
+    /// True only when the app owns the explicit Simulator QA profile, that profile
+    /// declares synthetic power support, and the injected service provides the
+    /// source-owned Simulator power-evidence contract. This is app capability
+    /// authority for mounting Simulator QA instrumentation, not physical ES80 proof.
+    let hasSimulatorPowerEvidenceSource: Bool
     private let service: any ScooterService
     private let retainedBatteryStorage: (any RetainedBatterySnapshotStorage)?
     private let batteryObservationAuthority: BatteryObservationAuthority?
 
-    var state: VehicleState
+    var state: VehicleState {
+        didSet {
+            // Aggregate transport is a veto only. A disconnected publication must
+            // synchronously make a previously source-live power receipt non-live at
+            // the Store boundary before SwiftUI can observe OFFLINE + LIVE POWER.
+            // Reconnect deliberately does not clear this fence; only a later source
+            // snapshot may positively restore live propulsion authority.
+            if state.connection != .connected {
+                simulatorPowerTransportVetoIsActive = true
+            }
+        }
+    }
     /// Source-owned currentness for speed. Cached `VehicleState` speed never
     /// promotes this value by itself.
     private(set) var speedEvidenceAvailability: SpeedEvidenceAvailability = .unavailable
+
+    /// Raw app-session custody of the newest source-owned Simulator power state.
+    /// No aggregate vehicle field, speed sample, mode mutation, view lifetime, or
+    /// display clock may write this value.
+    private var simulatorPowerEvidenceSourceAvailability: SimulatorPowerEvidenceAvailability = .unavailable
+    /// Once transport loss is observed, a cached raw `.live` receipt remains
+    /// demoted until the source provider itself publishes/replays current authority.
+    private var simulatorPowerTransportVetoIsActive = false
+
+    /// Source-owned Simulator propulsion currentness after the Store's transport
+    /// veto. Connection can only lower authority; it never promotes a retained or
+    /// cached receipt on reconnect. Consumers therefore cannot observe a
+    /// disconnected Store paired with live power even if the two async streams are
+    /// scheduled in the least favorable order.
+    private(set) var simulatorPowerEvidenceAvailability: SimulatorPowerEvidenceAvailability {
+        get {
+            guard simulatorPowerTransportVetoIsActive,
+                  case let .live(observation) = simulatorPowerEvidenceSourceAvailability else {
+                return simulatorPowerEvidenceSourceAvailability
+            }
+            return .retained(observation)
+        }
+        set {
+            simulatorPowerEvidenceSourceAvailability = newValue
+            switch newValue {
+            case .live:
+                // Positive authority still comes from the source receipt. The
+                // current aggregate connection may veto its presentation until
+                // transport catches up, but cannot create live authority itself.
+                simulatorPowerTransportVetoIsActive = state.connection != .connected
+            case .retained, .unavailable:
+                simulatorPowerTransportVetoIsActive = false
+            }
+        }
+    }
+
     var pendingCommands: Set<PendingCommand> = []
     var pendingRideMode: RideMode?
     var pendingCruiseValue: Bool?
@@ -124,6 +176,7 @@ final class VehicleStore {
 
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
     @ObservationIgnored private var speedEvidenceTask: Task<Void, Never>?
+    @ObservationIgnored private var simulatorPowerEvidenceTask: Task<Void, Never>?
     @ObservationIgnored private var speedEvidenceConsumerAuthority = SpeedEvidenceConsumerAuthority()
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private let shouldAutoConnectOnStart: Bool
@@ -140,6 +193,9 @@ final class VehicleStore {
         self.profile = service.profile
         self.shouldAutoConnectOnStart = shouldAutoConnectOnStart
         self.speedInstrumentInterpolationPolicy = speedInstrumentInterpolationPolicy
+        self.hasSimulatorPowerEvidenceSource = service.profile == .simulatorQA
+            && service.profile.capabilities.supportsPowerWatts
+            && service is any SimulatorPowerEvidenceProvider
         self.retainedBatteryStorage = retainedBatteryStorage
         self.batteryObservationAuthority = batteryObservationAuthority
 
@@ -216,6 +272,7 @@ final class VehicleStore {
     deinit {
         updatesTask?.cancel()
         speedEvidenceTask?.cancel()
+        simulatorPowerEvidenceTask?.cancel()
     }
 
     func start() async {
@@ -223,6 +280,12 @@ final class VehicleStore {
         didStart = true
 
         let speedEvidenceProvider = service as? any SpeedEvidenceProvider
+        let simulatorPowerEvidenceProvider: (any SimulatorPowerEvidenceProvider)?
+        if hasSimulatorPowerEvidenceSource {
+            simulatorPowerEvidenceProvider = service as? any SimulatorPowerEvidenceProvider
+        } else {
+            simulatorPowerEvidenceProvider = nil
+        }
 
         updatesTask = Task { [weak self, service, speedEvidenceProvider] in
             let stream = await service.stateUpdates()
@@ -268,6 +331,27 @@ final class VehicleStore {
             }
         } else {
             speedEvidenceAvailability = .unavailable
+        }
+
+        if let simulatorPowerEvidenceProvider {
+            simulatorPowerEvidenceTask = Task { [weak self, simulatorPowerEvidenceProvider] in
+                let stream = await simulatorPowerEvidenceProvider.simulatorPowerEvidenceUpdates()
+                for await _ in stream {
+                    guard let self, !Task.isCancelled else { return }
+
+                    // Availability events are wake-ups only. Re-read current source
+                    // state so a slow consumer cannot publish an obsolete queued
+                    // `.live` receipt after the source has already demoted it.
+                    let current = await simulatorPowerEvidenceProvider.simulatorPowerEvidenceSnapshot()
+                    guard !Task.isCancelled else { return }
+                    self.simulatorPowerEvidenceAvailability = current
+                }
+
+                guard let self, !Task.isCancelled else { return }
+                self.simulatorPowerEvidenceAvailability = .unavailable
+            }
+        } else {
+            simulatorPowerEvidenceAvailability = .unavailable
         }
 
         if shouldAutoConnectOnStart {

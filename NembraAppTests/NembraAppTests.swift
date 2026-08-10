@@ -165,6 +165,73 @@ final class NembraAppTests: XCTestCase {
     }
 
     @MainActor
+    func testSimulatorPowerTransportCanOnlyLowerAuthorityAcrossHostileOrdering() async throws {
+        let initialState = SimulatedScooterService.state(for: .riding)
+        let service = SimulatedScooterService(initialState: initialState)
+        let store = VehicleStore(
+            service: service,
+            initialState: initialState,
+            shouldAutoConnectOnStart: false
+        )
+        await store.start()
+
+        for _ in 0..<200 {
+            if case .live = store.simulatorPowerEvidenceAvailability { break }
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+        guard case let .live(initialObservation) = store.simulatorPowerEvidenceAvailability else {
+            return XCTFail("Simulator source must seed one source-owned live power receipt.")
+        }
+
+        // Force the exact hostile consumer ordering: aggregate disconnect is
+        // applied before the Store's independent power task has consumed the
+        // source's retained publication. The Store boundary must still make
+        // OFFLINE + LIVE POWER unrepresentable synchronously.
+        var disconnected = store.state
+        disconnected.connection = .disconnected
+        store.state = disconnected
+
+        guard case let .retained(disconnectedObservation) = store.simulatorPowerEvidenceAvailability else {
+            return XCTFail("Disconnected aggregate transport must synchronously lower live power to retained.")
+        }
+        XCTAssertEqual(disconnectedObservation.receiptSequenceNumber, initialObservation.receiptSequenceNumber)
+        XCTAssertEqual(disconnectedObservation.continuityGeneration, initialObservation.continuityGeneration)
+        XCTAssertEqual(disconnectedObservation.receivedAtUptimeNanoseconds, initialObservation.receivedAtUptimeNanoseconds)
+        XCTAssertEqual(disconnectedObservation.watts, initialObservation.watts, accuracy: 0.000_1)
+
+        // Reconnect is transport state only. Even if the raw source task has not
+        // yet caught up and still holds the old live receipt, connection alone
+        // cannot clear the veto or promote cached watts.
+        var reconnected = store.state
+        reconnected.connection = .connected
+        store.state = reconnected
+
+        guard case let .retained(reconnectedObservation) = store.simulatorPowerEvidenceAvailability else {
+            return XCTFail("Reconnect alone must not restore cached live power authority.")
+        }
+        XCTAssertEqual(reconnectedObservation.receiptSequenceNumber, initialObservation.receiptSequenceNumber)
+        XCTAssertEqual(reconnectedObservation.receivedAtUptimeNanoseconds, initialObservation.receivedAtUptimeNanoseconds)
+
+        // A genuine new source computation is the only event allowed to restore
+        // live authority. The receipt sequence must advance; this test never
+        // constructs or re-dates the source observation in app code.
+        await service.simulateRide(speedKilometersPerHour: 18.0, elapsedSeconds: 1.0)
+        for _ in 0..<200 {
+            if case let .live(observation) = store.simulatorPowerEvidenceAvailability,
+               observation.receiptSequenceNumber > initialObservation.receiptSequenceNumber {
+                break
+            }
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+
+        guard case let .live(recoveredObservation) = store.simulatorPowerEvidenceAvailability else {
+            return XCTFail("A new source-owned power receipt should restore live authority once transport is connected.")
+        }
+        XCTAssertGreaterThan(recoveredObservation.receiptSequenceNumber, initialObservation.receiptSequenceNumber)
+        XCTAssertGreaterThan(recoveredObservation.receivedAtUptimeNanoseconds, initialObservation.receivedAtUptimeNanoseconds)
+    }
+
+    @MainActor
     func testSpeedInstrumentUsesAcceptedSourceFallbackUntilFreshTelemetryArrives() throws {
         let model = SpeedInstrumentModel()
         let frame = try XCTUnwrap(model.frame(
