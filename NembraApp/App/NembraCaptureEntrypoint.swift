@@ -431,6 +431,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Exact scooter membership must be verified again for the current Secure Link session."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -488,6 +489,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
         membershipDeviceID = nil
+        membershipStatus = "Exact scooter membership must be verified again for the current Secure Link session."
         membershipRequestID = UUID()
         membershipBusy = false
 #if canImport(ThingSmartHomeKit)
@@ -1425,9 +1427,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
-            log("tuya_application_update", update.merging([
+            let accountUIDRedactedUpdate = redactCurrentAccountUID(from: update)
+            log("tuya_application_update", accountUIDRedactedUpdate.merging([
                 "generation": String(token.diagnosticGeneration)
-            ]) { current, _ in current })
+            ]) { _, trusted in trusted })
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -1451,6 +1454,17 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 message: "Application receipt violated the current internal session lifecycle: \(error.localizedDescription)",
                 kind: "application_update_lifecycle_rejected"
             )
+        }
+    }
+
+    private func redactCurrentAccountUID(from update: [String: String]) -> [String: String] {
+        guard accountIdentityLeaseIsAuthorized,
+              let rawAccountUID = membershipAccountUID else { return update }
+        let accountUID = rawAccountUID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !accountUID.isEmpty else { return update }
+
+        return update.mapValues { value in
+            value.replacingOccurrences(of: accountUID, with: "<redacted-account-uid>")
         }
     }
 
