@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Capture accepted export artifact immutability")
 struct TuyaAcceptedExportArtifactImmutabilitySourceTests {
-    @Test("canonical seal snapshots the entire accepted export before UI acceptance")
+    @Test("canonical seal snapshots the entire accepted export before UI acceptance or another suspension")
     func sealFreezesWholeAcceptedEnvelopeBeforeAcceptedPhase() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let watchdog = try section(
@@ -20,18 +20,25 @@ struct TuyaAcceptedExportArtifactImmutabilitySourceTests {
         let body = String(accepted)
 
         guard let packageSeal = body.range(of: "try await sessionLedger.sealAcceptedObservation(for: token)"),
-              let eventFreeze = body.range(of: "self.sealedAcceptedEventPrefix = acceptedEventPrefix", range: packageSeal.upperBound..<body.endIndex),
+              let sourceRecheck = body.range(of: "guard self.buildIdentity.isAuthoritativeFieldBuild,", range: packageSeal.upperBound..<body.endIndex),
+              let eventFreeze = body.range(of: "self.sealedAcceptedEventPrefix = acceptedEventPrefix", range: sourceRecheck.upperBound..<body.endIndex),
               let envelopeFreeze = body.range(of: "self.sealedAcceptedExport = self.makeExport(", range: eventFreeze.upperBound..<body.endIndex),
               let acceptedPhase = body.range(of: "self.phase = .accepted", range: envelopeFreeze.upperBound..<body.endIndex) else {
-            Issue.record("Accepted path must freeze both event prefix and complete export envelope before presenting accepted UI.")
+            Issue.record("Accepted path must re-check source authority, then freeze event prefix and complete export envelope before presenting accepted UI.")
             throw SourceContractError.sectionMissing
         }
 
+        #expect(sourceRecheck.lowerBound < eventFreeze.lowerBound)
         #expect(eventFreeze.lowerBound < envelopeFreeze.lowerBound)
         #expect(envelopeFreeze.lowerBound < acceptedPhase.lowerBound)
+        #expect(body.contains("self.accountIdentityLeaseIsAuthorized"))
+        #expect(body.contains("source_authority_changed_during_acceptance_seal"))
         #expect(body.contains("phase: .accepted"))
         #expect(body.contains("events: acceptedEventPrefix"))
         #expect(body.contains("self.exportData = nil"), Comment(rawValue: "Any JSON prepared before acceptance must be retired before accepted Share is shown."))
+
+        let afterSeal = body[packageSeal.upperBound..<envelopeFreeze.lowerBound]
+        #expect(!afterSeal.contains("await "), Comment(rawValue: "No actor/task suspension may let mutable app authority drift between package seal and full accepted artifact freeze."))
     }
 
     @Test("accepted Prepare uses only the sealed envelope and not current mutable authority")
