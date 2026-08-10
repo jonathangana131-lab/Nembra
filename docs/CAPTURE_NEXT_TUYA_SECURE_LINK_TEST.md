@@ -12,18 +12,19 @@ The 17-step run completed, but it received zero application characteristic paylo
 
 The next physical experiment exists only to prove the supported secure session and collect the first admissible application-level evidence from the already-bound scooter.
 
-1. Build/install the privately provisioned standalone Capture app whose Tuya app identity matches the Capture bundle ID.
-2. Log in to the user's own account through Tuya's official SmartLife SDK verification-code flow.
-3. Require the official SDK account/home enumeration to find the exact expected scooter device ID. SDK login alone is not device authority.
-4. With the scooter OFF, collect a short CoreBluetooth baseline.
-5. Turn the scooter ON and correlate the target. Authorization requires either the previously observed physical CoreBluetooth UUID or corroborating `FD50` + Tuya company `0x07D0` evidence. Name, RSSI, and OFF→ON appearance may rank candidates but may not authorize one.
-6. Stop Nembra's CoreBluetooth scan before secure authentication begins.
-7. Let `ThingSmartBLEManager` exclusively own the authenticated BLE connection. Nembra must not open a second CoreBluetooth connection.
-8. Treat the SDK connect callback only as transport progress. Authentication chronology begins only when Tuya's local-BLE status reports this scooter current on the official SDK connection.
-9. Admit only non-empty `ThingSmartDeviceDelegate` `dpsUpdate` callbacks from that same sealed connection generation.
-10. Keep observing local BLE. A long observation-loop gap or observed local-BLE drop invalidates the generation rather than silently counting toward the timer.
-11. PASS only when the canonical `TuyaAuthenticatedReadOnlyPreflight` verdict accepts the generation: official SmartLife authentication provenance, at least one admitted same-generation application update, valid monotonic chronology, and at least 45 seconds of admitted local-BLE observation.
-12. Export and share `Nembra-Secure-Link-*-Diagnostics.json`.
+1. Prepare the privately provisioned standalone Capture workspace with `scripts/field/install_one_time_capture.command`. The local Tuya security SDK and matching Tuya Developer Platform AppKey/AppSecret must belong to the Capture bundle ID; the installer can prompt for the identity without placing the secrets on its command line and generates the gitignored `NembraTuyaPrivateConfig` module consumed by the field app.
+2. Build/sign/install `NembraCapture.xcworkspace` on the intended iPhone.
+3. Log in to the user's own account through Tuya's official SmartLife SDK verification-code flow.
+4. Require the official SDK account/home enumeration to find the exact expected scooter device ID. SDK login alone is not device authority.
+5. With the scooter OFF, collect a short CoreBluetooth baseline.
+6. Turn the scooter ON and correlate the target. Authorization requires either the previously observed physical CoreBluetooth UUID or corroborating `FD50` + Tuya company `0x07D0` evidence. Name, RSSI, and OFF→ON appearance may rank candidates but may not authorize one.
+7. Stop Nembra's CoreBluetooth scan before secure authentication begins.
+8. Let `ThingSmartBLEManager` exclusively own the authenticated BLE connection. Nembra must not open a second CoreBluetooth connection.
+9. Treat the SDK connect callback only as transport progress. Authentication chronology begins only when Tuya's local-BLE status reports this scooter current on the official SDK connection.
+10. Admit only non-empty `ThingSmartDeviceDelegate` `dpsUpdate` callbacks from that same sealed connection generation.
+11. Keep observing local BLE. A long observation-loop gap or observed local-BLE drop invalidates the generation rather than silently counting toward the timer.
+12. PASS only when the canonical `TuyaAuthenticatedReadOnlyPreflight` verdict accepts the generation: official SmartLife authentication provenance, at least one admitted same-generation application update, valid monotonic chronology, and at least 45 seconds of admitted local-BLE observation.
+13. Export and share `Nembra-Secure-Link-*-Diagnostics.json`.
 
 ## What the application update is — and is not
 
@@ -51,7 +52,7 @@ A public/fallback build is not enough to authorize the physical test. The signed
 
 - `ThingSmartHomeKit` present;
 - the matching app-specific Tuya security component present locally;
-- private AppKey/AppSecret supplied for the same Tuya Developer Platform iOS app identity as the Capture bundle;
+- the generated local `NembraTuyaPrivateConfig` module containing the matching private AppKey/AppSecret for the same Tuya Developer Platform iOS app identity as the Capture bundle;
 - an official SDK account login;
 - exact membership of the expected scooter device ID proven from that SDK account's owned/shared home devices.
 
