@@ -18,13 +18,21 @@ struct TuyaSecureLinkRestartAuthoritySourceTests {
             to: "private var completionPanel: some View"
         )
 
-        // A generic build/account/device-ready state is not enough to authorize
-        // an in-process restart. Terminal retirement failure deliberately leaves
-        // the prior connection token alive and requires an app relaunch.
+        // Generic build/account/device readiness is never enough to authorize an
+        // in-process restart. The controller owns lifecycle authority; the UI may
+        // add stricter temporary availability gates without minting restart authority.
         #expect(controller.contains("var canRestartFromFreshOFF1"))
         #expect(controller.contains("currentConnectionToken == nil"))
-        #expect(failurePanel.contains("test.canRestartFromFreshOFF1"))
-        #expect(!failurePanel.contains(".disabled(!authorityReady"))
+        #expect(controller.contains("guard phase == .failed, canRestartFromFreshOFF1 else"))
+
+        guard let lifecycleGate = failurePanel.range(of: "if test.canRestartFromFreshOFF1"),
+              let retryCall = failurePanel.range(of: "test.retry()"),
+              let relaunchOnly = failurePanel.range(of: "Relaunch Capture before another attempt") else {
+            Issue.record("Expected lifecycle-gated retry and relaunch-only branches are missing.")
+            throw SourceContractError.sectionMissing
+        }
+        #expect(lifecycleGate.lowerBound < retryCall.lowerBound)
+        #expect(retryCall.lowerBound < relaunchOnly.lowerBound)
     }
 
     @Test("relaunch-only terminal recovery remains visible and cannot be replaced by generic restart copy")
