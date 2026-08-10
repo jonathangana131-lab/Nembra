@@ -84,7 +84,17 @@ Choose a private path outside the repository. The producer requires an absolute 
 
 Do not acquire the raw identifier through ordinary shell redirection. Even with `noclobber`, a checked parent directory pathname can be renamed and replaced before `> "$UDID_FILE"` re-resolves it. Use the accepted descriptor-bound private-input helper instead. It opens directory components with no-follow descriptors, creates the final file relative to the pinned directory descriptor, rebinds the pathname after creation, verifies directory/file identity and exact readback, and fails closed if the path was retargeted.
 
-The accepted helper identity is fixed below. These helper bytes are operator-custody tooling only; they do not alter the frozen `a0f4…` app subject and do not authorize signing acceptance or Bluetooth activity.
+The accepted helper identity is fixed below. The current merged helper refuses an already-occupied final name before acquiring the private UDID while retaining `O_EXCL` as the post-precheck race authority; fails closed rather than accepting a potentially echoed `getpass` fallback or terminal EOF; validates the fresh exact mode-`0600` single-link inode before writing secret bytes; and on acquisition failure requires durable erasure of the exact open inode through descriptor scrub and/or exact-inode unlink without silently claiming cleanup if neither route can be proven. These helper bytes are operator-custody tooling only; they do not alter the frozen `a0f4…` app subject and do not authorize signing acceptance or Bluetooth activity.
+
+Accepted current helper evidence:
+
+- merged helper commit: `af75ffa6dc4409a21822295428e4eeb922ac3d16`;
+- helper path: `scripts/ci/es80_today_private_device_input.py`;
+- helper blob: `50b12675a57fd2f570d833cfcdbfd7be59f52ca4`;
+- exact tested predecessor head carrying the same helper blob: `91dda8ac05e937e5615312a487f7d78926b74949`;
+- focused `Capture TODAY Field Candidate Preflight QA` run `31349855525` — terminal success on that exact predecessor head.
+
+The Git blob is the byte authority: the runbook materializes the exact merged helper blob from the durable merged commit below.
 
 ```bash
 umask 077
@@ -94,8 +104,8 @@ PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"
 UDID_FILE="$PRIVATE_DIR/es80-intended-device.udid"
 TOOL_REPO='/absolute/path/to/a/local/Nembra/tooling-repository'
 
-PRIVATE_INPUT_HELPER_COMMIT='05ce6d9a20487ab34aa31c5b6456910ed2ed438f'
-PRIVATE_INPUT_HELPER_BLOB='9a9f7f724ceaf895e52d6d443d326043f97645c8'
+PRIVATE_INPUT_HELPER_COMMIT='af75ffa6dc4409a21822295428e4eeb922ac3d16'
+PRIVATE_INPUT_HELPER_BLOB='50b12675a57fd2f570d833cfcdbfd7be59f52ca4'
 PRIVATE_INPUT_HELPER_DIR="$(/usr/bin/mktemp -d /tmp/nembra-es80-private-input.XXXXXX)"
 PRIVATE_INPUT_HELPER="$PRIVATE_INPUT_HELPER_DIR/es80_today_private_device_input.py"
 
