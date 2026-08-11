@@ -20,10 +20,121 @@ command -v pod >/dev/null || die "CocoaPods is required for the official Tuya SD
 EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"
 [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9A-Fa-f]{40}$ ]] || die "Pass the exact software-accepted Capture source SHA as the first argument (40 hex characters)."
 EXPECTED_SOURCE_SHA="$(printf '%s' "$EXPECTED_SOURCE_SHA" | tr '[:upper:]' '[:lower:]')"
-SOURCE_SHA="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+
+AUTHORITY_GIT_DIR="$ROOT/.git"
+[[ -d "$AUTHORITY_GIT_DIR" && ! -L "$AUTHORITY_GIT_DIR" ]] || die "Field source authority requires one real checkout .git directory."
+authority_git() {
+    /usr/bin/env -i \
+        HOME="${HOME:-/var/empty}" \
+        PATH="/usr/bin:/bin" \
+        LANG=C LC_ALL=C \
+        GIT_NO_REPLACE_OBJECTS=1 \
+        GIT_CONFIG_NOSYSTEM=1 \
+        GIT_CONFIG_GLOBAL=/dev/null \
+        /usr/bin/git \
+        --git-dir="$AUTHORITY_GIT_DIR" \
+        --work-tree="$ROOT" \
+        -c core.worktree="$ROOT" \
+        -c core.fsmonitor=false \
+        -c core.untrackedCache=false \
+        -c core.fileMode=true \
+        -c core.excludesFile=/dev/null \
+        "$@"
+}
+authority_git_with_index() {
+    local authority_index="$1"
+    shift
+    /usr/bin/env -i \
+        HOME="${HOME:-/var/empty}" \
+        PATH="/usr/bin:/bin" \
+        LANG=C LC_ALL=C \
+        GIT_NO_REPLACE_OBJECTS=1 \
+        GIT_CONFIG_NOSYSTEM=1 \
+        GIT_CONFIG_GLOBAL=/dev/null \
+        GIT_INDEX_FILE="$authority_index" \
+        /usr/bin/git \
+        --git-dir="$AUTHORITY_GIT_DIR" \
+        --work-tree="$ROOT" \
+        -c core.worktree="$ROOT" \
+        -c core.fsmonitor=false \
+        -c core.untrackedCache=false \
+        -c core.fileMode=true \
+        -c core.excludesFile=/dev/null \
+        "$@"
+}
+authority_git_status() {
+    local authority_index status
+    authority_index="$(mktemp "${TMPDIR:-/tmp}/nembra-capture-authority-index.XXXXXX")" || return 70
+    rm -f -- "$authority_index"
+    if ! authority_git_with_index "$authority_index" read-tree "$SOURCE_SHA" >/dev/null 2>&1; then
+        rm -f -- "$authority_index"
+        return 71
+    fi
+    if ! status="$(authority_git_with_index "$authority_index" status --porcelain=v1 --untracked-files=all)"; then
+        rm -f -- "$authority_index"
+        return 72
+    fi
+    rm -f -- "$authority_index"
+    printf '%s' "$status"
+}
+
+SOURCE_SHA="$(authority_git rev-parse --verify 'HEAD^{commit}' | tr '[:upper:]' '[:lower:]')"
 [[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]] || die "Current checkout $SOURCE_SHA does not match accepted Capture source $EXPECTED_SOURCE_SHA. Checkout the exact accepted SHA before building."
-[[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Working tree has local changes. Commit/stash them first."
-say "Exact requested Capture source matched: $SOURCE_SHA"
+[[ -z "$(authority_git_status)" ]] || die "Working tree has local changes under the fenced field-source authority index. Commit/stash them first."
+say "Exact requested Capture source matched under real-checkout Git authority: $SOURCE_SHA"
+
+run_accepted_source_bash() {
+    local relative_path="$1"
+    shift
+    /usr/bin/python3 -I - "$ROOT" "$SOURCE_SHA" "$relative_path" "$@" <<'PY_ACCEPTED_BASH'
+import os
+import subprocess
+import sys
+from pathlib import Path, PurePosixPath
+
+root = Path(sys.argv[1])
+source_sha = sys.argv[2]
+relative_path = sys.argv[3]
+helper_argv = sys.argv[4:]
+relative = PurePosixPath(relative_path)
+if relative.is_absolute() or '..' in relative.parts or '.' in relative.parts:
+    raise SystemExit('accepted Bash source path must remain canonical and repository-relative')
+git_environment = {
+    'HOME': '/var/empty',
+    'PATH': '/usr/bin:/bin',
+    'LANG': 'C',
+    'LC_ALL': 'C',
+    'GIT_NO_REPLACE_OBJECTS': '1',
+    'GIT_CONFIG_NOSYSTEM': '1',
+    'GIT_CONFIG_GLOBAL': '/dev/null',
+}
+try:
+    source = subprocess.check_output(
+        [
+            '/usr/bin/git',
+            f'--git-dir={root / ".git"}',
+            f'--work-tree={root}',
+            '-c', f'core.worktree={root}',
+            'show', f'{source_sha}:{relative_path}',
+        ],
+        env=git_environment,
+        stderr=subprocess.DEVNULL,
+    )
+except subprocess.CalledProcessError as error:
+    raise SystemExit(f'accepted Bash source is unavailable from exact Git authority: {relative_path}') from error
+child_environment = os.environ.copy()
+child_environment.pop('BASH_ENV', None)
+child_environment.pop('ENV', None)
+child_environment['NEMBRA_CAPTURE_ACCEPTED_REPO_ROOT'] = str(root)
+completed = subprocess.run(
+    ['/bin/bash', '--noprofile', '--norc', '-p', '-s', '--', *helper_argv],
+    input=source,
+    env=child_environment,
+    check=False,
+)
+raise SystemExit(completed.returncode)
+PY_ACCEPTED_BASH
+}
 
 # The intended-device identifier is private field-admission input, never product
 # evidence. Reuse the canonical descriptor-bound reader so the private file is
@@ -74,10 +185,10 @@ say "Private intended-device admission validated against Final GO digest"
 # CocoaPods. Building the public .xcodeproj here would intentionally compile the
 # fail-closed fallback and cannot authorize the ES80 experiment.
 say "Validating official Tuya SDK and private app-identity provisioning"
-"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"
+run_accepted_source_bash "Scripts/bootstrap_capture_tuya_sdk.sh"
 [[ -d "$ROOT/NembraCapture.xcworkspace" ]] || die "NembraCapture.xcworkspace was not generated. Do not use NembraCapture.xcodeproj for the authenticated field build."
-[[ "$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')" == "$SOURCE_SHA" ]] || die "Repository HEAD changed during private workspace bootstrap. Restart from the exact accepted source."
-[[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Private workspace bootstrap changed tracked or unignored accepted-source inputs. Review and re-accept before building."
+[[ "$(authority_git rev-parse --verify 'HEAD^{commit}' | tr '[:upper:]' '[:lower:]')" == "$SOURCE_SHA" ]] || die "Repository HEAD changed during private workspace bootstrap. Restart from the exact accepted source."
+[[ -z "$(authority_git_status)" ]] || die "Private workspace bootstrap changed tracked or unignored accepted-source inputs under fenced Git authority. Review and re-accept before building."
 [[ -f "$ROOT/Podfile.lock" ]] || die "Private workspace bootstrap produced no Podfile.lock; reviewed Tuya dependency provenance is unavailable."
 TUYA_DEPENDENCY_LOCK_SHA256="$(shasum -a 256 "$ROOT/Podfile.lock" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
 [[ "$TUYA_DEPENDENCY_LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "Could not compute a valid SHA-256 fingerprint for the resolved Tuya dependency lock."
@@ -281,8 +392,8 @@ run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \
     build || die "Private inputs changed while xcodebuild was running, vnode custody failed, or the signed build itself failed. No field artifact was admitted."
 
 verify_private_tuya_inputs
-[[ "$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')" == "$SOURCE_SHA" ]] || die "Repository HEAD changed while the accepted field build was compiling. Discard this candidate."
-[[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Accepted-source inputs changed while the field build was compiling. Discard this candidate and restart."
+[[ "$(authority_git rev-parse --verify 'HEAD^{commit}' | tr '[:upper:]' '[:lower:]')" == "$SOURCE_SHA" ]] || die "Repository HEAD changed while the accepted field build was compiling. Discard this candidate."
+[[ -z "$(authority_git_status)" ]] || die "Accepted-source inputs changed under fenced Git authority while the field build was compiling. Discard this candidate and restart."
 APP="$DERIVED/Build/Products/Debug-iphoneos/Nembra Capture.app"
 [[ -d "$APP" ]] || die "Build finished but the standalone Nembra Capture.app was not found at $APP"
 APP_INFO_PLIST="$APP/Info.plist"

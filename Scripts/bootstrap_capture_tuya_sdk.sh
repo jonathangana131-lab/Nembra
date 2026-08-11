@@ -1,8 +1,22 @@
 #!/bin/bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+if [[ -n "${NEMBRA_CAPTURE_ACCEPTED_REPO_ROOT:-}" ]]; then
+  [[ "$NEMBRA_CAPTURE_ACCEPTED_REPO_ROOT" == /* ]] || {
+    echo "ERROR: accepted Capture repository root must be absolute." >&2
+    exit 2
+  }
+  REPO_ROOT="$(cd "$NEMBRA_CAPTURE_ACCEPTED_REPO_ROOT" && pwd -P)"
+  SCRIPT_DIR="$REPO_ROOT/Scripts"
+  [[ -d "$SCRIPT_DIR" && ! -L "$SCRIPT_DIR" ]] || {
+    echo "ERROR: accepted Capture Scripts directory is unavailable beneath the admitted repository root." >&2
+    exit 2
+  }
+  unset NEMBRA_CAPTURE_ACCEPTED_REPO_ROOT
+else
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+fi
 TUYA_PRIVATE_SDK="$REPO_ROOT/LocalSecrets/TuyaSDK"
 TUYA_PRIVATE_IDENTITY="$REPO_ROOT/LocalSecrets/TuyaRuntime"
 DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
