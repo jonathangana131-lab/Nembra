@@ -46,6 +46,8 @@ jobs:
         run: |
           set -uo pipefail
           log="$RUNNER_TEMP/capture-main-graft-package.log"
+          list_log="$RUNNER_TEMP/capture-main-graft-test-list.log"
+          serial_log="$RUNNER_TEMP/capture-main-graft-package-serial.log"
           set +e
           (cd Packages/NembraBluetoothCapture && swift test) 2>&1 | tee "$log"
           status="${PIPESTATUS[0]}"
@@ -67,6 +69,16 @@ jobs:
           for name, count in files.most_common():
               print(f'PACKAGE_ISSUES {count:3d} {name}')
           PY
+          if [[ "$status" != "0" ]]; then
+            echo 'Primary package run failed; retaining non-authoritative runner diagnostics without changing acceptance status.'
+            set +e
+            (cd Packages/NembraBluetoothCapture && swift test list) >"$list_log" 2>&1
+            list_status="$?"
+            (cd Packages/NembraBluetoothCapture && swift test --no-parallel) >"$serial_log" 2>&1
+            serial_status="$?"
+            set -e
+            printf 'diagnostic_test_list_status=%s\ndiagnostic_serial_status=%s\n' "$list_status" "$serial_status"
+          fi
           exit 0
 
       - name: Build standalone Capture target on current main
@@ -106,6 +118,8 @@ jobs:
           name: capture-main-selective-graft-${{ github.event.pull_request.head.sha }}
           path: |
             ${{ runner.temp }}/capture-main-graft-package.log
+            ${{ runner.temp }}/capture-main-graft-package-serial.log
+            ${{ runner.temp }}/capture-main-graft-test-list.log
             ${{ runner.temp }}/capture-main-graft-xcodebuild.log
           retention-days: 7
           if-no-files-found: error
