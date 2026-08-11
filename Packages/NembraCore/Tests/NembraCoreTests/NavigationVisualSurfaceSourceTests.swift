@@ -77,6 +77,30 @@ struct NavigationVisualSurfaceSourceTests {
         #expect(navigation.contains("dynamicTypeSize.isAccessibilitySize ? 220 : 280"))
     }
 
+    @Test("Accessibility-size Navigation states recompose instead of clipping")
+    func accessibilityLowerSurfaceUsesDedicatedScrollableComposition() throws {
+        let source = try String(contentsOf: nembraAppURL, encoding: .utf8)
+        let emptyState = slice(
+            source,
+            after: "private var navigationEmptyState: some View {",
+            before: "private func navigationStatusSurface("
+        )
+        let statusState = slice(
+            source,
+            after: "private func navigationStatusSurface(",
+            before: "private var recentDestinationList"
+        )
+
+        // Large text is a separate composition, not a scaled-up copy of the
+        // decorative default state. It must be able to scroll if text wraps beyond
+        // the available lower sheet while keeping semantic title/detail content.
+        #expect(emptyState.contains("if dynamicTypeSize.isAccessibilitySize"))
+        #expect(emptyState.contains("ScrollView"))
+        #expect(emptyState.contains(".title2.weight(.semibold)"))
+        #expect(statusState.contains("if dynamicTypeSize.isAccessibilitySize"))
+        #expect(statusState.contains("ScrollView"))
+    }
+
     @Test("Empty and failure states use the Nembra Navigation hierarchy")
     func importantNavigationStatesAvoidStockUnavailableCards() throws {
         let source = try String(contentsOf: nembraAppURL, encoding: .utf8)
