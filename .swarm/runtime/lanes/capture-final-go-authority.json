@@ -13,9 +13,9 @@
       "id": "legacy-pr-active",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Legacy Final-GO/control descendants are still active; red-team PRs #2798 and #2803 demonstrate parent-module execution-before-authority defects that must be repaired on the selected control lineage.",
-      "pr": 2791,
-      "headSHA": "61dc8330f770e8378c3e92fe1b5dd481fc1ce981"
+      "reason": "Selected generated-subject spine #2775 is exact-head control-green at 71aee681 but has an execution-before-authority defect proven by #2803. Private-review child #2791 is stale to the moved #2775 parent, exact-head red at 61dc8330, and has its own generated-parent execution-before-authority defect proven by #2798. Repair/compose those defects before any Final-GO promotion.",
+      "pr": 2775,
+      "headSHA": "71aee681d12e353ec54111e066e26598a735ca64"
     }
   ],
   "mode": "exclusive",
@@ -38,10 +38,14 @@
   "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
   "sourceSHA": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc",
   "legacy": {
-    "primaryPR": 2791,
-    "primaryHeadSHA": "61dc8330f770e8378c3e92fe1b5dd481fc1ce981",
+    "selectedGeneratedPR": 2775,
+    "selectedGeneratedHeadSHA": "71aee681d12e353ec54111e066e26598a735ca64",
+    "privateReviewPR": 2791,
+    "privateReviewHeadSHA": "61dc8330f770e8378c3e92fe1b5dd481fc1ce981",
+    "privateReviewBaseSHA": "40f835a28e3f61b125c47c1922d7da2af20eba63",
     "lineagePRs": [2638, 2775, 2791, 2798, 2803],
-    "redTeamPRs": [2798, 2803]
+    "redTeamPRs": [2798, 2803],
+    "knownExactHeadFinding": "#2775 canonical Final-GO control suite is green but #2803 proves mutable authenticated-stationary parent execution occurs before authority. #2791 is both stale-parent and red, and #2798 proves mutable generated-parent execution occurs before authority."
   },
   "tags": ["capture", "p0", "physical-go", "control-authority", "legacy-import"]
 }
