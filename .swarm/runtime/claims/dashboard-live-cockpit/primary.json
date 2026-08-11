@@ -4,17 +4,23 @@
   "laneId": "dashboard-live-cockpit",
   "slot": "primary",
   "role": "implementation",
-  "workerId": "sol-20260811-hl6k",
-  "leaseId": "dashboard-primary-hl6k-20260811-1203",
-  "generation": 2,
+  "workerId": "sol-20260811-c84e",
+  "leaseId": "dashboard-primary-c84e-20260811-2023",
+  "generation": 3,
   "status": "ACTIVE",
-  "claimedAt": "2026-08-11T12:03:00Z",
-  "lastHeartbeatAt": "2026-08-11T13:22:30Z",
+  "claimedAt": "2026-08-11T20:23:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:23:00Z",
   "leaseSeconds": 2700,
-  "branch": "repair/v15-dashboard-ax5-layout-sol-hl6k",
+  "branch": "repair/v15-dashboard-ax5-status-sol-c84e",
   "pr": 2971,
-  "sourceSHA": "616746f18c63801a484aa6d394fc6770c8b22cce",
+  "sourceSHA": "c150a8287463231ee9af174c38564738bab576a3",
   "currentHeadSHA": "c150a8287463231ee9af174c38564738bab576a3",
-  "takeoverFromWorkerId": "sol-20260811-ui0052",
-  "checkpoint": "#2971 is a one-production-file AX5 layout child of combined QA head 616746f1. It replaces the accessibility vertical stack with a three-region landscape cockpit, preserves real Dynamic Type and full speed/Energy Rail semantics, and removes the nested accessibility-root identifier that masked child IDs in the failed hierarchy. Source review caught and repaired a SwiftUI frame-overload mistake before runner dispatch. Exact-head Xcode/AX5/visual evidence on c150a828 is required; no ancestor green counts. Dark-landscape #2963 remains frozen until this product repair is accepted. Capture/ES80 physical NO-GO."
+  "takeoverFromWorkerId": "sol-20260811-hl6k",
+  "takeoverReason": "Generation-2 lease expired many hours ago. Fresh independent evidence review of exact c150a828 / Xcode run 31510207367 found the former vertical overflow closed but critical AX5 vehicle/connection labels visibly ellipsized in the fixed 188-pt status rail and no AX5 stopped-control bounds witness. Continue the same Dashboard accessibility closure with a narrow product+test successor; preserve telemetry truth and Simulator-only authority.",
+  "ownedPaths": [
+    "NembraApp/Features/Dashboard/DashboardView.swift",
+    "NembraUITests/NembraUITests.swift",
+    "scripts/ci/xcode27_simulator_capture.sh"
+  ],
+  "acceptance": "Successor must keep speed/Energy Rail semantics, make critical left status intelligible at AX5 without disabling Dynamic Type, add exact AX5 connected-stopped in-window control evidence, and re-earn exact-head Xcode/screenshots plus independent review. ES80 physical NO-GO."
 }
