@@ -1,142 +1,99 @@
 #!/usr/bin/env python3
-"""Expected-red: the exact signed app verified for field authority must be the app installed.
+"""Require signed-app verification and install to share one guarded subject.
 
-The field installer verifies one signed Nembra Capture.app bundle and reads back its
-provenance/entitlements before installation. The install step later reopens the bundle by
-mutable pathname. This diagnostic executes the real post-verification install section with
-an adversarial same-UID pathname swap: a fake `open` replaces the already-reviewed app,
-`devicectl` observes the substituted bytes, and the fake tool restores the accepted bytes
-before the shell continues. A safe installer must fail closed rather than report success.
+This is the promoted regression for #2688. The original expected-red fixture proved
+that verification of one mutable `.app` pathname followed by a later direct
+`devicectl` open could install different bytes. Production closure must instead:
+- capture guard + verify/install implementation from exact SOURCE_SHA Git objects;
+- execute those implementations from already-open, verified descriptors;
+- keep the app tree + parent under vnode/cryptographic custody for the complete
+  provenance/signature/profile/install child;
+- carry the private device identifier only over stdin for log redaction;
+- refuse to launch until guarded installation has returned success.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-import os
-import subprocess
-import tempfile
-import textwrap
 import unittest
 
 REPOSITORY = Path(__file__).resolve().parents[3]
 INSTALLER = REPOSITORY / "scripts/field/install_one_time_capture.command"
+VERIFY_INSTALL = REPOSITORY / "scripts/field/verify_install_capture_app.command"
+GUARD = REPOSITORY / "scripts/ci/capture_signed_app_install_guard.py"
 
 
 class CaptureSignedAppInstallSubjectTests(unittest.TestCase):
-    def test_verified_bundle_cannot_be_swapped_before_devicectl_install(self) -> None:
+    def test_installer_uses_exact_git_descriptor_bound_guard_and_verifier(self) -> None:
         source = INSTALLER.read_text(encoding="utf-8")
-        verification_marker = '/usr/bin/codesign --verify --deep --strict "$APP"'
-        install_start_marker = 'say "Installing SDK-integrated Capture on the intended iPhone"'
-        launch_marker = 'say "Launching privately provisioned Capture on the intended iPhone"'
-        install_call_marker = 'xcrun devicectl device install app --device "$COREDEVICE_ID" "$APP"'
 
-        verification_index = source.find(verification_marker)
-        start_index = source.find(install_start_marker)
-        launch_index = source.find(launch_marker)
-        self.assertGreaterEqual(verification_index, 0, "installer no longer exposes the signed-app verification boundary")
-        self.assertGreater(start_index, verification_index, "install must remain downstream of signed-app verification")
-        self.assertGreater(launch_index, start_index, "could not isolate the real install section")
+        required = (
+            'SIGNED_APP_INSTALL_GUARD_RELATIVE_PATH="scripts/ci/capture_signed_app_install_guard.py"',
+            'SIGNED_APP_VERIFY_INSTALL_RELATIVE_PATH="scripts/field/verify_install_capture_app.command"',
+            '/usr/bin/git show "$SOURCE_SHA:$SIGNED_APP_INSTALL_GUARD_RELATIVE_PATH"',
+            '/usr/bin/git show "$SOURCE_SHA:$SIGNED_APP_VERIFY_INSTALL_RELATIVE_PATH"',
+            'GUARD_BLOB_SHA="$(/usr/bin/git rev-parse "$SOURCE_SHA:$SIGNED_APP_INSTALL_GUARD_RELATIVE_PATH")"',
+            'VERIFY_INSTALL_BLOB_SHA="$(/usr/bin/git rev-parse "$SOURCE_SHA:$SIGNED_APP_VERIFY_INSTALL_RELATIVE_PATH")"',
+            'verify_open_git_blob_descriptor 7 "$VERIFY_INSTALL_BLOB_SHA" "$VERIFY_INSTALL_BLOB_BYTES"',
+            'verify_open_git_blob_descriptor 8 "$GUARD_BLOB_SHA" "$GUARD_BLOB_BYTES"',
+            'exec 7< "$VERIFY_INSTALL_SNAPSHOT"',
+            'exec 8< "$GUARD_SNAPSHOT"',
+            '/bin/rm -f -- "$GUARD_SNAPSHOT" "$VERIFY_INSTALL_SNAPSHOT"',
+            '/usr/bin/python3 -I /dev/fd/8',
+            '--pass-fd 7',
+            '--app "$APP"',
+            '/bin/bash --noprofile --norc -p /dev/fd/7',
+        )
+        for marker in required:
+            self.assertIn(marker, source, marker)
 
-        install_section = source[start_index:launch_index]
-        self.assertIn(install_call_marker, install_section, "diagnostic must exercise the real devicectl install call")
+        descriptor_verify = source.index('verify_open_git_blob_descriptor 7')
+        unlink = source.index('/bin/rm -f -- "$GUARD_SNAPSHOT" "$VERIFY_INSTALL_SNAPSHOT"')
+        guard_start = source.index('/usr/bin/python3 -I /dev/fd/8')
+        launch = source.index('say "Launching privately provisioned Capture on the intended iPhone"')
+        self.assertLess(descriptor_verify, unlink)
+        self.assertLess(unlink, guard_start, "tool pathnames must be gone before authority code executes")
+        self.assertLess(guard_start, launch, "physical launch must remain downstream of stable guarded install")
 
-        with tempfile.TemporaryDirectory(prefix="nembra-signed-app-install-subject-") as temporary:
-            root = Path(temporary)
-            app = root / "Derived/Build/Products/Debug-iphoneos/Nembra Capture.app"
-            app.mkdir(parents=True)
-            payload = app / "subject.txt"
-            payload.write_text("ACCEPTED_SIGNED_SUBJECT\n", encoding="utf-8")
+    def test_private_device_identifier_is_stdin_only_at_install_boundary(self) -> None:
+        installer = INSTALLER.read_text(encoding="utf-8")
+        verifier = VERIFY_INSTALL.read_text(encoding="utf-8")
+        guarded_call_start = installer.index("# The private intended-device UDID crosses this boundary")
+        guarded_call_end = installer.index('say "Launching privately provisioned Capture on the intended iPhone"')
+        guarded_call = installer[guarded_call_start:guarded_call_end]
 
-            installed_subject = root / "installed-subject.txt"
-            fake_bin = root / "fake-bin"
-            fake_bin.mkdir()
+        self.assertIn("builtin printf '%s\\n' \"$DEVICE_UDID\" | /usr/bin/python3 -I /dev/fd/8", guarded_call)
+        self.assertNotIn('"$DEVICE_UDID" \\', guarded_call.split('|', 1)[1])
+        self.assertNotIn('--device "$DEVICE_UDID"', installer)
+        self.assertNotIn('--device "$PRIVATE_DEVICE_UDID"', verifier)
+        self.assertIn('--device "$COREDEVICE_ID" "$APP"', verifier)
 
-            fake_open = fake_bin / "open"
-            fake_open.write_text(
-                "#!/bin/bash\n"
-                "set -euo pipefail\n"
-                "printf 'SUBSTITUTED_AFTER_VERIFICATION\\n' > \"${NEMBRA_REDTEAM_APP:?}/subject.txt\"\n"
-                "exit 0\n",
-                encoding="utf-8",
-            )
-            fake_open.chmod(0o755)
+    def test_authority_checks_and_install_are_inside_same_guarded_child(self) -> None:
+        installer = INSTALLER.read_text(encoding="utf-8")
+        verifier = VERIFY_INSTALL.read_text(encoding="utf-8")
 
-            fake_xcrun = fake_bin / "xcrun"
-            fake_xcrun.write_text(
-                "#!/bin/bash\n"
-                "set -euo pipefail\n"
-                "if [[ ${1:-} == 'devicectl' && ${2:-} == 'device' && ${3:-} == 'install' && ${4:-} == 'app' ]]; then\n"
-                "  /bin/cat -- \"${NEMBRA_REDTEAM_APP:?}/subject.txt\" > \"${NEMBRA_REDTEAM_INSTALLED_SUBJECT:?}\"\n"
-                "  printf 'ACCEPTED_SIGNED_SUBJECT\\n' > \"${NEMBRA_REDTEAM_APP:?}/subject.txt\"\n"
-                "  exit 0\n"
-                "fi\n"
-                "exit 97\n",
-                encoding="utf-8",
-            )
-            fake_xcrun.chmod(0o755)
+        self.assertNotIn('devicectl device install app', installer, "main installer must not reopen APP for installation outside the custody child")
+        provenance = verifier.index('BUILT_BUILD_IDENTIFIER=')
+        signature = verifier.index('/usr/bin/codesign --verify --deep --strict "$APP"')
+        entitlements = verifier.index('/usr/bin/codesign -d --entitlements :- --xml "$APP"')
+        profile = verifier.index('/usr/bin/security cms -D -i "$BUILT_PROFILE"')
+        install = verifier.index('/usr/bin/xcrun devicectl device install app --device "$COREDEVICE_ID" "$APP"')
+        self.assertLess(provenance, signature)
+        self.assertLess(signature, entitlements)
+        self.assertLess(entitlements, profile)
+        self.assertLess(profile, install)
+        self.assertNotIn('device process launch', verifier, "guarded child must not launch before the parent performs final stable-subject proof")
 
-            harness = root / "install-boundary-harness.sh"
-            harness.write_text(
-                textwrap.dedent(
-                    f"""\
-                    #!/bin/bash
-                    set -euo pipefail
-                    ROOT={self._shell_quote(str(root))}
-                    DERIVED="$ROOT/Derived"
-                    APP={self._shell_quote(str(app))}
-                    COREDEVICE_ID='redteam-coredevice'
-                    DEVICE_UDID='redteam-private-udid'
-                    TMPDIR="$ROOT/tmp"
-                    /bin/mkdir -p "$TMPDIR"
-                    say() {{ builtin printf '%s\\n' "$*"; }}
-                    die() {{ builtin printf 'ERROR: %s\\n' "$*" >&2; exit 88; }}
-                    {install_section}
-                    exit 0
-                    """
-                ),
-                encoding="utf-8",
-            )
-            harness.chmod(0o755)
-
-            environment = {
-                "PATH": f"{fake_bin}:/usr/bin:/bin",
-                "HOME": str(root),
-                "LANG": "C.UTF-8",
-                "LC_ALL": "C.UTF-8",
-                "NEMBRA_REDTEAM_APP": str(app),
-                "NEMBRA_REDTEAM_INSTALLED_SUBJECT": str(installed_subject),
-            }
-            result = subprocess.run(
-                ["/bin/bash", str(harness)],
-                cwd=root,
-                env=environment,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                check=False,
-            )
-
-            self.assertTrue(installed_subject.is_file(), result.stdout)
-            self.assertEqual(
-                installed_subject.read_text(encoding="utf-8"),
-                "SUBSTITUTED_AFTER_VERIFICATION\n",
-                "red-team devicectl must observe bytes different from the earlier accepted subject",
-            )
-            self.assertEqual(
-                payload.read_text(encoding="utf-8"),
-                "ACCEPTED_SIGNED_SUBJECT\n",
-                "red-team must restore the accepted pathname before later inspection can notice drift",
-            )
-            self.assertNotEqual(
-                result.returncode,
-                0,
-                "field installer accepted a different app bundle at the devicectl side-effect boundary after signed-app verification; "
-                "pin or revalidate the exact install subject so a pathname swap/restore cannot cross physical-build authority",
-            )
-
-    @staticmethod
-    def _shell_quote(value: str) -> str:
-        return "'" + value.replace("'", "'\\''") + "'"
+    def test_guard_custodies_parent_and_every_real_bundle_entry(self) -> None:
+        source = GUARD.read_text(encoding="utf-8")
+        self.assertIn('paths: set[Path] = {parent, app}', source)
+        self.assertIn('for current_raw, directory_names, file_names in os.walk(app, topdown=True, followlinks=False):', source)
+        self.assertIn('initial_subject = bundle_subject(app)', source)
+        self.assertIn('armed_subject = bundle_subject(app)', source)
+        self.assertIn('bundle_subject(app) != initial_subject', source)
+        self.assertIn('KQ_NOTE_RENAME', source)
+        self.assertIn('KQ_NOTE_WRITE', source)
+        self.assertIn('pass_fds=inherited', source)
 
 
 if __name__ == "__main__":
