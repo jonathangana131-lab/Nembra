@@ -179,7 +179,7 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
             encoding: .utf8
         )
 
-        #expect(shell.contains("WRITER_SHA256=\"920e4c416fdf71909bdafecf6e69ed8b76986b87462efee979fc1fe01106be34\""))
+        #expect(shell.contains("WRITER_SHA256=\"b74437fc32c59b6b34b8289b0f66327f0d058c1818f632ea394d2b5a004f208e\""))
         #expect(shell.contains("WRITER_CAPTURE=\"$({ /bin/cat -- \"$WRITER\"; builtin printf '\\001'; })\""))
         #expect(shell.contains("/usr/bin/shasum -a 256"))
         #expect(shell.contains("/usr/bin/python3 -I -c \"$WRITER_SOURCE\" \"$ROOT_FD\" \"$ROOT\""))
@@ -197,9 +197,14 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
         #expect(writer.contains("O_NOFOLLOW"))
         #expect(writer.contains("O_DIRECTORY"))
         #expect(writer.contains("O_EXCL"))
-        #expect(writer.contains("dir_fd=parent_fd"))
-        #expect(writer.contains("src_dir_fd=parent_fd"))
-        #expect(writer.contains("dst_dir_fd=parent_fd"))
+        #expect(writer.contains("_require_sealed_staging_name(checkout_fd, source_name, sealed)"))
+        #expect(writer.contains("_secure_replace_beneath(checkout_fd, temporary_name, destination_relative, sealed)"))
+        #expect(writer.contains("renameatx_np"))
+        #expect(writer.contains("_DARWIN_RENAME_NOFOLLOW_ANY | _DARWIN_RENAME_RESOLVE_BENEATH"))
+        #expect(writer.contains("_unlink_owned_inode_if_named(destination_parent_fd, final_name, sealed)"))
+        #expect(writer.contains("hmac.compare_digest(bytes(published), payload)"))
+        #expect(!writer.contains("src_dir_fd=parent_fd"))
+        #expect(!writer.contains("dst_dir_fd=parent_fd"))
     }
 
     private func makeFixture() throws -> (root: URL, script: URL) {

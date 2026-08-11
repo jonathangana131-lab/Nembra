@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import base64
 import ctypes
+import hmac
 import os
 import secrets
 import stat
@@ -350,10 +351,47 @@ def _write_staged(
             or final.st_ino != sealed.st_ino
         ):
             raise ProvisionError("published private identity output is not the sealed staging inode")
+
         os.fchmod(final_fd, 0o600)
         os.fsync(final_fd)
+        before_read = os.fstat(final_fd)
+        os.lseek(final_fd, 0, os.SEEK_SET)
+        published = bytearray()
+        remaining = len(payload) + 1
+        while remaining > 0:
+            chunk = os.read(final_fd, min(65536, remaining))
+            if not chunk:
+                break
+            published.extend(chunk)
+            remaining -= len(chunk)
+        after_read = os.fstat(final_fd)
+        before_identity = (
+            before_read.st_dev,
+            before_read.st_ino,
+            before_read.st_mode,
+            before_read.st_uid,
+            before_read.st_gid,
+            before_read.st_nlink,
+            before_read.st_size,
+            before_read.st_mtime_ns,
+            before_read.st_ctime_ns,
+        )
+        after_identity = (
+            after_read.st_dev,
+            after_read.st_ino,
+            after_read.st_mode,
+            after_read.st_uid,
+            after_read.st_gid,
+            after_read.st_nlink,
+            after_read.st_size,
+            after_read.st_mtime_ns,
+            after_read.st_ctime_ns,
+        )
+        if before_identity != after_identity or not hmac.compare_digest(bytes(published), payload):
+            raise ProvisionError("published private identity payload changed during final custody verification")
         os.fsync(checkout_fd)
     except Exception:
+        _unlink_owned_inode_if_named(destination_parent_fd, final_name, sealed)
         _unlink_owned_inode_if_named(checkout_fd, temporary_name, sealed)
         raise
     finally:
@@ -450,7 +488,7 @@ def _self_test() -> None:
     encoded_key = base64.b64encode(b"dummy-key").decode("ascii")
     encoded_secret = base64.b64encode(b"dummy-secret").decode("ascii")
     with tempfile.TemporaryDirectory(prefix="nembra-tuya-writer-") as temporary:
-        root = Path(temporary)
+        root = Path(os.path.realpath(temporary))
         checkout = root / "repo"
         checkout.mkdir()
         checkout_fd = os.open(checkout, _directory_flags())

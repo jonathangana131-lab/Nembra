@@ -113,6 +113,73 @@ class PrivateIdentityPublicationRaceTests(unittest.TestCase):
     def test_staging_symlink_substitution_cannot_be_published_or_cleaned_as_owned(self) -> None:
         self._assert_staging_substitution_rejected("symlink")
 
+    def test_same_staging_inode_payload_mutation_cannot_be_accepted(self) -> None:
+        writer = load_writer()
+        payload = b"accepted-private-identity-payload"
+        attacker_payload = b"Y" * len(payload)
+
+        with tempfile.TemporaryDirectory(prefix="nembra-private-same-inode-race-") as temporary:
+            checkout = Path(temporary) / "repo"
+            parent = checkout / "private"
+            parent.mkdir(parents=True, mode=0o700)
+            checkout_fd = os.open(checkout, writer._directory_flags())
+            parent_fd = os.open(parent, writer._directory_flags())
+            original_publish = writer._secure_replace_beneath
+            attacked = False
+
+            def adversarial_publish(root_fd: int, src: str, dst: str, sealed) -> None:
+                nonlocal attacked
+                if not attacked:
+                    attacked = True
+                    mutation_fd = os.open(
+                        src,
+                        os.O_WRONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
+                        dir_fd=root_fd,
+                    )
+                    try:
+                        os.lseek(mutation_fd, 0, os.SEEK_SET)
+                        view = memoryview(attacker_payload)
+                        offset = 0
+                        while offset < len(view):
+                            written = os.write(mutation_fd, view[offset:])
+                            self.assertGreater(written, 0)
+                            offset += written
+                        os.fsync(mutation_fd)
+                    finally:
+                        os.close(mutation_fd)
+                original_publish(root_fd, src, dst, sealed)
+
+            writer._secure_replace_beneath = adversarial_publish
+            rejected = False
+            try:
+                try:
+                    writer._write_staged(
+                        checkout_fd,
+                        parent_fd,
+                        "identity.swift",
+                        "private/identity.swift",
+                        payload,
+                    )
+                except (writer.ProvisionError, OSError):
+                    rejected = True
+            finally:
+                writer._secure_replace_beneath = original_publish
+                os.close(parent_fd)
+                os.close(checkout_fd)
+
+            final = parent / "identity.swift"
+            final_bytes = final.read_bytes() if final.is_file() else None
+            self.assertTrue(attacked, "diagnostic never reached the sealed-inode publication boundary")
+            self.assertTrue(
+                rejected or final_bytes == payload,
+                "writer reported success after the sealed staging inode payload changed in place",
+            )
+            self.assertNotEqual(
+                final_bytes,
+                attacker_payload,
+                "same-inode attacker bytes were accepted as the published private identity",
+            )
+
     def test_detached_private_directory_cannot_receive_or_stage_credential_identity(self) -> None:
         writer = load_writer()
         key_b64 = "bmVtYnJhLWR1bW15LWFwcC1rZXk="
