@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "kind": "lane",
+  "laneId": "legacy-github-reconciliation",
+  "epic": "swarm-control-plane",
+  "title": "Reconcile legacy live GitHub work into V15 state",
+  "objective": "Inspect current main, open PRs, branches, CI and stale swarm artifacts; group active work by real objective and exact lineage; import the minimum trustworthy lanes and supersession records without duplicating implementation.",
+  "priority": 0,
+  "state": "READY",
+  "dependencies": ["swarm-control-plane-foundation"],
+  "blockers": [],
+  "mode": "exclusive",
+  "allowedWriteAreas": [
+    ".swarm/runtime/lanes",
+    ".swarm/runtime/events",
+    ".swarm/runtime/handoffs"
+  ],
+  "adjacentWriteAreas": [],
+  "slots": [
+    {"name": "reconcile", "role": "scheduler-reconciler", "exclusive": true, "leaseSeconds": 1800, "resources": []},
+    {"name": "review", "role": "adversarial-review", "exclusive": true, "leaseSeconds": 1800, "resources": []}
+  ],
+  "acceptance": {"independentReview": true},
+  "physical": {"required": false, "state": "SOURCE_READY"},
+  "tags": ["migration", "legacy-import", "scheduler-reconciliation"]
+}
