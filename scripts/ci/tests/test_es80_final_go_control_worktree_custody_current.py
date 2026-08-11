@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Exact-current regression for Final-GO control-plane worktree custody."""
+"""Exact-current regression for Final-GO control-plane worktree custody.
+
+The fixture intentionally uses ``assume-unchanged`` to prove that ordinary clean
+status is not authority for the executable control-plane bytes. Final-GO must
+bind the actual no-filter worktree bytes to the exact accepted ``HEAD:<path>``
+blobs before those modules can participate in physical authorization.
+"""
 from __future__ import annotations
 
 import importlib.util
