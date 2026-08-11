@@ -9,13 +9,13 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:56:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:56:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:58:10Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2991,
   "sourceSHA": "c150a8287463231ee9af174c38564738bab576a3",
-  "currentHeadSHA": "b15524162be97ef303502689bafce11230be273f",
+  "currentHeadSHA": "e6a813c9941da5b70c26bd980dbaa0ce34ae3604",
   "takeoverFromWorkerId": "sol-20260811-a91c7e",
-  "takeoverReason": "Generation-3 visual review blocked c150a828 on AX5 Energy Rail/LIVE POWER intersection. Active Dashboard primary has now stacked dedicated status-truncation + rail-currentness repairs into final PR #2991 exact b155241 and frozen it for acceptance. Independently inspect real retained Simulator evidence if available; verify both prior pixel blockers, stopped-control geometry, hierarchy, and no truth regression. Do not touch primary-owned source paths. Capture P0 remains higher priority but currently saturated. Simulator only; ES80 PHYSICAL NO-GO.",
-  "intent": "Review exact b155241 retained iPhone 12 standard/AX5 riding+stopped pixels and acceptance artifacts; publish precise acceptance or blocker, then release."
+  "checkpoint": "Live GitHub PR #2991 wins over stale primary metadata: actual PR head is e6a813c9941da5b70c26bd980dbaa0ce34ae3604. b155241 is its direct ancestor (compare shows e6 ahead by one); both exact Xcode runs are cancelled/non-evidence. Continue visual review only against live e6; ancestor c200 status pixels may be inspected as ingredient evidence but cannot accept rail fix.",
+  "intent": "Review live exact e6a813c. Inspect any exact retained iPhone 12 standard/AX5 riding+stopped pixels; if none exist, classify source/ingredient evidence separately and release WAITING_EXACT_VISUAL rather than promoting ancestor screenshots."
 }
