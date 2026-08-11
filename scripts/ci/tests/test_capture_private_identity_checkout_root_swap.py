@@ -28,6 +28,7 @@ import unittest
 REPOSITORY = Path(__file__).resolve().parents[3]
 PROVISIONER = REPOSITORY / "Scripts" / "provision_capture_tuya_identity.sh"
 WRITER = REPOSITORY / "Scripts" / "provision_capture_tuya_identity_writer.py"
+AUTHORITY_HELPER = REPOSITORY / "Scripts" / "capture_tuya_private_identity_authority.py"
 
 
 class PrivateIdentityCheckoutRootSwapTests(unittest.TestCase):
@@ -39,8 +40,10 @@ class PrivateIdentityCheckoutRootSwapTests(unittest.TestCase):
         scripts.mkdir(parents=True)
         shutil.copy2(PROVISIONER, scripts / PROVISIONER.name)
         shutil.copy2(WRITER, scripts / WRITER.name)
+        shutil.copy2(AUTHORITY_HELPER, scripts / AUTHORITY_HELPER.name)
         (scripts / PROVISIONER.name).chmod(0o700)
         (scripts / WRITER.name).chmod(0o600)
+        (scripts / AUTHORITY_HELPER.name).chmod(0o600)
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
