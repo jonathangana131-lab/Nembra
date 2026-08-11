@@ -9,15 +9,15 @@
   "generation": 6,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T23:13:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:48:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:51:00Z",
   "leaseSeconds": 1800,
   "branch": "validation/v14-apfs-mmap-ready-diagnostics-r2-sol-1607k9",
   "pr": 3116,
   "sourceSHA": "93feb6160ae053dbc71c9cb0919f78f59494eeba",
   "currentHeadSHA": "2e388a5dc6f7f63aeed893d548be214e64e94674",
-  "relatedValidationPRs": [3129, 3132],
+  "relatedValidationPRs": [3130, 3131, 3132],
   "takeoverFromWorkerId": "gpt56-sol-20260811-1437",
   "takeoverFromLeaseId": "capture-signed-install-tests-gpt56-sol-20260811-2154",
-  "takeoverReason": "Generation-5 tests lease expired at 2026-08-11T22:44:15Z. Recovered signed-install retained-writer validation, consumed exact Mac evidence, and repair stale acceptance contracts only when terminal evidence proves the product bytes are not the failure.",
-  "checkpoint": "Primary retained-writer diagnostic #3116 exact 2e388a5d remains queued on macos-15 run 31546153450/job 93958988498; no mmap pre-READY credential/path evidence yet. Dedicated-build identity validation is now accepted on #3129 exact 2c687bac: Xcode-27 run 31546911246/job 93961279965 and artifact 9122914932 prove real pre-sudo active field groups replayed, xcodebuild=0, no build-GID overlap, field attack=1, normal APFS detach=0, compiler/remount SHA equal, root/former-build readonly attacks=1, physicalAuthorityCreated=false. This is validation only; signed-iOS/keychain/private-input custody remains a production blocker. Fresh #3056 exact 9f813 Field Build Provenance run 31547042279/job 93961664688 failed only at stale test `test_field_build_requires_preaccepted_lock_before_xcodebuild`: expected literal '-- xcodebuild' is absent because current production correctly uses '-- /usr/bin/xcodebuild' behind the Tuya build-window guard. Test-only #3132 exact 9e0471fb changes exactly that one marker; Selective Graft run 31547730960 queued, Xcode Exact-Head run 31547731013 in progress. No product bytes moved. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-5 tests lease expired at 2026-08-11T22:44:15Z. Recovered signed-install retained-writer validation, consume exact Mac evidence, and repair stale acceptance contracts only when terminal evidence proves product bytes are not the failure.",
+  "checkpoint": "Primary mmap diagnostic #3116 exact 2e388a5d remains queued on macos-15 run 31546153450/job 93958988498; no pre-READY child identity/path evidence yet. Directory-FD successor #3130 exact b0b687dd uses structured credentials + exact pre-sudo active groups and remains queued run 31547467533; no dirFD verdict yet. Dedicated-UID identity bind #3131 exact 98fdc404 is terminal accepted validation evidence: run 31547634222/job 93963415338 SUCCESS and artifact 9123103927 seals field UID/GID 501/20, build 53279/53279, exact active groups, no build-GID overlap, xcodebuild=0, field attack=1, normal detach=0, byte-identical read-only remount, root/former-build attacks=1, physicalAuthorityCreated=false; source requires returned field UID/GID equal pre-sudo parent UID/GID. This does not prove signed iOS/private/keychain production custody. Current #3056 exact 9f813 Field Provenance run 31547042279 failed only stale test literal '-- xcodebuild'; #3132 exact 9e0471fb changes one assertion to '-- /usr/bin/xcodebuild'. Its Field run 31547731110 and Selective Graft 31547730960 remain queued; Xcode PR skipped/non-evidence. No production bytes moved by this tests claim. PHYSICAL NO-GO."
 }
