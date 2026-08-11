@@ -76,7 +76,14 @@ jobs:
       - name: Syntax-check field installer
         run: bash -n scripts/field/install_one_time_capture.command
       - name: Compile build guard
-        run: python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py 2>capture-build-guard-compile-error.txt; then
+            cat capture-build-guard-compile-error.txt >&2
+            exit 1
+          fi
+          rm -f capture-build-guard-compile-error.txt
       - name: Compile downstream red-team
         run: python3 -m py_compile scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py
       - name: Compile private-review commitment tests
@@ -101,6 +108,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: capture-authority-materializer-error
-          path: capture-authority-materializer-error.txt
-          if-no-files-found: ignore
+          path: |
+            capture-authority-materializer-error.txt
+            capture-build-guard-compile-error.txt
+            Scripts/capture_tuya_private_input_build_guard.py
+          if-no-files-found: error
           retention-days: 1
