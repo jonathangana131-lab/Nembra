@@ -1,5 +1,9 @@
-#!/bin/bash
+#!/bin/bash -p
 set -euo pipefail
+PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+export PATH
+unset BASH_ENV ENV CDPATH || true
+hash -r
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd -P)"
 cd "$ROOT"
@@ -8,10 +12,9 @@ say() { printf '\n==> %s\n' "$*"; }
 die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 
 [[ "$(uname -s)" == "Darwin" ]] || die "Run this on the Mac with Xcode and the intended iPhone connected."
-command -v xcodebuild >/dev/null || die "Xcode command-line tools are not available."
-command -v xcrun >/dev/null || die "xcrun is not available."
-command -v security >/dev/null || die "macOS security tool is not available."
-command -v pod >/dev/null || die "CocoaPods is required for the official Tuya SDK field build."
+[[ -x /usr/bin/xcodebuild ]] || die "Xcode command-line tools are not available."
+[[ -x /usr/bin/xcrun ]] || die "xcrun is not available."
+[[ -x /usr/bin/security ]] || die "macOS security tool is not available."
 [[ -x /usr/bin/python3 ]] || die "System Python 3 is required for private intended-device admission."
 [[ -x /usr/bin/plutil ]] || die "System plutil is required for exact built-app provenance verification."
 [[ -x /usr/bin/codesign ]] || die "System codesign is required for effective signed-entitlement verification."
@@ -351,7 +354,7 @@ verify_private_tuya_inputs() {
 unset NEMBRA_TUYA_APP_KEY NEMBRA_TUYA_APP_SECRET || true
 
 say "Verifying the intended iPhone 12 / iOS 27 baseline"
-DEVICE_ROWS="$(xcrun xctrace list devices 2>/dev/null | /usr/bin/python3 -I -c '
+DEVICE_ROWS="$(/usr/bin/xcrun xctrace list devices 2>/dev/null | /usr/bin/python3 -I -c '
 import re,sys
 section=False
 for raw in sys.stdin:
@@ -391,7 +394,7 @@ unset INTENDED_NORMALIZED ROW_NORMALIZED ROW_UDID
 # Correlate it to the private UDID through the device hostname, then use only the
 # CoreDevice identifier for install/launch so the private UDID never enters
 # devicectl argv. `--hide-headers` is an Xcode-supported textual-output option.
-COREDEVICE_ROWS="$(xcrun devicectl list devices --hide-headers 2>/dev/null || true)"
+COREDEVICE_ROWS="$(/usr/bin/xcrun devicectl list devices --hide-headers 2>/dev/null || true)"
 [[ -n "$COREDEVICE_ROWS" ]] || die "CoreDevice did not report the intended iPhone. Keep it connected/unlocked and allow Xcode device preparation to finish."
 COREDEVICE_MATCH="$(printf '%s\0%s' "$DEVICE_UDID" "$COREDEVICE_ROWS" | /usr/bin/python3 -I -c '
 import re,sys
@@ -429,7 +432,7 @@ unset COREDEVICE_MATCH COREDEVICE_ROWS DEVICE_ROWS DEVICE_LABEL DEVICE_MODEL
 say "Intended baseline proven: iPhone 12 / iOS $DEVICE_OS_VERSION"
 
 say "Finding Apple Development signing team"
-TEAM_IDS="$(security find-identity -v -p codesigning 2>/dev/null | /usr/bin/python3 -I -c '
+TEAM_IDS="$(/usr/bin/security find-identity -v -p codesigning 2>/dev/null | /usr/bin/python3 -I -c '
 import re,sys
 seen=[]
 for line in sys.stdin:
@@ -474,7 +477,7 @@ run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \
     --security-build "$TUYA_PRIVATE_SDK/Build" \
     --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
     --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
-    -- xcodebuild \
+    -- /usr/bin/xcodebuild \
     -workspace NembraCapture.xcworkspace \
     -scheme "Nembra Capture" \
     -configuration Debug \
