@@ -100,24 +100,21 @@ jobs:
           }
 
           '''
+          # The helper string is raw on purpose: its one trailing shell backslash
+          # and embedded Python escape sequences must arrive byte-for-byte.
+          helper = helper.replace('\\"', '"').replace('\\\\\n', '\\\n')
           if text.count(anchor) != 1:
               raise SystemExit(f'expected one run_accepted_source_bash anchor, found {text.count(anchor)}')
           text = text.replace(anchor, helper + anchor, 1)
 
-          old_bash = '''    if ! run_authority_git show "$SOURCE_SHA:$relative_path" |
-                  /bin/bash --noprofile --norc -p -c 'source /dev/stdin' "$ROOT/$relative_path"; then
-          '''
-          new_bash = '''    if ! run_verified_accepted_git_blob "$relative_path" |
-                  /bin/bash --noprofile --norc -p -c 'source /dev/stdin' "$ROOT/$relative_path"; then
-          '''
+          old_bash = '    if ! run_authority_git show "$SOURCE_SHA:$relative_path" |\n'
+          new_bash = '    if ! run_verified_accepted_git_blob "$relative_path" |\n'
           if text.count(old_bash) != 1:
               raise SystemExit(f'expected one direct accepted Bash stream, found {text.count(old_bash)}')
           text = text.replace(old_bash, new_bash, 1)
 
-          old_runner = '''    run_authority_git show "$SOURCE_SHA:scripts/ci/es80_signed_field_artifact_private_runner.py" |
-          '''
-          new_runner = '''    run_verified_accepted_git_blob "$PRIVATE_DEVICE_RUNNER_RELATIVE" |
-          '''
+          old_runner = '    run_authority_git show "$SOURCE_SHA:scripts/ci/es80_signed_field_artifact_private_runner.py" |\n'
+          new_runner = '    run_verified_accepted_git_blob "$PRIVATE_DEVICE_RUNNER_RELATIVE" |\n'
           if text.count(old_runner) != 1:
               raise SystemExit(f'expected one direct private-runner stream, found {text.count(old_runner)}')
           text = text.replace(old_runner, new_runner, 1)
