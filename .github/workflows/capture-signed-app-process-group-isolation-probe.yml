@@ -1,0 +1,71 @@
+name: Capture Signed App Process-Group Isolation Probe
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_signed_app_process_group_isolation_probe.py
+      - .github/workflows/capture-signed-app-process-group-isolation-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compiler-output-isolation:
+    name: Prove real xcodebuild output can remain same-UID inaccessible until root snapshot
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind validation child to exact signed-install production parent
+        shell: bash
+        env:
+          SIGNED_INSTALL_PARENT: f76e6ae54b4304df5b02db4f46a72f67daa276e2
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            test "$source_sha" = "${{ github.event.pull_request.head.sha }}"
+          fi
+          git cat-file -e "${SIGNED_INSTALL_PARENT}^{commit}"
+          changed_paths="$(git diff --name-only "$SIGNED_INSTALL_PARENT"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' \
+            '.github/workflows/capture-signed-app-process-group-isolation-probe.yml' \
+            'scripts/ci/tests/test_capture_signed_app_process_group_isolation_probe.py')"
+          if [[ "$changed_paths" != "$expected_paths" ]]; then
+            printf 'Signed-origin isolation child must remain exactly two-path validation-only. Changed paths:\n' >&2
+            printf '%s\n' "$changed_paths" | /usr/bin/sed 's/^/  /' >&2
+            exit 20
+          fi
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'NEMBRA_SIGNED_ORIGIN_ISOLATION_SOURCE_SHA=%s\n' "$source_sha" >> "$GITHUB_ENV"
+
+      - name: Compile isolation witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_signed_app_process_group_isolation_probe.py
+          /usr/bin/xcodebuild -version
+
+      - name: Prove real xcodebuild process-group output isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tests/test_capture_signed_app_process_group_isolation_probe.py
+
+      - name: Preserve validation-only truth boundary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'Validation head: %s\n' "${NEMBRA_SIGNED_ORIGIN_ISOLATION_SOURCE_SHA:-unavailable}"
+          printf 'Attacked/repair-target production parent: f76e6ae54b4304df5b02db4f46a72f67daa276e2\n'
+          printf 'This proof creates no signing identity, app install, device operation, Bluetooth action, Tuya action, telemetry, or physical authority.\n'
+          git diff --check f76e6ae54b4304df5b02db4f46a72f67daa276e2 "${NEMBRA_SIGNED_ORIGIN_ISOLATION_SOURCE_SHA:-HEAD}"
