@@ -114,8 +114,16 @@ class CaptureFieldVerifiedGitPayloadCurrentQAR3(unittest.TestCase):
             verifier.index("sys.stdout.buffer.write(source)"),
             "verified payload must not emit any prefix before identity succeeds",
         )
-        self.assertIn("subprocess.Popen(", verifier)
-        self.assertNotIn("subprocess.check_output", verifier)
+        self.assertIn(
+            '["/usr/bin/git", "cat-file", "blob", expected_oid]',
+            verifier,
+        )
+        self.assertIn("process = subprocess.Popen(", verifier)
+        self.assertNotIn(
+            'subprocess.check_output(\n        ["/usr/bin/git", "cat-file", "blob", expected_oid]',
+            verifier,
+            "accepted blob payload capture must not use an unbounded check_output path",
+        )
 
     def test_actual_materialized_verifier_rejects_forged_pack_alias_without_stdout(self) -> None:
         verifier = extract_verifier(INSTALLER.read_text(encoding="utf-8"))
