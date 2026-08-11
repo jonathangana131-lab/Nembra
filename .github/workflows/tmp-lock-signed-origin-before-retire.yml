@@ -1,0 +1,115 @@
+name: Temporary harden signed app origin lock order
+
+on:
+  push:
+    branches:
+      - repair/v14-signed-app-build-origin-custody-sol-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.event.head_commit.message == 'Run signed app origin lock-order hardening'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PYTHONPYCACHEPREFIX: /tmp/nembra-origin-lock-pycache
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact hardening head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Revoke build capability before descendant retirement
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          helper = Path('scripts/ci/capture_signed_app_build_origin_custody.py')
+          source = helper.read_text(encoding='utf-8')
+          old = '''        returncode = process.wait()
+        _terminate_remaining_process_group(process.pid)
+        if returncode != 0:
+            raise BuildOriginCustodyError(
+                f"guarded field build failed with exit status {returncode}"
+            )
+
+        # Revoke the transient filesystem capability before any bundle bytes are hashed or copied.
+        # External same-UID processes never possessed the supplementary gid, and ordinary build
+        # descendants have been retired before root closes traversal of the output root.
+        os.chown(derived_root, 0, 0)
+        os.chmod(derived_root, 0o700)
+'''
+          new = '''        returncode = process.wait()
+
+        # Revoke the transient filesystem capability at the first privileged instruction after the
+        # guarded build returns. The group-owner change alone removes the one-run gid from the root
+        # traversal decision; mode 0700 then makes the closed authority explicit. Only after that
+        # revocation do we retire ordinary descendants, so no leftover process retains a writable
+        # compiler-output window while the supervisor is cleaning up the build process group.
+        os.chown(derived_root, 0, 0)
+        os.chmod(derived_root, 0o700)
+        _terminate_remaining_process_group(process.pid)
+        if returncode != 0:
+            raise BuildOriginCustodyError(
+                f"guarded field build failed with exit status {returncode}"
+            )
+'''
+          if source.count(old) != 1:
+              raise SystemExit('exact helper lock-order precondition changed')
+          helper.write_text(source.replace(old, new, 1), encoding='utf-8')
+
+          test = Path('scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py')
+          source = test.read_text(encoding='utf-8')
+          old = '''            "spawn",
+            "retire",
+            "lock_owner",
+            "lock_mode",
+            "source_hash",
+'''
+          new = '''            "spawn",
+            "lock_owner",
+            "lock_mode",
+            "retire",
+            "source_hash",
+'''
+          if source.count(old) != 1:
+              raise SystemExit('exact regression lock-order precondition changed')
+          test.write_text(source.replace(old, new, 1), encoding='utf-8')
+          PY
+
+      - name: Validate hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+          bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+
+      - name: Publish non-workflow hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+          git diff --cached --check
+          git config user.name 'nembra-sol-swarm'
+          git config user.email 'nembra-sol-swarm@users.noreply.github.com'
+          git commit -m 'Revoke build output authority before cleanup'
+          git push origin HEAD:repair/v14-signed-app-build-origin-custody-sol-20260811
