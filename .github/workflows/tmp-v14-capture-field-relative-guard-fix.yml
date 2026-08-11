@@ -1,0 +1,112 @@
+name: TEMP Capture Field Relative Guard Fix
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-authority-composed-successor-sol-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-authority-composed-successor-sol-20260811
+          fetch-depth: 0
+      - name: Bind repair input head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Repair stale field guard path and add regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          installer = Path('scripts/field/install_one_time_capture.command')
+          text = installer.read_text()
+          stale = '[[ -f "$TUYA_BUILD_WINDOW_GUARD" ]] || die "Private Tuya build-window custody guard is missing from the accepted source."'
+          fixed = '[[ -f "$ROOT/$TUYA_BUILD_WINDOW_GUARD_RELATIVE" ]] || die "Private Tuya build-window custody guard is missing from the accepted source."'
+          if text.count(stale) != 1:
+              raise SystemExit(f'expected exactly one stale field guard path, found {text.count(stale)}')
+          text = text.replace(stale, fixed, 1)
+          installer.write_text(text)
+
+          regression = Path('scripts/ci/tests/test_capture_field_accepted_source_path_contract.py')
+          regression.write_text('''#!/usr/bin/env python3
+          from pathlib import Path
+          import unittest
+
+          REPOSITORY = Path(__file__).resolve().parents[3]
+          INSTALLER = REPOSITORY / "scripts/field/install_one_time_capture.command"
+
+
+          class CaptureFieldAcceptedSourcePathContractTests(unittest.TestCase):
+              def test_field_guard_uses_declared_relative_exact_source_path(self) -> None:
+                  source = INSTALLER.read_text(encoding="utf-8")
+                  self.assertIn(
+                      'TUYA_BUILD_WINDOW_GUARD_RELATIVE="Scripts/capture_tuya_private_input_build_guard.py"',
+                      source,
+                  )
+                  self.assertIn(
+                      '[[ -f "$ROOT/$TUYA_BUILD_WINDOW_GUARD_RELATIVE" ]]',
+                      source,
+                  )
+                  self.assertNotIn(
+                      '[[ -f "$TUYA_BUILD_WINDOW_GUARD" ]]',
+                      source,
+                      "field installer must not dereference the removed pre-relative-path variable under set -u",
+                  )
+                  self.assertIn(
+                      'run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE"',
+                      source,
+                      "build-window guard must execute from the exact accepted Git source subject",
+                  )
+
+              def test_private_provenance_uses_declared_relative_exact_source_path(self) -> None:
+                  source = INSTALLER.read_text(encoding="utf-8")
+                  self.assertIn(
+                      'TUYA_PROVENANCE_HELPER_RELATIVE="Scripts/capture_tuya_private_input_provenance.py"',
+                      source,
+                  )
+                  self.assertIn(
+                      'run_accepted_source_python "$TUYA_PROVENANCE_HELPER_RELATIVE" verify',
+                      source,
+                  )
+
+
+          if __name__ == "__main__":
+              unittest.main(verbosity=2)
+          '''.replace('          ', ''))
+          PY
+      - name: Validate repaired field path
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/field/install_one_time_capture.command
+          python3 -m py_compile scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
+          python3 -m unittest -v scripts.ci.tests.test_capture_field_accepted_source_path_contract
+          python3 -m unittest -v scripts.ci.tests.test_capture_field_accepted_source_git_replace_custody
+          git diff --check
+      - name: Publish clean exact-head repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/tmp-v14-capture-field-relative-guard-fix.yml
+          find scripts -type d -name __pycache__ -prune -exec rm -rf {} +
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --quiet && { echo 'ERROR: field guard repair produced no candidate diff' >&2; exit 1; }
+          git commit -m 'Capture: fix accepted field guard relative path'
+          git push origin HEAD:repair/v14-capture-authority-composed-successor-sol-20260811
