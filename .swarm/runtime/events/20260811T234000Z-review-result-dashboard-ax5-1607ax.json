@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "234000-review-result-dashboard-ax5-1607ax",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-1607ax",
+  "laneId": "dashboard-live-cockpit",
+  "message": "Capture P0 was saturated, so spare capacity reviewed P1 Dashboard #3117 exact e9c0dab725d96f735c6fdd14cf0a76d9e811b2c1 without touching primary-owned paths. One-file/+4 source patch is acceptable: .labelStyle(.titleOnly) exists only in accessibilityStatusSummary/accessibilityCockpit, preserves full Dynamic Type connection state as non-color cue, removes only decorative symbol width, and leaves standard cockpit/truth/control/Energy Rail semantics untouched. Review 4911631877 posted. Command run 31546215731 trusted PR-head resolver job 93959175162 SUCCESS; exact xcode-27 Build/test/capture job 93959225474 remains QUEUED. Earlier PR-triggered run 31546199706 is CANCELLED/not evidence. Exact AX5 stopped+riding pixels remain required before visual acceptance. Simulator-only; ES80 PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T23:40:00Z"
+}
