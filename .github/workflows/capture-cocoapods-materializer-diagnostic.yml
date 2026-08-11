@@ -1,0 +1,37 @@
+name: Capture CocoaPods Materializer Diagnostic
+
+on:
+  push:
+    branches:
+      - redteam/v14-capture-cocoapods-symlink-target-custody-sol
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Materializer transform
+        id: transform
+        continue-on-error: true
+        run: python3 scripts/ci/_materialize_cocoapods_build_subject.py
+      - name: Bootstrap syntax
+        continue-on-error: true
+        run: bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+      - name: Helper compile and self-test
+        continue-on-error: true
+        run: |
+          python3 -m py_compile Scripts/capture_cocoapods_build_subject.py scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+          python3 -I Scripts/capture_cocoapods_build_subject.py --self-test
+      - name: Generated-subject regression
+        continue-on-error: true
+        run: python3 scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+      - name: Diff hygiene
+        continue-on-error: true
+        run: git diff --check
