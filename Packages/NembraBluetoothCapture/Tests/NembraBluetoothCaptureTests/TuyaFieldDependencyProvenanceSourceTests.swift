@@ -43,6 +43,23 @@ struct TuyaFieldDependencyProvenanceSourceTests {
         #expect(!identity.contains("appKeySHA"))
     }
 
+    @Test("provenance workflow reruns for every compiled field-build input family")
+    func provenanceWorkflowTracksCompleteFieldInputs() throws {
+        let workflow = try readRepositoryFile(".github/workflows/capture-field-build-provenance.yml")
+        #expect(workflow.contains("      - Podfile\n"))
+        #expect(workflow.contains("      - Podfile.lock\n"))
+        #expect(workflow.contains("      - NembraCapture-Info.plist\n"))
+        #expect(workflow.contains("      - NembraCapture.xcodeproj/**\n"))
+        #expect(workflow.contains("      - NembraCapture.xcworkspace/**\n"))
+        #expect(workflow.contains("      - NembraCapture.entitlements\n"))
+        #expect(workflow.contains("      - NembraApp/App/NembraCaptureBuildIdentity.swift\n"))
+        #expect(workflow.contains("      - NembraApp/App/NembraCaptureEntrypoint.swift\n"))
+        #expect(workflow.contains("      - NembraApp/Features/Research/TuyaAccountBridge.swift\n"))
+        #expect(workflow.contains("      - NembraApp/Features/Research/ES80CaptureShellView.swift\n"))
+        #expect(workflow.contains("      - Packages/NembraBluetoothCapture/**\n"))
+        #expect(workflow.contains("      - Packages/NembraCore/**\n"))
+    }
+
     private func readRepositoryFile(_ relativePath: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

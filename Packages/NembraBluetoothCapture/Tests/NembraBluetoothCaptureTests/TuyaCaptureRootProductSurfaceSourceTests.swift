@@ -88,6 +88,20 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         #expect(action.lowerBound < accessibilitySupport.lowerBound)
     }
 
+    @Test("status endpoint evidence keeps its real shape and never becomes local strategy")
+    func statusEndpointEvidenceIsTruthfullyLabeled() throws {
+        let bridge = try readRepositoryFile("NembraApp/Features/Research/TuyaAccountBridge.swift")
+
+        #expect(bridge.contains("@Published private(set) var selectedDeviceStatusEndpointResult: Any?"))
+        #expect(bridge.contains("async let statusEndpointResponse = signedGET(path: \"/v1.0/m/life/devices/\\\(device.id)/status\")"))
+        #expect(bridge.contains("Self.redactSecrets(statusEndpoint[\"result\"] ?? NSNull())"))
+        #expect(bridge.contains("\"statusEndpointResult\": Self.redactSecrets(selectedDeviceStatusEndpointResult ?? NSNull())"))
+        #expect(!bridge.contains("selectedDeviceLocalStrategy"))
+        #expect(!bridge.contains("\"localStrategy\""))
+        #expect(!bridge.contains("strategyResponse"))
+        #expect(!bridge.contains("statusEndpoint[\"result\"] as? [String: Any]"))
+    }
+
     @Test("metadata preparation bridge remains cloud-only and command-free")
     func metadataBridgeCannotAcquireBluetoothOrScooterCommandAuthority() throws {
         let bridge = try readRepositoryFile("NembraApp/Features/Research/TuyaAccountBridge.swift")
