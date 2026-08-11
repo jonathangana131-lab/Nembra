@@ -26,6 +26,7 @@ AUTH_WORKFLOW_NAME="Capture Authenticated Stationary Final GO"
 AUTH_WORKFLOW_PATH=".github/workflows/capture-authenticated-stationary-final-go.yml"
 STATES={"unprovisioned-dark-standard","unprovisioned-dark-accessibility-xxxl"}
 INSTALLER="scripts/field/install_one_time_capture.command"; RUNBOOK="docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md"; IDENTITY="NembraApp/App/NembraCaptureBuildIdentity.swift"
+SIGNED_ARTIFACT_MODULE="scripts/ci/es80_authenticated_stationary_signed_artifact.py"
 HEX40=re.compile(r"^[0-9a-f]{40}$"); HEX64=re.compile(r"^[0-9a-f]{64}$"); DIGEST=re.compile(r"^sha256:([0-9a-f]{64})$")
 
 class GoError(RuntimeError): pass
@@ -263,6 +264,19 @@ def _accepted_installer_bytes(root:Path,source:str)->tuple[bytes,str]:
     if actual_blob!=accepted_blob: raise GoError("candidate installer execution bytes differ from accepted Git blob")
     return raw,accepted_blob
 
+def _git_blob_oid(raw:bytes,accepted_blob:str)->str:
+    if not isinstance(accepted_blob,str) or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",accepted_blob.lower()): raise GoError("accepted control-module Git blob invalid")
+    normalized=accepted_blob.lower(); digest=hashlib.sha1() if len(normalized)==40 else hashlib.sha256()
+    digest.update(f"blob {len(raw)}\0".encode("ascii")); digest.update(raw)
+    return digest.hexdigest()
+
+def _accepted_control_source(repo:Path,relative:str,accepted_blob:str)->bytes:
+    root=repo.expanduser().resolve(strict=True); rel=Path(relative)
+    if rel.is_absolute() or ".." in rel.parts: raise GoError("accepted control-module path invalid")
+    raw=regular(root/rel,f"accepted control module {relative}")
+    if _git_blob_oid(raw,accepted_blob)!=accepted_blob.lower(): raise GoError("control-module execution bytes differ from accepted Git blob")
+    return raw
+
 def installer(repo:Path,source:str,device:Path,device_digest:str,accepted_lock_sha256:str):
     root=repo.expanduser().resolve(strict=True); env=installer_environment(device,device_digest,accepted_lock_sha256)
     raw,accepted_blob=_accepted_installer_bytes(root,source)
@@ -287,29 +301,42 @@ def installer(repo:Path,source:str,device:Path,device_digest:str,accepted_lock_s
     if p.returncode or "SDK-INTEGRATED CAPTURE LAUNCHED" not in p.stdout or canon(git(root,"rev-parse","HEAD"),"post-install HEAD")!=source or git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("private installer did not preserve exact accepted field subject")
     return {"authority":"accepted-candidate-private-installer-execution-v2","result":"success","sourceCommitSHA":source,"installerGitBlob":accepted_blob,"buildIdentifier":f"capture-v14-{source[:12]}","bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27"}
 
-def retained_signed_artifact(repo:Path,source:str,device:Path,install:dict[str,Any],output:Path)->dict[str,Any]:
+def _signed_artifact_namespace(module_source:bytes)->dict[str,Any]:
+    if not isinstance(module_source,bytes) or not module_source: raise GoError("pinned retained signed-artifact module bytes are required")
     module_path=Path(__file__).with_name("es80_authenticated_stationary_signed_artifact.py")
-    spec=importlib.util.spec_from_file_location("nembra_authenticated_signed_artifact",module_path)
-    if not spec or not spec.loader: raise GoError("retained signed-artifact module unavailable")
-    module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
-    try: return module.retain_and_reinspect(repo,source,device,install,output)
+    namespace={"__name__":"nembra_authenticated_signed_artifact","__file__":str(module_path),"__package__":None,"__builtins__":__builtins__}
+    try: exec(compile(module_source,str(module_path),"exec"),namespace)
+    except Exception as error: raise GoError(f"pinned retained signed-artifact module could not execute: {error}") from error
+    return namespace
+
+def retained_signed_artifact(repo:Path,source:str,device:Path,install:dict[str,Any],output:Path,module_source:bytes|None=None)->dict[str,Any]:
+    if module_source is None: raise GoError("retained signed-artifact execution requires pinned accepted module bytes")
+    module=_signed_artifact_namespace(module_source); operation=module.get("retain_and_reinspect")
+    if not callable(operation): raise GoError("pinned retained signed-artifact module is missing retain_and_reinspect")
+    try: return operation(repo,source,device,install,output)
     except Exception as error: raise GoError(f"retained signed-artifact production failed: {error}") from error
 
-def retained_signed_artifact_reinspect(repo:Path,source:str,device:Path,install:dict[str,Any],output:Path)->dict[str,Any]:
-    module_path=Path(__file__).with_name("es80_authenticated_stationary_signed_artifact.py")
-    spec=importlib.util.spec_from_file_location("nembra_authenticated_signed_artifact",module_path)
-    if not spec or not spec.loader: raise GoError("retained signed-artifact module unavailable")
-    module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
-    try: return module.reinspect_retained(output,repo,source,device,install)
+def retained_signed_artifact_reinspect(repo:Path,source:str,device:Path,install:dict[str,Any],output:Path,module_source:bytes|None=None)->dict[str,Any]:
+    if module_source is None: raise GoError("retained signed-artifact reinspection requires pinned accepted module bytes")
+    module=_signed_artifact_namespace(module_source); operation=module.get("reinspect_retained")
+    if not callable(operation): raise GoError("pinned retained signed-artifact module is missing reinspect_retained")
+    try: return operation(output,repo,source,device,install)
     except Exception as error: raise GoError(f"retained signed-artifact reinspection failed: {error}") from error
-
 def build(*,authority_repo:Path,authority_pr:int,authority_run:int,candidate_repo:Path,source:str,pr:int,runs:dict[str,int],artifact_id:int,review_id:int,archive:Path,device_file:Path,retained_ipa:Path,get=api,control_authority=control_plane,run_installer=installer,inspect_signed_artifact=retained_signed_artifact,reinspect_signed_artifact=retained_signed_artifact_reinspect,now=None):
     control=control_authority(authority_repo,authority_pr,authority_run,get)
+    signed_module_source=None
+    if inspect_signed_artifact is retained_signed_artifact or reinspect_signed_artifact is retained_signed_artifact_reinspect:
+        blobs=control.get("gitBlobs")
+        if not isinstance(blobs,dict): raise GoError("GO control plane did not retain accepted control-module Git blobs")
+        signed_module_source=_accepted_control_source(authority_repo,SIGNED_ARTIFACT_MODULE,blobs.get(SIGNED_ARTIFACT_MODULE))
     source=canon(source,"source"); pr=pos(pr,"PR")
     ps,ws=public(source,pr,runs,get); vs=visual(source,runs[VISUAL],pos(artifact_id,"artifact"),archive,get); rv=review(pr,review_id,source,vs,get); cs=candidate(candidate_repo,source); dh=device_hash(device_file)
     got=run_installer(candidate_repo,source,device_file,dh,rv["tuyaDependencyLockSHA256"]); expected={"authority":"accepted-candidate-private-installer-execution-v2","result":"success","sourceCommitSHA":source,"installerGitBlob":cs["installerGitBlob"],"buildIdentifier":f"capture-v14-{source[:12]}","bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27"}
     if got!=expected: raise GoError("private installer result drifted")
-    signed=inspect_signed_artifact(candidate_repo,source,device_file,got,retained_ipa)
+    if inspect_signed_artifact is retained_signed_artifact:
+        signed=inspect_signed_artifact(candidate_repo,source,device_file,got,retained_ipa,module_source=signed_module_source)
+    else:
+        signed=inspect_signed_artifact(candidate_repo,source,device_file,got,retained_ipa)
     required_signed={"authority":"nembra-authenticated-stationary-retained-signed-artifact-v1","sourceCommitSHA":source,"buildIdentifier":expected["buildIdentifier"],"bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"codesignVerified":True,"intendedDeviceIncluded":True,"physicalAuthorityCreated":False}
     if not isinstance(signed,dict) or any(signed.get(k)!=v for k,v in required_signed.items()): raise GoError("retained signed artifact authority mismatch")
     for key in ("tuyaDependencyLockSHA256","retainedIPASHA256","retainedAppTreeSHA256","embeddedProvisioningProfileSHA256","signingTeamIdentifier","applicationIdentifier"):
@@ -318,7 +345,7 @@ def build(*,authority_repo:Path,authority_pr:int,authority_run:int,candidate_rep
     if not HEX64.fullmatch(signed["tuyaDependencyLockSHA256"]) or not HEX64.fullmatch(signed["retainedIPASHA256"]) or not HEX64.fullmatch(signed["retainedAppTreeSHA256"]) or not HEX64.fullmatch(signed["embeddedProvisioningProfileSHA256"]): raise GoError("retained signed artifact digest invalid")
     if signed["tuyaDependencyLockSHA256"]!=rv["tuyaDependencyLockSHA256"]: raise GoError("retained signed artifact Tuya dependency lock does not match prebuild GitHub review")
 
-    post_control=control_authority(authority_repo,authority_pr,authority_run,get); post_ps,post_ws=public(source,pr,runs,get); post_vs=visual(source,runs[VISUAL],artifact_id,archive,get); post_rv=review(pr,review_id,source,post_vs,get); post_cs=candidate(candidate_repo,source); post_dh=device_hash(device_file); post_signed=reinspect_signed_artifact(candidate_repo,source,device_file,got,retained_ipa)
+    post_control=control_authority(authority_repo,authority_pr,authority_run,get); post_ps,post_ws=public(source,pr,runs,get); post_vs=visual(source,runs[VISUAL],artifact_id,archive,get); post_rv=review(pr,review_id,source,post_vs,get); post_cs=candidate(candidate_repo,source); post_dh=device_hash(device_file); post_signed=(reinspect_signed_artifact(candidate_repo,source,device_file,got,retained_ipa,module_source=signed_module_source) if reinspect_signed_artifact is retained_signed_artifact_reinspect else reinspect_signed_artifact(candidate_repo,source,device_file,got,retained_ipa))
     stable_pr=("number","headSHA","headBranch","base","mainSHA","state","merged","draft")
     if post_control!=control or any(post_ps[k]!=ps[k] for k in stable_pr) or post_ws!=ws or post_vs!=vs or post_rv!=rv or post_cs!=cs or post_dh!=dh or post_signed!=signed:
         raise GoError("GO authority changed during private install; re-run from fresh exact evidence")
