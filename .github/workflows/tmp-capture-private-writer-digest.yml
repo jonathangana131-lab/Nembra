@@ -1,0 +1,37 @@
+name: Temporary Capture Private Writer Digest
+
+on:
+  push:
+    branches:
+      - qa/v14-capture-private-writer-digest-sol
+    paths:
+      - .github/workflows/tmp-capture-private-writer-digest.yml
+
+permissions:
+  contents: write
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: qa/v14-capture-private-writer-digest-sol
+          fetch-depth: 0
+      - name: Publish exact writer digest as ordinary QA file
+        shell: bash
+        env:
+          PRODUCT_HEAD: fc0e5a297d25630368dec8dc669b6beebe19e1f7
+          BRANCH: qa/v14-capture-private-writer-digest-sol
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_HEAD"
+          test "$(git diff --name-only "$PRODUCT_HEAD" HEAD)" = '.github/workflows/tmp-capture-private-writer-digest.yml'
+          sha256sum Scripts/provision_capture_tuya_identity_writer.py | awk '{print $1}' > scripts/ci/tmp_private_writer_sha256.txt
+          test "$(wc -c < scripts/ci/tmp_private_writer_sha256.txt | tr -d ' ')" = 65
+          git config user.name 'nembra-v14-sol'
+          git config user.email 'actions@users.noreply.github.com'
+          git add scripts/ci/tmp_private_writer_sha256.txt
+          git commit -m 'ci(capture): publish private writer digest probe'
+          git push origin "HEAD:$BRANCH"
