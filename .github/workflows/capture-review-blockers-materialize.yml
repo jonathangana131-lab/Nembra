@@ -26,32 +26,26 @@ jobs:
           git merge-base --is-ancestor 89843dcaf63a0c3c48a0dc605878df2e4362f0fd HEAD
           unexpected="$(git diff --name-only 89843dcaf63a0c3c48a0dc605878df2e4362f0fd HEAD | grep -Ev '^(\.github/scripts/capture_review_blockers_materialize\.py|\.github/workflows/capture-review-blockers-materialize\.yml)$' || true)"
           test -z "$unexpected"
-          test "$(git hash-object .github/workflows/capture-field-build-provenance.yml)" = "1b123f45f55bd31abbd41e7b347b3334b42c8b34"
           test "$(git hash-object NembraApp/Features/Research/TuyaAccountBridge.swift)" = "d2055e9e5d19e2b86b7a9145451f1ba9fb2077d8"
 
-      - name: Materialize provenance and metadata truth repairs
+      - name: Materialize metadata truth repair
         shell: bash
         run: |
           set -euo pipefail
           python3 .github/scripts/capture_review_blockers_materialize.py
           git diff --check
-          grep -Fq -- '- NembraCapture-Info.plist' .github/workflows/capture-field-build-provenance.yml
-          grep -Fq -- '- NembraApp/Features/Research/TuyaAccountBridge.swift' .github/workflows/capture-field-build-provenance.yml
-          grep -Fq -- '- Packages/NembraBluetoothCapture/**' .github/workflows/capture-field-build-provenance.yml
           grep -Fq 'selectedDeviceCloudStatus' NembraApp/Features/Research/TuyaAccountBridge.swift
           grep -Fq '"cloudStatusResponse"' NembraApp/Features/Research/TuyaAccountBridge.swift
           ! grep -Fq 'selectedDeviceLocalStrategy' NembraApp/Features/Research/TuyaAccountBridge.swift
           ! grep -Fq '"localStrategy"' NembraApp/Features/Research/TuyaAccountBridge.swift
 
-      - name: Commit product and contracts only
+      - name: Commit product and contract only
         shell: bash
         run: |
           set -euo pipefail
-          git rm .github/scripts/capture_review_blockers_materialize.py
-          git rm .github/workflows/capture-review-blockers-materialize.yml
           git diff --check
           git config user.name 'Nembra Capture Closure'
           git config user.email 'actions@users.noreply.github.com'
-          git add .github/workflows/capture-field-build-provenance.yml NembraApp/Features/Research/TuyaAccountBridge.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureReviewBlockerSourceTests.swift
-          git commit -m 'fix(capture): close provenance and metadata truth review blockers'
+          git add NembraApp/Features/Research/TuyaAccountBridge.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureReviewBlockerSourceTests.swift
+          git commit -m 'fix(capture): preserve Tuya status evidence truthfully'
           git push origin HEAD:agent/v14-capture-review-blockers-sol-20260810
