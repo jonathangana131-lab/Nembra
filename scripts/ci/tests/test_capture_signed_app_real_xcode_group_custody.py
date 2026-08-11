@@ -51,15 +51,15 @@ def choose_capability_gid(normal_groups: list[int]) -> int:
     raise RuntimeError("could not allocate isolated numeric capability gid")
 
 
-def drop(uid: int, gid: int, groups: list[int]):
-    normalized = sorted(set(groups))
+def structured_credentials(uid: int, gid: int, extra_groups: list[int]) -> dict[str, object]:
+    """Use the same minimum-authority POSIX launch shape as the production supervisor."""
 
-    def apply() -> None:
-        os.setgroups(normalized)
-        os.setgid(gid)
-        os.setuid(uid)
-
-    return apply
+    if uid <= 0 or gid < 0:
+        raise RuntimeError("structured child credentials require a non-root invoking identity")
+    normalized = sorted({group for group in extra_groups if group != gid})
+    if any(group <= 0 for group in normalized):
+        raise RuntimeError("structured child supplementary groups contain invalid authority")
+    return {"user": uid, "group": gid, "extra_groups": normalized}
 
 
 def emit_error(kind: str, message: str, *, build_output: str = "") -> None:
@@ -156,7 +156,8 @@ def root_probe(package_root: Path, normal_groups: list[int], caller_environment:
             "COMPILER_INDEX_STORE_ENABLE=NO",
             "build",
         ]
-        build_groups = sorted(set(normal_groups) | {capability_gid})
+        # The primary gid is supplied separately. The capability is deliberately the only
+        # supplementary group admitted into the authority-bearing Xcode process.
         build = subprocess.run(
             command,
             cwd=package_root,
@@ -165,8 +166,8 @@ def root_probe(package_root: Path, normal_groups: list[int], caller_environment:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            preexec_fn=drop(uid, gid, build_groups),
             check=False,
+            **structured_credentials(uid, gid, [capability_gid]),
         )
         if build.returncode != 0:
             emit_error(
@@ -193,8 +194,8 @@ def root_probe(package_root: Path, normal_groups: list[int], caller_environment:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            preexec_fn=drop(uid, gid, normal_groups),
             check=False,
+            **structured_credentials(uid, gid, []),
         )
         after = sha256_file(product)
         if attack.returncode == 0 or after != before:
@@ -224,6 +225,8 @@ def root_probe(package_root: Path, normal_groups: list[int], caller_environment:
             "fieldPrimaryGID": gid,
             "capabilityGID": capability_gid,
             "normalGroupsContainCapability": capability_gid in normal_groups,
+            "buildSupplementaryGroups": [capability_gid],
+            "attackSupplementaryGroups": [],
             "buildRootOwnerUIDAfterRevocation": build_root.stat().st_uid,
             "buildRootGroupAfterRevocation": build_root.stat().st_gid,
             "buildRootModeAfterRevocation": oct(stat.S_IMODE(build_root.stat().st_mode)),
@@ -303,6 +306,8 @@ def parent_probe() -> int:
             evidence.get("xcodebuildReturnCode") == 0
             and evidence.get("sameUIDAttackReturnCode") != 0
             and evidence.get("normalGroupsContainCapability") is False
+            and evidence.get("buildSupplementaryGroups") == [evidence.get("capabilityGID")]
+            and evidence.get("attackSupplementaryGroups") == []
             and evidence.get("buildRootOwnerUIDAfterRevocation") == 0
             and evidence.get("buildRootGroupAfterRevocation") == 0
             and evidence.get("buildRootModeAfterRevocation") == "0o700"
