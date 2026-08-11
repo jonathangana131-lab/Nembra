@@ -1,4 +1,5 @@
 name: Capture Signed App Install Custody
+# This source gate proves software custody only; it does not authorize a physical experiment.
 
 on:
   push:
