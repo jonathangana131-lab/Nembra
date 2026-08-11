@@ -1,0 +1,43 @@
+name: Capture Private Review HMAC Authority
+
+on:
+  pull_request:
+    paths:
+      - 'Scripts/provision_capture_tuya_identity.sh'
+      - 'Scripts/bootstrap_capture_tuya_sdk.sh'
+      - 'Scripts/capture_tuya_private_review_commitment.py'
+      - 'Scripts/capture_tuya_private_input_build_guard.py'
+      - 'scripts/ci/tests/test_capture_private_input_review_witness.py'
+      - 'scripts/ci/tests/test_capture_private_review_hmac_authority.py'
+      - 'scripts/ci/tests/test_capture_private_review_hmac_build_guard.py'
+      - '.github/workflows/capture-private-review-hmac-authority.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  private-review-authority:
+    name: Secret-safe external private authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bind checks to exact head
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - name: Static syntax
+        run: |
+          bash -n Scripts/provision_capture_tuya_identity.sh
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          python3 -m py_compile \
+            Scripts/capture_tuya_private_review_commitment.py \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            scripts/ci/tests/test_capture_private_input_review_witness.py \
+            scripts/ci/tests/test_capture_private_review_hmac_authority.py \
+            scripts/ci/tests/test_capture_private_review_hmac_build_guard.py
+      - name: Preserve inherited private-witness rejection
+        run: python3 scripts/ci/tests/test_capture_private_input_review_witness.py
+      - name: Reject coherent private plus witness replacement
+        run: python3 scripts/ci/tests/test_capture_private_review_hmac_authority.py
+      - name: Reprove external private authority at compiler admission
+        run: python3 scripts/ci/tests/test_capture_private_review_hmac_build_guard.py
