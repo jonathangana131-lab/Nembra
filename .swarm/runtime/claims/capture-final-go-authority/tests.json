@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-finalgo-r4",
   "leaseId": "capture-final-go-tests-solr4-20260811-1013",
   "generation": 2,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T10:13:00Z",
-  "lastHeartbeatAt": "2026-08-11T10:18:00Z",
+  "lastHeartbeatAt": "2026-08-11T10:20:00Z",
+  "releasedAt": "2026-08-11T10:20:00Z",
   "leaseSeconds": 1800,
   "branch": "redteam/v14-final-go-raw-candidate-tree-solr4-20260811",
   "pr": 2903,
@@ -18,5 +19,5 @@
   "parentPR": 2890,
   "outcome": "EXPECTED_RED_CONFIRMED",
   "workflowRunID": 31481047426,
-  "checkpoint": "Exact #2903 bind and compile pass; raw candidate-authority regression step is terminal red on exact #2890 parent. Final-GO still accepts/delegates candidate truth through repository-local status metadata instead of raw accepted-tree vs physical-filesystem authority. Keep witness unchanged and replay green on production successor. PHYSICAL NO-GO."
+  "checkpoint": "Exact #2903 bind/compile pass and raw candidate-authority regression is terminal expected-red on #2890. Durable witness is ready for any recovery worker to re-anchor unchanged against the production successor. Production #2890 remains independently owned. PHYSICAL NO-GO."
 }
