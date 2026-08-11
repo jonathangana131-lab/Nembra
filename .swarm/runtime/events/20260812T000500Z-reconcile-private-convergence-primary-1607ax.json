@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "000500-reconcile-private-convergence-primary-1607ax",
+  "type": "BLOCKED",
+  "workerId": "sol-20260811-1607ax",
+  "laneId": "capture-private-identity-convergence",
+  "message": "Recovered generation-2 stale private-convergence ownership after its 21:26:30Z heartbeat. The claim/PR #2993 exact 34091153 is an old divergent parent-convergence carrier whose own acceptance text says final work must be selectively transplanted onto the newest lineage, while live selected private convergence is now #3086 exact e454b1e9c32b3ff35a5b277a55fdb52736bd3cdb from #3026. Current #3086 has exact Current Convergence, Publication Races, Dependency Helper Execution, and Main Selective Graft greens; Field and Xcode remain queued, and its NEMBRA_ACCEPTED_SOURCE_ROOT interface still needs a later selected-build consumer. Therefore no safe mutation of #2993 is justified and stale implementation ownership should be released rather than treated as an active lock. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-12T00:05:00Z"
+}
