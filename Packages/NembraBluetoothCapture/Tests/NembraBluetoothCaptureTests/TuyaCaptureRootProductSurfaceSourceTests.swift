@@ -88,6 +88,15 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         )
         #expect(field.lowerBound < action.lowerBound)
         #expect(action.lowerBound < accessibilitySupport.lowerBound)
+
+        let secureLink = String(try section(
+            in: app,
+            from: "private struct SecureLinkView: View",
+            to: "private struct SecureTransfer: Transferable"
+        ))
+        #expect(secureLink.contains("if !dynamicTypeSize.isAccessibilitySize {\n                    ZStack {"))
+        #expect(secureLink.contains(".font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .system(.largeTitle, design: .rounded, weight: .bold))"))
+        #expect(secureLink.contains(".accessibilityElement(children: .combine)\n        .accessibilityAddTraits(.isHeader)"))
     }
 
     @Test("metadata preparation bridge remains cloud-only and command-free")
