@@ -1,0 +1,51 @@
+name: Capture Final GO Candidate Raw Tree Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+      - scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py
+      - scripts/ci/es80_authenticated_stationary_final_go.py
+      - scripts/ci/tests/test_es80_final_go_candidate_raw_tree_red_team.py
+      - .github/workflows/capture-final-go-candidate-raw-tree-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  candidate-raw-tree-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Bind diagnostic checkout to exact head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile raw candidate authority regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/tests/test_es80_final_go_candidate_raw_tree_red_team.py
+
+      - name: Require exact accepted tree versus physical candidate authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_candidate_raw_tree_red_team.py
+
+      - name: Diff hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha || github.sha }}"
