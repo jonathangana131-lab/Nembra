@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "claim",
+  "laneId": "go-worker-persistence-hardening",
+  "slot": "integration",
+  "role": "integration",
+  "workerId": "sol-20260811-goint1",
+  "leaseId": "goint1-20260811-0725",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T07:25:00Z",
+  "lastHeartbeatAt": "2026-08-11T07:25:00Z",
+  "leaseSeconds": 1800,
+  "branch": "",
+  "pr": 2806,
+  "sourceSHA": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc"
+}
