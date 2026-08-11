@@ -63,3 +63,5 @@ jobs:
           test "$(git diff --name-only "$base"..HEAD | sort)" = "$expected"
           git diff --check "$base"..HEAD
           git push origin HEAD:repair/v14-final-go-signed-device-binding-sol
+
+# Workflow already exists on this branch; this follow-up push triggers it.
