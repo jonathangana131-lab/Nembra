@@ -1,0 +1,131 @@
+name: Temporary Final GO Candidate Byte Custody
+
+on:
+  push:
+    branches:
+      - repair/v14-final-go-candidate-byte-custody-sol
+    paths:
+      - .github/workflows/tmp-final-go-candidate-byte-custody.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-final-go-candidate-byte-custody-sol
+          fetch-depth: 0
+
+      - name: Bind materializer to exact reviewed parent
+        shell: bash
+        env:
+          EXPECTED_BASE: 5a83d238e071bdeeb3188dc55425ffc220609cbe
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_BASE"
+          test "$(git diff --name-only "$EXPECTED_BASE" HEAD)" = '.github/workflows/tmp-final-go-candidate-byte-custody.yml'
+
+      - name: Apply candidate byte custody repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          module = Path('scripts/ci/es80_authenticated_stationary_final_go.py')
+          text = module.read_text()
+          old = '    blobs={k:git(root,"rev-parse",f"HEAD:{p}").lower() for k,p in (("installer",INSTALLER),("runbook",RUNBOOK),("buildIdentity",IDENTITY))}\n'
+          new = (
+              '    authority_paths={"installer":INSTALLER,"runbook":RUNBOOK,"buildIdentity":IDENTITY}\n'
+              '    blobs={k:git(root,"rev-parse",f"HEAD:{p}").lower() for k,p in authority_paths.items()}\n'
+          )
+          if text.count(old) != 1:
+              raise SystemExit('candidate blob map did not match exact reviewed form')
+          text = text.replace(old, new, 1)
+
+          old = (
+              '    paths=[root/INSTALLER,root/RUNBOOK,root/IDENTITY]\n'
+              '    if any(not p.is_file() or p.is_symlink() for p in paths): raise GoError("candidate authority path is not a regular non-symlink file")\n'
+              '    ins=paths[0].read_text(); rb=paths[1].read_text(); ident=paths[2].read_text()\n'
+          )
+          new = (
+              '    paths=[root/p for p in authority_paths.values()]\n'
+              '    if any(not p.is_file() or p.is_symlink() for p in paths): raise GoError("candidate authority path is not a regular non-symlink file")\n'
+              '    for key,relative in authority_paths.items():\n'
+              '        verbose=git(root,"ls-files","-v","--",relative)\n'
+              '        tagged=git(root,"ls-files","-t","--",relative)\n'
+              '        if not verbose or verbose[:1].islower() or tagged.startswith("S "):\n'
+              '            raise GoError("candidate authority path has suppressed index worktree tracking")\n'
+              '        actual_blob=git(root,"hash-object","--no-filters","--",relative).lower()\n'
+              '        if actual_blob!=blobs[key]: raise GoError("candidate authority worktree bytes differ from accepted Git blob")\n'
+              '    ins=paths[0].read_text(); rb=paths[1].read_text(); ident=paths[2].read_text()\n'
+          )
+          if text.count(old) != 1:
+              raise SystemExit('candidate path custody block did not match exact reviewed form')
+          text = text.replace(old, new, 1)
+          module.write_text(text)
+
+          tests = Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go.py')
+          text = tests.read_text()
+          marker = "if __name__=='__main__':unittest.main(verbosity=2)"
+          addition = ''' def test_candidate_rejects_assume_unchanged_installer_tamper(self):
+            path=self.f.repo/go.INSTALLER
+            subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'update-index','--assume-unchanged',go.INSTALLER],check=True)
+            path.write_text(path.read_text()+'# hidden replacement bytes\\n')
+            self.no(lambda:go.candidate(self.f.repo,self.f.s))
+            subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'update-index','--no-assume-unchanged',go.INSTALLER],check=True)
+            subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'checkout','--',go.INSTALLER],check=True)
+           def test_candidate_rejects_skip_worktree_installer_tamper(self):
+            path=self.f.repo/go.INSTALLER
+            subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'update-index','--skip-worktree',go.INSTALLER],check=True)
+            path.write_text(path.read_text()+'# hidden replacement bytes\\n')
+            self.no(lambda:go.candidate(self.f.repo,self.f.s))
+            subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'update-index','--no-skip-worktree',go.INSTALLER],check=True)
+            subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'checkout','--',go.INSTALLER],check=True)
+          '''.replace('\n          ', '\n')
+          if text.count(marker) != 1 or 'test_candidate_rejects_assume_unchanged_installer_tamper' in text:
+              raise SystemExit('test insertion point did not match exact reviewed form')
+          tests.write_text(text.replace(marker, addition + marker, 1))
+          PY
+          git diff --check
+
+      - name: Compile repaired authority code
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile scripts/ci/es80_authenticated_stationary_final_go.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+
+      - name: Run Final-GO adversarial authority suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+
+      - name: Remove materializer and publish clean repair checkpoint
+        shell: bash
+        env:
+          BRANCH: repair/v14-final-go-candidate-byte-custody-sol
+        run: |
+          set -euo pipefail
+          trigger="$(git rev-parse HEAD)"
+          rm .github/workflows/tmp-final-go-candidate-byte-custody.yml
+          expected="$(cat <<'EOF' | sort
+          scripts/ci/es80_authenticated_stationary_final_go.py
+          scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          EOF
+          )"
+          actual="$(git status --porcelain=v1 | sed -E 's/^...//' | sort)"
+          test "$actual" = "$expected"
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(capture): bind Final-GO candidate worktree bytes'
+          git fetch origin "$BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$trigger"
+          git push origin HEAD:"$BRANCH"
