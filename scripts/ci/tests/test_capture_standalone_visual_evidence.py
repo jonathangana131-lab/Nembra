@@ -7,6 +7,10 @@ workflow = (root / ".github/workflows/capture-standalone-visual-evidence.yml").r
 identity = (root / "NembraApp/App/NembraCaptureBuildIdentity.swift").read_text(encoding="utf-8")
 project = (root / "NembraCapture.xcodeproj/project.pbxproj").read_text(encoding="utf-8")
 
+guard_path = root / "scripts/ci/capture_visual_png_content_guard.py"
+if not guard_path.is_file():
+    raise SystemExit("missing fail-closed rendered-content PNG guard")
+
 for needle in [
     'static let requiredFieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"',
     'procedureIdentifier == Self.requiredFieldProcedureIdentifier',
@@ -24,15 +28,33 @@ for needle in [
     'static let requiredFieldProcedureIdentifier = \\"$EXPECTED_PROCEDURE_IDENTIFIER\\"',
     '[[ -n "$TUYA_DEPENDENCY_LOCK_SHA256" ]]',
     'SIMCTL_CHILD_*|NEMBRA_SIMULATION_*)',
+    'PNG_CONTENT_GUARD="$ROOT_DIR/scripts/ci/capture_visual_png_content_guard.py"',
+    'MAX_SCREENSHOT_ATTEMPTS=40',
+    'SCREENSHOT_RETRY_SECONDS=0.25',
+    'capture_ready_screenshot() {',
+    '/usr/bin/python3 "$PNG_CONTENT_GUARD" "$pending_path" --label "$label attempt $attempt/$MAX_SCREENSHOT_ATTEMPTS"',
+    'capture_ready_screenshot "$STANDARD_SCREENSHOT" "Standard iPhone 12 Capture root"',
     'xcrun simctl ui "$UDID" content_size accessibility-extra-extra-extra-large',
+    'xcrun simctl terminate "$UDID" "$BUNDLE_ID"',
+    'launch_standalone_capture append',
+    'capture_ready_screenshot "$AX5_SCREENSHOT" "Accessibility XXXL iPhone 12 Capture root"',
     '"requiredProcedureSourceVerified": True',
     '"procedureBuildRendezvousVerified": True',
     '"expectedFieldBuildAuthority": False',
+    '"screenshotRenderedContentReadinessVerified": True',
+    '"screenshotRenderedContentGuard": "capture_visual_png_content_guard.py/v1"',
     '"physicalAuthorityCreated": False',
     '"protocolAuthorityCreated": False',
 ]:
     if needle not in script:
         raise SystemExit(f"missing visual truth contract: {needle}")
+
+for forbidden in [
+    'sleep 2',
+    'sleep 1',
+]:
+    if forbidden in script:
+        raise SystemExit(f"visual readiness must not be authorized by a fixed launch delay: {forbidden}")
 
 for needle in [
     'NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=""',
@@ -50,7 +72,7 @@ if any(x in script for x in ("connectBLE", "writeValue", "publishDps", "publishD
 
 active = [x.strip() for x in script.splitlines() if x.strip() and not x.lstrip().startswith('#')]
 launch = [x for x in active if 'xcrun simctl launch' in x]
-if len(launch) != 1 or '--args' in launch[0]:
-    raise SystemExit("visual harness must launch exactly one unfixtureized standalone app")
+if len(launch) != 2 or any('--args' in line for line in launch):
+    raise SystemExit("visual harness must launch only the unfixtureized standalone app for standard and AX5 evidence")
 
-print("capture standalone visual evidence current identity contract: PASS")
+print("capture standalone visual evidence current identity/readiness contract: PASS")
