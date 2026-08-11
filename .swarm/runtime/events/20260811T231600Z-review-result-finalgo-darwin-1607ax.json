@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "231600-review-result-finalgo-darwin-1607ax",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-1607ax",
+  "laneId": "capture-final-go-authority",
+  "message": "Independent review posted on validation-only PR #3100 exact 8eec90d4559f9f8f42ad75ff609f9139557c9bc7 (GitHub review 4911551852). Selected production #3082 remains exact d4a44db4ad69947dede5b20e91e506297514a0bb. #3100 changes only the Darwin validation workflow and is source-acceptable: exact parent/delta binding, real _KqueueMutationBackend proof, unchanged whole-tree race oracle with preserved exit status and retained failure tail, sealed/retirement/committed-parent custody replays, hygiene. Darwin run 31545488271 remains QUEUED; Xcode is SKIPPED and not counted. Do not promote until exact Darwin terminal SUCCESS. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T23:16:00Z"
+}
