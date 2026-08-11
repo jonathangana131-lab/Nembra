@@ -35,14 +35,15 @@ jobs:
             test "$source_sha" = "${{ github.event.pull_request.head.sha }}"
           fi
           git cat-file -e "${ACCEPTED_PRODUCT_SHA}^{commit}"
-          mapfile -t changed < <(git diff --name-only "$ACCEPTED_PRODUCT_SHA"...HEAD | LC_ALL=C sort)
-          expected=(
-            '.github/workflows/capture-runtime-voiceover.yml'
-            'scripts/ci/capture_runtime_voiceover_xcuitest.swift'
-          )
-          if [[ "${changed[*]}" != "${expected[*]}" ]]; then
+          changed_paths="$(git diff --name-only "$ACCEPTED_PRODUCT_SHA"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' \
+            '.github/workflows/capture-runtime-voiceover.yml' \
+            'scripts/ci/capture_runtime_voiceover_xcuitest.swift')"
+          if [[ "$changed_paths" != "$expected_paths" ]]; then
             printf 'Runtime VoiceOver lane must remain test-only. Changed paths:\n' >&2
-            printf '  %s\n' "${changed[@]}" >&2
+            if [[ -n "$changed_paths" ]]; then
+              printf '%s\n' "$changed_paths" | /usr/bin/sed 's/^/  /' >&2
+            fi
             exit 20
           fi
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
@@ -132,7 +133,10 @@ jobs:
           evidence="$RUNNER_TEMP/CaptureRuntimeVoiceOverEvidence"
           mkdir -p "$evidence"
           snippet_sha="$(shasum -a 256 scripts/ci/capture_runtime_voiceover_xcuitest.swift | awk '{print $1}')"
-          /usr/bin/python3 - "$evidence/manifest.json" "$NEMBRA_RUNTIME_AX_SOURCE_SHA" "$NEMBRA_RUNTIME_AX_PRODUCT_PARENT" "$NEMBRA_RUNTIME_AX_RUNTIME" "$snippet_sha" <<'PY'
+          source_sha="${NEMBRA_RUNTIME_AX_SOURCE_SHA:-unavailable}"
+          product_parent="${NEMBRA_RUNTIME_AX_PRODUCT_PARENT:-005b7c4aaf27fabb442a65599b4538ebcc09ae27}"
+          runtime="${NEMBRA_RUNTIME_AX_RUNTIME:-unavailable}"
+          /usr/bin/python3 - "$evidence/manifest.json" "$source_sha" "$product_parent" "$runtime" "$snippet_sha" <<'PY'
           import json,sys
           path,source,parent,runtime,snippet=sys.argv[1:]
           record={
