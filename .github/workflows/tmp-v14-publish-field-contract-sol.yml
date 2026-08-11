@@ -1,0 +1,51 @@
+name: TEMP V14 Publish Field Provenance Contract (Sol)
+
+on:
+  push:
+    branches:
+      - repair/v14-private-review-hmac-helper-execution-sol
+    paths:
+      - .github/workflows/tmp-v14-publish-field-contract-sol.yml
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-private-review-hmac-helper-execution-sol
+          fetch-depth: 0
+      - name: Materialize accepted-source guard ordering contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/capture-field-build-provenance.yml')
+          text = path.read_text(encoding='utf-8')
+          old = 'guard_line="$(grep -nF \'/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD" \\\' "$installer" | sed -n \'1s/:.*//p\')"'
+          new = 'guard_line="$(grep -nF \'run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \\\' "$installer" | sed -n \'1s/:.*//p\')"'
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'field provenance stale guard ordering contract: expected one match, found {count}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          git diff --check
+          grep -Fq 'run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \' .github/workflows/capture-field-build-provenance.yml
+          ! grep -Fq 'grep -nF '\''/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD" \'\''' .github/workflows/capture-field-build-provenance.yml
+      - name: Publish permanent contract and retire publisher
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/tmp-v14-publish-field-contract-sol.yml
+          git add .github/workflows/capture-field-build-provenance.yml
+          git commit -m 'Capture: align field provenance accepted-source guard contract'
+          git push origin HEAD:repair/v14-private-review-hmac-helper-execution-sol
