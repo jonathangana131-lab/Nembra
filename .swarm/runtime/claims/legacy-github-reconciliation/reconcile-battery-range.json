@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "claim",
+  "laneId": "legacy-github-reconciliation",
+  "slot": "reconcile-battery-range",
+  "role": "scheduler-reconciler",
+  "workerId": "sol-20260811-f3a8",
+  "leaseId": "recbr-f3a8-20260811-0754",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T07:54:20Z",
+  "lastHeartbeatAt": "2026-08-11T07:54:20Z",
+  "leaseSeconds": 1800,
+  "branch": "",
+  "pr": null,
+  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c"
+}
