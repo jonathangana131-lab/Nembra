@@ -1,0 +1,25 @@
+name: Capture R3 Parent Live Base Binding Red Team
+
+on:
+  push:
+    branches:
+      - adversarial/v14-r3-parent-live-base-binding-sol-20260811
+  pull_request:
+    paths:
+      - scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py
+      - scripts/ci/tests/test_es80_generated_subject_parent_live_base_binding.py
+      - .github/workflows/capture-r3-parent-live-base-binding-redteam.yml
+
+permissions:
+  contents: read
+
+jobs:
+  exact-parent-execution-binding:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile exact-parent execution regression
+        run: python3 -m py_compile scripts/ci/tests/test_es80_generated_subject_parent_live_base_binding.py
+      - name: Reject child-committed parent execution before exact parent binding
+        run: python3 -m unittest -v scripts.ci.tests.test_es80_generated_subject_parent_live_base_binding
