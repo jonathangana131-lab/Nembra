@@ -197,8 +197,20 @@ fi
 }
 
 if [[ "$REVIEW_ONLY" == "1" ]]; then
-  # Review-only is the sole authority-creation phase for ignored/private build
-  # inputs. Normal field bootstrap never rewrites this witness.
+  # Preserve the long-lived field-provenance contract while fixing its authority
+  # boundary: snapshot is legitimate only during explicit review-candidate
+  # creation. Normal field bootstrap never calls snapshot or rewrites this witness.
+  if ! /usr/bin/python3 -I "$PROVENANCE_HELPER" snapshot \
+    --lockfile "$REPO_ROOT/Podfile.lock" \
+    --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
+    --security-build "$TUYA_PRIVATE_SDK/Build" \
+    --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
+    --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
+    --record "$DEPENDENCY_PROVENANCE"
+  then
+    echo "ERROR: exact private Tuya review candidate could not be snapshotted." >&2
+    exit 12
+  fi
   if ! PRIVATE_INPUT_REVIEW_COMMITMENT="$(/usr/bin/python3 -I "$PRIVATE_REVIEW_HELPER" review \
     --lockfile "$REPO_ROOT/Podfile.lock" \
     --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
@@ -208,7 +220,7 @@ if [[ "$REVIEW_ONLY" == "1" ]]; then
     --record "$DEPENDENCY_PROVENANCE" \
     --key "$PRIVATE_REVIEW_KEY")"
   then
-    echo "ERROR: exact private Tuya review witness could not be created." >&2
+    echo "ERROR: exact private Tuya review witness could not be committed to opaque authority." >&2
     exit 12
   fi
 else
