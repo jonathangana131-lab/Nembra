@@ -9,6 +9,7 @@ candidate installer bytes.
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import os
 import subprocess
@@ -50,6 +51,7 @@ class InstallerEnvironmentCustodyTests(unittest.TestCase):
                 "[[ -z \"${GITHUB_TOKEN:-}\" ]] || exit 43\n"
                 "[[ -z \"${NEMBRA_TUYA_APP_SECRET:-}\" ]] || exit 44\n"
                 "[[ -z \"${NEMBRA_TUYA_APP_KEY:-}\" ]] || exit 45\n"
+                "[[ \"${NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256:-}\" =~ ^[0-9a-f]{64}$ ]] || exit 47\n"
                 f"[[ \"${{PATH:-}}\" == {GO.TRUSTED_INSTALLER_PATH!r} ]] || exit 46\n"
                 "printf '%s\\n' 'SDK-INTEGRATED CAPTURE LAUNCHED'\n",
                 encoding="utf-8",
@@ -83,7 +85,7 @@ class InstallerEnvironmentCustodyTests(unittest.TestCase):
             os.environ["NEMBRA_TUYA_APP_KEY"] = "caller-key-must-not-cross"
             os.environ["PATH"] = "/caller/prepended/path:/usr/bin:/bin"
             try:
-                result = GO.installer(repository, source, private_device)
+                result = GO.installer(repository, source, private_device, GO.device_hash(private_device))
             finally:
                 os.environ.clear()
                 os.environ.update(old)
@@ -100,11 +102,13 @@ class InstallerEnvironmentCustodyTests(unittest.TestCase):
             device = Path(temporary).resolve(strict=True) / "device"
             device.write_text("device", encoding="utf-8")
             device.chmod(0o600)
-            env = GO.installer_environment(device)
+            digest = GO.device_hash(device)
+            env = GO.installer_environment(device, digest)
             self.assertEqual(env["PATH"], GO.TRUSTED_INSTALLER_PATH)
             self.assertEqual(env["BASH_ENV"], "/dev/null")
             self.assertEqual(env["ENV"], "/dev/null")
             self.assertEqual(env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"], str(device))
+            self.assertEqual(env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256"], digest)
             forbidden = {
                 "GITHUB_TOKEN", "GH_TOKEN", "PYTHONPATH", "PYTHONHOME",
                 "NEMBRA_TUYA_APP_KEY", "NEMBRA_TUYA_APP_SECRET",
@@ -123,7 +127,7 @@ class InstallerEnvironmentCustodyTests(unittest.TestCase):
             alias = root / "alias"
             alias.symlink_to(real_parent, target_is_directory=True)
             with self.assertRaises(GO.GoError):
-                GO.installer_environment(alias / "device")
+                GO.installer_environment(alias / "device", "a" * 64)
 
 
 if __name__ == "__main__":
