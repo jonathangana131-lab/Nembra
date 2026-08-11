@@ -55,6 +55,6 @@ jobs:
         run: |
           set -euo pipefail
           grep -Fq 'This bootstrap still does NOT authorize the physical experiment.' Scripts/bootstrap_capture_tuya_sdk.sh
-          grep -Fq 'normal field bootstrap never re-runs CocoaPods after review' Scripts/bootstrap_capture_tuya_sdk.sh
+          grep -Fq 'Normal field bootstrap never re-runs CocoaPods after review.' Scripts/bootstrap_capture_tuya_sdk.sh
           grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_TUYA_GENERATED_SUBJECT_SHA256' Scripts/capture_tuya_private_input_build_guard.py
           printf '%s\n' 'Generated-subject validation creates no BLE, telemetry, command, or physical authority.'
