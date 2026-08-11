@@ -1,0 +1,68 @@
+name: Capture Field Verified Git Payload R3
+
+on:
+  push:
+    branches:
+      - validation/v14-field-git-payload-2937-r3-sol-20260811
+    paths:
+      - scripts/ci/tests/test_capture_field_verified_git_payload_current_qa_r3.py
+      - .github/workflows/capture-field-verified-git-payload-r3.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verified-git-payload-r3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: validation/v14-field-git-payload-2937-r3-sol-20260811
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact validation lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD 1fb4628932e2dfee7333dee0f797c072dd934743)" = "1fb4628932e2dfee7333dee0f797c072dd934743"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          test -f scripts/ci/tmp_v14_field_git_payload_identity_materialize.py
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/tmp_v14_field_git_payload_identity_materialize.py \
+            scripts/ci/tests/test_capture_field_verified_git_payload_current_qa_r3.py
+          /bin/bash -n scripts/field/install_one_time_capture.command
+          git diff --check 1fb4628932e2dfee7333dee0f797c072dd934743..HEAD
+
+      - name: Materialize #2937 production repair unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tmp_v14_field_git_payload_identity_materialize.py
+          /bin/bash -n scripts/field/install_one_time_capture.command
+          test "$(git diff --name-only)" = "scripts/field/install_one_time_capture.command"
+          git diff --check
+
+      - name: Replay corrected three-surface verifier QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_verified_git_payload_current_qa_r3.py
+
+      - name: Preserve neighboring portable authority contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          for test in \
+            scripts/ci/tests/test_capture_field_private_runner_execution_red_team.py \
+            scripts/ci/tests/test_capture_field_accepted_source_path_contract.py \
+            scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          do
+            if [[ -f "$test" ]]; then
+              /usr/bin/python3 "$test"
+            fi
+          done
+          /bin/bash -n scripts/field/install_one_time_capture.command
+          git diff --check
