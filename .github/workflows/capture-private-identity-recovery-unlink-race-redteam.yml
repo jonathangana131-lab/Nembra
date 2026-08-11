@@ -1,0 +1,39 @@
+name: Capture Private Identity Recovery Unlink Race Red Team
+
+on:
+  pull_request:
+    paths:
+      - Scripts/provision_capture_tuya_identity_writer.py
+      - scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py
+      - .github/workflows/capture-private-identity-recovery-unlink-race-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recovery-unlink-race:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact diagnostic checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          test "$(git rev-parse HEAD)" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Require exact-inode recovery deletion authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py
+          git diff --check
