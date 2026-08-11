@@ -4,22 +4,19 @@
   "laneId": "battery-range-simulator-display-authority",
   "slot": "primary",
   "role": "primary",
-  "workerId": "sol-20260811-f3a8",
-  "leaseId": "brsim-f3a8-20260811-0802",
-  "generation": 1,
+  "workerId": "sol-20260811-brv7",
+  "leaseId": "brsim-primary-brv7-20260811-2139",
+  "generation": 2,
   "status": "ACTIVE",
-  "claimedAt": "2026-08-11T08:02:00Z",
-  "lastHeartbeatAt": "2026-08-11T08:19:30Z",
+  "claimedAt": "2026-08-11T21:39:30Z",
+  "lastHeartbeatAt": "2026-08-11T21:39:30Z",
   "leaseSeconds": 1800,
   "branch": "recovery/v15-battery-range-simulator-display/sol-f3a8",
   "pr": 2815,
-  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
-  "currentHeadSHA": "0d874412fb7e0479792c46e06128e1c749bd2a2c",
-  "lastGate": {
-    "head": "e35b95022c175e2ae083b888de1fbc245b1fe640",
-    "run": 31471566643,
-    "job": 93715868471,
-    "result": "FAILURE_IN_PACKAGE_GATE",
-    "note": "raw Swift log unavailable through connector; warnings-safe source readers applied without weakening assertions"
-  }
+  "sourceSHA": "359f1226938c2fae8ca63346113b005c3f336206",
+  "currentHeadSHA": "359f1226938c2fae8ca63346113b005c3f336206",
+  "takeoverFromWorkerId": "sol-20260811-f3a8",
+  "takeoverReason": "Generation-1 lease expired many hours ago and the exact branch remains open at 359f1226938c. Independent review 4910969717 on that predecessor head re-confirmed one missing mechanical regression: Simulator display authority is currently storage-isolated in makeRuntime, but the new suite does not lock that production-vs-Simulator retainedBatteryStorage boundary. Recover the same PR lineage to add only that allowed-path regression; visual acceptance remains separately blocked and this worker must not self-accept the successor. PHYSICAL ES80 battery/range truth remains unavailable.",
+  "ownedPaths": ["Packages/NembraCore/Tests/NembraCoreTests/SimulatorBatteryDisplayAuthorityAppSourceTests.swift"],
+  "checkpoint": "Predecessor exact 359f122 has Xcode success but review BLOCK. Repair only the missing retained-storage isolation regression in the existing source-contract test file; do not alter production authority or claim physical telemetry. After push, re-run/observe exact-head gates and hand successor to a different review worker."
 }
