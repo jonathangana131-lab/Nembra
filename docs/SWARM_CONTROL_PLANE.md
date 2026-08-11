@@ -1,181 +1,121 @@
-# Nembra Swarm Control Plane
+# Nembra Swarm Control Plane — V16
 
-This is the canonical operational guide for Nembra's GitHub-native multi-agent coordination layer. It supplements the product/source-of-truth rules in the existing Nembra charter; it does not replace product truth, exact-head acceptance, Xcode/Simulator evidence, or physical-scooter safety policy.
+This is the canonical operational guide for Nembra's GitHub-native multi-agent engineering control plane. It coordinates engineering only. It does **not** replace product truth, exact-head acceptance, Xcode/Simulator evidence, private-input custody, signing authority, or physical-scooter safety policy.
 
-The design rationale is in `docs/adr/ADR-0015-github-native-swarm-control-plane.md`.
+The original architecture decision is preserved in `docs/adr/ADR-0015-github-native-swarm-control-plane.md`. V16 enforcement is recorded in `docs/adr/ADR-0016-swarm-v16-enforcement.md`.
 
-## The 20-second model
+## Current operating model
 
-- Product code/config/docs live on `main` and ordinary worker branches/PRs.
-- Runtime coordination lives on the separate `swarm-state` branch under `.swarm/runtime/`.
-- A lane is real work. A slot is one role inside the lane.
+- Product code/config/docs live on `main` and normal worker branches/PRs.
+- High-churn coordination lives on the long-lived `swarm-state` branch under `.swarm/runtime/`.
+- A lane is real work; a slot is one role inside that lane.
 - A deterministic claim file is the exclusive ownership boundary.
-- GitHub create/update SHA semantics provide atomic conflict/CAS behavior.
-- Claims expire and can be atomically taken over.
-- Events/handoffs are durable structured memory between separate GPT sessions.
-- Resources such as Xcode/Simulator/physical scooter have their own leases.
-- The dashboard is generated; never treat it as authority.
-- The scheduler may observe physical GO but can never grant it.
-- Green CI is evidence about one exact head, not proof that a `Go` worker is finished advancing the repository.
+- GitHub create/update content-SHA semantics provide atomic create/CAS behavior.
+- Claims and scarce-resource leases expire and support generation-fenced takeover.
+- Worker IDs distinguish independent GPT-5.6 Sol sessions even when GitHub account identity is shared.
+- Structured events/handoffs are durable shared memory, not chat logs.
+- Dependencies/blockers remove unrunnable work instead of encouraging repeated retries.
+- The scheduler controls WIP and prefers closing review/integration/recovery work when implementation outruns validation.
+- Generated dashboard, metrics, and validation files are projections only.
+- New controlled PRs are mechanically enforced against live ownership.
+- The scheduler can observe physical authority but can never create `PHYSICAL_GO`.
+- Green CI is evidence, never a completion signal for a `Go` worker.
 
-## Fresh worker: `Go`
+## V16 enforcement
 
-A new GPT-5.6 Sol worker receiving only `Go` should:
+Nembra now uses `rolloutMode: enforcement` for work created after the configured V16 cutoff. The pre-V16 Capture backlog remains grandfathered by PR creation timestamp so ongoing accepted/recoverable work is not destroyed during migration.
 
-1. Create a session ID such as `sol-20260811-a81f` (date + random suffix; never a secret).
-2. Inspect live `main`, open/active PRs and branches, latest relevant commits, Actions/Xcode state, and product safety constraints. GitHub product truth still outranks stale prose.
-3. Read trusted `.swarm/config.json` from current product main.
-4. Read/validate the `swarm-state` runtime records. Unknown/newer schema or corrupted ownership state means **do not claim exclusive work**.
-5. Register/refresh the worker record.
-6. Read important recent events/handoffs for candidate lanes.
-7. Ask the scheduler for compatible ready slots.
-8. Atomically claim one exact slot. **Claim first. Branch second.** If create conflicts, immediately refresh/recommend another slot; do not duplicate implementation and do not stop merely because the first claim lost a race.
-9. Acquire any required resource leases in configured order.
-10. Re-check source/main/claim before a major shared-contract edit.
-11. Create the isolated branch and implement/review/test only the owned role/scope.
-12. Heartbeat at meaningful checkpoints (for example after a long build or before substantial push), not every few seconds.
-13. Publish a structured event only when another worker would act differently after reading it.
-14. Before substantial push/PR creation, prove the current `{workerId, leaseId, generation}` still owns the slot.
-15. Put swarm metadata in a new controlled PR.
-16. Obtain independent review when required; the accepting review worker ID must differ from the implementation/repair/reconciliation work-subject worker ID.
-17. Integration is a claimed role, not a merge race. Sync main, verify dependencies/reviews/exact-head evidence, merge, observe main, and only then close the lane.
-18. When a slice is accepted, blocked, handed off, merged, loses a claim, or reaches a green wait point, preserve the durable state and release anything that should not remain held.
-19. Then refresh current `main`, `swarm-state`, and scheduler recommendations **in the same Go turn** and claim another safe useful role when one exists. If one reconciliation slot is already owned, use another available reconciliation shard or another non-conflicting recommendation rather than equating ownership with no work.
-20. Stop only after the final stop-proof procedure below succeeds. A green check, green `main`, merged PR, completed slice, blocked slice, or one empty recommendation response is not a stop proof.
+For every new controlled PR, the enforcement job materializes:
 
-### Go worker stop proof
+1. trusted control code/config from the PR's **base** generation;
+2. the exact current `swarm-state` runtime snapshot;
+3. the exact changed-file set for the PR.
 
-An empty scheduler recommendation list is valid as a point-in-time snapshot, but it is **not** enough to end a `Go` turn. Before intentional idle/stop, perform a fresh final reconciliation against the current `main` SHA and verify all of these:
+It then requires:
 
-- no safe unowned scheduler recommendation is claimable by this worker;
-- no meaningful open PR, branch, failed-main repair, review/integration opportunity, or reconciliation family is missing from `swarm-state`;
-- no apparently unavailable slot is merely stale/expired ownership that is legally takeable;
-- all remaining useful work is actively owned, policy-blocked, dependency-blocked, resource-blocked, or externally blocked;
-- every newly discovered blocker, missing-work record, supersession, or handoff that would change another worker's behavior has been written durably.
+- valid swarm metadata;
+- a real lane and slot;
+- a live claim;
+- exact worker ID + claim generation;
+- exact claimed branch;
+- the lane to remain writable/unblocked;
+- changed files to remain inside declared/adjacent scope;
+- every resource required by the slot to have a matching live resource lease.
 
-If all conditions hold, publish a durable `EVIDENCE_RESULT` containing the current main SHA, the refreshed queue result, and why the remaining useful objectives are owned or blocked. Only then idle cleanly. Never manufacture speculative work just to stay busy.
+The validator used to police a PR comes from trusted base code, not PR-head code. A PR cannot weaken the validator that approves itself.
 
-If a current lane is merely waiting for CI, review, or external evidence, keep its ownership/evidence correct and release idle scarce resources; then advance another safe non-conflicting recommendation when policy permits instead of spending the whole `Go` turn status-watching.
-
-## Worker/session identity
-
-GitHub may show multiple GPT workers as the same account. Therefore every session gets its own control-plane identity:
+### Controlled PR metadata
 
 ```text
-sol-YYYYMMDD-<random>
+SWARM_SCHEMA: 1
+SWARM_LANE: <lane-id>
+SWARM_SLOT: <slot>
+SWARM_WORKER: sol-YYYYMMDD-<unique>
+SWARM_CLAIM_GENERATION: <integer>
 ```
 
-A worker record stores only coordination facts: model, status, lane/branch where relevant, timestamps, and leased resources. Do not store tokens, Apple credentials, signing secrets, Bluetooth credentials, or personal data.
+A post-cutoff PR without valid metadata fails. A pre-cutoff legacy PR can remain grandfathered, but a new worker may not use that compatibility path to bypass claims.
 
-## Lanes and role slots
+## Atomic ownership
 
-A lane is an independently understandable work unit with:
-
-- ID, epic, title, objective, priority and state;
-- dependencies and blockers;
-- `exclusive` or explicitly authorized `tournament` mode;
-- allowed + adjacent write areas;
-- role slots and resource requirements;
-- acceptance/review requirements;
-- source/exact-head constraints when needed;
-- physical requirement/state when applicable.
-
-Normal lane roles can include:
-
-- primary implementation;
-- tests;
-- adversarial review;
-- accessibility;
-- performance;
-- Xcode evidence;
-- physical evidence;
-- integration;
-- CI sheriff;
-- recovery;
-- architecture review;
-- scheduler reconciliation.
-
-A normal lane has at most one implementation primary. Use several complementary slots rather than several competing implementations.
-
-### Tournament mode
-
-Duplicate implementation is allowed only when explicitly useful. A tournament lane must be explicitly authorized and exposes a bounded 2–3 candidate implementation slots followed by independent judgment/synthesis. Ordinary work must remain exclusive.
-
-## Claims and leases
-
-The exact exclusive subject is:
+The exclusive slot path is:
 
 ```text
 .swarm/runtime/claims/<lane>/<slot>.json
 ```
 
-### Claim
+**Claim first. Branch second.** Racing create attempts produce one winner. Losing workers refresh and select another useful slot rather than coding anyway.
 
-Create the deterministic path with no prior content SHA. One racing create wins. Losing workers do not “try anyway”; they refresh and take another slot.
-
-### Heartbeat
-
-A valid owner is the tuple:
+A live owner is identified by:
 
 ```text
 workerId + leaseId + generation
 ```
 
-The worker reads the current content SHA, validates ownership/expiry, and performs a compare-and-swap update. Heartbeats are checkpoint-driven. Long roles may have longer leases than reviews; do not choose such short leases that normal Xcode builds constantly expire.
+Heartbeats and release use the currently observed content SHA. Takeover is legal only after release/expiry and increments generation. Two takeover workers racing the same stale blob produce one winner. An old worker that wakes after takeover cannot prove the new generation and must hand off/salvage instead of continuing as owner.
 
-### Takeover
+## Worker roles
 
-Takeover is allowed only when the previous lease is released or expired. The new record increments generation and records `takeoverFromWorkerId`, preserving the prior branch/PR/source SHA where available. If two workers race on the stale content SHA, one wins.
+There is no permanent manager model. GPT-5.6 Sol workers are peers taking temporary roles such as:
 
-A returning old worker must re-read the claim before pushing. If generation/lease ID changed, it no longer owns primary. Its remaining branch/commits/findings become salvage/handoff material.
+- implementation primary;
+- tests/adversarial tests;
+- independent review;
+- architecture review;
+- accessibility/performance;
+- Xcode/Simulator evidence;
+- physical evidence when already authorized;
+- integration;
+- CI sheriff;
+- recovery;
+- scheduler reconciliation.
 
-## Structured events
+A normal exclusive lane has one implementation primary and multiple complementary roles. Intentional duplicate implementation is permitted only through explicitly bounded tournament mode followed by independent judgment/synthesis.
 
-Publish an event when another worker would act differently because of it. Supported classes include:
+## Structured communication
 
-- finding;
-- blocker / external blocker;
-- question / answer;
-- decision;
-- dependency discovered;
-- review request/result;
-- handoff;
-- scope change;
-- superseded;
-- evidence result;
-- integration/recovery result;
-- claim/release/takeover/resource transitions when durable audit is useful.
+Publish a durable event when another worker would act differently after reading it. Useful classes include `FINDING`, `BLOCKER`, `EXTERNAL_BLOCKER`, `DEPENDENCY_DISCOVERED`, `DECISION`, `REVIEW_REQUEST`, `REVIEW_RESULT`, `HANDOFF`, `SUPERSEDED`, `EVIDENCE_RESULT`, `RECOVERY`, and `INTEGRATION_RESULT`.
 
-Events are immutable collision-resistant JSON files organized by date. Do not use them as chatty thought logs.
+Events are immutable, collision-resistant data. Control records reject executable-control fields; no arbitrary shell/Python/Swift/AppleScript is supplied by runtime state. Repository-owned trusted code is the only executable control logic.
 
-Control-plane records are **data only**. Executable-control field names (`command`, `shell`, `script`, `python`, `swift`, `exec`, etc.) are rejected. GitHub Actions execute only trusted repository-owned code.
+## Dependency, blocker, and WIP routing
 
-## Dependencies and blockers
+A slot is removed from the ready set when its lane is terminal/blocked, a dependency is missing/incomplete, a dependency cycle exists, an exclusive slot/resource is already live-owned, physical authority is absent, or project/per-epic WIP limits forbid another primary.
 
-Dependencies are machine-readable lane IDs. Downstream work is runnable only when dependencies are present and `DONE`. Missing dependencies and cycles fail closed.
-
-Blockers can represent a lane/epic/project/resource condition. An active blocker removes affected work from the ready set instead of making 20 workers repeatedly retry an impossible task.
-
-When an upstream external condition recovers, change its durable lane/blocker state; downstream work returns automatically on the next scheduler refresh.
-
-## Scheduler and WIP
-
-The scheduler does not maximize branch count. It removes conflicting/unrunnable work first, then favors:
+Scheduler priorities remain explainable:
 
 1. real red-main repair;
-2. work that closes review/integration backlog;
-3. high-priority product value;
-4. work that unblocks many downstream lanes;
+2. review/integration closure pressure;
+3. high-value product work;
+4. high fan-out unblockers;
 5. epic-closing/support roles;
-6. safe implementation under WIP limits.
+6. safe new implementation under WIP limits.
 
-Configured project WIP limits cap active primary implementation. When implementation outruns review/integration, new workers are directed into those closing roles.
+A worker losing one claim does not stop. An empty first recommendation does not stop. Green main does not stop. `SWARM_GO.md` defines the mandatory reconciliation/continuation loop.
 
-An empty recommendation set is valid as a scheduler snapshot, but for a `Go` worker it is **not an automatic completion condition**. The worker must first perform the current-main reconciliation and stop-proof checks above. Reconciliation is allowed to be sharded by objective family so many workers do not queue behind one global scanner. Do not invent speculative features to keep workers occupied.
+## Scarce resources
 
-## Scarce/high-contention resources
-
-Initial explicit resources are:
+Explicit resource classes include:
 
 ```text
 PROJECT_STATE_WRITER
@@ -189,47 +129,11 @@ BLUETOOTH_CAPTURE
 PHYSICAL_SCOOTER
 ```
 
-Acquire multiple required leases in the exact `.swarm/config.json` order. This avoids deadlock. If later acquisition fails, release already acquired resources best-effort without overwriting a newer owner.
-
-Do not over-lock ordinary source files. Use `HIGH_CONTENTION_FILE` only for proven expensive shared contracts/configuration.
-
-## Scope ownership
-
-Each lane declares product write areas plus explicitly acceptable adjacent test/doc areas. In shadow mode, scope checks report violations. Later enforcement can fail unamended expansion.
-
-If real work requires broader scope, do one of:
-
-- amend the lane;
-- create/link another lane;
-- record an architecture decision.
-
-Do not silently turn a narrow claim into a cross-project rewrite.
-
-## Reviews and integration
-
-When `acceptance.independentReview=true`, the primary implementer's swarm worker ID cannot be the accepting review worker ID. Same GitHub account is allowed because worker identity represents the independent reasoning session.
-
-Review results are durable: `APPROVE`, `REQUEST_CHANGES`, `BLOCK`, or `SUPERSEDE`.
-
-Integration is a claimable role. Before merge it refreshes live main, lane claim, dependency state, exact-head CI/evidence and independent reviews. After merge it watches main; a real red-main regression creates/prioritizes one repair primary plus complementary diagnostics/review, not many repair implementations.
-
-## PR metadata
-
-New controlled PRs use exact lines:
-
-```text
-SWARM_SCHEMA: 1
-SWARM_LANE: lane-id
-SWARM_SLOT: primary
-SWARM_WORKER: sol-20260811-a81f
-SWARM_CLAIM_GENERATION: 1
-```
-
-Current rollout is **shadow**. Legacy PRs are not rejected merely because they predate this metadata. New controlled work should include it now so the repo can measure readiness for enforcement.
+Acquire multiple resources in the exact order declared by `.swarm/config.json` to avoid deadlocks. Do not hold scarce resources while waiting on unrelated CI/review. Do not over-lock ordinary source files.
 
 ## Physical safety
 
-Physical state is explicit:
+Physical state remains explicit:
 
 ```text
 SOURCE_READY
@@ -240,44 +144,62 @@ PHYSICAL_GO
 PHYSICAL_EVIDENCE_ACCEPTED
 ```
 
-The scheduler has no operation that promotes to `PHYSICAL_GO`. A physical-evidence slot stays unrunnable unless reviewed existing Nembra physical policy/evidence already supplies GO.
+There is no control-plane operation that promotes to `PHYSICAL_GO`. Simulator, package, source, CI, Xcode, dashboard, or swarm success cannot create physical authority. Nembra's existing reviewed safety/evidence path remains the only authority. The swarm adds no scooter write command, remote-control primitive, credential exposure, or telemetry fabrication path.
 
-Never treat package-green, CI-green, Xcode-green, Simulator-green, or a generated dashboard as physical scooter proof. Never fabricate telemetry. This control plane adds **no scooter write commands or remote-control surface**.
+## Exact live-state fence and generated projection
 
-## Dashboard
+V16 computes SHA-256 across authoritative runtime JSON, excluding `.swarm/runtime/generated/`. It writes:
 
-A dashboard may be generated from authoritative lane/claim/resource/worker/event records. It is observability only. If it is stale, deleted, or corrupted, rebuild it. Never route work from a Markdown dashboard when underlying records disagree.
+```text
+.swarm/runtime/generated/DASHBOARD.md
+.swarm/runtime/generated/METRICS.json
+.swarm/runtime/generated/VALIDATION.json
+```
 
-## Failure and recovery
+`VALIDATION.json` binds `PASS` to one exact runtime-state digest. If authoritative state changes afterward, fence verification fails until the projection is rebuilt.
 
-### Worker disappears
+The scheduled/push projector:
 
-Lease expires. A new worker atomically takes over, preserves branch/PR/source lineage, reads latest events/handoffs, and salvages before rewriting.
+1. materializes one exact `swarm-state` commit;
+2. validates all authoritative records;
+3. renders dashboard/metrics/fence;
+4. verifies the fence;
+5. commits generated output on a detached copy of that exact state;
+6. re-fetches `swarm-state` immediately before push;
+7. refuses to publish if the branch advanced.
 
-### Worker returns after takeover
+Thus stale automation cannot overwrite newer coordination state. Generated output is still a cache; authoritative records remain the source of ownership truth.
 
-Ownership tuple no longer matches. It must not push/publish as primary. Publish salvage/handoff only if useful.
+## Mechanical stop proof
 
-### GitHub API/rate limit/transient failure
+After a fresh live-GitHub reconciliation, a worker can run:
 
-Use bounded retry/jitter. Do not hammer. If ownership cannot be proven after the operation, refresh; do not assume success.
+```bash
+PYTHONPATH=scripts python3 -m swarmcp.maximum stop-proof --root <materialized-state-root>
+```
 
-### Control-plane invalid/corrupt
+The proof fails when safe scheduler slots remain, stale active claims are recoverable, review backlog remains, or integration backlog remains. A state-only proof cannot establish that an unrecorded GitHub PR/branch does not exist, so live reconciliation is mandatory first.
 
-Fail closed for new exclusive implementation. A temporary recovery/state-writer role repairs or reconstructs authoritative records. Generated dashboard damage alone is harmless.
+A worker may intentionally idle only when both live reconciliation and the mechanical proof pass, and it publishes a durable `EVIDENCE_RESULT` explaining the current main SHA, state digest, empty queue, and remaining owned/blocked objectives.
 
-### Schema migration
+## Failure recovery
 
-Unknown schema fails closed. Migration takes a temporary single-writer lease, supports an intentionally bounded compatibility window when designed, converts authoritative records, rebuilds generated state, and retires old write semantics only after old active claims are gone.
+- **Worker disappears:** lease expires; another worker may atomically take over and salvage branch/PR/findings.
+- **Old worker returns:** generation/lease mismatch fences it from owner operations.
+- **GitHub API/rate limit/transient failure:** bounded retry/jitter; uncertain ownership is never assumed successful.
+- **Control state malformed/unknown schema:** new exclusive writes fail closed until recovery/reconciliation repairs truth.
+- **Generated projection corrupt/deleted:** rebuild it; generated files are not ownership authority.
+- **State publisher race:** expected branch-head mismatch causes refusal rather than overwrite.
+- **Schema migration:** temporary single-writer migration ownership; unknown newer schema fails closed.
 
 ## Tooling
 
-Core helper:
+Existing GitHub-native worker operations remain available through `scripts/swarm_control.py`:
 
 ```bash
 python3 scripts/swarm_control.py simulate --workers 30
 python3 scripts/swarm_control.py remote-validate --repo jonathangana131-lab/Nembra
-python3 scripts/swarm_control.py register --repo jonathangana131-lab/Nembra --worker sol-20260811-a81f
+python3 scripts/swarm_control.py register --repo jonathangana131-lab/Nembra --worker <worker>
 python3 scripts/swarm_control.py recommend --repo jonathangana131-lab/Nembra
 python3 scripts/swarm_control.py claim --repo jonathangana131-lab/Nembra --lane <lane> --slot <slot> --worker <worker>
 python3 scripts/swarm_control.py heartbeat --repo jonathangana131-lab/Nembra --lane <lane> --slot <slot> --worker <worker> --lease-id <id> --generation <n>
@@ -286,15 +208,27 @@ python3 scripts/swarm_control.py event --repo jonathangana131-lab/Nembra --type 
 python3 scripts/swarm_control.py board --repo jonathangana131-lab/Nembra
 ```
 
-`GITHUB_TOKEN` is read from the environment when a remote command needs a write/read API token. Never store the token in Git or control-state JSON.
+V16 local enforcement/projection commands:
 
-## Rollout
+```bash
+PYTHONPATH=scripts python3 -m swarmcp.maximum validate-local --root <root>
+PYTHONPATH=scripts python3 -m swarmcp.maximum render --root <root>
+PYTHONPATH=scripts python3 -m swarmcp.maximum verify-fence --root <root>
+PYTHONPATH=scripts python3 -m swarmcp.maximum pr-check --root <root> --event <event.json> --changed-files <paths.txt>
+PYTHONPATH=scripts python3 -m swarmcp.maximum stop-proof --root <root>
+```
 
-- **Foundation:** core/config/tests/docs.
-- **Shadow:** seed/import live state, observe scheduler, warn on metadata/scope, prove real GitHub CAS.
-- **Coordination:** new `Go` work must claim before branch creation; complementary roles/resources/handoffs active.
-- **Enforcement:** controlled PRs require live claim + metadata + review/scope rules.
-- **Full Go:** canonical worker boot instructions depend on a successful claim before implementation and require the explicit stop proof before an intentional idle/stop.
-- **Metrics/autotuning:** tune WIP/leases from throughput data, never lines-written gamification.
+`GITHUB_TOKEN` is read from the environment for remote GitHub operations. Never store tokens, Apple/signing credentials, Bluetooth secrets, or private Tuya credentials in Git/control records.
 
-The large existing Capture backlog is the reason shadow mode exists: preserve accepted work and safety while new work migrates to real atomic ownership.
+## Rollout status
+
+- Foundation: **complete**.
+- Real GitHub CAS proof: **complete**.
+- Coordination/claim-first workflow: **active**.
+- Full `Go` continuation/stop-proof protocol: **active**.
+- V16 enforcement for newly created work: **active after V16 merge**.
+- Pre-V16 Capture backlog: **grandfathered and incrementally reconciled**, not forcibly rewritten.
+- Digest-fenced live projection: **active after V16 merge**.
+- Metrics/autotuning: ongoing; tune WIP/leases from verified throughput and contention, never gross lines written.
+
+The control plane exists to reduce coordination cost. If a future rule costs more engineering throughput than the collisions/risks it prevents, measure it, simplify it, and preserve the invariants above.
