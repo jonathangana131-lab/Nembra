@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "claim",
+  "laneId": "capture-package-test-runner-recovery",
+  "slot": "review",
+  "role": "adversarial-review",
+  "workerId": "sol-20260811-gos93",
+  "leaseId": "capture-pkg-review-gos93-20260811-0719",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T07:19:55Z",
+  "lastHeartbeatAt": "2026-08-11T07:19:55Z",
+  "leaseSeconds": 1800,
+  "branch": "",
+  "pr": 2808,
+  "sourceSHA": "ff70b15cd770fcfa11c37635ebf528fcf554fda0"
+}
