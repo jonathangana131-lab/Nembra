@@ -13,24 +13,48 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Apply guarded non-workflow repair
+      - name: Broaden exact provenance trigger inputs
         shell: bash
         run: |
-          python3 .github/scripts/tmp_capture_final_review_blockers_gpt56.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/capture-field-build-provenance.yml')
+          text = path.read_text()
+          old = '''      - NembraApp/App/NembraCaptureBuildIdentity.swift
+      - NembraApp/App/NembraCaptureEntrypoint.swift
+      - NembraCapture.xcodeproj/project.pbxproj
+      - NembraCapture.entitlements
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerPrivateInstallLogCustodySourceTests.swift
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift
+'''
+          new = '''      - Podfile
+      - Podfile.lock
+      - NembraCapture-Info.plist
+      - NembraCapture.xcodeproj/**
+      - NembraCapture.xcworkspace/**
+      - NembraCapture.entitlements
+      - NembraApp/App/NembraCaptureBuildIdentity.swift
+      - NembraApp/App/NembraCaptureEntrypoint.swift
+      - NembraApp/Features/Research/TuyaAccountBridge.swift
+      - NembraApp/Features/Research/ES80CaptureShellView.swift
+      - Packages/NembraBluetoothCapture/**
+      - Packages/NembraCore/**
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f'provenance trigger seam changed: {text.count(old)} matches')
+          path.write_text(text.replace(old, new, 1))
+          PY
           git diff --check
-          git restore -- .github/workflows/capture-field-build-provenance.yml
-          git restore -- .github/workflows/tmp-capture-final-review-blockers-gpt56.yml
-          git restore -- .github/scripts/tmp_capture_final_review_blockers_gpt56.py
-          git diff --check
-          test "$(git diff --name-only | sort)" = "$(printf '%s\n' 'NembraApp/Features/Research/TuyaAccountBridge.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift' | sort)"
-      - name: Commit source and test repair only
+          test "$(git diff --name-only)" = '.github/workflows/capture-field-build-provenance.yml'
+      - name: Commit provenance workflow only
         shell: bash
         run: |
           git config user.name "nembra-v14-gpt56"
           git config user.email "nembra-v14-gpt56@users.noreply.github.com"
-          git add NembraApp/Features/Research/TuyaAccountBridge.swift \
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift \
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift
+          git add .github/workflows/capture-field-build-provenance.yml
           git diff --cached --check
-          git commit -m "fix(capture): preserve status endpoint truth"
+          git commit -m "fix(capture): broaden field provenance triggers"
           git push origin HEAD:repair/v14-capture-final-review-blockers-gpt56
