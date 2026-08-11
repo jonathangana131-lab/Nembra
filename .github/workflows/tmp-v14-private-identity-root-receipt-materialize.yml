@@ -1,0 +1,102 @@
+name: tmp V14 Private Identity Root Receipt Materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-private-recovery-unlink-race-sol-4f57unlink-20260811
+    paths:
+      - .github/workflows/tmp-v14-private-identity-root-receipt-materialize.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 8
+
+      - name: Bind root-receipt construction lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='1834a39ac44e09cf12426cf28cb95ed3c008e9a2'
+          git merge-base --is-ancestor "$base" HEAD
+          changed="$(git diff --name-only "$base"...HEAD | sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/tmp-v14-private-identity-root-receipt-materialize.yml' \
+            'Scripts/capture_tuya_private_identity_authority.py' \
+            'scripts/ci/tests/test_capture_private_identity_authority_receipt.py' \
+            'scripts/ci/tmp_v14_private_identity_root_receipt_materialize.py' | sort)"
+          test "$changed" = "$expected"
+
+      - name: Materialize transaction receipt lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tmp_v14_private_identity_root_receipt_materialize.py
+          /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_identity_authority.py
+          /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_authority_receipt.py
+          /bin/bash -n Scripts/provision_capture_tuya_identity.sh
+          /bin/bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          git diff --check
+
+      - name: Authority receipt lifecycle tests
+        run: /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_authority_receipt.py
+
+      - name: Writer self-test
+        run: /usr/bin/python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test
+
+      - name: Publication race suite
+        run: /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_publication_races.py
+
+      - name: Same-inode payload suite
+        run: /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
+
+      - name: Destination ancestor suite
+        run: /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
+
+      - name: Crash-residue suite
+        run: /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_crash_residue.py
+
+      - name: Recovery and cleanup suite
+        run: /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py
+
+      - name: Final-name binding suite
+        run: /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
+
+      - name: Verify pre-CocoaPods authority source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          verify_line="$(grep -nF 'verify "$REPO_ROOT" "$PRIVATE_IDENTITY_WRITER_SHA256"' Scripts/bootstrap_capture_tuya_sdk.sh | cut -d: -f1)"
+          pod_line="$(grep -nF 'command -v pod' Scripts/bootstrap_capture_tuya_sdk.sh | cut -d: -f1)"
+          invalidate_line="$(grep -nF 'invalidate "$ROOT"' Scripts/provision_capture_tuya_identity.sh | cut -d: -f1)"
+          credential_line="$(grep -nF 'Tuya SmartLife SDK AppKey (input hidden)' Scripts/provision_capture_tuya_identity.sh | cut -d: -f1)"
+          test -n "$verify_line" && test -n "$pod_line" && test "$verify_line" -lt "$pod_line"
+          test -n "$invalidate_line" && test -n "$credential_line" && test "$invalidate_line" -lt "$credential_line"
+          test -z "$(grep -F '_unlink_owned_relative_inode_if_named' Scripts/provision_capture_tuya_identity_writer.py || true)"
+          test -z "$(grep -F '_unlink_owned_inode_if_named' Scripts/provision_capture_tuya_identity_writer.py || true)"
+
+      - name: Publish durable root-receipt repair bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Nembra Swarm'
+          git config user.email 'noreply@users.noreply.github.com'
+          git add \
+            Scripts/capture_tuya_private_identity_authority.py \
+            Scripts/provision_capture_tuya_identity_writer.py \
+            Scripts/provision_capture_tuya_identity.sh \
+            Scripts/bootstrap_capture_tuya_sdk.sh \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift \
+            scripts/ci/tests/test_capture_private_identity_authority_receipt.py
+          test -n "$(git diff --cached --name-only)"
+          git commit -m 'Capture P0: seal private identity transaction before bootstrap'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
