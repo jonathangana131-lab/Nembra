@@ -6,14 +6,14 @@
   "title": "Capture build and private-review execution authority",
   "objective": "Converge the selected CocoaPods/private-input field-build authority lineage onto one exact descendant, preserving reviewed lock/generated/private subjects and closing every authority-helper execution subject plus macOS vnode-attribute custody before flagship composition.",
   "priority": 0,
-  "state": "VERIFYING",
+  "state": "BLOCKED_EXTERNAL",
   "dependencies": [],
   "blockers": [
     {
-      "id": "current-vnode-security-convergence-heavy-gates",
+      "id": "vnode-successor-must-rebase-new-partial-authority-closure",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Live clean synthesis is #2856 exact 757b35222ab33210d872993df1e50426fb59aff3, rebased directly onto current #2805 parent efd668b46ad1b7b9375e4dca767625ced3cad023. Direct source/review confirms this exact head combines #2805 exception-proxy + accepted-source/helper custody with KQ_NOTE_ATTRIB vnode metadata custody. Exact Private Review Commitment, Helper Execution Custody, Downstream Helper Red Team, CocoaPods Build Subject Authority, and CocoaPods Vnode Attribute Current are terminal SUCCESS; the vnode workflow includes exact-bound real macos-15 chmod/kqueue delivery. Remaining blockers are exact-head Capture Field Build Provenance, Capture Main Selective Graft Diagnostic, and Xcode 27 PR Exact-Head QA, which are queued and therefore not accepted. Any merge/rebase moves the head and requires the full applicable gate set again.",
+      "reason": "#2805 moved after #2856 rebased: current security spine is exact 4bdc76fa68e9c49ca4304c75e456cad22ee2f895 and now additionally closes caller-constructible partial authority by making accepted generated-subject/private-review flags implicitly require accepted provenance/generated-helper custody, with a permanent malicious-neighbor regression. #2856 exact 757b35222ab33210d872993df1e50426fb59aff3 still has valid vnode ingredient evidence (including real macos-15 chmod/kqueue) but is parent-stale. Rebase/recompose the same five-file vnode delta onto 4bdc76fa, preserve the new partial-authority closure, then rerun exact vnode/security/Field/selective-graft/Xcode. Ancestor greens cannot accept the rebased result.",
       "pr": 2856,
       "headSHA": "757b35222ab33210d872993df1e50426fb59aff3"
     },
@@ -21,7 +21,7 @@
       "id": "private-identity-publication-authority-separate-blocker",
       "state": "ACTIVE",
       "scope": "epic",
-      "reason": "Separate Capture private-identity recovery #2858 exact cb72a47ee2489235febd40ac440bc9f8462ba432 remains blocked by durable adversarial findings: post-publication destination substitution cleanup is not race-safe and same-inode equal-length payload mutation is not byte-bound across publication. Do not let build-authority convergence imply identity-publication authority or physical GO.",
+      "reason": "Separate #2858 exact cb72a47ee2489235febd40ac440bc9f8462ba432 remains blocked by two independently reproduced authority defects. #2860 exact-red proves post-sealed-name-check substitution can publish and leave attacker bytes at the credential destination. #2864 exact-red proves same-inode equal-length payload mutation can be accepted because bytes are not rebound after sealing. #2861 was closed as duplicate PR soup in favor of cleaner #2864. PHYSICAL authority remains unavailable regardless of build-authority progress.",
       "pr": 2858,
       "headSHA": "cb72a47ee2489235febd40ac440bc9f8462ba432"
     }
@@ -50,12 +50,12 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
-  "sourceSHA": "757b35222ab33210d872993df1e50426fb59aff3",
+  "sourceSHA": "4bdc76fa68e9c49ca4304c75e456cad22ee2f895",
   "legacy": {
     "primaryPR": 2856,
     "primaryHeadSHA": "757b35222ab33210d872993df1e50426fb59aff3",
-    "lineagePRs": [2709,2778,2794,2805,2809,2825,2829,2830,2834,2836,2837,2838,2840,2843,2844,2845,2850,2856],
-    "knownExactHeadFinding": "Reconciled 2026-08-11T09:06Z. #2856 is the first live clean synthesis found that combines the current #2805 exception-proxy/exact-source authority spine with KQ_NOTE_ATTRIB vnode metadata custody. Exact focused authority gates and real macOS chmod/kqueue evidence are green on 757b3522; Field, selective-graft, and Xcode remain queued. #2858 remains a separate private-identity publication blocker. PHYSICAL NO-GO."
+    "lineagePRs": [2709,2778,2794,2805,2809,2825,2829,2830,2834,2836,2837,2838,2840,2843,2844,2845,2850,2856,2860,2864],
+    "knownExactHeadFinding": "Reconciled 2026-08-11T09:10Z. Current #2805 4bdc76fa adds caller-constructible partial-authority closure after #2856's latest rebase, so #2856 757b3522 is again stale-parent ingredient evidence. It must rebase the accepted vnode delta onto 4bdc76fa and re-earn all exact gates. Separate private-identity publication remains red under #2860 and #2864. PHYSICAL NO-GO."
   },
   "tags": ["capture","p0","security","build-authority","legacy-import"]
 }
