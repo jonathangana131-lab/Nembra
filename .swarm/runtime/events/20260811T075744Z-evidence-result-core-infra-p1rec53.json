@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "075744-evidence-result-core-infra-p1rec53",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-p1rec53",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Core-infra reconciliation against main d8e38d0a786d4fd97e7eb641d97c6cec76adee0c imported two minimum coherent Rides/NembraCore lineage records: rides-duration-authority-persistence (#1474 exact 40fda835 -> #1514 exact 5744f017) and rides-distance-history-authority (#438 exact f23407fd -> #443 exact c213118e). Both are BLOCKED_EXTERNAL because their parent lineages are draft/stale to current main and exact acceptance is incomplete; neither is app-visible or physical truth. Standalone stale package-only drafts #342 exact dc51cb58 and #2289 exact 33c390d4 were inspected but deliberately not imported as independent runnable lanes: they have no current ownership/acceptance and are lower-priority provenance work that should be reconsidered inside the future Rides/provenance closure instead of inflating WIP. Superseded predecessors #1410 and #204 are recorded on the imported lineage records. No Capture, Battery/Range, Dashboard, UI, BLE/Tuya, telemetry, or physical authority changed.",
+  "createdAt": "2026-08-11T07:57:44Z"
+}
