@@ -9,14 +9,14 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:39:30Z",
-  "lastHeartbeatAt": "2026-08-11T21:39:30Z",
+  "lastHeartbeatAt": "2026-08-11T21:42:11Z",
   "leaseSeconds": 1800,
   "branch": "recovery/v15-battery-range-simulator-display/sol-f3a8",
   "pr": 2815,
   "sourceSHA": "359f1226938c2fae8ca63346113b005c3f336206",
-  "currentHeadSHA": "359f1226938c2fae8ca63346113b005c3f336206",
+  "currentHeadSHA": "c7413bd7a823cd01aec1039ea42fbaeee22d6b6f",
   "takeoverFromWorkerId": "sol-20260811-f3a8",
-  "takeoverReason": "Generation-1 lease expired many hours ago and the exact branch remains open at 359f1226938c. Independent review 4910969717 on that predecessor head re-confirmed one missing mechanical regression: Simulator display authority is currently storage-isolated in makeRuntime, but the new suite does not lock that production-vs-Simulator retainedBatteryStorage boundary. Recover the same PR lineage to add only that allowed-path regression; visual acceptance remains separately blocked and this worker must not self-accept the successor. PHYSICAL ES80 battery/range truth remains unavailable.",
+  "takeoverReason": "Generation-1 lease expired many hours ago. Recover the same open #2815 lineage to close the exact retainedBatteryStorage production-vs-Simulator regression identified by independent predecessor review 4910969717; preserve production behavior and do not self-accept the successor.",
   "ownedPaths": ["Packages/NembraCore/Tests/NembraCoreTests/SimulatorBatteryDisplayAuthorityAppSourceTests.swift"],
-  "checkpoint": "Predecessor exact 359f122 has Xcode success but review BLOCK. Repair only the missing retained-storage isolation regression in the existing source-contract test file; do not alter production authority or claim physical telemetry. After push, re-run/observe exact-head gates and hand successor to a different review worker."
+  "checkpoint": "Pushed test-only successor c7413bd7. The regression now isolates makeRuntime, compacts whitespace, and mechanically requires the exact production-only ternary `bootstrap.scenario == nil ? UserDefaultsRetainedBatterySnapshotStorage() : nil`, plus one forwarding site. No production source changed. Exact-head Xcode run 31539083686 is queued; ancestor green does not accept this head. Visual acceptance remains independently blocked because the standard artifact does not open BatteryRangeView and this lane does not authorize UI-test/harness writes. PHYSICAL ES80 battery/range truth remains unavailable."
 }
