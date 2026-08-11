@@ -39,9 +39,10 @@ jobs:
         run: |
           set -euo pipefail
           bash -n Scripts/bootstrap_capture_tuya_sdk.sh
-          PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -m py_compile Scripts/capture_cocoapods_build_subject.py
-          PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
-          PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-capture-pycache"
+          /usr/bin/python3 -m py_compile Scripts/capture_cocoapods_build_subject.py
+          /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
           /usr/bin/python3 -I Scripts/capture_cocoapods_build_subject.py --self-test
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
