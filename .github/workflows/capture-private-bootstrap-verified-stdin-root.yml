@@ -1,0 +1,82 @@
+name: Capture Private Bootstrap Verified Stdin Root
+
+on:
+  pull_request:
+    paths:
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - scripts/ci/tests/test_capture_private_bootstrap_verified_stdin_root.py
+      - .github/workflows/capture-private-bootstrap-verified-stdin-root.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verified-stdin-root:
+    name: Preserve accepted Git bytes with explicit bootstrap root
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact child scope
+        shell: bash
+        env:
+          PARENT: 11fc7e0813709a45b10a13d914e5a0275555ec0b
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          git cat-file -e "${PARENT}^{commit}"
+          changed_paths="$(git diff --name-only "$PARENT"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' \
+            '.github/workflows/capture-private-bootstrap-verified-stdin-root.yml' \
+            'Scripts/bootstrap_capture_tuya_sdk.sh' \
+            'scripts/ci/tests/test_capture_private_bootstrap_verified_stdin_root.py' | LC_ALL=C sort)"
+          if [[ "$changed_paths" != "$expected_paths" ]]; then
+            printf 'Verified-stdin bootstrap child must remain exactly three-path. Changed:\n' >&2
+            printf '%s\n' "$changed_paths" | sed 's/^/  /' >&2
+            exit 20
+          fi
+          test ! -e .github/workflows/tmp-v14-private-bootstrap-explicit-root-materialize.yml
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Validate bootstrap shell
+        shell: bash
+        run: |
+          set -euo pipefail
+          /bin/bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+
+      - name: Prove verified-stdin root semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I \
+            scripts/ci/tests/test_capture_private_bootstrap_verified_stdin_root.py
+
+      - name: Preserve explicit authority boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'if [[ -n "${NEMBRA_ACCEPTED_SOURCE_ROOT:-}" ]]; then' Scripts/bootstrap_capture_tuya_sdk.sh
+          grep -Fq 'PHYSICAL_CWD="$(pwd -P)"' Scripts/bootstrap_capture_tuya_sdk.sh
+          grep -Fq '[[ "$NEMBRA_ACCEPTED_SOURCE_ROOT" == "$PHYSICAL_CWD" ]]' Scripts/bootstrap_capture_tuya_sdk.sh
+          grep -Fq 'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"' Scripts/bootstrap_capture_tuya_sdk.sh
+          if grep -Fq 'eval ' Scripts/bootstrap_capture_tuya_sdk.sh; then
+            printf 'Bootstrap must not regain source identity through eval.\n' >&2
+            exit 21
+          fi
+
+      - name: Diff hygiene
+        shell: bash
+        env:
+          PARENT: 11fc7e0813709a45b10a13d914e5a0275555ec0b
+        run: |
+          set -euo pipefail
+          git diff --check "$PARENT" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'Validation only: no credentials, CocoaPods resolution, Xcode build, device operation, Bluetooth/Tuya action, or physical experiment occurred.\n'
