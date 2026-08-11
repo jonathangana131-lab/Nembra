@@ -1,0 +1,201 @@
+name: Capture Root AX Action First Materializer
+
+on:
+  push:
+    branches:
+      - visual/v14-capture-root-large-type-hierarchy-sol-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Recompose Accessibility XXXL around the recovery action
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text(encoding="utf-8")
+
+          def once(label: str, old: str, new: str) -> None:
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one match, found {count}")
+              text = text.replace(old, new, 1)
+
+          once(
+              "AX hero omission",
+              '''    @ViewBuilder
+              private var rootHero: some View {
+                  VStack(alignment: .leading, spacing: isAccessibilityLayout ? 4 : 8) {
+                      Text(isAccessibilityLayout ? "Prepare scooter link" : "Prepare the scooter link")
+                          .font(isAccessibilityLayout ? .title2.bold() : .largeTitle.bold())
+                          .fixedSize(horizontal: false, vertical: true)
+                          .accessibilityAddTraits(.isHeader)
+
+                      if !isAccessibilityLayout {
+                          Text("Link the Tuya Smart account that owns this scooter. Bluetooth and physical evidence stay locked until the reviewed field build and fresh scooter authority are verified.")
+                              .font(.body)
+                              .foregroundStyle(Color.white.opacity(0.78))
+                              .fixedSize(horizontal: false, vertical: true)
+                      }
+                  }
+              }
+          ''',
+              '''    @ViewBuilder
+              private var rootHero: some View {
+                  if !isAccessibilityLayout {
+                      VStack(alignment: .leading, spacing: 8) {
+                          Text("Prepare the scooter link")
+                              .font(.largeTitle.bold())
+                              .fixedSize(horizontal: false, vertical: true)
+                              .accessibilityAddTraits(.isHeader)
+
+                          Text("Link the Tuya Smart account that owns this scooter. Bluetooth and physical evidence stay locked until the reviewed field build and fresh scooter authority are verified.")
+                              .font(.body)
+                              .foregroundStyle(Color.white.opacity(0.78))
+                              .fixedSize(horizontal: false, vertical: true)
+                      }
+                  }
+              }
+          ''',
+          )
+
+          once(
+              "AX compact lock label",
+              '''                Text(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")
+                              .font(isAccessibilityLayout ? .subheadline.weight(.semibold) : .headline)
+                              .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)
+                              .fixedSize(horizontal: false, vertical: true)
+          ''',
+              '''                Text(
+                              fieldBuildIsAuthoritative
+                                  ? (isAccessibilityLayout ? "Build ready" : "Build provenance ready")
+                                  : (isAccessibilityLayout ? "Capture locked" : "Physical capture locked")
+                          )
+                          .font(isAccessibilityLayout ? .body.weight(.semibold) : .headline)
+                          .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+                          .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)
+                          .fixedSize(horizontal: false, vertical: true)
+          ''',
+          )
+
+          once(
+              "AX tighter lock padding",
+              '''        .padding(.vertical, isAccessibilityLayout ? 4 : 10)
+          ''',
+              '''        .padding(.vertical, isAccessibilityLayout ? 2 : 10)
+          ''',
+          )
+
+          once(
+              "AX account heading",
+              ''': (isAccessibilityLayout ? "Set up account metadata" : "Prepare account metadata")
+          ''',
+              ''': (isAccessibilityLayout ? "Account setup" : "Prepare account metadata")
+          ''',
+          )
+
+          once(
+              "AX account heading scale",
+              '''                    .font(isAccessibilityLayout ? .headline : .title3.bold())
+                              .accessibilityAddTraits(.isHeader)
+          ''',
+              '''                    .font(isAccessibilityLayout ? .title3.bold() : .title3.bold())
+                              .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+                              .accessibilityAddTraits(.isHeader)
+          ''',
+          )
+
+          once(
+              "AX user code field",
+              '''                VStack(alignment: .leading, spacing: 7) {
+                          Text("Tuya Smart user code")
+                              .font(.subheadline.weight(.semibold))
+                          TextField("Paste user code", text: $tuya.userCode)
+                              .textInputAutocapitalization(.never)
+          ''',
+              '''                VStack(alignment: .leading, spacing: 7) {
+                          if !isAccessibilityLayout {
+                              Text("Tuya Smart user code")
+                                  .font(.subheadline.weight(.semibold))
+                          }
+                          TextField(isAccessibilityLayout ? "Tuya user code" : "Paste user code", text: $tuya.userCode)
+                              .textInputAutocapitalization(.never)
+          ''',
+          )
+
+          once(
+              "AX QR button label",
+              '''                    Label("Create approval QR", systemImage: "qrcode")
+                              .font(.headline)
+                              .frame(maxWidth: .infinity, minHeight: 50)
+          ''',
+              '''                    Label(isAccessibilityLayout ? "Create QR" : "Create approval QR", systemImage: "qrcode")
+                              .font(isAccessibilityLayout ? .body.bold() : .headline)
+                              .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+                              .frame(maxWidth: .infinity, minHeight: 50)
+          ''',
+          )
+
+          once(
+              "AX QR semantic label",
+              '''                .accessibilityIdentifier("nembra.capture.root.account-link-action")
+                          .accessibilityHint("Creates the account-metadata approval QR. It does not start Bluetooth or physical Capture.")
+          ''',
+              '''                .accessibilityIdentifier("nembra.capture.root.account-link-action")
+                          .accessibilityLabel("Create approval QR")
+                          .accessibilityHint("Creates the account-metadata approval QR. It does not start Bluetooth or physical Capture.")
+          ''',
+          )
+
+          old_footer = '''                    if isAccessibilityLayout {
+                          Text(fieldBuildIsAuthoritative ? "Account metadata only here. Bluetooth stays locked until preflight verifies account and scooter authority." : "Account setup only in this public build.")
+                              .font(.footnote.weight(.semibold))
+                              .foregroundStyle(Color.white.opacity(0.78))
+                              .fixedSize(horizontal: false, vertical: true)
+                          Text("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings.")
+                              .font(.footnote)
+                              .foregroundStyle(Color.white.opacity(0.72))
+                              .fixedSize(horizontal: false, vertical: true)
+                          statusText
+                      }
+          '''
+          new_footer = '''                    if isAccessibilityLayout, tuya.phase != .needsUserCode {
+                          statusText
+                      }
+          '''
+          once("AX duplicate footer", old_footer, new_footer)
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Update hierarchy regression and retire materializer
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureRootLargeTypeHierarchySourceTests.swift")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace('#expect(hero.contains("Prepare scooter link"))', '#expect(hero.contains("if !isAccessibilityLayout"))\n        #expect(hero.contains("Prepare the scooter link"))')
+          text = text.replace('#expect(authority.contains(".font(isAccessibilityLayout ? .subheadline.weight(.semibold) : .headline)"))', '#expect(authority.contains("isAccessibilityLayout ? \"Capture locked\" : \"Physical capture locked\""))\n        #expect(authority.contains(".dynamicTypeSize(...DynamicTypeSize.accessibility1)"))')
+          text = text.replace('#expect(authority.contains(".padding(.vertical, isAccessibilityLayout ? 4 : 10)"))', '#expect(authority.contains(".padding(.vertical, isAccessibilityLayout ? 2 : 10)"))')
+          text = text.replace('#expect(account.contains("Set up account metadata"))', '#expect(account.contains("Account setup"))\n        #expect(account.contains("TextField(isAccessibilityLayout ? \"Tuya user code\" : \"Paste user code\""))\n        #expect(account.contains("isAccessibilityLayout ? \"Create QR\" : \"Create approval QR\""))\n        #expect(account.contains(".accessibilityLabel(\"Create approval QR\")"))')
+          path.write_text(text, encoding="utf-8")
+          PY
+          git diff --check
+          git rm .github/workflows/capture-root-ax-action-first-materialize.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureRootLargeTypeHierarchySourceTests.swift
+          git config user.name "nembra-capture-bot"
+          git config user.email "capture@nembra.invalid"
+          git commit -m "Capture: make accessibility root action-first"
+          git push origin HEAD:visual/v14-capture-root-large-type-hierarchy-sol-20260811
