@@ -28,7 +28,18 @@ def _load_provenance_module():
     return module
 
 
+def _load_generated_build_subject_module():
+    helper = Path(__file__).with_name("capture_cocoapods_generated_build_subject.py")
+    spec = importlib.util.spec_from_file_location("capture_cocoapods_generated_build_subject", helper)
+    if spec is None or spec.loader is None:
+        raise BuildGuardError("generated CocoaPods build-subject helper could not be loaded")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 provenance = _load_provenance_module()
+generated_build_subject = _load_generated_build_subject_module()
 
 
 @dataclass(frozen=True)
@@ -39,14 +50,32 @@ class PrivateInputs:
     identity_podspec: Path
     identity_sources: Path
 
+    @property
+    def generated_pods(self) -> Path:
+        return self.lockfile.parent / "Pods"
+
+    @property
+    def generated_workspace(self) -> Path:
+        return self.lockfile.parent / "NembraCapture.xcworkspace"
+
     def generation_snapshot(self):
-        return provenance._private_input_record_generation_snapshot(
+        private_snapshot = provenance._private_input_record_generation_snapshot(
             lockfile=self.lockfile,
             security_podspec=self.security_podspec,
             security_build=self.security_build,
             identity_podspec=self.identity_podspec,
             identity_sources=self.identity_sources,
         )
+        try:
+            generated_sha256 = generated_build_subject.fingerprint_subject(
+                self.generated_pods,
+                self.generated_workspace,
+            )
+        except generated_build_subject.SubjectError as error:
+            raise BuildGuardError(
+                f"generated CocoaPods build subject could not be admitted: {error}"
+            ) from error
+        return private_snapshot, generated_sha256
 
 
 class EventBackend(Protocol):
@@ -113,10 +142,12 @@ def _lstat_identity(path: Path) -> tuple[int, int, int, int, int, int, int]:
 
 
 def _watch_paths(inputs: PrivateInputs) -> tuple[Path, ...]:
-    """Return every regular file + directory whose mutation could change admitted inputs.
+    """Return every regular file + directory whose mutation could change the field build.
 
-    Symlink objects are covered by their containing directory watcher. The provenance
-    helper independently proves that any admitted symlink remains internal and stable.
+    The private provenance snapshot owns exact Tuya inputs. The generated-subject
+    fingerprint independently owns Pods + workspace bytes. Symlink objects are
+    covered by their containing directory watcher while each snapshot revalidates
+    the corresponding path graph before and after xcodebuild.
     """
 
     paths: set[Path] = {
@@ -124,9 +155,14 @@ def _watch_paths(inputs: PrivateInputs) -> tuple[Path, ...]:
         inputs.security_podspec,
         inputs.identity_podspec,
     }
-    for root in (inputs.security_build, inputs.identity_sources):
+    for root in (
+        inputs.security_build,
+        inputs.identity_sources,
+        inputs.generated_pods,
+        inputs.generated_workspace,
+    ):
         if not root.is_dir() or root.is_symlink():
-            raise BuildGuardError(f"private build input tree is not one real directory: {root}")
+            raise BuildGuardError(f"field build input tree is not one real directory: {root}")
         paths.add(root)
         for current_root, directories, files in os.walk(root, topdown=True, followlinks=False):
             current = Path(current_root)
@@ -216,16 +252,16 @@ def run_guarded_build(
     try:
         watched = _open_watched_inputs(_watch_paths(inputs), backend)
 
-        # Registration itself has a race boundary. Reprove the entire admitted
-        # generation after every vnode watch is armed, then reject any queued
-        # mutation before the child build is allowed to start.
+        # Registration itself has a race boundary. Reprove every admitted private
+        # and generated build subject after all vnode watches are armed, then reject
+        # any queued mutation before the child build is allowed to start.
         armed_snapshot = inputs.generation_snapshot()
         if armed_snapshot != initial_snapshot:
-            raise BuildGuardError("private build inputs changed while build-window monitoring was armed")
+            raise BuildGuardError("field build inputs changed while build-window monitoring was armed")
         queued = backend.events(0)
         if queued:
             raise BuildGuardError(
-                "private build inputs changed before xcodebuild admission: "
+                "field build inputs changed before xcodebuild admission: "
                 + _describe_events(queued, watched)
             )
 
@@ -235,28 +271,28 @@ def run_guarded_build(
             if events:
                 _stop_process(process)
                 raise BuildGuardError(
-                    "private build input mutation was observed while xcodebuild was running: "
+                    "field build input mutation was observed while xcodebuild was running: "
                     + _describe_events(events, watched)
                 )
 
         trailing = backend.events(0)
         if trailing:
             raise BuildGuardError(
-                "private build input mutation was observed at xcodebuild completion: "
+                "field build input mutation was observed at xcodebuild completion: "
                 + _describe_events(trailing, watched)
             )
 
-        # Keep every vnode watcher live while the final generation is sampled.
+        # Keep every vnode watcher live while the final generations are sampled.
         # A mutation after this point cannot have affected the already-finished
-        # child build; the install script still performs its independent crypto
-        # provenance verification immediately after this guard returns.
+        # child build; the install script still performs its independent private
+        # cryptographic provenance verification immediately after this guard returns.
         final_snapshot = inputs.generation_snapshot()
         if final_snapshot != initial_snapshot:
-            raise BuildGuardError("private build inputs changed across the guarded xcodebuild window")
+            raise BuildGuardError("field build inputs changed across the guarded xcodebuild window")
         trailing = backend.events(0)
         if trailing:
             raise BuildGuardError(
-                "private build input mutation was observed during final build-window verification: "
+                "field build input mutation was observed during final build-window verification: "
                 + _describe_events(trailing, watched)
             )
         return int(process.returncode or 0)
@@ -273,7 +309,7 @@ def run_guarded_build(
 
 def _parse_args(argv: Sequence[str]) -> tuple[PrivateInputs, list[str]]:
     parser = argparse.ArgumentParser(
-        description="Run the Capture field build while macOS vnode custody watches every admitted private input."
+        description="Run the Capture field build while macOS vnode custody watches every admitted private and generated input."
     )
     parser.add_argument("--lockfile", required=True, type=Path)
     parser.add_argument("--security-podspec", required=True, type=Path)
