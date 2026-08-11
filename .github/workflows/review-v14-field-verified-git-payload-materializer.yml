@@ -1,0 +1,58 @@
+name: REVIEW V14 Field Verified Git Payload Materializer
+
+on:
+  pull_request:
+    paths:
+      - scripts/field/install_one_time_capture.command
+      - scripts/ci/tmp_materialize_field_verified_git_payload.py
+      - scripts/ci/tests/test_capture_field_git_packed_blob_execution_red_team.py
+      - scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
+      - scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
+      - .github/workflows/review-v14-field-verified-git-payload-materializer.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-materialization-without-precondition-rewrite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact review head and parent construction blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git hash-object scripts/field/install_one_time_capture.command)" = "87430680649f9eb3160f30162f2c78f75809af68"
+          test "$(git hash-object scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py)" = "514dc57300f6f6987248a09e20f307a18fa43b76"
+
+      - name: Run checked-in materializer unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tmp_materialize_field_verified_git_payload.py
+
+      - name: Validate materialized authority contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/field/install_one_time_capture.command
+          python3 scripts/ci/tests/test_capture_field_git_packed_blob_execution_red_team.py
+          python3 scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
+          python3 scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
+          git diff --check
+
+      - name: Require production delta and no review mutation of construction helpers
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --quiet -- scripts/ci/tmp_materialize_field_verified_git_payload.py
+          git diff --quiet -- .github/workflows/tmp-v14-field-verified-git-payload-materialize.yml
+          test -n "$(git diff -- scripts/field/install_one_time_capture.command)"
