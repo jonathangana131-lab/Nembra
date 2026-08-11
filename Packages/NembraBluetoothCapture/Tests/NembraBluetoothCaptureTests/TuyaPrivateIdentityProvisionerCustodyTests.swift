@@ -43,6 +43,10 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
     func directInvocationClosesStartupEnvironment() throws {
         let fixture = try makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root.deletingLastPathComponent()) }
+        let source = try String(contentsOf: fixture.script, encoding: .utf8)
+        #expect(source.hasPrefix("#!/bin/bash -p\n"))
+        #expect(source.contains("if [[ $- != *p* ]]"))
+
         let sandbox = fixture.root.deletingLastPathComponent()
         let sentinel = sandbox.appendingPathComponent("startup-sentinel")
         let bashEnvironment = sandbox.appendingPathComponent("hostile-bash-env")
@@ -132,7 +136,7 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
     ) throws -> (status: Int32, output: String) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = (xtrace ? ["-x"] : []) + [script.path]
+        process.arguments = (xtrace ? ["-px"] : ["-p"]) + [script.path]
         return try run(process, environment: additions)
     }
 
