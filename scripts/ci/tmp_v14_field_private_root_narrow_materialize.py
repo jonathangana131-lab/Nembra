@@ -39,6 +39,12 @@ source = source.replace(old_dir_loop, new_dir_loop, 1)
 GUARD.write_text(source, encoding="utf-8")
 
 text = TEST.read_text(encoding="utf-8")
+old_shape_assertion = "allowed_directories, allowed_files = _accepted_source_field_allowlist"
+new_shape_assertion = "allowed_directories, allowed_directory_ancestors, allowed_files = _accepted_source_field_allowlist"
+if text.count(old_shape_assertion) != 1:
+    raise SystemExit("canonical allowlist source-shape assertion drifted")
+text = text.replace(old_shape_assertion, new_shape_assertion, 1)
+
 anchor = '''    def test_untracked_source_inserted_between_endpoint_audit_and_vnode_arming_is_rejected(self) -> None:\n'''
 if text.count(anchor) != 1:
     raise SystemExit("canonical red-team class anchor drifted")
