@@ -197,8 +197,14 @@ def _generation_snapshot(
     lockfile: Path,
     pods: Path,
     workspace: Path,
-    allowed_roots: tuple[tuple[str, Path], ...],
+    allowed_roots: tuple[tuple[str, Path], ...] | None = None,
 ) -> tuple[object, ...]:
+    # Keep this three-path API callable by the existing build guard. Callers may
+    # supply a precomputed root set only when taking several samples inside one
+    # higher-level subject operation.
+    if allowed_roots is None:
+        allowed_roots = _allowed_roots(lockfile=lockfile, pods=pods, workspace=workspace)
+
     lock_identity = provenance._regular_file_generation_identity(lockfile)
     pods_snapshot = _tree_generation_snapshot(pods, allowed_roots=allowed_roots)
     workspace_snapshot = _tree_generation_snapshot(workspace, allowed_roots=allowed_roots)
