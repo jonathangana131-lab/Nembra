@@ -9,13 +9,13 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T11:51:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:14:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:19:00Z",
   "leaseSeconds": 1800,
   "branch": "review/v14-signed-install-contracts-2911-sol-4f50qa",
-  "pr": 2911,
-  "sourceSHA": "83110a6af6220355092ed730cd28892a90c72fef",
+  "pr": 2871,
+  "sourceSHA": "f76e6ae54b4304df5b02db4f46a72f67daa276e2",
   "takeoverFromWorkerId": "sol-20260811-c4d2",
-  "takeoverReason": "Generation-3 review lease expired at 2026-08-11T10:41Z without heartbeat. Recover independent review on the active signed-install acceptance repair #2911 before composition into #2871.",
-  "durableEvidence": "Old head 8dbc60e6 exposed stale canonical Field workflow contract; review 4905936642 recorded it. Current exact head 83110a6a adds the workflow repair without production-path changes. Independent review 4905970453 finds the five-path acceptance-only scope clean. Integration review 4906029352 requires later #2907 composition to preserve both stronger accepted-source authority and stronger signed-install custody. Exact-head Field Build Provenance 31488849076, Main Selective Graft 31488848988, and Xcode 27 31488849061 are all terminal SUCCESS on unchanged 83110a6a. Review 4906078063 records child acceptance for its declared QA scope. Review 4906057134 records a separate unconfirmed post-build/pre-fingerprint signed-app substitution seam for the active tests owner to mechanize or dismiss by a concrete trust-boundary proof.",
-  "acceptance": "CHILD_EXACT_HEAD_ACCEPTED_FOR_DECLARED_QA_SCOPE. Signed-install lane still has an unconfirmed compiler-output-to-protected-stage custody question under active tests ownership. Any composition into #2871 moves the parent and requires fresh exact-head gates. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-3 review lease expired at 2026-08-11T10:41Z without heartbeat. Continue independent signed-install review upward after accepted QA child #2911 composed into #2871.",
+  "durableEvidence": "#2911 exact 83110a6a was accepted for declared QA scope with Field 31488849076, Main Graft 31488848988, and Xcode 31488849061 terminal SUCCESS plus review 4906078063. It merged into #2871 as exact moved parent f76e6ae54b4304df5b02db4f46a72f67daa276e2. All child greens are now ancestor evidence only. Fresh moved-parent runs: Signed App Install Custody 31490454614 queued, Field Build Provenance 31490454631 queued, Main Selective Graft 31490454719 in progress, Xcode 27 31490454623 queued. Review 4906029352 remains the future #2907 workflow composition contract. Review 4906057134 remains a separate unconfirmed post-build/pre-fingerprint signed-app substitution seam under tests ownership.",
+  "acceptance": "MOVED_PARENT_EXACT_HEAD_PENDING. Require Signed App + Field + Main Graft + Xcode terminal SUCCESS on unchanged f76e6ae5 and independent source review before signed-install parent acceptance. PHYSICAL NO-GO."
 }
