@@ -10,28 +10,28 @@
   "dependencies": ["capture-build-authority"],
   "blockers": [
     {
+      "id": "final-go-current-darwin-exact-descendant-pending",
+      "state": "ACTIVE",
+      "scope": "lane",
+      "reason": "Selected production is #3082 exact d4a44db4ad69947dede5b20e91e506297514a0bb after absorbing #3092 predecessor commit/path/blob provenance. On that unchanged head Capture Final GO Retirement Dispatch Custody run 31545310005, Sealed Candidate Handoff run 31545310008, and canonical Authenticated Stationary Private Review Final GO run 31545310020 are terminal SUCCESS. Xcode 31545310044 is SKIPPED and is not acceptance. Pre-absorption Darwin evidence is stale. #3087 exact 75c75d2 was correctly closed after the production head moved; duplicate replacement #3098 was also closed as superseded. Current selected Darwin witness is #3100 exact 8eec90d4559f9f8f42ad75ff609f9139557c9bc7 against d4a44db4; its real macOS kqueue run 31545488271 is QUEUED. Queued is not green, so Darwin software authority is not yet accepted on the selected production head.",
+      "pr": 3100,
+      "headSHA": "8eec90d4559f9f8f42ad75ff609f9139557c9bc7"
+    },
+    {
       "id": "build-authority-current-convergence-not-accepted",
       "state": "ACTIVE",
       "scope": "dependency",
-      "reason": "Final-GO's own exact software-authority child is accepted, but its build-authority dependency is not. Live build repair is #2988 exact 0f23ebe4aec1f69a9102d2d242a30d66de2e931e and is under active independent adversarial review, including the current POSIX-ACL mutation hypothesis; ancestor greens cannot be promoted across that moved head. Final-GO cannot authorize or outrun this dependency.",
-      "pr": 2988,
-      "headSHA": "0f23ebe4aec1f69a9102d2d242a30d66de2e931e"
-    },
-    {
-      "id": "final-go-current-canonical-regression-fixture-red",
-      "state": "RESOLVED",
-      "scope": "lane",
-      "reason": "The Git 2.54 read-only pack-index fixture defect was repaired in test-only #2976 and composed into #2921, moving the exact production parent to 471cc025b332f4df8b43a98d709710aeb4e0698f without changing production Final-GO authority bytes. Canonical Final-GO run 31532784360/job 93916591748 and required Xcode 27 run 31532784381/jobs 93916591468+93916625054 are terminal SUCCESS on that unchanged exact head. Independent review 4910583605 accepts 471cc025 as a Final-GO software ingredient only.",
-      "pr": 2921,
-      "headSHA": "471cc025b332f4df8b43a98d709710aeb4e0698f"
+      "reason": "Current selected-Xcode production candidate #3072 exact 3e41ecd07b020523ccfedc365c201db9799c3e7e has a terminal red ACL-custody gate. Diagnostic child #3093 exact 49e51aef23b843f8790d36508b4f6d33025c2df4 is queued for retained failure classification. Field-oracle convergence #3088 exact 31cca94cf3e5fb14fb95aa7a3399eaf1176c40e4 has terminal Field Build Provenance SUCCESS, but that does not accept the parent ACL authority and its Xcode result is skipped. Final-GO cannot outrun this dependency.",
+      "pr": 3072,
+      "headSHA": "3e41ecd07b020523ccfedc365c201db9799c3e7e"
     },
     {
       "id": "final-composed-product-authority-pending",
       "state": "ACTIVE",
       "scope": "flagship",
-      "reason": "Accepted Final-GO control is still only one ingredient. Signed-install origin custody, private-identity convergence, current app/runtime acceptance, build authority, and one final unchanged composed exact-head gate remain separate requirements. No ingredient acceptance creates physical ES80 evidence or authorizes a field run.",
-      "pr": 2921,
-      "headSHA": "471cc025b332f4df8b43a98d709710aeb4e0698f"
+      "reason": "Final-GO remains one ingredient. Selected build authority, signed compiler-output/install custody, private identity convergence, runtime VoiceOver, current app-visible composition, and one final unchanged exact-head gate remain separate requirements. No software ingredient creates physical ES80 evidence or authorizes a field run.",
+      "pr": 3082,
+      "headSHA": "d4a44db4ad69947dede5b20e91e506297514a0bb"
     }
   ],
   "mode": "exclusive",
@@ -45,30 +45,20 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true,"state":"PHYSICAL_NO_GO"},
-  "sourceSHA": "471cc025b332f4df8b43a98d709710aeb4e0698f",
+  "sourceSHA": "d4a44db4ad69947dede5b20e91e506297514a0bb",
   "legacy": {
-    "selectedGeneratedPR": 2775,
-    "selectedGeneratedHeadSHA": "b4a2172cd799d363cb503a1ecb3d15bc7382e36f",
-    "selectedPrivateReviewRecoveryPR": 2873,
-    "selectedPrivateReviewRecoveryHeadSHA": "3c8711f8520b93e2647ec9e3b52d50894193bc30",
-    "selectedProductionPR": 2921,
-    "selectedProductionHeadSHA": "471cc025b332f4df8b43a98d709710aeb4e0698f",
-    "rawTreeRedTeamPR": 2903,
-    "rawTreeRedTeamHeadSHA": "a19b9c389f76c3838436b13b5b87b33def258d5c",
-    "historicalSameHeadFinalGoSuccessRuns": [31490569648,31491154798],
-    "resolvedFixtureFailureRun": 31491239824,
-    "resolvedFixtureFailureJob": 93778006514,
-    "acceptedFinalGoRun": 31532784360,
-    "acceptedFinalGoJob": 93916591748,
-    "acceptedXcodeRun": 31532784381,
-    "acceptedXcodeJobs": [93916591468,93916625054],
-    "acceptedReviewId": 4910583605,
-    "descriptorAncestryCurrentValidationPR": 2972,
-    "descriptorAncestryCurrentValidationHeadSHA": "59000710ad38f693091feed17a040d8943d0b3cf",
-    "descriptorAncestryCurrentValidationRun": 31531987091,
-    "redTeamInputs": [2798,2869,2903,2936,2972],
-    "lineagePRs": [2638,2775,2791,2798,2803,2873,2890,2903,2936,2938,2921,2972,2976],
-    "knownExactHeadFinding": "Reconciled 2026-08-11T20:53Z by sol-20260811-a91c7e. The old 8242722c canonical red is resolved, not current truth. Test-only #2976 repaired the Git 2.54 read-only pack-index fixture without weakening the forged-object attack and was composed into #2921 exact 471cc025. Canonical Final-GO 31532784360 and Xcode 31532784381 are both terminal SUCCESS on that unchanged head, and independent review 4910583605 accepts it as a software-authority ingredient. Build authority remains an unmet live dependency on #2988 exact 0f23ebe4 under adversarial review; signed-install, private identity, app/runtime composition, and physical evidence are also unfinished. PHYSICAL NO-GO."
+    "reconciledAt": "2026-08-11T23:15:00Z",
+    "selectedProductionPR": 3082,
+    "selectedProductionHeadSHA": "d4a44db4ad69947dede5b20e91e506297514a0bb",
+    "currentDarwinValidationPR": 3100,
+    "currentDarwinValidationHeadSHA": "8eec90d4559f9f8f42ad75ff609f9139557c9bc7",
+    "currentDarwinRun": 31545488271,
+    "supersededDarwinPRs": [3087,3098],
+    "currentSoftwareSuccessRuns": [31545310005,31545310008,31545310020],
+    "skippedXcodeRun": 31545310044,
+    "previousAcceptedIngredientPR": 2921,
+    "previousAcceptedIngredientHeadSHA": "471cc025b332f4df8b43a98d709710aeb4e0698f",
+    "knownExactHeadFinding": "Reconciled generation 10 on 2026-08-11. Live Final-GO production has advanced from old #2921 to #3082 exact d4a44db4 after #3092 provenance absorption. Three current software-authority gates are terminal green, but exact-head Darwin/kqueue acceptance reset on that move. #3100 is the selected current exact-descendant witness and remains queued; #3087 and duplicate #3098 are superseded. Build authority and downstream flagship dependencies remain independently unaccepted. PHYSICAL NO-GO."
   },
   "tags": ["capture","p0","physical-go","control-authority","git-authority","legacy-import"]
 }
