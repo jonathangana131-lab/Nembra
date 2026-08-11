@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "085630-evidence-result-capture-flagship-exact-green-p1rec53",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-p1rec53",
+  "laneId": "capture-flagship-composition",
+  "message": "PR #2612 exact head 513ebea576cd6d03132e215d80fac57397877fbf has completed its meaningful current software/Simulator acceptance set: Xcode 27 Build/test/capture run 31473501059 SUCCESS, Field Build Provenance SUCCESS, Main Selective Graft integration-audit SUCCESS, exact iPhone 12 standalone Capture evidence SUCCESS, trusted same-repo head resolution SUCCESS, repository-owned/hardened Final-GO custody/composition SUCCESS, legacy executable Final-GO rejection SUCCESS, and caller-forged signed-field inspection rejection SUCCESS. One cleanup housekeeping job was cancelled and is not a product/security acceptance gate. Independent source review on this exact head is clean. Classify 513ebea as an accepted current software/Simulator parent slice only, NOT final flagship acceptance: #2841 visual/accessibility product bytes and the split build/private authority families (#2805 vs #2840/#2849) are still uncomposed; private signed installation/runtime rendezvous and deliberate Final-GO remain downstream. Any composition moves the exact head and requires fresh applicable gates. PHYSICAL remains NO-GO / do not scan / do not run.",
+  "createdAt": "2026-08-11T08:56:30Z"
+}
