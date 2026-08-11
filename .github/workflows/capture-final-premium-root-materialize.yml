@@ -1,0 +1,179 @@
+name: Capture Final Premium Root Materializer
+
+on:
+  push:
+    branches:
+      - recovery/v14-capture-final-premium-root-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.repository == 'jonathangana131-lab/Nembra'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: recovery/v14-capture-final-premium-root-sol
+
+      - name: Materialize current-parent premium root
+        shell: bash
+        env:
+          EXPECTED_PARENT: 1bfdb77bd1bdeb97a434570e7c23c5dbefe72c82
+          PREMIUM_SOURCE: 3c1d4394b7b443936240131e6d0d91ca01e49383
+          TARGET: NembraApp/App/NembraCaptureEntrypoint.swift
+          TEST_TARGET: Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootPrecisionAccessibilitySourceTests.swift
+          WORKFLOW: .github/workflows/capture-final-premium-root-materialize.yml
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test "$(git status --porcelain)" = ""
+
+          git fetch --no-tags origin "$PREMIUM_SOURCE"
+          git show "$PREMIUM_SOURCE:$TARGET" > "$TARGET"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text()
+
+          heading_needle = '''            .font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())
+            .fixedSize(horizontal: false, vertical: true)
+
+            Text(
+'''
+          heading_replacement = '''            .font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.isHeader)
+
+            Text(
+'''
+          assert source.count(heading_needle) == 1, "hero heading anchor drift"
+          source = source.replace(heading_needle, heading_replacement, 1)
+
+          combine_needle = '''        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var buildAuthorityStatus: some View {
+'''
+          combine_replacement = '''        }
+    }
+
+    private var buildAuthorityStatus: some View {
+'''
+          assert source.count(combine_needle) == 1, "hero accessibility container anchor drift"
+          source = source.replace(combine_needle, combine_replacement, 1)
+
+          required = [
+              'Text(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")',
+              'NavigationLink(fieldBuildIsAuthoritative ? "Continue to preflight" : "View locked preflight")',
+              'This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence.',
+              'private func rootSection<Content: View>',
+              '.frame(maxWidth: .infinity, minHeight: 50)',
+              '.accessibilityAddTraits(.isHeader)',
+          ]
+          for token in required:
+              assert token in source, f"missing required product token: {token}"
+          assert 'private func rootPanel<Content: View>' not in source
+          path.write_text(source)
+          PY
+
+          cat > "$TEST_TARGET" <<'SWIFT'
+          import Foundation
+          import Testing
+
+          @Suite("Capture P0 root precision accessibility")
+          struct CaptureP0RootPrecisionAccessibilitySourceTests {
+              @Test("root preserves fail-closed truth while retiring the generic card stack")
+              func precisionRootKeepsTruthWithoutCardSoup() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let root = String(try section(
+                      in: source,
+                      from: "private struct CaptureP0Root: View",
+                      to: "@MainActor\nprivate final class SecureLinkController"
+                  ))
+
+                  #expect(root.contains("private var isAccessibilityLayout: Bool"))
+                  #expect(root.contains("dynamicTypeSize.isAccessibilitySize"))
+                  #expect(root.contains("private func rootSection<Content: View>"))
+                  #expect(!root.contains("private func rootPanel<Content: View>"))
+                  #expect(root.contains("Build provenance ready"))
+                  #expect(root.contains("Physical capture locked"))
+                  #expect(root.contains("This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence."))
+                  #expect(root.contains("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings."))
+                  #expect(root.contains("NavigationLink(fieldBuildIsAuthoritative ? \"Continue to preflight\" : \"View locked preflight\")"))
+                  #expect(root.contains(".accessibilityAddTraits(.isHeader)"))
+                  #expect(root.contains(".fill(Color.white.opacity(0.14))"))
+              }
+
+              @Test("Accessibility setup keeps the labeled QR action ahead of verbose status")
+              func accessibilityPrimaryActionPrecedesVerboseStatus() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let account = String(try section(
+                      in: source,
+                      from: "private var accountSetupPanel: some View",
+                      to: "private var statusText: some View"
+                  ))
+
+                  #expect(account.contains("if !isAccessibilityLayout"))
+                  #expect(account.contains("Text(\"Tuya Smart user code\")"))
+                  #expect(account.contains("TextField(\"Paste user code\""))
+                  #expect(account.contains(".frame(minHeight: 52)"))
+                  #expect(account.contains("Label(\"Create approval QR\", systemImage: \"qrcode\")"))
+                  #expect(account.contains(".frame(maxWidth: .infinity, minHeight: 50)"))
+                  #expect(account.contains(".tint(.cyan)"))
+                  #expect(account.contains(".foregroundStyle(.black)"))
+                  #expect(account.contains("if isAccessibilityLayout"))
+
+                  let action = try #require(account.range(of: "tuya.requestApproval()"))
+                  let metadata = try #require(account.range(
+                      of: "This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings.",
+                      range: action.upperBound..<account.endIndex
+                  ))
+                  let status = try #require(account.range(
+                      of: "statusText",
+                      range: metadata.upperBound..<account.endIndex
+                  ))
+
+                  #expect(action.lowerBound < metadata.lowerBound)
+                  #expect(metadata.lowerBound < status.lowerBound)
+              }
+
+              private func section(in source: String, from start: String, to end: String) throws -> Substring {
+                  guard let startRange = source.range(of: start),
+                        let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+                      Issue.record("Expected source section missing: \(start) ... \(end)")
+                      throw SourceContractError.sectionMissing
+                  }
+                  return source[startRange.lowerBound..<endRange.lowerBound]
+              }
+
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  let repositoryRoot = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+              }
+
+              private enum SourceContractError: Error {
+                  case sectionMissing
+              }
+          }
+          SWIFT
+
+          rm "$WORKFLOW"
+          git diff --check
+          git diff --exit-code "$EXPECTED_PARENT" -- Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift
+
+          git config user.name "nembra-v14-materializer"
+          git config user.email "actions@users.noreply.github.com"
+          git add "$TARGET" "$TEST_TARGET" "$WORKFLOW"
+          git commit -m "fix(capture): converge premium root on frozen final truth"
+          git push origin HEAD:recovery/v14-capture-final-premium-root-sol
