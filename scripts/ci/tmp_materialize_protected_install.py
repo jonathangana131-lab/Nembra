@@ -26,8 +26,17 @@ if git("rev-parse", f"HEAD:{INSTALLER}") != BASE_INSTALLER_BLOB:
 source = subprocess.check_output(
     ["git", "show", f"FETCH_HEAD:{INSTALLER}"], text=True
 )
-old = '''SIGNED_APP_CUSTODY_HELPER="$ROOT/scripts/ci/capture_signed_app_install_custody.py"
-[[ -f "$SIGNED_APP_CUSTODY_HELPER" ]] || die "Signed-app install custody helper is missing from the exact accepted source."
+old = '''SIGNED_APP_CUSTODY_HELPER_RELATIVE="scripts/ci/capture_signed_app_install_custody.py"
+SIGNED_APP_CUSTODY_HELPER="$ROOT/$SIGNED_APP_CUSTODY_HELPER_RELATIVE"
+[[ -f "$SIGNED_APP_CUSTODY_HELPER" && ! -L "$SIGNED_APP_CUSTODY_HELPER" ]] || die "Signed-app install custody helper is missing or symlinked in the exact accepted source."
+HELPER_INDEX_VERBOSE="$(git ls-files -v -- "$SIGNED_APP_CUSTODY_HELPER_RELATIVE")"
+HELPER_INDEX_TAGGED="$(git ls-files -t -- "$SIGNED_APP_CUSTODY_HELPER_RELATIVE")"
+[[ "$HELPER_INDEX_VERBOSE" =~ ^[A-Z][[:space:]] ]] || die "Signed-app install custody helper has suppressed assume-unchanged/index authority."
+[[ "$HELPER_INDEX_TAGGED" != S\\ * ]] || die "Signed-app install custody helper has suppressed skip-worktree authority."
+HELPER_ACCEPTED_BLOB="$(git rev-parse "HEAD:$SIGNED_APP_CUSTODY_HELPER_RELATIVE" 2>/dev/null || true)"
+HELPER_ACTUAL_BLOB="$(git hash-object --no-filters -- "$SIGNED_APP_CUSTODY_HELPER_RELATIVE" 2>/dev/null || true)"
+[[ "$HELPER_ACCEPTED_BLOB" =~ ^[0-9a-fA-F]{40}([0-9a-fA-F]{24})?$ ]] || die "Signed-app install custody helper has no valid accepted Git blob."
+[[ "$HELPER_ACTUAL_BLOB" == "$HELPER_ACCEPTED_BLOB" ]] || die "Signed-app install custody helper worktree bytes differ from the exact accepted Git blob."
 SOURCE_APP_TREE_SHA256="$(/usr/bin/python3 -I "$ROOT/scripts/ci/capture_signed_app_install_custody.py" fingerprint --app "$APP")" || \\
     die "Could not bind the exact post-build signed-app tree before protected staging."
 '''
