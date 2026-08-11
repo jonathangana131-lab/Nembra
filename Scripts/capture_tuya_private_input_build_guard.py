@@ -9,7 +9,6 @@ import select
 import stat
 import subprocess
 import sys
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Protocol, Sequence
@@ -32,6 +31,10 @@ def _load_helper(module_name: str, filename: str):
 provenance = _load_helper(
     "capture_tuya_private_input_provenance",
     "capture_tuya_private_input_provenance.py",
+)
+private_review = _load_helper(
+    "capture_tuya_private_input_review",
+    "capture_tuya_private_input_review.py",
 )
 build_subject = _load_helper(
     "capture_cocoapods_build_subject",
@@ -58,6 +61,19 @@ class PrivateInputs:
     @property
     def generated_manifest(self) -> Path:
         return self.generated_pods / "Manifest.lock"
+
+    @property
+    def private_review_root(self) -> Path:
+        # .../TuyaRuntime/Sources/NembraTuyaPrivateConfig -> .../TuyaRuntime
+        return self.identity_sources.parent.parent
+
+    @property
+    def private_provenance_record(self) -> Path:
+        return self.private_review_root / "ResolvedTuyaDependencyProvenance.txt"
+
+    @property
+    def private_review_key(self) -> Path:
+        return self.private_review_root / "PrivateInputReviewKey.bin"
 
     def _lock_mirror_snapshot(self) -> tuple[str, str]:
         try:
@@ -123,6 +139,50 @@ class PrivateInputs:
             accepted_generated_sha256,
             observed_generated_sha256,
         )
+
+    def authority_bound_generation_snapshot(self):
+        """Bind the actual pre-watch generation to externally reviewed private authority.
+
+        Bootstrap already verifies the private subject before CocoaPods, but a
+        same-UID replacement can occur after bootstrap and before this build
+        guard starts. Revalidate the opaque external commitment here and bracket
+        that rebind with the complete generated/private generation snapshot. The
+        resulting exact snapshot, not a later attacker-selected sample, becomes
+        the baseline for vnode admission and the whole xcodebuild window.
+        """
+        accepted = os.environ.get(
+            "NEMBRA_CAPTURE_ACCEPTED_TUYA_PRIVATE_INPUT_COMMITMENT",
+            "",
+        )
+        if len(accepted) != 64 or any(
+            character not in "0123456789abcdef" for character in accepted
+        ):
+            raise BuildGuardError(
+                "NEMBRA_CAPTURE_ACCEPTED_TUYA_PRIVATE_INPUT_COMMITMENT must carry the exact reviewed lowercase 64-hex private-input authority before xcodebuild"
+            )
+
+        before = self.generation_snapshot()
+        try:
+            private_review.verify_review_paths(
+                record_path=self.private_provenance_record,
+                key_path=self.private_review_key,
+                accepted=accepted,
+                lockfile=self.lockfile,
+                security_podspec=self.security_podspec,
+                security_build=self.security_build,
+                identity_podspec=self.identity_podspec,
+                identity_sources=self.identity_sources,
+            )
+        except (private_review.PrivateReviewError, provenance.ProvenanceError) as error:
+            raise BuildGuardError(
+                f"private Tuya review authority rejected build-window admission: {error}"
+            ) from error
+        after = self.generation_snapshot()
+        if after != before:
+            raise BuildGuardError(
+                "accepted build inputs changed while private review authority was rebound before xcodebuild"
+            )
+        return after
 
 
 class EventBackend(Protocol):
@@ -321,7 +381,7 @@ def run_guarded_build(
     if not command:
         raise BuildGuardError("no build command was supplied")
 
-    initial_snapshot = inputs.generation_snapshot()
+    initial_snapshot = inputs.authority_bound_generation_snapshot()
     watch_paths = _watch_paths(inputs)
     _ensure_watch_descriptor_budget(len(watch_paths))
     backend = backend_factory()
@@ -418,8 +478,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     except BuildGuardError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 74
-    except provenance.ProvenanceError as error:
-        print(f"ERROR: private-input provenance rejected build-window custody: {error}", file=sys.stderr)
+    except (
+        provenance.ProvenanceError,
+        private_review.PrivateReviewError,
+    ) as error:
+        print(f"ERROR: private-input authority rejected build-window custody: {error}", file=sys.stderr)
         return 75
 
 
