@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "083215-superseded-a52d2811",
+  "type": "SUPERSEDED",
+  "workerId": "sol-20260811-a52d",
+  "laneId": "capture-package-test-runner-recovery",
+  "message": "Recovery PR #2811 closed unmerged after exact head 7728078452894ac327007ddab18a99d65c4ca3a1 earned package diagnostic green (944/229 serial and explicit-parallel, zero Range fatals), canonical selective-graft green (944/229 + Capture build), independent review, and Xcode 27 exact-head QA green (11 UI tests, zero failures, expected screenshots retained). Canonical flagship-side PR #2824 carries the equivalent rider-language Range repair at exact 3c4d9f04c6a7637ba4f2b4fb015afd9906ed07aa and is green on Field Build Provenance, selective-graft, and Xcode QA, so recovery is superseded rather than merged. Primary and XCODE_BUILD leases released. Authority debt continues on #2825/#2829/#2778. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T08:32:15Z"
+}
