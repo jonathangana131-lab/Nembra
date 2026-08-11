@@ -9,7 +9,7 @@ def replace_once(old: str, new: str) -> None:
     global source
     count = source.count(old)
     if count != 1:
-        raise SystemExit(f"expected exactly one bootstrap marker, found {count}: {old[:100]!r}")
+        raise SystemExit(f"expected exactly one bootstrap marker, found {count}: {old[:120]!r}")
     source = source.replace(old, new, 1)
 
 
@@ -95,24 +95,39 @@ fi
 }'''
 replace_once(mode_guard, subject_block)
 
-replace_once(
-    '  Podfile.lock SHA-256: $LOCK_SHA256\n  Local private-input fingerprint record: $DEPENDENCY_PROVENANCE',
-    '  Podfile.lock SHA-256: $LOCK_SHA256\n'
-    '  CocoaPods generated build subject SHA-256: $COCOAPODS_BUILD_SUBJECT_SHA256\n'
-    '  Local private-input fingerprint record: $DEPENDENCY_PROVENANCE',
-)
+old_review = '''if [[ "$REVIEW_ONLY" == "1" ]]; then
+  cat <<EOF
 
-replace_once(
-    '''Review and bind this exact dependency-lock digest to the exact accepted Capture
+DEPENDENCY LOCK CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY
+  Podfile.lock SHA-256: $LOCK_SHA256
+  Local private-input fingerprint record: $DEPENDENCY_PROVENANCE
+
+Review and bind this exact dependency-lock digest to the exact accepted Capture
 source through the current Final-GO control plane before any field build/install.
 Then rerun the normal bootstrap/installer with that accepted digest supplied as
-NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256.''',
-    '''Review and bind both the exact dependency-lock digest and generated CocoaPods
+NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256. This review-only mode never invokes
+xcodebuild, installs Nembra, scans Bluetooth, or authorizes a physical attempt.
+EOF
+  exit 0
+fi'''
+new_review = '''if [[ "$REVIEW_ONLY" == "1" ]]; then
+  cat <<EOF
+
+DEPENDENCY BUILD SUBJECT CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY
+  Podfile.lock SHA-256: $LOCK_SHA256
+  CocoaPods generated build subject SHA-256: $COCOAPODS_BUILD_SUBJECT_SHA256
+  Local private-input fingerprint record: $DEPENDENCY_PROVENANCE
+
+Review and bind both this exact dependency-lock digest and generated CocoaPods
 build-subject digest to the exact accepted Capture source before any field build/install.
 Then rerun normal bootstrap with both reviewed values supplied as
 NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 and
-NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256.''',
-)
+NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256. This review-only mode never
+invokes xcodebuild, installs Nembra, scans Bluetooth, or authorizes a physical attempt.
+EOF
+  exit 0
+fi'''
+replace_once(old_review, new_review)
 
 old_accept = '''[[ "$LOCK_SHA256" == "$ACCEPTED_LOCK_SHA256" ]] || {
   echo "ERROR: resolved Podfile.lock does not match the preaccepted dependency-lock SHA-256. Stop before xcodebuild/install and review the new dependency subject." >&2
@@ -133,11 +148,13 @@ printf 'Preaccepted generated CocoaPods build subject matched: %s\\n' "$COCOAPOD
 unset ACCEPTED_LOCK_SHA256 ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 || true'''
 replace_once(old_accept, new_accept)
 
-replace_once(
-    '  Podfile.lock SHA-256: $LOCK_SHA256\n  Local private-input fingerprint record: $DEPENDENCY_PROVENANCE',
-    '  Podfile.lock SHA-256: $LOCK_SHA256\n'
-    '  CocoaPods generated build subject SHA-256: $COCOAPODS_BUILD_SUBJECT_SHA256\n'
-    '  Local private-input fingerprint record: $DEPENDENCY_PROVENANCE',
-)
+old_final = '''Resolved dependency provenance:
+  Podfile.lock SHA-256: $LOCK_SHA256
+  Local private-input fingerprint record: $DEPENDENCY_PROVENANCE'''
+new_final = '''Resolved dependency provenance:
+  Podfile.lock SHA-256: $LOCK_SHA256
+  CocoaPods generated build subject SHA-256: $COCOAPODS_BUILD_SUBJECT_SHA256
+  Local private-input fingerprint record: $DEPENDENCY_PROVENANCE'''
+replace_once(old_final, new_final)
 
 path.write_text(source, encoding="utf-8")
