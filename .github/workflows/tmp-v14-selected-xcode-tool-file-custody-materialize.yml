@@ -42,7 +42,7 @@ jobs:
           path = Path("scripts/field/install_one_time_capture.command")
           source = path.read_text(encoding="utf-8")
 
-          new_helper = dedent(r'''\
+          new_helper = dedent(r'''
           validate_root_custodied_path() {
               local candidate="$1"
               local expected_kind="$2"
@@ -94,14 +94,14 @@ jobs:
               raise SystemExit("selected Xcode custody expected one real regular file")
           PY_CUSTODY
           }
-          ''')
+          ''').lstrip("\n")
 
           helper_pattern = re.compile(r'(?ms)^validate_root_custodied_path\(\) \{.*?^\}\n')
-          source, helper_count = helper_pattern.subn(new_helper, source, count=1)
+          source, helper_count = helper_pattern.subn(lambda _match: new_helper, source, count=1)
           if helper_count != 1:
               raise SystemExit(f"materializer expected one custody helper, found {helper_count}")
 
-          new_selection = dedent(r'''\
+          new_selection = dedent(r'''
           SELECTED_DEVELOPER_DIR="$(/usr/bin/xcode-select -p)"
           [[ -n "$SELECTED_DEVELOPER_DIR" ]] || die "Could not resolve the system-selected Xcode developer directory."
           readonly SELECTED_DEVELOPER_DIR
@@ -131,12 +131,12 @@ jobs:
           [[ -x "$SELECTED_DEVICECTL" ]] || die "Selected devicectl is not executable."
           say "Selected Xcode 27 developer tree and exact physical tool files admitted under root custody"
           unset SELECTED_XCODE_VERSION SELECTED_XCODE_FIRST_LINE || true
-          ''')
+          ''').lstrip("\n")
 
           selection_pattern = re.compile(
               r'(?ms)^SELECTED_DEVELOPER_DIR="\$\(/usr/bin/xcode-select -p\)"\n.*?^unset SELECTED_XCODE_VERSION SELECTED_XCODE_FIRST_LINE \|\| true\n'
           )
-          source, selection_count = selection_pattern.subn(new_selection, source, count=1)
+          source, selection_count = selection_pattern.subn(lambda _match: new_selection, source, count=1)
           if selection_count != 1:
               raise SystemExit(f"materializer expected one selected-Xcode admission block, found {selection_count}")
 
