@@ -7,13 +7,16 @@
   "workerId": "sol-20260811-5e64go",
   "leaseId": "nav-tests-5e64go-20260811-115956",
   "generation": 2,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T11:59:56Z",
-  "lastHeartbeatAt": "2026-08-11T12:05:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:33:00Z",
+  "releasedAt": "2026-08-11T12:33:00Z",
   "leaseSeconds": 1800,
   "branch": "test/v14-navigation-current-accessibility-contract-sol-5e64go",
   "pr": 2929,
   "sourceSHA": "82c3e17896600a4f15c02ce675cc39bcb398fca4",
   "currentHeadSHA": "b7d1ef4165d193826fad4c797c8e2a61943dc6b3",
-  "takeoverFromWorkerId": "sol-20260811-nv46"
+  "takeoverFromWorkerId": "sol-20260811-nv46",
+  "outcome": "ACCEPTED_PARENT_CHECKPOINT",
+  "checkpoint": "Exact head b7d1ef4165d193826fad4c797c8e2a61943dc6b3 terminal green in Xcode 27 run 31489548356: immutable checkout, project structure, NembraCore/source contracts, full iPhone 12/iOS 27 Simulator tests/capture, and artifact upload all succeeded. Descendants require their own exact-head acceptance; Capture remains PHYSICAL NO-GO."
 }
