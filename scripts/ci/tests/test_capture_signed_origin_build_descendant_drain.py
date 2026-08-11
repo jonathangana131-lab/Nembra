@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Expected-red diagnostic for signed-origin build descendant drain.
+"""Expected-red diagnostic for signed-origin build descendant authority.
 
-The current Capture build guard waits only for the direct build process. If that process
-spawns a child which remains alive after the direct process exits, the guard can return
-while the descendant still has the caller's output access. Any transient-GID origin
-repair must therefore include a mechanically proven process-family drain before root
-locks the build output and derives the first authority value.
+The current Capture build guard waits only for the direct build process. This diagnostic
+proves a descendant can survive that return boundary and perform a mutation that is
+causally gated until *after* run_guarded_build has returned. A compiler-output custody
+repair must therefore drain the relevant builder process family or otherwise revoke its
+output authority before root lock / first protected snapshot.
 
-This is research-only. It does not modify production code or create physical authority.
+Research only: this portable witness does not claim real Xcode leaks descendants and does
+not create app, signing, or physical authority.
 """
 
 from __future__ import annotations
@@ -31,10 +32,8 @@ def load_guard():
     if spec is None or spec.loader is None:
         raise RuntimeError("could not load Capture build guard")
     module = importlib.util.module_from_spec(spec)
-    # The guard contains dataclasses with postponed annotations. dataclasses resolves
-    # those through sys.modules while the class decorator runs, so register the
-    # module before exec_module instead of letting a harness-only import failure
-    # masquerade as process-lifetime evidence.
+    # The guard uses dataclasses with postponed annotations. Register before execution
+    # so a harness-only import failure cannot masquerade as process-lifetime evidence.
     sys.modules[module_name] = module
     try:
         spec.loader.exec_module(module)
@@ -45,7 +44,7 @@ def load_guard():
 
 
 class QuietBackend:
-    """Portable no-event backend; this diagnostic attacks process lifetime only."""
+    """Portable no-event backend; this diagnostic attacks process authority only."""
 
     def register(self, descriptor: int) -> None:
         del descriptor
@@ -75,29 +74,48 @@ class InputsFixture:
         (self.identity_sources / "input.txt").write_text("IDENTITY-SOURCE\n", encoding="utf-8")
 
     def generation_snapshot(self):
-        # The diagnostic is intentionally scoped to process-family lifetime. The
-        # no-event backend plus constant snapshot keeps unrelated input custody out
-        # of the oracle while still exercising the real guard's process admission,
-        # poll, completion and finally paths.
         return ("stable-input-generation",)
 
 
 class CaptureSignedOriginBuildDescendantDrainTests(unittest.TestCase):
-    def test_guard_cannot_return_while_build_descendant_remains_alive(self) -> None:
+    def test_guard_return_does_not_leave_descendant_with_post_return_output_authority(self) -> None:
         guard = load_guard()
         with tempfile.TemporaryDirectory(prefix="nembra-signed-origin-descendant-") as temporary:
             root = Path(temporary)
             inputs = InputsFixture(root)
             pid_file = root / "descendant.pid"
+            after_guard_gate = root / "after-guard-return.gate"
+            would_be_output = root / "would-be-compiler-output.bin"
 
+            # The direct build child spawns a descendant and exits. The descendant is
+            # forbidden by construction from mutating `would_be_output` until the test
+            # creates `after_guard_gate`, which happens only after run_guarded_build
+            # has returned. A later mutation is therefore causal post-return evidence,
+            # not merely evidence that the descendant happened to be alive.
             child_source = r'''
 import pathlib
 import subprocess
 import sys
 
 pid_path = pathlib.Path(sys.argv[1])
+gate_path = pathlib.Path(sys.argv[2])
+output_path = pathlib.Path(sys.argv[3])
+grandchild = r"""
+import os
+import pathlib
+import sys
+import time
+
+gate = pathlib.Path(sys.argv[1])
+output = pathlib.Path(sys.argv[2])
+deadline = time.monotonic() + 30.0
+while not gate.exists() and time.monotonic() < deadline:
+    time.sleep(0.01)
+if gate.exists():
+    output.write_bytes(b'POST-GUARD-DESCENDANT-MUTATION')
+"""
 process = subprocess.Popen(
-    [sys.executable, "-c", "import time; time.sleep(60)"],
+    [sys.executable, "-c", grandchild, str(gate_path), str(output_path)],
     stdin=subprocess.DEVNULL,
     stdout=subprocess.DEVNULL,
     stderr=subprocess.DEVNULL,
@@ -107,20 +125,39 @@ pid_path.write_text(str(process.pid), encoding="utf-8")
 
             status = guard.run_guarded_build(
                 inputs,
-                [sys.executable, "-c", child_source, str(pid_file)],
+                [
+                    sys.executable,
+                    "-c",
+                    child_source,
+                    str(pid_file),
+                    str(after_guard_gate),
+                    str(would_be_output),
+                ],
                 backend_factory=QuietBackend,
                 poll_interval=0.01,
             )
             self.assertEqual(status, 0)
             self.assertTrue(pid_file.is_file(), "fixture child did not publish descendant PID")
             descendant_pid = int(pid_file.read_text(encoding="utf-8").strip())
+            self.assertFalse(
+                would_be_output.exists(),
+                "fixture mutated output before the guard return gate; diagnostic is invalid",
+            )
+
+            # This signal is the causal return boundary. The descendant can mutate only
+            # after this point.
+            after_guard_gate.write_text("GUARD-RETURNED\n", encoding="utf-8")
+            deadline = time.monotonic() + 2.0
+            while not would_be_output.exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            post_return_mutation = would_be_output.exists()
 
             alive = False
             try:
                 os.kill(descendant_pid, 0)
                 alive = True
             except ProcessLookupError:
-                alive = False
+                pass
             finally:
                 if alive:
                     try:
@@ -129,11 +166,11 @@ pid_path.write_text(str(process.pid), encoding="utf-8")
                         pass
 
             self.assertFalse(
-                alive,
-                "Capture build guard returned while a direct build descendant remained alive. "
-                "A transient-GID signed-output repair must prove the entire trusted build process "
-                "family is drained (or otherwise stripped of output authority) before root lock / "
-                "first protected snapshot; waiting for only the direct xcodebuild process is not enough.",
+                post_return_mutation,
+                "Capture build guard returned while a build descendant retained post-return output mutation authority. "
+                "A signed-origin repair must mechanically drain the relevant builder process family or otherwise "
+                "revoke its output authority before root lock / first protected snapshot; waiting only for the direct "
+                "build child is insufficient.",
             )
 
 
